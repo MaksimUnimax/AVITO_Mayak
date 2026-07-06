@@ -30,3 +30,30 @@
 **Следующий безопасный шаг:**
 
 Создать и проверить первый documentation-bootstrap commit с точным набором governance/product/architecture документов.
+
+---
+
+## WL-0002 — 2026-07-06 — Literal bootstrap correction: repository URL
+
+**Тип:** governance / append-only correction  
+**Основание:** read-only byte audit `AVITO_MAYAK_WORKLOG_EXACT_BYTE_PROOF`.
+
+**Исправление записи:**
+
+В записи `WL-0001` строка с SSH URL репозитория содержит ошибочный текст:
+
+```text
+git@github.com/MaksimUnimax/AVITO_Mayak.git
+````
+
+Фактический и подтверждённый SSH URL репозитория:
+
+```text
+git@github.com:MaksimUnimax/AVITO_Mayak.git
+```
+
+Запись `WL-0001` не редактируется согласно append-only правилу. Эта запись является единственной корректировкой указанного факта.
+
+**Следующий безопасный шаг:**
+
+Принять документационный bootstrap после проверки обновлённого append-only журнала и сохранения доказательства расхождения.
