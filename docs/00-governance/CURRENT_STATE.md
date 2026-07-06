@@ -1,52 +1,56 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.0  
-**Статус:** APPROVED snapshot for Documentation Bootstrap  
+**Версия снимка:** 1.1
+**Статус:** APPROVED snapshot
 **Дата снимка:** 2026-07-06
 
 ## Фаза
 
-`A0 — Documentation Bootstrap`
+`A0.7 — Technical Baseline evidence collection`
 
-Репозиторий был создан пустым. До этого снимка не существовало production-кода, физической схемы БД, миграций, выбранного технологического стека, CI/CD, сервисов, внешних API-ключей или deploy-конфигурации.
+Documentation Bootstrap принят. Product-code, физическая схема БД, миграции, выбранный технологический стек, CI/CD, сервисы проекта, внешние API-ключи и deploy-конфигурация по-прежнему не созданы.
 
-## Доказанный baseline перед первым commit
+## Принятый documentation baseline
 
 - Репозиторий: `MaksimUnimax/AVITO_Mayak`.
-- Ветка: `main`.
-- Первоначальное состояние: `HEAD=UNBORN_OR_EMPTY_REPOSITORY`.
-- Рабочее дерево до documentation bootstrap: чистое.
-- Отдельный SSH deploy key для этого репозитория создан и доступ к repository read проверен.
-- Репозиторий локально клонирован в `/opt/avito-mayak` только для работы CLI-исполнителя.
-- На момент baseline не было файлов проекта вне `.git`.
+- Рабочая ветка: `main`.
+- Принятый remote commit: `b4b14dc6262581b10f45d02e9472c93e3cee6b31`.
+- Bootstrap parent commit: `e8587107fd6cd3675b3e69f1ce75ffa0c846cc3c`.
+- В документационном baseline ровно 49 файлов.
+- 48 исходных файлов совпали с переданным ChatGPT буквальным текстом по SHA-256.
+- Единственное расхождение было в исторической записи `WL-0001`: SSH URL ошибочно содержал `/` вместо `:` после `github.com`.
+- Ошибка не была переписана. Append-only prefix сохранён, а корректировка добавлена отдельной записью `WL-0002`.
+- Рабочее дерево после final audit было чистым.
+- Отдельный SSH deploy key и dedicated GitHub known_hosts существуют только для `MaksimUnimax/AVITO_Mayak`.
 
-## Принятые источники для документационного этапа
+## Принятые источники и правила
 
-- `MAYAK_AVITO_TARGET_MODEL_v0.1.md` — целевая модель продукта, статус `DRAFT`.
-- `MAYAK_AVITO_ARCHITECTURE_MODULE_MAP_v0.1.md` — архитектурная карта, статус `DRAFT`.
-- `CHATGPT_PROJECT_LEADERSHIP_RULES_v1.1.md` — обязательные правила руководства разработкой.
+- `docs/01-product/MAYAK_AVITO_TARGET_MODEL_v0.1.md` — целевая модель продукта, статус `DRAFT`.
+- `docs/02-architecture/MAYAK_AVITO_ARCHITECTURE_MODULE_MAP_v0.1.md` — архитектурная карта, статус `DRAFT`.
+- `docs/00-governance/CHATGPT_PROJECT_LEADERSHIP_RULES_v1.1.md` — обязательные правила руководства разработкой.
+- `docs/00-governance/DOCUMENTATION_GOVERNANCE.md` — обязательное правило буквальной передачи документов CLI-исполнителю.
+- `docs/00-governance/PROJECT_ENTRYPOINT.md` — обязательный протокол восстановления контекста.
 
-## Что создаёт текущая documentation-bootstrap задача
+## Активная задача
 
-- корневую точку входа и правила для CLI;
-- governance-документы, манифест, roadmap, append-only журналы и реестр открытых решений;
-- копии текущей целевой модели и архитектурной карты в репозитории;
-- реестр 13 модулей и зарезервированную структуру каталогов;
-- каркас задач, отчётов, контрактов, качества, операций, референсов и будущего кода без создания самого product-кода.
+`TASK-001 — Доказательная инвентаризация технической среды`.
 
-## Что ещё не создано и не должно считаться существующим
+Задача имеет режим `proof_only`. Она не выбирает технологический стек и не создаёт код. Она собирает только проверяемые факты о сервере и доступных инструментах, необходимых ChatGPT для проектирования Technical Baseline.
+
+## Что ещё не существует и не должно предполагаться существующим
 
 - утверждённый технический baseline;
-- машиночитаемые DTO/JSON Schema/OpenAPI/события;
-- физическая модель БД, миграции и политика совместимости;
-- тестовая стратегия, fixtures и acceptance matrix;
+- выбранный язык, framework, package manager, application layout или queue technology;
+- машиночитаемые DTO, JSON Schema, OpenAPI или event contracts;
+- физическая модель БД, миграции и migration policy;
 - security/privacy model;
-- deployment/operations runbooks;
-- принятые автономные playbook-документы всех модулей;
-- первый task на код.
+- test strategy, fixtures, acceptance matrix или regression policy;
+- operations/deployment runbooks;
+- принятые автономные module playbook-документы;
+- product-code, tests, CI, Dockerfile, database, queue, бот, parser, веб-интерфейс или production deploy.
 
-## Точный следующий безопасный шаг после проверки bootstrap commit
+## Следующий безопасный шаг
 
-ChatGPT обязан проверить фактическое содержимое remote commit: полный список файлов, `git diff --check`, соответствие переданному тексту, append-only начальные записи, отсутствие кода и самодеятельности CLI-исполнителя.
+Получить и проверить отчёт `TASK-001`.
 
-Только после приёмки bootstrap commit следующий документационный этап: подготовить и утвердить `Technical Baseline and Contract Package v1.0`. До этого этапа запрещено выдавать задачу на product-code.
+Только ChatGPT после проверки доказательств определяет выбранный technical baseline и пишет полный буквальный текст следующего документационного пакета. CLI-исполнитель не выбирает следующий шаг, стек или содержание документов.

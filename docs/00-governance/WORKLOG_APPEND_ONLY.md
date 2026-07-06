@@ -57,3 +57,32 @@ git@github.com:MaksimUnimax/AVITO_Mayak.git
 **Следующий безопасный шаг:**
 
 Принять документационный bootstrap после проверки обновлённого append-only журнала и сохранения доказательства расхождения.
+
+---
+
+## WL-0003 — 2026-07-06 — Documentation Bootstrap accepted; TASK-001 started
+
+**Тип:** governance / baseline acceptance and proof-task start  
+**Источник доказательства:** отчёты `AVITO_MAYAK_FINAL_DOCUMENTATION_BASELINE_AUDIT` и `AVITO_MAYAK_WORKLOG_EXACT_BYTE_PROOF`.
+
+**Подтверждено:**
+
+- remote `main` принят на commit `b4b14dc6262581b10f45d02e9472c93e3cee6b31`;
+- commit `b4b14dc6262581b10f45d02e9472c93e3cee6b31` имеет единственного родителя `e8587107fd6cd3675b3e69f1ce75ffa0c846cc3c`;
+- в baseline ровно 49 файлов;
+- 48 исходных файлов совпали с буквальным текстом ChatGPT по SHA-256;
+- изменение между двумя commit затронуло только `docs/00-governance/WORKLOG_APPEND_ONLY.md`;
+- историческая ошибка URL в `WL-0001` сохранена без редактирования;
+- корректный SSH URL добавлен только append-only записью `WL-0002`;
+- рабочее дерево после final audit было чистым.
+
+**Решение ChatGPT:**
+
+- принять Documentation Bootstrap;
+- не начинать product-code;
+- создать `TASK-001` только для read-only доказательной инвентаризации технической среды;
+- по результату TASK-001 подготовить полный буквальный документационный пакет technical baseline, а не поручать CLI выбор стека или содержания документов.
+
+**Следующий безопасный шаг:**
+
+Выполнить `TASK-001 — Доказательная инвентаризация технической среды` и вернуть доказательства без изменений сервера или product-code.

@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 1.0  
-**Статус:** APPROVED planning baseline  
+**Версия:** 1.1
+**Статус:** APPROVED planning baseline
 **Правило:** roadmap показывает этапы и факт прохождения. Детали конкретной работы живут в task packet, report и модульных playbook-документах.
 
 ## Статусы
@@ -17,13 +17,14 @@
 - `[x] A0.2` Зафиксирована архитектурная карта 13 модулей v0.1 как DRAFT.
 - `[x] A0.3` Зафиксированы правила руководства ChatGPT, запрет на догадки, поиск причины на уровень выше и запрет на постоянные костыли.
 - `[x] A0.4` Создан отдельный GitHub deploy key и проверен доступ к пустому репозиторию.
-- `[~] A0.5` Documentation Bootstrap: структура репозитория, точка входа, governance, журналы, реестры и импорт исходных документов.
-- `[ ] A0.6` Проверить и принять bootstrap commit.
-- `[ ] A0.7` Подготовить Technical Baseline and Contract Package v1.0.
-- `[ ] A0.8` Подготовить физическую data model и migration policy.
-- `[ ] A0.9` Подготовить test strategy, fixture registry и acceptance matrix.
-- `[ ] A0.10` Подготовить security/privacy model и operations/deployment runbooks.
-- `[ ] A0.11` Проверить, переработать и принять автономные playbook-документы 13 модулей на основе утверждённых контрактов.
+- `[x] A0.5` Documentation Bootstrap: структура репозитория, точка входа, governance, журналы, реестры и импорт исходных документов.
+- `[x] A0.6` Bootstrap commit проверен и принят: 48 исходных файлов совпали с буквальным текстом; историческая URL-опечатка сохранена и исправлена append-only записью.
+- `[~] A0.7` Собрать доказательства технической среды для Technical Baseline and Contract Package v1.0 (`TASK-001`).
+- `[ ] A0.8` На основе принятых доказательств подготовить Architecture Baseline, Security/Privacy Model и Contract Package v1.0.
+- `[ ] A0.9` Подготовить физическую data model, migration policy и compatibility policy.
+- `[ ] A0.10` Подготовить test strategy, fixture registry, acceptance matrix и reference regression policy.
+- `[ ] A0.11` Подготовить operations/deployment runbooks и реестр внешних референсов.
+- `[ ] A0.12` Проверить, переработать и принять автономные playbook-документы 13 модулей на основе утверждённых контрактов.
 
 ## B. Общая основа продукта
 
@@ -54,7 +55,7 @@
 
 ## Гейты перехода
 
-1. Нельзя начинать product-code до принятия A0.6–A0.10.
+1. Нельзя начинать product-code до принятия A0.8–A0.11.
 2. Нельзя начинать модуль, если его входные/выходные контракты, владелец данных, fake dependencies и acceptance checks не утверждены.
 3. Нельзя начинать внешнюю интеграцию по памяти: до кода нужна актуальная официальная документация и контрактная задача.
 4. Нельзя считать этап завершённым только по отчёту CLI: ChatGPT обязан проверить код, diff, тесты и evidence.
