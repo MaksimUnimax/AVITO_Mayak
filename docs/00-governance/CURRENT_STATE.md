@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.11
+**Версия снимка:** 1.12
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.13 — Technical Baseline published; Runs 1–10 documented; Run 10 server synchronization required before Run 11`
+`A0.14 — Runs 1–11 published; Run 10 server sync accepted; Run 11 server synchronization required before Run 12`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 9 Avito reference package is accepted in GitHub.
+Run 10 Technical Baseline was independently accepted on the server at GitHub SHA `099c9f0e35bb710f498d9f75ab38d542feb76be5`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, no GitHub/configuration mutation.
 
-Run 10 adds the missing Technical Baseline gate and expands the documentation route from 23 to 24 runs. It selects the core stack without creating code, dependency files, environments or infrastructure.
+Run 11 publishes current official-source policies for Telegram and MAX plus the current cross-provider registry index. It creates no bot, credential, provider request, executable test, service or runtime.
 
-Public `main` remains the factual source of truth. Server checkout acceptance always refers to one exact published SHA.
+Public `main` remains the factual source of truth. Run 11 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 11 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -27,19 +27,13 @@ Public `main` remains the factual source of truth. Server checkout acceptance al
 - `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
 - `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
 
-### Contracts
+### Contracts, data and quality
 
 - `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
 - `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
-- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
-
-### Data and compatibility
-
+- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`;
 - `docs/02-architecture/DATA_MODEL_v1.0.md`;
-- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
-
-### Quality
-
+- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`;
 - `docs/07-quality/TEST_STRATEGY_v1.0.md`;
 - `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
 - `docs/07-quality/ACCEPTANCE_MATRIX_v1.1.md`;
@@ -53,37 +47,32 @@ Public `main` remains the factual source of truth. Server checkout acceptance al
 - `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
 - `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
 
-### Avito references
+### External references
 
+- `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
 - `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
 - `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
+- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`;
+- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
+- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
 
-## Selected core technical baseline
+## Provider-policy consequences
 
-- CPython 3.14 standard build;
-- uv with `pyproject.toml` and `uv.lock` after bootstrap;
-- FastAPI and Uvicorn;
-- Pydantic v2 and pydantic-settings;
-- HTTPX;
-- PostgreSQL 18;
-- SQLAlchemy 2, Psycopg 3 and Alembic;
-- pytest, pytest-asyncio and RESpx;
-- Ruff, mypy, import-linter and coverage.py;
-- OpenTelemetry instrumentation boundary;
-- PostgreSQL-backed durable work/outbox; no external broker at baseline.
-
-Provider SDKs, exact Avito adapter stack, frontend, containerization, ingress, configuration delivery, telemetry backend and Windows packaging remain deferred.
+- Telegram webhook/getUpdates are mutually exclusive; provider updates and Mini App inputs are trusted only after the documented verification boundary.
+- Telegram `update_id` supports duplicate/order handling in provider scope but does not replace internal idempotency and ownership rules.
+- MAX production integrations use Webhook; Long Polling is development/test only according to current official documentation.
+- MAX currently requires migration from `platform-api.max.ru` to `platform-api2.max.ru` by 19 July 2026; this is a revalidation gate, not a runtime change made by Run 11.
+- MAX partner eligibility and moderation are adoption gates; they are not assumed satisfied.
+- Neither policy chooses SDKs, hosting, certificates, secrets delivery, retry budgets, UI scope or provider credentials.
 
 ## Current prohibitions
 
-No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, service, container, listener, port, sensitive access material, external call, parser, bot, deployment or runtime configuration has been created.
+No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, service, container, listener, port, credential, secret, external call, parser, bot, deployment or runtime configuration has been created.
 
 OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize server checkout to the exact Run 10 published GitHub SHA.
-2. Verify clean worktree and exact SHA.
-3. Continue with Run 11 of 24 — Telegram and MAX Reference Policies.
-4. Module playbooks begin at Run 12; Platform & Contracts is Run 12.
+1. Synchronize `/opt/avito-mayak` to the exact Run 11 published GitHub SHA.
+2. Verify local SHA, remote SHA, clean worktree and no prohibited mutation.
+3. After independent acceptance, continue with Run 12 of 24 — Platform & Contracts `MODULE_PLAYBOOK.md`.

@@ -405,3 +405,42 @@ GitHub publication is documented, but Run 10 is not fully accepted until the ser
 **Следующий безопасный шаг:**
 
 Synchronize `/opt/avito-mayak` to the exact published Run 10 GitHub SHA using server-sync-only Codex rules. After independent sync acceptance, resume the documentation agent at Run 11 — Telegram and MAX reference policies — using the 24-run route.
+
+---
+
+## WL-0015 — 2026-07-07 — Run 10 server sync accepted; Run 11 Telegram/MAX references published
+
+**Тип:** external-reference documentation publication / governance synchronization
+
+**Источник доказательства:**
+
+- independent GitHub Gate 0 review of public parent `099c9f0e35bb710f498d9f75ab38d542feb76be5`;
+- independently accepted server report `MAYAK-RUN10-CLOSURE-0001`: `/opt/avito-mayak`, branch `main`, local/remote SHA `099c9f0e35bb710f498d9f75ab38d542feb76be5`, ahead/behind `0/0`, clean worktree, no GitHub/Git/SSH/server configuration mutation;
+- official Telegram Bot API, Mini Apps and Bot Features documentation retrieved `2026-07-07T13:32:54+02:00`;
+- official MAX API, Webhook, Long Polling, Update, Mini App validation and partner-onboarding documentation retrieved `2026-07-07T13:32:54+02:00`;
+- governance-state reconciliation in the same Run 11 publication change set.
+
+**Опубликовано:**
+
+- `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
+- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
+- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`;
+- synchronized README, manifest, current state, roadmap, backlog and section-status indexes.
+
+**Границы принятия:**
+
+- Telegram and MAX claims are accepted only in exact current official-source scope;
+- Telegram facts are not evidence for MAX, and MAX facts are not evidence for Telegram;
+- webhook/Mini App inputs remain untrusted until provider-specific server-side verification;
+- provider duplicate/retry behavior does not replace internal idempotency or guarantee exactly-once delivery;
+- MAX eligibility/moderation and the 19 July 2026 API/certificate transition remain explicit adoption/revalidation gates;
+- no bot, provider account, token, secret, webhook, endpoint, certificate, provider call, SDK, executable test, product-code, migration, database, Dockerfile, CI/CD, service, container, port, deploy or runtime configuration is created;
+- OD-001–OD-014 remain open.
+
+**Run acceptance:**
+
+Run 11 GitHub publication is not fully accepted until `/opt/avito-mayak` is synchronized to the exact published Run 11 SHA and the server-sync report is independently verified.
+
+**Следующий безопасный шаг:**
+
+Publish and independently verify the complete Run 11 change set, then issue one server-sync-only CLI packet for the exact published SHA. After acceptance, continue to Run 12 — Platform & Contracts Module Playbook.

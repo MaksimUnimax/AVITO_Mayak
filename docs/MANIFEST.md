@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 2.0
+**Версия манифеста:** 2.1
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -26,9 +26,7 @@
 - `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
 - `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
 
-Historical revision retained:
-
-- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`.
+Historical revision retained: `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`.
 
 ### Common Contract Foundation
 
@@ -48,33 +46,26 @@ Historical revision retained:
 - `docs/07-quality/ACCEPTANCE_MATRIX_v1.1.md`;
 - `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
 
-Historical revision retained:
+Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 
-- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
-
-### Operations Environment Foundation
+### Operations Foundation
 
 - `docs/08-operations/ENVIRONMENT_MATRIX_v1.1.md`;
-- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`.
-
-Historical revision retained:
-
-- `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`.
-
-### Recovery and Release Boundaries
-
+- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`;
 - `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
-- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
-
-### Windows Egress Agent Boundaries
-
+- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
 - `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
 
-### Avito Reference Foundation
+Historical revision retained: `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`.
 
-- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
+### External Reference Foundation
+
+- `docs/09-references/REFERENCE_REGISTRY_v1.1.md` — current cross-provider registry index;
+- `docs/09-references/REFERENCE_REGISTRY_v1.0.md` — retained Avito record body incorporated by v1.1;
 - `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
+- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`;
+- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
+- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
 
 ## Каталоги
 
@@ -83,12 +74,12 @@ Historical revision retained:
 | `00-governance` | rules, state, decisions, worklog | approved governance |
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
-| `03-contracts` | common contracts | APPROVED |
-| `04-modules` | 13 playbooks | pending Runs 12–24 |
-| `05-tasks` | literal CLI packets | TASK-001 completed |
-| `06-reports` | evidence reports | REPORT-001 accepted |
-| `07-quality` | strategy, fixtures, acceptance, reference regression | current matrix v1.1 APPROVED |
-| `08-operations` | isolation, environments, observability, recovery, release, Windows egress | current environment matrix v1.1 APPROVED |
-| `09-references` | external evidence | Avito APPROVED; Telegram/MAX Run 11 next |
+| `03-contracts` | common contracts | APPROVED documentation baseline |
+| `04-modules` | 13 playbooks | RESERVED; pending Runs 12–24 |
+| `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
+| `06-reports` | evidence reports and handoffs | REPORT-001 accepted historically; no product-code report |
+| `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |
+| `08-operations` | isolation, environments, observability, recovery, release, Windows egress | APPROVED documentation baseline; no runtime/deploy |
+| `09-references` | external evidence | Avito, Telegram and MAX documentation approved; provider implementation absent |
 
-Statuses: `DRAFT`, `CANDIDATE`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. Historical approved revisions remain evidence for documents that used them; current work uses the versions listed as current above.
+Statuses: `DRAFT`, `CANDIDATE`, `RESERVED`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. Historical approved revisions remain evidence for documents that used them; current work uses the versions listed above.

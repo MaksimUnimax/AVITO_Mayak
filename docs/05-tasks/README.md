@@ -1,16 +1,9 @@
 # Task packets
 
-**Статус:** ACTIVE structure; task packets ещё не созданы.
+**Статус:** ACTIVE governance structure; TASK-001 completed historically; no active implementation task.
 
-Каждая конкретная работа CLI-исполнителя хранится отдельным `TASK-xxx.md` в одном из каталогов:
+Task packet создаётся только ChatGPT и содержит exact scope. В текущем документном цикле Codex/CLI используется только для server-sync после публикации GitHub и не создаёт/редактирует документацию.
 
-```text
-active/
-completed/
-blocked/
-change-requests/
-```
-
-Task packet создаётся только ChatGPT и содержит полный точный scope. CLI не создаёт себе task packet и не переносит task между каталогами самостоятельно.
+Каталоги `active/`, `completed/`, `blocked/` и `change-requests/` сохраняют task lifecycle. Historical TASK-001/REPORT-001 references remain evidence through manifest, governance logs and accepted report records.
 
 Шаблон: `TASK_TEMPLATE.md`.

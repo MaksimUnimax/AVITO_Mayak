@@ -1,23 +1,13 @@
 # Контракты — статус
 
-**Статус:** RESERVED — canonical contract package ещё не утверждён.
+**Статус:** APPROVED documentation baseline.
 
-Эта директория будет содержать нормативные интерфейсы между модулями: команды, события, DTO, error envelopes, idempotency keys, schemas, test vectors и mocks.
+Canonical documents:
 
-До принятия `Technical Baseline and Contract Package v1.0` запрещено:
+- `CONTRACT_PACKAGE_v1.0.md`;
+- `ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
+- `CONTRACT_CHANGE_POLICY_v1.0.md`.
 
-- создавать product-code, который предполагает формат межмодульного API;
-- выбирать реальные DTO/schema/event payload;
-- создавать физические таблицы/миграции как источник общего контракта;
-- выдавать candidate playbook за утверждённый контракт.
+Они задают transport-neutral semantics, ownership, error/idempotency and change control. Они не являются OpenAPI/JSON Schema, не создают runtime, таблицы, migrations или product-code.
 
-Будущая структура:
-
-```text
-schemas/       machine-readable schemas
-events/        versioned event contracts
-test-vectors/  exact input/output vectors
-mocks/         fake ports/adapters for isolated tests
-```
-
-Каждый файл появится только из полного текста ChatGPT в отдельной documentation task.
+Module-specific inputs/outputs и machine-readable schemas допускаются только после соответствующего approved `MODULE_PLAYBOOK.md` и отдельной implementation task.

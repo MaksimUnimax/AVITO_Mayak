@@ -18,10 +18,9 @@
 
 - Владелец продукта задаёт цели, ограничения и принимает продуктовые решения.
 - ChatGPT является разработчиком, архитектором и руководителем проекта.
-- Codex/CLI является техническим исполнителем и не принимает архитектурных, продуктовых или межмодульных решений.
-- Документация создаётся или изменяется только из полного буквального текста и exact scope.
+- Codex/CLI используется только как ограниченный технический исполнитель; для текущего документационного цикла — только как server-sync executor после публикации GitHub.
+- Public GitHub `main` — источник истины для документов.
 - Код и документация не создаются по догадке.
-- При проблеме сначала доказывается причина на уровень выше симптома.
 - Shared-host resources не принадлежат проекту только потому, что они видимы.
 - External behavior требует current official/primary evidence.
 
@@ -36,6 +35,8 @@
 - Quality Foundation with Acceptance Matrix v1.1
 - Operations/Environment boundaries
 - Avito Reference Foundation
+- Telegram Reference Policy v1.0
+- MAX Reference Policy v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -47,15 +48,15 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Architecture map: [`docs/02-architecture/MAYAK_AVITO_ARCHITECTURE_MODULE_MAP_v0.1.md`](docs/02-architecture/MAYAK_AVITO_ARCHITECTURE_MODULE_MAP_v0.1.md)
 - Open decisions: [`docs/00-governance/OPEN_DECISIONS.md`](docs/00-governance/OPEN_DECISIONS.md)
 
-## Запрет до следующего решения
+## Запрет до отдельного решения владельца
 
-До принятия applicable references, module playbook, isolated toolchain proof и exact implementation task запрещены:
+До принятия applicable module playbook, isolated toolchain proof и exact implementation task запрещены:
 
 - product-code;
 - `pyproject.toml`, `uv.lock` и dependency installation;
 - physical schema, migrations and database provisioning;
 - bots, parser and external calls;
 - Docker, CI/CD and deploy;
-- services, ports, sensitive access material and production infrastructure.
+- services, ports, credentials, secrets and production infrastructure.
 
-Следующий документационный ран: Run 11 of 24 — Telegram and MAX Reference Policies.
+Run 11 опубликован как documentation-only package. После синхронизации сервера с точным Run 11 SHA следующий документационный ран — Run 12 of 24, Platform & Contracts Module Playbook.
