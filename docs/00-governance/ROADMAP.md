@@ -1,6 +1,6 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 2.7
+**Версия:** 2.8
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` published/active; `[ ]` not started; `[!]` blocked.
@@ -26,8 +26,8 @@
   - `[x] Run 14` Entitlements & Billing; accepted at `2346ccbbeaa8f1be18281fdf16fbec75cdb5052e`;
   - `[x] Run 15` Beacon Management; accepted at `2a73078c42cb03ef89d62b6161752f2069d35129`;
   - `[x] Run 16` Avito Parser Adapter; accepted at `9907b22d2192e60680bcdd9e4e98f6bb104cb18f`;
-  - `[~] Run 17` Scan Orchestration & Listing State published; exact server synchronization/acceptance pending;
-  - `[ ] Run 18` Egress Routing;
+  - `[x] Run 17` Scan Orchestration & Listing State; accepted at `7dc5eb6c26c7cbe82a5db42dfeffaff521f01d90`;
+  - `[~] Run 18` Egress Routing published; exact server synchronization/acceptance pending;
   - `[ ] Run 19` Notification Delivery;
   - `[ ] Run 20` Telegram Adapter;
   - `[ ] Run 21` MAX Adapter;
@@ -38,4 +38,4 @@
 
 Product implementation remains forbidden until the receiving module has an accepted playbook, current references where applicable, isolated toolchain proof and exact implementation task.
 
-An accepted playbook is a prerequisite, not an automatic instruction to create code, dependencies, database, migrations, scheduler/worker, parser/provider calls, notifications, services or runtime.
+An accepted playbook is a prerequisite, not an automatic instruction to create code, dependencies, database, migrations, agents, routes, tunnels, ports, parser/provider calls, notifications, services or runtime.

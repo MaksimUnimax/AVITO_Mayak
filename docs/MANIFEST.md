@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 2.7
+**Версия манифеста:** 2.8
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -50,7 +50,8 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 
 ### Operations Foundation
 
-- current documents under `docs/08-operations/` listed by its README and backlog.
+- current documents under `docs/08-operations/` listed by its README and backlog;
+- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
 
 ### External Reference Foundation
 
@@ -68,8 +69,9 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 - `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
-- `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 17 server acceptance pending.
-- Modules 07–13 — RESERVED; Runs 18–24.
+- `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
+- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 18 server acceptance pending.
+- Modules 08–13 — RESERVED; Runs 19–24.
 
 ## Каталоги
 
@@ -79,7 +81,7 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
 | `03-contracts` | common contracts | APPROVED documentation baseline |
-| `04-modules` | 13 playbooks | 6 published; 7 reserved |
+| `04-modules` | 13 playbooks | 7 published; 6 reserved |
 | `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
 | `06-reports` | evidence reports and handoffs | REPORT-001 accepted historically; no product-code report |
 | `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |

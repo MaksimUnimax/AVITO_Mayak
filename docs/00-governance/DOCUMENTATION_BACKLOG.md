@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.7
+**Версия:** 2.8
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -67,17 +67,22 @@ Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy
 
 - `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md`.
 - Exact server synchronization accepted at `9907b22d2192e60680bcdd9e4e98f6bb104cb18f`.
-- Adapter extraction/normalization, explicit external outcomes and false-empty prohibition are fixed without live provider traffic or parser implementation.
 
-### Run 17 — Scan Orchestration & Listing State — PUBLISHED
+### Run 17 — Scan Orchestration & Listing State — ACCEPTED
 
 - `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `7dc5eb6c26c7cbe82a5db42dfeffaff521f01d90`.
+- Durable scan/run state, immutable revision pinning, per-Beacon baseline/difference rules and post-commit scan-domain events are fixed without scheduler/worker/database/provider implementation.
 
-The playbook fixes durable scan intent/run/claim semantics, immutable Beacon revision pinning, Parser outcome preservation, per-Beacon immutable observations/state, first-complete baseline suppression, subsequent listing-ID and ID+price-pair differences, reconciliation and post-commit domain events. OD-003, OD-004, OD-009, OD-010, OD-011 and OD-013 remain unresolved. Exact server synchronization to the Run 17 SHA is pending before acceptance.
+### Run 18 — Egress Routing — PUBLISHED
 
-### Runs 18–24 — RESERVED
+- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 07–13 in route order. Egress Routing must provide explicit route/lease/outcome contracts without owning Scan state; Notification Delivery must consume committed Scan domain events and never infer them from Parser/route outcomes.
+The playbook fixes agent/route registration, capability/readiness/health/quarantine ownership, bounded leases, server-side selection evidence, explicit transport outcomes, false-success prohibition, reconciliation-first ambiguity and replaceable Windows-agent boundaries. OD-009, OD-010, OD-011 and OD-013 remain unresolved. Route technology, topology, ports, tunnels/VPN/proxy, credentials, priority/fallback, thresholds, retry/rate values, cookies/sessions and retention remain blocked. Exact server synchronization to the Run 18 SHA is pending before acceptance.
+
+### Runs 19–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 08–13 in route order. Notification Delivery must consume committed Scan domain events, own outbox/delivery attempts and preserve channel/provider ambiguity without treating Egress or Parser outcomes as delivery success.
 
 ## DB-09 — Final audit
 

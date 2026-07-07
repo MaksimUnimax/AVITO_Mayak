@@ -43,6 +43,7 @@
 - Beacon Management Module Playbook v1.0
 - Avito Parser Adapter Module Playbook v1.0
 - Scan Orchestration & Listing State Module Playbook v1.0
+- Egress Routing Module Playbook v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -65,4 +66,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 17 опубликован как documentation-only Scan Orchestration & Listing State playbook. Он не создаёт scheduler/worker, queue, database, parser/provider traffic, notification delivery, runtime или infrastructure. После синхронизации сервера с точным Run 17 SHA следующий документационный ран — Run 18 of 24, Egress Routing Module Playbook.
+Run 18 опубликован как documentation-only Egress Routing playbook. Он не создаёт Windows/server agent, route, lease, tunnel, proxy, VPN, port, listener, credential, parser/provider traffic, database, runtime или infrastructure. После синхронизации сервера с точным Run 18 SHA следующий документационный ран — Run 19 of 24, Notification Delivery Module Playbook.
