@@ -258,3 +258,33 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Подготовить Run 7 — Backup and Recovery plus Deployment and Release boundaries — documentation only, with undefined ingress, ports and TLS preserved as explicit gates.
+
+---
+
+## WL-0011 — 2026-07-07 — Recovery and Release Boundaries accepted and governance state synchronized
+
+**Тип:** documentation foundation acceptance / governance synchronization
+
+**Источник доказательства:**
+
+- independent literal review of `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md` published by commit `d5234d2ad884e07caec12adbe8906b7470cf2950`;
+- independent literal review of `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md` published by commit `5c3020490d15ad3b432209ebee0562e7291c5288`;
+- governance-state reconciliation in the same Run 7 publication change set.
+
+**Принято:**
+
+- `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
+- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
+
+**Границы принятия:**
+
+- backup identity, ownership, provenance, verification, restore/recovery lifecycle and semantic validation gates are documented;
+- release and deployment identities/lifecycles, target gates, activation, validation, interruption, rollback and roll-forward boundaries are documented;
+- foreign/shared-host backup and runtime resources remain prohibited;
+- ingress, reverse proxy, ports, TLS, runtime, deployment tooling/strategy, backup technology, retention and RPO/RTO remain explicit open/blocking gates;
+- no backup, snapshot, dump, restore, artifact, pipeline, deploy, product-code, executable test, CI/CD, migration, database, service, container, user, port, credential or secret is created;
+- OD-001–OD-014 remain open.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 8 — Windows Egress Agent Runbook — documentation only, without agent installation, route creation, services, ports, credentials or runtime changes.
