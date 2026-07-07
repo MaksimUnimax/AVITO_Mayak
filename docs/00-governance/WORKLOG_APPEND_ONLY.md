@@ -1,13 +1,13 @@
 # Маяк Авито — журнал работы (append-only)
 
-**Статус:** APPROVED append-only log
+**Статус:** APPROVED append-only log  
 **Правило:** существующие записи не редактируются, не удаляются и не переставляются. Корректировка оформляется новой записью в конце журнала с ссылкой на исправляемую запись.
 
 ---
 
 ## WL-0001 — 2026-07-06 — Project documentation bootstrap started
 
-**Тип:** governance / repository bootstrap
+**Тип:** governance / repository bootstrap  
 **Источник доказательства:** отчёт CLI-исполнителя `AVITO_MAYAK_REPOSITORY_ACCESS_AND_BASELINE_INSPECTION`.
 
 **Подтверждено:**
@@ -35,7 +35,7 @@
 
 ## WL-0002 — 2026-07-06 — Literal bootstrap correction: repository URL
 
-**Тип:** governance / append-only correction
+**Тип:** governance / append-only correction  
 **Основание:** read-only byte audit `AVITO_MAYAK_WORKLOG_EXACT_BYTE_PROOF`.
 
 **Исправление записи:**
@@ -62,7 +62,7 @@ git@github.com:MaksimUnimax/AVITO_Mayak.git
 
 ## WL-0003 — 2026-07-06 — Documentation Bootstrap accepted; TASK-001 started
 
-**Тип:** governance / baseline acceptance and proof-task start
+**Тип:** governance / baseline acceptance and proof-task start  
 **Источник доказательства:** отчёты `AVITO_MAYAK_FINAL_DOCUMENTATION_BASELINE_AUDIT` и `AVITO_MAYAK_WORKLOG_EXACT_BYTE_PROOF`.
 
 **Подтверждено:**
