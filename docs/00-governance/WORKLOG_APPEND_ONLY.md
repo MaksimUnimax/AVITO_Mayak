@@ -165,3 +165,32 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Подготовить Run 4 — Data Model and Migration/Compatibility Policy — только из полного literal text ChatGPT.
+
+---
+
+## WL-0008 — 2026-07-07 — Data and Compatibility Foundation accepted and governance state synchronized
+
+**Тип:** documentation foundation acceptance / governance synchronization
+
+**Источник доказательства:**
+
+- independent literal review of `docs/02-architecture/DATA_MODEL_v1.0.md` published by commit `3d267e4a9ebe8a27b199ab07aa4e1973e0f7e030`;
+- independent literal review of `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md` published by commit `805837abc67c0423ea391669d51e352fa9bedc48`;
+- governance-state reconciliation in the same Run 4 publication change set.
+
+**Принято:**
+
+- `docs/02-architecture/DATA_MODEL_v1.0.md`;
+- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+
+**Границы принятия:**
+
+- conceptual data domains, module ownership, identifiers, account/Beacon isolation, privacy classes and authoritative/read-model boundaries are documented;
+- compatibility classification, backfill/repair, idempotency, reconciliation, rollback/roll-forward and future migration gates are documented;
+- no physical schema, SQL, ORM entity, migration file, database, runtime, service, infrastructure or deploy is created;
+- DRAFT first-run/listing-difference semantics are not promoted to APPROVED;
+- OD-001–OD-014 remain open.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 5 — Quality documentation — Test Strategy, Fixture Registry, Acceptance Matrix and Reference Regression Policy only.
