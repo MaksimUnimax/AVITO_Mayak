@@ -41,6 +41,7 @@
 - Identity & Access Module Playbook v1.0
 - Entitlements & Billing Module Playbook v1.0
 - Beacon Management Module Playbook v1.0
+- Avito Parser Adapter Module Playbook v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -63,4 +64,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 15 опубликован как documentation-only Beacon Management playbook. Он не создаёт parser, database, runtime или supported-filter defaults. После синхронизации сервера с точным Run 15 SHA следующий документационный ран — Run 16 of 24, Avito Parser Adapter Module Playbook.
+Run 16 опубликован как documentation-only Avito Parser Adapter playbook. Он не создаёт parser, live Avito traffic, endpoint assumptions, dependency files, database, runtime или route configuration. После синхронизации сервера с точным Run 16 SHA следующий документационный ран — Run 17 of 24, Scan Orchestration & Listing State Module Playbook.

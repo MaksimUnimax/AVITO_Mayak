@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.5
+**Версия:** 2.6
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -39,41 +39,40 @@ Technical Baseline package and exact server synchronization accepted.
 
 ## DB-07 — Telegram and MAX references — RUN 11 ACCEPTED
 
-- `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
-- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
-
-Exact server synchronization was independently accepted at `642655a523af3591b1a024c39efa6978a064b2b8`. No provider runtime or sensitive access material was created.
+Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy v1.0 were accepted at `642655a523af3591b1a024c39efa6978a064b2b8`. No provider runtime or sensitive access material was created.
 
 ## DB-08 — Module playbooks — RUNS 12–24
 
 ### Run 12 — Platform & Contracts — ACCEPTED
 
 - `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md`.
-
-Exact server synchronization was independently accepted at `728b9062126fd7c2e816dde3a1a3ed9d42431cf2`. The playbook remains a prerequisite only and creates no implementation artifact.
+- Exact server synchronization accepted at `728b9062126fd7c2e816dde3a1a3ed9d42431cf2`.
 
 ### Run 13 — Identity & Access — ACCEPTED
 
 - `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md`.
-
-Exact server synchronization was independently accepted at `bcc33aa7120d60f977819319195000ab3a27a2c7`. The playbook keeps OD-006, OD-007 and OD-008 open and creates no implementation artifact.
+- Exact server synchronization accepted at `bcc33aa7120d60f977819319195000ab3a27a2c7`.
 
 ### Run 14 — Entitlements & Billing — ACCEPTED
 
 - `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `2346ccbbeaa8f1be18281fdf16fbec75cdb5052e`.
 
-Exact server synchronization was independently accepted at `2346ccbbeaa8f1be18281fdf16fbec75cdb5052e`. The playbook keeps tariff/payment open decisions unresolved and creates no implementation artifact.
-
-### Run 15 — Beacon Management — PUBLISHED
+### Run 15 — Beacon Management — ACCEPTED
 
 - `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `2a73078c42cb03ef89d62b6161752f2069d35129`.
+- Beacon ownership, source URL, snapshot, override, revision and lifecycle boundaries are fixed without parser/runtime implementation.
 
-The playbook fixes Beacon ownership, immutable source URL, extracted snapshot, separate user overrides, deterministic effective configuration, immutable revisions and lifecycle boundaries. It consumes Identity/Entitlements contracts and Parser outcomes without duplicating their authority. OD-003, OD-004, OD-009, OD-010, OD-011 and OD-013 remain open. Exact server synchronization to the Run 15 SHA is pending before acceptance.
+### Run 16 — Avito Parser Adapter — PUBLISHED
 
-### Runs 16–24 — RESERVED
+- `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 05–13 in route order. Parser and Scan playbooks must consume Beacon public contracts and immutable revision references and must not mutate Beacon configuration directly.
+The playbook fixes evidence-bound adapter ownership, source-analysis and page-parse contracts, Egress/Beacon/Scan boundaries, explicit external outcome classes, multivalue preservation, privacy minimization and reference-profile versioning. `AVITO-PRIMARY-PARSER-001` remains implementation evidence only. OD-009, OD-010, OD-011 and OD-013 remain unresolved. Exact server synchronization to the Run 16 SHA is pending before acceptance.
+
+### Runs 17–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 06–13 in route order. Scan Orchestration must consume explicit parser outcomes and immutable Beacon revision references; it must never reinterpret route/parser failure as no listings.
 
 ## DB-09 — Final audit
 
