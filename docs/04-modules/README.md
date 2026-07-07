@@ -1,16 +1,16 @@
 # Автономные module playbooks
 
-**Статус:** ACTIVE documentation route — Platform & Contracts v1.0 published; Runs 13–24 remain RESERVED.
+**Статус:** ACTIVE documentation route — Platform & Contracts v1.0 accepted; Identity & Access v1.0 published; Runs 14–24 remain RESERVED.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
 Published:
 
-- `01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12; exact server synchronization/acceptance pending.
+- `01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12; exact server synchronization accepted.
+- `02-identity-and-access/MODULE_PLAYBOOK.md` — Run 13; exact server synchronization/acceptance pending.
 
 Reserved route:
 
-- Run 13 — Identity & Access;
 - Run 14 — Entitlements & Billing;
 - Run 15 — Beacon Management;
 - Run 16 — Avito Parser Adapter;
