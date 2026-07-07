@@ -85,3 +85,56 @@ ChatGPT является разработчиком, архитектором и
 **Решение:** public GitHub `main` is the factual source of truth. ChatGPT independently reads it before repository-changing decisions and independently verifies commit, diff, final content, append-only integrity, forbidden scope and remote state after CLI reports. CLI verifies its local baseline but does not replace this review. Foreign shared-host resources do not belong to the project.
 
 **Последствие:** handoff, local worktree and CLI report cannot independently close a task; baseline mismatch stops without self-repair; code and deploy remain gated by separate approved documentation.
+
+---
+
+## ADR-0007 — 2026-07-07 — Technical Baseline becomes a separate mandatory Run 10
+
+**Статус:** APPROVED
+
+**Контекст:**
+
+Architecture Baseline v1.0 explicitly left the implementation stack unselected, while the Platform & Contracts README requires an approved Technical Baseline before its module playbook. The existing 23-run route moved directly from provider references to module playbooks and therefore omitted a required gate.
+
+**Решение:**
+
+Expand the documentation cycle from 23 to 24 runs. Insert Technical Baseline as Run 10. Move Telegram and MAX reference policies to Run 11. Move the thirteen module playbooks to Runs 12–24 without combining modules. Final independent documentation audit follows Run 24.
+
+Run 10 consists of the Technology Selection Method, Technical Baseline Evidence, Technical Baseline, and necessary architecture/environment/quality version updates. It is documentation only and creates no implementation or runtime artifacts.
+
+**Последствие:**
+
+Platform & Contracts cannot receive a playbook before Run 10 is accepted and synchronized. Existing references to Runs 11–23 as the module-playbook interval are superseded by the current manifest, roadmap, current state and Acceptance Matrix v1.1. The second documentation agent must resume from Run 11 and use the 24-run route.
+
+---
+
+## ADR-0008 — 2026-07-07 — Core implementation technology baseline
+
+**Статус:** APPROVED
+
+**Контекст:**
+
+The project requires one reproducible core toolchain compatible with the modular-monolith boundaries, PostgreSQL ownership, typed contracts, background work, Windows egress boundary and the mandatory `Duff89/parser_avito` implementation reference. The reference is a local Python application and is not a SaaS architecture or a permission to copy source.
+
+**Решение:**
+
+Select the following core baseline:
+
+- CPython 3.14 supported line, standard GIL build;
+- `uv` project management with `pyproject.toml` and committed `uv.lock`, with the exact `uv` version pinned by the first toolchain task;
+- FastAPI and Uvicorn for the HTTP application boundary;
+- Pydantic v2 and pydantic-settings for external DTO and configuration validation;
+- HTTPX as the default HTTP client;
+- PostgreSQL 18 supported line;
+- SQLAlchemy 2, Psycopg 3 and Alembic for persistence and migration tooling;
+- PostgreSQL-backed durable work claims and transactional outbox for the initial worker/scheduler model, without a required external broker;
+- pytest, pytest-asyncio, RESpx, Ruff, mypy, import-linter and coverage.py for the initial quality toolchain;
+- OpenTelemetry Python API/SDK as the telemetry instrumentation boundary, while exporter/backend selection remains deferred.
+
+Framework and ORM objects are not intermodule contracts. Module-specific and operations-specific dependencies remain deferred to their own evidence and playbooks.
+
+Flet, SQLite, Excel dependencies, VK integration, local TOML as multiuser state, Requests as a second default HTTP client and direct parser-to-notification coupling are not part of the core baseline.
+
+**Последствие:**
+
+The first implementation authorization must be a separate proof/toolchain task that creates exact dependency pins and demonstrates isolated reproducibility. This ADR does not authorize implementation, installation, migration, database creation, external access, deployment or server mutation. A major technology change requires new evidence, compatibility analysis, rollback/roll-forward implications and a new append-only decision.
