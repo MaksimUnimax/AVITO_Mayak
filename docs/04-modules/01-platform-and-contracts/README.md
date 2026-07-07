@@ -1,9 +1,19 @@
 # Platform & Contracts
 
-**Статус:** RESERVED — autonomous playbook ещё не принят.
+**Статус:** APPROVED documentation playbook v1.0; Run 12 server synchronization/acceptance pending.
 
-**Граница модуля:** Фундамент приложения, общие конвенции, конфигурация, ошибки, идемпотентность, инструменты миграций после отдельного решения.
+Canonical playbook:
 
-До появления `MODULE_PLAYBOOK.md` и утверждённого contract package запрещено реализовывать модуль, создавать его таблицы, вводить форматы межмодульных сообщений или принимать архитектурные решения от имени модуля.
+- `MODULE_PLAYBOOK.md`
 
-Следующий документ для этой директории создаётся ChatGPT буквальным текстом после утверждения Technical Baseline and Contract Package.
+Module boundary:
+
+- future application/package skeleton;
+- common contract/error/idempotency/configuration/process conventions;
+- architecture/import rules;
+- migration tooling conventions only after separate gates;
+- shared fake/test-support semantics.
+
+The module does not own foreign business state and this publication creates no code, dependency files, lock, tests, migrations, database, runtime or infrastructure.
+
+Next implementation activity is not automatic. It requires an exact task, isolated toolchain proof and the playbook gates.

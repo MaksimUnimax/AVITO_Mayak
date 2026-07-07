@@ -37,6 +37,7 @@
 - Avito Reference Foundation
 - Telegram Reference Policy v1.0
 - MAX Reference Policy v1.0
+- Platform & Contracts Module Playbook v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -59,4 +60,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 11 опубликован как documentation-only package. После синхронизации сервера с точным Run 11 SHA следующий документационный ран — Run 12 of 24, Platform & Contracts Module Playbook.
+Run 12 опубликован как documentation-only Platform & Contracts playbook. После синхронизации сервера с точным Run 12 SHA следующий документационный ран — Run 13 of 24, Identity & Access Module Playbook.

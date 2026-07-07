@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.12
+**Версия снимка:** 1.13
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.14 — Runs 1–11 published; Run 10 server sync accepted; Run 11 server synchronization required before Run 12`
+`A0.15 — Runs 1–12 published; Run 11 server sync accepted; Run 12 server synchronization required before Run 13`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 10 Technical Baseline was independently accepted on the server at GitHub SHA `099c9f0e35bb710f498d9f75ab38d542feb76be5`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, no GitHub/configuration mutation.
+Run 11 Telegram/MAX references were independently accepted on the server at GitHub SHA `642655a523af3591b1a024c39efa6978a064b2b8`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, expected parent/subject/paths and `WL-0015` confirmed, no GitHub/configuration mutation.
 
-Run 11 publishes current official-source policies for Telegram and MAX plus the current cross-provider registry index. It creates no bot, credential, provider request, executable test, service or runtime.
+Run 12 publishes `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md`. It defines future application/package, common contract, idempotency, configuration, process-composition, dependency, fake, fixture and acceptance boundaries without creating implementation artifacts.
 
-Public `main` remains the factual source of truth. Run 11 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 11 published SHA and that report is independently verified.
+Public `main` remains the factual source of truth. Run 12 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 12 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -39,31 +39,25 @@ Public `main` remains the factual source of truth. Run 11 is not fully accepted 
 - `docs/07-quality/ACCEPTANCE_MATRIX_v1.1.md`;
 - `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
 
-### Operations
+### Operations and references
 
-- `docs/08-operations/ENVIRONMENT_MATRIX_v1.1.md`;
-- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`;
-- `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
-- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
-- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
-
-### External references
-
+- current operations documents listed by `docs/MANIFEST.md`;
 - `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
-- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`;
-- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
+- Avito, Telegram and MAX current policy/evidence documents.
 
-## Provider-policy consequences
+### Module playbooks
 
-- Telegram webhook/getUpdates are mutually exclusive; provider updates and Mini App inputs are trusted only after the documented verification boundary.
-- Telegram `update_id` supports duplicate/order handling in provider scope but does not replace internal idempotency and ownership rules.
-- MAX production integrations use Webhook; Long Polling is development/test only according to current official documentation.
-- MAX currently requires migration from `platform-api.max.ru` to `platform-api2.max.ru` by 19 July 2026; this is a revalidation gate, not a runtime change made by Run 11.
-- MAX partner eligibility and moderation are adoption gates; they are not assumed satisfied.
-- Neither policy chooses SDKs, hosting, certificates, secrets delivery, retry budgets, UI scope or provider credentials.
+- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12 published; exact server sync pending.
+- Modules 02–13 remain RESERVED and are scheduled as Runs 13–24.
+
+## Platform & Contracts consequences
+
+- future source layout is singular under `src/mayak/` with platform/contracts/entrypoints/modules boundaries;
+- public contracts remain transport/framework/persistence/provider neutral;
+- Platform owns common conventions and reusable protocols, not foreign business state;
+- owning modules define commit points and persist business idempotency outcomes;
+- typed configuration, process composition, import rules, fake boundaries and migration gates are documented;
+- toolchain/dependency/code/database/migration work remains blocked until a separate exact task and proof gates.
 
 ## Current prohibitions
 
@@ -73,6 +67,6 @@ OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize `/opt/avito-mayak` to the exact Run 11 published GitHub SHA.
-2. Verify local SHA, remote SHA, clean worktree and no prohibited mutation.
-3. After independent acceptance, continue with Run 12 of 24 — Platform & Contracts `MODULE_PLAYBOOK.md`.
+1. Synchronize `/opt/avito-mayak` to the exact Run 12 published GitHub SHA.
+2. Verify local SHA, remote SHA, clean worktree, expected paths and no prohibited mutation.
+3. After independent acceptance, continue with Run 13 of 24 — Identity & Access `MODULE_PLAYBOOK.md`.

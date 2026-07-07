@@ -444,3 +444,40 @@ Run 11 GitHub publication is not fully accepted until `/opt/avito-mayak` is sync
 **Следующий безопасный шаг:**
 
 Publish and independently verify the complete Run 11 change set, then issue one server-sync-only CLI packet for the exact published SHA. After acceptance, continue to Run 12 — Platform & Contracts Module Playbook.
+
+---
+
+## WL-0016 — 2026-07-07 — Run 11 server sync accepted; Run 12 Platform & Contracts playbook published
+
+**Тип:** module-playbook documentation publication / governance synchronization
+
+**Источник доказательства:**
+
+- independent GitHub verification of public parent `642655a523af3591b1a024c39efa6978a064b2b8` with subject `docs: accept Run 11 Telegram and MAX references`;
+- independently accepted server report `MAYAK-RUN11-SERVER-SYNC-0001`: `/opt/avito-mayak`, branch `main`, local/remote SHA `642655a523af3591b1a024c39efa6978a064b2b8`, ahead/behind `0/0`, clean worktree, expected parent/subject/paths and exactly one `WL-0015`, no GitHub/Git/SSH/server configuration mutation;
+- Architecture Baseline v1.1, Technical Baseline v1.0, Common Contract Foundation, Data Model, Migration/Compatibility Policy, Fixture Registry and Acceptance Matrix v1.1;
+- governance-state reconciliation in the same Run 12 publication change set.
+
+**Опубликовано:**
+
+- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md`;
+- synchronized module registry and module indexes;
+- synchronized README, manifest, current state, roadmap and backlog.
+
+**Границы принятия:**
+
+- Platform & Contracts owns common application/package, contract, error, idempotency, configuration, process-composition, import-boundary and migration-tooling conventions, not foreign business state;
+- one future source layout under `src/mayak/` is documented without creating it;
+- common contracts remain transport/framework/ORM/provider neutral;
+- owning modules retain authorization, authoritative state, commit points and business idempotency outcomes;
+- dependencies, executable fakes/tests, database and migrations remain gated by separate exact tasks and proof;
+- no product-code, `pyproject.toml`, lockfile, package installation, executable test, fixture file, migration, database, Dockerfile, CI/CD, service, container, port, credential, secret, provider call, deploy or runtime configuration is created;
+- OD-001–OD-014 remain open.
+
+**Run acceptance:**
+
+Run 12 GitHub publication is not fully accepted until `/opt/avito-mayak` is synchronized to the exact published Run 12 SHA and the server-sync report is independently verified.
+
+**Следующий безопасный шаг:**
+
+Publish and independently verify the complete Run 12 change set, then issue one server-sync-only CLI packet for the exact published SHA. After acceptance, continue to Run 13 — Identity & Access Module Playbook.

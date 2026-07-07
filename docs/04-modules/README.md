@@ -1,18 +1,28 @@
 # Автономные module playbooks
 
-**Статус:** RESERVED — директории модулей созданы, но ни один playbook в репозитории пока не является `APPROVED`.
+**Статус:** ACTIVE documentation route — Platform & Contracts v1.0 published; Runs 13–24 remain RESERVED.
 
-Для каждого из 13 модулей будет создан один самодостаточный `MODULE_PLAYBOOK.md`. Он обязан включать:
+Each module has one canonical `MODULE_PLAYBOOK.md`.
 
-- цель, границы и data ownership;
-- точные входы и выходы;
-- интерфейсы и запрещённые прямые записи;
-- fake dependencies, mocks, fixtures и input/output test vectors;
-- roadmap шагов;
-- acceptance tests;
-- запреты и риски;
-- формат report/handoff;
-- append-only историю;
-- версию встроенного contract package.
+Published:
 
-Агент получает только свой playbook и текущий task packet. Он не должен читать общее ТЗ или ожидать готовности соседнего модуля. Но playbook нельзя выпускать до утверждения общих контрактов и data ownership.
+- `01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12; exact server synchronization/acceptance pending.
+
+Reserved route:
+
+- Run 13 — Identity & Access;
+- Run 14 — Entitlements & Billing;
+- Run 15 — Beacon Management;
+- Run 16 — Avito Parser Adapter;
+- Run 17 — Scan Orchestration & Listing State;
+- Run 18 — Egress Routing;
+- Run 19 — Notification Delivery;
+- Run 20 — Telegram Adapter;
+- Run 21 — MAX Adapter;
+- Run 22 — Admin & Support;
+- Run 23 — Web Cabinet;
+- Run 24 — Filter Catalog & Builder.
+
+Every playbook must include purpose/boundaries, data owner, confirmed and open decisions, public inputs/outputs, allowed/forbidden changes, immutable common contracts, dependencies/fakes, fixtures/test vectors, acceptance criteria, roadmap, report/handoff and append-only history.
+
+A playbook is a prerequisite only. It does not authorize code, dependency installation, database, migrations, services, provider access or deployment without a separate exact task and gates.

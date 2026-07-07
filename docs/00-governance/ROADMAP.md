@@ -1,6 +1,6 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 2.1
+**Версия:** 2.2
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` published/active; `[ ]` not started; `[!]` blocked.
@@ -17,11 +17,11 @@
   - `[x] Run 8` Windows Egress Agent boundaries;
   - `[x] Run 9` Avito reference registry, policy and evidence.
 - `[x] A0.13` Technical Foundation:
-  - `[x] Run 10` Technical Baseline package published and server synchronization independently accepted at `099c9f0e35bb710f498d9f75ab38d542feb76be5`.
-- `[~] A0.14` Remaining provider references:
-  - `[~] Run 11` Telegram and MAX reference policies plus cross-provider registry v1.1 published; exact server synchronization/acceptance pending.
-- `[ ] A0.15` Thirteen module playbooks:
-  - `[ ] Run 12` Platform & Contracts;
+  - `[x] Run 10` Technical Baseline package and exact server synchronization accepted.
+- `[x] A0.14` Remaining provider references:
+  - `[x] Run 11` Telegram and MAX reference policies plus cross-provider registry v1.1; exact server synchronization accepted at `642655a523af3591b1a024c39efa6978a064b2b8`.
+- `[~] A0.15` Thirteen module playbooks:
+  - `[~] Run 12` Platform & Contracts playbook published; exact server synchronization/acceptance pending;
   - `[ ] Run 13` Identity & Access;
   - `[ ] Run 14` Entitlements & Billing;
   - `[ ] Run 15` Beacon Management;
@@ -36,6 +36,6 @@
   - `[ ] Run 24` Filter Catalog & Builder.
 - `[ ] A0.16` Final independent documentation audit and stop.
 
-Product implementation remains forbidden until the receiving module has an approved playbook, current references, isolated toolchain proof and exact implementation task.
+Product implementation remains forbidden until the receiving module has an accepted playbook, current references where applicable, isolated toolchain proof and exact implementation task.
 
-Provider policies do not provision bots, credentials, endpoints, certificates, ports or runtime. CLI reports never replace independent GitHub acceptance.
+An accepted playbook is a prerequisite, not an automatic instruction to create code, dependencies, database, migrations, services or runtime.

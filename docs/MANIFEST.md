@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 2.1
+**Версия манифеста:** 2.2
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -50,22 +50,21 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 
 ### Operations Foundation
 
-- `docs/08-operations/ENVIRONMENT_MATRIX_v1.1.md`;
-- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`;
-- `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
-- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
-- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
-
-Historical revision retained: `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`.
+- current documents under `docs/08-operations/` listed by its README and backlog.
 
 ### External Reference Foundation
 
-- `docs/09-references/REFERENCE_REGISTRY_v1.1.md` — current cross-provider registry index;
-- `docs/09-references/REFERENCE_REGISTRY_v1.0.md` — retained Avito record body incorporated by v1.1;
+- `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
+- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
 - `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
 - `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`;
 - `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
 - `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
+
+### Module Playbooks
+
+- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 12 server acceptance pending.
+- Modules 02–13 — RESERVED; Runs 13–24.
 
 ## Каталоги
 
@@ -75,11 +74,11 @@ Historical revision retained: `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`.
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
 | `03-contracts` | common contracts | APPROVED documentation baseline |
-| `04-modules` | 13 playbooks | RESERVED; pending Runs 12–24 |
+| `04-modules` | 13 playbooks | 1 published; 12 reserved |
 | `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
 | `06-reports` | evidence reports and handoffs | REPORT-001 accepted historically; no product-code report |
 | `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |
 | `08-operations` | isolation, environments, observability, recovery, release, Windows egress | APPROVED documentation baseline; no runtime/deploy |
 | `09-references` | external evidence | Avito, Telegram and MAX documentation approved; provider implementation absent |
 
-Statuses: `DRAFT`, `CANDIDATE`, `RESERVED`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. Historical approved revisions remain evidence for documents that used them; current work uses the versions listed above.
+Statuses: `DRAFT`, `CANDIDATE`, `RESERVED`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. A document may be APPROVED on GitHub while its run remains pending exact server synchronization; `CURRENT_STATE.md` is authoritative for run acceptance.

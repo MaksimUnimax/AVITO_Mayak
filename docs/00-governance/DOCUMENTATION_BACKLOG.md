@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.1
+**Версия:** 2.2
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -35,26 +35,27 @@ Runs 6–9 delivered Environment/Observability, Backup/Recovery, Deployment/Rele
 
 ## DB-06 — Technical Baseline — RUN 10 ACCEPTED
 
-- `docs/02-architecture/TECHNOLOGY_SELECTION_METHOD_v1.0.md`;
-- `docs/02-architecture/TECHNICAL_BASELINE_EVIDENCE_v1.0.md`;
-- `docs/02-architecture/TECHNICAL_BASELINE_v1.0.md`;
-- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.1.md`;
-- `docs/08-operations/ENVIRONMENT_MATRIX_v1.1.md`;
-- `docs/07-quality/ACCEPTANCE_MATRIX_v1.1.md`.
+Technical Baseline package and exact server synchronization accepted.
 
-Server synchronization was independently accepted at GitHub SHA `099c9f0e35bb710f498d9f75ab38d542feb76be5` with clean `main` and `0/0` divergence.
-
-## DB-07 — Telegram and MAX references — RUN 11 PUBLISHED
+## DB-07 — Telegram and MAX references — RUN 11 ACCEPTED
 
 - `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
 - `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
 - `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
 
-Only current official/primary evidence is used. Run 11 creates no bots, credentials, provider traffic or runtime. Exact server synchronization to the Run 11 SHA is pending before acceptance.
+Exact server synchronization was independently accepted at `642655a523af3591b1a024c39efa6978a064b2b8`. No provider runtime or sensitive access material was created.
 
 ## DB-08 — Module playbooks — RUNS 12–24
 
-One autonomous `MODULE_PLAYBOOK.md` for each of 13 modules. Each playbook uses current architecture/technical/contracts/data/quality baselines and applicable provider evidence.
+### Run 12 — Platform & Contracts — PUBLISHED
+
+- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md`.
+
+The playbook fixes future source/package boundaries, common contracts/errors/idempotency/configuration/process conventions, allowed dependencies, fake boundaries, fixtures, acceptance rows, roadmap and handoff. It creates no implementation artifact. Exact server synchronization to the Run 12 SHA is pending before acceptance.
+
+### Runs 13–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 02–13 in route order. A later playbook must not rewrite Platform & Contracts ownership or common contract semantics without an approved change packet.
 
 ## DB-09 — Final audit
 
