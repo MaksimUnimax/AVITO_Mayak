@@ -1,6 +1,6 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 2.3
+**Версия:** 2.4
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` published/active; `[ ]` not started; `[!]` blocked.
@@ -22,8 +22,8 @@
   - `[x] Run 11` Telegram and MAX reference policies plus cross-provider registry v1.1; exact server synchronization accepted at `642655a523af3591b1a024c39efa6978a064b2b8`.
 - `[~] A0.15` Thirteen module playbooks:
   - `[x] Run 12` Platform & Contracts playbook; exact server synchronization accepted at `728b9062126fd7c2e816dde3a1a3ed9d42431cf2`;
-  - `[~] Run 13` Identity & Access playbook published; exact server synchronization/acceptance pending;
-  - `[ ] Run 14` Entitlements & Billing;
+  - `[x] Run 13` Identity & Access playbook; exact server synchronization accepted at `bcc33aa7120d60f977819319195000ab3a27a2c7`;
+  - `[~] Run 14` Entitlements & Billing playbook published; exact server synchronization/acceptance pending;
   - `[ ] Run 15` Beacon Management;
   - `[ ] Run 16` Avito Parser Adapter;
   - `[ ] Run 17` Scan Orchestration & Listing State;
@@ -38,4 +38,4 @@
 
 Product implementation remains forbidden until the receiving module has an accepted playbook, current references where applicable, isolated toolchain proof and exact implementation task.
 
-An accepted playbook is a prerequisite, not an automatic instruction to create code, dependencies, database, migrations, services or runtime.
+An accepted playbook is a prerequisite, not an automatic instruction to create code, dependencies, database, migrations, payment integration, services or runtime.

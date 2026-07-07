@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 2.3
+**Версия манифеста:** 2.4
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -64,8 +64,9 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 ### Module Playbooks
 
 - `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
-- `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 13 server acceptance pending.
-- Modules 03–13 — RESERVED; Runs 14–24.
+- `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
+- `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 14 server acceptance pending.
+- Modules 04–13 — RESERVED; Runs 15–24.
 
 ## Каталоги
 
@@ -75,7 +76,7 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
 | `03-contracts` | common contracts | APPROVED documentation baseline |
-| `04-modules` | 13 playbooks | 2 published; 11 reserved |
+| `04-modules` | 13 playbooks | 3 published; 10 reserved |
 | `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
 | `06-reports` | evidence reports and handoffs | REPORT-001 accepted historically; no product-code report |
 | `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |
