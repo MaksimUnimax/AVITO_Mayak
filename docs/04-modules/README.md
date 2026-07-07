@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** ACTIVE documentation route — Runs 12–15 accepted; Run 16 published; Runs 17–24 remain RESERVED.
+**Статус:** ACTIVE documentation route — Runs 12–16 accepted; Run 17 published; Runs 18–24 remain RESERVED.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -10,11 +10,11 @@ Published:
 - `02-identity-and-access/MODULE_PLAYBOOK.md` — Run 13; exact server synchronization accepted.
 - `03-entitlements-and-billing/MODULE_PLAYBOOK.md` — Run 14; exact server synchronization accepted.
 - `04-beacon-management/MODULE_PLAYBOOK.md` — Run 15; exact server synchronization accepted.
-- `05-avito-parser-adapter/MODULE_PLAYBOOK.md` — Run 16; exact server synchronization/acceptance pending.
+- `05-avito-parser-adapter/MODULE_PLAYBOOK.md` — Run 16; exact server synchronization accepted.
+- `06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md` — Run 17; exact server synchronization/acceptance pending.
 
 Reserved route:
 
-- Run 17 — Scan Orchestration & Listing State;
 - Run 18 — Egress Routing;
 - Run 19 — Notification Delivery;
 - Run 20 — Telegram Adapter;
@@ -25,4 +25,4 @@ Reserved route:
 
 Every playbook must include purpose/boundaries, data owner, confirmed and open decisions, public inputs/outputs, allowed/forbidden changes, immutable common contracts, dependencies/fakes, fixtures/test vectors, acceptance criteria, roadmap, report/handoff and append-only history.
 
-A playbook is a prerequisite only. It does not authorize code, dependency installation, database, migrations, provider calls, services or deployment without a separate exact task and gates.
+A playbook is a prerequisite only. It does not authorize code, dependency installation, database, migrations, provider calls, scheduler/worker, notifications, services or deployment without a separate exact task and gates.

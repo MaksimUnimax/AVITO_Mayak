@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.17
+**Версия снимка:** 1.18
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.15 — Runs 1–16 published; Run 15 server sync accepted; Run 16 server synchronization required before Run 17`
+`A0.15 — Runs 1–17 published; Run 16 server sync accepted; Run 17 server synchronization required before Run 18`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 15 Beacon Management was independently accepted on the server at GitHub SHA `2a73078c42cb03ef89d62b6161752f2069d35129`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact three-commit publication range, nine-path set, playbook/governance evidence and `BM-HISTORY-0001` confirmed, no GitHub/configuration mutation.
+Run 16 Avito Parser Adapter was independently accepted on the server at GitHub SHA `9907b22d2192e60680bcdd9e4e98f6bb104cb18f`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact three-commit publication range, nine-path set, playbook/reference/governance evidence and `APA-HISTORY-0001` confirmed, no GitHub/configuration mutation.
 
-Run 16 publishes `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md`. It defines an evidence-bound Avito external adapter: source-analysis and page-parse request families, explicit transport/parser outcome separation, safe extraction/normalization, multivalue preservation, reference-profile versioning and strict false-empty prohibition without making live Avito requests or creating implementation artifacts.
+Run 17 publishes `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md`. It defines durable scan intent/run/claim semantics, immutable Beacon revision pinning, explicit Parser outcome consumption, per-Beacon immutable observations and state, first complete baseline without notification, subsequent listing-ID and ID+price-pair difference semantics, reconciliation and post-commit domain-event boundaries without creating implementation artifacts.
 
-Public `main` remains the factual source of truth. Run 16 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 16 published SHA and that report is independently verified.
+Public `main` remains the factual source of truth. Run 17 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 17 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -43,9 +43,7 @@ Public `main` remains the factual source of truth. Run 16 is not fully accepted 
 
 - current operations documents listed by `docs/MANIFEST.md`;
 - `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
-- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`;
-- Telegram and MAX current policy/evidence documents.
+- current Avito, Telegram and MAX policy/evidence documents.
 
 ### Module playbooks
 
@@ -53,29 +51,31 @@ Public `main` remains the factual source of truth. Run 16 is not fully accepted 
 - `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md` — Run 13 accepted;
 - `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md` — Run 14 accepted;
 - `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md` — Run 15 accepted;
-- `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md` — Run 16 published; exact server sync pending.
-- Modules 06–13 remain RESERVED and are scheduled as Runs 17–24.
+- `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md` — Run 16 accepted;
+- `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md` — Run 17 published; exact server sync pending.
+- Modules 07–13 remain RESERVED and are scheduled as Runs 18–24.
 
-## Avito Parser Adapter consequences
+## Scan Orchestration & Listing State consequences
 
-- Avito-dependent behavior is accepted only through current reference records with exact scope, status and limitations.
-- `AVITO-PRIMARY-PARSER-001` at commit `48441c352e36919abef13c436f41a3a62636da17` is implementation evidence only, not an official provider contract or permission.
-- Observed `loaderData.data`, `searchCore`, `context`, `catalog` and `/web/1/js/items` behavior is not declared stable.
-- Transport success is not parser success; parser success is not scan/business success.
-- No request sent, route failure, rejection, restriction/CAPTCHA, malformed/incomplete response, stale/unsupported evidence and ambiguity remain explicit outcomes and never become a clean empty listing set.
-- Repeated filter values must not be silently collapsed.
-- Parser Adapter does not own Beacon configuration, Scan/listing history, Egress routes or Notification Delivery.
-- Raw provider payload retention, exact fields/identity, filters, markets, cadence, cookies/sessions, headers, pagination, retry/backoff and access strategy remain blocked until evidence/decisions/tasks.
-- OD-009, OD-010, OD-011 and OD-013 remain unresolved.
+- Every logical run is bound to one `beacon_id` and one immutable `configuration_revision_id`; a newer revision never silently reinterprets a recorded run.
+- The module owns durable scan/run state, observations, per-Beacon listing state, baseline/difference decisions and scan-domain events; it does not own Beacon configuration, Parser mappings, Egress routes or notification delivery.
+- Only a complete, explicit, comparison-eligible Parser outcome may establish or advance baseline/difference state.
+- The first complete accepted scan establishes the Beacon baseline and emits no listing-change notification event for baseline contents.
+- After baseline, a previously unseen listing identity produces a new-listing domain event; a known identity with a previously unseen normalized price pair produces a price-pair event; an already known identity+price pair produces no new event.
+- If price returns to a previously observed value, that pair is already known and no new price-pair event is produced under v1.0 semantics.
+- Observations are immutable and history/state remain isolated by `beacon_id` even when provider listing identity is equal.
+- A missing listing in one result does not prove removal or inactivity.
+- Partial, malformed, restricted, route-failed, stale-evidence or ambiguous outcomes never become clean success, never establish baseline and never erase state.
+- Exact intervals, expiry behavior, supported filters/markets, safe cadence and retention remain blocked by OD-003, OD-004, OD-009, OD-010, OD-011 and OD-013.
 
 ## Current prohibitions
 
-No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, parser implementation, live/provider request, endpoint probing, cookie/session/proxy setup, service, container, listener, port, credential, secret, deployment or runtime configuration has been created.
+No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, scheduler/worker/queue implementation, parser/provider request, notification delivery, service, container, listener, port, credential, secret, deployment or runtime configuration has been created.
 
 OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize `/opt/avito-mayak` to the exact Run 16 published GitHub SHA.
-2. Verify local SHA, remote SHA, clean worktree, publication scope, literal parser/reference boundaries and no prohibited mutation.
-3. After independent acceptance, continue with Run 17 of 24 — Scan Orchestration & Listing State `MODULE_PLAYBOOK.md`.
+1. Synchronize `/opt/avito-mayak` to the exact Run 17 published GitHub SHA.
+2. Verify local SHA, remote SHA, clean worktree, publication scope, literal baseline/diff/reconciliation boundaries and no prohibited mutation.
+3. After independent acceptance, continue with Run 18 of 24 — Egress Routing `MODULE_PLAYBOOK.md`.

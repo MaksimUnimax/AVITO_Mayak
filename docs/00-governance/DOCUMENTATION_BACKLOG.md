@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.6
+**Версия:** 2.7
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -62,17 +62,22 @@ Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy
 
 - `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md`.
 - Exact server synchronization accepted at `2a73078c42cb03ef89d62b6161752f2069d35129`.
-- Beacon ownership, source URL, snapshot, override, revision and lifecycle boundaries are fixed without parser/runtime implementation.
 
-### Run 16 — Avito Parser Adapter — PUBLISHED
+### Run 16 — Avito Parser Adapter — ACCEPTED
 
 - `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `9907b22d2192e60680bcdd9e4e98f6bb104cb18f`.
+- Adapter extraction/normalization, explicit external outcomes and false-empty prohibition are fixed without live provider traffic or parser implementation.
 
-The playbook fixes evidence-bound adapter ownership, source-analysis and page-parse contracts, Egress/Beacon/Scan boundaries, explicit external outcome classes, multivalue preservation, privacy minimization and reference-profile versioning. `AVITO-PRIMARY-PARSER-001` remains implementation evidence only. OD-009, OD-010, OD-011 and OD-013 remain unresolved. Exact server synchronization to the Run 16 SHA is pending before acceptance.
+### Run 17 — Scan Orchestration & Listing State — PUBLISHED
 
-### Runs 17–24 — RESERVED
+- `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 06–13 in route order. Scan Orchestration must consume explicit parser outcomes and immutable Beacon revision references; it must never reinterpret route/parser failure as no listings.
+The playbook fixes durable scan intent/run/claim semantics, immutable Beacon revision pinning, Parser outcome preservation, per-Beacon immutable observations/state, first-complete baseline suppression, subsequent listing-ID and ID+price-pair differences, reconciliation and post-commit domain events. OD-003, OD-004, OD-009, OD-010, OD-011 and OD-013 remain unresolved. Exact server synchronization to the Run 17 SHA is pending before acceptance.
+
+### Runs 18–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 07–13 in route order. Egress Routing must provide explicit route/lease/outcome contracts without owning Scan state; Notification Delivery must consume committed Scan domain events and never infer them from Parser/route outcomes.
 
 ## DB-09 — Final audit
 
