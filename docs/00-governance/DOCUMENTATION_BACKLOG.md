@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.4
+**Версия:** 2.5
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -59,15 +59,21 @@ Exact server synchronization was independently accepted at `728b9062126fd7c2e816
 
 Exact server synchronization was independently accepted at `bcc33aa7120d60f977819319195000ab3a27a2c7`. The playbook keeps OD-006, OD-007 and OD-008 open and creates no implementation artifact.
 
-### Run 14 — Entitlements & Billing — PUBLISHED
+### Run 14 — Entitlements & Billing — ACCEPTED
 
 - `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md`.
 
-The playbook fixes ownership and semantic boundaries for tariff definitions, subscriptions, entitlement grants, manual access, usage limits and future payment records. It keeps OD-001–OD-005, OD-010, OD-011 and OD-013 open, treats target-model tariff values as DRAFT context rather than implementation defaults, and creates no payment or runtime artifact. Exact server synchronization to the Run 14 SHA is pending before acceptance.
+Exact server synchronization was independently accepted at `2346ccbbeaa8f1be18281fdf16fbec75cdb5052e`. The playbook keeps tariff/payment open decisions unresolved and creates no implementation artifact.
 
-### Runs 15–24 — RESERVED
+### Run 15 — Beacon Management — PUBLISHED
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 04–13 in route order. Beacon Management and later modules must request effective entitlement decisions through public contracts and must not duplicate tariff, subscription, grant or payment authority.
+- `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md`.
+
+The playbook fixes Beacon ownership, immutable source URL, extracted snapshot, separate user overrides, deterministic effective configuration, immutable revisions and lifecycle boundaries. It consumes Identity/Entitlements contracts and Parser outcomes without duplicating their authority. OD-003, OD-004, OD-009, OD-010, OD-011 and OD-013 remain open. Exact server synchronization to the Run 15 SHA is pending before acceptance.
+
+### Runs 16–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 05–13 in route order. Parser and Scan playbooks must consume Beacon public contracts and immutable revision references and must not mutate Beacon configuration directly.
 
 ## DB-09 — Final audit
 
