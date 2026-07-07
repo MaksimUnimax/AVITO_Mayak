@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.6
+**Версия:** 1.7
 **Статус:** APPROVED planning register
 
 ## DB-00 — accepted evidence and supervision
@@ -39,10 +39,22 @@ This package fixes conceptual data ownership, isolation, privacy and future comp
 
 This package fixes framework-neutral quality gates, canonical semantic fixtures, acceptance traceability and external-reference regression control. It does not create executable tests, fixture data files or CI/CD.
 
-## DB-05 — operations and references — NEXT
+## DB-05 — operations and references — ACTIVE
 
-- Run 6: `ENVIRONMENT_MATRIX_v1.0.md`, `OBSERVABILITY_AND_ALERTING_v1.0.md`;
-- Run 7: `BACKUP_AND_RECOVERY_v1.0.md`, `DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
+### Run 6 — environment and observability — ACCEPTED
+
+- `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`;
+- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`.
+
+This package fixes environment ownership/readiness, shared-host restrictions, health semantics, signal classes, redaction and alert lifecycle without provisioning or monitoring configuration.
+
+### Run 7 — backup and release boundaries — NEXT
+
+- `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
+- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
+
+### Remaining DB-05 route
+
 - Run 8: `WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`;
 - Run 9: Avito reference registry, policy and evidence;
 - Run 10: Telegram and MAX reference policies.
