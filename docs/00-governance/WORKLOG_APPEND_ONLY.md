@@ -86,3 +86,11 @@ git@github.com:MaksimUnimax/AVITO_Mayak.git
 **Следующий безопасный шаг:**
 
 Выполнить `TASK-001 — Доказательная инвентаризация технической среды` и вернуть доказательства без изменений сервера или product-code.
+
+## WL-0004 — 2026-07-06 — TASK-001 evidence accepted and governance synchronized
+
+**Тип:** proof-only acceptance / governance synchronization
+
+TASK-001 completed without repository or server changes. Its host snapshot is accepted only as limited evidence; it does not choose stack, architecture, deployment or implementation. Historical one-file commit wording is clarified by errata without rewriting task history.
+
+ChatGPT decision: adopt independent remote repository supervision; keep code, infrastructure, migrations, CI/CD and deploy prohibited; proceed only to Run 2 Architecture Foundation documentation.

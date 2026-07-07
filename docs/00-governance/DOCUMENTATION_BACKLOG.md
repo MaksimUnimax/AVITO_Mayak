@@ -1,75 +1,36 @@
-# Маяк Авито — backlog необходимой документации
+# Маяк Авито — backlog документации
 
-**Версия:** 1.1
+**Версия:** 1.2
 **Статус:** APPROVED planning register
-**Правило:** этот backlog не разрешает создавать документы по шаблону или догадке. Каждый документ будет написан ChatGPT после нужного proof/design этапа и передан CLI буквальным текстом.
 
-## DB-00 — Доказательства технической среды
+## DB-00 — accepted evidence and supervision
 
-**Статус:** IN PROGRESS через `TASK-001`.
+`TASK-001`, `REPORT-001`, TASK-001 errata, remote-supervision protocol, ADR-0006 and WL-0004. This does not permit code or deploy.
 
-**Цель:** собрать доказанные сведения о сервере, Git baseline, доступных runtime-инструментах, container runtime, локальных database/queue tools, минимально релевантных service states и слушающих TCP endpoints.
+## DB-01 — Architecture Foundation
 
-**Граница:** задача не выбирает стек, не создаёт сервисы и не читает секреты, конфигурации, `.env`, process arguments или systemd unit contents.
+`ARCHITECTURE_BASELINE_v1.0.md`, `ENVIRONMENT_ISOLATION_POLICY_v1.0.md`, `SECURITY_AND_PRIVACY_MODEL_v1.0.md`.
 
-**Результат:** основание для решения ChatGPT о technical baseline.
+## DB-02 — contracts
 
-## DB-01 — Architecture, security and contract foundation v1.0
+`CONTRACT_PACKAGE_v1.0.md`, `ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`, `CONTRACT_CHANGE_POLICY_v1.0.md`.
 
-**Цель:** на основании DB-00 определить без догадок язык/рантайм/сборку, границы модульного монолита, security baseline, API/command/event conventions, idempotency, error envelope и версионирование контрактов.
+## DB-03 — data
 
-**Результаты:**
+`DATA_MODEL_v1.0.md`, `MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
 
-- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`;
-- `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
-- `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
-- `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
-- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`;
-- машиночитаемые schemas, events, test vectors и mocks только в объёме, подтверждённом принятым контрактом.
+## DB-04 — quality
 
-## DB-02 — Data and compatibility governance
+Test Strategy, Fixture Registry, Acceptance Matrix, Reference Regression Policy.
 
-**Цель:** физическая модель БД, ownership, unique constraints, migration/retry/backward compatibility policy.
+## DB-05 — operations and references
 
-**Результаты:**
+Environment Matrix, Observability/Alerting, Backup/Recovery, Deployment/Release, Windows Egress; Reference Registry and Avito/Telegram/MAX policies/evidence.
 
-- `docs/02-architecture/DATA_MODEL_v1.0.md`;
-- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+## DB-06 — playbooks
 
-## DB-03 — Quality
+One autonomous playbook for each of 13 modules after DB-01–DB-05.
 
-**Цель:** определить уровни тестов, fixtures, contract tests, integration tests, manual acceptance и доказательства production-ready.
+## DB-07 — final audit
 
-**Результаты:**
-
-- `docs/07-quality/TEST_STRATEGY_v1.0.md`;
-- `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
-- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
-- `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
-
-## DB-04 — Operations and external references
-
-**Цель:** определить среды, deploy, backup/recovery, observability, Windows Egress Agent operations и проверяемые vendor/reference источники.
-
-**Результаты:**
-
-- `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`;
-- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
-- `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
-- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`;
-- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`;
-- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`;
-- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
-
-## DB-05 — Autonomous module playbooks
-
-**Цель:** проверить existing candidate playbooks против утверждённых contracts/data/security и выпустить самодостаточные принятые файлы для 13 модулей.
-
-**Неподвижное требование:** каждый playbook должен содержать точные входы/выходы, ownership, fakes/mocks, fixtures, test vectors, acceptance criteria, scope, запреты, roadmap, report/handoff и append-only history. Агент не должен читать общее ТЗ, чтобы реализовать свою изолированную задачу.
-
-## DB-06 — Tasks and reports in use
-
-**Цель:** после принятия playbooks начать создавать конкретные `TASK-xxx.md`, accepted/rejected reports и handoff только по шаблонам и exact text ChatGPT.
+Reconcile main/manifest/roadmap/backlog; links; append-only integrity; no duplicate layouts; unresolved decisions stay open; no forbidden artifacts; reference evidence; all 13 compatible playbooks. Then stop documentation work.

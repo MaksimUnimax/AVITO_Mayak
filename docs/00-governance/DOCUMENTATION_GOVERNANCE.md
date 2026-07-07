@@ -1,67 +1,14 @@
 # Маяк Авито — правила ведения документации
 
-**Версия:** 1.0  
+**Версия:** 1.1
 **Статус:** APPROVED
 
-## 1. Авторство и передача текста
+ChatGPT owns document content; CLI receives exact path, mode, literal text/append block, checks and commit/push permission. CLI must not improve, infer or silently change text.
 
-Содержание каждого документа определяет ChatGPT как разработчик, архитектор и руководитель проекта.
+Public GitHub `main` is repository source of truth. Before change and after report, ChatGPT independently reviews current remote state. `APPROVED` is explicit; candidate is not acceptance.
 
-Codex/CLI не является автором документации. Для каждой операции ChatGPT передаёт ему точные:
+Append-only files are never edited, removed or reordered. Correction is a new final record.
 
-- путь;
-- режим `CREATE`, `REPLACE` или `APPEND_ONLY`;
-- полный текст файла либо полный блок добавления;
-- проверки;
-- разрешение/запрет на commit и push.
+Documents distinguish confirmed fact, accepted decision, assumption, open decision, risk/limit and external-reference deviation. Significant boundary/contract/data/security/role/route changes require a decision-log entry before dependent documents update.
 
-CLI записывает только переданный текст. Он не имеет права исправлять стиль, орфографию, версии, даты, ссылки, статусы или разделы по своему пониманию.
-
-## 2. Статусы
-
-Каждый нормативный документ должен содержать версию и статус:
-
-- `DRAFT` — документ готовится и не закрывает решение окончательно;
-- `CANDIDATE` — подготовлен для review, но не допускает production-решения;
-- `APPROVED` — действующий источник истины в своей области;
-- `SUPERSEDED` — заменён более новой версией;
-- `ARCHIVED` — исторический документ.
-
-Новый документ не получает `APPROVED` автоматически: статус должен быть указан явным текстом ChatGPT.
-
-## 3. Append-only документы
-
-К append-only относятся:
-
-- `WORKLOG_APPEND_ONLY.md`;
-- `DECISION_LOG_APPEND_ONLY.md`;
-- append-only журналы модулей, tasks, reports и handoff, когда они будут созданы.
-
-Для них запрещены удаление, редактирование, перестановка или «чистка» старых записей. Исправление оформляется новой записью в конце с указанием, что именно уточняется.
-
-## 4. Разделение типов утверждений
-
-Технический документ обязан различать:
-
-- подтверждённый факт;
-- принятое проектное решение;
-- допущение;
-- открытый вопрос;
-- риск/ограничение;
-- отклонение от внешнего референса.
-
-Нельзя записывать предположение как факт, а candidate-документ как утверждённый контракт.
-
-## 5. Правило изменения
-
-Если изменение влияет на продуктовые границы, модульные владения, публичный контракт, data model, безопасность, тарифы, baseline, дедупликацию, роли, маршруты или внешнее поведение, ChatGPT сначала создаёт точную запись в decision log и затем обновляет затронутые документы.
-
-Нельзя тихо менять архитектуру или договорённость только в коде.
-
-## 6. Проверка документной задачи
-
-После записи CLI обязан вернуть список файлов, `git diff --check`, diff/статус, SHA-256 изменённых файлов, commit hash и push status, если это разрешено. ChatGPT обязан сам сверить фактическое содержимое с переданным текстом.
-
-## 7. Версии и ссылки
-
-Документы не переименовываются и не заменяются молча. Если выходит новая версия, новая версия создаётся отдельным файлом или явно заменяет старую с записью `SUPERSEDED` и ссылкой на замену.
+CLI reports paths, checks, hashes, commit and push state. ChatGPT independently verifies actual remote content. Shared-host resources are not project resources.

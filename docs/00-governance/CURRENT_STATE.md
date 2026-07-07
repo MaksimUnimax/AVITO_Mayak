@@ -1,56 +1,21 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.1
+**Версия снимка:** 1.2
 **Статус:** APPROVED snapshot
-**Дата снимка:** 2026-07-06
+**Дата:** 2026-07-06
 
 ## Фаза
 
-`A0.7 — Technical Baseline evidence collection`
+`A0.7 — TASK-001 evidence accepted; A0.8 Architecture Foundation pending`
 
-Documentation Bootstrap принят. Product-code, физическая схема БД, миграции, выбранный технологический стек, CI/CD, сервисы проекта, внешние API-ключи и deploy-конфигурация по-прежнему не созданы.
+Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
+Pre-package evidence baseline: `e017241824b3b3e90db1116faefc466791bef2e5`.
+Public `main` is factual source of truth; procedure: `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`.
 
-## Принятый documentation baseline
+TASK-001 is accepted as limited proof-only evidence and is in `docs/05-tasks/completed/`. Shared-host facts do not permit use of foreign containers, databases, Nginx, ports, networks, volumes or secrets.
 
-- Репозиторий: `MaksimUnimax/AVITO_Mayak`.
-- Рабочая ветка: `main`.
-- Принятый remote commit: `b4b14dc6262581b10f45d02e9472c93e3cee6b31`.
-- Bootstrap parent commit: `e8587107fd6cd3675b3e69f1ce75ffa0c846cc3c`.
-- В документационном baseline ровно 49 файлов.
-- 48 исходных файлов совпали с переданным ChatGPT буквальным текстом по SHA-256.
-- Единственное расхождение было в исторической записи `WL-0001`: SSH URL ошибочно содержал `/` вместо `:` после `github.com`.
-- Ошибка не была переписана. Append-only prefix сохранён, а корректировка добавлена отдельной записью `WL-0002`.
-- Рабочее дерево после final audit было чистым.
-- Отдельный SSH deploy key и dedicated GitHub known_hosts существуют только для `MaksimUnimax/AVITO_Mayak`.
+No product code, CI/CD, migrations, project service, deploy configuration, external key or new infrastructure exists. Existing approved ADRs remain authoritative only within their recorded scope; unresolved items remain in `OPEN_DECISIONS.md`.
 
-## Принятые источники и правила
+## Next safe step
 
-- `docs/01-product/MAYAK_AVITO_TARGET_MODEL_v0.1.md` — целевая модель продукта, статус `DRAFT`.
-- `docs/02-architecture/MAYAK_AVITO_ARCHITECTURE_MODULE_MAP_v0.1.md` — архитектурная карта, статус `DRAFT`.
-- `docs/00-governance/CHATGPT_PROJECT_LEADERSHIP_RULES_v1.1.md` — обязательные правила руководства разработкой.
-- `docs/00-governance/DOCUMENTATION_GOVERNANCE.md` — обязательное правило буквальной передачи документов CLI-исполнителю.
-- `docs/00-governance/PROJECT_ENTRYPOINT.md` — обязательный протокол восстановления контекста.
-
-## Активная задача
-
-`TASK-001 — Доказательная инвентаризация технической среды`.
-
-Задача имеет режим `proof_only`. Она не выбирает технологический стек и не создаёт код. Она собирает только проверяемые факты о сервере и доступных инструментах, необходимых ChatGPT для проектирования Technical Baseline.
-
-## Что ещё не существует и не должно предполагаться существующим
-
-- утверждённый технический baseline;
-- выбранный язык, framework, package manager, application layout или queue technology;
-- машиночитаемые DTO, JSON Schema, OpenAPI или event contracts;
-- физическая модель БД, миграции и migration policy;
-- security/privacy model;
-- test strategy, fixtures, acceptance matrix или regression policy;
-- operations/deployment runbooks;
-- принятые автономные module playbook-документы;
-- product-code, tests, CI, Dockerfile, database, queue, бот, parser, веб-интерфейс или production deploy.
-
-## Следующий безопасный шаг
-
-Получить и проверить отчёт `TASK-001`.
-
-Только ChatGPT после проверки доказательств определяет выбранный technical baseline и пишет полный буквальный текст следующего документационного пакета. CLI-исполнитель не выбирает следующий шаг, стек или содержание документов.
+Run 2 of 23: Architecture Baseline, Environment Isolation Policy and Security/Privacy Model as documentation only.

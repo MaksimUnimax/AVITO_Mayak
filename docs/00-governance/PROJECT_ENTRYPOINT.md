@@ -1,40 +1,10 @@
 # Маяк Авито — точка входа в проект
 
-**Версия:** 1.0  
-**Статус:** APPROVED  
-**Назначение:** дать ChatGPT и человеку точный минимальный порядок восстановления контекста при новом входе в репозиторий.
+**Версия:** 1.1
+**Статус:** APPROVED
 
-## Обязательный входной протокол ChatGPT
+При входе ChatGPT independently reads public `main`, records branch/SHA and files actually read, then reads README, MANIFEST, CURRENT_STATE, ROADMAP, DOCUMENTATION_BACKLOG, remote-supervision protocol, relevant logs, OPEN_DECISIONS and task-specific evidence.
 
-При получении ссылки на репозиторий или при возобновлении работы ChatGPT обязан:
+Before a CLI task ChatGPT states proven baseline, goal, decision, allowed scope, forbidden scope, checks and acceptance. CLI is never a substitute for GitHub reading and never chooses the next step.
 
-1. Получить фактическое текущее состояние репозитория: ветка, HEAD, рабочее дерево, последние изменения и нужные документы. Нельзя предполагать, что состояние совпадает с прошлым диалогом.
-2. Прочитать `README.md`.
-3. Прочитать `docs/MANIFEST.md`.
-4. Прочитать `docs/00-governance/CURRENT_STATE.md`.
-5. Прочитать `docs/00-governance/ROADMAP.md`.
-6. Прочитать последние релевантные записи append-only журналов: `DECISION_LOG_APPEND_ONLY.md` и `WORKLOG_APPEND_ONLY.md`.
-7. Прочитать `OPEN_DECISIONS.md` и не подменять открытые решения догадками.
-8. Для конкретной задачи прочитать только относящийся к ней модульный playbook, task packet, report/handoff, контракт и внешнюю документацию.
-9. До постановки задачи CLI-исполнителю сформулировать: доказанный baseline, цель, решение ChatGPT, scope, запреты, проверки и критерии приёмки.
-
-## Обязательный порядок выбора следующего шага
-
-1. Не выбирать следующий шаг из памяти или по общему ощущению.
-2. Сопоставить `CURRENT_STATE.md`, roadmap, актуальные блокеры, открытые решения и принятые решения.
-3. Проверить, что следующий шаг не требует недостающего контракта, архитектурного решения или внешнего доказательства.
-4. Если требуется доказательство — сначала дать CLI-исполнителю узкую `proof_only` задачу.
-5. Если требуется архитектурное решение — сначала обновить документацию точным текстом и журнал решений.
-6. Только затем создавать задачу на код.
-
-## Неподвижные правила
-
-- ChatGPT — разработчик, архитектор и руководитель проекта; CLI — только исполнитель.
-- Все документы создаются и изменяются только из полного буквального текста, который ChatGPT передаёт CLI в конкретной задаче.
-- Любая проблема расследуется от симптома к подтверждённой причине на уровень выше; постоянный костыль вместо исправления причины запрещён.
-- Нельзя выдавать candidate, fixture или mock за production-доказательство.
-- Нельзя считать документ или код актуальным, пока он не прочитан из фактического текущего репозитория.
-
-## Когда этот документ должен обновляться
-
-Этот документ меняется редко: только если меняется сам протокол входа и управления проектом. Текущий прогресс, следующий шаг и активные задачи живут в `CURRENT_STATE.md`, а не здесь.
+Next work follows current state, roadmap, accepted evidence and unresolved decisions; it is not chosen from memory. Missing evidence requires `proof_only`; a needed design requires literal documentation first. Product code remains gated by accepted documentation.
