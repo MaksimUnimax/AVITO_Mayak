@@ -317,3 +317,37 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Подготовить Run 9 — Avito Reference Registry, Policy and Evidence — only from verified official or primary sources, without parser implementation or provider traffic.
+
+---
+
+## WL-0013 — 2026-07-07 — Avito reference registry, policy and evidence accepted and governance state synchronized
+
+**Тип:** external-reference documentation acceptance / governance synchronization
+
+**Источник доказательства:**
+
+- official Avito Ads help `https://ads-help.avito.com/external/api`, retrieved `2026-07-07T09:00:29+02:00`;
+- official `avito-tech/avito-ads-sdk-python3` at commit `41a3c72cf4c18ed76e43925f6a7e5e6ae9238267`;
+- mandatory primary implementation reference `Duff89/parser_avito` at commit `48441c352e36919abef13c436f41a3a62636da17`;
+- direct-capture status `UNAVAILABLE` for `https://developers.avito.ru/api-catalog/ads/documentation`;
+- governance-state reconciliation in the same Run 9 publication change set.
+
+**Принято:**
+
+- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
+- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
+- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
+
+**Границы принятия:**
+
+- official Avito Ads evidence is accepted only in advertising-account scope and is not generalized to consumer classified search;
+- `Duff89/parser_avito` is accepted only as exact-revision primary implementation evidence, not as an official Avito contract, permission or production design;
+- internal `loaderData`, `searchCore`, `context`, `catalog` and `/web/1/js/items` behavior remains unsupported as a stable provider contract;
+- consumer-search API availability, legal permission, stable fields/filters/categories/markets, request cadence, CAPTCHA, cookie, proxy, retry and route behavior remain blocked;
+- OD-009, OD-010 and OD-011 remain unresolved; OD-001–OD-014 remain open;
+- provider failures, restrictions, malformed/incomplete responses and ambiguity cannot become a clean empty listing result;
+- no Avito/provider request, parser, executable test, credential, cookie, session, proxy, VPN, route, agent, product-code, migration, database, Dockerfile, CI/CD, service, container, port, deploy or runtime configuration is created.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 10 — Telegram and MAX Reference Policies — only from current official/primary sources, without bots, provider traffic, credentials or runtime changes.
