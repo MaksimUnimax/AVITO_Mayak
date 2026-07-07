@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.5
+**Версия:** 1.6
 **Статус:** APPROVED planning register
 
 ## DB-00 — accepted evidence and supervision
@@ -30,16 +30,24 @@ This package fixes contract semantics, ownership, errors, idempotency and change
 
 This package fixes conceptual data ownership, isolation, privacy and future compatibility gates. It does not create physical storage or executable migrations.
 
-## DB-04 — quality — NEXT
+## DB-04 — quality — ACCEPTED
 
 - `docs/07-quality/TEST_STRATEGY_v1.0.md`;
 - `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
 - `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
 - `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
 
-## DB-05 — operations and references
+This package fixes framework-neutral quality gates, canonical semantic fixtures, acceptance traceability and external-reference regression control. It does not create executable tests, fixture data files or CI/CD.
 
-Environment Matrix, Observability/Alerting, Backup/Recovery, Deployment/Release, Windows Egress; Reference Registry and Avito/Telegram/MAX policies/evidence.
+## DB-05 — operations and references — NEXT
+
+- Run 6: `ENVIRONMENT_MATRIX_v1.0.md`, `OBSERVABILITY_AND_ALERTING_v1.0.md`;
+- Run 7: `BACKUP_AND_RECOVERY_v1.0.md`, `DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
+- Run 8: `WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`;
+- Run 9: Avito reference registry, policy and evidence;
+- Run 10: Telegram and MAX reference policies.
+
+These runs define documentation boundaries and evidence only. They do not create runtime, deploy, monitoring stack, credentials or provider implementations.
 
 ## DB-06 — playbooks
 
