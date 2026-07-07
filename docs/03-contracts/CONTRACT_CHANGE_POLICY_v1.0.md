@@ -85,7 +85,9 @@ Every proposed contract change must contain:
 14. required documentation updates;
 15. explicit approval authority.
 
-Without this packet, CLI must return `CHANGE_REQUEST_REQUIRED` and make no change.
+A task packet lacking any required item is invalid. ChatGPT must not issue it to CLI until the packet is completed and independently approved.
+
+CLI receives only a final literal task and must not decide whether a proposed change is sufficient, compatible, breaking, secure or complete.
 
 ## 5. Version boundary rules
 
