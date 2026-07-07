@@ -1,78 +1,89 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.10
+**Версия снимка:** 1.11
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.12 — Operations and external-reference documentation active; Runs 6–9 accepted; Run 10 Telegram and MAX references pending`
+`A0.13 — Technical Baseline published; Runs 1–10 documented; Run 10 server synchronization required before Run 11`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 9 Avito reference package is published as one predeclared documentation change set: Reference Registry, Avito Reference Policy, Avito Reference Evidence, governance-state updates and append-only acceptance.
+Run 9 Avito reference package is accepted in GitHub.
 
-Public `main` is the factual source of truth. Independent verification procedure: `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`.
+Run 10 adds the missing Technical Baseline gate and expands the documentation route from 23 to 24 runs. It selects the core stack without creating code, dependency files, environments or infrastructure.
 
-TASK-001 remains limited proof-only evidence. Shared-host facts do not authorize foreign containers, databases, Nginx, ports, networks, volumes, backups, credentials or secrets.
+Public `main` remains the factual source of truth. Server checkout acceptance always refers to one exact published SHA.
 
-## Принятые foundation documents
+## Current approved foundations
 
-### Architecture Foundation
+### Architecture and Technical
 
-- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`;
+- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.1.md`;
+- `docs/02-architecture/TECHNOLOGY_SELECTION_METHOD_v1.0.md`;
+- `docs/02-architecture/TECHNICAL_BASELINE_EVIDENCE_v1.0.md`;
+- `docs/02-architecture/TECHNICAL_BASELINE_v1.0.md`;
 - `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
 - `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
 
-### Common Contract Foundation
+### Contracts
 
 - `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
 - `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
 - `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
 
-### Data and Compatibility Foundation
+### Data and compatibility
 
 - `docs/02-architecture/DATA_MODEL_v1.0.md`;
 - `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
 
-### Quality Foundation
+### Quality
 
 - `docs/07-quality/TEST_STRATEGY_v1.0.md`;
 - `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
-- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
+- `docs/07-quality/ACCEPTANCE_MATRIX_v1.1.md`;
 - `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
 
-### Operations Environment Foundation
+### Operations
 
-- `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`;
-- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`.
-
-### Recovery and Release Boundaries
-
+- `docs/08-operations/ENVIRONMENT_MATRIX_v1.1.md`;
+- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`;
 - `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
-- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
-
-### Windows Egress Agent Boundaries
-
+- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`;
 - `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
 
-### Avito Reference Foundation
+### Avito references
 
 - `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
 - `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
 - `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
 
-The accepted documents define modular ownership, conceptual data and contract semantics, error/idempotency, compatibility, security/privacy, quality, environments, observability, recovery/release, Windows egress and external-evidence boundaries.
+## Selected core technical baseline
 
-Run 9 establishes that accessible first-party evidence reviewed here concerns the separate Avito Ads product. It does not establish an official consumer-search contract, permission to scrape, stable internal endpoint/page structure, supported filter catalog, country-wide support or monitoring cadence. `Duff89/parser_avito` remains a primary implementation reference only at exact commit `48441c352e36919abef13c436f41a3a62636da17`.
+- CPython 3.14 standard build;
+- uv with `pyproject.toml` and `uv.lock` after bootstrap;
+- FastAPI and Uvicorn;
+- Pydantic v2 and pydantic-settings;
+- HTTPX;
+- PostgreSQL 18;
+- SQLAlchemy 2, Psycopg 3 and Alembic;
+- pytest, pytest-asyncio and RESpx;
+- Ruff, mypy, import-linter and coverage.py;
+- OpenTelemetry instrumentation boundary;
+- PostgreSQL-backed durable work/outbox; no external broker at baseline.
 
-No product code, executable tests, fixture data files, CI/CD, migrations, backups, monitoring configuration, Windows agent, route, tunnel, service, scheduled task, listener, port, credential, provider call, parser, deployment, runtime configuration or infrastructure is created. OD-001–OD-014 remain unresolved; specifically OD-009–OD-011 remain blocked by evidence and owner decisions.
+Provider SDKs, exact Avito adapter stack, frontend, containerization, ingress, configuration delivery, telemetry backend and Windows packaging remain deferred.
+
+## Current prohibitions
+
+No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, service, container, listener, port, sensitive access material, external call, parser, bot, deployment or runtime configuration has been created.
+
+OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-Run 10 of 23: Telegram and MAX reference documentation only:
-
-- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
-
-Run 10 must use current official/primary sources, record retrieval date, URL, scope, status and limitations, preserve unresolved decisions, and create no bots, provider calls, credentials, code, services or runtime artifacts.
+1. Synchronize server checkout to the exact Run 10 published GitHub SHA.
+2. Verify clean worktree and exact SHA.
+3. Continue with Run 11 of 24 — Telegram and MAX Reference Policies.
+4. Module playbooks begin at Run 12; Platform & Contracts is Run 12.

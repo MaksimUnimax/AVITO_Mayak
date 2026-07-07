@@ -1,85 +1,86 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.10
+**Версия:** 2.0
 **Статус:** APPROVED planning register
 
-## DB-00 — accepted evidence and supervision
+## DB-00 — evidence and supervision — ACCEPTED
 
-`TASK-001`, `REPORT-001`, TASK-001 errata, remote-supervision protocol, ADR-0006 and relevant append-only worklog entries. This does not permit code or deploy.
+TASK-001, REPORT-001/errata, remote supervision, ADR-0006 and append-only worklog. No code/deploy permission.
 
 ## DB-01 — Architecture Foundation — ACCEPTED
 
-- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`;
-- `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
-- `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
+Historical architecture v1.0, security/privacy and environment isolation boundaries.
 
-This package fixes architecture, isolation and security boundaries without selecting implementation technology.
+Current architecture authority is `ARCHITECTURE_BASELINE_v1.1.md`.
 
 ## DB-02 — Common Contract Foundation — ACCEPTED
 
-- `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
-- `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
-- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
+- `CONTRACT_PACKAGE_v1.0.md`;
+- `ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
+- `CONTRACT_CHANGE_POLICY_v1.0.md`.
 
-This package fixes contract semantics, ownership, errors, idempotency and change control without implementation schemas.
+## DB-03 — Data and Compatibility — ACCEPTED
 
-## DB-03 — data and compatibility — ACCEPTED
+- `DATA_MODEL_v1.0.md`;
+- `MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
 
-- `docs/02-architecture/DATA_MODEL_v1.0.md`;
-- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+## DB-04 — Quality — ACCEPTED
 
-This package fixes conceptual data ownership, isolation, privacy and future compatibility gates. It does not create physical storage or executable migrations.
+- `TEST_STRATEGY_v1.0.md`;
+- `FIXTURE_REGISTRY_v1.0.md`;
+- `ACCEPTANCE_MATRIX_v1.1.md`;
+- `REFERENCE_REGRESSION_POLICY_v1.0.md`.
 
-## DB-04 — quality — ACCEPTED
+Acceptance Matrix v1.1 supersedes v1.0 for future work and adds Technical Baseline gates plus module run numbering 12–24.
 
-- `docs/07-quality/TEST_STRATEGY_v1.0.md`;
-- `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
-- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
-- `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
+## DB-05 — Operations and Avito references — ACCEPTED
 
-This package fixes framework-neutral quality gates, canonical semantic fixtures, acceptance traceability and external-reference regression control. It does not create executable tests, fixture data files or CI/CD.
+### Run 6
 
-## DB-05 — operations and references — ACTIVE
+- `ENVIRONMENT_MATRIX_v1.0.md` historical;
+- `OBSERVABILITY_AND_ALERTING_v1.0.md`.
 
-### Run 6 — environment and observability — ACCEPTED
+### Run 7
 
-- `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`;
-- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`.
+- `BACKUP_AND_RECOVERY_v1.0.md`;
+- `DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
 
-This package fixes environment ownership/readiness, shared-host restrictions, health semantics, signal classes, redaction and alert lifecycle without provisioning or monitoring configuration.
+### Run 8
 
-### Run 7 — backup and release boundaries — ACCEPTED
+- `WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
 
-- `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
-- `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
+### Run 9
 
-This package fixes backup identity/lifecycle, restore and recovery gates, release/deployment lifecycle, validation, rollback and roll-forward boundaries. It creates no backup, snapshot, restore, pipeline, deployment, ingress, port, TLS or runtime configuration.
+- `REFERENCE_REGISTRY_v1.0.md`;
+- `AVITO_REFERENCE_POLICY_v1.0.md`;
+- `AVITO_REFERENCE_EVIDENCE_v1.0.md`.
 
-### Run 8 — Windows egress — ACCEPTED
+## DB-06 — Technical Baseline — RUN 10 PUBLISHED
 
-- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
+- `docs/02-architecture/TECHNOLOGY_SELECTION_METHOD_v1.0.md`;
+- `docs/02-architecture/TECHNICAL_BASELINE_EVIDENCE_v1.0.md`;
+- `docs/02-architecture/TECHNICAL_BASELINE_v1.0.md`;
+- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.1.md`;
+- `docs/08-operations/ENVIRONMENT_MATRIX_v1.1.md`;
+- `docs/07-quality/ACCEPTANCE_MATRIX_v1.1.md`.
 
-This package fixes Egress Routing ownership, agent/route/lease/request lifecycle, outbound-only exposure default, readiness, quarantine, fallback, idempotency, reconciliation, Windows-host isolation and evidence requirements. It creates no agent, route, tunnel, service, scheduled task, inbound listener, port, credential, provider request or runtime configuration.
+This package selects core language, toolchain, framework, persistence, quality and telemetry boundaries and explicitly defers provider, frontend and deployment technologies.
 
-### Run 9 — Avito references — ACCEPTED
+It creates no code, lockfile, packages, environment, database or runtime.
 
-- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
-
-This package records dated official/primary source identities, exact scope, lifecycle status, limitations, unsupported claims, revalidation gates and reference-regression mapping. It distinguishes the official Avito Ads product from consumer search and treats `Duff89/parser_avito` only as an exact-revision implementation reference. No provider request, parser, credential, route or runtime is created. OD-009–OD-011 remain unresolved.
-
-### Run 10 — Telegram and MAX references — NEXT
+## DB-07 — Telegram and MAX references — RUN 11 NEXT
 
 - `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
 - `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
 
-These runs define documentation boundaries and evidence only. They do not create bots, runtime, deploy, credentials, routes, agents or provider implementations.
+Only current official/primary evidence. No bots, credentials, external calls or runtime.
 
-## DB-06 — playbooks
+## DB-08 — Module playbooks — RUNS 12–24
 
-One autonomous playbook for each of 13 modules after DB-01–DB-05.
+One autonomous `MODULE_PLAYBOOK.md` for each of 13 modules.
 
-## DB-07 — final audit
+Each playbook uses current Architecture Baseline v1.1, Technical Baseline v1.0, Acceptance Matrix v1.1 and applicable provider evidence.
 
-Reconcile main/manifest/roadmap/backlog; links; append-only integrity; no duplicate layouts; unresolved decisions stay open; no forbidden artifacts; reference evidence; all 13 compatible playbooks. Then stop documentation work.
+## DB-09 — Final audit
+
+After Run 24 reconcile manifest/state/roadmap/backlog, links, historical/current versions, append-only integrity, open decisions, external evidence, all playbooks and absence of forbidden implementation artifacts. Then publish final governance acceptance and synchronize exact SHA.
