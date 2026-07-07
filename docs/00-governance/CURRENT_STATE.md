@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.8
+**Версия снимка:** 1.9
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.12 — Operations and external-reference documentation active; Runs 6–7 accepted; Run 8 Windows egress pending`
+`A0.12 — Operations and external-reference documentation active; Runs 6–8 accepted; Run 9 Avito references pending`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 7 Recovery and Release package опубликован commits `d5234d2ad884e07caec12adbe8906b7470cf2950` и `5c3020490d15ad3b432209ebee0562e7291c5288` как один заранее определённый documentation change set.
+Run 8 Windows Egress Agent package опубликован commit `8cd1082caa82c6eb61615f71b27f0bda10756c41` как основной deliverable одного заранее определённого documentation change set; governance-state updates и append-only acceptance входят в тот же Run 8 package.
 
 Public `main` — фактический источник истины. Процедура независимой проверки: `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`.
 
-TASK-001 принят только как ограниченное proof-only evidence. Shared-host facts не разрешают использовать foreign containers, databases, Nginx, ports, networks, volumes, backups или secrets.
+TASK-001 принят только как ограниченное proof-only evidence. Shared-host facts не разрешают использовать foreign containers, databases, Nginx, ports, networks, volumes, backups, credentials или secrets.
 
 ## Принятые foundation documents
 
@@ -52,16 +52,22 @@ TASK-001 принят только как ограниченное proof-only ev
 - `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
 - `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
 
-Принятые documents фиксируют modular boundaries, ownership, conceptual data domains, contract semantics, error/idempotency rules, migration/compatibility gates, security/privacy limits, quality gates, canonical semantic fixtures, acceptance traceability, environment readiness/ownership, observability/alerting semantics, backup/recovery lifecycle and release/deployment gates.
-
-Они не выбирают implementation language, framework, package manager, test framework, CI provider, queue, transport, serialization, monitoring stack, alert thresholds/channels, backup/storage technology, retention, RPO/RTO, deployment tooling/strategy, ingress, reverse proxy, TLS, ports, storage implementation, secrets product, physical database schema, migration tool или runtime topology.
-
-No product code, executable tests, fixture data files, CI/CD, migrations, backup/snapshot, restore, monitoring configuration, live alerts, project service, deployment pipeline, deploy configuration, external key or new infrastructure exists. Existing approved ADRs remain authoritative only within their recorded scope; unresolved items remain in `OPEN_DECISIONS.md`.
-
-## Next safe step
-
-Run 8 of 23: Windows Egress Agent documentation only:
+### Windows Egress Agent Boundaries
 
 - `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
 
-Run 8 must not create or configure a Windows agent, host, route, tunnel, service, scheduler, credential, port, firewall rule, runtime or provider access. It documents ownership, registration, health, lease, quarantine, failure and evidence boundaries only.
+Принятые documents фиксируют modular boundaries, ownership, conceptual data domains, contract semantics, error/idempotency rules, migration/compatibility gates, security/privacy limits, quality gates, canonical semantic fixtures, acceptance traceability, environment readiness/ownership, observability/alerting semantics, backup/recovery lifecycle, release/deployment gates and Windows egress agent/route/lease safety boundaries.
+
+Они не выбирают implementation language, framework, package manager, test framework, CI provider, queue, transport, serialization, monitoring stack, alert thresholds/channels, backup/storage technology, retention, RPO/RTO, deployment tooling/strategy, ingress, reverse proxy, TLS, ports, tunnel/VPN/proxy protocol, Windows service/task model, agent credentials, route thresholds/switching policy, storage implementation, secrets product, physical database schema, migration tool или runtime topology.
+
+No product code, executable tests, fixture data files, CI/CD, migrations, backup/snapshot, restore, monitoring configuration, live alerts, Windows agent, route, tunnel, service, scheduled task, inbound listener, port, credential, project service, deployment pipeline, deploy configuration, provider call, external key or new infrastructure exists. Existing approved ADRs remain authoritative only within their recorded scope; unresolved items remain in `OPEN_DECISIONS.md`.
+
+## Next safe step
+
+Run 9 of 23: Avito reference documentation only:
+
+- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
+- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
+- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
+
+Run 9 must use verified official or primary sources, record retrieval date, URL, scope, status and limitations, and must not send Avito requests, implement parser/route behavior, create credentials, close product decisions by assumption or create runtime artifacts.
