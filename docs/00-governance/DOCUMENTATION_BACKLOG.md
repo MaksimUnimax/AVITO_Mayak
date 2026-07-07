@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.4
+**Версия:** 1.5
 **Статус:** APPROVED planning register
 
 ## DB-00 — accepted evidence and supervision
@@ -13,7 +13,7 @@
 - `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
 - `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
 
-Этот package фиксирует boundaries and gates only. It does not select stack, runtime, ingress, storage, secrets product, ports, deployment method or physical data model.
+This package fixes architecture, isolation and security boundaries without selecting implementation technology.
 
 ## DB-02 — Common Contract Foundation — ACCEPTED
 
@@ -21,16 +21,21 @@
 - `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
 - `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
 
-Этот package фиксирует semantic contract boundaries, ownership, error handling, idempotency rules and change control. It does not create API schemas, transport, runtime, queue, database objects or deployment configuration.
+This package fixes contract semantics, ownership, errors, idempotency and change control without implementation schemas.
 
-## DB-03 — data and compatibility — NEXT
+## DB-03 — data and compatibility — ACCEPTED
 
 - `docs/02-architecture/DATA_MODEL_v1.0.md`;
 - `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
 
-## DB-04 — quality
+This package fixes conceptual data ownership, isolation, privacy and future compatibility gates. It does not create physical storage or executable migrations.
 
-Test Strategy, Fixture Registry, Acceptance Matrix, Reference Regression Policy.
+## DB-04 — quality — NEXT
+
+- `docs/07-quality/TEST_STRATEGY_v1.0.md`;
+- `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
+- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
+- `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
 
 ## DB-05 — operations and references
 
