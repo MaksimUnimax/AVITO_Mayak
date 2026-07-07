@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 1.8
+**Версия манифеста:** 1.9
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -55,6 +55,12 @@
 
 - `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
 
+### Avito Reference Foundation
+
+- `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
+- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
+- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
+
 ## Каталоги
 
 | Каталог | Назначение | Статус |
@@ -68,6 +74,6 @@
 | `06-reports` | accepted/rejected evidence | REPORT-001 accepted |
 | `07-quality` | quality gates, fixtures, acceptance and reference regression | Quality Foundation APPROVED |
 | `08-operations` | isolation, environment, observability, recovery, release and Windows egress boundaries | Runs 6–8 APPROVED |
-| `09-references` | external reference evidence | Run 9 next |
+| `09-references` | external reference evidence | Run 9 APPROVED; Run 10 next |
 
 Statuses: `DRAFT`, `CANDIDATE`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. Change rules: `DOCUMENTATION_GOVERNANCE.md`.
