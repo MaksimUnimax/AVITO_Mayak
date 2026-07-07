@@ -1,6 +1,6 @@
 # Маяк Авито — реестр модулей
 
-**Версия:** 1.4
+**Версия:** 1.5
 **Статус:** APPROVED registry derived from Architecture Baseline v1.1
 **Правило:** это реестр границ. Playbook status does not authorize implementation; each published run still requires exact server synchronization and independent acceptance.
 
@@ -9,8 +9,8 @@
 | 01 | `01-platform-and-contracts` | Platform & Contracts | application skeleton, configuration conventions, common errors, idempotency conventions, migration/tooling conventions after approval; no foreign business state | v1.0 accepted |
 | 02 | `02-identity-and-access` | Identity & Access | accounts, identities, authentication records, roles, sessions, auth/link challenges | v1.0 accepted |
 | 03 | `03-entitlements-and-billing` | Entitlements & Billing | tariff definitions, subscriptions, entitlement grants, manual access, future payment records and later approved usage counters | v1.0 accepted |
-| 04 | `04-beacon-management` | Beacon Management | Beacons, source URLs, extracted snapshots, user overrides, effective configuration, immutable revisions and lifecycle authority | v1.0 published; Run 15 sync pending |
-| 05 | `05-avito-parser-adapter` | Avito Parser Adapter | extraction/normalization of Avito search data; no direct Beacon mutation or notification delivery | RESERVED — Run 16 |
+| 04 | `04-beacon-management` | Beacon Management | Beacons, source URLs, extracted snapshots, user overrides, effective configuration, immutable revisions and lifecycle authority | v1.0 accepted |
+| 05 | `05-avito-parser-adapter` | Avito Parser Adapter | evidence-bound source/page extraction, response classification, normalized search configuration and listing candidates; no Beacon/Scan/route/notification mutation | v1.0 published; Run 16 sync pending |
 | 06 | `06-scan-orchestration-and-listing-state` | Scan Orchestration & Listing State | runs, observations, baseline/diff, listing state | RESERVED — Run 17 |
 | 07 | `07-egress-routing` | Egress Routing | routes, agents, leases, heartbeat | RESERVED — Run 18 |
 | 08 | `08-notification-delivery` | Notification Delivery | notification events, outbox, delivery attempts, delivery logs | RESERVED — Run 19 |
@@ -24,13 +24,18 @@
 
 - Внешний интерфейс не пишет напрямую в таблицу чужого модуля.
 - Telegram/MAX/Web/Admin используют публичные команды/сервисы соответствующих модулей.
-- Parser не отправляет Telegram/MAX напрямую; он создаёт нормализованный результат/событие для Scan/Notification contracts.
+- Parser не отправляет Telegram/MAX напрямую and does not create notifications; it returns explicit normalized outcomes for Beacon/Scan consumers.
 - История объявлений и уведомления изолированы по `beacon_id`.
 - Framework, ORM and provider types do not become public intermodule contracts.
 - Platform & Contracts owns common conventions, not foreign business state.
 - Identity & Access owns account identity, contact, role, session and auth/link challenge state; adapters and Web Cabinet do not create separate customer databases.
 - Entitlements & Billing owns tariff, subscription, grant and payment authority; Beacon Management consumes effective entitlement decisions and does not duplicate billing state.
-- Beacon Management is the only owner of Beacon configuration/lifecycle state; Parser returns normalized outcomes, Scan consumes immutable revision references, and adapters/UI use public commands.
+- Beacon Management is the only owner of Beacon configuration/lifecycle state; Parser cannot create, activate or mutate a Beacon.
+- Avito Parser Adapter owns adapter-level extraction/normalization semantics and safe outcome evidence only. It does not own routes, schedules, scan/listing history, baseline/diff or notification delivery.
+- Egress transport success is not parser success. Parser success is not scan/business success.
+- Access restriction, CAPTCHA, malformed/incomplete result, route failure, stale/unsupported evidence or ambiguity never becomes an empty listing result.
+- Internal Avito structures and endpoints observed in a primary reference remain unsupported as stable provider contracts.
 - Source URL is preserved separately from extracted snapshot and overrides; effective configuration change creates a new immutable revision.
+- Scan Orchestration consumes an explicit immutable Beacon revision and explicit parser outcome; it cannot infer success from transport alone.
 - Payment provider response is external evidence, not entitlement authority, until verified and converted by an approved server-side transition.
 - Модульные границы и владение данными меняются только через decision log and approved contract/architecture change packet.
