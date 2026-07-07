@@ -22,3 +22,24 @@ CLI reported `main`, remote `main` and clean worktree at `e017241824b3b3e90db111
 ## Следующий шаг
 
 После независимого acceptance текущего governance package перейти к Run 2: Architecture Foundation documentation only.
+
+---
+
+## CORRECTION-001 — 2026-07-07 — TASK-001 toolchain evidence correction
+
+**Статус:** APPROVED append-only correction
+**Область:** исправляет только перечисленные ниже факты toolchain snapshot.
+**Источник:** исходный read-only output TASK-001 `mayak-task001-proof-20260706-001`.
+
+Ранее в разделе «Принятые факты» были ошибочно указаны Node.js `18.19.1`, npm `9.2.0` и отсутствие `uv`/`pip3`. Эти значения не подтверждаются исходным evidence.
+
+Подтверждённый TASK-001 snapshot:
+
+- `pip3` доступен;
+- Node.js: `v22.22.1`;
+- npm: `10.9.4`;
+- `uv`: `0.11.11`.
+
+Остальные ограничения REPORT-001 сохраняются: это proof-only snapshot на момент TASK-001, а не утверждение о текущем состоянии хоста, выборе stack, architecture, deploy, infrastructure, ports, secrets, database, queue или production readiness.
+
+Никакая существующая строка REPORT-001 не переписывается. Эта append-only correction является авторитетной для перечисленных выше toolchain facts.

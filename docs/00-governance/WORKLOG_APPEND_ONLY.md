@@ -94,3 +94,22 @@ git@github.com:MaksimUnimax/AVITO_Mayak.git
 TASK-001 completed without repository or server changes. Its host snapshot is accepted only as limited evidence; it does not choose stack, architecture, deployment or implementation. Historical one-file commit wording is clarified by errata without rewriting task history.
 
 ChatGPT decision: adopt independent remote repository supervision; keep code, infrastructure, migrations, CI/CD and deploy prohibited; proceed only to Run 2 Architecture Foundation documentation.
+
+---
+
+## WL-0005 — 2026-07-07 — REPORT-001 evidence correction
+
+**Тип:** append-only factual correction
+**Основание:** независимое сопоставление accepted REPORT-001 с исходным read-only output TASK-001.
+
+**Исправлено только evidence record:**
+
+- Node.js `v22.22.1`, не `18.19.1`;
+- npm `10.9.4`, не `9.2.0`;
+- `pip3` и `uv 0.11.11` были доступны в command path.
+
+Исторический текст REPORT-001 не редактируется. Коррекция добавлена отдельным append-only block `CORRECTION-001`.
+
+**Следующий безопасный шаг:**
+
+Провести независимую GitHub-проверку corrected Run 1 package и только затем решать, принят ли Run 1.
