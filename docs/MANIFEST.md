@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 1.7
+**Версия манифеста:** 1.8
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -51,6 +51,10 @@
 - `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
 - `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
 
+### Windows Egress Agent Boundaries
+
+- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
+
 ## Каталоги
 
 | Каталог | Назначение | Статус |
@@ -63,7 +67,7 @@
 | `05-tasks` | literal CLI packets | TASK-001 completed |
 | `06-reports` | accepted/rejected evidence | REPORT-001 accepted |
 | `07-quality` | quality gates, fixtures, acceptance and reference regression | Quality Foundation APPROVED |
-| `08-operations` | isolation, environment, observability, recovery and release boundaries; Windows egress next | Runs 6–7 APPROVED; Run 8 next |
-| `09-references` | external reference evidence | backlog |
+| `08-operations` | isolation, environment, observability, recovery, release and Windows egress boundaries | Runs 6–8 APPROVED |
+| `09-references` | external reference evidence | Run 9 next |
 
 Statuses: `DRAFT`, `CANDIDATE`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. Change rules: `DOCUMENTATION_GOVERNANCE.md`.
