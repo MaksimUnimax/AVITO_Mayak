@@ -1,13 +1,13 @@
 # Маяк Авито — журнал работы (append-only)
 
-**Статус:** APPROVED append-only log  
+**Статус:** APPROVED append-only log
 **Правило:** существующие записи не редактируются, не удаляются и не переставляются. Корректировка оформляется новой записью в конце журнала с ссылкой на исправляемую запись.
 
 ---
 
 ## WL-0001 — 2026-07-06 — Project documentation bootstrap started
 
-**Тип:** governance / repository bootstrap  
+**Тип:** governance / repository bootstrap
 **Источник доказательства:** отчёт CLI-исполнителя `AVITO_MAYAK_REPOSITORY_ACCESS_AND_BASELINE_INSPECTION`.
 
 **Подтверждено:**
@@ -35,7 +35,7 @@
 
 ## WL-0002 — 2026-07-06 — Literal bootstrap correction: repository URL
 
-**Тип:** governance / append-only correction  
+**Тип:** governance / append-only correction
 **Основание:** read-only byte audit `AVITO_MAYAK_WORKLOG_EXACT_BYTE_PROOF`.
 
 **Исправление записи:**
@@ -62,7 +62,7 @@ git@github.com:MaksimUnimax/AVITO_Mayak.git
 
 ## WL-0003 — 2026-07-06 — Documentation Bootstrap accepted; TASK-001 started
 
-**Тип:** governance / baseline acceptance and proof-task start  
+**Тип:** governance / baseline acceptance and proof-task start
 **Источник доказательства:** отчёты `AVITO_MAYAK_FINAL_DOCUMENTATION_BASELINE_AUDIT` и `AVITO_MAYAK_WORKLOG_EXACT_BYTE_PROOF`.
 
 **Подтверждено:**
@@ -137,3 +137,31 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Подготовить Run 3 — Common Contract Foundation — только из полного literal text ChatGPT.
+
+---
+
+## WL-0007 — 2026-07-07 — Common Contract Foundation accepted and governance state synchronized
+
+**Тип:** documentation foundation acceptance / governance synchronization
+
+**Источник доказательства:**
+
+- independent GitHub review of public commit `b6fd8ff5119e9b85f1e307962e97513e1ee401b2`;
+- independent GitHub review of public commit `df372c71579fe7dc1f84e479d0894803f4b22322`.
+
+**Принято:**
+
+- `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
+- `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
+- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
+
+**Границы принятия:**
+
+- common contract semantics, ownership, error handling, idempotency and contract change control are documented;
+- CLI remains a literal executor and does not decide task sufficiency, compatibility, security or completeness;
+- no API schema, transport, queue, database object, runtime, product-code, infrastructure or deploy decision is created;
+- open decisions remain open.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 4 — Data Model and Migration/Compatibility Policy — только из полного literal text ChatGPT.

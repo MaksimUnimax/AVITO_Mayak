@@ -1,11 +1,11 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.3
+**Версия:** 1.4
 **Статус:** APPROVED planning register
 
 ## DB-00 — accepted evidence and supervision
 
-`TASK-001`, `REPORT-001`, TASK-001 errata, remote-supervision protocol, ADR-0006 and WL-0004/WL-0005. This does not permit code or deploy.
+`TASK-001`, `REPORT-001`, TASK-001 errata, remote-supervision protocol, ADR-0006 and relevant append-only worklog entries. This does not permit code or deploy.
 
 ## DB-01 — Architecture Foundation — ACCEPTED
 
@@ -15,13 +15,15 @@
 
 Этот package фиксирует boundaries and gates only. It does not select stack, runtime, ingress, storage, secrets product, ports, deployment method or physical data model.
 
-## DB-02 — contracts — NEXT
+## DB-02 — Common Contract Foundation — ACCEPTED
 
 - `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
 - `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
 - `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
 
-## DB-03 — data
+Этот package фиксирует semantic contract boundaries, ownership, error handling, idempotency rules and change control. It does not create API schemas, transport, runtime, queue, database objects or deployment configuration.
+
+## DB-03 — data and compatibility — NEXT
 
 - `docs/02-architecture/DATA_MODEL_v1.0.md`;
 - `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
