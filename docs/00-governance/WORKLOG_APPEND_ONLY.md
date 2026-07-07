@@ -228,3 +228,33 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Подготовить Run 6 — Operations Environment and Observability documentation — Environment Matrix and Observability/Alerting boundaries only.
+
+---
+
+## WL-0010 — 2026-07-07 — Operations Environment Foundation accepted and governance state synchronized
+
+**Тип:** documentation foundation acceptance / governance synchronization
+
+**Источник доказательства:**
+
+- independent literal review of `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md` published by commit `3150fe4621d1d92f65fa2b4b0fdbb1557c1ac582`;
+- independent literal review of `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md` published by commit `2c333a6ce4c21e70201deeab42965c546f562e4d`;
+- governance-state reconciliation in the same Run 6 publication change set.
+
+**Принято:**
+
+- `docs/08-operations/ENVIRONMENT_MATRIX_v1.0.md`;
+- `docs/08-operations/OBSERVABILITY_AND_ALERTING_v1.0.md`.
+
+**Границы принятия:**
+
+- environment classes, ownership records, readiness states, shared-host evidence-only restrictions and entry/exit gates are documented;
+- liveness, readiness, dependency health and business outcome are separated;
+- signal classes, mandatory metadata, redaction, alert severity/lifecycle, idempotency and reconciliation semantics are documented;
+- no host, provider, port, ingress, runtime, service identity, monitoring stack, dashboard, live alert, threshold or paging channel is selected or created;
+- no product-code, executable tests, CI/CD, migration, database, backup, deploy, service, container, credential or secret is created;
+- OD-001–OD-014 and operational technology decisions remain open.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 7 — Backup and Recovery plus Deployment and Release boundaries — documentation only, with undefined ingress, ports and TLS preserved as explicit gates.
