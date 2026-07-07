@@ -1,6 +1,6 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 1.8
+**Версия:** 1.9
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` active; `[ ]` not started; `[!]` blocked.
@@ -14,10 +14,10 @@
 - `[~] A0.12` Operations and external-reference documentation active:
   - `[x] Run 6` Environment Matrix and Observability/Alerting baseline accepted;
   - `[x] Run 7` Backup/Recovery and Deployment/Release boundaries accepted;
-  - `[ ] Run 8` Windows Egress Agent runbook;
+  - `[x] Run 8` Windows Egress Agent runbook accepted;
   - `[ ] Run 9` Avito reference registry, policy and evidence;
   - `[ ] Run 10` Telegram and MAX reference policies.
 - `[ ] A0.13` Thirteen module playbooks.
 - `[ ] A0.14` Final independent documentation audit and stop.
 
-Product implementation is forbidden until required documentation gates are accepted. A module cannot start without approved boundaries, owner, contracts, data/compatibility rules, fake dependencies, canonical fixtures, acceptance checks and applicable operations/reference evidence. Release/deployment eligibility never constitutes permission to provision or deploy. External integration requires current official evidence. CLI reports never replace independent GitHub acceptance.
+Product implementation is forbidden until required documentation gates are accepted. A module cannot start without approved boundaries, owner, contracts, data/compatibility rules, fake dependencies, canonical fixtures, acceptance checks and applicable operations/reference evidence. Windows-agent readiness or release/deployment eligibility never constitutes permission to provision, connect or deploy. External integration requires current official evidence. CLI reports never replace independent GitHub acceptance.
