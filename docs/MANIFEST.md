@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 1.3
+**Версия манифеста:** 1.4
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -13,7 +13,7 @@
 6. `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`
 7. relevant append-only decision/worklog entries
 8. `OPEN_DECISIONS.md`
-9. relevant architecture foundation, contract foundation, task, report, module playbook and reference evidence.
+9. relevant architecture, data, contract, task, report, module playbook and reference evidence.
 
 ## Approved foundation documents
 
@@ -29,19 +29,24 @@
 - `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
 - `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
 
+### Data and Compatibility Foundation
+
+- `docs/02-architecture/DATA_MODEL_v1.0.md`;
+- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+
 ## Каталоги
 
 | Каталог | Назначение | Статус |
 |---|---|---|
 | `00-governance` | rules, state, decisions, worklog | approved governance |
 | `01-product` | product model | v0.1 DRAFT |
-| `02-architecture` | map, registry, architecture/security baseline and future data policy | map DRAFT; baseline/security APPROVED; data backlog |
+| `02-architecture` | architecture, security, data and compatibility documents | map DRAFT; approved baselines present |
 | `03-contracts` | common contracts | Common Contract Foundation APPROVED |
 | `04-modules` | 13 playbooks | pending |
 | `05-tasks` | literal CLI packets | TASK-001 completed |
 | `06-reports` | accepted/rejected evidence | REPORT-001 accepted |
-| `07-quality` | quality | backlog |
-| `08-operations` | operations | environment isolation APPROVED; remaining operations backlog |
-| `09-references` | official evidence | backlog |
+| `07-quality` | quality | Run 5 next |
+| `08-operations` | operations | environment isolation APPROVED; remaining backlog |
+| `09-references` | external reference evidence | backlog |
 
 Statuses: `DRAFT`, `CANDIDATE`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. Change rules: `DOCUMENTATION_GOVERNANCE.md`.
