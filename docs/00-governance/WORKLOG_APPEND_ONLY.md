@@ -194,3 +194,37 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Подготовить Run 5 — Quality documentation — Test Strategy, Fixture Registry, Acceptance Matrix and Reference Regression Policy only.
+
+---
+
+## WL-0009 — 2026-07-07 — Quality Foundation accepted and governance state synchronized
+
+**Тип:** documentation foundation acceptance / governance synchronization
+
+**Источник доказательства:**
+
+- independent literal review of `docs/07-quality/TEST_STRATEGY_v1.0.md` published by commit `bbd27bd522d994e929eda79663f58ce80766b1d3`;
+- independent literal review of `docs/07-quality/FIXTURE_REGISTRY_v1.0.md` published by commit `fe705dedf7cc8640c632118ee150ffc83a86578f`;
+- independent literal review of `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md` published by commit `f804da85b270d4e782faa2375e0fb6c2aa15ab7b`;
+- independent literal review of `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md` published by commit `b6c7469e41c8f096f5c666f61cceea95378967fe`;
+- governance-state reconciliation in the same Run 5 publication change set.
+
+**Принято:**
+
+- `docs/07-quality/TEST_STRATEGY_v1.0.md`;
+- `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
+- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
+- `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
+
+**Границы принятия:**
+
+- framework-neutral quality gates, scenario dimensions, fake-dependency requirements and evidence package are documented;
+- canonical semantic fixtures cover contracts, ownership, replay, interruption, external failure, privacy, migration and reference-regression cases;
+- acceptance traceability and stop conditions are documented for foundation, module playbook and future task scopes;
+- external evidence lifecycle distinguishes current, stale, superseded, unavailable and disputed states without inventing provider facts;
+- no executable tests, fixture data files, CI/CD, provider calls, product-code, migration, database, runtime, service, infrastructure or deploy is created;
+- OD-001–OD-014 remain open.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 6 — Operations Environment and Observability documentation — Environment Matrix and Observability/Alerting boundaries only.
