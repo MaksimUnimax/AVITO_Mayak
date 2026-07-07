@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.13
+**Версия снимка:** 1.14
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.15 — Runs 1–12 published; Run 11 server sync accepted; Run 12 server synchronization required before Run 13`
+`A0.15 — Runs 1–13 published; Run 12 server sync accepted; Run 13 server synchronization required before Run 14`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 11 Telegram/MAX references were independently accepted on the server at GitHub SHA `642655a523af3591b1a024c39efa6978a064b2b8`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, expected parent/subject/paths and `WL-0015` confirmed, no GitHub/configuration mutation.
+Run 12 Platform & Contracts was independently accepted on the server at GitHub SHA `728b9062126fd7c2e816dde3a1a3ed9d42431cf2`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, expected parent/subject/paths, playbook evidence and `WL-0016` confirmed, no GitHub/configuration mutation.
 
-Run 12 publishes `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md`. It defines future application/package, common contract, idempotency, configuration, process-composition, dependency, fake, fixture and acceptance boundaries without creating implementation artifacts.
+Run 13 publishes `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md`. It defines account, identity, contact point, credential-reference, role assignment, session and challenge boundaries without creating implementation artifacts.
 
-Public `main` remains the factual source of truth. Run 12 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 12 published SHA and that report is independently verified.
+Public `main` remains the factual source of truth. Run 13 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 13 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -47,17 +47,18 @@ Public `main` remains the factual source of truth. Run 12 is not fully accepted 
 
 ### Module playbooks
 
-- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12 published; exact server sync pending.
-- Modules 02–13 remain RESERVED and are scheduled as Runs 13–24.
+- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12 accepted;
+- `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md` — Run 13 published; exact server sync pending.
+- Modules 03–13 remain RESERVED and are scheduled as Runs 14–24.
 
-## Platform & Contracts consequences
+## Identity & Access consequences
 
-- future source layout is singular under `src/mayak/` with platform/contracts/entrypoints/modules boundaries;
-- public contracts remain transport/framework/persistence/provider neutral;
-- Platform owns common conventions and reusable protocols, not foreign business state;
-- owning modules define commit points and persist business idempotency outcomes;
-- typed configuration, process composition, import rules, fake boundaries and migration gates are documented;
-- toolchain/dependency/code/database/migration work remains blocked until a separate exact task and proof gates.
+- `account_id` remains the internal account boundary and is not replaced by Telegram, MAX, email, phone or username.
+- Messenger identity is required for bot-first entry; phone is a separate verified contact point and not a primary key.
+- Automatic merge by weak signals is prohibited; account merge remains blocked by OD-008.
+- Phone+password and recovery policy remain blocked by OD-006; mandatory phone policy remains blocked by OD-007.
+- Roles and administrative privileges require server-side assignment and audit; UI flags or provider names are not authorization.
+- Credential material, one-time codes and provider payloads are not common contracts, audit payloads or fixture content.
 
 ## Current prohibitions
 
@@ -67,6 +68,6 @@ OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize `/opt/avito-mayak` to the exact Run 12 published GitHub SHA.
+1. Synchronize `/opt/avito-mayak` to the exact Run 13 published GitHub SHA.
 2. Verify local SHA, remote SHA, clean worktree, expected paths and no prohibited mutation.
-3. After independent acceptance, continue with Run 13 of 24 — Identity & Access `MODULE_PLAYBOOK.md`.
+3. After independent acceptance, continue with Run 14 of 24 — Entitlements & Billing `MODULE_PLAYBOOK.md`.

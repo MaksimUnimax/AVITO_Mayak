@@ -1,9 +1,22 @@
 # Identity & Access
 
-**Статус:** RESERVED — autonomous playbook ещё не принят.
+**Статус:** APPROVED documentation playbook v1.0; Run 13 server synchronization/acceptance pending.
 
-**Граница модуля:** Аккаунты, внешние identity, роли, credentials, sessions, link/auth challenges.
+Canonical playbook:
 
-До появления `MODULE_PLAYBOOK.md` и утверждённого contract package запрещено реализовывать модуль, создавать его таблицы, вводить форматы межмодульных сообщений или принимать архитектурные решения от имени модуля.
+- `MODULE_PLAYBOOK.md`
 
-Следующий документ для этой директории создаётся ChatGPT буквальным текстом после утверждения Technical Baseline and Contract Package.
+Module boundary:
+
+- internal account boundary;
+- account identities for Telegram, MAX, email, phone and future local credentials;
+- verified contact points;
+- credential references without raw secret material;
+- server-side role assignment;
+- auth sessions;
+- auth and identity-link challenges;
+- account-link/merge safety gates.
+
+The module does not own tariffs, Beacons, parser state, notification delivery, provider adapter payloads, admin work items or Web Cabinet presentation state.
+
+This publication creates no code, dependency files, lock, tests, migrations, database, runtime or infrastructure.

@@ -1,6 +1,6 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 2.2
+**Версия:** 2.3
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` published/active; `[ ]` not started; `[!]` blocked.
@@ -21,8 +21,8 @@
 - `[x] A0.14` Remaining provider references:
   - `[x] Run 11` Telegram and MAX reference policies plus cross-provider registry v1.1; exact server synchronization accepted at `642655a523af3591b1a024c39efa6978a064b2b8`.
 - `[~] A0.15` Thirteen module playbooks:
-  - `[~] Run 12` Platform & Contracts playbook published; exact server synchronization/acceptance pending;
-  - `[ ] Run 13` Identity & Access;
+  - `[x] Run 12` Platform & Contracts playbook; exact server synchronization accepted at `728b9062126fd7c2e816dde3a1a3ed9d42431cf2`;
+  - `[~] Run 13` Identity & Access playbook published; exact server synchronization/acceptance pending;
   - `[ ] Run 14` Entitlements & Billing;
   - `[ ] Run 15` Beacon Management;
   - `[ ] Run 16` Avito Parser Adapter;

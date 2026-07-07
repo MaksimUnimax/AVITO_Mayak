@@ -1,13 +1,13 @@
 # Маяк Авито — реестр модулей
 
-**Версия:** 1.1
+**Версия:** 1.2
 **Статус:** APPROVED registry derived from Architecture Baseline v1.1
 **Правило:** это реестр границ. Playbook status does not authorize implementation; each published run still requires exact server synchronization and independent acceptance.
 
 | № | ID каталога | Модуль | Владелец данных / граница | Playbook |
 |---:|---|---|---|---|
-| 01 | `01-platform-and-contracts` | Platform & Contracts | application skeleton, configuration conventions, common errors, idempotency conventions, migration/tooling conventions after approval; no foreign business state | v1.0 published; Run 12 sync pending |
-| 02 | `02-identity-and-access` | Identity & Access | accounts, identities, authentication records, roles, sessions, auth/link challenges | RESERVED — Run 13 |
+| 01 | `01-platform-and-contracts` | Platform & Contracts | application skeleton, configuration conventions, common errors, idempotency conventions, migration/tooling conventions after approval; no foreign business state | v1.0 accepted |
+| 02 | `02-identity-and-access` | Identity & Access | accounts, identities, authentication records, roles, sessions, auth/link challenges | v1.0 published; Run 13 sync pending |
 | 03 | `03-entitlements-and-billing` | Entitlements & Billing | tariffs, entitlements, subscriptions, future payment records | RESERVED — Run 14 |
 | 04 | `04-beacon-management` | Beacon Management | beacons, source URLs, extracted snapshots, overrides, configuration revisions | RESERVED — Run 15 |
 | 05 | `05-avito-parser-adapter` | Avito Parser Adapter | extraction/normalization of Avito search data; no direct notification delivery | RESERVED — Run 16 |
@@ -28,4 +28,5 @@
 - История объявлений и уведомления изолированы по `beacon_id`.
 - Framework, ORM and provider types do not become public intermodule contracts.
 - Platform & Contracts owns common conventions, not foreign business state.
+- Identity & Access owns account identity, contact, role, session and auth/link challenge state; adapters and Web Cabinet do not create separate customer databases.
 - Модульные границы и владение данными меняются только через decision log and approved contract/architecture change packet.
