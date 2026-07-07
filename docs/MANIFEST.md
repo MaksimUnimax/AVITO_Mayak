@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 1.4
+**Версия манифеста:** 1.5
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -13,7 +13,7 @@
 6. `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`
 7. relevant append-only decision/worklog entries
 8. `OPEN_DECISIONS.md`
-9. relevant architecture, data, contract, task, report, module playbook and reference evidence.
+9. relevant architecture, data, contract, quality, task, report, module playbook and reference evidence.
 
 ## Approved foundation documents
 
@@ -34,6 +34,13 @@
 - `docs/02-architecture/DATA_MODEL_v1.0.md`;
 - `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
 
+### Quality Foundation
+
+- `docs/07-quality/TEST_STRATEGY_v1.0.md`;
+- `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
+- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
+- `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
+
 ## Каталоги
 
 | Каталог | Назначение | Статус |
@@ -45,8 +52,8 @@
 | `04-modules` | 13 playbooks | pending |
 | `05-tasks` | literal CLI packets | TASK-001 completed |
 | `06-reports` | accepted/rejected evidence | REPORT-001 accepted |
-| `07-quality` | quality | Run 5 next |
-| `08-operations` | operations | environment isolation APPROVED; remaining backlog |
+| `07-quality` | quality gates, fixtures, acceptance and reference regression | Quality Foundation APPROVED |
+| `08-operations` | operations | environment isolation APPROVED; Run 6 next |
 | `09-references` | external reference evidence | backlog |
 
 Statuses: `DRAFT`, `CANDIDATE`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. Change rules: `DOCUMENTATION_GOVERNANCE.md`.
