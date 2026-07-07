@@ -1,13 +1,13 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 1.2
+**Версия:** 1.3
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` active; `[ ]` not started; `[!]` blocked.
 
 - `[x] A0.1–A0.6` Product/model/governance bootstrap accepted.
 - `[x] A0.7` TASK-001 technical environment evidence accepted; remote supervision introduced.
-- `[ ] A0.8` Architecture Foundation: baseline, environment isolation, security/privacy.
+- `[x] A0.8` Architecture Foundation: Architecture Baseline, Environment Isolation Policy and Security/Privacy Model accepted.
 - `[ ] A0.9` Common Contract Foundation.
 - `[ ] A0.10` Data model, migration and compatibility policy.
 - `[ ] A0.11` Quality strategy, fixtures, acceptance and regression policy.

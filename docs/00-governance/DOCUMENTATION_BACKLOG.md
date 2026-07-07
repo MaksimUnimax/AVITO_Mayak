@@ -1,23 +1,30 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.2
+**Версия:** 1.3
 **Статус:** APPROVED planning register
 
 ## DB-00 — accepted evidence and supervision
 
-`TASK-001`, `REPORT-001`, TASK-001 errata, remote-supervision protocol, ADR-0006 and WL-0004. This does not permit code or deploy.
+`TASK-001`, `REPORT-001`, TASK-001 errata, remote-supervision protocol, ADR-0006 and WL-0004/WL-0005. This does not permit code or deploy.
 
-## DB-01 — Architecture Foundation
+## DB-01 — Architecture Foundation — ACCEPTED
 
-`ARCHITECTURE_BASELINE_v1.0.md`, `ENVIRONMENT_ISOLATION_POLICY_v1.0.md`, `SECURITY_AND_PRIVACY_MODEL_v1.0.md`.
+- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`;
+- `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
+- `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
 
-## DB-02 — contracts
+Этот package фиксирует boundaries and gates only. It does not select stack, runtime, ingress, storage, secrets product, ports, deployment method or physical data model.
 
-`CONTRACT_PACKAGE_v1.0.md`, `ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`, `CONTRACT_CHANGE_POLICY_v1.0.md`.
+## DB-02 — contracts — NEXT
+
+- `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
+- `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
+- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
 
 ## DB-03 — data
 
-`DATA_MODEL_v1.0.md`, `MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+- `docs/02-architecture/DATA_MODEL_v1.0.md`;
+- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
 
 ## DB-04 — quality
 

@@ -1,21 +1,39 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.2
+**Версия снимка:** 1.3
 **Статус:** APPROVED snapshot
-**Дата:** 2026-07-06
+**Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.7 — TASK-001 evidence accepted; A0.8 Architecture Foundation pending`
+`A0.8 — Architecture Foundation accepted; A0.9 Common Contract Foundation pending`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
-Pre-package evidence baseline: `e017241824b3b3e90db1116faefc466791bef2e5`.
-Public `main` is factual source of truth; procedure: `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`.
 
-TASK-001 is accepted as limited proof-only evidence and is in `docs/05-tasks/completed/`. Shared-host facts do not permit use of foreign containers, databases, Nginx, ports, networks, volumes or secrets.
+Последний принятый foundation package опубликован commit `6c0d64237903d8e73248600d9f29a0cc6160b8ab`.
+
+Public `main` — фактический источник истины. Процедура независимой проверки: `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`.
+
+TASK-001 принят только как ограниченное proof-only evidence. Shared-host facts не разрешают использовать foreign containers, databases, Nginx, ports, networks, volumes или secrets.
+
+## Принятая Architecture Foundation
+
+Приняты только следующие documentation baseline documents:
+
+- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`;
+- `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
+- `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
+
+Они фиксируют modular-monolith boundaries, ограничения shared-host isolation и framework-independent security/privacy requirements.
+
+Они не выбирают implementation language, framework, package manager, queue, ingress, ports, storage implementation, secrets product, deployment method, physical database schema или migration tool.
 
 No product code, CI/CD, migrations, project service, deploy configuration, external key or new infrastructure exists. Existing approved ADRs remain authoritative only within their recorded scope; unresolved items remain in `OPEN_DECISIONS.md`.
 
 ## Next safe step
 
-Run 2 of 23: Architecture Baseline, Environment Isolation Policy and Security/Privacy Model as documentation only.
+Run 3 of 23: Common Contract Foundation documentation only:
+
+- `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
+- `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
+- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.

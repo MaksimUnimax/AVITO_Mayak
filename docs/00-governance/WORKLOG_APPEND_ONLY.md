@@ -113,3 +113,27 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Провести независимую GitHub-проверку corrected Run 1 package и только затем решать, принят ли Run 1.
+
+---
+
+## WL-0006 — 2026-07-07 — Architecture Foundation accepted and governance state synchronized
+
+**Тип:** documentation foundation acceptance / governance synchronization
+**Источник доказательства:** independent GitHub review of public commit `6c0d64237903d8e73248600d9f29a0cc6160b8ab`.
+
+**Принято:**
+
+- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.0.md`;
+- `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
+- `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
+
+**Границы принятия:**
+
+- architecture foundation фиксирует existing modular-monolith, isolation and security/privacy boundaries;
+- она не выбирает stack, runtime, ports, ingress, storage, secrets product, deployment method, physical database schema или migrations;
+- product-code, CI/CD, infrastructure, deploy и external integrations остаются запрещёнными;
+- open decisions остаются открытыми.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 3 — Common Contract Foundation — только из полного literal text ChatGPT.
