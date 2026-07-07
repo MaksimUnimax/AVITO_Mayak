@@ -288,3 +288,32 @@ ChatGPT decision: adopt independent remote repository supervision; keep code, in
 **Следующий безопасный шаг:**
 
 Подготовить Run 8 — Windows Egress Agent Runbook — documentation only, without agent installation, route creation, services, ports, credentials or runtime changes.
+
+---
+
+## WL-0012 — 2026-07-07 — Windows Egress Agent Boundaries accepted and governance state synchronized
+
+**Тип:** documentation foundation acceptance / governance synchronization
+
+**Источник доказательства:**
+
+- independent literal review of `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md` published by commit `8cd1082caa82c6eb61615f71b27f0bda10756c41`;
+- governance-state reconciliation in the same Run 8 publication change set.
+
+**Принято:**
+
+- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
+
+**Границы принятия:**
+
+- Egress Routing ownership and Windows agent non-ownership boundaries are documented;
+- agent, route, lease and transport-request identities/lifecycles are documented;
+- outbound-only/no-public-inbound default, trust/secret isolation, readiness, heartbeat, quarantine, fallback, idempotency and reconciliation boundaries are documented;
+- route failure, access restriction, malformed response and ambiguity cannot become clean parser/business success;
+- exact Windows host, runtime, service/task model, tunnel/VPN/proxy protocol, ports, credentials, thresholds, route priority/switching and Avito behavior remain open;
+- no agent, route, tunnel, service, scheduled task, inbound listener, port, credential, provider request, product-code, executable test, CI/CD, migration, database, container, deploy or runtime configuration is created;
+- OD-001–OD-014 remain open.
+
+**Следующий безопасный шаг:**
+
+Подготовить Run 9 — Avito Reference Registry, Policy and Evidence — only from verified official or primary sources, without parser implementation or provider traffic.
