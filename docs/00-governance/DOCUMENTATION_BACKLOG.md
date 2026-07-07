@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.9
+**Версия:** 1.10
 **Статус:** APPROVED planning register
 
 ## DB-00 — accepted evidence and supervision
@@ -61,17 +61,20 @@ This package fixes backup identity/lifecycle, restore and recovery gates, releas
 
 This package fixes Egress Routing ownership, agent/route/lease/request lifecycle, outbound-only exposure default, readiness, quarantine, fallback, idempotency, reconciliation, Windows-host isolation and evidence requirements. It creates no agent, route, tunnel, service, scheduled task, inbound listener, port, credential, provider request or runtime configuration.
 
-### Run 9 — Avito references — NEXT
+### Run 9 — Avito references — ACCEPTED
 
 - `docs/09-references/REFERENCE_REGISTRY_v1.0.md`;
 - `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
 - `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`.
 
-### Remaining DB-05 route
+This package records dated official/primary source identities, exact scope, lifecycle status, limitations, unsupported claims, revalidation gates and reference-regression mapping. It distinguishes the official Avito Ads product from consumer search and treats `Duff89/parser_avito` only as an exact-revision implementation reference. No provider request, parser, credential, route or runtime is created. OD-009–OD-011 remain unresolved.
 
-- Run 10: Telegram and MAX reference policies.
+### Run 10 — Telegram and MAX references — NEXT
 
-These runs define documentation boundaries and evidence only. They do not create runtime, deploy, monitoring stack, backups, credentials, routes, agents or provider implementations.
+- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
+- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
+
+These runs define documentation boundaries and evidence only. They do not create bots, runtime, deploy, credentials, routes, agents or provider implementations.
 
 ## DB-06 — playbooks
 
