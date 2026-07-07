@@ -1,16 +1,16 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.4
+**Версия снимка:** 1.5
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-07
 
 ## Фаза
 
-`A0.9 — Common Contract Foundation accepted; A0.10 Data Model and Migration/Compatibility Policy pending`
+`A0.10 — Data Model and Migration/Compatibility Policy accepted; A0.11 Quality documentation pending`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Последний принятый Common Contract Foundation package опубликован commit `b6fd8ff5119e9b85f1e307962e97513e1ee401b2`; governance correction опубликован commit `df372c71579fe7dc1f84e479d0894803f4b22322`.
+Run 4 Data and Compatibility package опубликован commits `3d267e4a9ebe8a27b199ab07aa4e1973e0f7e030` и `805837abc67c0423ea391669d51e352fa9bedc48` и принят после независимого literal review public `main`.
 
 Public `main` — фактический источник истины. Процедура независимой проверки: `REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`.
 
@@ -30,15 +30,24 @@ TASK-001 принят только как ограниченное proof-only ev
 - `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
 - `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`.
 
-Принятые foundation documents фиксируют boundaries, ownership, contract semantics, error and idempotency rules, security/privacy limits and document-change control.
+### Data and Compatibility Foundation
 
-Они не выбирают implementation language, framework, package manager, queue, transport, serialization, ingress, ports, storage implementation, secrets product, deployment method, physical database schema или migration tool.
+- `docs/02-architecture/DATA_MODEL_v1.0.md`;
+- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+
+Принятые foundation documents фиксируют modular boundaries, ownership, conceptual data domains, contract semantics, error/idempotency rules, migration/compatibility gates, security/privacy limits and document-change control.
+
+Они не выбирают implementation language, framework, package manager, queue, transport, serialization, ingress, ports, storage implementation, secrets product, deployment method, physical database schema, migration tool или runtime topology.
 
 No product code, CI/CD, migrations, project service, deploy configuration, external key or new infrastructure exists. Existing approved ADRs remain authoritative only within their recorded scope; unresolved items remain in `OPEN_DECISIONS.md`.
 
 ## Next safe step
 
-Run 4 of 23: Data Model and Migration/Compatibility Policy documentation only:
+Run 5 of 23: Quality documentation only:
 
-- `docs/02-architecture/DATA_MODEL_v1.0.md`;
-- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+- `docs/07-quality/TEST_STRATEGY_v1.0.md`;
+- `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
+- `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`;
+- `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
+
+Run 5 must not create tests, fixtures as executable code, CI/CD, product-code, migrations, databases, deploy or runtime configuration. It defines documentation gates and evidence expectations only.
