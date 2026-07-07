@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 1.7
+**Версия:** 1.8
 **Статус:** APPROVED planning register
 
 ## DB-00 — accepted evidence and supervision
@@ -48,18 +48,23 @@ This package fixes framework-neutral quality gates, canonical semantic fixtures,
 
 This package fixes environment ownership/readiness, shared-host restrictions, health semantics, signal classes, redaction and alert lifecycle without provisioning or monitoring configuration.
 
-### Run 7 — backup and release boundaries — NEXT
+### Run 7 — backup and release boundaries — ACCEPTED
 
 - `docs/08-operations/BACKUP_AND_RECOVERY_v1.0.md`;
 - `docs/08-operations/DEPLOYMENT_AND_RELEASE_RUNBOOK_v1.0.md`.
 
+This package fixes backup identity/lifecycle, restore and recovery gates, release/deployment lifecycle, validation, rollback and roll-forward boundaries. It creates no backup, snapshot, restore, pipeline, deployment, ingress, port, TLS or runtime configuration.
+
+### Run 8 — Windows egress — NEXT
+
+- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`.
+
 ### Remaining DB-05 route
 
-- Run 8: `WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`;
 - Run 9: Avito reference registry, policy and evidence;
 - Run 10: Telegram and MAX reference policies.
 
-These runs define documentation boundaries and evidence only. They do not create runtime, deploy, monitoring stack, credentials or provider implementations.
+These runs define documentation boundaries and evidence only. They do not create runtime, deploy, monitoring stack, backups, credentials or provider implementations.
 
 ## DB-06 — playbooks
 
