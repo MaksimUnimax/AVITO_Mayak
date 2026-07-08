@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.21
+**Версия снимка:** 1.22
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-08
 
 ## Фаза
 
-`A0.15 — Runs 1–20 published; Run 19 server sync accepted; Run 20 server synchronization required before Run 21`
+`A0.15 — Runs 1–21 published; Run 20 server sync accepted; Run 21 server synchronization required before Run 22`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 19 Notification Delivery was independently accepted on the server at GitHub SHA `c1fd2f78883880a58e337753a5013d81a65e50d7`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact nine-commit publication range, nine-path set, notification event/outbox/attempt/reconciliation evidence and `ND-HISTORY-0001` confirmed, no GitHub/configuration mutation.
+Run 20 Telegram Adapter was independently accepted on the server at GitHub SHA `6fcc1b9a77a48b7f02cc5aba640f20a3ff23a461`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact nine-commit publication range, nine-path set, Telegram identity/update/Mini-App/outbound/reconciliation evidence and `TG-HISTORY-0001` confirmed, no GitHub/configuration mutation.
 
-Run 20 publishes `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md`. It defines Telegram provider identity mapping, inbound update authenticity/replay boundaries, command/callback/deep-link normalization, Mini App initData validation boundary, outbound provider request/outcome mapping and provider-effect reconciliation without creating a bot, token, webhook, polling loop, Mini App, SDK, provider call, database schema, migration, endpoint, certificate, port, service or runtime.
+Run 21 publishes `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md`. It defines MAX partner/eligibility gates, provider identity mapping, Webhook and Long Polling boundaries, update authenticity/replay semantics, Mini App WebAppData validation boundary, contact-request boundary, outbound provider request/outcome mapping and provider-effect reconciliation without creating a partner profile, bot, token, webhook subscription, Long Polling loop, Mini App, SDK, provider call, database schema, migration, endpoint, certificate/trust-store change, port, service or runtime.
 
-Public `main` remains the factual source of truth. Run 20 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 20 published SHA and that report is independently verified.
+Public `main` remains the factual source of truth. Run 21 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 21 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -56,29 +56,32 @@ Public `main` remains the factual source of truth. Run 20 is not fully accepted 
 - `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md` — Run 17 accepted;
 - `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md` — Run 18 accepted;
 - `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md` — Run 19 accepted;
-- `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md` — Run 20 published; exact server sync pending.
-- Modules 10–13 remain RESERVED and are scheduled as Runs 21–24.
+- `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md` — Run 20 accepted;
+- `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md` — Run 21 published; exact server sync pending.
+- Modules 11–13 remain RESERVED and are scheduled as Runs 22–24.
 
-## Telegram Adapter consequences
+## MAX Adapter consequences
 
-- Telegram Adapter is the only owner of Telegram provider identity mapping, update intake evidence, Telegram update replay/deduplication state, command/callback/deep-link normalization, Mini App validation result references and Telegram provider outcome mapping.
-- Telegram user/chat/message/update IDs are external provider identifiers and do not replace internal `account_id`, `beacon_id`, Notification outbox/attempt IDs or common correlation IDs.
-- Telegram Adapter does not own generic notification outbox, Identity account/linking state, Beacon configuration, Scan state, Egress route state or MAX provider mapping.
-- Webhook and `getUpdates` remain unselected operational modes. Run 20 does not create endpoint, polling loop, certificate, port or provider runtime.
-- `initDataUnsafe` is not trusted. Future Mini App usage must validate raw `Telegram.WebApp.initData` server-side and still route identity/linking through Identity & Access.
-- Telegram Bot API `ok=true` is a provider API result class, not human read, click, generic Notification delivery success or business success.
-- Unknown Telegram provider send/update effect is reconcile-first and must not be retried blindly.
-- Exact command catalog, supported surfaces, mode per environment, bot token storage, retry/rate values, retention, Mini App screens and provider SDK remain unselected.
+- MAX Adapter is the only owner of MAX provider identity mapping, eligibility/moderation evidence references, update intake evidence, Webhook/Long Polling receipt evidence, event replay/deduplication state, command/callback/button/deep-link normalization, contact-validation references, Mini App validation result references and MAX provider outcome mapping.
+- MAX user/chat/message/update-related IDs are external provider identifiers and do not replace internal `account_id`, `beacon_id`, Notification outbox/attempt IDs or common correlation IDs.
+- MAX Adapter does not own generic notification outbox, Identity account/linking state, Beacon configuration, Scan state, Egress route state, Telegram provider mapping or legal eligibility decisions.
+- Partner eligibility, verified profile and moderation are explicit gates and are not assumed.
+- Production MAX update delivery uses Webhook under current official evidence; Long Polling remains development/test only and not production fallback.
+- Webhook endpoint/TLS/443/certificate/trust-store/secret verification are operations/security gates and are not created by Run 21.
+- MAX Mini App launch data is not trusted until server-side WebAppData validation succeeds; account linking still routes through Identity & Access.
+- MAX API success is a provider operation result class, not human read, click, generic Notification delivery success or business success.
+- Unknown MAX provider send/update effect is reconcile-first and must not be retried blindly.
+- Exact command catalog, supported surfaces, eligibility evidence, partner/bot/moderation workflow, token storage, retry/rate values, retention, Mini App screens and provider SDK remain unselected.
 - OD-006, OD-007, OD-008, OD-012, OD-013 and OD-014 remain unresolved and all OD-001–OD-014 remain open.
 
 ## Current prohibitions
 
-No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, bot, Telegram/MAX request, webhook, polling loop, Mini App, token, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
+No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, bot, Telegram/MAX request, webhook, Long Polling loop, Mini App, token, partner profile, moderation submission, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate/trust-store change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
 
 OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize `/opt/avito-mayak` to the exact Run 20 published GitHub SHA.
-2. Verify local SHA, remote SHA, clean worktree, publication scope, literal Telegram identity/update/Mini-App/outbound/reconciliation boundaries and no prohibited mutation.
-3. After independent acceptance, continue with Run 21 of 24 — MAX Adapter `MODULE_PLAYBOOK.md`.
+1. Synchronize `/opt/avito-mayak` to the exact Run 21 published GitHub SHA.
+2. Verify local SHA, remote SHA, clean worktree, publication scope, literal MAX eligibility/Webhook/Long-Polling/Mini-App/contact/outbound/reconciliation boundaries and no prohibited mutation.
+3. After independent acceptance, continue with Run 22 of 24 — Admin & Support `MODULE_PLAYBOOK.md`.
