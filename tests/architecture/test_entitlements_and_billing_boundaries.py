@@ -13,6 +13,7 @@ ALLOWED_IMPORT_ROOTS = {
     "manual_access",
     "pydantic",
     "policies",
+    "usage_consumption",
     "typing",
 }
 
@@ -23,6 +24,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/entitlements_and_billing/policies.py"),
     Path("src/mayak/modules/entitlements_and_billing/fixtures.py"),
     Path("src/mayak/modules/entitlements_and_billing/evaluation.py"),
+    Path("src/mayak/modules/entitlements_and_billing/usage_consumption.py"),
 )
 
 
