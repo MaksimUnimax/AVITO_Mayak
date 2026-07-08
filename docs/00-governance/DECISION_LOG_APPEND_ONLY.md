@@ -337,3 +337,35 @@ The first implementation authorization must be a separate proof/toolchain task t
 - EB-06 must not implement database schema, migrations, repositories, runtime quota decrement, Beacon mutation, Scan Orchestration mutation, Notification Delivery mutation, payment/provider integration, Admin UI/Web Cabinet UI, Docker/CI/CD/deploy/runtime configuration, secrets, tokens or credentials.
 - Beacon Management, Scan Orchestration and Notification Delivery integration remain gated by their own accepted module contracts.
 - Provider/payment runtime remains blocked until provider-specific evidence and exact tasks.
+
+## ADR-0013 — 2026-07-08 — Payment provider official evidence capture
+
+**Статус:** APPROVED
+
+**Модуль:** `03-entitlements-and-billing`
+
+**Открывает gate:** EB-08 official provider evidence/reference capture for later planning only.
+
+**Не открывает:** runtime provider adapter, provider SDK/API calls, webhooks, payment account setup, invoice/receipt/tax implementation, refunds runtime, recurring billing, provider-derived entitlement grants, database schema, migrations, repositories, persistence, Admin UI, Web Cabinet UI, Beacon mutation, scheduler integration, notification sending, Docker, CI/CD, deploy, runtime configuration, secrets, tokens or payment credentials.
+
+**Контекст:** The module playbook keeps payment-provider work blocked until exact provider-specific scope is approved. The current owner policy remains manual renewal only and manual refunds only, with no recurring payments now. EB-08 needs official provider references captured as governance evidence before later planning can define deterministic semantic boundaries. Provider response remains external evidence and never grants access by itself.
+
+**Решение:**
+
+1. Capture the official YooKassa API reference as provider evidence for future planning only.
+2. Capture the official Telegram bot payments documentation for digital goods/services and Telegram Stars as provider evidence for future planning only.
+3. Capture the official T-Bank internet acquiring and T-API documentation as provider evidence for future planning only.
+4. Treat provider response as non-authority evidence only.
+5. Treat raw provider payload as not being entitlement authority.
+6. Preserve the current owner policy: manual renewal only and manual refunds only.
+7. Preserve the current owner policy that recurring billing is not implemented now.
+8. Require any future EB-08 implementation to use an exact provider-specific task before runtime adapter work.
+9. Keep `OD-010`, `OD-011` and `OD-013` open.
+
+**Consequences:**
+
+- EB-08 may use these official references for later provider-boundary planning and documentation only.
+- This decision does not authorize provider SDK/API calls, webhook endpoints, payment account setup, receipts, invoices, refunds automation, recurring billing, card data handling, database access, migrations, Admin UI, Web Cabinet UI or secrets handling.
+- Payment evidence remains external evidence and never grants access by itself.
+- Raw provider payload must not become entitlement authority.
+- `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.

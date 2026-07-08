@@ -118,3 +118,29 @@ For current planning after `ADR-0012`:
 | OD-010 | OPEN | Country-wide availability remains unresolved. |
 | OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
 | OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
+
+---
+
+## Governance capture update — 2026-07-08 — EB-08 official provider evidence capture
+
+`ADR-0013` captures official provider evidence for EB-08 planning/reference only.
+
+This update closes the official evidence blocker for provider-reference planning only. It does not open runtime provider adapter, provider SDK/API/webhooks, payment account setup, invoice/receipt/tax implementation, refunds automation, recurring billing, payment reconciliation/refunds for EB-09, persistence/migrations, Admin UI, Web Cabinet runtime or secrets/tokens.
+
+For current planning after `ADR-0013`:
+
+| Item | Status after ADR-0013 | Notes |
+|---|---|---|
+| Official provider evidence blocker | CLOSED_BY_ADR_0013 | EB-08 planning/reference may use the captured official provider references. |
+| Runtime provider adapter | BLOCKED | Still requires a separate exact provider-specific task. |
+| Provider SDK/API/webhooks | BLOCKED | Not authorized by ADR-0013. |
+| Payment account setup | BLOCKED | Not authorized by ADR-0013. |
+| Invoice/receipt/tax runtime | BLOCKED | Not authorized by ADR-0013. |
+| Refunds automation | BLOCKED | Manual refunds only remain the current policy. |
+| Recurring billing | BLOCKED | Recurring billing remains not implemented. |
+| Payment reconciliation/refunds for EB-09 | BLOCKED | Remains a later exact task boundary. |
+| Persistence/migrations | BLOCKED | Not authorized by ADR-0013. |
+| Admin UI/Web Cabinet runtime | BLOCKED | Not authorized by ADR-0013. |
+| OD-010 | OPEN | Country-wide availability remains unresolved. |
+| OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
+| OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
