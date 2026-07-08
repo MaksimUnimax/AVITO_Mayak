@@ -11,12 +11,20 @@ def test_identity_and_access_package_exports_semantic_primitives() -> None:
     assert module.MODULE_ID == ia.MODULE_ID
     assert module.Account is ia.Account
     assert module.AccountIdentity is ia.AccountIdentity
+    assert module.ActorContext is ia.ActorContext
+    assert module.ActorContextValidationState is ia.ActorContextValidationState
+    assert module.AuditReference is ia.AuditReference
     assert module.ContactPoint is ia.ContactPoint
     assert module.CredentialReference is ia.CredentialReference
     assert module.RoleAssignment is ia.RoleAssignment
+    assert module.RoleAssignmentDecision is ia.RoleAssignmentDecision
     assert module.AuthSession is ia.AuthSession
     assert module.AuthChallenge is ia.AuthChallenge
     assert module.IdentityLinkChallenge is ia.IdentityLinkChallenge
+    assert module.RoleScope is ia.RoleScope
+    assert module.RoleScopeKind is ia.RoleScopeKind
+    assert module.TargetScope is ia.TargetScope
+    assert module.TargetScopeKind is ia.TargetScopeKind
     assert module.SYNTHETIC_FIXTURE_IDS == ia.SYNTHETIC_FIXTURE_IDS
 
 

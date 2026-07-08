@@ -5,6 +5,9 @@ from mayak.platform.boundaries import IDENTITY_AND_ACCESS_MODULE_ID
 from .contracts import (
     Account,
     AccountIdentity,
+    ActorContext,
+    ActorContextValidationState,
+    AuditReference,
     AuthChallenge,
     AuthChallengeState,
     AuthSession,
@@ -16,7 +19,12 @@ from .contracts import (
     IdentityLinkChallengeState,
     IdentityProvider,
     RoleAssignment,
+    RoleAssignmentDecision,
     RoleAssignmentState,
+    RoleScope,
+    RoleScopeKind,
+    TargetScope,
+    TargetScopeKind,
 )
 from .fixtures import SYNTHETIC_FIXTURE_IDS
 
@@ -25,6 +33,9 @@ MODULE_ID = IDENTITY_AND_ACCESS_MODULE_ID
 __all__ = [
     "Account",
     "AccountIdentity",
+    "ActorContext",
+    "ActorContextValidationState",
+    "AuditReference",
     "AuthChallenge",
     "AuthChallengeState",
     "AuthSession",
@@ -36,7 +47,12 @@ __all__ = [
     "IdentityLinkChallengeState",
     "IdentityProvider",
     "MODULE_ID",
+    "RoleAssignmentDecision",
     "RoleAssignment",
     "RoleAssignmentState",
+    "RoleScope",
+    "RoleScopeKind",
     "SYNTHETIC_FIXTURE_IDS",
+    "TargetScope",
+    "TargetScopeKind",
 ]

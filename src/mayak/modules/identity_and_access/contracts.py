@@ -27,6 +27,31 @@ class ContactPointKind(str, Enum):
     PHONE = "PHONE"
 
 
+class ActorContextValidationState(str, Enum):
+    """Semantic actor-context validation outcomes."""
+
+    VERIFIED = "VERIFIED"
+    UNAUTHENTICATED = "UNAUTHENTICATED"
+    FORBIDDEN = "FORBIDDEN"
+    AMBIGUOUS = "AMBIGUOUS"
+    STALE = "STALE"
+
+
+class RoleScopeKind(str, Enum):
+    """Semantic role-scope kinds without transport or persistence details."""
+
+    ACCOUNT = "ACCOUNT"
+    SUPPORT = "SUPPORT"
+
+
+class TargetScopeKind(str, Enum):
+    """Semantic target-scope kinds without runtime authority payloads."""
+
+    ACCOUNT = "ACCOUNT"
+    CONTACT_POINT = "CONTACT_POINT"
+    ROLE_ASSIGNMENT = "ROLE_ASSIGNMENT"
+
+
 class RoleAssignmentState(str, Enum):
     """Semantic role assignment states."""
 
@@ -68,6 +93,53 @@ class IdentityLinkChallengeState(str, Enum):
     REPLAYED = "REPLAYED"
     FOREIGN_ACCOUNT_REJECTED = "FOREIGN_ACCOUNT_REJECTED"
     BLOCKED = "BLOCKED"
+
+
+class AuditReference(_SemanticPrimitive):
+    """Safe audit reference semantics without raw payload or secret names."""
+
+    audit_reference_id: str = Field(min_length=1)
+    audit_actor_ref: str = Field(min_length=1)
+    audit_target_ref: str = Field(min_length=1)
+    audit_scope_ref: str = Field(min_length=1)
+    audit_outcome_ref: str = Field(min_length=1)
+
+
+class RoleScope(_SemanticPrimitive):
+    """Role-scope primitive for server-authorized role assignment semantics."""
+
+    role_scope_kind: RoleScopeKind
+    role_scope_id: str = Field(min_length=1)
+
+
+class TargetScope(_SemanticPrimitive):
+    """Target-scope primitive for server-authorized role assignment semantics."""
+
+    target_scope_kind: TargetScopeKind
+    target_scope_id: str = Field(min_length=1)
+
+
+class ActorContext(_SemanticPrimitive):
+    """Validated actor context with explicit outcome semantics."""
+
+    actor_context_id: str = Field(min_length=1)
+    validation_state: ActorContextValidationState
+    account_id: str | None = Field(default=None, min_length=1)
+    actor_reference_id: str | None = Field(default=None, min_length=1)
+    role_scope: RoleScope | None = None
+    target_scope: TargetScope | None = None
+    audit_reference: AuditReference | None = None
+
+
+class RoleAssignmentDecision(_SemanticPrimitive):
+    """Server-authorized role assignment outcome without runtime authority."""
+
+    role_assignment_decision_id: str = Field(min_length=1)
+    decision_state: RoleAssignmentState
+    actor_context: ActorContext
+    role_scope: RoleScope
+    target_scope: TargetScope
+    audit_reference: AuditReference | None = None
 
 
 class Account(_SemanticPrimitive):
@@ -141,6 +213,9 @@ class IdentityLinkChallenge(_SemanticPrimitive):
 __all__ = [
     "Account",
     "AccountIdentity",
+    "ActorContext",
+    "ActorContextValidationState",
+    "AuditReference",
     "AuthChallenge",
     "AuthChallengeState",
     "AuthSession",
@@ -151,6 +226,11 @@ __all__ = [
     "IdentityLinkChallenge",
     "IdentityLinkChallengeState",
     "IdentityProvider",
+    "RoleAssignmentDecision",
     "RoleAssignment",
     "RoleAssignmentState",
+    "RoleScope",
+    "RoleScopeKind",
+    "TargetScope",
+    "TargetScopeKind",
 ]
