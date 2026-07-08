@@ -1,9 +1,11 @@
 # Notification Delivery
 
-**Статус:** RESERVED — autonomous playbook ещё не принят.
+**Статус:** APPROVED documentation playbook — Run 19 published; exact server synchronization/acceptance pending.
 
-**Граница модуля:** Notification events, durable outbox, deduplication, retries и delivery logs.
+**Граница модуля:** Notification event intake, durable outbox, deduplication, delivery attempts, delivery logs and delivery reconciliation state.
 
-До появления `MODULE_PLAYBOOK.md` и утверждённого contract package запрещено реализовывать модуль, создавать его таблицы, вводить форматы межмодульных сообщений или принимать архитектурные решения от имени модуля.
+Canonical playbook: `MODULE_PLAYBOOK.md`.
 
-Следующий документ для этой директории создаётся ChatGPT буквальным текстом после утверждения Technical Baseline and Contract Package.
+Этот документ не разрешает implementation. До отдельного exact implementation task запрещено создавать product-code, tables, migrations, queue/worker, provider adapter runtime, Telegram/MAX calls, bot, notification delivery execution, credentials, secrets, services, ports or deployment.
+
+Следующий документационный модуль после acceptance Run 19: `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md`.
