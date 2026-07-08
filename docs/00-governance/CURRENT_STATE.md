@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.24
+**Версия снимка:** 1.25
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-08
 
 ## Фаза
 
-`A0.15 — Runs 1–23 published; Run 22 server sync accepted; Run 23 server synchronization required before Run 24`
+`A0.15 — Runs 1–24 published; Run 23 server sync accepted; Run 24 server synchronization required before final audit`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 22 Admin & Support was independently accepted on the server at GitHub SHA `1668a01a65abf7c816c85ea062741bcfcb086645`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact nine-commit publication range, nine-path set, Admin & Support support-case/read/command/audit/escalation/redaction evidence and `ADMIN-HISTORY-0001` confirmed, no GitHub/configuration mutation.
+Run 23 Web Cabinet was independently accepted on the server at GitHub SHA `1f86b8c131b8ac7d456184e4ed2ba7c1ddad8b05`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact nine-commit publication range, nine-path set, Web Cabinet presentation/draft/read/command/support/analytics-blocking/redaction evidence and `WEB-HISTORY-0001` confirmed, no GitHub/configuration mutation.
 
-Run 23 publishes `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md`. It defines Web Cabinet presentation state, drafts, read-model composition, customer command envelopes, support handoff, analytics-blocking, Identity/session separation, owning-module dispatch and redaction/minimization boundaries without creating frontend, pages, API routes, authentication/session implementation, analytics, payment UI, database schema, migration, service, port, credential, secret or runtime.
+Run 24 publishes `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md`. It defines evidence-bound filter definitions, immutable catalog versions, filter option/range/dependency semantics, builder draft validation, Beacon/Web/Parser separation, OD-009 blocking, catalog compatibility warnings, false-success prohibition and redaction/minimization boundaries without creating exact supported-filter list, frontend builder, parser probes, provider calls, database schema, migration, service, port, credential, secret or runtime.
 
-Public `main` remains the factual source of truth. Run 23 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 23 published SHA and that report is independently verified.
+Public `main` remains the factual source of truth. Run 24 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 24 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -59,28 +59,30 @@ Public `main` remains the factual source of truth. Run 23 is not fully accepted 
 - `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md` — Run 20 accepted;
 - `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md` — Run 21 accepted;
 - `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md` — Run 22 accepted;
-- `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — Run 23 published; exact server sync pending.
-- Module 13 remains RESERVED and is scheduled as Run 24.
+- `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — Run 23 accepted;
+- `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — Run 24 published; exact server sync pending.
 
-## Web Cabinet consequences
+## Filter Catalog & Builder consequences
 
-- Web Cabinet owns web presentation state, draft form state, read-model composition, web command envelopes, safe explanation views, support handoff references, future analytics intent placeholders and safe web error/display state.
-- Web Cabinet is a presentation and command boundary over public module services. It does not write directly to Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Admin & Support or Filter Catalog state.
-- Identity & Access owns account, authentication, sessions, roles and identity linking. Web Cabinet does not create a second user database or treat browser/session state as Identity authority.
-- Draft form state and client-side validation are not authoritative business state until the owning module accepts a public command.
-- Web reads must preserve actor context, ownership scope, provenance, freshness/staleness, redaction and safe error semantics.
-- Analytics, screen composition, public site depth, retention/deletion/export, phone+password recovery, phone requirement and account merge remain open-decision scope.
-- Filter Catalog & Builder remains reserved until Run 24; Web Cabinet cannot invent visual filter definitions or builder behavior before that playbook is accepted.
+- Filter Catalog & Builder owns filter evidence references, filter definitions/options/ranges, capability profiles, dependency/compatibility rules, builder field semantics, catalog versioning, compatibility warnings and safe builder read models.
+- Beacon Management owns actual source URLs, accepted extracted snapshots, override sets, effective configuration, immutable revisions and lifecycle.
+- Avito Parser Adapter owns extraction/normalization evidence and warnings only; parser success does not approve supported editability.
+- Web Cabinet may render builder forms only from approved catalog definitions and cannot invent filter definitions.
+- Exact supported first-stage editable Avito filters by category remain blocked by OD-009; Run 24 does not approve a concrete filter list.
+- Internal Avito endpoint/embedded-state behavior remains unsupported as stable public contract.
+- Multivalue, range, unit, dependency, category/geography and compatibility semantics must be explicit before filter editability is accepted.
+- Catalog versions are immutable; supersession does not rewrite historical Beacon revisions.
 - OD-001–OD-014 remain unresolved.
 
 ## Current prohibitions
 
-No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, frontend, pages, API routes, UI components, analytics, payment UI, CI/CD, migrations, database, dependency installation, auth/session implementation, account merge, phone requirement, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, admin UI, support CRM, role implementation, audit store, provider request, bot, webhook, Mini App, token, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate/trust-store change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
+No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, frontend, pages, API routes, UI components, analytics, payment UI, CI/CD, migrations, database, dependency installation, auth/session implementation, account merge, phone requirement, filter catalog implementation, exact supported-filter list, parser probe, provider call, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, admin UI, support CRM, role implementation, audit store, bot, webhook, Mini App, token, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate/trust-store change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
 
 OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize `/opt/avito-mayak` to the exact Run 23 published GitHub SHA.
-2. Verify local SHA, remote SHA, clean worktree, publication scope, literal Web Cabinet presentation/draft/read/command/support/analytics-blocking/redaction boundaries and no prohibited mutation.
-3. After independent acceptance, continue with Run 24 of 24 — Filter Catalog & Builder `MODULE_PLAYBOOK.md`.
+1. Synchronize `/opt/avito-mayak` to the exact Run 24 published GitHub SHA.
+2. Verify local SHA, remote SHA, clean worktree, publication scope, literal Filter Catalog evidence/catalog/builder/Beacon/Web/Parser/OD-009/redaction boundaries and no prohibited mutation.
+3. After independent acceptance, perform final independent documentation audit across all Runs 1–24.
+4. Publish final governance acceptance only if the audit proves readiness.
