@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** ACTIVE documentation route — Runs 12–20 accepted; Run 21 published; Runs 22–24 remain RESERVED.
+**Статус:** ACTIVE documentation route — Runs 12–21 accepted; Run 22 published; Runs 23–24 remain RESERVED.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -15,11 +15,11 @@ Published:
 - `07-egress-routing/MODULE_PLAYBOOK.md` — Run 18; exact server synchronization accepted.
 - `08-notification-delivery/MODULE_PLAYBOOK.md` — Run 19; exact server synchronization accepted.
 - `09-telegram-adapter/MODULE_PLAYBOOK.md` — Run 20; exact server synchronization accepted.
-- `10-max-adapter/MODULE_PLAYBOOK.md` — Run 21; exact server synchronization/acceptance pending.
+- `10-max-adapter/MODULE_PLAYBOOK.md` — Run 21; exact server synchronization accepted.
+- `11-admin-and-support/MODULE_PLAYBOOK.md` — Run 22; exact server synchronization/acceptance pending.
 
 Reserved route:
 
-- Run 22 — Admin & Support;
 - Run 23 — Web Cabinet;
 - Run 24 — Filter Catalog & Builder.
 
