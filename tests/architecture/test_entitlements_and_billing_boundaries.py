@@ -10,6 +10,7 @@ ALLOWED_IMPORT_ROOTS = {
     "contracts",
     "fixtures",
     "mayak",
+    "manual_access",
     "pydantic",
     "policies",
     "typing",
@@ -18,6 +19,7 @@ ALLOWED_IMPORT_ROOTS = {
 MODULE_FILES = (
     Path("src/mayak/modules/entitlements_and_billing/__init__.py"),
     Path("src/mayak/modules/entitlements_and_billing/contracts.py"),
+    Path("src/mayak/modules/entitlements_and_billing/manual_access.py"),
     Path("src/mayak/modules/entitlements_and_billing/policies.py"),
     Path("src/mayak/modules/entitlements_and_billing/fixtures.py"),
     Path("src/mayak/modules/entitlements_and_billing/evaluation.py"),
