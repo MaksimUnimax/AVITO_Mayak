@@ -1,10 +1,10 @@
 # Автономные module playbooks
 
-**Статус:** ACTIVE documentation route — Runs 12–23 accepted; Run 24 published; final audit pending after exact Run 24 server synchronization.
+**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED — all 13 module playbooks are accepted; exact final server synchronization is pending.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
-Published:
+Accepted:
 
 - `01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12; exact server synchronization accepted.
 - `02-identity-and-access/MODULE_PLAYBOOK.md` — Run 13; exact server synchronization accepted.
@@ -18,10 +18,10 @@ Published:
 - `10-max-adapter/MODULE_PLAYBOOK.md` — Run 21; exact server synchronization accepted.
 - `11-admin-and-support/MODULE_PLAYBOOK.md` — Run 22; exact server synchronization accepted.
 - `12-web-cabinet/MODULE_PLAYBOOK.md` — Run 23; exact server synchronization accepted.
-- `13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — Run 24; exact server synchronization/acceptance pending.
+- `13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — Run 24; exact server synchronization accepted.
 
-All 13 module playbooks are published. Final documentation acceptance remains pending until Run 24 server synchronization and final independent audit are accepted.
+All 13 module playbooks are published and accepted. Final documentation acceptance is published in `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md` and remains pending only exact final server synchronization.
 
-Every playbook must include purpose/boundaries, data owner, confirmed and open decisions, public inputs/outputs, allowed/forbidden changes, immutable common contracts, dependencies/fakes, fixtures/test vectors, acceptance criteria, roadmap, report/handoff and append-only history.
+Every playbook includes purpose/boundaries, data owner, confirmed and open decisions, public inputs/outputs, allowed/forbidden changes, immutable common contracts, dependencies/fakes, fixtures/test vectors, acceptance criteria, roadmap, report/handoff and append-only history.
 
-A playbook is a prerequisite only. It does not authorize code, dependency installation, database, migrations, agents, routes, tunnels, ports, provider calls, notifications, services or deployment without a separate exact task and gates.
+A playbook is a prerequisite only. It does not authorize code, dependency installation, database, migrations, agents, routes, tunnels, ports, provider calls, notifications, services or deployment without a separate exact owner decision and gated task.
