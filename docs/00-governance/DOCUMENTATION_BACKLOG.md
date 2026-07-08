@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.10
+**Версия:** 2.11
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -86,15 +86,21 @@ Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy
 - Exact server synchronization accepted at `c1fd2f78883880a58e337753a5013d81a65e50d7`.
 - Notification event intake, durable outbox ownership, deduplication, delivery attempts, delivery logs, channel/provider handoff, retry/reconciliation boundary and false-success prohibition are fixed without queue/worker/runtime/provider implementation.
 
-### Run 20 — Telegram Adapter — PUBLISHED
+### Run 20 — Telegram Adapter — ACCEPTED
 
 - `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `6fcc1b9a77a48b7f02cc5aba640f20a3ff23a461`.
+- Telegram provider identity mapping, update authenticity/replay boundaries, command/callback/deep-link normalization, Mini App initData validation boundary, outbound provider request/outcome mapping and provider-effect reconciliation are fixed without bot/webhook/polling/Mini-App/runtime/provider implementation.
 
-The playbook fixes Telegram provider identity mapping, update authenticity/replay boundaries, command/callback/deep-link normalization, Mini App initData validation boundary, outbound provider request/outcome mapping and provider-effect reconciliation. Telegram Adapter does not own generic notification outbox, account identity, Beacon configuration, Scan state, Egress route state or MAX provider behavior. OD-006, OD-007, OD-008, OD-012, OD-013 and OD-014 remain unresolved. Webhook/getUpdates mode, endpoint/domain/TLS/port, bot token storage, command catalog, Mini App screens, retry/rate values, SDK/library choice and runtime remain blocked. Exact server synchronization to the Run 20 SHA is pending before acceptance.
+### Run 21 — MAX Adapter — PUBLISHED
 
-### Runs 21–24 — RESERVED
+- `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 10–13 in route order. MAX Adapter must map MAX provider-specific delivery/ingress behavior without owning generic notification outbox, account identity, Beacon configuration, Scan state, Egress route state or Telegram provider state.
+The playbook fixes MAX eligibility/moderation gates, provider identity mapping, Webhook and Long Polling boundaries, update authenticity/replay semantics, Mini App WebAppData validation boundary, contact-request boundary, outbound provider request/outcome mapping and provider-effect reconciliation. MAX Adapter does not own generic notification outbox, account identity, Beacon configuration, Scan state, Egress route state, Telegram provider state or legal eligibility decisions. OD-006, OD-007, OD-008, OD-012, OD-013 and OD-014 remain unresolved. Partner eligibility, bot/moderation workflow, endpoint/domain/TLS/port/certificate/trust-store, webhook runtime, Long Polling runtime, token storage, contact adoption, retry/rate values, SDK/library choice and runtime remain blocked. Exact server synchronization to the Run 21 SHA is pending before acceptance.
+
+### Runs 22–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 11–13 in route order. Admin & Support must use public services and read models without bypassing module ownership, authorization, audit, privacy or open decisions.
 
 ## DB-09 — Final audit
 
