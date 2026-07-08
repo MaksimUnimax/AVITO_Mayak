@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.19
+**Версия снимка:** 1.20
 **Статус:** APPROVED snapshot
-**Дата:** 2026-07-07
+**Дата:** 2026-07-08
 
 ## Фаза
 
-`A0.15 — Runs 1–18 published; Run 17 server sync accepted; Run 18 server synchronization required before Run 19`
+`A0.15 — Runs 1–19 published; Run 18 server sync accepted; Run 19 server synchronization required before Run 20`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 17 Scan Orchestration & Listing State was independently accepted on the server at GitHub SHA `7dc5eb6c26c7cbe82a5db42dfeffaff521f01d90`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact one-commit publication range, nine-path set, playbook/baseline/difference/governance evidence and `SOLS-HISTORY-0001` confirmed, no GitHub/configuration mutation.
+Run 18 Egress Routing was independently accepted on the server at GitHub SHA `fb55ec29708cb0f4de745504393fb02afb62ce3a`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact one-commit publication range, nine-path set, route/lease/outcome/reconciliation evidence and `ER-HISTORY-0001` confirmed, no GitHub/configuration mutation.
 
-Run 18 publishes `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`. It defines authoritative agent/route registration, capability/readiness/health/quarantine state, bounded route leases and transport assignments, server-side selection evidence, explicit dispatch/send outcomes, false-success prohibition, reconciliation-first ambiguity and a replaceable Windows Egress Agent boundary without choosing or creating transport/runtime infrastructure.
+Run 19 publishes `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md`. It defines authoritative notification event intake, durable outbox state, deduplication, delivery attempts, delivery logs, channel routing intent, retry/reconciliation boundaries and provider-adapter handoff without choosing or creating queue, worker, provider runtime, Telegram/MAX implementation, database schema, migration, notification delivery execution or infrastructure.
 
-Public `main` remains the factual source of truth. Run 18 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 18 published SHA and that report is independently verified.
+Public `main` remains the factual source of truth. Run 19 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 19 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -54,33 +54,29 @@ Public `main` remains the factual source of truth. Run 18 is not fully accepted 
 - `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md` — Run 15 accepted;
 - `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md` — Run 16 accepted;
 - `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md` — Run 17 accepted;
-- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md` — Run 18 published; exact server sync pending.
-- Modules 08–13 remain RESERVED and are scheduled as Runs 19–24.
+- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md` — Run 18 accepted;
+- `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md` — Run 19 published; exact server sync pending.
+- Modules 09–13 remain RESERVED and are scheduled as Runs 20–24.
 
-## Egress Routing consequences
+## Notification Delivery consequences
 
-- Egress Routing is the only owner of logical agent/route registration, capability/readiness/health/quarantine state, route leases, route-selection decisions, bounded transport assignments and transport reconciliation records.
-- `route_id`, `agent_id` and `lease_id` are semantic identifiers, not IP address, hostname, port or process aliases.
-- Windows Egress Agent is a replaceable execution dependency. It does not own Beacon, account, entitlement, scan/listing state, Parser mappings, notification state, primary database or secrets.
-- Agent heartbeat or an established connection does not prove readiness, route usability, request success, Parser success or business success.
-- A lease is bounded authorization for one declared purpose/scope and does not transfer ownership of business state or credentials.
-- Agent-side independent fallback is forbidden. Route selection, switching, restriction and quarantine decisions remain server-side and auditable.
-- Transport outcomes distinguish not dispatched, ambiguous dispatch, received-not-sent, sent response, explicit rejection, unavailable, restricted, malformed/unusable, failure, ambiguous and cancelled/expired classes.
-- `SENT_SUCCESS_RESPONSE` is only a transport outcome. Parser must still validate the response; Scan must still commit the business comparison.
-- Unknown dispatch/send state is reconcile-first and must not be retried blindly.
-- Route/agent failure, restriction, CAPTCHA, timeout, expired/revoked lease, malformed response or ambiguity never becomes clean Parser success or an empty listing set.
-- Public unauthenticated inbound exposure is prohibited by default, while exact connectivity technology/topology remains unselected.
-- Exact route technology, ports, tunnel/VPN/proxy, credentials, capabilities, priority, fallback, lease/heartbeat/readiness thresholds, retry/backoff/rate limits, cookies/sessions and retention remain blocked.
-- OD-009, OD-010, OD-011 and OD-013 remain unresolved and all OD-001–OD-014 remain open.
+- Notification Delivery is the only owner of notification event intake records, durable outbox items, delivery attempts, delivery logs, deduplication state and provider-delivery reconciliation state.
+- The module consumes only committed Scan domain events after the Scan commit point. Parser success, Egress transport success and Scan comparison success are not notification delivery success.
+- Baseline-established facts and baseline contents do not create user-visible listing-change deliveries under current v1.0 semantics.
+- Notification failure, ambiguity or retry state never rolls back committed Scan observations, listing state or domain events.
+- Telegram Adapter and MAX Adapter own provider-specific mapping/transport details after their playbooks; Notification Delivery owns generic outbox and delivery-attempt semantics.
+- Provider callback/webhook, message rendering, chat identity, bot runtime, Mini App behavior and channel-specific payload schemas remain adapter scope and are not selected by Run 19.
+- Exact queue/worker technology, delivery schedule, retry/backoff values, rate limits, channel priority, quiet hours, message templates, retention and read/ack semantics remain unselected.
+- OD-004, OD-012 and OD-013 remain unresolved and all OD-001–OD-014 remain open.
 
 ## Current prohibitions
 
-No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, Windows/server agent, service, scheduled task, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate change, parser/provider request, notification delivery, credential, secret, deployment or runtime configuration has been created.
+No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, bot, Telegram/MAX request, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
 
 OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize `/opt/avito-mayak` to the exact Run 18 published GitHub SHA.
-2. Verify local SHA, remote SHA, clean worktree, publication scope, literal route/lease/outcome/reconciliation boundaries and no prohibited mutation.
-3. After independent acceptance, continue with Run 19 of 24 — Notification Delivery `MODULE_PLAYBOOK.md`.
+1. Synchronize `/opt/avito-mayak` to the exact Run 19 published GitHub SHA.
+2. Verify local SHA, remote SHA, clean worktree, publication scope, literal notification event/outbox/attempt/reconciliation boundaries and no prohibited mutation.
+3. After independent acceptance, continue with Run 20 of 24 — Telegram Adapter `MODULE_PLAYBOOK.md`.
