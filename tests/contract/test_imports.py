@@ -2,6 +2,14 @@ from __future__ import annotations
 
 from importlib import import_module
 
+from mayak.contracts import (
+    CommonErrorOutcome,
+    CommonOutcome,
+    ContractMetadata,
+    ErrorCategory,
+    Result,
+    RetryClass,
+)
 from mayak.platform import boundaries
 
 
@@ -11,6 +19,15 @@ def test_platform_and_contracts_import() -> None:
 
     assert platform.MODULE_ID == boundaries.PLATFORM_AND_CONTRACTS_MODULE_ID
     assert contracts.MODULE_ID == boundaries.PLATFORM_AND_CONTRACTS_MODULE_ID
+
+
+def test_contract_package_exports_common_primitives() -> None:
+    assert ContractMetadata.__name__ == "ContractMetadata"
+    assert Result.__name__ == "Result"
+    assert ErrorCategory.__name__ == "ErrorCategory"
+    assert CommonOutcome.__name__ == "CommonOutcome"
+    assert CommonErrorOutcome.__name__ == "CommonErrorOutcome"
+    assert RetryClass.__name__ == "RetryClass"
 
 
 def test_all_module_packages_import() -> None:
