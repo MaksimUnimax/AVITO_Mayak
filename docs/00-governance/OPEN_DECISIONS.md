@@ -22,3 +22,26 @@
 | OD-012 | Нужен ли в будущем VK или другие каналы, помимо Telegram/MAX. | Notifications, adapters |
 | OD-013 | Сроки хранения истории, логов и персональных данных. | Data model, privacy, operations |
 | OD-014 | Состав будущих экранов публичного сайта и глубина аналитики клиента. | Web Cabinet, analytics |
+
+## Governance capture update — 2026-07-08 — OD-001–OD-005
+
+`ADR-0009` captures owner decisions for `03-entitlements-and-billing` and closes `OD-001`, `OD-002`, `OD-003`, `OD-004` and `OD-005` for the first-stage Free/Basic billing policy.
+
+The historical rows above are preserved for append-only traceability. For current planning after `ADR-0009`, the active unresolved decisions from this file are:
+
+| ID | Status after ADR-0009 | Notes |
+|---|---|---|
+| OD-001 | CLOSED_BY_ADR_0009 | Basic `990 ₽` is for one month. |
+| OD-002 | CLOSED_BY_ADR_0009 | Current stage has Free and Basic only; future tariffs must be admin-configurable but are not predeclared now. |
+| OD-003 | CLOSED_BY_ADR_0009 | Basic interval starts at 5 minutes with 5-minute step; Free interval starts at 3 hours with 3-hour step and one Beacon limit. |
+| OD-004 | CLOSED_BY_ADR_0009 | Expired paid access freezes all Beacons; user chooses and fixes one Free-compliant Beacon manually. |
+| OD-005 | CLOSED_BY_ADR_0009 | YooKassa, Telegram Stars and Tinkoff are provider candidates; first stage is manual renewal/manual refunds only, no recurring, no trial/grace/proration, RUB and Telegram Stars. |
+| OD-006 | OPEN | Not changed by ADR-0009. |
+| OD-007 | OPEN | Not changed by ADR-0009. |
+| OD-008 | OPEN | Not changed by ADR-0009. |
+| OD-009 | OPEN | Not changed by ADR-0009. |
+| OD-010 | OPEN | Country-wide availability remains unresolved. |
+| OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
+| OD-012 | OPEN | Not changed by ADR-0009. |
+| OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
+| OD-014 | OPEN | Not changed by ADR-0009. |
