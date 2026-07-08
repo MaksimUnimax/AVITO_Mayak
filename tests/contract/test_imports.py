@@ -7,6 +7,11 @@ from mayak.contracts import (
     CommonOutcome,
     ContractMetadata,
     ErrorCategory,
+    IdempotencyDecision,
+    IdempotencyDecisionOutcome,
+    IdempotencyFingerprint,
+    IdempotencyKey,
+    IdempotencyScope,
     Result,
     RetryClass,
 )
@@ -25,6 +30,11 @@ def test_contract_package_exports_common_primitives() -> None:
     assert ContractMetadata.__name__ == "ContractMetadata"
     assert Result.__name__ == "Result"
     assert ErrorCategory.__name__ == "ErrorCategory"
+    assert IdempotencyDecision.__name__ == "IdempotencyDecision"
+    assert IdempotencyDecisionOutcome.__name__ == "IdempotencyDecisionOutcome"
+    assert IdempotencyFingerprint.__name__ == "IdempotencyFingerprint"
+    assert IdempotencyKey.__name__ == "IdempotencyKey"
+    assert IdempotencyScope.__name__ == "IdempotencyScope"
     assert CommonOutcome.__name__ == "CommonOutcome"
     assert CommonErrorOutcome.__name__ == "CommonErrorOutcome"
     assert RetryClass.__name__ == "RetryClass"
