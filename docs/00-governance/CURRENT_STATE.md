@@ -1,20 +1,20 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 1.22
+**Версия снимка:** 1.23
 **Статус:** APPROVED snapshot
 **Дата:** 2026-07-08
 
 ## Фаза
 
-`A0.15 — Runs 1–21 published; Run 20 server sync accepted; Run 21 server synchronization required before Run 22`
+`A0.15 — Runs 1–22 published; Run 21 server sync accepted; Run 22 server synchronization required before Run 23`
 
 Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
 
-Run 20 Telegram Adapter was independently accepted on the server at GitHub SHA `6fcc1b9a77a48b7f02cc5aba640f20a3ff23a461`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact nine-commit publication range, nine-path set, Telegram identity/update/Mini-App/outbound/reconciliation evidence and `TG-HISTORY-0001` confirmed, no GitHub/configuration mutation.
+Run 21 MAX Adapter was independently accepted on the server at GitHub SHA `c114818a23a400e97ee6d83c8ab54e419fa401df`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact nine-commit publication range, nine-path set, MAX eligibility/Webhook/Long-Polling/Mini-App/contact/outbound/reconciliation evidence and `MAX-HISTORY-0001` confirmed, no GitHub/configuration mutation.
 
-Run 21 publishes `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md`. It defines MAX partner/eligibility gates, provider identity mapping, Webhook and Long Polling boundaries, update authenticity/replay semantics, Mini App WebAppData validation boundary, contact-request boundary, outbound provider request/outcome mapping and provider-effect reconciliation without creating a partner profile, bot, token, webhook subscription, Long Polling loop, Mini App, SDK, provider call, database schema, migration, endpoint, certificate/trust-store change, port, service or runtime.
+Run 22 publishes `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md`. It defines support cases, safe support reads, protected support commands, operator actor/scope gates, support audit records, escalation/reconciliation coordination, redaction/minimization boundaries and owning-module dispatch without creating admin UI, support CRM, role implementation, database schema, migration, audit store, service, port, credential, secret or runtime.
 
-Public `main` remains the factual source of truth. Run 21 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 21 published SHA and that report is independently verified.
+Public `main` remains the factual source of truth. Run 22 is not fully accepted until `/opt/avito-mayak` is synchronized to the exact Run 22 published SHA and that report is independently verified.
 
 ## Current approved foundations
 
@@ -57,31 +57,29 @@ Public `main` remains the factual source of truth. Run 21 is not fully accepted 
 - `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md` — Run 18 accepted;
 - `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md` — Run 19 accepted;
 - `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md` — Run 20 accepted;
-- `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md` — Run 21 published; exact server sync pending.
-- Modules 11–13 remain RESERVED and are scheduled as Runs 22–24.
+- `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md` — Run 21 accepted;
+- `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md` — Run 22 published; exact server sync pending.
+- Modules 12–13 remain RESERVED and are scheduled as Runs 23–24.
 
-## MAX Adapter consequences
+## Admin & Support consequences
 
-- MAX Adapter is the only owner of MAX provider identity mapping, eligibility/moderation evidence references, update intake evidence, Webhook/Long Polling receipt evidence, event replay/deduplication state, command/callback/button/deep-link normalization, contact-validation references, Mini App validation result references and MAX provider outcome mapping.
-- MAX user/chat/message/update-related IDs are external provider identifiers and do not replace internal `account_id`, `beacon_id`, Notification outbox/attempt IDs or common correlation IDs.
-- MAX Adapter does not own generic notification outbox, Identity account/linking state, Beacon configuration, Scan state, Egress route state, Telegram provider mapping or legal eligibility decisions.
-- Partner eligibility, verified profile and moderation are explicit gates and are not assumed.
-- Production MAX update delivery uses Webhook under current official evidence; Long Polling remains development/test only and not production fallback.
-- Webhook endpoint/TLS/443/certificate/trust-store/secret verification are operations/security gates and are not created by Run 21.
-- MAX Mini App launch data is not trusted until server-side WebAppData validation succeeds; account linking still routes through Identity & Access.
-- MAX API success is a provider operation result class, not human read, click, generic Notification delivery success or business success.
-- Unknown MAX provider send/update effect is reconcile-first and must not be retried blindly.
-- Exact command catalog, supported surfaces, eligibility evidence, partner/bot/moderation workflow, token storage, retry/rate values, retention, Mini App screens and provider SDK remain unselected.
-- OD-006, OD-007, OD-008, OD-012, OD-013 and OD-014 remain unresolved and all OD-001–OD-014 remain open.
+- Admin & Support owns support case/work-item records, safe support notes, support action requests, support audit references, escalation records and support read-model projections.
+- Admin & Support uses public module services and read models only. It does not write directly to Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Web Cabinet or Filter Catalog state.
+- Operator authority comes from Identity & Access verified actor context and server-assigned roles, not UI flags, provider usernames, chat names or local configuration.
+- Support reads must preserve provenance, freshness/staleness, authorization scope, redaction and safe error semantics.
+- Protected support mutations require actor verification, role/scope authorization, target validation, policy gate, explicit reason, idempotency, owning-module public command and audit outcome.
+- Support notes are not authoritative business state and cannot close open decisions or mask ambiguous owning-module outcomes.
+- Break-glass, impersonation, manual entitlement correction, manual Beacon correction, notification resend/suppression, data export/deletion, support note visibility and audit retention remain unselected.
+- OD-006, OD-007, OD-008, OD-013 and OD-014 remain unresolved and all OD-001–OD-014 remain open.
 
 ## Current prohibitions
 
-No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, bot, Telegram/MAX request, webhook, Long Polling loop, Mini App, token, partner profile, moderation submission, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate/trust-store change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
+No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, CI/CD, migrations, database, dependency installation, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, admin UI, support CRM, role implementation, audit store, break-glass, impersonation, provider request, bot, webhook, Mini App, token, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate/trust-store change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
 
 OD-001–OD-014 remain unresolved.
 
 ## Next safe step
 
-1. Synchronize `/opt/avito-mayak` to the exact Run 21 published GitHub SHA.
-2. Verify local SHA, remote SHA, clean worktree, publication scope, literal MAX eligibility/Webhook/Long-Polling/Mini-App/contact/outbound/reconciliation boundaries and no prohibited mutation.
-3. After independent acceptance, continue with Run 22 of 24 — Admin & Support `MODULE_PLAYBOOK.md`.
+1. Synchronize `/opt/avito-mayak` to the exact Run 22 published GitHub SHA.
+2. Verify local SHA, remote SHA, clean worktree, publication scope, literal Admin & Support support-case/read/command/audit/escalation/redaction boundaries and no prohibited mutation.
+3. After independent acceptance, continue with Run 23 of 24 — Web Cabinet `MODULE_PLAYBOOK.md`.
