@@ -1,9 +1,11 @@
 # Admin & Support
 
-**Статус:** RESERVED — autonomous playbook ещё не принят.
+**Статус:** APPROVED documentation playbook — Run 22 published; exact server synchronization/acceptance pending.
 
-**Граница модуля:** Admin/support views and commands only through public module services.
+**Граница модуля:** Support cases, safe support reads, protected support command envelopes, audit references and escalation coordination through public module services only.
 
-До появления `MODULE_PLAYBOOK.md` и утверждённого contract package запрещено реализовывать модуль, создавать его таблицы, вводить форматы межмодульных сообщений или принимать архитектурные решения от имени модуля.
+Canonical playbook: `MODULE_PLAYBOOK.md`.
 
-Следующий документ для этой директории создаётся ChatGPT буквальным текстом после утверждения Technical Baseline and Contract Package.
+Этот документ не разрешает implementation. До отдельного exact implementation task запрещено создавать product-code, tables, migrations, admin UI, support CRM, role implementation, audit store, queue/worker, provider calls, credentials, secrets, services, endpoints, ports or deployment.
+
+Следующий документационный модуль после acceptance Run 22: `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md`.
