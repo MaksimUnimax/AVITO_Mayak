@@ -49,6 +49,7 @@
 - MAX Adapter Module Playbook v1.0
 - Admin & Support Module Playbook v1.0
 - Web Cabinet Module Playbook v1.0
+- Filter Catalog & Builder Module Playbook v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -71,4 +72,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 23 опубликован как documentation-only Web Cabinet playbook. Он не создаёт frontend, pages, API routes, auth/session implementation, analytics, payment UI, database, migration, runtime, credential, secret, service, endpoint, port or infrastructure. После синхронизации сервера с точным Run 23 SHA следующий документационный ран — Run 24 of 24, Filter Catalog & Builder Module Playbook.
+Run 24 опубликован как documentation-only Filter Catalog & Builder playbook. Он не создаёт exact supported-filter list, frontend builder, parser probes, API routes, database, migration, runtime, credential, secret, service, endpoint, port or infrastructure. После синхронизации сервера с точным Run 24 SHA следующий шаг — final independent documentation audit and final governance acceptance only if the audit proves readiness.
