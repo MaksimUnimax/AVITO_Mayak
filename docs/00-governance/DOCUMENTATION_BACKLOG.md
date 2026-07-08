@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.11
+**Версия:** 2.12
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -92,15 +92,21 @@ Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy
 - Exact server synchronization accepted at `6fcc1b9a77a48b7f02cc5aba640f20a3ff23a461`.
 - Telegram provider identity mapping, update authenticity/replay boundaries, command/callback/deep-link normalization, Mini App initData validation boundary, outbound provider request/outcome mapping and provider-effect reconciliation are fixed without bot/webhook/polling/Mini-App/runtime/provider implementation.
 
-### Run 21 — MAX Adapter — PUBLISHED
+### Run 21 — MAX Adapter — ACCEPTED
 
 - `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `c114818a23a400e97ee6d83c8ab54e419fa401df`.
+- MAX eligibility/moderation gates, provider identity mapping, Webhook and Long Polling boundaries, update authenticity/replay semantics, Mini App WebAppData validation boundary, contact-request boundary, outbound provider request/outcome mapping and provider-effect reconciliation are fixed without partner/bot/webhook/Long-Polling/Mini-App/runtime/provider implementation.
 
-The playbook fixes MAX eligibility/moderation gates, provider identity mapping, Webhook and Long Polling boundaries, update authenticity/replay semantics, Mini App WebAppData validation boundary, contact-request boundary, outbound provider request/outcome mapping and provider-effect reconciliation. MAX Adapter does not own generic notification outbox, account identity, Beacon configuration, Scan state, Egress route state, Telegram provider state or legal eligibility decisions. OD-006, OD-007, OD-008, OD-012, OD-013 and OD-014 remain unresolved. Partner eligibility, bot/moderation workflow, endpoint/domain/TLS/port/certificate/trust-store, webhook runtime, Long Polling runtime, token storage, contact adoption, retry/rate values, SDK/library choice and runtime remain blocked. Exact server synchronization to the Run 21 SHA is pending before acceptance.
+### Run 22 — Admin & Support — PUBLISHED
 
-### Runs 22–24 — RESERVED
+- `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 11–13 in route order. Admin & Support must use public services and read models without bypassing module ownership, authorization, audit, privacy or open decisions.
+The playbook fixes support cases, safe support reads, protected support command envelopes, operator actor/scope gates, support audit records, escalation/reconciliation coordination, redaction/minimization and owning-module dispatch. Admin & Support does not own Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Web Cabinet or Filter Catalog state and never bypasses owning-module public services. OD-006, OD-007, OD-008, OD-013 and OD-014 remain unresolved. Admin UI, support CRM, role implementation, audit store, break-glass, impersonation, manual corrections, data export/deletion, persistence and runtime remain blocked. Exact server synchronization to the Run 22 SHA is pending before acceptance.
+
+### Runs 23–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 12–13 in route order. Web Cabinet must present user-facing state through public services without creating a second user database, bypassing Identity, or owning business state.
 
 ## DB-09 — Final audit
 
