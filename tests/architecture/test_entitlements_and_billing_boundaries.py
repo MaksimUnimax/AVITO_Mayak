@@ -32,6 +32,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/entitlements_and_billing/evaluation.py"),
     Path("src/mayak/modules/entitlements_and_billing/usage_consumption.py"),
     Path("src/mayak/modules/entitlements_and_billing/subscription_lifecycle.py"),
+    Path("src/mayak/modules/entitlements_and_billing/payment_reconciliation.py"),
 )
 
 
