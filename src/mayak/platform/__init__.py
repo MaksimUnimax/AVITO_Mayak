@@ -15,6 +15,8 @@ from mayak.platform.idempotency import (
     IdempotencyKey,
     IdempotencyScope,
 )
+from mayak.platform.process import ProcessCompositionMetadata, ProcessRole
+from mayak.platform.readiness import DependencyReadiness, DependencyReadinessStatus
 from mayak.platform.redaction import REDACTED_VALUE, RedactedValue, redact_sensitive_value
 
 MODULE_ID = PLATFORM_AND_CONTRACTS_MODULE_ID
@@ -27,10 +29,14 @@ __all__ = [
     "ConfigurationProvenance",
     "ConfigurationSchemaVersion",
     "ConfigurationSourceCategory",
+    "DependencyReadiness",
+    "DependencyReadinessStatus",
     "IdempotencyFingerprint",
     "IdempotencyKey",
     "IdempotencyScope",
     "REDACTED_VALUE",
+    "ProcessCompositionMetadata",
+    "ProcessRole",
     "MODULE_ID",
     "MODULE_IDS",
     "RedactedValue",

@@ -21,10 +21,24 @@ from mayak.contracts import (
     IdempotencyFingerprint,
     IdempotencyKey,
     IdempotencyScope,
+    ProcessCompositionMetadata,
+    ProcessReadinessOutcome,
+    ProcessReadinessStatus,
+    ProcessRole,
     Result,
     RetryClass,
 )
-from mayak.platform import boundaries
+from mayak.platform import (
+    DependencyReadiness,
+    DependencyReadinessStatus,
+    boundaries,
+)
+from mayak.platform import (
+    ProcessCompositionMetadata as PlatformProcessCompositionMetadata,
+)
+from mayak.platform import (
+    ProcessRole as PlatformProcessRole,
+)
 
 
 def test_platform_and_contracts_import() -> None:
@@ -53,9 +67,20 @@ def test_contract_package_exports_common_primitives() -> None:
     assert IdempotencyFingerprint.__name__ == "IdempotencyFingerprint"
     assert IdempotencyKey.__name__ == "IdempotencyKey"
     assert IdempotencyScope.__name__ == "IdempotencyScope"
+    assert ProcessCompositionMetadata.__name__ == "ProcessCompositionMetadata"
+    assert ProcessReadinessOutcome.__name__ == "ProcessReadinessOutcome"
+    assert ProcessReadinessStatus.__name__ == "ProcessReadinessStatus"
+    assert ProcessRole.__name__ == "ProcessRole"
     assert CommonOutcome.__name__ == "CommonOutcome"
     assert CommonErrorOutcome.__name__ == "CommonErrorOutcome"
     assert RetryClass.__name__ == "RetryClass"
+
+
+def test_platform_package_exports_process_primitives() -> None:
+    assert DependencyReadiness.__name__ == "DependencyReadiness"
+    assert DependencyReadinessStatus.__name__ == "DependencyReadinessStatus"
+    assert PlatformProcessCompositionMetadata.__name__ == "ProcessCompositionMetadata"
+    assert PlatformProcessRole.__name__ == "ProcessRole"
 
 
 def test_all_module_packages_import() -> None:
