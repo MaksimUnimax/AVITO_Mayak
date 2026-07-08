@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.9
+**Версия:** 2.10
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -80,15 +80,21 @@ Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy
 - Exact server synchronization accepted at `fb55ec29708cb0f4de745504393fb02afb62ce3a`.
 - Agent/route registration, capability/readiness/health/quarantine ownership, bounded leases, server-side selection evidence, explicit transport outcomes, false-success prohibition, reconciliation-first ambiguity and replaceable Windows-agent boundaries are fixed without route/runtime/provider implementation.
 
-### Run 19 — Notification Delivery — PUBLISHED
+### Run 19 — Notification Delivery — ACCEPTED
 
 - `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `c1fd2f78883880a58e337753a5013d81a65e50d7`.
+- Notification event intake, durable outbox ownership, deduplication, delivery attempts, delivery logs, channel/provider handoff, retry/reconciliation boundary and false-success prohibition are fixed without queue/worker/runtime/provider implementation.
 
-The playbook fixes notification event intake, durable outbox ownership, deduplication, delivery attempts, delivery logs, channel/provider handoff, retry/reconciliation boundary and false-success prohibition. Notification Delivery consumes committed Scan domain events only; Egress transport success, Parser success and Scan commit are not delivery success. OD-004, OD-012 and OD-013 remain unresolved. Exact queue/worker technology, retry/backoff values, rate limits, channel priority, provider adapters, message templates, retention and runtime remain blocked. Exact server synchronization to the Run 19 SHA is pending before acceptance.
+### Run 20 — Telegram Adapter — PUBLISHED
 
-### Runs 20–24 — RESERVED
+- `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 09–13 in route order. Telegram Adapter and MAX Adapter must map provider-specific delivery/ingress behavior without owning generic notification outbox, account identity, Beacon configuration, Scan state or Egress transport state.
+The playbook fixes Telegram provider identity mapping, update authenticity/replay boundaries, command/callback/deep-link normalization, Mini App initData validation boundary, outbound provider request/outcome mapping and provider-effect reconciliation. Telegram Adapter does not own generic notification outbox, account identity, Beacon configuration, Scan state, Egress route state or MAX provider behavior. OD-006, OD-007, OD-008, OD-012, OD-013 and OD-014 remain unresolved. Webhook/getUpdates mode, endpoint/domain/TLS/port, bot token storage, command catalog, Mini App screens, retry/rate values, SDK/library choice and runtime remain blocked. Exact server synchronization to the Run 20 SHA is pending before acceptance.
+
+### Runs 21–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 10–13 in route order. MAX Adapter must map MAX provider-specific delivery/ingress behavior without owning generic notification outbox, account identity, Beacon configuration, Scan state, Egress route state or Telegram provider state.
 
 ## DB-09 — Final audit
 
