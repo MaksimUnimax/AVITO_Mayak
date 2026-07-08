@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 2.14
-**Статус:** APPROVED
+**Версия манифеста:** 3.0
+**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED
 
 ## Порядок входа
 
@@ -10,10 +10,11 @@
 3. `docs/00-governance/CURRENT_STATE.md`
 4. `docs/00-governance/ROADMAP.md`
 5. `docs/00-governance/DOCUMENTATION_BACKLOG.md`
-6. `docs/00-governance/REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`
-7. relevant append-only decision/worklog entries
-8. `docs/00-governance/OPEN_DECISIONS.md`
-9. current architecture/technical/contracts/data/quality/operations/reference/module documents
+6. `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md`
+7. `docs/00-governance/REMOTE_REPOSITORY_SUPERVISION_PROTOCOL_v1.0.md`
+8. relevant append-only decision/worklog entries
+9. `docs/00-governance/OPEN_DECISIONS.md`
+10. current architecture/technical/contracts/data/quality/operations/reference/module documents
 
 ## Current approved foundation documents
 
@@ -76,21 +77,25 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 - `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
-- `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 24 server acceptance pending.
+- `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
+
+### Final governance
+
+- `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md` — FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED; exact final server synchronization pending.
 
 ## Каталоги
 
 | Каталог | Назначение | Current status |
 |---|---|---|
-| `00-governance` | rules, state, decisions, worklog | approved governance |
+| `00-governance` | rules, state, decisions, worklog | final governance state published |
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
 | `03-contracts` | common contracts | APPROVED documentation baseline |
-| `04-modules` | 13 playbooks | 13 published; Run 24 sync pending |
+| `04-modules` | 13 playbooks | all 13 accepted |
 | `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
-| `06-reports` | evidence reports and handoffs | REPORT-001 accepted historically; no product-code report |
+| `06-reports` | evidence reports and handoffs | final documentation acceptance published; no product-code report |
 | `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |
 | `08-operations` | isolation, environments, observability, recovery, release, Windows egress | APPROVED documentation baseline; no runtime/deploy |
 | `09-references` | external evidence | Avito, Telegram and MAX documentation approved; provider implementation absent |
 
-Statuses: `DRAFT`, `CANDIDATE`, `RESERVED`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`. A document may be APPROVED on GitHub while its run remains pending exact server synchronization; `CURRENT_STATE.md` is authoritative for run acceptance.
+Statuses: `DRAFT`, `CANDIDATE`, `RESERVED`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`, `FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED`. Final completion still requires exact server synchronization to the final governance SHA and independent verification.
