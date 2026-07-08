@@ -1,6 +1,6 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 2.13
+**Версия:** 2.14
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` published/active; `[ ]` not started; `[!]` blocked.
@@ -32,8 +32,8 @@
   - `[x] Run 20` Telegram Adapter; accepted at `6fcc1b9a77a48b7f02cc5aba640f20a3ff23a461`;
   - `[x] Run 21` MAX Adapter; accepted at `c114818a23a400e97ee6d83c8ab54e419fa401df`;
   - `[x] Run 22` Admin & Support; accepted at `1668a01a65abf7c816c85ea062741bcfcb086645`;
-  - `[~] Run 23` Web Cabinet published; exact server synchronization/acceptance pending;
-  - `[ ] Run 24` Filter Catalog & Builder.
+  - `[x] Run 23` Web Cabinet; accepted at `1f86b8c131b8ac7d456184e4ed2ba7c1ddad8b05`;
+  - `[~] Run 24` Filter Catalog & Builder published; exact server synchronization/acceptance pending.
 - `[ ] A0.16` Final independent documentation audit and stop.
 
 Product implementation remains forbidden until the receiving module has an accepted playbook, current references where applicable, isolated toolchain proof and exact implementation task.
