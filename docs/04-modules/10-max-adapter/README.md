@@ -1,9 +1,11 @@
 # MAX Adapter
 
-**Статус:** RESERVED — autonomous playbook ещё не принят.
+**Статус:** APPROVED documentation playbook — Run 21 published; exact server synchronization/acceptance pending.
 
-**Граница модуля:** MAX ingress/egress и UI adaptation через contracts, без business-table ownership.
+**Граница модуля:** MAX eligibility evidence, provider identity/update mapping, Webhook/Long Polling boundaries, Mini App/contact validation and UI adaptation through contracts, without business-table ownership.
 
-До появления `MODULE_PLAYBOOK.md` и утверждённого contract package запрещено реализовывать модуль, создавать его таблицы, вводить форматы межмодульных сообщений или принимать архитектурные решения от имени модуля.
+Canonical playbook: `MODULE_PLAYBOOK.md`.
 
-Следующий документ для этой директории создаётся ChatGPT буквальным текстом после утверждения Technical Baseline and Contract Package.
+Этот документ не разрешает implementation. До отдельного exact implementation task запрещено создавать product-code, tables, migrations, queue/worker, partner profile, bot, token, webhook subscription, Long Polling loop, Mini App, provider SDK, MAX calls, certificates, trust-store changes, credentials, secrets, services, endpoints, ports or deployment.
+
+Следующий документационный модуль после acceptance Run 21: `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md`.
