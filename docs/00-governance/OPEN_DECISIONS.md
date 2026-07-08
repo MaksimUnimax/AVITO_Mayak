@@ -144,3 +144,29 @@ For current planning after `ADR-0013`:
 | OD-010 | OPEN | Country-wide availability remains unresolved. |
 | OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
 | OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
+## Governance capture update — 2026-07-08 — EB-09 reconciliation/refunds gate
+
+`ADR-0014` captures the EB-09 reconciliation/refund semantic gate.
+
+Exact semantic contracts/tests for EB-09 are now allowed.
+
+This update does not open runtime reconciliation, provider refund API calls, automatic refunds, recurring billing, chargeback automation, webhook processing, persistence, migrations, Admin UI, Web Cabinet runtime, provider-derived entitlement grant or raw provider payload as entitlement authority.
+
+For current planning after `ADR-0014`:
+
+| Item | Status after ADR-0014 | Notes |
+|---|---|---|
+| EB-09 reconciliation/refund semantic gate | CLOSED_BY_ADR_0014 | EB-09 may proceed only for deterministic semantic reconciliation/refunds contracts/tests. |
+| Runtime reconciliation | BLOCKED | Not authorized by ADR-0014. |
+| Provider refund API calls | BLOCKED | Not authorized by ADR-0014. |
+| Automatic refunds | BLOCKED | Not authorized by ADR-0014. |
+| Recurring billing | BLOCKED | Not authorized by ADR-0014. |
+| Chargeback automation | BLOCKED | Not authorized by ADR-0014. |
+| Webhook processing | BLOCKED | Not authorized by ADR-0014. |
+| Persistence/migrations | BLOCKED | Not authorized by ADR-0014. |
+| Admin UI/Web Cabinet runtime | BLOCKED | Not authorized by ADR-0014. |
+| Provider-derived entitlement grant | BLOCKED | Not authorized by ADR-0014. |
+| Raw provider payload as entitlement authority | BLOCKED | Not authorized by ADR-0014. |
+| OD-010 | OPEN | Country-wide availability remains unresolved. |
+| OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
+| OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |

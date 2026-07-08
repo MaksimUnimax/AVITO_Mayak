@@ -369,3 +369,29 @@ The first implementation authorization must be a separate proof/toolchain task t
 - Payment evidence remains external evidence and never grants access by itself.
 - Raw provider payload must not become entitlement authority.
 - `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.
+## ADR-0014 — 2026-07-08 — EB-09 Payment reconciliation and manual refund semantics
+
+**Статус:** APPROVED
+
+**Модуль:** `03-entitlements-and-billing`
+
+**Открывает gate:** EB-09 deterministic semantic reconciliation/refunds contracts/tests only.
+
+**Не открывает:** runtime reconciliation engine, provider API calls, provider refund API calls, automatic refunds, recurring billing, chargebacks, webhooks, persistence, migrations, UI, secrets or provider-derived entitlement grants.
+
+**Контекст:** EB-09 opens only for deterministic semantic reconciliation/refund contracts/tests. The module already treats payment provider responses as external evidence only, raw provider payload as non-authority, payment evidence as non-authority for access changes, refunds as manual only and recurring billing as not implemented now. The exact reconciliation/refund semantic state machine needed for EB-09 has now been captured at governance level.
+
+**Решение:**
+
+1. EB-09 is approved only for deterministic semantic reconciliation/refund contracts/tests.
+2. Approved reconciliation semantic outcomes are: `RECORDED`, `DUPLICATE`, `REJECTED`, `AMBIGUOUS`, `RECONCILE_REQUIRED`, `CONFIRMED`, `UNRESOLVED`, `MANUAL_REVIEW_REQUIRED`, `REPLAYED`, `IDEMPOTENCY_MISMATCH`, `BLOCKED`.
+3. Approved manual refund semantic outcomes are: `MANUAL_REFUND_REVIEW_REQUIRED`, `MANUAL_REFUND_REFERENCED`, `AUTOMATIC_REFUND_BLOCKED`, `PROVIDER_REFUND_API_BLOCKED`, `REFUND_REJECTED`, `REFUND_REPLAYED`, `REFUND_IDEMPOTENCY_MISMATCH`.
+4. Duplicate provider event identity or stable idempotency/fingerprint semantics must not create a second semantic effect.
+5. Ambiguous or unknown external provider effect must use reconcile-first semantics; blind retry after unknown provider effect is forbidden.
+6. Idempotency key is required; missing key is rejected before any semantic effect; same key with the same request fingerprint replays the original terminal semantic outcome; same key with a different request fingerprint returns `IDEMPOTENCY_MISMATCH`.
+7. Commit-point terminology in EB-09 is semantic-only and does not implement persistence/runtime commit in this task.
+8. Manual renewal only remains the current recurrence policy; recurring billing attempts remain blocked.
+9. Refunds are manual only; automatic refunds and provider refund API calls remain blocked.
+10. Raw provider payload is not entitlement authority and payment evidence must not create, change or extend access by itself.
+11. Any future entitlement/subscription transition requires a separate server-authorized business transition and remains distinct from payment evidence.
+12. `OD-010`, `OD-011` and `OD-013` remain open.
