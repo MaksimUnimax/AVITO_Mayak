@@ -1,6 +1,6 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 2.11
+**Версия:** 2.12
 **Статус:** APPROVED planning baseline
 
 `[x]` accepted; `[~]` published/active; `[ ]` not started; `[!]` blocked.
@@ -30,8 +30,8 @@
   - `[x] Run 18` Egress Routing; accepted at `fb55ec29708cb0f4de745504393fb02afb62ce3a`;
   - `[x] Run 19` Notification Delivery; accepted at `c1fd2f78883880a58e337753a5013d81a65e50d7`;
   - `[x] Run 20` Telegram Adapter; accepted at `6fcc1b9a77a48b7f02cc5aba640f20a3ff23a461`;
-  - `[~] Run 21` MAX Adapter published; exact server synchronization/acceptance pending;
-  - `[ ] Run 22` Admin & Support;
+  - `[x] Run 21` MAX Adapter; accepted at `c114818a23a400e97ee6d83c8ab54e419fa401df`;
+  - `[~] Run 22` Admin & Support published; exact server synchronization/acceptance pending;
   - `[ ] Run 23` Web Cabinet;
   - `[ ] Run 24` Filter Catalog & Builder.
 - `[ ] A0.16` Final independent documentation audit and stop.
