@@ -1,6 +1,6 @@
 # Маяк Авито
 
-**Статус репозитория:** Documentation Baseline. Код продукта ещё не создан.
+**Статус репозитория:** Final Documentation Acceptance published. Код продукта ещё не создан.
 
 «Маяк Авито» — сервис мониторинга поисковой выдачи Avito. Клиент создаёт отдельный Маяк из готовой ссылки поиска и получает уведомления о новых объявлениях и новых для этого Маяка парах `listing_id + price`.
 
@@ -12,7 +12,8 @@
 2. [`docs/00-governance/CURRENT_STATE.md`](docs/00-governance/CURRENT_STATE.md)
 3. [`docs/00-governance/ROADMAP.md`](docs/00-governance/ROADMAP.md)
 4. [`docs/MANIFEST.md`](docs/MANIFEST.md)
-5. [`docs/02-architecture/TECHNICAL_BASELINE_v1.0.md`](docs/02-architecture/TECHNICAL_BASELINE_v1.0.md)
+5. [`docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md`](docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md)
+6. [`docs/02-architecture/TECHNICAL_BASELINE_v1.0.md`](docs/02-architecture/TECHNICAL_BASELINE_v1.0.md)
 
 ## Неподвижные правила
 
@@ -50,6 +51,7 @@
 - Admin & Support Module Playbook v1.0
 - Web Cabinet Module Playbook v1.0
 - Filter Catalog & Builder Module Playbook v1.0
+- Final Documentation Acceptance v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -63,7 +65,7 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 
 ## Запрет до отдельного решения владельца
 
-До принятия applicable module playbook, isolated toolchain proof и exact implementation task запрещены:
+До отдельного решения владельца о начале product-code запрещены:
 
 - product-code;
 - `pyproject.toml`, `uv.lock` и dependency installation;
@@ -72,4 +74,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 24 опубликован как documentation-only Filter Catalog & Builder playbook. Он не создаёт exact supported-filter list, frontend builder, parser probes, API routes, database, migration, runtime, credential, secret, service, endpoint, port or infrastructure. После синхронизации сервера с точным Run 24 SHA следующий шаг — final independent documentation audit and final governance acceptance only if the audit proves readiness.
+Final governance acceptance опубликован как documentation-only record. Финальная приёмка завершается только после синхронизации сервера `/opt/avito-mayak` с точным финальным GitHub SHA и независимой проверки этого отчёта. Product-code не начат.
