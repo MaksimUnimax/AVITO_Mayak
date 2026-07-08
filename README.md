@@ -48,6 +48,7 @@
 - Telegram Adapter Module Playbook v1.0
 - MAX Adapter Module Playbook v1.0
 - Admin & Support Module Playbook v1.0
+- Web Cabinet Module Playbook v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -70,4 +71,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 22 опубликован как documentation-only Admin & Support playbook. Он не создаёт admin UI, support CRM, role implementation, audit store, service, database, migration, runtime, credential, secret, port or infrastructure. После синхронизации сервера с точным Run 22 SHA следующий документационный ран — Run 23 of 24, Web Cabinet Module Playbook.
+Run 23 опубликован как documentation-only Web Cabinet playbook. Он не создаёт frontend, pages, API routes, auth/session implementation, analytics, payment UI, database, migration, runtime, credential, secret, service, endpoint, port or infrastructure. После синхронизации сервера с точным Run 23 SHA следующий документационный ран — Run 24 of 24, Filter Catalog & Builder Module Playbook.
