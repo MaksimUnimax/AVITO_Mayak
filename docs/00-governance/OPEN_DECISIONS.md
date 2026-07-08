@@ -45,3 +45,23 @@ The historical rows above are preserved for append-only traceability. For curren
 | OD-012 | OPEN | Not changed by ADR-0009. |
 | OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
 | OD-014 | OPEN | Not changed by ADR-0009. |
+
+---
+
+## Governance capture update — 2026-07-08 — EB-03 precedence gate
+
+`ADR-0010` captures the approved Entitlements & Billing precedence policy needed before EB-03 `Effective entitlement evaluation semantics`.
+
+This update does not close `OD-010`, `OD-011` or `OD-013`.
+
+For current planning after `ADR-0010`:
+
+| Item | Status after ADR-0010 | Notes |
+|---|---|---|
+| EB-03 precedence blocker | CLOSED_BY_ADR_0010 | EB-03 may proceed only for deterministic semantic evaluator contracts/tests. |
+| Payment records/events authority | NON_AUTHORITY_EVIDENCE | Payment records and events never grant access directly. |
+| Expired paid access behavior | GOVERNED_BY_ADR_0009_AND_ADR_0010 | Expired paid access yields Free-only/user-choice-required/free-compliance-required semantics without automatic Beacon choice. |
+| Manual access precedence | GOVERNED_BY_ADR_0010 | Manual grants have highest precedence only inside explicit account/scope/interval/reason/actor/idempotency/audit boundaries. |
+| OD-010 | OPEN | Country-wide availability remains unresolved. |
+| OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
+| OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |

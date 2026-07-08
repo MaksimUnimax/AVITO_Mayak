@@ -167,3 +167,46 @@ The first implementation authorization must be a separate proof/toolchain task t
 - Manual access must require verified actor context, authorization, reason, scope, effective interval, idempotency and audit reference.
 - `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.
 - Persistence, migrations, Admin UI, provider runtime integration, Beacon runtime mutation, scheduler integration and notification sending remain blocked until their own gates are opened.
+
+---
+
+## ADR-0010 — 2026-07-08 — Entitlements precedence policy for effective entitlement evaluation
+
+**Статус:** APPROVED
+
+**Модуль:** `03-entitlements-and-billing`
+
+**Открывает gate:** EB-03 `Effective entitlement evaluation semantics` for semantic evaluator contracts/tests only.
+
+**Не открывает:** runtime evaluator, billing runtime service, database persistence, migrations, provider integration, payment SDK/API calls, webhooks, invoice/receipt/tax implementation, Admin UI, Web Cabinet, Beacon runtime mutation, scheduler integration, notification sending, Docker, CI/CD, deploy, secrets, tokens or payment credentials.
+
+**Контекст:** `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md` states that exact precedence among tariff, subscription and manual grants remains a future contract/task detail and must be explicit before implementation. `ADR-0009` approved the first-stage Free/Basic billing policy and confirmed that payment provider responses remain external evidence and never grant access by themselves. EB-02 added semantic contracts and fixtures, but EB-03 effective entitlement evaluation remained blocked until an explicit precedence decision.
+
+**Решение:**
+
+1. `TariffDefinition` defines the baseline tariff policy: approved capability set, limits, scan interval rules, price/period semantics where applicable and explicit future gates.
+2. An active `Subscription` selects the currently applicable tariff family for an account. If the paid subscription is active, it selects the paid tariff policy. If paid access is expired or unavailable, evaluation must move to the Free-only requirement state described below.
+3. `EntitlementGrant` may add, restrict or qualify individual capabilities only inside its explicit account scope, capability scope and effective interval. It must not silently mutate the selected tariff definition or create a new tariff family.
+4. `ManualAccessGrant` has highest precedence only inside its explicit target account, capability/scope, effective interval, reason, actor context, idempotency reference and audit reference. A valid manual grant may override a tariff/subscription denial only for that exact explicit scope and interval. Outside that scope or interval, normal tariff/subscription/grant evaluation applies.
+5. `PaymentRecord` and `PaymentEvent` are non-authority evidence. They never grant access directly and never produce an entitlement by themselves. Any future payment-derived access requires a separate server-authorized transition and its own exact task.
+6. If paid access is expired, the effective result must represent a Free-only requirement state. All paid Beacons are treated as requiring user action: user-choice-required and free-compliance-required. The system must not automatically choose the remaining Free Beacon.
+7. If sources disagree or the evaluator cannot prove a safe deterministic result, the result must be `AMBIGUOUS` or `CONFLICT`; it must not silently allow access.
+8. EB-03 semantic evaluator contracts/tests may use the following result statuses only as semantic outcomes: `ALLOWED`, `DENIED`, `BLOCKED`, `EXPIRED`, `AMBIGUOUS`, `UNSUPPORTED`, `USER_CHOICE_REQUIRED`, `FREE_COMPLIANCE_REQUIRED`, `CONFLICT`.
+
+**Evaluation precedence order for EB-03 semantic contracts/tests:**
+
+1. Validate account ownership/scope first. Foreign-account or missing-account-scope inputs must not evaluate to silent allow.
+2. Treat payment records/events as evidence only and never as authority.
+3. Determine the baseline tariff policy from the active subscription state and approved tariff definitions.
+4. If paid access is expired, return the Free-only requirement state instead of choosing a Beacon or mutating Beacon state.
+5. Apply valid entitlement grants only within their explicit scope and effective interval.
+6. Apply valid manual access grants only within their explicit scope and effective interval, with actor, reason, idempotency and audit reference.
+7. If a deterministic safe decision remains impossible, return `AMBIGUOUS` or `CONFLICT`.
+
+**Consequences:**
+
+- EB-03 may proceed only for deterministic semantic evaluator contracts/tests.
+- EB-03 must remain transport/provider/framework/ORM neutral.
+- EB-03 must not implement database-backed evaluation, repositories, provider adapters, webhooks, runtime services, Beacon mutation, scheduler integration, notification sending or Admin UI.
+- `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.
+- Usage counters, Beacon integration, provider adapters, reconciliation/refunds, persistence/migrations and Admin tariff management remain gated by their own roadmap steps.
