@@ -1,6 +1,6 @@
 # Маяк Авито — реестр модулей
 
-**Версия:** 1.12
+**Версия:** 1.13
 **Статус:** APPROVED registry derived from Architecture Baseline v1.1
 **Правило:** это реестр границ. Playbook status does not authorize implementation; each published run still requires exact server synchronization and independent acceptance.
 
@@ -17,8 +17,8 @@
 | 09 | `09-telegram-adapter` | Telegram Adapter | Telegram provider identity/update mapping, ingress/egress normalization, Mini App validation boundary and UI adaptation; no business-table ownership | v1.0 accepted |
 | 10 | `10-max-adapter` | MAX Adapter | MAX eligibility evidence, provider identity/update mapping, Webhook/Long Polling boundaries, Mini App/contact validation and UI adaptation; no business-table ownership | v1.0 accepted |
 | 11 | `11-admin-and-support` | Admin & Support | support cases, safe support reads, protected support command envelopes, audit references and escalation coordination through public services | v1.0 accepted |
-| 12 | `12-web-cabinet` | Web Cabinet | web presentation state, draft form state, read-model composition and customer command envelopes through public services; no second user database | v1.0 published; Run 23 sync pending |
-| 13 | `13-filter-catalog-and-builder` | Filter Catalog & Builder | verified filter definitions/options and builder UI over the same Beacon configuration model | RESERVED — Run 24 |
+| 12 | `12-web-cabinet` | Web Cabinet | web presentation state, draft form state, read-model composition and customer command envelopes through public services; no second user database | v1.0 accepted |
+| 13 | `13-filter-catalog-and-builder` | Filter Catalog & Builder | evidence-bound filter definitions/options/ranges, capability profiles, immutable catalog versions and UI-neutral builder semantics over Beacon configuration model | v1.0 published; Run 24 sync pending |
 
 ## Неподвижные межмодульные правила
 
@@ -40,6 +40,8 @@
 - Admin & Support owns support cases, support read projections, protected support action requests, audit references and escalation coordination. It does not own or bypass authoritative state of Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Web Cabinet or Filter Catalog.
 - Web Cabinet owns web presentation state, draft form state, read-model composition, customer command envelopes and safe display/support handoff state. It does not own Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Admin & Support or Filter Catalog state.
 - Web Cabinet does not create a second customer database and does not treat browser/session state as Identity authority.
+- Filter Catalog & Builder owns evidence-bound filter definitions/options/ranges, capability profiles, dependency/compatibility rules, immutable catalog versions and UI-neutral builder semantics. It does not own Beacon source URL/snapshot/override/revision/lifecycle or Parser extraction/provider evidence.
+- Exact supported first-stage editable filters remain OD-009 until separately resolved; no module may infer them from UI visibility or parser observation.
 - `route_id`, `agent_id` and `lease_id` are semantic identifiers, not host/IP/port/process aliases.
 - Windows Egress Agent is a replaceable execution dependency and does not store primary project database or authoritative business state.
 - `ScanWorkClaim` and `RouteLease` are distinct. A route lease does not transfer Scan work ownership or business-state mutation authority.
@@ -49,8 +51,9 @@
 - Telegram/MAX provider acceptance is not human read, click or final business success until Notification accepts the provider outcome under its own state.
 - Admin/support case closure is not domain success unless the owning module’s accepted outcome proves it.
 - Web draft/client-side validation is not owning-module success until the owning module accepts the command.
+- Builder/client-side validation is not Beacon override or configuration success until Beacon accepts the command.
 - `SENT_SUCCESS_RESPONSE` remains a transport fact until Parser validates content.
-- Unknown dispatch/send/provider/support/web action state is reconcile-first and is never retried blindly.
+- Unknown dispatch/send/provider/support/web/builder action state is reconcile-first and is never retried blindly.
 - Route/agent unavailable, expired/revoked lease, restriction/CAPTCHA, timeout, malformed response, transport failure or ambiguity cannot become clean Parser success or no listings.
 - Public unauthenticated inbound exposure is prohibited by default; exact transport/topology/port/tunnel/VPN/proxy technology remains unselected.
 - Foreign host containers, networks, ports, databases, queues, volumes, Nginx, services, certificates and secrets do not become project resources by visibility.
