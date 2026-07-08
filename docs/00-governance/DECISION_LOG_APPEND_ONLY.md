@@ -395,3 +395,69 @@ The first implementation authorization must be a separate proof/toolchain task t
 10. Raw provider payload is not entitlement authority and payment evidence must not create, change or extend access by itself.
 11. Any future entitlement/subscription transition requires a separate server-authorized business transition and remains distinct from payment evidence.
 12. `OD-010`, `OD-011` and `OD-013` remain open.
+
+## ADR-0015 — 2026-07-08 — EB-11 Admin tariff management semantic boundary
+
+**Статус:** APPROVED
+
+**Модуль:** `03-entitlements-and-billing`
+
+**Открывает gate:** EB-11 deterministic semantic Admin tariff-management boundary contracts/tests only.
+
+**Не открывает:** Admin UI, Web Cabinet UI, Identity role runtime, billing runtime, database schema, migrations, repositories, persistence, provider/payment runtime, secrets or product-code.
+
+**Контекст:** The module playbook and prior governance decisions already separate owner policy, identity authority, admin/support boundary and web presentation boundary. EB-11 needs a deterministic semantic boundary for tariff draft/edit/publish and protected account tariff/manual assignment contracts/tests without authorizing runtime implementation.
+
+**Решение:**
+
+1. Approved semantic capability references for future EB-11 contracts/tests are:
+   - `ENTITLEMENTS_TARIFF_ADMIN`;
+   - `ENTITLEMENTS_TARIFF_ASSIGN_ADMIN`;
+   - `ENTITLEMENTS_MANUAL_ACCESS_ADMIN`.
+2. `ENTITLEMENTS_TARIFF_ADMIN` is required for protected tariff draft/edit/publish semantics inside Entitlements.
+3. `ENTITLEMENTS_TARIFF_ASSIGN_ADMIN` is required for protected account tariff assignment semantics inside Entitlements.
+4. `ENTITLEMENTS_MANUAL_ACCESS_ADMIN` remains the existing approved manual access capability from `ADR-0011`.
+5. These capability references are module-level semantic references only. They do not implement Identity roles, do not close exact admin role taxonomy, and do not authorize UI flags, provider usernames, chat titles, local config or client-supplied admin flags.
+6. Approved semantic command families are:
+   - `CreateTariffDraftCommand`;
+   - `EditTariffDraftCommand`;
+   - `PublishTariffDefinitionCommand`;
+   - `AssignAccountTariffCommand`;
+   - `AssignManualAccessCommand`;
+   - `RejectAdminTariffCommand`.
+7. Approved semantic outcomes are:
+   - `DRAFT_CREATED`;
+   - `DRAFT_UPDATED`;
+   - `PUBLISH_READY`;
+   - `PUBLISHED`;
+   - `ASSIGNED`;
+   - `MANUAL_ACCESS_ASSIGNED`;
+   - `REJECTED`;
+   - `FORBIDDEN`;
+   - `CONFLICT`;
+   - `REPLAYED`;
+   - `IDEMPOTENCY_MISMATCH`;
+   - `BLOCKED`;
+   - `UNAVAILABLE`.
+8. A tariff draft is not an active tariff, does not change user access, does not change subscription state and does not create payment/provider behavior.
+9. A tariff draft must include semantic draft id, actor context, requested fields, reason, idempotency key and audit reference.
+10. Future tariff names, prices, limits and defaults may not be invented by code/tests. Only current approved `Free` and `Basic` product values may be used as current published policy where already accepted by prior ADRs.
+11. Publishing requires all product fields to be approved and no open-decision blocker relevant to the field.
+12. Publishing must be performed by an Entitlements semantic command, not by Admin/Web direct write.
+13. Editing an already published tariff must create a new semantic version or be blocked until versioning rules are approved.
+14. Direct mutation of historical tariff definitions is blocked, and deleting tariff history is blocked.
+15. Protected assignment requires verified actor context, server-side capability reference, target `account_id`, target approved tariff or manual-access scope, reason, idempotency key and audit reference.
+16. Assignment to non-approved or draft-only tariff returns `BLOCKED` or `REJECTED`.
+17. Assignment cannot be derived from payment provider evidence or UI/client flag and cannot bypass subscription/manual-access semantics already accepted.
+18. Assignment does not mutate Beacon, scheduler, notification, provider or UI state, and remains semantic-only until persistence/runtime gates open.
+19. Admin/Web must supply verified server-side actor context; UI flags, provider usernames, chat titles, local config and client-supplied admin flags are not authorization.
+20. Identity owns role assignment and actor verification; EB-11 does not implement role assignment, role revocation or role-changing and does not close exact admin role taxonomy.
+21. Admin & Support and Web Cabinet may request protected tariff/manual assignment actions only through public command envelopes and do not own tariff, subscription, entitlement or payment state.
+22. Admin & Support and Web Cabinet must not write Entitlements state directly or write billing tables directly.
+23. Every tariff draft/edit/publish/assignment semantic mutation requires an idempotency key; missing idempotency key returns `REJECTED`; same key + same request fingerprint + prior terminal outcome returns `REPLAYED` or original terminal outcome; same key + different request fingerprint returns `IDEMPOTENCY_MISMATCH`.
+24. Audit reference is required as a semantic reference only, and audit retention/storage remains blocked by `OD-013`.
+25. `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.
+
+**Последствие:**
+
+EB-11 exact semantic contracts/tests may use this decision and `ADR-0015` as approved input only for deterministic semantic Admin tariff-management boundary contracts/tests. Runtime Admin UI, Web Cabinet UI, Identity role runtime, billing runtime, persistence, migrations, database, provider/payment runtime or actual tariff management service still requires a separate exact task.

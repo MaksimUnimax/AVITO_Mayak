@@ -66,6 +66,38 @@ For current planning after `ADR-0010`:
 | OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
 | OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
 
+## Governance capture update — 2026-07-08 — EB-11 admin tariff-management semantic gate
+
+`ADR-0015` captures the EB-11 Admin tariff-management semantic gate.
+
+Exact semantic contracts/tests for EB-11 are now allowed.
+
+This update does not open Admin UI, Web Cabinet UI/runtime, Identity role runtime, exact role taxonomy, role changing implementation, persistence, migrations, billing runtime, provider/payment runtime, direct Admin/Web writes to Entitlements state or direct table writes.
+
+Future tariff values/defaults remain blocked unless separately approved.
+
+Audit retention/storage remains blocked by `OD-013`.
+
+For current planning after `ADR-0015`:
+
+| Item | Status after ADR-0015 | Notes |
+|---|---|---|
+| EB-11 admin tariff-management semantic gate | CLOSED_BY_ADR_0015 | EB-11 may proceed only for deterministic semantic Admin tariff-management boundary contracts/tests. |
+| Admin UI | BLOCKED | Not authorized by ADR-0015. |
+| Web Cabinet UI/runtime | BLOCKED | Not authorized by ADR-0015. |
+| Identity role runtime and exact role taxonomy | BLOCKED | Not authorized by ADR-0015. |
+| Role changing implementation | BLOCKED | Not authorized by ADR-0015. |
+| Persistence/migrations | BLOCKED | Not authorized by ADR-0015. |
+| Billing runtime | BLOCKED | Not authorized by ADR-0015. |
+| Provider/payment runtime | BLOCKED | Not authorized by ADR-0015. |
+| Direct Admin/Web writes to Entitlements state | BLOCKED | Not authorized by ADR-0015. |
+| Direct table writes | BLOCKED | Not authorized by ADR-0015. |
+| Future tariff values/defaults | BLOCKED | Not authorized by ADR-0015 unless separately approved. |
+| Audit retention/storage | BLOCKED | Remains blocked by `OD-013`. |
+| OD-010 | OPEN | Country-wide availability remains unresolved. |
+| OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
+| OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
+
 ---
 
 ## Governance capture update — 2026-07-08 — EB-04 manual access authorization gate
