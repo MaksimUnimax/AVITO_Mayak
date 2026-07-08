@@ -5,6 +5,7 @@ from pathlib import Path
 
 ALLOWED_IMPORT_ROOTS = {
     "__future__",
+    "admin_tariff_management",
     "beacon_integration",
     "decimal",
     "contracts",
@@ -24,6 +25,7 @@ ALLOWED_IMPORT_ROOTS = {
 MODULE_FILES = (
     Path("src/mayak/modules/entitlements_and_billing/__init__.py"),
     Path("src/mayak/modules/entitlements_and_billing/contracts.py"),
+    Path("src/mayak/modules/entitlements_and_billing/admin_tariff_management.py"),
     Path("src/mayak/modules/entitlements_and_billing/manual_access.py"),
     Path("src/mayak/modules/entitlements_and_billing/beacon_integration.py"),
     Path("src/mayak/modules/entitlements_and_billing/payment_provider_boundary.py"),
