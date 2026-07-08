@@ -1,6 +1,6 @@
 # Маяк Авито — реестр модулей
 
-**Версия:** 1.9
+**Версия:** 1.10
 **Статус:** APPROVED registry derived from Architecture Baseline v1.1
 **Правило:** это реестр границ. Playbook status does not authorize implementation; each published run still requires exact server synchronization and independent acceptance.
 
@@ -14,8 +14,8 @@
 | 06 | `06-scan-orchestration-and-listing-state` | Scan Orchestration & Listing State | durable scan intent/run/claim state, immutable observations, per-Beacon listing state, baseline/difference decisions and committed scan-domain events | v1.0 accepted |
 | 07 | `07-egress-routing` | Egress Routing | logical agent/route registration, capability/readiness/health/quarantine, bounded route leases, route-selection decisions, transport assignment/outcome and reconciliation evidence | v1.0 accepted |
 | 08 | `08-notification-delivery` | Notification Delivery | notification event intake, durable outbox, deduplication, delivery attempts, delivery logs and delivery reconciliation state | v1.0 accepted |
-| 09 | `09-telegram-adapter` | Telegram Adapter | Telegram provider identity/update mapping, ingress/egress normalization, Mini App validation boundary and UI adaptation; no business-table ownership | v1.0 published; Run 20 sync pending |
-| 10 | `10-max-adapter` | MAX Adapter | MAX provider ingress/egress mapping and UI adaptation; no business-table ownership | RESERVED — Run 21 |
+| 09 | `09-telegram-adapter` | Telegram Adapter | Telegram provider identity/update mapping, ingress/egress normalization, Mini App validation boundary and UI adaptation; no business-table ownership | v1.0 accepted |
+| 10 | `10-max-adapter` | MAX Adapter | MAX eligibility evidence, provider identity/update mapping, Webhook/Long Polling boundaries, Mini App/contact validation and UI adaptation; no business-table ownership | v1.0 published; Run 21 sync pending |
 | 11 | `11-admin-and-support` | Admin & Support | admin/support views and work items through public services; no bypass of module ownership | RESERVED — Run 22 |
 | 12 | `12-web-cabinet` | Web Cabinet | web UI/session presentation state; no second user database | RESERVED — Run 23 |
 | 13 | `13-filter-catalog-and-builder` | Filter Catalog & Builder | verified filter definitions/options and builder UI over the same Beacon configuration model | RESERVED — Run 24 |
@@ -36,13 +36,14 @@
 - Egress Routing owns logical agent/route registration, capability/readiness/health/quarantine, bounded route leases, server-side selection decisions, dispatch/send outcomes and transport reconciliation. It does not own Beacon, account, entitlement, scan/listing, Parser mapping or notification state.
 - Notification Delivery consumes committed scan-domain events and owns notification intake, outbox, deduplication, delivery attempts, delivery logs and delivery reconciliation. It does not create Scan facts, choose Egress routes or implement Telegram/MAX provider behavior.
 - Telegram Adapter owns Telegram provider identity/update mapping, authenticity/replay handling, command/callback/deep-link normalization, Mini App validation result references and provider outcome mapping. It does not own account identity, generic notification outbox, Beacon state, Scan state, Egress route state or MAX provider behavior.
+- MAX Adapter owns MAX provider identity/update mapping, eligibility/moderation evidence references, Webhook/Long Polling boundaries, contact/Mini App validation references and provider outcome mapping. It does not own account identity, generic notification outbox, Beacon state, Scan state, Egress route state, Telegram provider state or legal eligibility decisions.
 - `route_id`, `agent_id` and `lease_id` are semantic identifiers, not host/IP/port/process aliases.
 - Windows Egress Agent is a replaceable execution dependency and does not store primary project database or authoritative business state.
 - `ScanWorkClaim` and `RouteLease` are distinct. A route lease does not transfer Scan work ownership or business-state mutation authority.
 - Agent heartbeat or connection does not prove readiness, route usability, request success, Parser success or business success.
 - Route selection/fallback is server-side. Agent and Parser do not select fallback independently.
 - Egress transport success is not Parser success. Parser success is not a committed scan comparison. A committed scan comparison is not notification delivery.
-- Telegram Bot API provider acceptance is not human read, click or final business success until Notification accepts the provider outcome under its own state.
+- Telegram/MAX provider acceptance is not human read, click or final business success until Notification accepts the provider outcome under its own state.
 - `SENT_SUCCESS_RESPONSE` remains a transport fact until Parser validates content.
 - Unknown dispatch/send/provider state is reconcile-first and is never retried blindly.
 - Route/agent unavailable, expired/revoked lease, restriction/CAPTCHA, timeout, malformed response, transport failure or ambiguity cannot become clean Parser success or no listings.
