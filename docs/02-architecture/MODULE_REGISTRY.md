@@ -1,6 +1,6 @@
 # Маяк Авито — реестр модулей
 
-**Версия:** 1.11
+**Версия:** 1.12
 **Статус:** APPROVED registry derived from Architecture Baseline v1.1
 **Правило:** это реестр границ. Playbook status does not authorize implementation; each published run still requires exact server synchronization and independent acceptance.
 
@@ -16,8 +16,8 @@
 | 08 | `08-notification-delivery` | Notification Delivery | notification event intake, durable outbox, deduplication, delivery attempts, delivery logs and delivery reconciliation state | v1.0 accepted |
 | 09 | `09-telegram-adapter` | Telegram Adapter | Telegram provider identity/update mapping, ingress/egress normalization, Mini App validation boundary and UI adaptation; no business-table ownership | v1.0 accepted |
 | 10 | `10-max-adapter` | MAX Adapter | MAX eligibility evidence, provider identity/update mapping, Webhook/Long Polling boundaries, Mini App/contact validation and UI adaptation; no business-table ownership | v1.0 accepted |
-| 11 | `11-admin-and-support` | Admin & Support | support cases, safe support reads, protected support command envelopes, audit references and escalation coordination through public services | v1.0 published; Run 22 sync pending |
-| 12 | `12-web-cabinet` | Web Cabinet | web UI/session presentation state; no second user database | RESERVED — Run 23 |
+| 11 | `11-admin-and-support` | Admin & Support | support cases, safe support reads, protected support command envelopes, audit references and escalation coordination through public services | v1.0 accepted |
+| 12 | `12-web-cabinet` | Web Cabinet | web presentation state, draft form state, read-model composition and customer command envelopes through public services; no second user database | v1.0 published; Run 23 sync pending |
 | 13 | `13-filter-catalog-and-builder` | Filter Catalog & Builder | verified filter definitions/options and builder UI over the same Beacon configuration model | RESERVED — Run 24 |
 
 ## Неподвижные межмодульные правила
@@ -29,7 +29,7 @@
 - Framework, ORM and provider types do not become public intermodule contracts.
 - Platform & Contracts owns common conventions, not foreign business state.
 - Identity & Access owns account identity, contact, role, session and auth/link challenge state; adapters, Admin/Support and Web Cabinet do not create separate customer/operator databases.
-- Entitlements & Billing owns tariff, subscription, grant and payment authority; Beacon/Scan/Notification/Admin consume effective entitlement decisions and do not duplicate billing state.
+- Entitlements & Billing owns tariff, subscription, grant and payment authority; Beacon/Scan/Notification/Admin/Web consume effective entitlement decisions and do not duplicate billing state.
 - Beacon Management is the only owner of Beacon configuration/lifecycle state. Every ScanRun is pinned to one immutable configuration revision and never silently follows “latest”.
 - Avito Parser Adapter owns extraction/normalization and explicit parser outcomes only. It does not own route selection/execution, run, baseline, difference, listing history or notification decisions.
 - Scan Orchestration & Listing State owns durable scan/run state, immutable observations, per-Beacon listing state, baseline/difference decisions and scan-domain event facts. It does not own routes, Parser mappings, Beacon configuration or delivery attempts.
@@ -38,6 +38,8 @@
 - Telegram Adapter owns Telegram provider identity/update mapping, authenticity/replay handling, command/callback/deep-link normalization, Mini App validation result references and provider outcome mapping. It does not own account identity, generic notification outbox, Beacon state, Scan state, Egress route state or MAX provider behavior.
 - MAX Adapter owns MAX provider identity/update mapping, eligibility/moderation evidence references, Webhook/Long Polling boundaries, contact/Mini App validation references and provider outcome mapping. It does not own account identity, generic notification outbox, Beacon state, Scan state, Egress route state, Telegram provider state or legal eligibility decisions.
 - Admin & Support owns support cases, support read projections, protected support action requests, audit references and escalation coordination. It does not own or bypass authoritative state of Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Web Cabinet or Filter Catalog.
+- Web Cabinet owns web presentation state, draft form state, read-model composition, customer command envelopes and safe display/support handoff state. It does not own Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Admin & Support or Filter Catalog state.
+- Web Cabinet does not create a second customer database and does not treat browser/session state as Identity authority.
 - `route_id`, `agent_id` and `lease_id` are semantic identifiers, not host/IP/port/process aliases.
 - Windows Egress Agent is a replaceable execution dependency and does not store primary project database or authoritative business state.
 - `ScanWorkClaim` and `RouteLease` are distinct. A route lease does not transfer Scan work ownership or business-state mutation authority.
@@ -46,8 +48,9 @@
 - Egress transport success is not Parser success. Parser success is not a committed scan comparison. A committed scan comparison is not notification delivery.
 - Telegram/MAX provider acceptance is not human read, click or final business success until Notification accepts the provider outcome under its own state.
 - Admin/support case closure is not domain success unless the owning module’s accepted outcome proves it.
+- Web draft/client-side validation is not owning-module success until the owning module accepts the command.
 - `SENT_SUCCESS_RESPONSE` remains a transport fact until Parser validates content.
-- Unknown dispatch/send/provider/support action state is reconcile-first and is never retried blindly.
+- Unknown dispatch/send/provider/support/web action state is reconcile-first and is never retried blindly.
 - Route/agent unavailable, expired/revoked lease, restriction/CAPTCHA, timeout, malformed response, transport failure or ambiguity cannot become clean Parser success or no listings.
 - Public unauthenticated inbound exposure is prohibited by default; exact transport/topology/port/tunnel/VPN/proxy technology remains unselected.
 - Foreign host containers, networks, ports, databases, queues, volumes, Nginx, services, certificates and secrets do not become project resources by visibility.
