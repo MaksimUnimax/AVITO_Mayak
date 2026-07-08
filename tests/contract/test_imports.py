@@ -5,6 +5,15 @@ from importlib import import_module
 from mayak.contracts import (
     CommonErrorOutcome,
     CommonOutcome,
+    ConfigurationComponent,
+    ConfigurationEnvironment,
+    ConfigurationMetadata,
+    ConfigurationPresence,
+    ConfigurationProvenance,
+    ConfigurationSchemaVersion,
+    ConfigurationSourceCategory,
+    ConfigurationValidationOutcome,
+    ConfigurationValidationStatus,
     ContractMetadata,
     ErrorCategory,
     IdempotencyDecision,
@@ -30,6 +39,15 @@ def test_contract_package_exports_common_primitives() -> None:
     assert ContractMetadata.__name__ == "ContractMetadata"
     assert Result.__name__ == "Result"
     assert ErrorCategory.__name__ == "ErrorCategory"
+    assert ConfigurationComponent.__name__ == "ConfigurationComponent"
+    assert ConfigurationEnvironment.__name__ == "ConfigurationEnvironment"
+    assert ConfigurationMetadata.__name__ == "ConfigurationMetadata"
+    assert ConfigurationPresence.__name__ == "ConfigurationPresence"
+    assert ConfigurationProvenance.__name__ == "ConfigurationProvenance"
+    assert ConfigurationSchemaVersion.__name__ == "ConfigurationSchemaVersion"
+    assert ConfigurationSourceCategory.__name__ == "ConfigurationSourceCategory"
+    assert ConfigurationValidationOutcome.__name__ == "ConfigurationValidationOutcome"
+    assert ConfigurationValidationStatus.__name__ == "ConfigurationValidationStatus"
     assert IdempotencyDecision.__name__ == "IdempotencyDecision"
     assert IdempotencyDecisionOutcome.__name__ == "IdempotencyDecisionOutcome"
     assert IdempotencyFingerprint.__name__ == "IdempotencyFingerprint"

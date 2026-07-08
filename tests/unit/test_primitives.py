@@ -83,5 +83,9 @@ def test_module_ids_exist() -> None:
 def test_redaction_helper_replaces_sensitive_value() -> None:
     redacted = redact_sensitive_value("super-secret-token")
 
-    assert redacted == REDACTED_VALUE
-    assert "super-secret-token" not in redacted
+    assert redacted.placeholder == REDACTED_VALUE
+    assert redacted.is_redacted is True
+    assert redacted.model_dump() == {
+        "placeholder": REDACTED_VALUE,
+        "is_redacted": True,
+    }
