@@ -29,6 +29,9 @@ class EntitlementDecisionStatus(str, Enum):
     EXPIRED = "EXPIRED"
     AMBIGUOUS = "AMBIGUOUS"
     UNSUPPORTED = "UNSUPPORTED"
+    USER_CHOICE_REQUIRED = "USER_CHOICE_REQUIRED"
+    FREE_COMPLIANCE_REQUIRED = "FREE_COMPLIANCE_REQUIRED"
+    CONFLICT = "CONFLICT"
 
 
 class SubscriptionState(str, Enum):

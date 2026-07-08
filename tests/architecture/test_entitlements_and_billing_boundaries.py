@@ -20,6 +20,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/entitlements_and_billing/contracts.py"),
     Path("src/mayak/modules/entitlements_and_billing/policies.py"),
     Path("src/mayak/modules/entitlements_and_billing/fixtures.py"),
+    Path("src/mayak/modules/entitlements_and_billing/evaluation.py"),
 )
 
 
