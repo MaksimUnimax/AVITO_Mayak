@@ -65,3 +65,26 @@ For current planning after `ADR-0010`:
 | OD-010 | OPEN | Country-wide availability remains unresolved. |
 | OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
 | OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
+
+---
+
+## Governance capture update — 2026-07-08 — EB-04 manual access authorization gate
+
+`ADR-0011` captures the approved Entitlements & Billing manual access grant authorization and lifecycle policy needed before EB-04 `Manual access grants`.
+
+This update does not close `OD-010`, `OD-011` or `OD-013`.
+
+For current planning after `ADR-0011`:
+
+| Item | Status after ADR-0011 | Notes |
+|---|---|---|
+| EB-04 manual access authorization blocker | CLOSED_BY_ADR_0011 | EB-04 may proceed only for deterministic semantic manual access grant contracts/tests. |
+| Manual access admin capability | APPROVED_FOR_SEMANTIC_CONTRACTS | `ENTITLEMENTS_MANUAL_ACCESS_ADMIN` is the required server-side capability for create/revoke semantics. |
+| Open-ended manual grants | FORBIDDEN_CURRENT_SCOPE | Every manual access grant must include `starts_at` and `ends_at`. |
+| Manual access mutation idempotency | GOVERNED_BY_ADR_0011 | Same key + same request replays original outcome; same key + different fingerprint returns `IDEMPOTENCY_MISMATCH`; missing key returns `REJECTED`. |
+| Manual access revocation | GOVERNED_BY_ADR_0011 | Revocation requires authorized actor, grant/account target, reason, idempotency key and audit reference; history is not deleted. |
+| Admin UI/Web Cabinet runtime | BLOCKED | This decision does not authorize UI/runtime implementation. |
+| Database/persistence/migrations | BLOCKED | This decision does not authorize DB-backed manual access state. |
+| OD-010 | OPEN | Country-wide availability remains unresolved. |
+| OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
+| OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |

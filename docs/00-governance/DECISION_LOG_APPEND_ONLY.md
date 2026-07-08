@@ -210,3 +210,43 @@ The first implementation authorization must be a separate proof/toolchain task t
 - EB-03 must not implement database-backed evaluation, repositories, provider adapters, webhooks, runtime services, Beacon mutation, scheduler integration, notification sending or Admin UI.
 - `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.
 - Usage counters, Beacon integration, provider adapters, reconciliation/refunds, persistence/migrations and Admin tariff management remain gated by their own roadmap steps.
+
+---
+
+## ADR-0011 — 2026-07-08 — Manual access grant authorization and lifecycle policy
+
+**Статус:** APPROVED
+
+**Модуль:** `03-entitlements-and-billing`
+
+**Открывает gate:** EB-04 `Manual access grants` for semantic contracts/tests only.
+
+**Не открывает:** runtime Admin UI, Web Cabinet runtime, role runtime service, database persistence, migrations, repositories, direct database edits, provider/payment integration, Beacon mutation, scheduler integration, notification sending, Docker, CI/CD, deploy, runtime configuration, secrets, tokens or payment credentials.
+
+**Контекст:** The module playbook requires exact authorization scope and task before manual access grants. Current source-of-truth already requires actor context, authorization, ownership/scope validation, idempotency, explicit commit point and auditable outcome for entitlement mutations, but exact role taxonomy for entitlement administration remained open. EB-04 needs an approved manual access authorization and lifecycle policy before semantic contracts/tests may be implemented.
+
+**Решение:**
+
+1. Manual access grant creation and revocation may be performed only by a server-side actor with capability `ENTITLEMENTS_MANUAL_ACCESS_ADMIN`.
+2. The actor context must include `actor_id`, `actor_category`, `authorization_scope`, `authorization_reference` and `audit_reference`.
+3. A manual access grant is valid only for one explicit `target_account_id`, one explicit capability/scope, one explicit effective interval, one required reason, one required idempotency key and one required audit reference.
+4. Open-ended manual grants are forbidden for current scope. Every manual access grant must define both `starts_at` and `ends_at`.
+5. EB-04 semantic contracts/tests may use only these manual grant lifecycle outcomes: `CREATED`, `REPLAYED`, `REVOKED`, `EXPIRED`, `REJECTED`, `CONFLICT`, `IDEMPOTENCY_MISMATCH`, `UNAUTHORIZED`, `OUT_OF_SCOPE`.
+6. Idempotency policy for manual access mutations is:
+   - same key plus same request fingerprint plus terminal outcome returns the original outcome;
+   - same key plus different request fingerprint returns `IDEMPOTENCY_MISMATCH`;
+   - missing idempotency key returns `REJECTED` before any effect.
+7. Revocation may be performed only by an actor with capability `ENTITLEMENTS_MANUAL_ACCESS_ADMIN`.
+8. Revocation requires target `grant_id`, target `account_id`, reason, idempotency key and audit reference.
+9. Revocation must not delete history. It may only produce a semantic revoked outcome in EB-04 contracts/tests.
+10. A successful manual grant or revocation event may exist only after an authoritative semantic commit point.
+11. UI toggles, chat messages, direct database edits and provider/payment events are not valid manual access grants.
+
+**Consequences:**
+
+- EB-04 may proceed only for deterministic semantic manual access grant contracts/tests.
+- EB-04 must remain transport/provider/framework/ORM neutral.
+- EB-04 must not implement runtime Admin UI, role runtime service, database-backed mutation, repositories, migrations, direct database edits, provider/payment integration, Beacon mutation, scheduler integration or notification sending.
+- `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.
+- Admin UI/Web Cabinet runtime remains blocked until its own module gates.
+- Payment/provider runtime remains blocked until provider-specific evidence and exact tasks.
