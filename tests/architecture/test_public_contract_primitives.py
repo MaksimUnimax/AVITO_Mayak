@@ -14,6 +14,7 @@ ALLOWED_IMPORT_ROOTS = {
 
 PUBLIC_PRIMITIVE_FILES = (
     Path("src/mayak/contracts/configuration.py"),
+    Path("src/mayak/contracts/audit.py"),
     Path("src/mayak/contracts/__init__.py"),
     Path("src/mayak/contracts/errors.py"),
     Path("src/mayak/contracts/idempotency.py"),
@@ -21,8 +22,10 @@ PUBLIC_PRIMITIVE_FILES = (
     Path("src/mayak/contracts/readiness.py"),
     Path("src/mayak/contracts/results.py"),
     Path("src/mayak/platform/config.py"),
+    Path("src/mayak/platform/audit.py"),
     Path("src/mayak/platform/__init__.py"),
     Path("src/mayak/platform/errors.py"),
+    Path("src/mayak/platform/correlation.py"),
     Path("src/mayak/platform/idempotency.py"),
     Path("src/mayak/platform/process.py"),
     Path("src/mayak/platform/readiness.py"),

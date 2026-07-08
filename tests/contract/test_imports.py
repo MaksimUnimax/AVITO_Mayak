@@ -3,6 +3,17 @@ from __future__ import annotations
 from importlib import import_module
 
 from mayak.contracts import (
+    AuditActorCategory,
+    AuditConfigurationReference,
+    AuditContext,
+    AuditContractReference,
+    AuditErrorReference,
+    AuditModuleIdentifier,
+    AuditOperation,
+    AuditReadinessReference,
+    AuditReason,
+    AuditResultReference,
+    AuditTargetScope,
     CommonErrorOutcome,
     CommonOutcome,
     ConfigurationComponent,
@@ -15,18 +26,30 @@ from mayak.contracts import (
     ConfigurationValidationOutcome,
     ConfigurationValidationStatus,
     ContractMetadata,
+    CorrelationContext,
+    CorrelationId,
     ErrorCategory,
     IdempotencyDecision,
     IdempotencyDecisionOutcome,
     IdempotencyFingerprint,
     IdempotencyKey,
     IdempotencyScope,
+    MessageId,
     ProcessCompositionMetadata,
     ProcessReadinessOutcome,
     ProcessReadinessStatus,
     ProcessRole,
+    RequestId,
     Result,
     RetryClass,
+    RunId,
+    WorkId,
+)
+from mayak.platform import (
+    AuditContext as PlatformAuditContext,
+)
+from mayak.platform import (
+    CorrelationContext as PlatformCorrelationContext,
 )
 from mayak.platform import (
     DependencyReadiness,
@@ -50,7 +73,20 @@ def test_platform_and_contracts_import() -> None:
 
 
 def test_contract_package_exports_common_primitives() -> None:
+    assert AuditActorCategory.__name__ == "AuditActorCategory"
+    assert AuditConfigurationReference.__name__ == "AuditConfigurationReference"
+    assert AuditContext.__name__ == "AuditContext"
+    assert AuditContractReference.__name__ == "AuditContractReference"
+    assert AuditErrorReference.__name__ == "AuditErrorReference"
+    assert AuditModuleIdentifier.__name__ == "AuditModuleIdentifier"
+    assert AuditOperation.__name__ == "AuditOperation"
+    assert AuditReadinessReference.__name__ == "AuditReadinessReference"
+    assert AuditReason.__name__ == "AuditReason"
+    assert AuditResultReference.__name__ == "AuditResultReference"
+    assert AuditTargetScope.__name__ == "AuditTargetScope"
     assert ContractMetadata.__name__ == "ContractMetadata"
+    assert CorrelationContext.__name__ == "CorrelationContext"
+    assert CorrelationId.__name__ == "CorrelationId"
     assert Result.__name__ == "Result"
     assert ErrorCategory.__name__ == "ErrorCategory"
     assert ConfigurationComponent.__name__ == "ConfigurationComponent"
@@ -74,9 +110,15 @@ def test_contract_package_exports_common_primitives() -> None:
     assert CommonOutcome.__name__ == "CommonOutcome"
     assert CommonErrorOutcome.__name__ == "CommonErrorOutcome"
     assert RetryClass.__name__ == "RetryClass"
+    assert MessageId.__name__ == "MessageId"
+    assert RequestId.__name__ == "RequestId"
+    assert RunId.__name__ == "RunId"
+    assert WorkId.__name__ == "WorkId"
 
 
 def test_platform_package_exports_process_primitives() -> None:
+    assert PlatformAuditContext.__name__ == "AuditContext"
+    assert PlatformCorrelationContext.__name__ == "CorrelationContext"
     assert DependencyReadiness.__name__ == "DependencyReadiness"
     assert DependencyReadinessStatus.__name__ == "DependencyReadinessStatus"
     assert PlatformProcessCompositionMetadata.__name__ == "ProcessCompositionMetadata"

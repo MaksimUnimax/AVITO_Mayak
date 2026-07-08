@@ -1,5 +1,14 @@
 """Public contract primitives for Mayak."""
 
+from mayak.contracts.audit import (
+    AuditActorCategory,
+    AuditConfigurationReference,
+    AuditContext,
+    AuditContractReference,
+    AuditErrorReference,
+    AuditReadinessReference,
+    AuditResultReference,
+)
 from mayak.contracts.configuration import (
     ConfigurationValidationOutcome,
     ConfigurationValidationStatus,
@@ -18,6 +27,12 @@ from mayak.contracts.readiness import (
     ProcessReadinessStatus,
 )
 from mayak.contracts.results import CommonOutcome, Result, ResultOutcome
+from mayak.platform.audit import (
+    AuditModuleIdentifier,
+    AuditOperation,
+    AuditReason,
+    AuditTargetScope,
+)
 from mayak.platform.boundaries import PLATFORM_AND_CONTRACTS_MODULE_ID
 from mayak.platform.config import (
     ConfigurationComponent,
@@ -28,12 +43,31 @@ from mayak.platform.config import (
     ConfigurationSchemaVersion,
     ConfigurationSourceCategory,
 )
+from mayak.platform.correlation import (
+    CorrelationContext,
+    CorrelationId,
+    MessageId,
+    RequestId,
+    RunId,
+    WorkId,
+)
 from mayak.platform.process import ProcessCompositionMetadata, ProcessRole
 from mayak.platform.readiness import DependencyReadiness, DependencyReadinessStatus
 
 MODULE_ID = PLATFORM_AND_CONTRACTS_MODULE_ID
 
 __all__ = [
+    "AuditActorCategory",
+    "AuditConfigurationReference",
+    "AuditContext",
+    "AuditContractReference",
+    "AuditErrorReference",
+    "AuditModuleIdentifier",
+    "AuditOperation",
+    "AuditReadinessReference",
+    "AuditReason",
+    "AuditResultReference",
+    "AuditTargetScope",
     "CommonErrorOutcome",
     "CommonOutcome",
     "ConfigurationComponent",
@@ -45,10 +79,13 @@ __all__ = [
     "ConfigurationSourceCategory",
     "ConfigurationValidationOutcome",
     "ConfigurationValidationStatus",
+    "CorrelationContext",
+    "CorrelationId",
     "DependencyReadiness",
     "DependencyReadinessStatus",
     "ContractMetadata",
     "ErrorCategory",
+    "MessageId",
     "IdempotencyDecision",
     "IdempotencyDecisionOutcome",
     "IdempotencyFingerprint",
@@ -59,7 +96,10 @@ __all__ = [
     "ProcessReadinessOutcome",
     "ProcessReadinessStatus",
     "ProcessRole",
+    "RequestId",
     "Result",
     "ResultOutcome",
     "RetryClass",
+    "RunId",
+    "WorkId",
 ]

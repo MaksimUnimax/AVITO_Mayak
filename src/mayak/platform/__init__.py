@@ -1,5 +1,13 @@
 """Platform primitives for Mayak."""
 
+from mayak.platform.audit import (
+    AuditActorCategory,
+    AuditContext,
+    AuditModuleIdentifier,
+    AuditOperation,
+    AuditReason,
+    AuditTargetScope,
+)
 from mayak.platform.boundaries import MODULE_IDS, PLATFORM_AND_CONTRACTS_MODULE_ID
 from mayak.platform.config import (
     ConfigurationComponent,
@@ -9,6 +17,14 @@ from mayak.platform.config import (
     ConfigurationProvenance,
     ConfigurationSchemaVersion,
     ConfigurationSourceCategory,
+)
+from mayak.platform.correlation import (
+    CorrelationContext,
+    CorrelationId,
+    MessageId,
+    RequestId,
+    RunId,
+    WorkId,
 )
 from mayak.platform.idempotency import (
     IdempotencyFingerprint,
@@ -29,6 +45,18 @@ __all__ = [
     "ConfigurationProvenance",
     "ConfigurationSchemaVersion",
     "ConfigurationSourceCategory",
+    "CorrelationContext",
+    "CorrelationId",
+    "MessageId",
+    "RequestId",
+    "RunId",
+    "WorkId",
+    "AuditActorCategory",
+    "AuditContext",
+    "AuditModuleIdentifier",
+    "AuditOperation",
+    "AuditReason",
+    "AuditTargetScope",
     "DependencyReadiness",
     "DependencyReadinessStatus",
     "IdempotencyFingerprint",
