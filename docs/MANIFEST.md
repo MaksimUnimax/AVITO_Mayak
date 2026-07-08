@@ -1,6 +1,6 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 2.13
+**Версия манифеста:** 2.14
 **Статус:** APPROVED
 
 ## Порядок входа
@@ -75,8 +75,8 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 - `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
-- `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 23 server acceptance pending.
-- Module 13 — RESERVED; Run 24.
+- `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
+- `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — v1.0 APPROVED document; Run 24 server acceptance pending.
 
 ## Каталоги
 
@@ -86,7 +86,7 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
 | `03-contracts` | common contracts | APPROVED documentation baseline |
-| `04-modules` | 13 playbooks | 12 published; 1 reserved |
+| `04-modules` | 13 playbooks | 13 published; Run 24 sync pending |
 | `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
 | `06-reports` | evidence reports and handoffs | REPORT-001 accepted historically; no product-code report |
 | `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |
