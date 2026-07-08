@@ -1,9 +1,11 @@
 # Web Cabinet
 
-**Статус:** RESERVED — autonomous playbook ещё не принят.
+**Статус:** APPROVED documentation playbook — Run 23 published; exact server synchronization/acceptance pending.
 
-**Граница модуля:** Future web UI and session presentation state over the same account and public services.
+**Граница модуля:** Web presentation state, draft form state, read-model composition and customer command envelopes through public module services only, without second user database or business-state ownership.
 
-До появления `MODULE_PLAYBOOK.md` и утверждённого contract package запрещено реализовывать модуль, создавать его таблицы, вводить форматы межмодульных сообщений или принимать архитектурные решения от имени модуля.
+Canonical playbook: `MODULE_PLAYBOOK.md`.
 
-Следующий документ для этой директории создаётся ChatGPT буквальным текстом после утверждения Technical Baseline and Contract Package.
+Этот документ не разрешает implementation. До отдельного exact implementation task запрещено создавать product-code, frontend, pages, routes, API handlers, auth/session implementation, analytics, payment UI, tables, migrations, credentials, secrets, services, endpoints, ports or deployment.
+
+Следующий документационный модуль после acceptance Run 23: `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md`.
