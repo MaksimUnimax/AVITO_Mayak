@@ -1,0 +1,118 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mayak"
+version = "0.0.0"
+description = "Bootstrap skeleton for Mayak"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.7,<3",
+]
+
+[dependency-groups]
+dev = [
+  "coverage>=7.6,<8",
+  "import-linter>=2.9,<3",
+  "mypy>=1.14,<2",
+  "pytest>=8.3,<9",
+  "pytest-asyncio>=0.25,<1",
+  "ruff>=0.9,<1",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mayak = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.mypy]
+python_version = "3.14"
+mypy_path = "src"
+files = ["src", "tests"]
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+show_error_codes = true
+
+[tool.importlinter]
+root_package = "mayak"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "platform-contracts"
+name = "Platform and contracts do not import modules"
+type = "forbidden"
+source_modules = ["mayak.platform", "mayak.contracts"]
+forbidden_modules = ["mayak.modules"]
+
+[[tool.importlinter.contracts]]
+id = "module-isolation"
+name = "Module packages do not import each other"
+type = "forbidden"
+source_modules = [
+  "mayak.modules.identity_and_access",
+  "mayak.modules.entitlements_and_billing",
+  "mayak.modules.beacon_management",
+  "mayak.modules.avito_parser_adapter",
+  "mayak.modules.scan_orchestration",
+  "mayak.modules.egress_routing",
+  "mayak.modules.notification_delivery",
+  "mayak.modules.telegram_adapter",
+  "mayak.modules.max_adapter",
+  "mayak.modules.admin_and_support",
+  "mayak.modules.web_cabinet",
+  "mayak.modules.filter_catalog",
+]
+forbidden_modules = [
+  "mayak.modules.identity_and_access",
+  "mayak.modules.entitlements_and_billing",
+  "mayak.modules.beacon_management",
+  "mayak.modules.avito_parser_adapter",
+  "mayak.modules.scan_orchestration",
+  "mayak.modules.egress_routing",
+  "mayak.modules.notification_delivery",
+  "mayak.modules.telegram_adapter",
+  "mayak.modules.max_adapter",
+  "mayak.modules.admin_and_support",
+  "mayak.modules.web_cabinet",
+  "mayak.modules.filter_catalog",
+]
+as_packages = false
+
+[[tool.importlinter.contracts]]
+id = "public-contracts-external-free"
+name = "Public contracts avoid framework, provider and persistence internals"
+type = "forbidden"
+source_modules = ["mayak.platform", "mayak.contracts"]
+forbidden_modules = [
+  "mayak.modules",
+  "fastapi",
+  "sqlalchemy",
+  "alembic",
+  "httpx",
+  "respx",
+  "opentelemetry",
+  "aiogram",
+  "telethon",
+  "psycopg",
+  "psycopg2",
+]
