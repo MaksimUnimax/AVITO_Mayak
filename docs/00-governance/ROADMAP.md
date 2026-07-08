@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
-**Версия:** 2.14
-**Статус:** APPROVED planning baseline
+**Версия:** 3.0
+**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED
 
 `[x]` accepted; `[~]` published/active; `[ ]` not started; `[!]` blocked.
 
@@ -20,7 +20,7 @@
   - `[x] Run 10` Technical Baseline package and exact server synchronization accepted.
 - `[x] A0.14` Remaining provider references:
   - `[x] Run 11` Telegram and MAX reference policies plus cross-provider registry v1.1; exact server synchronization accepted at `642655a523af3591b1a024c39efa6978a064b2b8`.
-- `[~] A0.15` Thirteen module playbooks:
+- `[x] A0.15` Thirteen module playbooks:
   - `[x] Run 12` Platform & Contracts; accepted at `728b9062126fd7c2e816dde3a1a3ed9d42431cf2`;
   - `[x] Run 13` Identity & Access; accepted at `bcc33aa7120d60f977819319195000ab3a27a2c7`;
   - `[x] Run 14` Entitlements & Billing; accepted at `2346ccbbeaa8f1be18281fdf16fbec75cdb5052e`;
@@ -33,9 +33,9 @@
   - `[x] Run 21` MAX Adapter; accepted at `c114818a23a400e97ee6d83c8ab54e419fa401df`;
   - `[x] Run 22` Admin & Support; accepted at `1668a01a65abf7c816c85ea062741bcfcb086645`;
   - `[x] Run 23` Web Cabinet; accepted at `1f86b8c131b8ac7d456184e4ed2ba7c1ddad8b05`;
-  - `[~] Run 24` Filter Catalog & Builder published; exact server synchronization/acceptance pending.
-- `[ ] A0.16` Final independent documentation audit and stop.
+  - `[x] Run 24` Filter Catalog & Builder; accepted at `75bb64e2c3ac1fc8dfec27672cb548f7c362e251`.
+- `[~] A0.16` Final independent documentation audit and acceptance published; exact final server synchronization pending.
 
-Product implementation remains forbidden until the receiving module has an accepted playbook, current references where applicable, isolated toolchain proof and exact implementation task.
+Product implementation remains forbidden until a separate explicit owner decision after final documentation acceptance.
 
-An accepted playbook is a prerequisite, not an automatic instruction to create code, dependencies, database, migrations, agents, routes, tunnels, ports, parser/provider calls, notifications, services or runtime.
+The final governance record does not authorize code, dependencies, database, migrations, agents, routes, tunnels, ports, parser/provider calls, notifications, services, deploy or runtime.
