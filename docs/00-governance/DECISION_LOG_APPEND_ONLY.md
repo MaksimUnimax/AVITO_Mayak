@@ -250,3 +250,90 @@ The first implementation authorization must be a separate proof/toolchain task t
 - `OD-010`, `OD-011` and `OD-013` remain open and must not be closed by this decision.
 - Admin UI/Web Cabinet runtime remains blocked until its own module gates.
 - Payment/provider runtime remains blocked until provider-specific evidence and exact tasks.
+
+---
+
+## ADR-0012 — 2026-07-08 — Usage counters and limit consumption semantic policy
+
+**Статус:** APPROVED
+
+**Модуль:** `03-entitlements-and-billing`
+
+**Открывает gate:** EB-06 `Usage counters / limit consumption` for semantic contracts/tests only.
+
+**Не открывает:** runtime counter store, database tables, repositories, migrations, scheduler hooks, notification sending, Beacon mutation, Scan Orchestration mutation, provider/payment consumption, runtime quota decrement, Admin UI, Web Cabinet UI, Docker, CI/CD, deploy, runtime configuration, secrets, tokens or credentials.
+
+**Контекст:** The module playbook keeps usage counters and limit consumption blocked until exact semantics and affected module contracts are approved. EB-02 through EB-05 define tariff, subscription, effective entitlement, manual access and subscription lifecycle semantics, but they do not define usage-consumption ownership, counter families, commit-point semantics, idempotency, reset/window behavior or requester-module boundaries.
+
+**Решение:**
+
+1. EB-06 is opened only for deterministic semantic contracts/tests.
+2. Entitlements & Billing owns only semantic usage-consumption policy and decisions.
+3. Entitlements & Billing does not own Beacon state, scan execution state, notification delivery state or payment provider state.
+4. Current approved EB-06 semantic counter families are:
+   - `ACTIVE_BEACON_SLOT`;
+   - `SCAN_INTERVAL_WINDOW`.
+5. The following are not approved in current EB-06 scope:
+   - scan-count quotas;
+   - notification-count quotas;
+   - payment-related consumption;
+   - storage quotas;
+   - provider-specific quotas;
+   - monetary/payment consumption.
+6. `ACTIVE_BEACON_SLOT` semantics:
+   - requester module: Beacon Management;
+   - source facts owner: Beacon Management;
+   - Entitlements receives only synthetic snapshot/evidence for semantic evaluation;
+   - Entitlements must not create, freeze, start, stop, delete or choose Beacons;
+   - Free may use the accepted current limit of one active Beacon;
+   - Basic active Beacon numeric limit remains gated unless already accepted elsewhere in current source-of-truth;
+   - unsupported or missing limit returns `UNAVAILABLE` or `BLOCKED`, not `ACCEPTED`.
+7. `SCAN_INTERVAL_WINDOW` semantics:
+   - requester module: Scan Orchestration;
+   - source facts owner: Scan Orchestration;
+   - Entitlements receives only synthetic last/next scan timing evidence for semantic evaluation;
+   - Entitlements must not schedule scans, run scans, cancel scans or mutate scheduler state;
+   - Free uses accepted interval policy: starting at 3 hours, step 3 hours;
+   - Basic uses accepted interval policy: starting at 5 minutes, step 5 minutes;
+   - `OD-011` minimum monitoring frequency safety remains open and must not be closed by EB-06;
+   - if `OD-011` safety is required to decide a case, return `BLOCKED` or `UNAVAILABLE`.
+8. EB-06 semantic outcomes are:
+   - `ACCEPTED`;
+   - `DENIED`;
+   - `REPLAYED`;
+   - `CONFLICT`;
+   - `UNAVAILABLE`;
+   - `IDEMPOTENCY_MISMATCH`;
+   - `REJECTED`;
+   - `BLOCKED`.
+9. Idempotency policy:
+   - usage-consumption semantic requests require an idempotency key;
+   - same key plus same request fingerprint plus terminal outcome returns `REPLAYED` or the original terminal outcome;
+   - same key plus different request fingerprint returns `IDEMPOTENCY_MISMATCH`;
+   - missing idempotency key returns `REJECTED` before any effect.
+10. Commit-point policy:
+    - EB-06 may define semantic commit-point terminology only;
+    - no actual persistent commit is implemented in EB-06;
+    - a successful semantic usage decision may become an event candidate only after the owning requester module reaches its own future approved commit point;
+    - unknown commit state returns `UNAVAILABLE` or `BLOCKED`, never silent `ACCEPTED`.
+11. Reset/window policy:
+    - `ACTIVE_BEACON_SLOT` has no reset window in EB-06 and is evaluated from current source facts snapshot;
+    - `SCAN_INTERVAL_WINDOW` is evaluated from current time plus supplied last/next scan evidence;
+    - daily/monthly quota reset, rolling counters and notification counters are not approved in EB-06.
+12. Conflict handling:
+    - conflicting source facts return `CONFLICT`;
+    - missing required source facts return `UNAVAILABLE` or `REJECTED`;
+    - unsupported counter family returns `BLOCKED`;
+    - ambiguous evidence must not return `ACCEPTED`.
+13. Remaining open decisions:
+    - `OD-010` country-wide availability remains open;
+    - `OD-011` minimum monitoring frequency safety remains open;
+    - `OD-013` billing, audit and personal-data retention remains open.
+
+**Consequences:**
+
+- EB-06 may proceed only for deterministic semantic usage-consumption contracts/tests.
+- EB-06 must remain transport-neutral, provider-neutral, framework-neutral, ORM-neutral and runtime-neutral.
+- EB-06 must not implement database schema, migrations, repositories, runtime quota decrement, Beacon mutation, Scan Orchestration mutation, Notification Delivery mutation, payment/provider integration, Admin UI/Web Cabinet UI, Docker/CI/CD/deploy/runtime configuration, secrets, tokens or credentials.
+- Beacon Management, Scan Orchestration and Notification Delivery integration remain gated by their own accepted module contracts.
+- Provider/payment runtime remains blocked until provider-specific evidence and exact tasks.

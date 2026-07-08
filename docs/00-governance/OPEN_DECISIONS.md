@@ -88,3 +88,33 @@ For current planning after `ADR-0011`:
 | OD-010 | OPEN | Country-wide availability remains unresolved. |
 | OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
 | OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
+
+---
+
+## Governance capture update — 2026-07-08 — EB-06 usage counters gate
+
+`ADR-0012` captures the approved Entitlements & Billing usage counters and limit consumption semantic policy needed before EB-06 `Usage counters / limit consumption`.
+
+This update does not close `OD-010`, `OD-011` or `OD-013`.
+
+For current planning after `ADR-0012`:
+
+| Item | Status after ADR-0012 | Notes |
+|---|---|---|
+| EB-06 usage counter semantics blocker | CLOSED_BY_ADR_0012 | EB-06 may proceed only for deterministic semantic usage-consumption contracts/tests. |
+| Approved EB-06 counter families | APPROVED_FOR_SEMANTIC_CONTRACTS | `ACTIVE_BEACON_SLOT` and `SCAN_INTERVAL_WINDOW` only. |
+| Scan-count quotas | BLOCKED | Not approved in current EB-06 scope. |
+| Notification-count quotas | BLOCKED | Not approved in current EB-06 scope. |
+| Payment-related consumption | BLOCKED | Payment/provider evidence must not become usage consumption authority. |
+| Active Beacon source facts owner | BEACON_MANAGEMENT | Entitlements may receive only synthetic snapshot/evidence and must not mutate Beacon state. |
+| Scan interval source facts owner | SCAN_ORCHESTRATION | Entitlements may receive only synthetic timing evidence and must not schedule or mutate scans. |
+| Usage-consumption idempotency | GOVERNED_BY_ADR_0012 | Same key + same request replays/original terminal outcome; same key + different fingerprint returns `IDEMPOTENCY_MISMATCH`; missing key returns `REJECTED`. |
+| Usage-consumption commit point | SEMANTIC_ONLY | No persistent commit is implemented in EB-06. Unknown commit state returns `UNAVAILABLE` or `BLOCKED`. |
+| Reset/window policy | LIMITED_BY_ADR_0012 | `ACTIVE_BEACON_SLOT` has no reset window; `SCAN_INTERVAL_WINDOW` uses supplied timing evidence; daily/monthly quotas and rolling counters remain blocked. |
+| Beacon Management integration | BLOCKED | Requires accepted Beacon Management contract gate. |
+| Scan Orchestration integration | BLOCKED | Requires accepted Scan Orchestration contract gate. |
+| Notification Delivery integration | BLOCKED | Notification counters remain blocked. |
+| Database/persistence/migrations | BLOCKED | This decision does not authorize DB-backed usage counters. |
+| OD-010 | OPEN | Country-wide availability remains unresolved. |
+| OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
+| OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
