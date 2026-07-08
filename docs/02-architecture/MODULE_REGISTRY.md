@@ -1,8 +1,8 @@
 # Маяк Авито — реестр модулей
 
-**Версия:** 1.13
-**Статус:** APPROVED registry derived from Architecture Baseline v1.1
-**Правило:** это реестр границ. Playbook status does not authorize implementation; each published run still requires exact server synchronization and independent acceptance.
+**Версия:** 2.0
+**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED
+**Правило:** это реестр границ. Playbook status does not authorize implementation; product-code requires a separate owner decision after final documentation acceptance.
 
 | № | ID каталога | Модуль | Владелец данных / граница | Playbook |
 |---:|---|---|---|---|
@@ -18,7 +18,7 @@
 | 10 | `10-max-adapter` | MAX Adapter | MAX eligibility evidence, provider identity/update mapping, Webhook/Long Polling boundaries, Mini App/contact validation and UI adaptation; no business-table ownership | v1.0 accepted |
 | 11 | `11-admin-and-support` | Admin & Support | support cases, safe support reads, protected support command envelopes, audit references and escalation coordination through public services | v1.0 accepted |
 | 12 | `12-web-cabinet` | Web Cabinet | web presentation state, draft form state, read-model composition and customer command envelopes through public services; no second user database | v1.0 accepted |
-| 13 | `13-filter-catalog-and-builder` | Filter Catalog & Builder | evidence-bound filter definitions/options/ranges, capability profiles, immutable catalog versions and UI-neutral builder semantics over Beacon configuration model | v1.0 published; Run 24 sync pending |
+| 13 | `13-filter-catalog-and-builder` | Filter Catalog & Builder | evidence-bound filter definitions/options/ranges, capability profiles, immutable catalog versions and UI-neutral builder semantics over Beacon configuration model | v1.0 accepted |
 
 ## Неподвижные межмодульные правила
 
