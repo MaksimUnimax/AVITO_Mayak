@@ -5,26 +5,30 @@ from pathlib import Path
 
 ALLOWED_IMPORT_ROOTS = {
     "__future__",
+    "beacon_integration",
+    "contracts",
     "datetime",
     "enum",
-    "contracts",
     "fixtures",
-    "mayak",
     "manual_access",
+    "mayak",
     "pydantic",
     "policies",
-    "usage_consumption",
+    "subscription_lifecycle",
     "typing",
+    "usage_consumption",
 }
 
 MODULE_FILES = (
     Path("src/mayak/modules/entitlements_and_billing/__init__.py"),
     Path("src/mayak/modules/entitlements_and_billing/contracts.py"),
     Path("src/mayak/modules/entitlements_and_billing/manual_access.py"),
+    Path("src/mayak/modules/entitlements_and_billing/beacon_integration.py"),
     Path("src/mayak/modules/entitlements_and_billing/policies.py"),
     Path("src/mayak/modules/entitlements_and_billing/fixtures.py"),
     Path("src/mayak/modules/entitlements_and_billing/evaluation.py"),
     Path("src/mayak/modules/entitlements_and_billing/usage_consumption.py"),
+    Path("src/mayak/modules/entitlements_and_billing/subscription_lifecycle.py"),
 )
 
 
