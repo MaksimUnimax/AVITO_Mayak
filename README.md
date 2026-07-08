@@ -46,6 +46,7 @@
 - Egress Routing Module Playbook v1.0
 - Notification Delivery Module Playbook v1.0
 - Telegram Adapter Module Playbook v1.0
+- MAX Adapter Module Playbook v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -68,4 +69,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 20 опубликован как documentation-only Telegram Adapter playbook. Он не создаёт bot, token, webhook, getUpdates polling, Mini App, provider SDK, Telegram calls, database, migration, runtime, credential, secret, service, endpoint, certificate, port or infrastructure. После синхронизации сервера с точным Run 20 SHA следующий документационный ран — Run 21 of 24, MAX Adapter Module Playbook.
+Run 21 опубликован как documentation-only MAX Adapter playbook. Он не создаёт MAX partner profile, bot, token, webhook, Long Polling loop, Mini App, provider SDK, MAX calls, certificate/trust-store change, database, migration, runtime, credential, secret, service, endpoint, port or infrastructure. После синхронизации сервера с точным Run 21 SHA следующий документационный ран — Run 22 of 24, Admin & Support Module Playbook.
