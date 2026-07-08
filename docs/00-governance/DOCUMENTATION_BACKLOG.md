@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.8
+**Версия:** 2.9
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -74,15 +74,21 @@ Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy
 - Exact server synchronization accepted at `7dc5eb6c26c7cbe82a5db42dfeffaff521f01d90`.
 - Durable scan/run state, immutable revision pinning, per-Beacon baseline/difference rules and post-commit scan-domain events are fixed without scheduler/worker/database/provider implementation.
 
-### Run 18 — Egress Routing — PUBLISHED
+### Run 18 — Egress Routing — ACCEPTED
 
 - `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `fb55ec29708cb0f4de745504393fb02afb62ce3a`.
+- Agent/route registration, capability/readiness/health/quarantine ownership, bounded leases, server-side selection evidence, explicit transport outcomes, false-success prohibition, reconciliation-first ambiguity and replaceable Windows-agent boundaries are fixed without route/runtime/provider implementation.
 
-The playbook fixes agent/route registration, capability/readiness/health/quarantine ownership, bounded leases, server-side selection evidence, explicit transport outcomes, false-success prohibition, reconciliation-first ambiguity and replaceable Windows-agent boundaries. OD-009, OD-010, OD-011 and OD-013 remain unresolved. Route technology, topology, ports, tunnels/VPN/proxy, credentials, priority/fallback, thresholds, retry/rate values, cookies/sessions and retention remain blocked. Exact server synchronization to the Run 18 SHA is pending before acceptance.
+### Run 19 — Notification Delivery — PUBLISHED
 
-### Runs 19–24 — RESERVED
+- `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 08–13 in route order. Notification Delivery must consume committed Scan domain events, own outbox/delivery attempts and preserve channel/provider ambiguity without treating Egress or Parser outcomes as delivery success.
+The playbook fixes notification event intake, durable outbox ownership, deduplication, delivery attempts, delivery logs, channel/provider handoff, retry/reconciliation boundary and false-success prohibition. Notification Delivery consumes committed Scan domain events only; Egress transport success, Parser success and Scan commit are not delivery success. OD-004, OD-012 and OD-013 remain unresolved. Exact queue/worker technology, retry/backoff values, rate limits, channel priority, provider adapters, message templates, retention and runtime remain blocked. Exact server synchronization to the Run 19 SHA is pending before acceptance.
+
+### Runs 20–24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for each module 09–13 in route order. Telegram Adapter and MAX Adapter must map provider-specific delivery/ingress behavior without owning generic notification outbox, account identity, Beacon configuration, Scan state or Egress transport state.
 
 ## DB-09 — Final audit
 
