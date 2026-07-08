@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** ACTIVE documentation route — Runs 12–21 accepted; Run 22 published; Runs 23–24 remain RESERVED.
+**Статус:** ACTIVE documentation route — Runs 12–22 accepted; Run 23 published; Run 24 remains RESERVED.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -16,11 +16,11 @@ Published:
 - `08-notification-delivery/MODULE_PLAYBOOK.md` — Run 19; exact server synchronization accepted.
 - `09-telegram-adapter/MODULE_PLAYBOOK.md` — Run 20; exact server synchronization accepted.
 - `10-max-adapter/MODULE_PLAYBOOK.md` — Run 21; exact server synchronization accepted.
-- `11-admin-and-support/MODULE_PLAYBOOK.md` — Run 22; exact server synchronization/acceptance pending.
+- `11-admin-and-support/MODULE_PLAYBOOK.md` — Run 22; exact server synchronization accepted.
+- `12-web-cabinet/MODULE_PLAYBOOK.md` — Run 23; exact server synchronization/acceptance pending.
 
 Reserved route:
 
-- Run 23 — Web Cabinet;
 - Run 24 — Filter Catalog & Builder.
 
 Every playbook must include purpose/boundaries, data owner, confirmed and open decisions, public inputs/outputs, allowed/forbidden changes, immutable common contracts, dependencies/fakes, fixtures/test vectors, acceptance criteria, roadmap, report/handoff and append-only history.
