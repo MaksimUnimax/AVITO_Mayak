@@ -45,6 +45,7 @@
 - Scan Orchestration & Listing State Module Playbook v1.0
 - Egress Routing Module Playbook v1.0
 - Notification Delivery Module Playbook v1.0
+- Telegram Adapter Module Playbook v1.0
 
 Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
 
@@ -67,4 +68,4 @@ Core stack выбран документально: Python 3.14, uv, FastAPI/Pyd
 - Docker, CI/CD and deploy;
 - services, ports, credentials, secrets and production infrastructure.
 
-Run 19 опубликован как documentation-only Notification Delivery playbook. Он не создаёт outbox implementation, queue, worker, provider adapter implementation, Telegram/MAX calls, bot, database, migration, runtime, notification delivery execution, credential, secret, service or infrastructure. После синхронизации сервера с точным Run 19 SHA следующий документационный ран — Run 20 of 24, Telegram Adapter Module Playbook.
+Run 20 опубликован как documentation-only Telegram Adapter playbook. Он не создаёт bot, token, webhook, getUpdates polling, Mini App, provider SDK, Telegram calls, database, migration, runtime, credential, secret, service, endpoint, certificate, port or infrastructure. После синхронизации сервера с точным Run 20 SHA следующий документационный ран — Run 21 of 24, MAX Adapter Module Playbook.
