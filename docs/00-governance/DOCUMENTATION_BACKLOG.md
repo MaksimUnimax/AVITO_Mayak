@@ -1,6 +1,6 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 2.12
+**Версия:** 2.13
 **Статус:** APPROVED planning register
 
 ## DB-00 — evidence and supervision — ACCEPTED
@@ -98,15 +98,21 @@ Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy
 - Exact server synchronization accepted at `c114818a23a400e97ee6d83c8ab54e419fa401df`.
 - MAX eligibility/moderation gates, provider identity mapping, Webhook and Long Polling boundaries, update authenticity/replay semantics, Mini App WebAppData validation boundary, contact-request boundary, outbound provider request/outcome mapping and provider-effect reconciliation are fixed without partner/bot/webhook/Long-Polling/Mini-App/runtime/provider implementation.
 
-### Run 22 — Admin & Support — PUBLISHED
+### Run 22 — Admin & Support — ACCEPTED
 
 - `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md`.
+- Exact server synchronization accepted at `1668a01a65abf7c816c85ea062741bcfcb086645`.
+- Support cases, safe support reads, protected support command envelopes, operator actor/scope gates, support audit records, escalation/reconciliation coordination, redaction/minimization and owning-module dispatch are fixed without admin UI/support CRM/role/audit-store/runtime implementation.
 
-The playbook fixes support cases, safe support reads, protected support command envelopes, operator actor/scope gates, support audit records, escalation/reconciliation coordination, redaction/minimization and owning-module dispatch. Admin & Support does not own Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Web Cabinet or Filter Catalog state and never bypasses owning-module public services. OD-006, OD-007, OD-008, OD-013 and OD-014 remain unresolved. Admin UI, support CRM, role implementation, audit store, break-glass, impersonation, manual corrections, data export/deletion, persistence and runtime remain blocked. Exact server synchronization to the Run 22 SHA is pending before acceptance.
+### Run 23 — Web Cabinet — PUBLISHED
 
-### Runs 23–24 — RESERVED
+- `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md`.
 
-One autonomous `MODULE_PLAYBOOK.md` remains required for each module 12–13 in route order. Web Cabinet must present user-facing state through public services without creating a second user database, bypassing Identity, or owning business state.
+The playbook fixes web presentation state, drafts, read-model composition, customer command envelopes, support handoff, analytics-blocking, Identity/session separation, owning-module dispatch and redaction/minimization boundaries. Web Cabinet does not own Identity, Entitlements, Beacon, Scan, Egress, Notification, Telegram, MAX, Admin & Support or Filter Catalog state and does not create a second user database. OD-001–OD-014 remain unresolved. Frontend, pages, API routes, auth/session implementation, analytics, payment UI, route map, screen composition, persistence and runtime remain blocked. Exact server synchronization to the Run 23 SHA is pending before acceptance.
+
+### Run 24 — RESERVED
+
+One autonomous `MODULE_PLAYBOOK.md` remains required for module 13. Filter Catalog & Builder must define verified filter definitions/options and builder boundaries over the same Beacon configuration model without owning Beacon lifecycle or Parser provider evidence.
 
 ## DB-09 — Final audit
 
