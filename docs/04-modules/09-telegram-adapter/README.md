@@ -1,9 +1,11 @@
 # Telegram Adapter
 
-**Статус:** RESERVED — autonomous playbook ещё не принят.
+**Статус:** APPROVED documentation playbook — Run 20 published; exact server synchronization/acceptance pending.
 
-**Граница модуля:** Telegram ingress/egress и UI adaptation через contracts, без business-table ownership.
+**Граница модуля:** Telegram provider identity/update mapping, ingress/egress normalization, Mini App validation boundary and UI adaptation through contracts, without business-table ownership.
 
-До появления `MODULE_PLAYBOOK.md` и утверждённого contract package запрещено реализовывать модуль, создавать его таблицы, вводить форматы межмодульных сообщений или принимать архитектурные решения от имени модуля.
+Canonical playbook: `MODULE_PLAYBOOK.md`.
 
-Следующий документ для этой директории создаётся ChatGPT буквальным текстом после утверждения Technical Baseline and Contract Package.
+Этот документ не разрешает implementation. До отдельного exact implementation task запрещено создавать product-code, tables, migrations, queue/worker, bot, token, webhook, polling loop, Mini App, provider SDK, Telegram calls, credentials, secrets, services, endpoints, ports, certificates or deployment.
+
+Следующий документационный модуль после acceptance Run 20: `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md`.
