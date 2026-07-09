@@ -593,6 +593,14 @@ _ADMIN_SUPPORT_CONTEXT = _actor_context(
     actor_reference_id="actor-ref-bm-support-001",
 )
 
+_ADMIN_SUPPORT_UNVERIFIED_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-009",
+    actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+    is_verified=False,
+    account_id=_SUPPORT_ACCOUNT_ID,
+    actor_reference_id="actor-ref-bm-support-002",
+)
+
 _TELEGRAM_CLIENT_CONTEXT = _actor_context(
     actor_context_id="actor-bm-005",
     actor_kind=BeaconActorKind.ANONYMOUS,
@@ -679,6 +687,29 @@ _ADMIN_SUPPORT_READ_ALLOWED = _authorization_decision(
     reason="Admin/support read is allowed only with server-side scope and audit reference.",
     server_role_scope_reference="support-scope-bm-001",
     server_audit_reference="audit-bm-005",
+)
+
+_ADMIN_SUPPORT_READ_REQUIRES_VERIFIED = _authorization_decision(
+    decision_id="decision-bm-012",
+    protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+    actor_context=_ADMIN_SUPPORT_UNVERIFIED_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR,
+    safe_reason_code="ADMIN_SUPPORT_READ_REQUIRES_VERIFIED_ACTOR",
+    reason="Admin/support read requires a verified actor.",
+)
+
+_ADMIN_SUPPORT_READ_REQUIRES_SCOPE = _authorization_decision(
+    decision_id="decision-bm-013",
+    protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+    actor_context=_ADMIN_SUPPORT_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.REQUIRES_SCOPE,
+    safe_reason_code="ADMIN_SUPPORT_READ_REQUIRES_SCOPE",
+    reason="Admin/support read requires server-side scope.",
+    server_audit_reference="audit-bm-013",
 )
 
 _ADMIN_SUPPORT_MUTATE_REQUIRES_AUDIT = _authorization_decision(
@@ -933,6 +964,22 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         beacon=_OWN_ACTIVE_BEACON,
         authorization_decision=_ADMIN_SUPPORT_READ_ALLOWED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-VERIFIED-001",
+        summary="Admin/support read requires a verified actor.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        authorization_decision=_ADMIN_SUPPORT_READ_REQUIRES_VERIFIED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-SCOPE-001",
+        summary="Admin/support read requires server-side scope.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        authorization_decision=_ADMIN_SUPPORT_READ_REQUIRES_SCOPE,
     ),
     SyntheticFixtureCase(
         fixture_id="FX-BM-AUTHZ-ADMIN-SUPPORT-MUTATE-REQUIRES-AUDIT-001",

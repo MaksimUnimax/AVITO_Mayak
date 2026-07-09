@@ -199,6 +199,197 @@ def test_admin_support_allowed_action_requires_audit_reference() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "protected_action",
+    (
+        BeaconProtectedAction.ADMIN_SUPPORT_READ,
+        BeaconProtectedAction.ADMIN_SUPPORT_MUTATE,
+    ),
+)
+def test_unverified_admin_support_allowed_action_is_rejected(
+    protected_action: BeaconProtectedAction,
+) -> None:
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id=f"decision-contract-bm03-unverified-{protected_action.value.lower()}",
+            protected_action=protected_action,
+            actor_context=BeaconActorContext(
+                actor_context_id=f"actor-contract-bm03-unverified-{protected_action.value.lower()}",
+                actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+                is_verified=False,
+                account_id="acct-contract-bm03-support",
+                actor_reference_id="actor-ref-contract-bm03-unverified",
+            ),
+            beacon_id="beacon-contract-bm03-unverified",
+            beacon_account_id="acct-contract-bm03-target",
+            outcome=BeaconAuthorizationOutcome.ALLOWED,
+            safe_reason_code="ADMIN_SUPPORT_ALLOWED_REQUIRES_VERIFIED_ACTOR",
+            reason="unverified admin/support actor must not be allowed",
+            server_role_scope_reference="support-scope-contract-bm03-unverified",
+            server_audit_reference="audit-contract-bm03-unverified",
+        )
+
+
+def test_verified_admin_support_allowed_action_is_allowed_with_scope_and_audit() -> None:
+    decision = BeaconAuthorizationDecision(
+        decision_id="decision-contract-bm03-allowed",
+        protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+        actor_context=BeaconActorContext(
+            actor_context_id="actor-contract-bm03-allowed",
+            actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+            is_verified=True,
+            account_id="acct-contract-bm03-support",
+            actor_reference_id="actor-ref-contract-bm03-allowed",
+        ),
+        beacon_id="beacon-contract-bm03-allowed",
+        beacon_account_id="acct-contract-bm03-target",
+        outcome=BeaconAuthorizationOutcome.ALLOWED,
+        safe_reason_code="ADMIN_SUPPORT_READ_ALLOWED",
+        reason="verified admin/support actor may be allowed",
+        server_role_scope_reference="support-scope-contract-bm03-allowed",
+        server_audit_reference="audit-contract-bm03-allowed",
+    )
+
+    assert decision.outcome is BeaconAuthorizationOutcome.ALLOWED
+    assert decision.actor_context.is_verified is True
+    assert decision.server_role_scope_reference == "support-scope-contract-bm03-allowed"
+    assert decision.server_audit_reference == "audit-contract-bm03-allowed"
+
+
+def test_requires_verified_actor_outcome_rejects_verified_actor() -> None:
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id="decision-contract-bm03-requires-verified",
+            protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-requires-verified",
+                actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+                is_verified=True,
+                account_id="acct-contract-bm03-support",
+                actor_reference_id="actor-ref-contract-bm03-requires-verified",
+            ),
+            beacon_id="beacon-contract-bm03-requires-verified",
+            beacon_account_id="acct-contract-bm03-target",
+            outcome=BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR,
+            safe_reason_code="ADMIN_SUPPORT_READ_REQUIRES_VERIFIED_ACTOR",
+            reason="verified actor cannot be represented as requires verified actor",
+        )
+
+
+def test_requires_verified_actor_outcome_accepts_unverified_actor() -> None:
+    decision = BeaconAuthorizationDecision(
+        decision_id="decision-contract-bm03-requires-verified-ok",
+        protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+        actor_context=BeaconActorContext(
+            actor_context_id="actor-contract-bm03-requires-verified-ok",
+            actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+            is_verified=False,
+            account_id="acct-contract-bm03-support",
+            actor_reference_id="actor-ref-contract-bm03-requires-verified-ok",
+        ),
+        beacon_id="beacon-contract-bm03-requires-verified-ok",
+        beacon_account_id="acct-contract-bm03-target",
+        outcome=BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR,
+        safe_reason_code="ADMIN_SUPPORT_READ_REQUIRES_VERIFIED_ACTOR",
+        reason="unverified actor can be represented as requires verified actor",
+    )
+
+    assert decision.outcome is BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR
+    assert decision.actor_context.is_verified is False
+
+
+def test_requires_scope_outcome_rejects_present_scope_reference() -> None:
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id="decision-contract-bm03-requires-scope",
+            protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-requires-scope",
+                actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+                is_verified=True,
+                account_id="acct-contract-bm03-support",
+                actor_reference_id="actor-ref-contract-bm03-requires-scope",
+            ),
+            beacon_id="beacon-contract-bm03-requires-scope",
+            beacon_account_id="acct-contract-bm03-target",
+            outcome=BeaconAuthorizationOutcome.REQUIRES_SCOPE,
+            safe_reason_code="ADMIN_SUPPORT_READ_REQUIRES_SCOPE",
+            reason="scope reference cannot be present on requires-scope outcome",
+            server_role_scope_reference="support-scope-contract-bm03-requires-scope",
+            server_audit_reference="audit-contract-bm03-requires-scope",
+        )
+
+
+def test_requires_scope_outcome_accepts_missing_scope_reference() -> None:
+    decision = BeaconAuthorizationDecision(
+        decision_id="decision-contract-bm03-requires-scope-ok",
+        protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+        actor_context=BeaconActorContext(
+            actor_context_id="actor-contract-bm03-requires-scope-ok",
+            actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+            is_verified=True,
+            account_id="acct-contract-bm03-support",
+            actor_reference_id="actor-ref-contract-bm03-requires-scope-ok",
+        ),
+        beacon_id="beacon-contract-bm03-requires-scope-ok",
+        beacon_account_id="acct-contract-bm03-target",
+        outcome=BeaconAuthorizationOutcome.REQUIRES_SCOPE,
+        safe_reason_code="ADMIN_SUPPORT_READ_REQUIRES_SCOPE",
+        reason="missing scope reference is valid for requires-scope outcome",
+        server_audit_reference="audit-contract-bm03-requires-scope-ok",
+    )
+
+    assert decision.outcome is BeaconAuthorizationOutcome.REQUIRES_SCOPE
+    assert decision.server_role_scope_reference is None
+    assert decision.server_audit_reference == "audit-contract-bm03-requires-scope-ok"
+
+
+def test_requires_audit_outcome_rejects_present_audit_reference() -> None:
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id="decision-contract-bm03-requires-audit",
+            protected_action=BeaconProtectedAction.ADMIN_SUPPORT_MUTATE,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-requires-audit",
+                actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+                is_verified=True,
+                account_id="acct-contract-bm03-support",
+                actor_reference_id="actor-ref-contract-bm03-requires-audit",
+            ),
+            beacon_id="beacon-contract-bm03-requires-audit",
+            beacon_account_id="acct-contract-bm03-target",
+            outcome=BeaconAuthorizationOutcome.REQUIRES_AUDIT,
+            safe_reason_code="ADMIN_SUPPORT_MUTATE_REQUIRES_AUDIT",
+            reason="audit reference cannot be present on requires-audit outcome",
+            server_role_scope_reference="support-scope-contract-bm03-requires-audit",
+            server_audit_reference="audit-contract-bm03-requires-audit",
+        )
+
+
+def test_requires_audit_outcome_accepts_missing_audit_reference() -> None:
+    decision = BeaconAuthorizationDecision(
+        decision_id="decision-contract-bm03-requires-audit-ok",
+        protected_action=BeaconProtectedAction.ADMIN_SUPPORT_MUTATE,
+        actor_context=BeaconActorContext(
+            actor_context_id="actor-contract-bm03-requires-audit-ok",
+            actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+            is_verified=True,
+            account_id="acct-contract-bm03-support",
+            actor_reference_id="actor-ref-contract-bm03-requires-audit-ok",
+        ),
+        beacon_id="beacon-contract-bm03-requires-audit-ok",
+        beacon_account_id="acct-contract-bm03-target",
+        outcome=BeaconAuthorizationOutcome.REQUIRES_AUDIT,
+        safe_reason_code="ADMIN_SUPPORT_MUTATE_REQUIRES_AUDIT",
+        reason="missing audit reference is valid for requires-audit outcome",
+        server_role_scope_reference="support-scope-contract-bm03-requires-audit-ok",
+    )
+
+    assert decision.outcome is BeaconAuthorizationOutcome.REQUIRES_AUDIT
+    assert decision.server_role_scope_reference == "support-scope-contract-bm03-requires-audit-ok"
+    assert decision.server_audit_reference is None
+
+
 def test_client_channel_flags_are_not_authorization_proof() -> None:
     with pytest.raises(ValidationError):
         BeaconActorContext(
@@ -257,6 +448,32 @@ def test_system_lifecycle_allowed_action_requires_causation() -> None:
             outcome=BeaconAuthorizationOutcome.ALLOWED,
             safe_reason_code="SYSTEM_FREEZE_ALLOWED",
             reason="system freeze without causation must be rejected",
+        )
+
+
+def test_system_lifecycle_blocked_outcome_rejects_action_causation() -> None:
+    causation = BeaconActionCausation(
+        service_actor_class=BeaconSystemActorClass.MAINTENANCE_SERVICE,
+        causation_reference="causation-contract-bm03-003",
+        policy_source_reference="policy-source-contract-bm03-003",
+    )
+
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id="decision-contract-bm03-009",
+            protected_action=BeaconProtectedAction.SYSTEM_FREEZE_AFTER_EXPIRY,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-009",
+                actor_kind=BeaconActorKind.SYSTEM,
+                is_verified=False,
+                actor_reference_id="actor-ref-contract-bm03-009",
+            ),
+            beacon_id="beacon-contract-bm03-009",
+            beacon_account_id="acct-contract-bm03-009-target",
+            outcome=BeaconAuthorizationOutcome.BLOCKED,
+            safe_reason_code="SYSTEM_FREEZE_BLOCKED",
+            reason="system freeze blocked outcome must not carry causation",
+            action_causation=causation,
         )
 
 

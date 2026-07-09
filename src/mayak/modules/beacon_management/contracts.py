@@ -220,6 +220,10 @@ class BeaconOwnershipDecision(BaseModel):
         if self.foreign_account_existence_sensitive_detail:
             raise ValueError("foreign-account denial must not reveal existence-sensitive detail")
 
+        if self.outcome is BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR:
+            if self.actor_context.is_verified:
+                raise ValueError("requires verified actor outcome cannot target a verified actor")
+
         if (
             self.protected_action in owner_actions
             and self.outcome is BeaconAuthorizationOutcome.ALLOWED
@@ -244,6 +248,16 @@ class BeaconAuthorizationDecision(BeaconOwnershipDecision):
 
     @model_validator(mode="after")
     def _validate_authorization_decision(self) -> "BeaconAuthorizationDecision":
+        if self.outcome is BeaconAuthorizationOutcome.REQUIRES_SCOPE:
+            if self.server_role_scope_reference is not None:
+                raise ValueError(
+                    "requires scope outcome must not carry server role scope reference"
+                )
+
+        if self.outcome is BeaconAuthorizationOutcome.REQUIRES_AUDIT:
+            if self.server_audit_reference is not None:
+                raise ValueError("requires audit outcome must not carry audit reference")
+
         if self.protected_action in {
             BeaconProtectedAction.ADMIN_SUPPORT_READ,
             BeaconProtectedAction.ADMIN_SUPPORT_MUTATE,
@@ -251,6 +265,8 @@ class BeaconAuthorizationDecision(BeaconOwnershipDecision):
             if self.outcome is BeaconAuthorizationOutcome.ALLOWED:
                 if self.actor_context.actor_kind is not BeaconActorKind.ADMIN_SUPPORT:
                     raise ValueError("admin/support action requires an admin/support actor context")
+                if not self.actor_context.is_verified:
+                    raise ValueError("admin/support action requires verified actor context")
                 if self.server_role_scope_reference is None:
                     raise ValueError(
                         "admin/support action requires server-side role scope reference"
@@ -264,6 +280,10 @@ class BeaconAuthorizationDecision(BeaconOwnershipDecision):
                     raise ValueError("system lifecycle action requires a system actor context")
                 if self.action_causation is None:
                     raise ValueError("system lifecycle action requires service actor causation")
+            elif self.action_causation is not None:
+                raise ValueError(
+                    "system lifecycle missing-causation outcome must not carry action causation"
+                )
 
         return self
 

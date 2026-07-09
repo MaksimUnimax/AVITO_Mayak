@@ -153,6 +153,8 @@ def test_authorization_fixture_ids_are_present_and_appended_deterministically() 
         "FX-BM-AUTHZ-FOREIGN-READ-BLOCKED-001",
         "FX-BM-AUTHZ-FOREIGN-MUTATE-BLOCKED-001",
         "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-ALLOWED-001",
+        "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-VERIFIED-001",
+        "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-SCOPE-001",
         "FX-BM-AUTHZ-ADMIN-SUPPORT-MUTATE-REQUIRES-AUDIT-001",
         "FX-BM-AUTHZ-CLIENT-FLAG-TELEGRAM-DENIED-001",
         "FX-BM-AUTHZ-CLIENT-FLAG-WEB-DENIED-001",
@@ -208,7 +210,31 @@ def test_admin_support_read_fixture_has_server_side_scope_and_audit_reference() 
         fixture.authorization_decision.protected_action
         is BeaconProtectedAction.ADMIN_SUPPORT_READ
     )
+    assert fixture.authorization_decision.actor_context.is_verified is True
     assert fixture.authorization_decision.server_role_scope_reference is not None
+    assert fixture.authorization_decision.server_audit_reference is not None
+
+
+def test_admin_support_requires_verified_fixture_is_unverified() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-VERIFIED-001"]
+
+    assert fixture.authorization_decision is not None
+    assert (
+        fixture.authorization_decision.outcome
+        is BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR
+    )
+    assert fixture.authorization_decision.actor_context.is_verified is False
+    assert fixture.authorization_decision.server_role_scope_reference is None
+    assert fixture.authorization_decision.server_audit_reference is None
+
+
+def test_admin_support_requires_scope_fixture_has_no_scope_reference() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-SCOPE-001"]
+
+    assert fixture.authorization_decision is not None
+    assert fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.REQUIRES_SCOPE
+    assert fixture.authorization_decision.actor_context.is_verified is True
+    assert fixture.authorization_decision.server_role_scope_reference is None
     assert fixture.authorization_decision.server_audit_reference is not None
 
 
@@ -219,6 +245,21 @@ def test_admin_support_missing_audit_fixture_is_blocked() -> None:
     assert fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.REQUIRES_AUDIT
     assert fixture.authorization_decision.server_role_scope_reference is not None
     assert fixture.authorization_decision.server_audit_reference is None
+
+
+def test_unverified_admin_support_allowed_state_is_not_present_as_a_valid_fixture() -> None:
+    for fixture in SYNTHETIC_FIXTURE_CASES:
+        if fixture.authorization_decision is None:
+            continue
+        if fixture.authorization_decision.protected_action not in (
+            BeaconProtectedAction.ADMIN_SUPPORT_READ,
+            BeaconProtectedAction.ADMIN_SUPPORT_MUTATE,
+        ):
+            continue
+        assert not (
+            fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.ALLOWED
+            and fixture.authorization_decision.actor_context.is_verified is False
+        )
 
 
 def test_client_flag_only_fixtures_are_denied_not_authorization() -> None:
