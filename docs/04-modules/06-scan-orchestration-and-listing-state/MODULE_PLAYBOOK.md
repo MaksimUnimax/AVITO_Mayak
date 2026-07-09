@@ -1013,3 +1013,19 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-06+ remain gated.
+
+### SOLS-HISTORY-0007 — 2026-07-09 — Difference rules for new listings only
+
+SOLS-06 created docs-only difference rules for current owner scope: new listings only;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-03 eligibility boundary, SOLS-04 lifecycle/commit-point rules and SOLS-05 baseline/rolling anchor state;
+price may remain display/parser candidate data, but price-change tracking and price-pair notification/event remain deferred/disabled;
+no user notification is created solely because an old listing changed price;
+no-new-listings is an explicit successful comparison result, not a fallback for uncertainty;
+incomplete/partial/ambiguous/CAPTCHA/external-unavailable outcomes do not create new-listing facts and do not advance anchors;
+lost anchors are delegated to SOLS-07;
+window overflow remains future design;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-07+ remain gated.
