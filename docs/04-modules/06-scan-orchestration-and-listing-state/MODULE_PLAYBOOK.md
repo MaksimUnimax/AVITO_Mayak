@@ -1132,3 +1132,23 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation or Egress implementation or Notification delivery was introduced;
 SOLS-12+ remain gated.
+
+### SOLS-HISTORY-0014 — 2026-07-09 — Persistence, scheduler and worker gates
+
+SOLS-13 created docs-only persistence/scheduler/worker gate documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-03 eligibility boundary, SOLS-04 lifecycle/commit-point rules, SOLS-05 baseline/rolling anchor state, SOLS-06 difference rules, SOLS-07 lost-anchor recovery, SOLS-08 external failure/recovery, SOLS-09 overlap/mid-run rules, SOLS-10 parser outcome/reconciliation rules, SOLS-11 notification/status handoff and SOLS-12 privacy/retention boundary;
+PostgreSQL tables, SQLAlchemy models, Psycopg usage and Alembic migrations remain blocked until explicit physical schema/migration gate;
+scheduler runtime, polling loop, due slot identity, interval values and missed-scan scheduling mechanics remain blocked until explicit scheduler/time policy gate;
+worker runtime, worker concurrency/fairness and worker dispatch mechanics remain blocked until explicit worker gate;
+claim lease duration, heartbeat, renewal, physical locks, transactions and stale-claim handling remain blocked until explicit claim/concurrency gate;
+retry/backoff/circuit breaker policy remains blocked;
+queue/broker/cache infrastructure remains blocked;
+Parser calls, live Avito calls and Egress route calls remain blocked and not Scan-owned;
+Notification outbox, delivery attempts, retries and provider-success claims remain blocked and owned by Notification Delivery;
+read-model rebuild, retention, deletion and compaction jobs remain blocked by OD-013 and DB/runtime gates;
+no numeric defaults were introduced for interval, due slot, claim lease, heartbeat, retry/backoff, retention, deletion, compaction, queue timeout, worker concurrency or fairness;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-14 remains gated until applicable prior subtasks are accepted.
