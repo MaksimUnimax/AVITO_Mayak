@@ -999,3 +999,17 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-05+ remain gated.
+
+### SOLS-HISTORY-0006 — 2026-07-09 — Baseline and rolling anchor state
+
+SOLS-05 created docs-only baseline and rolling anchor state documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-03 eligibility boundary and SOLS-04 lifecycle/commit-point rules;
+first complete comparison-eligible scan establishes baseline and emits no user new-listing result for baseline contents;
+rolling anchors are compact memory, not full user-visible listing archive;
+anchor window size remains policy/config reference and future Admin-configurable, with no hard-coded value;
+failed/partial/ambiguous/CAPTCHA/external-unavailable outcomes do not establish baseline or advance anchors;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-06+ remain gated.
