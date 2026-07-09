@@ -65,7 +65,18 @@ FORBIDDEN_TEXT_FRAGMENTS = {
     _fragment("c", "o", "o", "k", "i", "e", "s"),
     _fragment("s", "e", "s", "s", "i", "o", "n"),
     _fragment("p", "r", "o", "x", "y"),
-    _fragment("c", "a", "p", "t", "c", "h", "a"),
+}
+
+FORBIDDEN_CAPTCHA_RUNTIME_FRAGMENTS = {
+    "solve_captcha",
+    "captcha_solver",
+    "captcha_service",
+    "captcha_token",
+    "captcha_cookie",
+    "bypass_captcha",
+    "anti_captcha",
+    "2captcha",
+    "rucaptcha",
 }
 
 
@@ -96,6 +107,20 @@ def _import_issues(source: str) -> tuple[set[str], set[str]]:
     return forbidden_roots, forbidden_modules
 
 
+def _enum_member_names(source: str, class_name: str) -> set[str]:
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == class_name:
+            members: set[str] = set()
+            for item in node.body:
+                if isinstance(item, ast.Assign):
+                    for target in item.targets:
+                        if isinstance(target, ast.Name):
+                            members.add(target.id)
+            return members
+    raise AssertionError(f"{class_name} not found")
+
+
 def test_avito_parser_adapter_module_has_only_allowed_imports_and_static_text() -> None:
     repo_root = Path(__file__).resolve().parents[2]
 
@@ -108,3 +133,9 @@ def test_avito_parser_adapter_module_has_only_allowed_imports_and_static_text() 
         lowered_source = source.lower()
         for fragment in FORBIDDEN_TEXT_FRAGMENTS:
             assert fragment not in lowered_source, f"{relative_path}: {fragment}"
+        for fragment in FORBIDDEN_CAPTCHA_RUNTIME_FRAGMENTS:
+            assert fragment not in lowered_source, f"{relative_path}: {fragment}"
+
+        if relative_path == Path("src/mayak/modules/avito_parser_adapter/contracts.py"):
+            parser_outcome_members = _enum_member_names(source, "ParserOutcomeStatus")
+            assert "CAPTCHA_OR_CHALLENGE" in parser_outcome_members
