@@ -21,7 +21,7 @@
 | BM-05 parser outcome and extracted snapshot acceptance boundary | `1b4037efc1d1ff8b051025dcd5a3d08f8e6dbcbd` | `git log` shows `bm-05: add parser snapshot acceptance boundary`. |
 | BM-06 structured overrides and effective configuration assembler | `0ee6c56ecc20789a1d8caecf3f4eccfdd61799d6` | `git log` shows the BM-06 add/harden commit chain. |
 | BM-07 current configuration and revision/storage policy | `cbebe0e85682860ba3607df9e06142a271095db7` | `git log` shows `bm-07: add current config storage policy semantics`. |
-| BM-08 entitlement-gated lifecycle | `410dd9d42ef59fb4534f9e12b8033db3979ebf5e` | `git log` shows `bm-08: add entitlement gated lifecycle semantics`. |
+| BM-08 entitlement-gated lifecycle | `164dd1372cc58846572bb1d25cd35b4f26ce3f08` | `410dd9d42ef59fb4534f9e12b8033db3979ebf5e` — BM-08 semantic commit; `164dd1372cc58846572bb1d25cd35b4f26ce3f08` — BM-08 final accepted range tip after test typing narrowings. |
 | BM-09 Beacon History / Archive / Delete / Permanent Delete | `f3e786392f9d1ce18382fbcce3c24389b1980379` | `git show --name-only` confirms the two BM-09 test files changed in this commit. |
 
 ## BM-09 evidence
