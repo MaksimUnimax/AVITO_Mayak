@@ -39,6 +39,49 @@ class ReferenceOutcomeStatus(str, Enum):
     CURRENT = "CURRENT"
 
 
+class CompatibilityProfileLifecycleStatus(str, Enum):
+    """Compatibility-profile lifecycle states."""
+
+    CURRENT = "CURRENT"
+    STALE = "STALE"
+    SUPERSEDED = "SUPERSEDED"
+    WITHDRAWN = "WITHDRAWN"
+    UNAVAILABLE = "UNAVAILABLE"
+    DISPUTED = "DISPUTED"
+
+
+class CompatibilityProfileAuthorityClass(str, Enum):
+    """Authority class for a profile or observation set."""
+
+    OBSERVATION_ONLY = "OBSERVATION_ONLY"
+    OWNER_CAPTURED = "OWNER_CAPTURED"
+    SYNTHETIC = "SYNTHETIC"
+    PROOF_GATED = "PROOF_GATED"
+    OFFICIAL_PRIMARY_ONLY = "OFFICIAL_PRIMARY_ONLY"
+
+
+class CompatibilityChangeClass(str, Enum):
+    """Semantic classification for compatibility changes."""
+
+    COMPATIBLE = "COMPATIBLE"
+    WARNING = "WARNING"
+    BREAKING = "BREAKING"
+    UNKNOWN = "UNKNOWN"
+    DISPUTED = "DISPUTED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class CompatibilityRevalidationTrigger(str, Enum):
+    """Triggers that require compatibility revalidation."""
+
+    REFERENCE_CHANGED = "REFERENCE_CHANGED"
+    EXTRACTION_CLAIM_CHANGED = "EXTRACTION_CLAIM_CHANGED"
+    PARSER_WARNING_MAPPING_CHANGED = "PARSER_WARNING_MAPPING_CHANGED"
+    FIXTURE_MATRIX_CHANGED = "FIXTURE_MATRIX_CHANGED"
+    PROVIDER_STRUCTURE_UNPROVEN_OR_STALE = "PROVIDER_STRUCTURE_UNPROVEN_OR_STALE"
+    OWNER_DECISION_CHANGED = "OWNER_DECISION_CHANGED"
+
+
 class ParserWarningCode(str, Enum):
     """Semantic warning codes for safe adapter evidence."""
 
@@ -52,6 +95,18 @@ class ParserWarningCode(str, Enum):
     STALE_COMPATIBILITY_PROFILE = "STALE_COMPATIBILITY_PROFILE"
     EMPTY_RESULT_PROVEN = "EMPTY_RESULT_PROVEN"
     FIELD_CANDIDATE_OPTIONAL = "FIELD_CANDIDATE_OPTIONAL"
+    REFERENCE_CHANGED = "REFERENCE_CHANGED"
+    REFERENCE_SUPERSEDED = "REFERENCE_SUPERSEDED"
+    REFERENCE_WITHDRAWN = "REFERENCE_WITHDRAWN"
+    REFERENCE_UNAVAILABLE = "REFERENCE_UNAVAILABLE"
+    REFERENCE_DISPUTED = "REFERENCE_DISPUTED"
+    UNSUPPORTED_EXTRACTION_CLAIM = "UNSUPPORTED_EXTRACTION_CLAIM"
+    COMPATIBILITY_REVALIDATION_REQUIRED = "COMPATIBILITY_REVALIDATION_REQUIRED"
+    INTERNAL_ENDPOINT_OBSERVATION_ONLY = "INTERNAL_ENDPOINT_OBSERVATION_ONLY"
+    STALE_PROFILE_BLOCKED = "STALE_PROFILE_BLOCKED"
+    WITHDRAWN_PROFILE_BLOCKED = "WITHDRAWN_PROFILE_BLOCKED"
+    DISPUTED_PROFILE_WARNING = "DISPUTED_PROFILE_WARNING"
+    UNAVAILABLE_PROFILE_WARNING = "UNAVAILABLE_PROFILE_WARNING"
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +116,7 @@ class ParserEvidenceReference:
     reference_id: str
     evidence_kind: str
     reference_status: ReferenceOutcomeStatus = ReferenceOutcomeStatus.CURRENT
+    lifecycle_status: CompatibilityProfileLifecycleStatus | None = None
     fingerprint: str | None = None
     version: str | None = None
     sample_count: int | None = None
@@ -71,6 +127,39 @@ class ParserEvidenceReference:
             raise ValueError("reference_id must not be blank")
         if not self.evidence_kind.strip():
             raise ValueError("evidence_kind must not be blank")
+
+
+def _lifecycle_status_from_reference_status(
+    reference_status: ReferenceOutcomeStatus,
+) -> CompatibilityProfileLifecycleStatus:
+    if reference_status is ReferenceOutcomeStatus.CURRENT:
+        return CompatibilityProfileLifecycleStatus.CURRENT
+    if reference_status is ReferenceOutcomeStatus.REFERENCE_STALE:
+        return CompatibilityProfileLifecycleStatus.STALE
+    if reference_status is ReferenceOutcomeStatus.REFERENCE_DISPUTED:
+        return CompatibilityProfileLifecycleStatus.DISPUTED
+    return CompatibilityProfileLifecycleStatus.UNAVAILABLE
+
+
+def _reference_status_from_lifecycle_status(
+    lifecycle_status: CompatibilityProfileLifecycleStatus,
+) -> ReferenceOutcomeStatus:
+    if lifecycle_status is CompatibilityProfileLifecycleStatus.CURRENT:
+        return ReferenceOutcomeStatus.CURRENT
+    if lifecycle_status in (
+        CompatibilityProfileLifecycleStatus.STALE,
+        CompatibilityProfileLifecycleStatus.SUPERSEDED,
+    ):
+        return ReferenceOutcomeStatus.REFERENCE_STALE
+    if lifecycle_status is CompatibilityProfileLifecycleStatus.DISPUTED:
+        return ReferenceOutcomeStatus.REFERENCE_DISPUTED
+    return ReferenceOutcomeStatus.REFERENCE_MISSING
+
+
+def _validate_nonblank_values(field_name: str, values: tuple[str, ...]) -> None:
+    for value in values:
+        if not value.strip():
+            raise ValueError(f"{field_name} must not contain blank values")
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,19 +181,103 @@ class ParserCompatibilityProfile:
     """Versioned reference profile that gates semantic parsing behavior."""
 
     profile_id: str
-    profile_version: str
-    reference_status: ReferenceOutcomeStatus
+    semantic_version: str | None = None
+    profile_version: str | None = None
+    lifecycle_status: CompatibilityProfileLifecycleStatus | None = None
+    authority_class: CompatibilityProfileAuthorityClass = CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
+    authority_scope: tuple[str, ...] = ()
+    reference_ids: tuple[str, ...] = ()
+    primary_reference_repository: str | None = None
+    primary_reference_commit: str | None = None
+    retrieval_date: str | None = None
+    effective_date: str | None = None
+    reference_status: ReferenceOutcomeStatus | None = None
     source_reference: str | None = None
     evidence_reference: ParserEvidenceReference | None = None
+    supported_extraction_claims: tuple[str, ...] = ()
     supported_shape_signatures: tuple[str, ...] = ()
+    unsupported_extraction_claims: tuple[str, ...] = ()
     unsupported_shape_signatures: tuple[str, ...] = ()
+    required_fields: tuple[str, ...] = ()
+    completeness_rules: tuple[str, ...] = ()
+    warning_mappings: tuple[str, ...] = ()
+    error_mappings: tuple[str, ...] = ()
+    fixture_ids: tuple[str, ...] = ()
+    acceptance_matrix_rows: tuple[str, ...] = ()
+    revalidation_triggers: tuple[CompatibilityRevalidationTrigger, ...] = ()
+    compatibility_change_classes: tuple[CompatibilityChangeClass, ...] = ()
     notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.profile_id.strip():
             raise ValueError("profile_id must not be blank")
-        if not self.profile_version.strip():
+
+        if self.semantic_version is None and self.profile_version is None:
+            raise ValueError("semantic_version must not be blank")
+        if self.semantic_version is None:
+            object.__setattr__(self, "semantic_version", self.profile_version)
+        if self.profile_version is None:
+            object.__setattr__(self, "profile_version", self.semantic_version)
+        if self.semantic_version is not None and not self.semantic_version.strip():
+            raise ValueError("semantic_version must not be blank")
+        if self.profile_version is not None and not self.profile_version.strip():
             raise ValueError("profile_version must not be blank")
+        if self.semantic_version != self.profile_version:
+            raise ValueError("semantic_version and profile_version must match")
+
+        if self.lifecycle_status is None and self.reference_status is None:
+            object.__setattr__(self, "lifecycle_status", CompatibilityProfileLifecycleStatus.CURRENT)
+            object.__setattr__(self, "reference_status", ReferenceOutcomeStatus.CURRENT)
+        elif self.lifecycle_status is None:
+            object.__setattr__(
+                self,
+                "lifecycle_status",
+                _lifecycle_status_from_reference_status(self.reference_status),
+            )
+        elif self.reference_status is None:
+            object.__setattr__(
+                self,
+                "reference_status",
+                _reference_status_from_lifecycle_status(self.lifecycle_status),
+            )
+        else:
+            expected_reference_status = _reference_status_from_lifecycle_status(self.lifecycle_status)
+            if self.reference_status is not expected_reference_status:
+                raise ValueError("reference_status must match lifecycle_status")
+
+        if self.primary_reference_repository is not None and not self.primary_reference_repository.strip():
+            raise ValueError("primary_reference_repository must not be blank")
+        if self.primary_reference_commit is not None and not self.primary_reference_commit.strip():
+            raise ValueError("primary_reference_commit must not be blank")
+        if (self.primary_reference_repository is None) != (self.primary_reference_commit is None):
+            raise ValueError("primary_reference_repository and primary_reference_commit must be provided together")
+
+        if self.supported_extraction_claims and not self.supported_shape_signatures:
+            object.__setattr__(self, "supported_shape_signatures", self.supported_extraction_claims)
+        if self.supported_shape_signatures and not self.supported_extraction_claims:
+            object.__setattr__(self, "supported_extraction_claims", self.supported_shape_signatures)
+
+        if self.unsupported_extraction_claims and not self.unsupported_shape_signatures:
+            object.__setattr__(self, "unsupported_shape_signatures", self.unsupported_extraction_claims)
+        if self.unsupported_shape_signatures and not self.unsupported_extraction_claims:
+            object.__setattr__(self, "unsupported_extraction_claims", self.unsupported_shape_signatures)
+
+        for field_name, values in (
+            ("authority_scope", self.authority_scope),
+            ("reference_ids", self.reference_ids),
+            ("supported_extraction_claims", self.supported_extraction_claims),
+            ("unsupported_extraction_claims", self.unsupported_extraction_claims),
+            ("supported_shape_signatures", self.supported_shape_signatures),
+            ("unsupported_shape_signatures", self.unsupported_shape_signatures),
+            ("required_fields", self.required_fields),
+            ("completeness_rules", self.completeness_rules),
+            ("warning_mappings", self.warning_mappings),
+            ("error_mappings", self.error_mappings),
+            ("fixture_ids", self.fixture_ids),
+            ("acceptance_matrix_rows", self.acceptance_matrix_rows),
+            ("notes", self.notes),
+        ):
+            _validate_nonblank_values(field_name, values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +329,14 @@ class ParserOutcomeExplanation:
 
     summary: str
     reason_code: str | None = None
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus | None = None
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | None
+    ) = None
     details: tuple[str, ...] = ()
     evidence_references: tuple[ParserEvidenceReference, ...] = ()
     warnings: tuple[ParserWarning, ...] = ()
@@ -173,7 +353,7 @@ class ParserAttemptOutcome:
     attempt_id: str
     transport_status: TransportOutcomeStatus
     parser_status: ParserOutcomeStatus | None = None
-    reference_status: ReferenceOutcomeStatus | None = None
+    reference_status: ReferenceOutcomeStatus | CompatibilityProfileLifecycleStatus | None = None
     request_envelope: ParserRequestEnvelope | None = None
     transport_outcome: TransportOutcomeReference | None = None
     response_reference: str | None = None
@@ -193,7 +373,13 @@ class SearchSourceAnalysisOutcome:
     analysis_id: str
     request_envelope: ParserRequestEnvelope
     transport_outcome: TransportOutcomeReference | None
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+    )
     compatibility_profile: ParserCompatibilityProfile
     warnings: tuple[ParserWarning, ...] = ()
     evidence_references: tuple[ParserEvidenceReference, ...] = ()
@@ -211,7 +397,13 @@ class SearchConfigurationExtractionOutcome:
     extraction_id: str
     request_envelope: ParserRequestEnvelope
     transport_outcome: TransportOutcomeReference | None
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+    )
     compatibility_profile: ParserCompatibilityProfile
     normalized_geography_candidates: tuple[str, ...] = ()
     normalized_category_candidates: tuple[str, ...] = ()
@@ -272,7 +464,13 @@ class ListingPageParseOutcome:
     page_id: str
     request_envelope: ParserRequestEnvelope
     transport_outcome: TransportOutcomeReference | None
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+    )
     compatibility_profile: ParserCompatibilityProfile
     normalized_listing_candidates: tuple[NormalizedListingCandidate, ...] = ()
     card_candidates: tuple[ListingCardCandidate, ...] = ()
@@ -292,7 +490,13 @@ class ListingBatchParseOutcome:
     batch_id: str
     request_envelope: ParserRequestEnvelope
     transport_outcome: TransportOutcomeReference | None
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+    )
     compatibility_profile: ParserCompatibilityProfile
     page_outcomes: tuple[ListingPageParseOutcome, ...] = ()
     warnings: tuple[ParserWarning, ...] = ()
@@ -304,14 +508,46 @@ class ListingBatchParseOutcome:
             raise ValueError("batch_id must not be blank")
 
 
+@dataclass(frozen=True, slots=True)
+class ParserCompatibilityOutcome:
+    """Read-only compatibility decision for a bounded evidence/profile set."""
+
+    outcome_id: str
+    compatibility_profile: ParserCompatibilityProfile
+    lifecycle_status: CompatibilityProfileLifecycleStatus
+    change_class: CompatibilityChangeClass
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | None
+    ) = None
+    warnings: tuple[ParserWarning, ...] = ()
+    error_messages: tuple[str, ...] = ()
+    revalidation_triggers: tuple[CompatibilityRevalidationTrigger, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    explanation: ParserOutcomeExplanation | None = None
+
+    def __post_init__(self) -> None:
+        if not self.outcome_id.strip():
+            raise ValueError("outcome_id must not be blank")
+
+
 __all__: Final[tuple[str, ...]] = (
     "TransportOutcomeStatus",
     "ParserOutcomeStatus",
     "ReferenceOutcomeStatus",
+    "CompatibilityProfileLifecycleStatus",
+    "CompatibilityProfileAuthorityClass",
+    "CompatibilityChangeClass",
+    "CompatibilityRevalidationTrigger",
     "ParserWarningCode",
     "ParserEvidenceReference",
     "ParserWarning",
     "ParserCompatibilityProfile",
+    "ParserCompatibilityOutcome",
     "ParserRequestEnvelope",
     "TransportOutcomeReference",
     "ParserOutcomeExplanation",

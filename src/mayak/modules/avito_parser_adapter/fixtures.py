@@ -6,10 +6,15 @@ from dataclasses import dataclass
 from typing import Final
 
 from .contracts import (
+    CompatibilityChangeClass,
+    CompatibilityProfileAuthorityClass,
+    CompatibilityProfileLifecycleStatus,
+    CompatibilityRevalidationTrigger,
     ListingBatchParseOutcome,
     ListingCardCandidate,
     ListingPageParseOutcome,
     NormalizedListingCandidate,
+    ParserCompatibilityOutcome,
     ParserAttemptOutcome,
     ParserCompatibilityProfile,
     ParserEvidenceReference,
@@ -18,11 +23,13 @@ from .contracts import (
     ParserRequestEnvelope,
     ParserWarning,
     ParserWarningCode,
+    _lifecycle_status_from_reference_status,
     ReferenceOutcomeStatus,
     SearchConfigurationExtractionOutcome,
     SearchSourceAnalysisOutcome,
     TransportOutcomeReference,
     TransportOutcomeStatus,
+    _reference_status_from_lifecycle_status,
 )
 
 
@@ -35,6 +42,8 @@ class SyntheticFixtureCase:
     request_envelope: ParserRequestEnvelope
     transport_outcome: TransportOutcomeReference
     attempt_outcome: ParserAttemptOutcome
+    compatibility_profile: ParserCompatibilityProfile | None = None
+    compatibility_outcome: ParserCompatibilityOutcome | None = None
     search_source_analysis_outcome: SearchSourceAnalysisOutcome | None = None
     search_configuration_extraction_outcome: SearchConfigurationExtractionOutcome | None = None
     listing_page_parse_outcome: ListingPageParseOutcome | None = None
@@ -45,29 +54,100 @@ class SyntheticFixtureCase:
             raise ValueError("fixture_id must not be blank")
         if not self.summary.strip():
             raise ValueError("summary must not be blank")
+        if self.compatibility_profile is None:
+            object.__setattr__(self, "compatibility_profile", self.request_envelope.compatibility_profile)
 
 
 def _profile(
     profile_id: str,
     *,
+    lifecycle_status: CompatibilityProfileLifecycleStatus | None = None,
+    authority_class: CompatibilityProfileAuthorityClass = CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
     reference_status: ReferenceOutcomeStatus = ReferenceOutcomeStatus.CURRENT,
     evidence_suffix: str,
+    reference_ids: tuple[str, ...] = ("AVITO-PRIMARY-PARSER-001",),
+    primary_reference_repository: str = "Duff89/parser_avito",
+    primary_reference_commit: str = "48441c352e36919abef13c436f41a3a62636da17",
+    retrieval_date: str = "2026-07-09",
+    effective_date: str = "2026-07-09",
+    supported_extraction_claims: tuple[str, ...] = (),
+    unsupported_extraction_claims: tuple[str, ...] = (
+        "official/public contract",
+        "internal endpoint stability",
+        "phone extraction permission",
+        "production suitability",
+    ),
+    required_fields: tuple[str, ...] = ("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules: tuple[str, ...] = (
+        "supported extraction claims are explicit",
+        "unsupported claims remain explicit",
+    ),
+    warning_mappings: tuple[str, ...] = (
+        "REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",
+        "REFERENCE_DISPUTED->DISPUTED_PROFILE_WARNING",
+    ),
+    error_mappings: tuple[str, ...] = (
+        "REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",
+        "REFERENCE_UNAVAILABLE->UNAVAILABLE_PROFILE_WARNING",
+    ),
+    fixture_ids: tuple[str, ...] = (),
+    acceptance_matrix_rows: tuple[str, ...] = (),
+    revalidation_triggers: tuple[CompatibilityRevalidationTrigger, ...] = (
+        CompatibilityRevalidationTrigger.REFERENCE_CHANGED,
+        CompatibilityRevalidationTrigger.EXTRACTION_CLAIM_CHANGED,
+        CompatibilityRevalidationTrigger.PARSER_WARNING_MAPPING_CHANGED,
+        CompatibilityRevalidationTrigger.FIXTURE_MATRIX_CHANGED,
+        CompatibilityRevalidationTrigger.PROVIDER_STRUCTURE_UNPROVEN_OR_STALE,
+        CompatibilityRevalidationTrigger.OWNER_DECISION_CHANGED,
+    ),
+    compatibility_change_classes: tuple[CompatibilityChangeClass, ...] = (
+        CompatibilityChangeClass.COMPATIBLE,
+        CompatibilityChangeClass.WARNING,
+        CompatibilityChangeClass.BREAKING,
+        CompatibilityChangeClass.UNKNOWN,
+        CompatibilityChangeClass.DISPUTED,
+        CompatibilityChangeClass.UNAVAILABLE,
+    ),
 ) -> ParserCompatibilityProfile:
+    effective_lifecycle_status = (
+        lifecycle_status if lifecycle_status is not None else _lifecycle_status_from_reference_status(reference_status)
+    )
+    evidence_reference = ParserEvidenceReference(
+        reference_id=f"fx::{evidence_suffix}::profile",
+        evidence_kind="compatibility-profile",
+        reference_status=reference_status,
+        lifecycle_status=effective_lifecycle_status,
+        fingerprint=f"fingerprint::{evidence_suffix}",
+        version="2026.07.09",
+        notes=(f"synthetic compatibility profile {profile_id}",),
+    )
     return ParserCompatibilityProfile(
         profile_id=profile_id,
+        semantic_version="2026.07.09",
         profile_version="2026.07.09",
+        lifecycle_status=effective_lifecycle_status,
+        authority_class=authority_class,
+        authority_scope=("observation-only", "synthetic"),
+        reference_ids=reference_ids,
+        primary_reference_repository=primary_reference_repository,
+        primary_reference_commit=primary_reference_commit,
+        retrieval_date=retrieval_date,
+        effective_date=effective_date,
         reference_status=reference_status,
         source_reference=f"safe-source::{evidence_suffix}",
-        evidence_reference=ParserEvidenceReference(
-            reference_id=f"fx::{evidence_suffix}::profile",
-            evidence_kind="compatibility-profile",
-            reference_status=reference_status,
-            fingerprint=f"fingerprint::{evidence_suffix}",
-            version="2026.07.09",
-            notes=(f"synthetic compatibility profile {profile_id}",),
-        ),
-        supported_shape_signatures=(f"shape::{evidence_suffix}::tier1",),
-        unsupported_shape_signatures=(),
+        evidence_reference=evidence_reference,
+        supported_extraction_claims=supported_extraction_claims,
+        supported_shape_signatures=supported_extraction_claims or (f"shape::{evidence_suffix}::tier1",),
+        unsupported_extraction_claims=unsupported_extraction_claims,
+        unsupported_shape_signatures=unsupported_extraction_claims,
+        required_fields=required_fields,
+        completeness_rules=completeness_rules,
+        warning_mappings=warning_mappings,
+        error_mappings=error_mappings,
+        fixture_ids=fixture_ids,
+        acceptance_matrix_rows=acceptance_matrix_rows,
+        revalidation_triggers=revalidation_triggers,
+        compatibility_change_classes=compatibility_change_classes,
         notes=(f"synthetic profile {profile_id}",),
     )
 
@@ -364,6 +444,8 @@ def _fixture(
     transport_outcome: TransportOutcomeReference,
     attempt_outcome: ParserAttemptOutcome,
     *,
+    compatibility_profile: ParserCompatibilityProfile | None = None,
+    compatibility_outcome: ParserCompatibilityOutcome | None = None,
     search_source_analysis_outcome: SearchSourceAnalysisOutcome | None = None,
     search_configuration_extraction_outcome: SearchConfigurationExtractionOutcome | None = None,
     listing_page_parse_outcome: ListingPageParseOutcome | None = None,
@@ -372,13 +454,61 @@ def _fixture(
     return SyntheticFixtureCase(
         fixture_id=fixture_id,
         summary=summary,
+        compatibility_profile=compatibility_profile or request_envelope.compatibility_profile,
         request_envelope=request_envelope,
         transport_outcome=transport_outcome,
         attempt_outcome=attempt_outcome,
+        compatibility_outcome=compatibility_outcome,
         search_source_analysis_outcome=search_source_analysis_outcome,
         search_configuration_extraction_outcome=search_configuration_extraction_outcome,
         listing_page_parse_outcome=listing_page_parse_outcome,
         listing_batch_parse_outcome=listing_batch_parse_outcome,
+    )
+
+
+def _compatibility_outcome(
+    outcome_id: str,
+    profile: ParserCompatibilityProfile,
+    *,
+    lifecycle_status: CompatibilityProfileLifecycleStatus,
+    change_class: CompatibilityChangeClass,
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | None
+    ) = None,
+    evidence_suffix: str,
+    warnings: tuple[ParserWarning, ...] = (),
+    error_messages: tuple[str, ...] = (),
+    revalidation_triggers: tuple[CompatibilityRevalidationTrigger, ...] = (),
+) -> ParserCompatibilityOutcome:
+    return ParserCompatibilityOutcome(
+        outcome_id=outcome_id,
+        compatibility_profile=profile,
+        lifecycle_status=lifecycle_status,
+        change_class=change_class,
+        status=status,
+        warnings=warnings,
+        error_messages=error_messages,
+        revalidation_triggers=revalidation_triggers,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::compatibility",
+                evidence_kind="compatibility-outcome",
+                reference_status=_reference_status_from_lifecycle_status(lifecycle_status),
+                lifecycle_status=lifecycle_status,
+                notes=(f"synthetic compatibility outcome {outcome_id}",),
+            ),
+        ),
+        explanation=ParserOutcomeExplanation(
+            summary="synthetic compatibility revalidation",
+            reason_code=f"FX::{evidence_suffix}",
+            status=lifecycle_status,
+            warnings=warnings,
+        ),
     )
 
 
@@ -395,6 +525,146 @@ _PROFILE_STALE = _profile(
     "fx-apa02-profile-stale",
     reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
     evidence_suffix="stale",
+)
+
+_PROFILE_CURRENT_REFERENCE = _profile(
+    "fx-apa03-profile-current-reference",
+    evidence_suffix="apa03-current-reference",
+    supported_extraction_claims=(
+        "tier-1 semantic claims",
+        "current clean-empty proof only when explicitly evidenced",
+    ),
+    unsupported_extraction_claims=(
+        "official/public contract",
+        "internal endpoint stability",
+    ),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=(
+        "current profile requires explicit evidence metadata",
+        "clean empty remains blocked without current proof",
+    ),
+    warning_mappings=(
+        "REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",
+        "REFERENCE_DISPUTED->DISPUTED_PROFILE_WARNING",
+    ),
+    error_mappings=(
+        "REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",
+        "REFERENCE_UNAVAILABLE->UNAVAILABLE_PROFILE_WARNING",
+    ),
+    fixture_ids=("FX-APA03-CURRENT-REFERENCE-PROFILE-001",),
+    acceptance_matrix_rows=("APA03::CURRENT::TIER1::ACCEPT",),
+)
+_PROFILE_STALE_REFERENCE = _profile(
+    "fx-apa03-profile-stale-reference",
+    lifecycle_status=CompatibilityProfileLifecycleStatus.STALE,
+    reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
+    evidence_suffix="apa03-stale-reference",
+    supported_extraction_claims=(
+        "stale profile blocks clean empty without current proof",
+    ),
+    unsupported_extraction_claims=(
+        "clean empty current proof",
+    ),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("stale profiles cannot be treated as current",),
+    warning_mappings=("REFERENCE_CHANGED->STALE_PROFILE_BLOCKED",),
+    error_mappings=("REFERENCE_STALE->BLOCK_CURRENT_ACCEPTANCE",),
+    fixture_ids=("FX-APA03-STALE-REFERENCE-PROFILE-BLOCKS-CLEAN-EMPTY-001",),
+    acceptance_matrix_rows=("APA03::STALE::EMPTY::BLOCK",),
+)
+_PROFILE_DISPUTED_REFERENCE = _profile(
+    "fx-apa03-profile-disputed-reference",
+    lifecycle_status=CompatibilityProfileLifecycleStatus.DISPUTED,
+    reference_status=ReferenceOutcomeStatus.REFERENCE_DISPUTED,
+    evidence_suffix="apa03-disputed-reference",
+    supported_extraction_claims=("disputed evidence stays warning-only",),
+    unsupported_extraction_claims=("current acceptance",),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("disputed evidence cannot become current",),
+    warning_mappings=("REFERENCE_DISPUTED->DISPUTED_PROFILE_WARNING",),
+    error_mappings=("REFERENCE_DISPUTED->DISPUTED_PROFILE_WARNING",),
+    fixture_ids=("FX-APA03-DISPUTED-REFERENCE-PROFILE-WARNING-001",),
+    acceptance_matrix_rows=("APA03::DISPUTED::WARN",),
+)
+_PROFILE_SUPERSEDED_REFERENCE = _profile(
+    "fx-apa03-profile-superseded-reference",
+    lifecycle_status=CompatibilityProfileLifecycleStatus.SUPERSEDED,
+    reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
+    evidence_suffix="apa03-superseded-reference",
+    supported_extraction_claims=("superseded evidence is revalidation-only",),
+    unsupported_extraction_claims=("current acceptance",),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("superseded evidence requires replacement profile",),
+    warning_mappings=("REFERENCE_SUPERSEDED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+    error_mappings=("REFERENCE_SUPERSEDED->BREAK_CURRENT_ACCEPTANCE",),
+    fixture_ids=("FX-APA03-SUPERSEDED-REFERENCE-PROFILE-001",),
+    acceptance_matrix_rows=("APA03::SUPERSEDED::REVALIDATE",),
+)
+_PROFILE_WITHDRAWN_REFERENCE = _profile(
+    "fx-apa03-profile-withdrawn-reference",
+    lifecycle_status=CompatibilityProfileLifecycleStatus.WITHDRAWN,
+    reference_status=ReferenceOutcomeStatus.REFERENCE_MISSING,
+    evidence_suffix="apa03-withdrawn-reference",
+    supported_extraction_claims=("withdrawn evidence blocks success",),
+    unsupported_extraction_claims=("parser success",),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("withdrawn evidence cannot be accepted as current",),
+    warning_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+    error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+    fixture_ids=("FX-APA03-WITHDRAWN-REFERENCE-PROFILE-BLOCKS-SUCCESS-001",),
+    acceptance_matrix_rows=("APA03::WITHDRAWN::BLOCK",),
+)
+_PROFILE_UNAVAILABLE_REFERENCE = _profile(
+    "fx-apa03-profile-unavailable-reference",
+    lifecycle_status=CompatibilityProfileLifecycleStatus.UNAVAILABLE,
+    reference_status=ReferenceOutcomeStatus.REFERENCE_MISSING,
+    evidence_suffix="apa03-unavailable-reference",
+    supported_extraction_claims=("unavailable evidence remains unavailable",),
+    unsupported_extraction_claims=("current acceptance",),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("unavailable evidence cannot be treated as current",),
+    warning_mappings=("REFERENCE_UNAVAILABLE->UNAVAILABLE_PROFILE_WARNING",),
+    error_mappings=("REFERENCE_UNAVAILABLE->UNAVAILABLE_PROFILE_WARNING",),
+    fixture_ids=("FX-APA03-UNAVAILABLE-REFERENCE-PROFILE-001",),
+    acceptance_matrix_rows=("APA03::UNAVAILABLE::BLOCK",),
+)
+_PROFILE_UNSUPPORTED_CLAIM = _profile(
+    "fx-apa03-profile-unsupported-claim",
+    evidence_suffix="apa03-unsupported-claim",
+    supported_extraction_claims=("search configuration extraction only",),
+    unsupported_extraction_claims=("phone extraction", "listing-detail enrichment"),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("unsupported claims remain unavailable",),
+    warning_mappings=("UNSUPPORTED_EXTRACTION_CLAIM->UNAVAILABLE",),
+    error_mappings=("UNSUPPORTED_EXTRACTION_CLAIM->UNAVAILABLE",),
+    fixture_ids=("FX-APA03-UNSUPPORTED-EXTRACTION-CLAIM-001",),
+    acceptance_matrix_rows=("APA03::CLAIM::UNSUPPORTED",),
+)
+_PROFILE_CHANGED_REFERENCE = _profile(
+    "fx-apa03-profile-changed-reference",
+    evidence_suffix="apa03-changed-reference",
+    supported_extraction_claims=("reference change triggers revalidation",),
+    unsupported_extraction_claims=("stable acceptance without revalidation",),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("changed references must revalidate before acceptance",),
+    warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+    error_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+    fixture_ids=("FX-APA03-REFERENCE-COMMIT-REVALIDATION-001",),
+    acceptance_matrix_rows=("APA03::REFERENCE_CHANGED::REVALIDATE",),
+    revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+)
+_PROFILE_INTERNAL_OBSERVATION = _profile(
+    "fx-apa03-profile-internal-observation",
+    authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+    evidence_suffix="apa03-internal-observation",
+    supported_extraction_claims=("internal endpoint observation only",),
+    unsupported_extraction_claims=("official/public contract", "stable provider contract"),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("observation-only evidence cannot become the official contract",),
+    warning_mappings=("INTERNAL_ENDPOINT_OBSERVATION_ONLY->OBSERVATION_ONLY",),
+    error_mappings=("INTERNAL_ENDPOINT_OBSERVATION_ONLY->NOT_STABLE_CONTRACT",),
+    fixture_ids=("FX-APA03-INTERNAL-ENDPOINT-OBSERVATION-NOT-STABLE-001",),
+    acceptance_matrix_rows=("APA03::OBSERVATION::NOT_STABLE",),
 )
 
 _REQUEST_TIER1 = _request(
@@ -541,7 +811,143 @@ _TRANSPORT_STALE = _transport(
     evidence_reference_suffix="stale",
 )
 
+_REQUEST_CURRENT_REFERENCE = _request(
+    "fx-apa03-request-current-reference",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::current-reference",
+    requested_page_numbers=(1,),
+)
+_REQUEST_STALE_REFERENCE = _request(
+    "fx-apa03-request-stale-reference",
+    _PROFILE_STALE_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::stale-reference",
+    requested_page_numbers=(1,),
+)
+_REQUEST_DISPUTED_REFERENCE = _request(
+    "fx-apa03-request-disputed-reference",
+    _PROFILE_DISPUTED_REFERENCE,
+    purpose="source-analysis",
+    safe_source_reference="source::disputed-reference",
+)
+_REQUEST_SUPERSEDED_REFERENCE = _request(
+    "fx-apa03-request-superseded-reference",
+    _PROFILE_SUPERSEDED_REFERENCE,
+    purpose="source-analysis",
+    safe_source_reference="source::superseded-reference",
+)
+_REQUEST_WITHDRAWN_REFERENCE = _request(
+    "fx-apa03-request-withdrawn-reference",
+    _PROFILE_WITHDRAWN_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::withdrawn-reference",
+    requested_page_numbers=(1,),
+)
+_REQUEST_UNAVAILABLE_REFERENCE = _request(
+    "fx-apa03-request-unavailable-reference",
+    _PROFILE_UNAVAILABLE_REFERENCE,
+    purpose="source-analysis",
+    safe_source_reference="source::unavailable-reference",
+)
+_REQUEST_UNSUPPORTED_CLAIM = _request(
+    "fx-apa03-request-unsupported-claim",
+    _PROFILE_UNSUPPORTED_CLAIM,
+    purpose="configuration-extraction",
+    safe_source_reference="source::unsupported-claim",
+)
+_REQUEST_CHANGED_REFERENCE = _request(
+    "fx-apa03-request-changed-reference",
+    _PROFILE_CHANGED_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::changed-reference",
+    requested_page_numbers=(1,),
+)
+_REQUEST_INTERNAL_OBSERVATION = _request(
+    "fx-apa03-request-internal-observation",
+    _PROFILE_INTERNAL_OBSERVATION,
+    purpose="source-analysis",
+    safe_source_reference="source::internal-observation",
+)
+
+_TRANSPORT_CURRENT_REFERENCE = _transport(
+    "fx-apa03-transport-current-reference",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_CURRENT_REFERENCE.request_id,
+    response_reference="response::current-reference",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-current-reference",
+)
+_TRANSPORT_STALE_REFERENCE = _transport(
+    "fx-apa03-transport-stale-reference",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_STALE_REFERENCE.request_id,
+    response_reference="response::stale-reference",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-stale-reference",
+)
+_TRANSPORT_DISPUTED_REFERENCE = _transport(
+    "fx-apa03-transport-disputed-reference",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_DISPUTED_REFERENCE.request_id,
+    response_reference="response::disputed-reference",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-disputed-reference",
+)
+_TRANSPORT_SUPERSEDED_REFERENCE = _transport(
+    "fx-apa03-transport-superseded-reference",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_SUPERSEDED_REFERENCE.request_id,
+    response_reference="response::superseded-reference",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-superseded-reference",
+)
+_TRANSPORT_WITHDRAWN_REFERENCE = _transport(
+    "fx-apa03-transport-withdrawn-reference",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_WITHDRAWN_REFERENCE.request_id,
+    response_reference="response::withdrawn-reference",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-withdrawn-reference",
+)
+_TRANSPORT_UNAVAILABLE_REFERENCE = _transport(
+    "fx-apa03-transport-unavailable-reference",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_UNAVAILABLE_REFERENCE.request_id,
+    response_reference="response::unavailable-reference",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-unavailable-reference",
+)
+_TRANSPORT_UNSUPPORTED_CLAIM = _transport(
+    "fx-apa03-transport-unsupported-claim",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_UNSUPPORTED_CLAIM.request_id,
+    response_reference="response::unsupported-claim",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-unsupported-claim",
+)
+_TRANSPORT_CHANGED_REFERENCE = _transport(
+    "fx-apa03-transport-changed-reference",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_CHANGED_REFERENCE.request_id,
+    response_reference="response::changed-reference",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-changed-reference",
+)
+_TRANSPORT_INTERNAL_OBSERVATION = _transport(
+    "fx-apa03-transport-internal-observation",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_INTERNAL_OBSERVATION.request_id,
+    response_reference="response::internal-observation",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa03-internal-observation",
+)
+
 _CARD_TIER1 = _usable_listing_card("fx-apa02-card-tier1", evidence_suffix="tier1")
+_CARD_CURRENT_REFERENCE = _usable_listing_card(
+    "fx-apa03-card-current-reference",
+    evidence_suffix="apa03-current-reference",
+)
 _CARD_OPTIONAL_PHONE = _usable_listing_card(
     "fx-apa02-card-optional-phone",
     evidence_suffix="optional-phone",
@@ -559,6 +965,11 @@ _LISTING_TIER1 = _listing_candidate(
     "fx-apa02-listing-tier1",
     _CARD_TIER1,
     evidence_suffix="tier1",
+)
+_LISTING_CURRENT_REFERENCE = _listing_candidate(
+    "fx-apa03-listing-current-reference",
+    _CARD_CURRENT_REFERENCE,
+    evidence_suffix="apa03-current-reference",
 )
 _LISTING_OPTIONAL_PHONE = _listing_candidate(
     "fx-apa02-listing-optional-phone",
@@ -702,6 +1113,267 @@ _BATCH_PARTIAL = _listing_batch(
         ParserWarning(
             code=ParserWarningCode.PARTIAL_PAGE,
             message="batch outcome is partial in synthetic case",
+        ),
+    ),
+)
+
+_PAGE_STALE_BLOCKED = _listing_page(
+    "fx-apa03-page-stale-blocked",
+    _REQUEST_STALE_REFERENCE,
+    _TRANSPORT_STALE_REFERENCE,
+    _PROFILE_STALE_REFERENCE,
+    status=CompatibilityProfileLifecycleStatus.STALE,
+    evidence_suffix="apa03-stale-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.STALE_PROFILE_BLOCKED,
+            message="stale compatibility profile blocks clean empty",
+        ),
+    ),
+)
+_PAGE_WITHDRAWN_BLOCKED = _listing_page(
+    "fx-apa03-page-withdrawn-blocked",
+    _REQUEST_WITHDRAWN_REFERENCE,
+    _TRANSPORT_WITHDRAWN_REFERENCE,
+    _PROFILE_WITHDRAWN_REFERENCE,
+    status=CompatibilityProfileLifecycleStatus.WITHDRAWN,
+    evidence_suffix="apa03-withdrawn-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.WITHDRAWN_PROFILE_BLOCKED,
+            message="withdrawn compatibility profile blocks parser success",
+        ),
+    ),
+)
+_PAGE_CURRENT_REFERENCE = _listing_page(
+    "fx-apa03-page-current-reference",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate=_LISTING_CURRENT_REFERENCE,
+    card=_CARD_CURRENT_REFERENCE,
+    evidence_suffix="apa03-current-reference",
+)
+
+_COMPATIBILITY_CURRENT_REFERENCE = _compatibility_outcome(
+    "fx-apa03-compatibility-current-reference",
+    _PROFILE_CURRENT_REFERENCE,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+    change_class=CompatibilityChangeClass.COMPATIBLE,
+    status=CompatibilityProfileLifecycleStatus.CURRENT,
+    evidence_suffix="apa03-current-reference",
+)
+_COMPATIBILITY_STALE_REFERENCE = _compatibility_outcome(
+    "fx-apa03-compatibility-stale-reference",
+    _PROFILE_STALE_REFERENCE,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.STALE,
+    change_class=CompatibilityChangeClass.BREAKING,
+    status=CompatibilityProfileLifecycleStatus.STALE,
+    evidence_suffix="apa03-stale-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.STALE_PROFILE_BLOCKED,
+            message="stale compatibility profile cannot be treated as current",
+        ),
+    ),
+    revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+)
+_COMPATIBILITY_DISPUTED_REFERENCE = _compatibility_outcome(
+    "fx-apa03-compatibility-disputed-reference",
+    _PROFILE_DISPUTED_REFERENCE,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.DISPUTED,
+    change_class=CompatibilityChangeClass.DISPUTED,
+    status=CompatibilityProfileLifecycleStatus.DISPUTED,
+    evidence_suffix="apa03-disputed-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.DISPUTED_PROFILE_WARNING,
+            message="disputed profile returns warning-only outcome",
+        ),
+    ),
+    revalidation_triggers=(CompatibilityRevalidationTrigger.OWNER_DECISION_CHANGED,),
+)
+_COMPATIBILITY_SUPERSEDED_REFERENCE = _compatibility_outcome(
+    "fx-apa03-compatibility-superseded-reference",
+    _PROFILE_SUPERSEDED_REFERENCE,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.SUPERSEDED,
+    change_class=CompatibilityChangeClass.WARNING,
+    status=CompatibilityProfileLifecycleStatus.SUPERSEDED,
+    evidence_suffix="apa03-superseded-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.REFERENCE_SUPERSEDED,
+            message="superseded profile requires revalidation",
+        ),
+    ),
+    revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+)
+_COMPATIBILITY_WITHDRAWN_REFERENCE = _compatibility_outcome(
+    "fx-apa03-compatibility-withdrawn-reference",
+    _PROFILE_WITHDRAWN_REFERENCE,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.WITHDRAWN,
+    change_class=CompatibilityChangeClass.BREAKING,
+    status=CompatibilityProfileLifecycleStatus.WITHDRAWN,
+    evidence_suffix="apa03-withdrawn-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.WITHDRAWN_PROFILE_BLOCKED,
+            message="withdrawn profile blocks parser success",
+        ),
+    ),
+    revalidation_triggers=(CompatibilityRevalidationTrigger.OWNER_DECISION_CHANGED,),
+)
+_COMPATIBILITY_UNAVAILABLE_REFERENCE = _compatibility_outcome(
+    "fx-apa03-compatibility-unavailable-reference",
+    _PROFILE_UNAVAILABLE_REFERENCE,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.UNAVAILABLE,
+    change_class=CompatibilityChangeClass.UNAVAILABLE,
+    status=CompatibilityProfileLifecycleStatus.UNAVAILABLE,
+    evidence_suffix="apa03-unavailable-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.UNAVAILABLE_PROFILE_WARNING,
+            message="unavailable profile cannot be treated as current",
+        ),
+    ),
+)
+_COMPATIBILITY_CHANGED_REFERENCE = _compatibility_outcome(
+    "fx-apa03-compatibility-changed-reference",
+    _PROFILE_CHANGED_REFERENCE,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+    change_class=CompatibilityChangeClass.WARNING,
+    status=CompatibilityProfileLifecycleStatus.CURRENT,
+    evidence_suffix="apa03-changed-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.REFERENCE_CHANGED,
+            message="changed reference commit requires revalidation",
+        ),
+    ),
+    revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+)
+_COMPATIBILITY_INTERNAL_OBSERVATION = _compatibility_outcome(
+    "fx-apa03-compatibility-internal-observation",
+    _PROFILE_INTERNAL_OBSERVATION,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+    change_class=CompatibilityChangeClass.UNKNOWN,
+    status=CompatibilityProfileLifecycleStatus.CURRENT,
+    evidence_suffix="apa03-internal-observation",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.INTERNAL_ENDPOINT_OBSERVATION_ONLY,
+            message="internal endpoint observation does not become a stable contract",
+        ),
+    ),
+    revalidation_triggers=(CompatibilityRevalidationTrigger.PROVIDER_STRUCTURE_UNPROVEN_OR_STALE,),
+)
+_COMPATIBILITY_UNSUPPORTED_CLAIM = _compatibility_outcome(
+    "fx-apa03-compatibility-unsupported-claim",
+    _PROFILE_UNSUPPORTED_CLAIM,
+    lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+    change_class=CompatibilityChangeClass.UNAVAILABLE,
+    status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+    evidence_suffix="apa03-unsupported-claim",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.UNSUPPORTED_EXTRACTION_CLAIM,
+            message="unsupported extraction claim stays unavailable or unknown",
+        ),
+    ),
+)
+
+_SEARCH_SOURCE_DISPUTED_REFERENCE = _search_source_analysis(
+    "fx-apa03-analysis-disputed-reference",
+    _REQUEST_DISPUTED_REFERENCE,
+    _TRANSPORT_DISPUTED_REFERENCE,
+    _PROFILE_DISPUTED_REFERENCE,
+    status=CompatibilityProfileLifecycleStatus.DISPUTED,
+    evidence_suffix="apa03-disputed-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.DISPUTED_PROFILE_WARNING,
+            message="disputed profile returns warning/disputed outcome",
+        ),
+    ),
+)
+_SEARCH_SOURCE_SUPERSEDED_REFERENCE = _search_source_analysis(
+    "fx-apa03-analysis-superseded-reference",
+    _REQUEST_SUPERSEDED_REFERENCE,
+    _TRANSPORT_SUPERSEDED_REFERENCE,
+    _PROFILE_SUPERSEDED_REFERENCE,
+    status=CompatibilityProfileLifecycleStatus.SUPERSEDED,
+    evidence_suffix="apa03-superseded-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.REFERENCE_SUPERSEDED,
+            message="superseded profile requires revalidation",
+        ),
+    ),
+)
+_SEARCH_SOURCE_UNAVAILABLE_REFERENCE = _search_source_analysis(
+    "fx-apa03-analysis-unavailable-reference",
+    _REQUEST_UNAVAILABLE_REFERENCE,
+    _TRANSPORT_UNAVAILABLE_REFERENCE,
+    _PROFILE_UNAVAILABLE_REFERENCE,
+    status=CompatibilityProfileLifecycleStatus.UNAVAILABLE,
+    evidence_suffix="apa03-unavailable-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.UNAVAILABLE_PROFILE_WARNING,
+            message="unavailable profile cannot be treated as current",
+        ),
+    ),
+)
+_SEARCH_SOURCE_INTERNAL_OBSERVATION = _search_source_analysis(
+    "fx-apa03-analysis-internal-observation",
+    _REQUEST_INTERNAL_OBSERVATION,
+    _TRANSPORT_INTERNAL_OBSERVATION,
+    _PROFILE_INTERNAL_OBSERVATION,
+    status=CompatibilityProfileLifecycleStatus.CURRENT,
+    evidence_suffix="apa03-internal-observation",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.INTERNAL_ENDPOINT_OBSERVATION_ONLY,
+            message="internal endpoint observation does not become a stable contract",
+        ),
+    ),
+)
+_SEARCH_SOURCE_CURRENT_REFERENCE = _search_source_analysis(
+    "fx-apa03-analysis-current-reference",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    evidence_suffix="apa03-current-reference",
+)
+
+_SEARCH_CONFIGURATION_UNSUPPORTED_CLAIM = _search_configuration(
+    "fx-apa03-extraction-unsupported-claim",
+    _REQUEST_UNSUPPORTED_CLAIM,
+    _TRANSPORT_UNSUPPORTED_CLAIM,
+    _PROFILE_UNSUPPORTED_CLAIM,
+    status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+    evidence_suffix="apa03-unsupported-claim",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.UNSUPPORTED_EXTRACTION_CLAIM,
+            message="unsupported extraction claim stays unavailable or unknown",
+        ),
+    ),
+)
+
+_SEARCH_CONFIGURATION_CHANGED_REFERENCE = _search_configuration(
+    "fx-apa03-extraction-changed-reference",
+    _REQUEST_CHANGED_REFERENCE,
+    _TRANSPORT_CHANGED_REFERENCE,
+    _PROFILE_CHANGED_REFERENCE,
+    status=CompatibilityProfileLifecycleStatus.CURRENT,
+    evidence_suffix="apa03-changed-reference",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.REFERENCE_CHANGED,
+            message="changed reference commit requires revalidation",
         ),
     ),
 )
@@ -965,6 +1637,210 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
                 ),
             ),
         ),
+    ),
+    _fixture(
+        "FX-APA03-CURRENT-REFERENCE-PROFILE-001",
+        "current reference profile accepted for semantic Tier 1 claims",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _usable_attempt(
+            "fx-apa03-attempt-current-reference",
+            _PROFILE_CURRENT_REFERENCE,
+            _REQUEST_CURRENT_REFERENCE,
+            _TRANSPORT_CURRENT_REFERENCE,
+            evidence_suffix="apa03-current-reference",
+        ),
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        compatibility_outcome=_COMPATIBILITY_CURRENT_REFERENCE,
+        search_source_analysis_outcome=_SEARCH_SOURCE_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_CURRENT_REFERENCE,
+    ),
+    _fixture(
+        "FX-APA03-STALE-REFERENCE-PROFILE-BLOCKS-CLEAN-EMPTY-001",
+        "stale reference profile blocks clean empty",
+        _REQUEST_STALE_REFERENCE,
+        _TRANSPORT_STALE_REFERENCE,
+        _usable_attempt(
+            "fx-apa03-attempt-stale-reference",
+            _PROFILE_STALE_REFERENCE,
+            _REQUEST_STALE_REFERENCE,
+            _TRANSPORT_STALE_REFERENCE,
+            parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+            reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
+            evidence_suffix="apa03-stale-reference",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.STALE_PROFILE_BLOCKED,
+                    message="stale reference profile blocks clean empty",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_STALE_REFERENCE,
+        compatibility_outcome=_COMPATIBILITY_STALE_REFERENCE,
+        listing_page_parse_outcome=_PAGE_STALE_BLOCKED,
+    ),
+    _fixture(
+        "FX-APA03-DISPUTED-REFERENCE-PROFILE-WARNING-001",
+        "disputed reference profile returns warning/disputed outcome",
+        _REQUEST_DISPUTED_REFERENCE,
+        _TRANSPORT_DISPUTED_REFERENCE,
+        _usable_attempt(
+            "fx-apa03-attempt-disputed-reference",
+            _PROFILE_DISPUTED_REFERENCE,
+            _REQUEST_DISPUTED_REFERENCE,
+            _TRANSPORT_DISPUTED_REFERENCE,
+            parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+            reference_status=ReferenceOutcomeStatus.REFERENCE_DISPUTED,
+            evidence_suffix="apa03-disputed-reference",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.DISPUTED_PROFILE_WARNING,
+                    message="disputed profile returns warning/disputed outcome",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_DISPUTED_REFERENCE,
+        compatibility_outcome=_COMPATIBILITY_DISPUTED_REFERENCE,
+        search_source_analysis_outcome=_SEARCH_SOURCE_DISPUTED_REFERENCE,
+    ),
+    _fixture(
+        "FX-APA03-SUPERSEDED-REFERENCE-PROFILE-001",
+        "superseded reference profile requires revalidation",
+        _REQUEST_SUPERSEDED_REFERENCE,
+        _TRANSPORT_SUPERSEDED_REFERENCE,
+        _usable_attempt(
+            "fx-apa03-attempt-superseded-reference",
+            _PROFILE_SUPERSEDED_REFERENCE,
+            _REQUEST_SUPERSEDED_REFERENCE,
+            _TRANSPORT_SUPERSEDED_REFERENCE,
+            parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+            reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
+            evidence_suffix="apa03-superseded-reference",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.REFERENCE_SUPERSEDED,
+                    message="superseded profile requires revalidation",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_SUPERSEDED_REFERENCE,
+        compatibility_outcome=_COMPATIBILITY_SUPERSEDED_REFERENCE,
+        search_source_analysis_outcome=_SEARCH_SOURCE_SUPERSEDED_REFERENCE,
+    ),
+    _fixture(
+        "FX-APA03-WITHDRAWN-REFERENCE-PROFILE-BLOCKS-SUCCESS-001",
+        "withdrawn reference profile blocks parser success",
+        _REQUEST_WITHDRAWN_REFERENCE,
+        _TRANSPORT_WITHDRAWN_REFERENCE,
+        _usable_attempt(
+            "fx-apa03-attempt-withdrawn-reference",
+            _PROFILE_WITHDRAWN_REFERENCE,
+            _REQUEST_WITHDRAWN_REFERENCE,
+            _TRANSPORT_WITHDRAWN_REFERENCE,
+            parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+            reference_status=ReferenceOutcomeStatus.REFERENCE_MISSING,
+            evidence_suffix="apa03-withdrawn-reference",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.WITHDRAWN_PROFILE_BLOCKED,
+                    message="withdrawn profile blocks parser success",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_WITHDRAWN_REFERENCE,
+        compatibility_outcome=_COMPATIBILITY_WITHDRAWN_REFERENCE,
+        listing_page_parse_outcome=_PAGE_WITHDRAWN_BLOCKED,
+    ),
+    _fixture(
+        "FX-APA03-UNAVAILABLE-REFERENCE-PROFILE-001",
+        "unavailable reference profile remains unavailable",
+        _REQUEST_UNAVAILABLE_REFERENCE,
+        _TRANSPORT_UNAVAILABLE_REFERENCE,
+        _usable_attempt(
+            "fx-apa03-attempt-unavailable-reference",
+            _PROFILE_UNAVAILABLE_REFERENCE,
+            _REQUEST_UNAVAILABLE_REFERENCE,
+            _TRANSPORT_UNAVAILABLE_REFERENCE,
+            parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+            reference_status=ReferenceOutcomeStatus.REFERENCE_MISSING,
+            evidence_suffix="apa03-unavailable-reference",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.UNAVAILABLE_PROFILE_WARNING,
+                    message="unavailable profile remains unavailable",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_UNAVAILABLE_REFERENCE,
+        compatibility_outcome=_COMPATIBILITY_UNAVAILABLE_REFERENCE,
+        search_source_analysis_outcome=_SEARCH_SOURCE_UNAVAILABLE_REFERENCE,
+    ),
+    _fixture(
+        "FX-APA03-UNSUPPORTED-EXTRACTION-CLAIM-001",
+        "unsupported extraction claim stays unavailable or unknown",
+        _REQUEST_UNSUPPORTED_CLAIM,
+        _TRANSPORT_UNSUPPORTED_CLAIM,
+        _usable_attempt(
+            "fx-apa03-attempt-unsupported-claim",
+            _PROFILE_UNSUPPORTED_CLAIM,
+            _REQUEST_UNSUPPORTED_CLAIM,
+            _TRANSPORT_UNSUPPORTED_CLAIM,
+            parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+            evidence_suffix="apa03-unsupported-claim",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.UNSUPPORTED_EXTRACTION_CLAIM,
+                    message="unsupported extraction claim stays unavailable or unknown",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_UNSUPPORTED_CLAIM,
+        compatibility_outcome=_COMPATIBILITY_UNSUPPORTED_CLAIM,
+        search_configuration_extraction_outcome=_SEARCH_CONFIGURATION_UNSUPPORTED_CLAIM,
+    ),
+    _fixture(
+        "FX-APA03-REFERENCE-COMMIT-REVALIDATION-001",
+        "changed reference commit requires revalidation",
+        _REQUEST_CHANGED_REFERENCE,
+        _TRANSPORT_CHANGED_REFERENCE,
+        _usable_attempt(
+            "fx-apa03-attempt-changed-reference",
+            _PROFILE_CHANGED_REFERENCE,
+            _REQUEST_CHANGED_REFERENCE,
+            _TRANSPORT_CHANGED_REFERENCE,
+            evidence_suffix="apa03-changed-reference",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.REFERENCE_CHANGED,
+                    message="changed reference commit requires revalidation",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_CHANGED_REFERENCE,
+        compatibility_outcome=_COMPATIBILITY_CHANGED_REFERENCE,
+        search_configuration_extraction_outcome=_SEARCH_CONFIGURATION_CHANGED_REFERENCE,
+    ),
+    _fixture(
+        "FX-APA03-INTERNAL-ENDPOINT-OBSERVATION-NOT-STABLE-001",
+        "internal endpoint observation does not become a stable contract",
+        _REQUEST_INTERNAL_OBSERVATION,
+        _TRANSPORT_INTERNAL_OBSERVATION,
+        _usable_attempt(
+            "fx-apa03-attempt-internal-observation",
+            _PROFILE_INTERNAL_OBSERVATION,
+            _REQUEST_INTERNAL_OBSERVATION,
+            _TRANSPORT_INTERNAL_OBSERVATION,
+            evidence_suffix="apa03-internal-observation",
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.INTERNAL_ENDPOINT_OBSERVATION_ONLY,
+                    message="internal endpoint observation does not become a stable contract",
+                ),
+            ),
+        ),
+        compatibility_profile=_PROFILE_INTERNAL_OBSERVATION,
+        compatibility_outcome=_COMPATIBILITY_INTERNAL_OBSERVATION,
+        search_source_analysis_outcome=_SEARCH_SOURCE_INTERNAL_OBSERVATION,
     ),
 )
 
