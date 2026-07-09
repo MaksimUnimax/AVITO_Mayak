@@ -107,6 +107,116 @@ class ParserWarningCode(str, Enum):
     WITHDRAWN_PROFILE_BLOCKED = "WITHDRAWN_PROFILE_BLOCKED"
     DISPUTED_PROFILE_WARNING = "DISPUTED_PROFILE_WARNING"
     UNAVAILABLE_PROFILE_WARNING = "UNAVAILABLE_PROFILE_WARNING"
+    SOURCE_URL_UNTRUSTED = "SOURCE_URL_UNTRUSTED"
+    SOURCE_URL_POLICY_MISSING = "SOURCE_URL_POLICY_MISSING"
+    SOURCE_URL_MALFORMED = "SOURCE_URL_MALFORMED"
+    SOURCE_URL_UNSUPPORTED = "SOURCE_URL_UNSUPPORTED"
+    SOURCE_URL_CANONICALIZATION_UNPROVEN = "SOURCE_URL_CANONICALIZATION_UNPROVEN"
+    SOURCE_URL_REDIRECT_POLICY_BLOCKED = "SOURCE_URL_REDIRECT_POLICY_BLOCKED"
+    SOURCE_URL_DNS_POLICY_BLOCKED = "SOURCE_URL_DNS_POLICY_BLOCKED"
+    SOURCE_VALUE_SHELL_TARGET_BLOCKED = "SOURCE_VALUE_SHELL_TARGET_BLOCKED"
+    SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED = "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED"
+    SOURCE_VALUE_NETWORK_TARGET_BLOCKED = "SOURCE_VALUE_NETWORK_TARGET_BLOCKED"
+
+
+class SourceReferenceKind(str, Enum):
+    """Semantic kinds for bounded source references consumed by the parser."""
+
+    BEACON_OWNED_SUBMISSION = "BEACON_OWNED_SUBMISSION"
+    SAFE_REFERENCE = "SAFE_REFERENCE"
+    BOUNDED_VALUE = "BOUNDED_VALUE"
+    EXTERNAL_UNTRUSTED_INPUT = "EXTERNAL_UNTRUSTED_INPUT"
+    BLOCKED_BOUNDARY = "BLOCKED_BOUNDARY"
+
+
+class SourceBoundaryStatus(str, Enum):
+    """Explicit source-boundary analysis statuses."""
+
+    SOURCE_URL_UNTRUSTED = "SOURCE_URL_UNTRUSTED"
+    SOURCE_URL_POLICY_MISSING = "SOURCE_URL_POLICY_MISSING"
+    SOURCE_URL_MALFORMED = "SOURCE_URL_MALFORMED"
+    SOURCE_URL_UNSUPPORTED = "SOURCE_URL_UNSUPPORTED"
+    SOURCE_URL_CANONICALIZATION_UNPROVEN = "SOURCE_URL_CANONICALIZATION_UNPROVEN"
+    SOURCE_URL_REDIRECT_POLICY_BLOCKED = "SOURCE_URL_REDIRECT_POLICY_BLOCKED"
+    SOURCE_URL_DNS_POLICY_BLOCKED = "SOURCE_URL_DNS_POLICY_BLOCKED"
+    SOURCE_VALUE_SHELL_TARGET_BLOCKED = "SOURCE_VALUE_SHELL_TARGET_BLOCKED"
+    SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED = "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED"
+    SOURCE_VALUE_NETWORK_TARGET_BLOCKED = "SOURCE_VALUE_NETWORK_TARGET_BLOCKED"
+
+
+class SourceBoundaryRiskCode(str, Enum):
+    """Risk codes that describe blocked or unproven source-boundary conditions."""
+
+    SOURCE_URL_UNTRUSTED = "SOURCE_URL_UNTRUSTED"
+    SOURCE_URL_POLICY_MISSING = "SOURCE_URL_POLICY_MISSING"
+    SOURCE_URL_MALFORMED = "SOURCE_URL_MALFORMED"
+    SOURCE_URL_UNSUPPORTED = "SOURCE_URL_UNSUPPORTED"
+    SOURCE_URL_CANONICALIZATION_UNPROVEN = "SOURCE_URL_CANONICALIZATION_UNPROVEN"
+    SOURCE_URL_REDIRECT_POLICY_BLOCKED = "SOURCE_URL_REDIRECT_POLICY_BLOCKED"
+    SOURCE_URL_DNS_POLICY_BLOCKED = "SOURCE_URL_DNS_POLICY_BLOCKED"
+    SOURCE_VALUE_SHELL_TARGET_BLOCKED = "SOURCE_VALUE_SHELL_TARGET_BLOCKED"
+    SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED = "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED"
+    SOURCE_VALUE_NETWORK_TARGET_BLOCKED = "SOURCE_VALUE_NETWORK_TARGET_BLOCKED"
+
+
+class SourceBoundaryPolicyRequirement(str, Enum):
+    """Required policy gates for source-boundary validation."""
+
+    HOST_POLICY_REQUIRED = "HOST_POLICY_REQUIRED"
+    PATH_POLICY_REQUIRED = "PATH_POLICY_REQUIRED"
+    QUERY_POLICY_REQUIRED = "QUERY_POLICY_REQUIRED"
+    REDIRECT_POLICY_REQUIRED = "REDIRECT_POLICY_REQUIRED"
+    DNS_POLICY_REQUIRED = "DNS_POLICY_REQUIRED"
+    CANONICALIZATION_PROOF_REQUIRED = "CANONICALIZATION_PROOF_REQUIRED"
+    SHELL_INTERPOLATION_BLOCK_REQUIRED = "SHELL_INTERPOLATION_BLOCK_REQUIRED"
+    FILESYSTEM_TARGET_BLOCK_REQUIRED = "FILESYSTEM_TARGET_BLOCK_REQUIRED"
+    NETWORK_TARGET_BLOCK_REQUIRED = "NETWORK_TARGET_BLOCK_REQUIRED"
+
+
+@dataclass(frozen=True, slots=True)
+class ParserSourceReference:
+    """Beacon-owned bounded source reference with no live URL authority."""
+
+    source_reference_id: str
+    source_reference_kind: SourceReferenceKind
+    beacon_source_reference: str
+    bounded_value: str
+    ownership: str = "Beacon Management"
+    untrusted_input: bool = True
+    host_reference: str | None = None
+    path_reference: str | None = None
+    query_reference: str | None = None
+    header_references: tuple[str, ...] = ()
+    extracted_value_references: tuple[str, ...] = ()
+    policy_requirements: tuple[SourceBoundaryPolicyRequirement, ...] = ()
+    risk_codes: tuple[SourceBoundaryRiskCode, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field_name in ("source_reference_id", "ownership", "bounded_value", "beacon_source_reference"):
+            if not getattr(self, field_name).strip():
+                raise ValueError(f"{field_name} must not be blank")
+        _validate_nonblank_values("header_references", self.header_references)
+        _validate_nonblank_values("extracted_value_references", self.extracted_value_references)
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBoundaryOutcome:
+    """Explicit source-boundary analysis outcome for safe parser metadata."""
+
+    boundary_id: str
+    source_reference: ParserSourceReference
+    status: SourceBoundaryStatus
+    policy_requirements: tuple[SourceBoundaryPolicyRequirement, ...] = ()
+    risk_codes: tuple[SourceBoundaryRiskCode, ...] = ()
+    warnings: tuple[ParserWarning, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.boundary_id.strip():
+            raise ValueError("boundary_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +401,8 @@ class ParserRequestEnvelope:
     purpose: str
     compatibility_profile: ParserCompatibilityProfile
     safe_source_reference: str | None = None
+    source_reference: ParserSourceReference | None = None
+    source_boundary_outcome: SourceBoundaryOutcome | None = None
     configuration_revision_id: str | None = None
     safe_transport_reference: str | None = None
     message_id: str | None = None
@@ -304,6 +416,12 @@ class ParserRequestEnvelope:
         for field_name in ("request_id", "contract_name", "contract_version", "producer", "purpose"):
             if not getattr(self, field_name).strip():
                 raise ValueError(f"{field_name} must not be blank")
+        if self.source_reference is not None and self.safe_source_reference is not None:
+            if self.source_reference.bounded_value != self.safe_source_reference:
+                raise ValueError("safe_source_reference must match source_reference.bounded_value")
+        if self.source_boundary_outcome is not None and self.source_reference is not None:
+            if self.source_boundary_outcome.source_reference != self.source_reference:
+                raise ValueError("source_boundary_outcome.source_reference must match source_reference")
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,6 +453,7 @@ class ParserOutcomeExplanation:
         | ReferenceOutcomeStatus
         | CompatibilityProfileLifecycleStatus
         | CompatibilityChangeClass
+        | SourceBoundaryStatus
         | None
     ) = None
     details: tuple[str, ...] = ()
@@ -379,6 +498,7 @@ class SearchSourceAnalysisOutcome:
         | ReferenceOutcomeStatus
         | CompatibilityProfileLifecycleStatus
         | CompatibilityChangeClass
+        | SourceBoundaryStatus
     )
     compatibility_profile: ParserCompatibilityProfile
     warnings: tuple[ParserWarning, ...] = ()
@@ -403,6 +523,7 @@ class SearchConfigurationExtractionOutcome:
         | ReferenceOutcomeStatus
         | CompatibilityProfileLifecycleStatus
         | CompatibilityChangeClass
+        | SourceBoundaryStatus
     )
     compatibility_profile: ParserCompatibilityProfile
     normalized_geography_candidates: tuple[str, ...] = ()
@@ -470,6 +591,7 @@ class ListingPageParseOutcome:
         | ReferenceOutcomeStatus
         | CompatibilityProfileLifecycleStatus
         | CompatibilityChangeClass
+        | SourceBoundaryStatus
     )
     compatibility_profile: ParserCompatibilityProfile
     normalized_listing_candidates: tuple[NormalizedListingCandidate, ...] = ()
@@ -496,6 +618,7 @@ class ListingBatchParseOutcome:
         | ReferenceOutcomeStatus
         | CompatibilityProfileLifecycleStatus
         | CompatibilityChangeClass
+        | SourceBoundaryStatus
     )
     compatibility_profile: ParserCompatibilityProfile
     page_outcomes: tuple[ListingPageParseOutcome, ...] = ()
@@ -544,6 +667,12 @@ __all__: Final[tuple[str, ...]] = (
     "CompatibilityChangeClass",
     "CompatibilityRevalidationTrigger",
     "ParserWarningCode",
+    "SourceReferenceKind",
+    "SourceBoundaryStatus",
+    "SourceBoundaryRiskCode",
+    "SourceBoundaryPolicyRequirement",
+    "ParserSourceReference",
+    "SourceBoundaryOutcome",
     "ParserEvidenceReference",
     "ParserWarning",
     "ParserCompatibilityProfile",

@@ -11,8 +11,13 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityRevalidationTrigger,
     FIXTURE_IDS,
     ParserOutcomeStatus,
+    ParserWarningCode,
     ReferenceOutcomeStatus,
     SYNTHETIC_FIXTURE_BY_ID,
+    SourceBoundaryPolicyRequirement,
+    SourceBoundaryRiskCode,
+    SourceBoundaryStatus,
+    SourceReferenceKind,
     TransportOutcomeStatus,
 )
 
@@ -102,6 +107,17 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA03-UNSUPPORTED-EXTRACTION-CLAIM-001",
         "FX-APA03-REFERENCE-COMMIT-REVALIDATION-001",
         "FX-APA03-INTERNAL-ENDPOINT-OBSERVATION-NOT-STABLE-001",
+        "FX-APA04-BEACON-OWNED-SOURCE-REFERENCE-001",
+        "FX-APA04-MALFORMED-SOURCE-BLOCKED-001",
+        "FX-APA04-UNSUPPORTED-SOURCE-BLOCKED-001",
+        "FX-APA04-POLICY-MISSING-SOURCE-BLOCKED-001",
+        "FX-APA04-REDIRECT-POLICY-BLOCKED-001",
+        "FX-APA04-DNS-POLICY-BLOCKED-001",
+        "FX-APA04-CANONICALIZATION-UNPROVEN-WARNING-001",
+        "FX-APA04-SHELL-INTERPOLATION-BLOCKED-001",
+        "FX-APA04-FILESYSTEM-TARGET-BLOCKED-001",
+        "FX-APA04-NETWORK-TARGET-BLOCKED-001",
+        "FX-APA04-PARSER-OUTPUT-NOT-OVERWRITING-BEACON-SOURCE-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
@@ -229,3 +245,117 @@ def test_apa03_reference_metadata_stays_observation_only_and_claim_scoped() -> N
     assert internal.compatibility_profile.authority_class is CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
     assert internal.compatibility_outcome is not None
     assert internal.compatibility_outcome.change_class is CompatibilityChangeClass.UNKNOWN
+
+
+def test_apa04_beacon_owned_source_reference_is_bounded_and_untrusted() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-BEACON-OWNED-SOURCE-REFERENCE-001"]
+    avito_live_url_marker = "".join(("a", "v", "i", "t", "o", ".", "r", "u"))
+
+    assert fixture.request_envelope.source_reference is not None
+    assert fixture.request_envelope.source_reference.source_reference_kind is SourceReferenceKind.BEACON_OWNED_SUBMISSION
+    assert fixture.request_envelope.source_reference.ownership == "Beacon Management"
+    assert fixture.request_envelope.source_reference.untrusted_input is True
+    assert fixture.request_envelope.safe_source_reference == "bounded-source-value"
+    assert fixture.request_envelope.source_boundary_outcome is not None
+    assert fixture.request_envelope.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert fixture.request_envelope.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,
+    )
+    assert fixture.request_envelope.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+    )
+    assert fixture.transport_outcome.transport_status is TransportOutcomeStatus.NOT_SENT
+    assert fixture.attempt_outcome.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert fixture.search_source_analysis_outcome is not None
+    assert fixture.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert avito_live_url_marker not in fixture.request_envelope.source_reference.bounded_value.lower()
+
+
+def test_apa04_blocked_source_boundaries_remain_explicit() -> None:
+    malformed = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-MALFORMED-SOURCE-BLOCKED-001"]
+    unsupported = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-UNSUPPORTED-SOURCE-BLOCKED-001"]
+    policy_missing = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-POLICY-MISSING-SOURCE-BLOCKED-001"]
+    redirect_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-REDIRECT-POLICY-BLOCKED-001"]
+    dns_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-DNS-POLICY-BLOCKED-001"]
+    canonicalization = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-CANONICALIZATION-UNPROVEN-WARNING-001"]
+    shell_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SHELL-INTERPOLATION-BLOCKED-001"]
+    filesystem_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-FILESYSTEM-TARGET-BLOCKED-001"]
+    network_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-NETWORK-TARGET-BLOCKED-001"]
+
+    assert malformed.search_source_analysis_outcome is not None
+    assert malformed.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+    assert malformed.transport_outcome.transport_status is TransportOutcomeStatus.NOT_SENT
+    assert malformed.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+
+    assert unsupported.search_source_analysis_outcome is not None
+    assert unsupported.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNSUPPORTED
+    assert unsupported.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+
+    assert policy_missing.search_source_analysis_outcome is not None
+    assert policy_missing.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_POLICY_MISSING
+    assert policy_missing.request_envelope.source_reference is not None
+    assert policy_missing.request_envelope.source_reference.host_reference == "provider.example"
+    assert policy_missing.request_envelope.source_reference.path_reference == "/search"
+    assert policy_missing.request_envelope.source_reference.query_reference == "q=bounded-source-value"
+
+    assert redirect_blocked.search_source_analysis_outcome is not None
+    assert redirect_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_REDIRECT_POLICY_BLOCKED
+    assert redirect_blocked.request_envelope.source_boundary_outcome is not None
+    assert redirect_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.REDIRECT_POLICY_REQUIRED,
+    )
+
+    assert dns_blocked.search_source_analysis_outcome is not None
+    assert dns_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_DNS_POLICY_BLOCKED
+    assert dns_blocked.request_envelope.source_boundary_outcome is not None
+    assert dns_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.DNS_POLICY_REQUIRED,
+    )
+
+    assert canonicalization.search_source_analysis_outcome is not None
+    assert canonicalization.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_CANONICALIZATION_UNPROVEN
+    assert canonicalization.attempt_outcome.parser_status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert canonicalization.search_source_analysis_outcome.warnings[0].code is ParserWarningCode.SOURCE_URL_CANONICALIZATION_UNPROVEN
+
+    assert shell_blocked.search_source_analysis_outcome is not None
+    assert shell_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_VALUE_SHELL_TARGET_BLOCKED
+    assert shell_blocked.request_envelope.source_boundary_outcome is not None
+    assert shell_blocked.request_envelope.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_VALUE_SHELL_TARGET_BLOCKED,
+    )
+
+    assert filesystem_blocked.search_source_analysis_outcome is not None
+    assert filesystem_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED
+    assert filesystem_blocked.request_envelope.source_boundary_outcome is not None
+    assert filesystem_blocked.request_envelope.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED,
+    )
+    assert filesystem_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.FILESYSTEM_TARGET_BLOCK_REQUIRED,
+    )
+
+    assert network_blocked.search_source_analysis_outcome is not None
+    assert network_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_VALUE_NETWORK_TARGET_BLOCKED
+    assert network_blocked.request_envelope.source_boundary_outcome is not None
+    assert network_blocked.request_envelope.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_VALUE_NETWORK_TARGET_BLOCKED,
+    )
+    assert network_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.NETWORK_TARGET_BLOCK_REQUIRED,
+    )
+
+
+def test_apa04_parser_output_preserves_beacon_source_ownership() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-PARSER-OUTPUT-NOT-OVERWRITING-BEACON-SOURCE-001"]
+
+    assert fixture.request_envelope.source_reference is not None
+    assert fixture.request_envelope.source_boundary_outcome is not None
+    assert fixture.request_envelope.source_boundary_outcome.source_reference is fixture.request_envelope.source_reference
+    assert fixture.search_configuration_extraction_outcome is not None
+    assert fixture.search_configuration_extraction_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert fixture.search_configuration_extraction_outcome.normalized_geography_candidates == ("safe-geography",)
+    assert fixture.search_configuration_extraction_outcome.normalized_category_candidates == ("safe-category",)
+    assert fixture.search_configuration_extraction_outcome.normalized_filter_candidates == ("ownership=beacon",)
+    assert not hasattr(fixture.search_configuration_extraction_outcome, "source_reference")

@@ -13,10 +13,17 @@ from mayak.modules.avito_parser_adapter import (
     ParserCompatibilityProfile,
     ParserEvidenceReference,
     ParserOutcomeExplanation,
+    ParserRequestEnvelope,
     ParserWarning,
     ParserWarningCode,
     ReferenceOutcomeStatus,
     SYNTHETIC_FIXTURE_BY_ID,
+    ParserSourceReference,
+    SourceBoundaryOutcome,
+    SourceBoundaryPolicyRequirement,
+    SourceBoundaryRiskCode,
+    SourceBoundaryStatus,
+    SourceReferenceKind,
     TransportOutcomeStatus,
 )
 from mayak.platform import boundaries
@@ -43,6 +50,12 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ParserWarning",
         "ParserEvidenceReference",
         "ParserOutcomeExplanation",
+        "ParserSourceReference",
+        "SourceBoundaryOutcome",
+        "SourceBoundaryPolicyRequirement",
+        "SourceBoundaryRiskCode",
+        "SourceBoundaryStatus",
+        "SourceReferenceKind",
         "NormalizedListingCandidate",
         "ListingCardCandidate",
         "FIXTURE_IDS",
@@ -139,9 +152,110 @@ def test_contract_objects_are_frozen_and_safe() -> None:
         raise AssertionError("ParserCompatibilityProfile must be frozen")
 
 
+def test_source_boundary_contracts_keep_bounded_references_explicit() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::boundary::evidence",
+        evidence_kind="source-boundary",
+    )
+    source_reference = ParserSourceReference(
+        source_reference_id="fx::boundary::source-reference",
+        source_reference_kind=SourceReferenceKind.BEACON_OWNED_SUBMISSION,
+        beacon_source_reference="source-ref:beacon-revision-999",
+        bounded_value="bounded-source-value",
+        host_reference="provider.example",
+        path_reference="/search",
+        query_reference="q=bounded",
+        policy_requirements=(
+            SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+        ),
+        risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+    )
+    warning = ParserWarning(
+        code=ParserWarningCode.SOURCE_URL_UNTRUSTED,
+        message="bounded source reference is explicitly untrusted",
+        evidence_reference=evidence,
+    )
+    boundary = SourceBoundaryOutcome(
+        boundary_id="fx::boundary::outcome",
+        source_reference=source_reference,
+        status=SourceBoundaryStatus.SOURCE_URL_UNTRUSTED,
+        policy_requirements=(
+            SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+        ),
+        risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+        warnings=(warning,),
+    )
+    request = ParserRequestEnvelope(
+        request_id="fx::boundary::request",
+        contract_name="mayak.avito.parser.request",
+        contract_version="1.0",
+        producer="mayak.tests.synthetic",
+        purpose="source-boundary-analysis",
+        compatibility_profile=ParserCompatibilityProfile(
+            profile_id="fx::boundary::profile",
+            semantic_version="2026.07.09",
+            profile_version="2026.07.09",
+            reference_ids=("AVITO-PRIMARY-PARSER-001",),
+            primary_reference_repository="Duff89/parser_avito",
+            primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        ),
+        safe_source_reference="bounded-source-value",
+        source_reference=source_reference,
+        source_boundary_outcome=boundary,
+        configuration_revision_id="cfg::boundary::001",
+        safe_transport_reference="transport::boundary",
+    )
+
+    assert request.source_reference is source_reference
+    assert request.source_boundary_outcome is boundary
+    assert request.source_boundary_outcome.source_reference is source_reference
+    assert request.safe_source_reference == source_reference.bounded_value
+    assert boundary.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert boundary.policy_requirements == (
+        SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+    )
+    assert boundary.risk_codes == (SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,)
+    assert warning.code is ParserWarningCode.SOURCE_URL_UNTRUSTED
+    assert {field.name for field in fields(ParserRequestEnvelope)} >= {
+        "safe_source_reference",
+        "source_reference",
+        "source_boundary_outcome",
+        "configuration_revision_id",
+        "safe_transport_reference",
+    }
+    assert {field.name for field in fields(ParserSourceReference)} >= {
+        "source_reference_id",
+        "source_reference_kind",
+        "beacon_source_reference",
+        "bounded_value",
+        "policy_requirements",
+        "risk_codes",
+    }
+    assert {field.name for field in fields(SourceBoundaryOutcome)} >= {
+        "boundary_id",
+        "source_reference",
+        "status",
+        "policy_requirements",
+        "risk_codes",
+        "warnings",
+    }
+    assert {member.value for member in ParserWarningCode} >= {
+        "SOURCE_URL_UNTRUSTED",
+        "SOURCE_URL_POLICY_MISSING",
+        "SOURCE_URL_MALFORMED",
+        "SOURCE_URL_UNSUPPORTED",
+    }
+
+
 def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
     assert len(SYNTHETIC_FIXTURE_BY_ID) == len({fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_BY_ID.values()})
     avito_live_url_marker = "".join(("a", "v", "i", "t", "o", ".", "r", "u"))
     for fixture in SYNTHETIC_FIXTURE_BY_ID.values():
-        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-"))
+        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-"))
         assert avito_live_url_marker not in fixture.summary.lower()
