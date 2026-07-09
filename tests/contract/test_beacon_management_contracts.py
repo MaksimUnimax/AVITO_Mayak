@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from mayak.modules import beacon_management
-from mayak.modules.beacon_management import contracts
+from mayak.modules.beacon_management import SYNTHETIC_FIXTURE_BY_ID, contracts
 from mayak.modules.beacon_management.contracts import (
     Beacon,
     BeaconActionCausation,
@@ -18,7 +18,13 @@ from mayak.modules.beacon_management.contracts import (
     BeaconActorKind,
     BeaconAuthorizationDecision,
     BeaconAuthorizationOutcome,
+    BeaconConfigurationEvidenceRetentionDecision,
+    BeaconConfigurationRetentionBoundary,
+    BeaconConfigurationStoragePolicyOutcome,
+    BeaconConfigurationStoragePolicyRejectionReason,
     BeaconCurrentConfiguration,
+    BeaconCurrentConfigurationAuthorityStatus,
+    BeaconCurrentConfigurationDecision,
     BeaconDecisionStatus,
     BeaconEffectiveConfigurationDecision,
     BeaconEffectiveConfigurationRejectionReason,
@@ -1492,6 +1498,174 @@ def test_beacon_management_source_url_is_preserved_separately_from_snapshot_and_
     assert "submitted_url" not in type(current.accepted_snapshot).model_fields
 
 
+def test_bm07_current_configuration_fixture_represent_one_current_active_configuration() -> None:
+    configuration_fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM07-CURRENT-CONFIG-ACCEPTED-001"]
+
+    assert configuration_fixture.current_configuration is not None
+    assert configuration_fixture.current_configuration_decision is not None
+    current_configuration = configuration_fixture.current_configuration
+    decision = configuration_fixture.current_configuration_decision
+    assert (
+        decision.authority_status
+        is BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE
+    )
+    assert decision.storage_policy_outcome is BeaconConfigurationStoragePolicyOutcome.ALLOWED
+    assert decision.retention_boundary is (
+        BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION
+    )
+    assert len(decision.current_user_facing_active_configurations) == 1
+    assert (
+        decision.current_scan_configuration_reference == current_configuration.current_revision_id
+    )
+    assert (
+        current_configuration.source_url.evidence_reference
+        != current_configuration.accepted_snapshot.evidence_reference
+    )
+    assert (
+        current_configuration.source_url.evidence_reference
+        != current_configuration.current_revision_id
+    )
+    assert (
+        current_configuration.accepted_snapshot.evidence_reference
+        != current_configuration.overrides[0].override_reference
+    )
+    assert (
+        current_configuration.source_url.evidence_reference
+        != current_configuration.overrides[0].override_reference
+    )
+    assert (
+        current_configuration.current_revision_id
+        != current_configuration.overrides[0].override_reference
+    )
+    assert (
+        current_configuration.current_revision_id
+        != current_configuration.accepted_snapshot.evidence_reference
+    )
+
+
+def test_bm07_configuration_replacement_replaces_current_working_configuration_semantically() -> (
+    None
+):
+    configuration_fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM07-CURRENT-CONFIG-REPLACED-001"]
+
+    assert configuration_fixture.current_configuration is not None
+    assert configuration_fixture.current_configuration_decision is not None
+    current_configuration = configuration_fixture.current_configuration
+    decision = configuration_fixture.current_configuration_decision
+    replaced = decision.replaced_current_user_facing_configuration
+
+    assert replaced is not None
+    assert decision.configuration_change_replaces_current_working_configuration is True
+    assert (
+        decision.authority_status
+        is BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE
+    )
+    assert decision.storage_policy_outcome is BeaconConfigurationStoragePolicyOutcome.ALLOWED
+    assert decision.retention_boundary is (
+        BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION
+    )
+    assert len(decision.current_user_facing_active_configurations) == 1
+    assert decision.current_user_facing_active_configurations[0] == current_configuration
+    assert (
+        decision.current_scan_configuration_reference == current_configuration.current_revision_id
+    )
+    assert replaced.current_revision_id == "current-config-bm07-replaced-old-ref-001"
+    assert replaced.current_revision_id != current_configuration.current_revision_id
+    assert current_configuration.previous_user_facing_revision_ids == (
+        "current-config-bm07-replaced-old-ref-001",
+    )
+
+
+def test_bm07_committed_scan_audit_evidence_fixture_retains_original_configuration_reference() -> (
+    None
+):
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM07-COMMITTED-SCAN-EVIDENCE-RETAINED-001"]
+
+    assert fixture.configuration_evidence_retention_decision is not None
+    decision = fixture.configuration_evidence_retention_decision
+    assert decision.authority_status is (
+        BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE
+    )
+    assert decision.storage_policy_outcome is BeaconConfigurationStoragePolicyOutcome.ALLOWED
+    assert decision.retention_boundary is (
+        BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE
+    )
+    assert (
+        decision.current_configuration_reference != decision.committed_scan_audit_evidence_reference
+    )
+    assert (
+        decision.original_current_configuration_reference == "current-config-bm07-original-ref-001"
+    )
+    assert decision.minimal_immutable_scan_audit_evidence_reference == (
+        "retention-boundary-bm07-minimal-001"
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture_id,validator,expected_message,expected_reason",
+    (
+        (
+            "FX-BM07-MULTIPLE-CURRENT-CONFIGS-REJECTED-001",
+            BeaconCurrentConfigurationDecision,
+            "exactly one current user-facing active configuration must be represented",
+            BeaconConfigurationStoragePolicyRejectionReason.MORE_THAN_ONE_CURRENT_USER_FACING_ACTIVE_CONFIGURATION,
+        ),
+        (
+            "FX-BM07-NO-REINTERPRETATION-BLOCKED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "must not be silently reinterpreted",
+            BeaconConfigurationStoragePolicyRejectionReason.REINTERPRETING_COMMITTED_SCAN_AUDIT_FACTS,
+        ),
+        (
+            "FX-BM07-UNBOUNDED-REVISION-CLOUTTER-REJECTED-001",
+            BeaconCurrentConfigurationDecision,
+            "must not become unbounded user-visible clutter",
+            BeaconConfigurationStoragePolicyRejectionReason.UNBOUNDED_USER_FACING_REVISION_CLOUTTER,
+        ),
+        (
+            "FX-BM07-PHYSICAL-COMPACTION-DELETE-REJECTED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "physical delete or compaction in semantic contract is forbidden",
+            BeaconConfigurationStoragePolicyRejectionReason.PHYSICAL_DELETE_OR_COMPACTION_CLAIM,
+        ),
+        (
+            "FX-BM07-RUNTIME-PERSISTENCE-CLAIM-REJECTED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "DB/repository/runtime persistence implementation claim is forbidden",
+            BeaconConfigurationStoragePolicyRejectionReason.DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM,
+        ),
+        (
+            "FX-BM07-SCANRUN-HISTORY-CLAIM-REJECTED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "ScanRun/listing history state claim is forbidden",
+            BeaconConfigurationStoragePolicyRejectionReason.SCANRUN_LISTING_HISTORY_STATE_CLAIM,
+        ),
+        (
+            "FX-BM07-MINIMAL-COMMITTED-EVIDENCE-NOT-EDITABLE-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "minimal committed evidence cannot be treated as editable current config",
+            BeaconConfigurationStoragePolicyRejectionReason.MINIMAL_COMMITTED_EVIDENCE_EDITABLE,
+        ),
+    ),
+)
+def test_bm07_blocked_and_rejected_semantics_are_rejected(
+    fixture_id: str,
+    validator: type[BeaconConfigurationEvidenceRetentionDecision]
+    | type[BeaconCurrentConfigurationDecision],
+    expected_message: str,
+    expected_reason: BeaconConfigurationStoragePolicyRejectionReason,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+    decision = (
+        fixture.current_configuration_decision or fixture.configuration_evidence_retention_decision
+    )
+    assert decision is not None
+    assert decision.rejection_reason is expected_reason
+
+    with pytest.raises(ValidationError, match=expected_message):
+        validator.model_validate(decision.model_dump())
+
+
 def test_free_country_wide_activation_cannot_be_allowed() -> None:
     with pytest.raises(ValidationError):
         contracts.BeaconActivationDecision(
@@ -1813,6 +1987,42 @@ def test_beacon_management_contract_module_exports_bm06_override_effective_confi
     assert BeaconPatchSaveRejectionReason.__name__ == "BeaconPatchSaveRejectionReason"
 
 
+def test_beacon_management_package_exports_bm07_current_configuration_storage_primitives() -> None:
+    bm07_names = (
+        "BeaconCurrentConfigurationAuthorityStatus",
+        "BeaconCurrentConfigurationDecision",
+        "BeaconConfigurationEvidenceRetentionDecision",
+        "BeaconConfigurationRetentionBoundary",
+        "BeaconConfigurationStoragePolicyOutcome",
+        "BeaconConfigurationStoragePolicyRejectionReason",
+    )
+
+    for name in bm07_names:
+        assert hasattr(beacon_management, name)
+        assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
+def test_beacon_management_contract_exports_bm07_storage_primitives() -> None:
+    assert (
+        BeaconCurrentConfigurationAuthorityStatus.__name__
+        == "BeaconCurrentConfigurationAuthorityStatus"
+    )
+    assert BeaconCurrentConfigurationDecision.__name__ == "BeaconCurrentConfigurationDecision"
+    assert (
+        BeaconConfigurationEvidenceRetentionDecision.__name__
+        == "BeaconConfigurationEvidenceRetentionDecision"
+    )
+    assert BeaconConfigurationRetentionBoundary.__name__ == "BeaconConfigurationRetentionBoundary"
+    assert (
+        BeaconConfigurationStoragePolicyOutcome.__name__
+        == "BeaconConfigurationStoragePolicyOutcome"
+    )
+    assert (
+        BeaconConfigurationStoragePolicyRejectionReason.__name__
+        == "BeaconConfigurationStoragePolicyRejectionReason"
+    )
+
+
 def test_supported_explicit_field_override_can_be_applied() -> None:
     override = BeaconOverridePatchOperation(
         field_name="district",
@@ -2031,9 +2241,7 @@ def test_effective_configuration_rejects_applied_override_value_mismatches(
         rejection_reason=None,
     )
 
-    with pytest.raises(
-        ValidationError, match="applied override must match requested values"
-    ):
+    with pytest.raises(ValidationError, match="applied override must match requested values"):
         BeaconEffectiveConfigurationDecision(
             decision_id="decision-contract-bm06-effective-mismatch-001",
             beacon_id="beacon-contract-bm06-effective-mismatch-001",

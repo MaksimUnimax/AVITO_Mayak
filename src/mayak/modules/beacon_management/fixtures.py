@@ -16,7 +16,13 @@ from .contracts import (
     BeaconActorKind,
     BeaconAuthorizationDecision,
     BeaconAuthorizationOutcome,
+    BeaconConfigurationEvidenceRetentionDecision,
+    BeaconConfigurationRetentionBoundary,
+    BeaconConfigurationStoragePolicyOutcome,
+    BeaconConfigurationStoragePolicyRejectionReason,
     BeaconCurrentConfiguration,
+    BeaconCurrentConfigurationAuthorityStatus,
+    BeaconCurrentConfigurationDecision,
     BeaconDecisionStatus,
     BeaconEffectiveConfigurationDecision,
     BeaconEffectiveConfigurationRejectionReason,
@@ -80,6 +86,10 @@ class SyntheticFixtureCase(BaseModel):
     ownership_decision: BeaconOwnershipDecision | None = None
     authorization_decision: BeaconAuthorizationDecision | None = None
     history_entry: BeaconHistoryEntry | None = None
+    current_configuration_decision: BeaconCurrentConfigurationDecision | None = None
+    configuration_evidence_retention_decision: (
+        BeaconConfigurationEvidenceRetentionDecision | None
+    ) = None
 
 
 _OWN_ACCOUNT_ID = "acct-bm-synth-own-001"
@@ -230,6 +240,96 @@ def _configuration(
         lifecycle_state=lifecycle_state,
         retained_evidence_references=retained_evidence_references,
         previous_user_facing_revision_ids=previous_user_facing_revision_ids,
+    )
+
+
+def _current_configuration_decision(
+    *,
+    decision_id: str,
+    beacon_id: str,
+    account_id: str,
+    current_user_facing_active_configurations: tuple[BeaconCurrentConfiguration, ...],
+    current_scan_configuration_reference: str,
+    authority_status: BeaconCurrentConfigurationAuthorityStatus,
+    storage_policy_outcome: BeaconConfigurationStoragePolicyOutcome,
+    retention_boundary: BeaconConfigurationRetentionBoundary,
+    replaced_current_user_facing_configuration: BeaconCurrentConfiguration | None = None,
+    committed_scan_audit_evidence_configuration_reference: str | None = None,
+    configuration_change_replaces_current_working_configuration: bool = True,
+    already_committed_scan_audit_facts_reinterpreted: bool = False,
+    physical_delete_or_compaction_claimed: bool = False,
+    db_repository_runtime_persistence_claimed: bool = False,
+    scanrun_listing_history_state_claimed: bool = False,
+    minimal_committed_evidence_editable: bool = False,
+    drops_committed_scan_audit_evidence: bool = False,
+    provenance_boundary_changed: bool = False,
+    rejection_reason: BeaconConfigurationStoragePolicyRejectionReason | None = None,
+) -> BeaconCurrentConfigurationDecision:
+    return BeaconCurrentConfigurationDecision(
+        decision_id=decision_id,
+        beacon_id=beacon_id,
+        account_id=account_id,
+        authority_status=authority_status,
+        storage_policy_outcome=storage_policy_outcome,
+        retention_boundary=retention_boundary,
+        current_user_facing_active_configurations=current_user_facing_active_configurations,
+        replaced_current_user_facing_configuration=replaced_current_user_facing_configuration,
+        current_scan_configuration_reference=current_scan_configuration_reference,
+        committed_scan_audit_evidence_configuration_reference=committed_scan_audit_evidence_configuration_reference,
+        configuration_change_replaces_current_working_configuration=(
+            configuration_change_replaces_current_working_configuration
+        ),
+        already_committed_scan_audit_facts_reinterpreted=already_committed_scan_audit_facts_reinterpreted,
+        physical_delete_or_compaction_claimed=physical_delete_or_compaction_claimed,
+        db_repository_runtime_persistence_claimed=db_repository_runtime_persistence_claimed,
+        scanrun_listing_history_state_claimed=scanrun_listing_history_state_claimed,
+        minimal_committed_evidence_editable=minimal_committed_evidence_editable,
+        drops_committed_scan_audit_evidence=drops_committed_scan_audit_evidence,
+        provenance_boundary_changed=provenance_boundary_changed,
+        rejection_reason=rejection_reason,
+    )
+
+
+def _configuration_evidence_retention_decision(
+    *,
+    decision_id: str,
+    beacon_id: str,
+    account_id: str,
+    committed_scan_audit_evidence_reference: str,
+    original_current_configuration_reference: str,
+    current_configuration_reference: str | None,
+    minimal_immutable_scan_audit_evidence_reference: str,
+    authority_status: BeaconCurrentConfigurationAuthorityStatus,
+    storage_policy_outcome: BeaconConfigurationStoragePolicyOutcome,
+    retention_boundary: BeaconConfigurationRetentionBoundary,
+    minimal_committed_evidence_editable: bool = False,
+    already_committed_scan_audit_facts_reinterpreted: bool = False,
+    physical_delete_or_compaction_claimed: bool = False,
+    db_repository_runtime_persistence_claimed: bool = False,
+    scanrun_listing_history_state_claimed: bool = False,
+    drops_committed_scan_audit_evidence: bool = False,
+    provenance_boundary_changed: bool = False,
+    rejection_reason: BeaconConfigurationStoragePolicyRejectionReason | None = None,
+) -> BeaconConfigurationEvidenceRetentionDecision:
+    return BeaconConfigurationEvidenceRetentionDecision(
+        decision_id=decision_id,
+        beacon_id=beacon_id,
+        account_id=account_id,
+        authority_status=authority_status,
+        storage_policy_outcome=storage_policy_outcome,
+        retention_boundary=retention_boundary,
+        committed_scan_audit_evidence_reference=committed_scan_audit_evidence_reference,
+        original_current_configuration_reference=original_current_configuration_reference,
+        current_configuration_reference=current_configuration_reference,
+        minimal_immutable_scan_audit_evidence_reference=minimal_immutable_scan_audit_evidence_reference,
+        minimal_committed_evidence_editable=minimal_committed_evidence_editable,
+        already_committed_scan_audit_facts_reinterpreted=already_committed_scan_audit_facts_reinterpreted,
+        physical_delete_or_compaction_claimed=physical_delete_or_compaction_claimed,
+        db_repository_runtime_persistence_claimed=db_repository_runtime_persistence_claimed,
+        scanrun_listing_history_state_claimed=scanrun_listing_history_state_claimed,
+        drops_committed_scan_audit_evidence=drops_committed_scan_audit_evidence,
+        provenance_boundary_changed=provenance_boundary_changed,
+        rejection_reason=rejection_reason,
     )
 
 
@@ -1231,9 +1331,7 @@ _BM06_SINGLE_VALUE_MISMATCH_EFFECTIVE_CONFIGURATION = (
         account_id=_OWN_ACCOUNT_ID,
         source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
         accepted_snapshot=_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT,
-        override_operations=(
-            _BM06_SINGLE_VALUE_MISMATCH_OVERRIDE_OPERATION,
-        ),
+        override_operations=(_BM06_SINGLE_VALUE_MISMATCH_OVERRIDE_OPERATION,),
         status=BeaconDecisionStatus.ALLOWED,
         effective_configuration_reference="effective-config-bm06-single-value-mismatch-001",
         authoritative_state_reference=(
@@ -1762,6 +1860,333 @@ _SYSTEM_FREEZE_BLOCKED = _authorization_decision(
     outcome=BeaconAuthorizationOutcome.BLOCKED,
     safe_reason_code="SYSTEM_FREEZE_BLOCKED",
     reason="System freeze after expiry is blocked until causation and policy source exist.",
+)
+
+_BM07_CURRENT_SOURCE_URL = _source_url(
+    "current-config-bm07-source-ref-001",
+    "https://example.invalid/search?query=current-config-bm07&city=synthetic",
+)
+
+_BM07_CURRENT_SNAPSHOT = _snapshot(
+    snapshot_id="snapshot-current-config-bm07-001",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=True,
+    evidence_reference="current-config-bm07-snapshot-ref-001",
+    parser_evidence_reference=_parser_evidence_reference(
+        evidence_reference="current-config-bm07-parser-evidence-001"
+    ),
+    normalized_filter_values=("city=synthetic-city", "category=synthetic-category"),
+)
+
+_BM07_CURRENT_OVERRIDE = _override(
+    field_name="district",
+    supported=True,
+    status=BeaconOverrideStatus.APPLIED,
+    requested_values=("north",),
+    applied_values=("north",),
+    reference="current-config-bm07-override-ref-001",
+    reason="synthetic BM07 override",
+)
+
+_BM07_CURRENT_CONFIGURATION = _configuration(
+    beacon_id="beacon-bm07-current-001",
+    account_id=_OWN_ACCOUNT_ID,
+    source_url=_BM07_CURRENT_SOURCE_URL,
+    snapshot=_BM07_CURRENT_SNAPSHOT,
+    display_name="Synthetic BM07 current configuration",
+    lifecycle_state=BeaconLifecycleState.ACTIVE,
+    current_revision_id="current-config-bm07-effective-ref-001",
+    overrides=(_BM07_CURRENT_OVERRIDE,),
+    retained_evidence_references=("committed-scan-evidence-bm07-current-accepted-001",),
+    previous_user_facing_revision_ids=(),
+)
+
+_BM07_CURRENT_CONFIGURATION_DECISION = _current_configuration_decision(
+    decision_id="storage-policy-bm07-current-config-accepted-001",
+    beacon_id="beacon-bm07-current-001",
+    account_id=_OWN_ACCOUNT_ID,
+    current_user_facing_active_configurations=(_BM07_CURRENT_CONFIGURATION,),
+    current_scan_configuration_reference=_BM07_CURRENT_CONFIGURATION.current_revision_id,
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.ALLOWED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION,
+)
+
+_BM07_SECOND_CURRENT_CONFIGURATION = _BM07_CURRENT_CONFIGURATION.model_copy(
+    update={
+        "current_revision_id": "current-config-bm07-effective-ref-002",
+        "display_name": "Synthetic BM07 second current configuration",
+    }
+)
+
+_BM07_MULTIPLE_CURRENT_CONFIGURATIONS_DECISION = BeaconCurrentConfigurationDecision.model_construct(
+    decision_id="storage-policy-bm07-multiple-current-configurations-rejected-001",
+    beacon_id="beacon-bm07-current-001",
+    account_id=_OWN_ACCOUNT_ID,
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.REJECTED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION,
+    current_user_facing_active_configurations=(
+        _BM07_CURRENT_CONFIGURATION,
+        _BM07_SECOND_CURRENT_CONFIGURATION,
+    ),
+    replaced_current_user_facing_configuration=None,
+    current_scan_configuration_reference=_BM07_CURRENT_CONFIGURATION.current_revision_id,
+    committed_scan_audit_evidence_configuration_reference=None,
+    configuration_change_replaces_current_working_configuration=True,
+    already_committed_scan_audit_facts_reinterpreted=False,
+    physical_delete_or_compaction_claimed=False,
+    db_repository_runtime_persistence_claimed=False,
+    scanrun_listing_history_state_claimed=False,
+    minimal_committed_evidence_editable=False,
+    drops_committed_scan_audit_evidence=False,
+    provenance_boundary_changed=False,
+    rejection_reason=(
+        BeaconConfigurationStoragePolicyRejectionReason.MORE_THAN_ONE_CURRENT_USER_FACING_ACTIVE_CONFIGURATION
+    ),
+)
+
+_BM07_REPLACED_OLD_CONFIGURATION = _configuration(
+    beacon_id="beacon-bm07-replaced-001",
+    account_id=_OWN_ACCOUNT_ID,
+    source_url=_source_url(
+        "current-config-bm07-replaced-old-source-ref-001",
+        "https://example.invalid/search?query=current-config-bm07-replaced-old&city=synthetic",
+    ),
+    snapshot=_snapshot(
+        snapshot_id="snapshot-current-config-bm07-replaced-old-001",
+        status=BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        evidence_reference="current-config-bm07-replaced-old-snapshot-ref-001",
+        parser_evidence_reference=_parser_evidence_reference(
+            evidence_reference="current-config-bm07-replaced-old-parser-evidence-001"
+        ),
+        normalized_filter_values=("city=synthetic-city",),
+    ),
+    display_name="Synthetic BM07 replaced configuration old",
+    lifecycle_state=BeaconLifecycleState.READY,
+    current_revision_id="current-config-bm07-replaced-old-ref-001",
+    retained_evidence_references=("committed-scan-evidence-bm07-replaced-old-001",),
+    previous_user_facing_revision_ids=(),
+)
+
+_BM07_REPLACED_NEW_CONFIGURATION = _configuration(
+    beacon_id="beacon-bm07-replaced-001",
+    account_id=_OWN_ACCOUNT_ID,
+    source_url=_source_url(
+        "current-config-bm07-replaced-new-source-ref-001",
+        "https://example.invalid/search?query=current-config-bm07-replaced-new&city=synthetic",
+    ),
+    snapshot=_snapshot(
+        snapshot_id="snapshot-current-config-bm07-replaced-new-001",
+        status=BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        evidence_reference="current-config-bm07-replaced-new-snapshot-ref-001",
+        parser_evidence_reference=_parser_evidence_reference(
+            evidence_reference="current-config-bm07-replaced-new-parser-evidence-001"
+        ),
+        normalized_filter_values=("city=synthetic-city", "district=north"),
+    ),
+    display_name="Synthetic BM07 replaced configuration new",
+    lifecycle_state=BeaconLifecycleState.ACTIVE,
+    current_revision_id="current-config-bm07-replaced-new-ref-001",
+    overrides=(
+        _override(
+            field_name="district",
+            supported=True,
+            status=BeaconOverrideStatus.APPLIED,
+            requested_values=("north",),
+            applied_values=("north",),
+            reference="current-config-bm07-replaced-override-ref-001",
+            reason="synthetic BM07 replacement override",
+        ),
+    ),
+    retained_evidence_references=("committed-scan-evidence-bm07-replaced-new-001",),
+    previous_user_facing_revision_ids=("current-config-bm07-replaced-old-ref-001",),
+)
+
+_BM07_REPLACEMENT_DECISION = _current_configuration_decision(
+    decision_id="storage-policy-bm07-current-config-replaced-001",
+    beacon_id="beacon-bm07-replaced-001",
+    account_id=_OWN_ACCOUNT_ID,
+    current_user_facing_active_configurations=(_BM07_REPLACED_NEW_CONFIGURATION,),
+    replaced_current_user_facing_configuration=_BM07_REPLACED_OLD_CONFIGURATION,
+    current_scan_configuration_reference=_BM07_REPLACED_NEW_CONFIGURATION.current_revision_id,
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.ALLOWED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION,
+)
+
+_BM07_COMMITTED_EVIDENCE_DECISION = _configuration_evidence_retention_decision(
+    decision_id="storage-policy-bm07-committed-evidence-retained-001",
+    beacon_id="beacon-bm07-committed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    committed_scan_audit_evidence_reference="committed-scan-evidence-bm07-retained-001",
+    original_current_configuration_reference="current-config-bm07-original-ref-001",
+    current_configuration_reference="current-config-bm07-current-ref-001",
+    minimal_immutable_scan_audit_evidence_reference="retention-boundary-bm07-minimal-001",
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.ALLOWED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+)
+
+_BM07_NO_REINTERPRETATION_DECISION = BeaconConfigurationEvidenceRetentionDecision.model_construct(
+    decision_id="storage-policy-bm07-no-reinterpretation-001",
+    beacon_id="beacon-bm07-committed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.BLOCKED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+    committed_scan_audit_evidence_reference="committed-scan-evidence-bm07-no-reinterpretation-001",
+    original_current_configuration_reference="current-config-bm07-original-no-reinterpretation-001",
+    current_configuration_reference="current-config-bm07-current-no-reinterpretation-001",
+    minimal_immutable_scan_audit_evidence_reference="retention-boundary-bm07-no-reinterpretation-001",
+    minimal_committed_evidence_editable=False,
+    already_committed_scan_audit_facts_reinterpreted=True,
+    physical_delete_or_compaction_claimed=False,
+    db_repository_runtime_persistence_claimed=False,
+    scanrun_listing_history_state_claimed=False,
+    drops_committed_scan_audit_evidence=False,
+    provenance_boundary_changed=False,
+    rejection_reason=BeaconConfigurationStoragePolicyRejectionReason.REINTERPRETING_COMMITTED_SCAN_AUDIT_FACTS,
+)
+
+_BM07_UNBOUNDED_REVISIONS_CONFIGURATION = BeaconCurrentConfiguration.model_construct(
+    beacon_id="beacon-bm07-unbounded-revisions-001",
+    account_id=_OWN_ACCOUNT_ID,
+    source_url=_source_url(
+        "current-config-bm07-unbounded-source-ref-001",
+        "https://example.invalid/search?query=current-config-bm07-unbounded&city=synthetic",
+    ),
+    accepted_snapshot=_snapshot(
+        snapshot_id="snapshot-current-config-bm07-unbounded-001",
+        status=BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        evidence_reference="current-config-bm07-unbounded-snapshot-ref-001",
+        parser_evidence_reference=_parser_evidence_reference(
+            evidence_reference="current-config-bm07-unbounded-parser-evidence-001"
+        ),
+        normalized_filter_values=("city=synthetic-city",),
+    ),
+    overrides=(),
+    current_revision_id="current-config-bm07-unbounded-ref-001",
+    display_name="Synthetic BM07 unbounded revision clutter",
+    lifecycle_state=BeaconLifecycleState.ACTIVE,
+    retained_evidence_references=("committed-scan-evidence-bm07-unbounded-001",),
+    previous_user_facing_revision_ids=(
+        "current-config-bm07-unbounded-previous-001",
+        "current-config-bm07-unbounded-previous-002",
+    ),
+)
+
+_BM07_UNBOUNDED_REVISIONS_DECISION = BeaconCurrentConfigurationDecision.model_construct(
+    decision_id="storage-policy-bm07-unbounded-revisions-rejected-001",
+    beacon_id="beacon-bm07-unbounded-revisions-001",
+    account_id=_OWN_ACCOUNT_ID,
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.REJECTED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION,
+    current_user_facing_active_configurations=(_BM07_UNBOUNDED_REVISIONS_CONFIGURATION,),
+    replaced_current_user_facing_configuration=None,
+    current_scan_configuration_reference=_BM07_UNBOUNDED_REVISIONS_CONFIGURATION.current_revision_id,
+    committed_scan_audit_evidence_configuration_reference=None,
+    configuration_change_replaces_current_working_configuration=True,
+    already_committed_scan_audit_facts_reinterpreted=False,
+    physical_delete_or_compaction_claimed=False,
+    db_repository_runtime_persistence_claimed=False,
+    scanrun_listing_history_state_claimed=False,
+    minimal_committed_evidence_editable=False,
+    drops_committed_scan_audit_evidence=False,
+    provenance_boundary_changed=False,
+    rejection_reason=BeaconConfigurationStoragePolicyRejectionReason.UNBOUNDED_USER_FACING_REVISION_CLOUTTER,
+)
+
+_BM07_PHYSICAL_COMPACTION_DELETE_DECISION = (
+    BeaconConfigurationEvidenceRetentionDecision.model_construct(
+        decision_id="storage-policy-bm07-physical-compaction-delete-rejected-001",
+        beacon_id="beacon-bm07-committed-001",
+        account_id=_OWN_ACCOUNT_ID,
+        authority_status=BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+        storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.BLOCKED,
+        retention_boundary=BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+        committed_scan_audit_evidence_reference="committed-scan-evidence-bm07-physical-delete-001",
+        original_current_configuration_reference="current-config-bm07-physical-delete-original-001",
+        current_configuration_reference="current-config-bm07-physical-delete-current-001",
+        minimal_immutable_scan_audit_evidence_reference="retention-boundary-bm07-physical-delete-001",
+        minimal_committed_evidence_editable=False,
+        already_committed_scan_audit_facts_reinterpreted=False,
+        physical_delete_or_compaction_claimed=True,
+        db_repository_runtime_persistence_claimed=False,
+        scanrun_listing_history_state_claimed=False,
+        drops_committed_scan_audit_evidence=False,
+        provenance_boundary_changed=False,
+        rejection_reason=BeaconConfigurationStoragePolicyRejectionReason.PHYSICAL_DELETE_OR_COMPACTION_CLAIM,
+    )
+)
+
+_BM07_RUNTIME_PERSISTENCE_DECISION = BeaconConfigurationEvidenceRetentionDecision.model_construct(
+    decision_id="storage-policy-bm07-runtime-persistence-claim-rejected-001",
+    beacon_id="beacon-bm07-committed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.BLOCKED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+    committed_scan_audit_evidence_reference="committed-scan-evidence-bm07-runtime-persistence-001",
+    original_current_configuration_reference="current-config-bm07-runtime-persistence-original-001",
+    current_configuration_reference="current-config-bm07-runtime-persistence-current-001",
+    minimal_immutable_scan_audit_evidence_reference="retention-boundary-bm07-runtime-persistence-001",
+    minimal_committed_evidence_editable=False,
+    already_committed_scan_audit_facts_reinterpreted=False,
+    physical_delete_or_compaction_claimed=False,
+    db_repository_runtime_persistence_claimed=True,
+    scanrun_listing_history_state_claimed=False,
+    drops_committed_scan_audit_evidence=False,
+    provenance_boundary_changed=False,
+    rejection_reason=BeaconConfigurationStoragePolicyRejectionReason.DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM,
+)
+
+_BM07_SCANRUN_HISTORY_CLAIM_DECISION = BeaconConfigurationEvidenceRetentionDecision.model_construct(
+    decision_id="storage-policy-bm07-scanrun-history-claim-rejected-001",
+    beacon_id="beacon-bm07-committed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    authority_status=BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+    storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.BLOCKED,
+    retention_boundary=BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+    committed_scan_audit_evidence_reference="committed-scan-evidence-bm07-scanrun-history-001",
+    original_current_configuration_reference="current-config-bm07-scanrun-history-original-001",
+    current_configuration_reference="current-config-bm07-scanrun-history-current-001",
+    minimal_immutable_scan_audit_evidence_reference="retention-boundary-bm07-scanrun-history-001",
+    minimal_committed_evidence_editable=False,
+    already_committed_scan_audit_facts_reinterpreted=False,
+    physical_delete_or_compaction_claimed=False,
+    db_repository_runtime_persistence_claimed=False,
+    scanrun_listing_history_state_claimed=True,
+    drops_committed_scan_audit_evidence=False,
+    provenance_boundary_changed=False,
+    rejection_reason=BeaconConfigurationStoragePolicyRejectionReason.SCANRUN_LISTING_HISTORY_STATE_CLAIM,
+)
+
+_BM07_MINIMAL_COMMITTED_EVIDENCE_EDITABLE_DECISION = (
+    BeaconConfigurationEvidenceRetentionDecision.model_construct(
+        decision_id="storage-policy-bm07-minimal-committed-evidence-editable-rejected-001",
+        beacon_id="beacon-bm07-committed-001",
+        account_id=_OWN_ACCOUNT_ID,
+        authority_status=BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+        storage_policy_outcome=BeaconConfigurationStoragePolicyOutcome.BLOCKED,
+        retention_boundary=BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE,
+        committed_scan_audit_evidence_reference="committed-scan-evidence-bm07-minimal-editable-001",
+        original_current_configuration_reference="current-config-bm07-minimal-editable-original-001",
+        current_configuration_reference="current-config-bm07-minimal-editable-current-001",
+        minimal_immutable_scan_audit_evidence_reference="retention-boundary-bm07-minimal-editable-001",
+        minimal_committed_evidence_editable=True,
+        already_committed_scan_audit_facts_reinterpreted=False,
+        physical_delete_or_compaction_claimed=False,
+        db_repository_runtime_persistence_claimed=False,
+        scanrun_listing_history_state_claimed=False,
+        drops_committed_scan_audit_evidence=False,
+        provenance_boundary_changed=False,
+        rejection_reason=BeaconConfigurationStoragePolicyRejectionReason.MINIMAL_COMMITTED_EVIDENCE_EDITABLE,
+    )
 )
 
 SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
@@ -2425,6 +2850,82 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         account_id=_OWN_ACCOUNT_ID,
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         patch_save_decision=_BM06_PATCH_STALE_FULL_FORM_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM07-CURRENT-CONFIG-ACCEPTED-001",
+        summary="Exactly one current working configuration is accepted.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        current_configuration=_BM07_CURRENT_CONFIGURATION,
+        current_configuration_decision=_BM07_CURRENT_CONFIGURATION_DECISION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM07-MULTIPLE-CURRENT-CONFIGS-REJECTED-001",
+        summary="More than one current user-facing active configuration is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        current_configuration=_BM07_CURRENT_CONFIGURATION,
+        current_configuration_decision=_BM07_MULTIPLE_CURRENT_CONFIGURATIONS_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM07-CURRENT-CONFIG-REPLACED-001",
+        summary="Configuration change replaces the current working configuration semantically.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        current_configuration=_BM07_REPLACED_NEW_CONFIGURATION,
+        current_configuration_decision=_BM07_REPLACEMENT_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM07-COMMITTED-SCAN-EVIDENCE-RETAINED-001",
+        summary="Committed scan/audit evidence retains the original configuration reference.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        configuration_evidence_retention_decision=_BM07_COMMITTED_EVIDENCE_DECISION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM07-NO-REINTERPRETATION-BLOCKED-001",
+        summary="Newer configuration must not rewrite already committed evidence.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        configuration_evidence_retention_decision=_BM07_NO_REINTERPRETATION_DECISION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM07-UNBOUNDED-REVISION-CLOUTTER-REJECTED-001",
+        summary=(
+            "Unbounded old user-facing revisions are rejected as authoritative current settings."
+        ),
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        current_configuration=_BM07_UNBOUNDED_REVISIONS_CONFIGURATION,
+        current_configuration_decision=_BM07_UNBOUNDED_REVISIONS_DECISION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM07-PHYSICAL-COMPACTION-DELETE-REJECTED-001",
+        summary="Physical compaction/delete claims are rejected in semantic contracts.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        configuration_evidence_retention_decision=_BM07_PHYSICAL_COMPACTION_DELETE_DECISION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM07-RUNTIME-PERSISTENCE-CLAIM-REJECTED-001",
+        summary="DB/repository/runtime persistence claims are rejected in semantic contracts.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        configuration_evidence_retention_decision=_BM07_RUNTIME_PERSISTENCE_DECISION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM07-SCANRUN-HISTORY-CLAIM-REJECTED-001",
+        summary="ScanRun/listing history ownership claims are rejected in semantic contracts.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        configuration_evidence_retention_decision=_BM07_SCANRUN_HISTORY_CLAIM_DECISION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM07-MINIMAL-COMMITTED-EVIDENCE-NOT-EDITABLE-001",
+        summary="Minimal committed evidence cannot be treated as editable current config.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        configuration_evidence_retention_decision=_BM07_MINIMAL_COMMITTED_EVIDENCE_EDITABLE_DECISION,
     ),
 )
 

@@ -10,6 +10,12 @@ from mayak.modules.beacon_management import (
 )
 from mayak.modules.beacon_management.contracts import (
     BeaconAuthorizationOutcome,
+    BeaconConfigurationEvidenceRetentionDecision,
+    BeaconConfigurationRetentionBoundary,
+    BeaconConfigurationStoragePolicyOutcome,
+    BeaconConfigurationStoragePolicyRejectionReason,
+    BeaconCurrentConfigurationAuthorityStatus,
+    BeaconCurrentConfigurationDecision,
     BeaconDecisionStatus,
     BeaconEffectiveConfigurationDecision,
     BeaconEffectiveConfigurationRejectionReason,
@@ -99,6 +105,19 @@ EXPECTED_BM06_FIXTURE_IDS = (
     "FX-BM06-PATCH-MERGE-NONOVERLAP-001",
     "FX-BM06-PATCH-LAST-WRITE-WINS-001",
     "FX-BM06-PATCH-STALE-FULL-FORM-REJECTED-001",
+)
+
+EXPECTED_BM07_FIXTURE_IDS = (
+    "FX-BM07-CURRENT-CONFIG-ACCEPTED-001",
+    "FX-BM07-MULTIPLE-CURRENT-CONFIGS-REJECTED-001",
+    "FX-BM07-CURRENT-CONFIG-REPLACED-001",
+    "FX-BM07-COMMITTED-SCAN-EVIDENCE-RETAINED-001",
+    "FX-BM07-NO-REINTERPRETATION-BLOCKED-001",
+    "FX-BM07-UNBOUNDED-REVISION-CLOUTTER-REJECTED-001",
+    "FX-BM07-PHYSICAL-COMPACTION-DELETE-REJECTED-001",
+    "FX-BM07-RUNTIME-PERSISTENCE-CLAIM-REJECTED-001",
+    "FX-BM07-SCANRUN-HISTORY-CLAIM-REJECTED-001",
+    "FX-BM07-MINIMAL-COMMITTED-EVIDENCE-NOT-EDITABLE-001",
 )
 
 
@@ -683,9 +702,7 @@ def test_bm06_single_value_override_mismatch_fixture_is_rejected() -> None:
     assert fixture.override_patch_operation.requested_values == ("north",)
     assert fixture.override_patch_operation.applied_values == ("south",)
     with pytest.raises(ValidationError, match="applied override must match requested values"):
-        BeaconOverridePatchOperation.model_validate(
-            fixture.override_patch_operation.model_dump()
-        )
+        BeaconOverridePatchOperation.model_validate(fixture.override_patch_operation.model_dump())
 
 
 def test_bm06_effective_config_evidence_is_distinct() -> None:
@@ -713,17 +730,13 @@ def test_bm06_effective_config_evidence_is_distinct() -> None:
 
 
 def test_bm06_effective_config_single_value_mismatch_fixture_is_rejected() -> None:
-    fixture = SYNTHETIC_FIXTURE_BY_ID[
-        "FX-BM06-EFFECTIVE-CONFIG-SINGLE-VALUE-MISMATCH-REJECTED-001"
-    ]
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-EFFECTIVE-CONFIG-SINGLE-VALUE-MISMATCH-REJECTED-001"]
 
     assert fixture.effective_configuration_decision is not None
     invalid_decision = fixture.effective_configuration_decision
     assert invalid_decision.override_operations[0].requested_values == ("north",)
     assert invalid_decision.override_operations[0].applied_values == ("south",)
-    with pytest.raises(
-        ValidationError, match="applied override must match requested values"
-    ):
+    with pytest.raises(ValidationError, match="applied override must match requested values"):
         BeaconEffectiveConfigurationDecision(
             decision_id=invalid_decision.decision_id,
             beacon_id=invalid_decision.beacon_id,
@@ -792,10 +805,175 @@ def test_bm06_stale_full_form_overwrite_fixture_is_rejected() -> None:
     assert fixture.patch_save_decision.authoritative_state_reference is None
 
 
-def test_pre_bm06_fixture_order_is_preserved_and_bm06_fixtures_are_appended() -> None:
+def test_bm07_current_configuration_fixture_has_one_current_active_configuration() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM07-CURRENT-CONFIG-ACCEPTED-001"]
+
+    assert fixture.current_configuration is not None
+    assert fixture.current_configuration_decision is not None
+    assert fixture.current_configuration_decision.authority_status is (
+        BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE
+    )
+    assert fixture.current_configuration_decision.storage_policy_outcome is (
+        BeaconConfigurationStoragePolicyOutcome.ALLOWED
+    )
+    assert fixture.current_configuration_decision.retention_boundary is (
+        BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION
+    )
+    assert (
+        len(fixture.current_configuration_decision.current_user_facing_active_configurations) == 1
+    )
+    assert (
+        fixture.current_configuration_decision.current_scan_configuration_reference
+        == fixture.current_configuration.current_revision_id
+    )
+    assert (
+        fixture.current_configuration.source_url.evidence_reference
+        != fixture.current_configuration.accepted_snapshot.evidence_reference
+    )
+    assert (
+        fixture.current_configuration.accepted_snapshot.evidence_reference
+        != fixture.current_configuration.overrides[0].override_reference
+    )
+    assert (
+        fixture.current_configuration.source_url.evidence_reference
+        != fixture.current_configuration.overrides[0].override_reference
+    )
+    assert (
+        fixture.current_configuration.current_revision_id
+        != fixture.current_configuration.overrides[0].override_reference
+    )
+    assert (
+        fixture.current_configuration.current_revision_id
+        != fixture.current_configuration.accepted_snapshot.evidence_reference
+    )
+
+
+def test_bm07_configuration_replacement_fixture_marks_new_configuration_as_current() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM07-CURRENT-CONFIG-REPLACED-001"]
+
+    assert fixture.current_configuration is not None
+    assert fixture.current_configuration_decision is not None
+    assert (
+        fixture.current_configuration_decision.configuration_change_replaces_current_working_configuration
+        is True
+    )
+    assert (
+        fixture.current_configuration_decision.replaced_current_user_facing_configuration
+        is not None
+    )
+    assert fixture.current_configuration_decision.current_user_facing_active_configurations[0] == (
+        fixture.current_configuration
+    )
+    assert fixture.current_configuration.previous_user_facing_revision_ids == (
+        "current-config-bm07-replaced-old-ref-001",
+    )
+    assert fixture.current_configuration_decision.current_scan_configuration_reference == (
+        fixture.current_configuration.current_revision_id
+    )
+    assert (
+        fixture.current_configuration_decision.replaced_current_user_facing_configuration.current_revision_id
+        == "current-config-bm07-replaced-old-ref-001"
+    )
+
+
+def test_bm07_committed_scan_evidence_fixture_retains_original_reference() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM07-COMMITTED-SCAN-EVIDENCE-RETAINED-001"]
+
+    assert fixture.configuration_evidence_retention_decision is not None
+    decision = fixture.configuration_evidence_retention_decision
+    assert decision.authority_status is (
+        BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE
+    )
+    assert decision.storage_policy_outcome is BeaconConfigurationStoragePolicyOutcome.ALLOWED
+    assert decision.retention_boundary is (
+        BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE
+    )
+    assert (
+        decision.current_configuration_reference != decision.committed_scan_audit_evidence_reference
+    )
+    assert (
+        decision.original_current_configuration_reference == "current-config-bm07-original-ref-001"
+    )
+    assert decision.minimal_immutable_scan_audit_evidence_reference == (
+        "retention-boundary-bm07-minimal-001"
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture_id,validator,expected_message,expected_reason",
+    (
+        (
+            "FX-BM07-MULTIPLE-CURRENT-CONFIGS-REJECTED-001",
+            BeaconCurrentConfigurationDecision,
+            "exactly one current user-facing active configuration must be represented",
+            BeaconConfigurationStoragePolicyRejectionReason.MORE_THAN_ONE_CURRENT_USER_FACING_ACTIVE_CONFIGURATION,
+        ),
+        (
+            "FX-BM07-UNBOUNDED-REVISION-CLOUTTER-REJECTED-001",
+            BeaconCurrentConfigurationDecision,
+            "must not become unbounded user-visible clutter",
+            BeaconConfigurationStoragePolicyRejectionReason.UNBOUNDED_USER_FACING_REVISION_CLOUTTER,
+        ),
+        (
+            "FX-BM07-NO-REINTERPRETATION-BLOCKED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "must not be silently reinterpreted",
+            BeaconConfigurationStoragePolicyRejectionReason.REINTERPRETING_COMMITTED_SCAN_AUDIT_FACTS,
+        ),
+        (
+            "FX-BM07-PHYSICAL-COMPACTION-DELETE-REJECTED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "physical delete or compaction in semantic contract is forbidden",
+            BeaconConfigurationStoragePolicyRejectionReason.PHYSICAL_DELETE_OR_COMPACTION_CLAIM,
+        ),
+        (
+            "FX-BM07-RUNTIME-PERSISTENCE-CLAIM-REJECTED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "DB/repository/runtime persistence implementation claim is forbidden",
+            BeaconConfigurationStoragePolicyRejectionReason.DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM,
+        ),
+        (
+            "FX-BM07-SCANRUN-HISTORY-CLAIM-REJECTED-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "ScanRun/listing history state claim is forbidden",
+            BeaconConfigurationStoragePolicyRejectionReason.SCANRUN_LISTING_HISTORY_STATE_CLAIM,
+        ),
+        (
+            "FX-BM07-MINIMAL-COMMITTED-EVIDENCE-NOT-EDITABLE-001",
+            BeaconConfigurationEvidenceRetentionDecision,
+            "minimal committed evidence cannot be treated as editable current config",
+            BeaconConfigurationStoragePolicyRejectionReason.MINIMAL_COMMITTED_EVIDENCE_EDITABLE,
+        ),
+    ),
+)
+def test_bm07_blocked_and_rejected_fixtures_are_rejected(
+    fixture_id: str,
+    validator: type[BeaconCurrentConfigurationDecision]
+    | type[BeaconConfigurationEvidenceRetentionDecision],
+    expected_message: str,
+    expected_reason: BeaconConfigurationStoragePolicyRejectionReason,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+    decision = (
+        fixture.current_configuration_decision or fixture.configuration_evidence_retention_decision
+    )
+    assert decision is not None
+    assert decision.rejection_reason is expected_reason
+
+    with pytest.raises(ValidationError, match=expected_message):
+        validator.model_validate(decision.model_dump())
+
+
+def test_pre_bm06_fixture_order_is_preserved_and_bm07_fixtures_are_appended() -> None:
     assert FIXTURE_IDS[: len(EXPECTED_PRE_BM06_FIXTURE_IDS)] == EXPECTED_PRE_BM06_FIXTURE_IDS
-    assert FIXTURE_IDS[len(EXPECTED_PRE_BM06_FIXTURE_IDS) :] == EXPECTED_BM06_FIXTURE_IDS
+    bm06_start = len(EXPECTED_PRE_BM06_FIXTURE_IDS)
+    bm06_end = bm06_start + len(EXPECTED_BM06_FIXTURE_IDS)
+    assert FIXTURE_IDS[bm06_start:bm06_end] == EXPECTED_BM06_FIXTURE_IDS
+    assert FIXTURE_IDS[bm06_end:] == EXPECTED_BM07_FIXTURE_IDS
     for fixture_id in EXPECTED_BM06_FIXTURE_IDS:
+        assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
+        assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
+    for fixture_id in EXPECTED_BM07_FIXTURE_IDS:
         assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
         assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
 

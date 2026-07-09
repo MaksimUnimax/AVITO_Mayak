@@ -908,6 +908,296 @@ class BeaconCurrentConfiguration(BaseModel):
             "previous_user_facing_revision_ids",
             self.previous_user_facing_revision_ids,
         )
+        if len(self.previous_user_facing_revision_ids) > 1:
+            raise ValueError(
+                "old user-facing revisions must not become unbounded user-visible clutter"
+            )
+        return self
+
+
+class BeaconCurrentConfigurationAuthorityStatus(str, Enum):
+    """Semantic authority status for current configuration and retained evidence."""
+
+    CURRENT_USER_FACING_ACTIVE = "CURRENT_USER_FACING_ACTIVE"
+    MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE = "MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE"
+
+
+class BeaconConfigurationStoragePolicyOutcome(str, Enum):
+    """Semantic storage-policy outcome for current configuration and retained evidence."""
+
+    ALLOWED = "ALLOWED"
+    BLOCKED = "BLOCKED"
+    REJECTED = "REJECTED"
+    DEFERRED = "DEFERRED"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class BeaconConfigurationRetentionBoundary(str, Enum):
+    """Semantic retention boundary for current configuration and retained evidence."""
+
+    CURRENT_USER_FACING_WORKING_CONFIGURATION = "CURRENT_USER_FACING_WORKING_CONFIGURATION"
+    COMMITTED_SCAN_AUDIT_EVIDENCE = "COMMITTED_SCAN_AUDIT_EVIDENCE"
+    MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE = "MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE"
+
+
+class BeaconConfigurationStoragePolicyRejectionReason(str, Enum):
+    """Semantic rejection reasons for current configuration and retention policy."""
+
+    MORE_THAN_ONE_CURRENT_USER_FACING_ACTIVE_CONFIGURATION = (
+        "MORE_THAN_ONE_CURRENT_USER_FACING_ACTIVE_CONFIGURATION"
+    )
+    UNBOUNDED_USER_FACING_REVISION_CLOUTTER = "UNBOUNDED_USER_FACING_REVISION_CLOUTTER"
+    REINTERPRETING_COMMITTED_SCAN_AUDIT_FACTS = "REINTERPRETING_COMMITTED_SCAN_AUDIT_FACTS"
+    OLD_USER_FACING_REVISION_CLOUTTER_AS_AUTHORITY = (
+        "OLD_USER_FACING_REVISION_CLOUTTER_AS_AUTHORITY"
+    )
+    PHYSICAL_DELETE_OR_COMPACTION_CLAIM = "PHYSICAL_DELETE_OR_COMPACTION_CLAIM"
+    DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM = "DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM"
+    SCANRUN_LISTING_HISTORY_STATE_CLAIM = "SCANRUN_LISTING_HISTORY_STATE_CLAIM"
+    MINIMAL_COMMITTED_EVIDENCE_EDITABLE = "MINIMAL_COMMITTED_EVIDENCE_EDITABLE"
+    DROPPING_COMMITTED_SCAN_AUDIT_EVIDENCE = "DROPPING_COMMITTED_SCAN_AUDIT_EVIDENCE"
+    PROVENANCE_BOUNDARY_CHANGED = "PROVENANCE_BOUNDARY_CHANGED"
+
+
+class BeaconCurrentConfigurationDecision(BaseModel):
+    """Semantic decision for current working configuration and current scan handoff."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    beacon_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    authority_status: BeaconCurrentConfigurationAuthorityStatus
+    storage_policy_outcome: BeaconConfigurationStoragePolicyOutcome
+    retention_boundary: BeaconConfigurationRetentionBoundary
+    current_user_facing_active_configurations: tuple[BeaconCurrentConfiguration, ...] = Field(
+        min_length=1
+    )
+    replaced_current_user_facing_configuration: BeaconCurrentConfiguration | None = None
+    current_scan_configuration_reference: str = Field(min_length=1)
+    committed_scan_audit_evidence_configuration_reference: str | None = Field(
+        default=None, min_length=1
+    )
+    configuration_change_replaces_current_working_configuration: bool = True
+    already_committed_scan_audit_facts_reinterpreted: bool = False
+    physical_delete_or_compaction_claimed: bool = False
+    db_repository_runtime_persistence_claimed: bool = False
+    scanrun_listing_history_state_claimed: bool = False
+    minimal_committed_evidence_editable: bool = False
+    drops_committed_scan_audit_evidence: bool = False
+    provenance_boundary_changed: bool = False
+    rejection_reason: BeaconConfigurationStoragePolicyRejectionReason | None = None
+
+    @model_validator(mode="after")
+    def _validate_current_configuration_decision(self) -> "BeaconCurrentConfigurationDecision":
+        if len(self.current_user_facing_active_configurations) != 1:
+            raise ValueError(
+                "exactly one current user-facing active configuration must be represented"
+            )
+
+        current_configuration = self.current_user_facing_active_configurations[0]
+        if current_configuration.beacon_id != self.beacon_id:
+            raise ValueError("current configuration must remain owned by the same beacon_id")
+        if current_configuration.account_id != self.account_id:
+            raise ValueError("current configuration must remain owned by the same account_id")
+        if self.current_scan_configuration_reference != current_configuration.current_revision_id:
+            raise ValueError("new scans must use the current configuration reference")
+
+        if (
+            self.authority_status
+            is not BeaconCurrentConfigurationAuthorityStatus.CURRENT_USER_FACING_ACTIVE
+        ):
+            raise ValueError(
+                "current configuration decision must represent current working authority"
+            )
+
+        if (
+            current_configuration.previous_user_facing_revision_ids
+            and len(current_configuration.previous_user_facing_revision_ids) > 1
+        ):
+            raise ValueError(
+                "old user-facing revisions must not become unbounded user-visible clutter"
+            )
+
+        if self.replaced_current_user_facing_configuration is not None:
+            replaced_configuration = self.replaced_current_user_facing_configuration
+            if replaced_configuration.beacon_id != self.beacon_id:
+                raise ValueError("replacement must remain within the same beacon_id")
+            if replaced_configuration.account_id != self.account_id:
+                raise ValueError("replacement must remain within the same account_id")
+            if (
+                replaced_configuration.current_revision_id
+                == current_configuration.current_revision_id
+            ):
+                raise ValueError("replacement must change the current working configuration")
+
+        if self.configuration_change_replaces_current_working_configuration is not True:
+            raise ValueError("configuration change must replace the current working configuration")
+
+        if self.committed_scan_audit_evidence_configuration_reference is not None:
+            if self.already_committed_scan_audit_facts_reinterpreted:
+                raise ValueError(
+                    "already committed scan/audit facts must not be silently reinterpreted"
+                )
+
+        if self.physical_delete_or_compaction_claimed:
+            raise ValueError("physical delete or compaction in semantic contract is forbidden")
+
+        if self.db_repository_runtime_persistence_claimed:
+            raise ValueError("DB/repository/runtime persistence implementation claim is forbidden")
+
+        if self.scanrun_listing_history_state_claimed:
+            raise ValueError("ScanRun/listing history state claim is forbidden")
+
+        if self.minimal_committed_evidence_editable:
+            raise ValueError(
+                "minimal committed evidence cannot be treated as editable current config"
+            )
+
+        if self.drops_committed_scan_audit_evidence:
+            raise ValueError(
+                "already committed scan/audit evidence required "
+                "for downstream evidence must not be dropped"
+            )
+
+        if self.provenance_boundary_changed:
+            raise ValueError(
+                "source URL, snapshot, override and effective config "
+                "provenance boundaries must remain distinct"
+            )
+
+        current_working_boundary = (
+            BeaconConfigurationRetentionBoundary.CURRENT_USER_FACING_WORKING_CONFIGURATION
+        )
+        if self.storage_policy_outcome is BeaconConfigurationStoragePolicyOutcome.ALLOWED:
+            if self.retention_boundary is not current_working_boundary:
+                raise ValueError(
+                    "allowed current configuration decision must use current working boundary"
+                )
+
+        if (
+            self.storage_policy_outcome
+            in {
+                BeaconConfigurationStoragePolicyOutcome.REJECTED,
+                BeaconConfigurationStoragePolicyOutcome.BLOCKED,
+            }
+            and self.rejection_reason is None
+        ):
+            raise ValueError(
+                "rejected or blocked storage policy outcome requires a rejection reason"
+            )
+
+        if (
+            self.rejection_reason is not None
+            and self.storage_policy_outcome is BeaconConfigurationStoragePolicyOutcome.ALLOWED
+        ):
+            raise ValueError("allowed storage policy outcome must not carry rejection reason")
+
+        return self
+
+
+class BeaconConfigurationEvidenceRetentionDecision(BaseModel):
+    """Semantic decision for committed evidence retention and minimal immutable references."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    beacon_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    authority_status: BeaconCurrentConfigurationAuthorityStatus
+    storage_policy_outcome: BeaconConfigurationStoragePolicyOutcome
+    retention_boundary: BeaconConfigurationRetentionBoundary
+    committed_scan_audit_evidence_reference: str = Field(min_length=1)
+    original_current_configuration_reference: str = Field(min_length=1)
+    current_configuration_reference: str | None = Field(default=None, min_length=1)
+    minimal_immutable_scan_audit_evidence_reference: str | None = Field(default=None, min_length=1)
+    minimal_committed_evidence_editable: bool = False
+    already_committed_scan_audit_facts_reinterpreted: bool = False
+    physical_delete_or_compaction_claimed: bool = False
+    db_repository_runtime_persistence_claimed: bool = False
+    scanrun_listing_history_state_claimed: bool = False
+    drops_committed_scan_audit_evidence: bool = False
+    provenance_boundary_changed: bool = False
+    rejection_reason: BeaconConfigurationStoragePolicyRejectionReason | None = None
+
+    @model_validator(mode="after")
+    def _validate_evidence_retention_decision(
+        self,
+    ) -> "BeaconConfigurationEvidenceRetentionDecision":
+        if (
+            self.authority_status
+            is not BeaconCurrentConfigurationAuthorityStatus.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE
+        ):
+            raise ValueError(
+                "evidence retention decision must represent minimal immutable evidence"
+            )
+
+        if (
+            self.retention_boundary
+            is not BeaconConfigurationRetentionBoundary.MINIMAL_IMMUTABLE_SCAN_AUDIT_EVIDENCE
+        ):
+            raise ValueError(
+                "evidence retention decision must use the minimal immutable evidence boundary"
+            )
+
+        if self.minimal_immutable_scan_audit_evidence_reference is None:
+            raise ValueError("minimal immutable scan/audit evidence reference is required")
+
+        if self.current_configuration_reference is not None and (
+            self.current_configuration_reference == self.committed_scan_audit_evidence_reference
+        ):
+            raise ValueError(
+                "committed scan/audit evidence must retain the "
+                "original configuration reference separately"
+            )
+
+        if self.minimal_committed_evidence_editable:
+            raise ValueError(
+                "minimal committed evidence cannot be treated as editable current config"
+            )
+
+        if self.already_committed_scan_audit_facts_reinterpreted:
+            raise ValueError(
+                "already committed scan/audit facts must not be silently reinterpreted"
+            )
+
+        if self.physical_delete_or_compaction_claimed:
+            raise ValueError("physical delete or compaction in semantic contract is forbidden")
+
+        if self.db_repository_runtime_persistence_claimed:
+            raise ValueError("DB/repository/runtime persistence implementation claim is forbidden")
+
+        if self.scanrun_listing_history_state_claimed:
+            raise ValueError("ScanRun/listing history state claim is forbidden")
+
+        if self.drops_committed_scan_audit_evidence:
+            raise ValueError(
+                "already committed scan/audit evidence required "
+                "for downstream evidence must not be dropped"
+            )
+
+        if self.provenance_boundary_changed:
+            raise ValueError(
+                "source URL, snapshot, override and effective config "
+                "provenance boundaries must remain distinct"
+            )
+
+        if self.storage_policy_outcome is BeaconConfigurationStoragePolicyOutcome.ALLOWED:
+            if self.rejection_reason is not None:
+                raise ValueError("allowed storage policy outcome must not carry rejection reason")
+
+        if (
+            self.storage_policy_outcome
+            in {
+                BeaconConfigurationStoragePolicyOutcome.REJECTED,
+                BeaconConfigurationStoragePolicyOutcome.BLOCKED,
+            }
+            and self.rejection_reason is None
+        ):
+            raise ValueError(
+                "rejected or blocked storage policy outcome requires a rejection reason"
+            )
+
         return self
 
 
@@ -1239,9 +1529,15 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconAuthorizationDecision",
     "BeaconAuthorizationOutcome",
     "BeaconCurrentConfiguration",
+    "BeaconCurrentConfigurationAuthorityStatus",
+    "BeaconCurrentConfigurationDecision",
     "BeaconDecisionStatus",
     "BeaconEffectiveConfigurationDecision",
     "BeaconEffectiveConfigurationRejectionReason",
+    "BeaconConfigurationEvidenceRetentionDecision",
+    "BeaconConfigurationRetentionBoundary",
+    "BeaconConfigurationStoragePolicyOutcome",
+    "BeaconConfigurationStoragePolicyRejectionReason",
     "BeaconExpiryOutcome",
     "BeaconFilterOverride",
     "BeaconHistoryEntry",

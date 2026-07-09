@@ -45,6 +45,16 @@ from mayak.contracts import (
     RunId,
     WorkId,
 )
+from mayak.modules import beacon_management
+from mayak.modules.beacon_management import (
+    BeaconConfigurationEvidenceRetentionDecision,
+    BeaconConfigurationRetentionBoundary,
+    BeaconConfigurationStoragePolicyOutcome,
+    BeaconConfigurationStoragePolicyRejectionReason,
+    BeaconCurrentConfigurationAuthorityStatus,
+    BeaconCurrentConfigurationDecision,
+)
+from mayak.modules.beacon_management import contracts as beacon_management_contracts
 from mayak.platform import (
     AuditContext as PlatformAuditContext,
 )
@@ -147,3 +157,39 @@ def test_all_module_packages_import() -> None:
     for package_name, module_id in package_names_and_ids:
         module = import_module(package_name)
         assert module.MODULE_ID == module_id
+
+
+def test_beacon_management_package_exports_bm07_current_configuration_storage_primitives() -> None:
+    assert BeaconCurrentConfigurationAuthorityStatus.__name__ == (
+        "BeaconCurrentConfigurationAuthorityStatus"
+    )
+    assert BeaconConfigurationStoragePolicyOutcome.__name__ == (
+        "BeaconConfigurationStoragePolicyOutcome"
+    )
+    assert BeaconConfigurationRetentionBoundary.__name__ == "BeaconConfigurationRetentionBoundary"
+    assert BeaconCurrentConfigurationDecision.__name__ == "BeaconCurrentConfigurationDecision"
+    assert BeaconConfigurationEvidenceRetentionDecision.__name__ == (
+        "BeaconConfigurationEvidenceRetentionDecision"
+    )
+    assert BeaconConfigurationStoragePolicyRejectionReason.__name__ == (
+        "BeaconConfigurationStoragePolicyRejectionReason"
+    )
+
+    assert beacon_management.BeaconCurrentConfigurationAuthorityStatus is (
+        beacon_management_contracts.BeaconCurrentConfigurationAuthorityStatus
+    )
+    assert beacon_management.BeaconConfigurationStoragePolicyOutcome is (
+        beacon_management_contracts.BeaconConfigurationStoragePolicyOutcome
+    )
+    assert beacon_management.BeaconConfigurationRetentionBoundary is (
+        beacon_management_contracts.BeaconConfigurationRetentionBoundary
+    )
+    assert beacon_management.BeaconCurrentConfigurationDecision is (
+        beacon_management_contracts.BeaconCurrentConfigurationDecision
+    )
+    assert beacon_management.BeaconConfigurationEvidenceRetentionDecision is (
+        beacon_management_contracts.BeaconConfigurationEvidenceRetentionDecision
+    )
+    assert beacon_management.BeaconConfigurationStoragePolicyRejectionReason is (
+        beacon_management_contracts.BeaconConfigurationStoragePolicyRejectionReason
+    )
