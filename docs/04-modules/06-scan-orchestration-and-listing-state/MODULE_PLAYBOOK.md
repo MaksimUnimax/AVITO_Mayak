@@ -1043,3 +1043,18 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-08+ remain gated.
+
+### SOLS-HISTORY-0009 — 2026-07-09 — External failure and pending recovery scan
+
+SOLS-08 created docs-only external-failure and pending-recovery scan documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-03 eligibility boundary, SOLS-04 lifecycle/commit-point rules, SOLS-05 baseline/rolling anchor state, SOLS-06 difference rules and SOLS-07 lost-anchor recovery;
+external failure/CAPTCHA/route/parser/provider ambiguity is not no-new-listings;
+external failure does not erase baseline, erase anchors, advance anchors or create new-listing facts;
+one pending recovery scan is kept while the same problem continues; missed due intervals are coalesced and not accumulated into multiple scans;
+one recovery result may be sent/reported even after entitlement expiry if the external problem began while access was active; after that, current entitlement rules apply;
+Parser owns provider response classification, Egress owns route/fallback/quarantine/agent mechanics, Notification Delivery owns delivery;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-09+ remain gated.
