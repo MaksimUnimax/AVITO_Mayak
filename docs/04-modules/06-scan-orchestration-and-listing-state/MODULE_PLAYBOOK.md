@@ -1029,3 +1029,17 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-07+ remain gated.
+
+### SOLS-HISTORY-0008 — 2026-07-09 — Lost anchors recovery
+
+SOLS-07 created docs-only lost-anchor recovery documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-03 eligibility boundary, SOLS-04 lifecycle/commit-point rules, SOLS-05 baseline/rolling anchor state and SOLS-06 difference rules;
+lost anchors means previous anchors exist but none are found in a usable current top-window;
+lost anchors are not external failure, CAPTCHA, partial, ambiguous, malformed, sort-not-proven or window overflow;
+lost-anchor recovery reports latest 3 fresh listings as state-restored/latest-fresh, not confirmed new listings;
+after recovery commit, anchor state is updated/reseeded from the current observed top-window to avoid repeated latest-3 output;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-08+ remain gated.
