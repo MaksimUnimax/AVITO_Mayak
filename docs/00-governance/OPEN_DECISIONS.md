@@ -202,3 +202,15 @@ For current planning after `ADR-0014`:
 | OD-010 | OPEN | Country-wide availability remains unresolved. |
 | OD-011 | OPEN | Minimum monitoring frequency safety remains unresolved. |
 | OD-013 | OPEN | Billing, audit and personal-data retention remains unresolved. |
+
+## Beacon Management captured decisions
+
+The following open-decision areas have owner decisions captured for Beacon Management governance use by `ADR-0016 — 2026-07-09 — Beacon Management owner decisions for BM-01`:
+
+- `OD-003` / `OD-011`: Free and Basic interval rules are captured for Beacon Management semantic use; scheduler/runtime implementation remains gated.
+- `OD-004`: paid-access expiry consequences for Beacons are captured for Beacon Management semantic use; notifications, runtime downgrade and automatic activation remain gated.
+- `OD-009`: supported editable filters are bounded by Parser Adapter / Filter Catalog evidence; Parser/Filter implementation and exact UI remain gated.
+- `OD-010`: country-wide policy is captured for Free and Basic activation semantics; Parser/runtime/UI remain gated.
+- `OD-013`: History / Archive / delete / permanent delete semantics are captured for Beacon Management semantic use; physical deletion, retention jobs, privacy/legal retention and DB implementation remain gated.
+
+These captured decisions are not product-code authorization and do not implement runtime behavior. Other open decisions remain unresolved unless separately captured by append-only decision record.

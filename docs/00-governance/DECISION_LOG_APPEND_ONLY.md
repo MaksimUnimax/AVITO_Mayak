@@ -461,3 +461,169 @@ The first implementation authorization must be a separate proof/toolchain task t
 **Последствие:**
 
 EB-11 exact semantic contracts/tests may use this decision and `ADR-0015` as approved input only for deterministic semantic Admin tariff-management boundary contracts/tests. Runtime Admin UI, Web Cabinet UI, Identity role runtime, billing runtime, persistence, migrations, database, provider/payment runtime or actual tariff management service still requires a separate exact task.
+
+## ADR-0016 — 2026-07-09 — Beacon Management owner decisions for BM-01
+
+**Статус:** APPROVED owner decision capture for Beacon Management governance.
+
+**Контекст:** Module `04-beacon-management` playbook v1.0 intentionally left Beacon-specific use of `OD-003`, `OD-004`, `OD-009`, `OD-010`, `OD-011`, `OD-013`, duplicate source URL policy, Beacon naming, revision retention/compaction, patch-based save semantics, lifecycle/history/delete semantics and several activation constraints unresolved. Entitlements & Billing already captured billing policy in `ADR-0009`; this ADR captures Beacon Management-specific owner decisions and boundaries before Beacon Management contracts, fixtures, tests, implementation or runtime may use them.
+
+**Решение:**
+
+### Relation to Entitlements & Billing decisions
+
+Beacon Management must treat Entitlements & Billing as the tariff/access authority. Beacon Management may use captured Free/Basic outcomes semantically, but it must not duplicate tariff authority as runtime source.
+
+`ADR-0009` remains the Entitlements & Billing owner decision capture. This ADR captures Beacon Management consequences and module boundaries.
+
+### OD-003 / OD-011 — allowed monitoring intervals and minimum monitoring frequency
+
+For `Paid / Basic`:
+- minimum interval is 5 minutes;
+- allowed interval step is 5 minutes: 5, 10, 15, 20 and further by 5-minute increments;
+- there is no configured upper limit at this decision level.
+
+For `Free`:
+- minimum interval is 3 hours;
+- allowed interval step is 3 hours: 3, 6, 9, 12 hours and further by 3-hour increments;
+- there is no configured upper limit at this decision level.
+
+User interval-change UI mechanics remain deferred to a future interface decision. Semantic contracts may express allowed/denied interval outcomes, but this decision does not authorize runtime UI flow, scheduler runtime, parser calls, database schema or product implementation.
+
+### OD-004 — behavior after paid access expiry
+
+After paid access ends:
+- only `Free` access remains;
+- all active paid Beacons become frozen;
+- the user receives a future notification through a future notification/channel module;
+- the user chooses one Beacon that may remain under Free;
+- the chosen Beacon must be brought into Free-compliant state;
+- the user explicitly starts/resumes the chosen Free Beacon;
+- without user choice and Free compliance, no Beacon is activated automatically.
+
+Beacon Management must not automatically choose a Beacon for the user.
+
+### OD-009 — supported editable filters
+
+Beacon Management does not define a hard-coded first-stage list of supported editable Avito filters by itself.
+
+Beacon Management may support only parameters that are safely parsed from the Avito source URL and accepted as supported by Parser Adapter / Filter Catalog evidence. Parser Adapter / Filter Catalog evidence determines which parameters are actually supported.
+
+Unsupported, uncertain or ambiguous parameters must not be silently changed.
+
+This decision does not authorize Parser Adapter implementation, Filter Catalog implementation, live Avito calls, raw query-string rewriting, UI forms or runtime validation.
+
+### OD-010 — country-wide / all-Russia search
+
+Country-wide search across all Russia is allowed for `Paid / Basic`.
+
+`Free` cannot activate a country-wide Beacon. If a Free user submits an all-Russia source, the system must explicitly indicate that this is unavailable on Free and require the user to choose a city. Without city selection, the Free Beacon is not activated.
+
+### OD-013 — archive, delete, history and permanent delete
+
+A user may delete a Beacon from the active list.
+
+Ordinary deletion moves the Beacon into user-visible History / Archive rather than necessarily physically deleting it immediately.
+
+History includes Beacons that belonged to the user, including:
+- frozen Beacons after paid access expiry;
+- Beacons removed from the active list;
+- archived Beacons.
+
+From History, the user may restore/activate a Beacon without re-entering the source URL if current entitlement, current policy and validation allow.
+
+From History, the user may permanently delete a Beacon. A permanently deleted Beacon cannot be restored.
+
+Deleted, archived and History Beacons do not count toward the active Beacon limit. For Free, only one active Beacon counts toward the Free active limit. While a Free account already has one active Beacon, another active Free Beacon cannot be added.
+
+Exact History UI mechanics remain deferred to a future interface decision.
+
+This decision does not authorize physical database delete implementation, retention job, privacy/legal retention implementation, listing history deletion, ScanRun deletion, notification sending, Admin/Web/Telegram/MAX presentation or database schema.
+
+### Duplicate source URL
+
+One account may create multiple Beacons with the same Avito source URL. A user may need identical source URLs for different intervals, names or settings.
+
+Different accounts may also have identical source URLs.
+
+Source URL is not a unique key. Idempotency must not be based only on source URL.
+
+### Beacon naming
+
+The user may provide a Beacon name.
+
+If the user does not provide a name, a default name may be created from recognized title/context.
+
+The exact default naming algorithm remains deferred to a future interface decision.
+
+Beacon name is presentation metadata. Rename does not change search configuration.
+
+### Configuration changes, current configuration and revision/storage policy
+
+The owner does not want unbounded database clutter from old user-facing revision settings.
+
+Target behavior:
+- the user sees one current working Beacon configuration;
+- when settings change, the new active configuration becomes current;
+- old user-facing revision settings are not stored forever as separate user-visible clutter;
+- if downstream scan/audit/history requires proof of settings used by an already committed scan, minimal immutable evidence/snapshot/reference may be retained only for that committed scan/audit purpose.
+
+Exact physical retention and compaction policy must be decided governance-safely before persistence, migrations or runtime implementation.
+
+This decision clarifies the current owner intent and must be reconciled with the earlier immutable revision boundary in the Beacon Management playbook before any persistence, migration, scan handoff or runtime implementation.
+
+### Patch-based save and last-write-wins behavior
+
+Saving Beacon settings is patch-based and last-write-wins.
+
+When a user saves settings, the system reads the current authoritative Beacon state and applies only fields that are actually present in the current save command.
+
+If two clients changed different fields, both changes may be combined.
+
+If two clients changed the same field, the last successful save wins.
+
+The system must not overwrite the entire Beacon from an old stale form.
+
+After save, the user must see the actual current Beacon state reloaded from authoritative storage.
+
+A user-visible conflict is not created merely because Telegram and Web Cabinet edited the same Beacon concurrently. Conflict/blocked outcomes remain allowed when the command cannot be safely applied at all, including permanently deleted target, unauthorized actor/account, unsupported field, invalid source/snapshot, entitlement denial, missing required confirmation or missing target state.
+
+Before physical database/schema gates this is semantic behavior only, not a database implementation.
+
+### Overrides and effective configuration
+
+Effective configuration is the accepted extracted snapshot plus explicit user overrides.
+
+An override wins over snapshot only for an explicitly changed supported field.
+
+Unsupported or uncertain parameters must not be silently changed.
+
+For multivalue parameters, approved values must not be silently collapsed.
+
+Exact add/remove/replace UX for multivalue parameters remains deferred to Filter Catalog / interface evidence.
+
+### Parser snapshot acceptance
+
+Exact acceptance thresholds must be tested later.
+
+Malformed, incomplete, CAPTCHA-affected, blocked, route-failed or ambiguous parser outcome must not become a clean accepted snapshot.
+
+### Entitlement re-check
+
+Before activation or resume, entitlement must be checked again.
+
+If entitlement is ambiguous, denied or expired, the Beacon is not activated.
+
+If Free does not allow geography, interval or active count, the Beacon is not activated.
+
+If paid access ended, affected Beacons enter the frozen/history/user-choice flow described for OD-004.
+
+### Basic active Beacon limit
+
+Basic initially allows 5 active Beacons.
+
+An Admin capability may change limits and tariffs in the future. Admin UI/runtime is not implemented by this decision.
+
+**Границы и запреты:** This ADR does not authorize product-code, parser implementation, live Avito calls, source URL live validation, Filter Catalog implementation, Scan Orchestration runtime, scheduler runtime, notification sending, Telegram/MAX/Web Cabinet UI, Admin UI, database schema, migrations, physical delete implementation, retention job, runtime services, Docker/CI/CD/deploy, ports/listeners, credentials or secrets.
+
+**Последствие:** Beacon Management BM-01 may use these decisions only as governance-captured owner decisions. Later steps may reference them in semantic contracts and synthetic documentation only when their own gates allow it. Runtime, persistence, parser, scan, UI and infrastructure remain separately gated.

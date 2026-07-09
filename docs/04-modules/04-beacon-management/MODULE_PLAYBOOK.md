@@ -494,3 +494,10 @@ Existing entries in this section must never be edited or deleted. Corrections ar
 - OD-003, OD-004, OD-009, OD-010, OD-011 and OD-013 remain unresolved.
 - No implementation, parser, database, runtime or infrastructure artifact created.
 - Run acceptance remains pending until the server checkout is synchronized to the exact published SHA and independently verified.
+
+### BM-HISTORY-0002 — 2026-07-09 — Owner decisions captured for BM-01
+
+- Owner decisions for Beacon Management use of `OD-003`, `OD-004`, `OD-009`, `OD-010`, `OD-011`, `OD-013`, duplicate source URL policy, Beacon naming, History / Archive / delete / permanent delete, current configuration storage policy, patch-based save, last-write-wins save, override semantics, parser snapshot safety and entitlement re-check have been captured in `ADR-0016`.
+- `docs/04-modules/04-beacon-management/OWNER_DECISIONS_CAPTURE_v1.0.md` records the module-local governance capture for later semantic-contract tasks.
+- This capture does not authorize product-code, parser implementation, live Avito calls, Filter Catalog implementation, Scan Orchestration runtime, scheduler runtime, notification sending, UI, database schema, migrations, retention jobs, Docker/CI/CD/deploy, services, ports/listeners, credentials or secrets.
+- Earlier immutable-revision language remains historical module-playbook context and must be reconciled against the owner’s current-configuration / no-unbounded-revision-clutter decision before persistence, migration, scan handoff or runtime implementation.
