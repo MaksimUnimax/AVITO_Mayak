@@ -1152,3 +1152,17 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-14 remains gated until applicable prior subtasks are accepted.
+
+### SOLS-HISTORY-0015 — 2026-07-09 — Full evidence and handoff
+
+SOLS-14 created final docs-only full evidence/handoff for module 06;
+it summarizes accepted SOLS-01 through SOLS-13 SHAs and artifacts;
+it records owner decisions and current new-listings-only scope;
+it records known divergence from original price-pair/price-change semantics;
+it records remaining Parser/Egress/Notification/DB/runtime/Admin/Web/Telegram/MAX gates;
+it records no live provider traffic;
+it records no DB/schema/migration/runtime/deploy implementation;
+it records no source code/tests/executable fixtures introduced;
+it records OD-013 remains open;
+it records module 06 is complete only in accepted semantic documentation/evidence scope;
+any future implementation must start from explicit future gates and ChatGPT verification.
