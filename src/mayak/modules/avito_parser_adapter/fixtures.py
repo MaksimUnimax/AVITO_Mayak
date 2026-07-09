@@ -20,6 +20,7 @@ from .contracts import (
     ParserEvidenceReference,
     ParserOutcomeExplanation,
     ParserOutcomeStatus,
+    ParserSourceReference,
     ParserRequestEnvelope,
     ParserWarning,
     ParserWarningCode,
@@ -27,6 +28,11 @@ from .contracts import (
     ReferenceOutcomeStatus,
     SearchConfigurationExtractionOutcome,
     SearchSourceAnalysisOutcome,
+    SourceBoundaryOutcome,
+    SourceBoundaryPolicyRequirement,
+    SourceBoundaryRiskCode,
+    SourceBoundaryStatus,
+    SourceReferenceKind,
     TransportOutcomeReference,
     TransportOutcomeStatus,
     _reference_status_from_lifecycle_status,
@@ -42,6 +48,7 @@ class SyntheticFixtureCase:
     request_envelope: ParserRequestEnvelope
     transport_outcome: TransportOutcomeReference
     attempt_outcome: ParserAttemptOutcome
+    source_boundary_outcome: SourceBoundaryOutcome | None = None
     compatibility_profile: ParserCompatibilityProfile | None = None
     compatibility_outcome: ParserCompatibilityOutcome | None = None
     search_source_analysis_outcome: SearchSourceAnalysisOutcome | None = None
@@ -54,6 +61,8 @@ class SyntheticFixtureCase:
             raise ValueError("fixture_id must not be blank")
         if not self.summary.strip():
             raise ValueError("summary must not be blank")
+        if self.source_boundary_outcome is None:
+            object.__setattr__(self, "source_boundary_outcome", self.request_envelope.source_boundary_outcome)
         if self.compatibility_profile is None:
             object.__setattr__(self, "compatibility_profile", self.request_envelope.compatibility_profile)
 
@@ -158,6 +167,8 @@ def _request(
     *,
     purpose: str,
     safe_source_reference: str,
+    source_reference: ParserSourceReference | None = None,
+    source_boundary_outcome: SourceBoundaryOutcome | None = None,
     requested_page_numbers: tuple[int, ...] = (),
     requested_unit_ids: tuple[str, ...] = (),
 ) -> ParserRequestEnvelope:
@@ -168,6 +179,8 @@ def _request(
         producer="mayak.tests.synthetic",
         purpose=purpose,
         compatibility_profile=profile,
+        source_reference=source_reference,
+        source_boundary_outcome=source_boundary_outcome,
         safe_source_reference=safe_source_reference,
         configuration_revision_id="cfg::synthetic::001",
         safe_transport_reference=f"transport::{request_id}",
@@ -177,6 +190,63 @@ def _request(
         idempotency_key=f"idempotency::{request_id}",
         requested_page_numbers=requested_page_numbers,
         requested_unit_ids=requested_unit_ids,
+    )
+
+
+def _source_reference(
+    source_reference_id: str,
+    *,
+    kind: SourceReferenceKind,
+    bounded_value: str = "source-ref:beacon-revision-001",
+    owner: str = "Beacon Management",
+    notes: tuple[str, ...] = (),
+) -> ParserSourceReference:
+    return ParserSourceReference(
+        source_reference_id=source_reference_id,
+        source_reference_kind=kind,
+        bounded_value=bounded_value,
+        owner=owner,
+        notes=notes,
+    )
+
+
+def _source_boundary(
+    source_boundary_id: str,
+    source_reference: ParserSourceReference,
+    *,
+    status: SourceBoundaryStatus,
+    evidence_suffix: str,
+    policy_requirements: tuple[SourceBoundaryPolicyRequirement, ...] = (),
+    risk_codes: tuple[SourceBoundaryRiskCode, ...] = (),
+    warning_codes: tuple[ParserWarningCode, ...] = (),
+    warning_message: str | None = None,
+) -> SourceBoundaryOutcome:
+    warnings = tuple(
+        ParserWarning(
+            code=code,
+            message=warning_message or f"source boundary {code.value.lower()} in synthetic case",
+        )
+        for code in warning_codes
+    )
+    return SourceBoundaryOutcome(
+        source_boundary_id=source_boundary_id,
+        source_reference=source_reference,
+        status=status,
+        policy_requirements=policy_requirements,
+        risk_codes=risk_codes,
+        warnings=warnings,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::source-boundary",
+                evidence_kind="source-boundary",
+            ),
+        ),
+        explanation=ParserOutcomeExplanation(
+            summary="synthetic source boundary decision",
+            reason_code=f"FX::{evidence_suffix}",
+            status=status,
+            warnings=warnings,
+        ),
     )
 
 
@@ -287,6 +357,40 @@ def _usable_attempt(
         evidence_references=transport.evidence_references,
         explanation=ParserOutcomeExplanation(
             summary="synthetic parser attempt",
+            reason_code=f"FX::{evidence_suffix}",
+            status=parser_status,
+            evidence_references=transport.evidence_references,
+            warnings=warnings,
+        ),
+    )
+
+
+def _source_boundary_attempt(
+    attempt_id: str,
+    request: ParserRequestEnvelope,
+    *,
+    parser_status: ParserOutcomeStatus,
+    evidence_suffix: str,
+    warnings: tuple[ParserWarning, ...] = (),
+) -> ParserAttemptOutcome:
+    transport = _transport(
+        transport_reference_id=f"fx::{evidence_suffix}::transport",
+        status=TransportOutcomeStatus.NOT_SENT,
+        request_reference=request.request_id,
+        response_reference=None,
+        route_reference=None,
+        evidence_reference_suffix=evidence_suffix,
+    )
+    return ParserAttemptOutcome(
+        attempt_id=attempt_id,
+        transport_status=TransportOutcomeStatus.NOT_SENT,
+        parser_status=parser_status,
+        request_envelope=request,
+        transport_outcome=transport,
+        warnings=warnings,
+        evidence_references=transport.evidence_references,
+        explanation=ParserOutcomeExplanation(
+            summary="synthetic source boundary attempt",
             reason_code=f"FX::{evidence_suffix}",
             status=parser_status,
             evidence_references=transport.evidence_references,
@@ -444,6 +548,7 @@ def _fixture(
     transport_outcome: TransportOutcomeReference,
     attempt_outcome: ParserAttemptOutcome,
     *,
+    source_boundary_outcome: SourceBoundaryOutcome | None = None,
     compatibility_profile: ParserCompatibilityProfile | None = None,
     compatibility_outcome: ParserCompatibilityOutcome | None = None,
     search_source_analysis_outcome: SearchSourceAnalysisOutcome | None = None,
@@ -454,6 +559,7 @@ def _fixture(
     return SyntheticFixtureCase(
         fixture_id=fixture_id,
         summary=summary,
+        source_boundary_outcome=source_boundary_outcome or request_envelope.source_boundary_outcome,
         compatibility_profile=compatibility_profile or request_envelope.compatibility_profile,
         request_envelope=request_envelope,
         transport_outcome=transport_outcome,
@@ -665,6 +771,72 @@ _PROFILE_INTERNAL_OBSERVATION = _profile(
     error_mappings=("INTERNAL_ENDPOINT_OBSERVATION_ONLY->NOT_STABLE_CONTRACT",),
     fixture_ids=("FX-APA03-INTERNAL-ENDPOINT-OBSERVATION-NOT-STABLE-001",),
     acceptance_matrix_rows=("APA03::OBSERVATION::NOT_STABLE",),
+)
+
+_PROFILE_SOURCE_BOUNDARY = _profile(
+    "fx-apa04-profile-source-boundary",
+    evidence_suffix="apa04-source-boundary",
+    supported_extraction_claims=(
+        "Beacon-owned source reference is carried as bounded metadata",
+        "malformed and unsupported source boundaries remain explicit",
+    ),
+    unsupported_extraction_claims=(
+        "live URL open",
+        "redirect following",
+        "DNS probing",
+        "canonicalization guessing",
+        "shell target interpolation",
+        "filesystem target interpolation",
+        "network target interpolation",
+    ),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=(
+        "source boundary decisions remain explicit",
+        "parser output must not overwrite Beacon source URL",
+    ),
+    warning_mappings=(
+        "SOURCE_URL_UNTRUSTED->SOURCE_URL_UNTRUSTED",
+        "SOURCE_URL_POLICY_MISSING->SOURCE_URL_POLICY_MISSING",
+        "SOURCE_URL_MALFORMED->SOURCE_URL_MALFORMED",
+        "SOURCE_URL_UNSUPPORTED->SOURCE_URL_UNSUPPORTED",
+        "SOURCE_URL_CANONICALIZATION_UNPROVEN->SOURCE_URL_CANONICALIZATION_UNPROVEN",
+        "SOURCE_URL_REDIRECT_POLICY_BLOCKED->SOURCE_URL_REDIRECT_POLICY_BLOCKED",
+        "SOURCE_URL_DNS_POLICY_BLOCKED->SOURCE_URL_DNS_POLICY_BLOCKED",
+        "SOURCE_VALUE_SHELL_TARGET_BLOCKED->SOURCE_VALUE_SHELL_TARGET_BLOCKED",
+        "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED->SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED",
+        "SOURCE_VALUE_NETWORK_TARGET_BLOCKED->SOURCE_VALUE_NETWORK_TARGET_BLOCKED",
+    ),
+    error_mappings=(
+        "SOURCE_URL_MALFORMED->MALFORMED",
+        "SOURCE_URL_UNSUPPORTED->UNSUPPORTED",
+        "SOURCE_URL_POLICY_MISSING->POLICY_MISSING",
+    ),
+    fixture_ids=(
+        "FX-APA04-SOURCE-REFERENCE-BOUNDED-INPUT-ACCEPTED-001",
+        "FX-APA04-SOURCE-BOUNDARY-MALFORMED-REJECTED-001",
+        "FX-APA04-SOURCE-BOUNDARY-UNSUPPORTED-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-POLICY-MISSING-001",
+        "FX-APA04-SOURCE-BOUNDARY-REDIRECT-POLICY-MISSING-001",
+        "FX-APA04-SOURCE-BOUNDARY-DNS-POLICY-MISSING-001",
+        "FX-APA04-SOURCE-BOUNDARY-CANONICALIZATION-UNPROVEN-001",
+        "FX-APA04-SOURCE-BOUNDARY-SHELL-TARGET-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-FILESYSTEM-TARGET-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-NETWORK-TARGET-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-PARSER-OUTPUT-PRESERVES-BEACON-SOURCE-001",
+    ),
+    acceptance_matrix_rows=(
+        "APA04::SOURCE::ACCEPT",
+        "APA04::SOURCE::MALFORMED",
+        "APA04::SOURCE::UNSUPPORTED",
+        "APA04::SOURCE::POLICY_MISSING",
+        "APA04::SOURCE::REDIRECT_POLICY_MISSING",
+        "APA04::SOURCE::DNS_POLICY_MISSING",
+        "APA04::SOURCE::CANONICALIZATION_UNPROVEN",
+        "APA04::SOURCE::SHELL_TARGET_BLOCKED",
+        "APA04::SOURCE::FILESYSTEM_TARGET_BLOCKED",
+        "APA04::SOURCE::NETWORK_TARGET_BLOCKED",
+        "APA04::SOURCE::OUTPUT_PRESERVED",
+    ),
 )
 
 _REQUEST_TIER1 = _request(
@@ -941,6 +1113,427 @@ _TRANSPORT_INTERNAL_OBSERVATION = _transport(
     response_reference="response::internal-observation",
     route_reference="route::synthetic",
     evidence_reference_suffix="apa03-internal-observation",
+)
+
+_SOURCE_REFERENCE_ACCEPTED = _source_reference(
+    "fx-apa04-source-reference-accepted",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+)
+_SOURCE_REFERENCE_MALFORMED = _source_reference(
+    "fx-apa04-source-reference-malformed",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+)
+_SOURCE_REFERENCE_UNSUPPORTED = _source_reference(
+    "fx-apa04-source-reference-unsupported",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+)
+_SOURCE_REFERENCE_POLICY_MISSING = _source_reference(
+    "fx-apa04-source-reference-policy-missing",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+)
+_SOURCE_REFERENCE_REDIRECT = _source_reference(
+    "fx-apa04-source-reference-redirect",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+)
+_SOURCE_REFERENCE_DNS = _source_reference(
+    "fx-apa04-source-reference-dns",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+)
+_SOURCE_REFERENCE_CANONICALIZATION = _source_reference(
+    "fx-apa04-source-reference-canonicalization",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+)
+_SOURCE_REFERENCE_SHELL = _source_reference(
+    "fx-apa04-source-reference-shell",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+    bounded_value="bounded-source-value",
+)
+_SOURCE_REFERENCE_FILESYSTEM = _source_reference(
+    "fx-apa04-source-reference-filesystem",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+    bounded_value="bounded-source-value",
+)
+_SOURCE_REFERENCE_NETWORK = _source_reference(
+    "fx-apa04-source-reference-network",
+    kind=SourceReferenceKind.BEACON_SUBMITTED_URL,
+    bounded_value="bounded-source-value",
+)
+_SOURCE_REFERENCE_PRESERVED = _source_reference(
+    "fx-apa04-source-reference-preserved",
+    kind=SourceReferenceKind.BEACON_PERSISTED_REFERENCE,
+)
+
+_BOUNDARY_ACCEPTED = _source_boundary(
+    "fx-apa04-boundary-accepted",
+    _SOURCE_REFERENCE_ACCEPTED,
+    status=SourceBoundaryStatus.ACCEPTED,
+    evidence_suffix="apa04-source-reference-accepted",
+    policy_requirements=(
+        SourceBoundaryPolicyRequirement.BEACON_OWNERSHIP_PRESERVED,
+        SourceBoundaryPolicyRequirement.SAFE_REFERENCE_ONLY,
+    ),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_UNTRUSTED,),
+    warning_message="Beacon-owned source reference is accepted only as bounded metadata",
+)
+_BOUNDARY_MALFORMED = _source_boundary(
+    "fx-apa04-boundary-malformed",
+    _SOURCE_REFERENCE_MALFORMED,
+    status=SourceBoundaryStatus.MALFORMED,
+    evidence_suffix="apa04-source-boundary-malformed",
+    policy_requirements=(SourceBoundaryPolicyRequirement.SAFE_REFERENCE_ONLY,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_MALFORMED,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_MALFORMED,),
+    warning_message="malformed source boundary is rejected",
+)
+_BOUNDARY_UNSUPPORTED = _source_boundary(
+    "fx-apa04-boundary-unsupported",
+    _SOURCE_REFERENCE_UNSUPPORTED,
+    status=SourceBoundaryStatus.UNSUPPORTED,
+    evidence_suffix="apa04-source-boundary-unsupported",
+    policy_requirements=(SourceBoundaryPolicyRequirement.SAFE_REFERENCE_ONLY,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNSUPPORTED,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_UNSUPPORTED,),
+    warning_message="unsupported source boundary is blocked",
+)
+_BOUNDARY_POLICY_MISSING = _source_boundary(
+    "fx-apa04-boundary-policy-missing",
+    _SOURCE_REFERENCE_POLICY_MISSING,
+    status=SourceBoundaryStatus.POLICY_MISSING,
+    evidence_suffix="apa04-source-boundary-policy-missing",
+    policy_requirements=(SourceBoundaryPolicyRequirement.HOST_PATH_QUERY_POLICY,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_POLICY_MISSING,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_POLICY_MISSING,),
+    warning_message="host/path/query validation policy is missing",
+)
+_BOUNDARY_REDIRECT_POLICY_MISSING = _source_boundary(
+    "fx-apa04-boundary-redirect-policy-missing",
+    _SOURCE_REFERENCE_REDIRECT,
+    status=SourceBoundaryStatus.POLICY_MISSING,
+    evidence_suffix="apa04-source-boundary-redirect-policy-missing",
+    policy_requirements=(SourceBoundaryPolicyRequirement.REDIRECT_POLICY,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_REDIRECT_POLICY_BLOCKED,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_REDIRECT_POLICY_BLOCKED,),
+    warning_message="redirect policy is missing so live follow stays blocked",
+)
+_BOUNDARY_DNS_POLICY_MISSING = _source_boundary(
+    "fx-apa04-boundary-dns-policy-missing",
+    _SOURCE_REFERENCE_DNS,
+    status=SourceBoundaryStatus.POLICY_MISSING,
+    evidence_suffix="apa04-source-boundary-dns-policy-missing",
+    policy_requirements=(SourceBoundaryPolicyRequirement.DNS_POLICY,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_DNS_POLICY_BLOCKED,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_DNS_POLICY_BLOCKED,),
+    warning_message="DNS policy is missing so probing stays blocked",
+)
+_BOUNDARY_CANONICALIZATION_UNPROVEN = _source_boundary(
+    "fx-apa04-boundary-canonicalization-unproven",
+    _SOURCE_REFERENCE_CANONICALIZATION,
+    status=SourceBoundaryStatus.UNPROVEN,
+    evidence_suffix="apa04-source-boundary-canonicalization-unproven",
+    policy_requirements=(SourceBoundaryPolicyRequirement.CANONICALIZATION_POLICY,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_CANONICALIZATION_UNPROVEN,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_CANONICALIZATION_UNPROVEN,),
+    warning_message="canonicalization/equivalence remains unproven",
+)
+_BOUNDARY_SHELL_BLOCKED = _source_boundary(
+    "fx-apa04-boundary-shell-blocked",
+    _SOURCE_REFERENCE_SHELL,
+    status=SourceBoundaryStatus.BLOCKED,
+    evidence_suffix="apa04-source-boundary-shell-blocked",
+    policy_requirements=(SourceBoundaryPolicyRequirement.NO_SHELL_TARGETS,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_VALUE_SHELL_TARGET_BLOCKED,),
+    warning_codes=(ParserWarningCode.SOURCE_VALUE_SHELL_TARGET_BLOCKED,),
+    warning_message="shell interpolation target remains blocked",
+)
+_BOUNDARY_FILESYSTEM_BLOCKED = _source_boundary(
+    "fx-apa04-boundary-filesystem-blocked",
+    _SOURCE_REFERENCE_FILESYSTEM,
+    status=SourceBoundaryStatus.BLOCKED,
+    evidence_suffix="apa04-source-boundary-filesystem-blocked",
+    policy_requirements=(SourceBoundaryPolicyRequirement.NO_FILESYSTEM_TARGETS,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED,),
+    warning_codes=(ParserWarningCode.SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED,),
+    warning_message="filesystem target remains blocked",
+)
+_BOUNDARY_NETWORK_BLOCKED = _source_boundary(
+    "fx-apa04-boundary-network-blocked",
+    _SOURCE_REFERENCE_NETWORK,
+    status=SourceBoundaryStatus.BLOCKED,
+    evidence_suffix="apa04-source-boundary-network-blocked",
+    policy_requirements=(SourceBoundaryPolicyRequirement.NO_NETWORK_TARGETS,),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_VALUE_NETWORK_TARGET_BLOCKED,),
+    warning_codes=(ParserWarningCode.SOURCE_VALUE_NETWORK_TARGET_BLOCKED,),
+    warning_message="arbitrary network target remains blocked",
+)
+_BOUNDARY_OUTPUT_PRESERVED = _source_boundary(
+    "fx-apa04-boundary-output-preserved",
+    _SOURCE_REFERENCE_PRESERVED,
+    status=SourceBoundaryStatus.ACCEPTED,
+    evidence_suffix="apa04-source-boundary-output-preserved",
+    policy_requirements=(
+        SourceBoundaryPolicyRequirement.BEACON_OWNERSHIP_PRESERVED,
+        SourceBoundaryPolicyRequirement.SAFE_REFERENCE_ONLY,
+    ),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+    warning_codes=(ParserWarningCode.SOURCE_URL_UNTRUSTED,),
+    warning_message="parser output preserves Beacon source URL ownership",
+)
+
+_REQUEST_SOURCE_BOUNDARY_ACCEPTED = _request(
+    "fx-apa04-request-source-boundary-accepted",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_ACCEPTED.bounded_value,
+    source_reference=_SOURCE_REFERENCE_ACCEPTED,
+    source_boundary_outcome=_BOUNDARY_ACCEPTED,
+)
+_REQUEST_SOURCE_BOUNDARY_MALFORMED = _request(
+    "fx-apa04-request-source-boundary-malformed",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_MALFORMED.bounded_value,
+    source_reference=_SOURCE_REFERENCE_MALFORMED,
+    source_boundary_outcome=_BOUNDARY_MALFORMED,
+)
+_REQUEST_SOURCE_BOUNDARY_UNSUPPORTED = _request(
+    "fx-apa04-request-source-boundary-unsupported",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_UNSUPPORTED.bounded_value,
+    source_reference=_SOURCE_REFERENCE_UNSUPPORTED,
+    source_boundary_outcome=_BOUNDARY_UNSUPPORTED,
+)
+_REQUEST_SOURCE_BOUNDARY_POLICY_MISSING = _request(
+    "fx-apa04-request-source-boundary-policy-missing",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_POLICY_MISSING.bounded_value,
+    source_reference=_SOURCE_REFERENCE_POLICY_MISSING,
+    source_boundary_outcome=_BOUNDARY_POLICY_MISSING,
+)
+_REQUEST_SOURCE_BOUNDARY_REDIRECT = _request(
+    "fx-apa04-request-source-boundary-redirect",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_REDIRECT.bounded_value,
+    source_reference=_SOURCE_REFERENCE_REDIRECT,
+    source_boundary_outcome=_BOUNDARY_REDIRECT_POLICY_MISSING,
+)
+_REQUEST_SOURCE_BOUNDARY_DNS = _request(
+    "fx-apa04-request-source-boundary-dns",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_DNS.bounded_value,
+    source_reference=_SOURCE_REFERENCE_DNS,
+    source_boundary_outcome=_BOUNDARY_DNS_POLICY_MISSING,
+)
+_REQUEST_SOURCE_BOUNDARY_CANONICALIZATION = _request(
+    "fx-apa04-request-source-boundary-canonicalization",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_CANONICALIZATION.bounded_value,
+    source_reference=_SOURCE_REFERENCE_CANONICALIZATION,
+    source_boundary_outcome=_BOUNDARY_CANONICALIZATION_UNPROVEN,
+)
+_REQUEST_SOURCE_BOUNDARY_SHELL = _request(
+    "fx-apa04-request-source-boundary-shell",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_SHELL.bounded_value,
+    source_reference=_SOURCE_REFERENCE_SHELL,
+    source_boundary_outcome=_BOUNDARY_SHELL_BLOCKED,
+)
+_REQUEST_SOURCE_BOUNDARY_FILESYSTEM = _request(
+    "fx-apa04-request-source-boundary-filesystem",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_FILESYSTEM.bounded_value,
+    source_reference=_SOURCE_REFERENCE_FILESYSTEM,
+    source_boundary_outcome=_BOUNDARY_FILESYSTEM_BLOCKED,
+)
+_REQUEST_SOURCE_BOUNDARY_NETWORK = _request(
+    "fx-apa04-request-source-boundary-network",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_NETWORK.bounded_value,
+    source_reference=_SOURCE_REFERENCE_NETWORK,
+    source_boundary_outcome=_BOUNDARY_NETWORK_BLOCKED,
+)
+_REQUEST_SOURCE_BOUNDARY_PRESERVED = _request(
+    "fx-apa04-request-source-boundary-preserved",
+    _PROFILE_SOURCE_BOUNDARY,
+    purpose="source-boundary-analysis",
+    safe_source_reference=_SOURCE_REFERENCE_PRESERVED.bounded_value,
+    source_reference=_SOURCE_REFERENCE_PRESERVED,
+    source_boundary_outcome=_BOUNDARY_OUTPUT_PRESERVED,
+)
+
+_TRANSPORT_SOURCE_BOUNDARY_ACCEPTED = _transport(
+    "fx-apa04-transport-source-boundary-accepted",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_ACCEPTED.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-accepted",
+)
+_TRANSPORT_SOURCE_BOUNDARY_MALFORMED = _transport(
+    "fx-apa04-transport-source-boundary-malformed",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_MALFORMED.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-malformed",
+)
+_TRANSPORT_SOURCE_BOUNDARY_UNSUPPORTED = _transport(
+    "fx-apa04-transport-source-boundary-unsupported",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_UNSUPPORTED.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-unsupported",
+)
+_TRANSPORT_SOURCE_BOUNDARY_POLICY_MISSING = _transport(
+    "fx-apa04-transport-source-boundary-policy-missing",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_POLICY_MISSING.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-policy-missing",
+)
+_TRANSPORT_SOURCE_BOUNDARY_REDIRECT = _transport(
+    "fx-apa04-transport-source-boundary-redirect",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_REDIRECT.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-redirect",
+)
+_TRANSPORT_SOURCE_BOUNDARY_DNS = _transport(
+    "fx-apa04-transport-source-boundary-dns",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_DNS.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-dns",
+)
+_TRANSPORT_SOURCE_BOUNDARY_CANONICALIZATION = _transport(
+    "fx-apa04-transport-source-boundary-canonicalization",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_CANONICALIZATION.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-canonicalization",
+)
+_TRANSPORT_SOURCE_BOUNDARY_SHELL = _transport(
+    "fx-apa04-transport-source-boundary-shell",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_SHELL.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-shell",
+)
+_TRANSPORT_SOURCE_BOUNDARY_FILESYSTEM = _transport(
+    "fx-apa04-transport-source-boundary-filesystem",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_FILESYSTEM.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-filesystem",
+)
+_TRANSPORT_SOURCE_BOUNDARY_NETWORK = _transport(
+    "fx-apa04-transport-source-boundary-network",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_NETWORK.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-network",
+)
+_TRANSPORT_SOURCE_BOUNDARY_PRESERVED = _transport(
+    "fx-apa04-transport-source-boundary-preserved",
+    status=TransportOutcomeStatus.NOT_SENT,
+    request_reference=_REQUEST_SOURCE_BOUNDARY_PRESERVED.request_id,
+    response_reference=None,
+    route_reference=None,
+    evidence_reference_suffix="apa04-source-boundary-preserved",
+)
+
+_ATTEMPT_SOURCE_BOUNDARY_ACCEPTED = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-accepted",
+    _REQUEST_SOURCE_BOUNDARY_ACCEPTED,
+    parser_status=ParserOutcomeStatus.USABLE_RESPONSE,
+    evidence_suffix="apa04-source-boundary-accepted",
+    warnings=_BOUNDARY_ACCEPTED.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_MALFORMED = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-malformed",
+    _REQUEST_SOURCE_BOUNDARY_MALFORMED,
+    parser_status=ParserOutcomeStatus.MALFORMED_RESPONSE,
+    evidence_suffix="apa04-source-boundary-malformed",
+    warnings=_BOUNDARY_MALFORMED.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_UNSUPPORTED = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-unsupported",
+    _REQUEST_SOURCE_BOUNDARY_UNSUPPORTED,
+    parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+    evidence_suffix="apa04-source-boundary-unsupported",
+    warnings=_BOUNDARY_UNSUPPORTED.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_POLICY_MISSING = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-policy-missing",
+    _REQUEST_SOURCE_BOUNDARY_POLICY_MISSING,
+    parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+    evidence_suffix="apa04-source-boundary-policy-missing",
+    warnings=_BOUNDARY_POLICY_MISSING.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_REDIRECT = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-redirect",
+    _REQUEST_SOURCE_BOUNDARY_REDIRECT,
+    parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+    evidence_suffix="apa04-source-boundary-redirect",
+    warnings=_BOUNDARY_REDIRECT_POLICY_MISSING.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_DNS = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-dns",
+    _REQUEST_SOURCE_BOUNDARY_DNS,
+    parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+    evidence_suffix="apa04-source-boundary-dns",
+    warnings=_BOUNDARY_DNS_POLICY_MISSING.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_CANONICALIZATION = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-canonicalization",
+    _REQUEST_SOURCE_BOUNDARY_CANONICALIZATION,
+    parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+    evidence_suffix="apa04-source-boundary-canonicalization",
+    warnings=_BOUNDARY_CANONICALIZATION_UNPROVEN.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_SHELL = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-shell",
+    _REQUEST_SOURCE_BOUNDARY_SHELL,
+    parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+    evidence_suffix="apa04-source-boundary-shell",
+    warnings=_BOUNDARY_SHELL_BLOCKED.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_FILESYSTEM = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-filesystem",
+    _REQUEST_SOURCE_BOUNDARY_FILESYSTEM,
+    parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+    evidence_suffix="apa04-source-boundary-filesystem",
+    warnings=_BOUNDARY_FILESYSTEM_BLOCKED.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_NETWORK = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-network",
+    _REQUEST_SOURCE_BOUNDARY_NETWORK,
+    parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+    evidence_suffix="apa04-source-boundary-network",
+    warnings=_BOUNDARY_NETWORK_BLOCKED.warnings,
+)
+_ATTEMPT_SOURCE_BOUNDARY_PRESERVED = _source_boundary_attempt(
+    "fx-apa04-attempt-source-boundary-preserved",
+    _REQUEST_SOURCE_BOUNDARY_PRESERVED,
+    parser_status=ParserOutcomeStatus.USABLE_RESPONSE,
+    evidence_suffix="apa04-source-boundary-preserved",
+    warnings=_BOUNDARY_OUTPUT_PRESERVED.warnings,
 )
 
 _CARD_TIER1 = _usable_listing_card("fx-apa02-card-tier1", evidence_suffix="tier1")
@@ -1841,6 +2434,105 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         compatibility_profile=_PROFILE_INTERNAL_OBSERVATION,
         compatibility_outcome=_COMPATIBILITY_INTERNAL_OBSERVATION,
         search_source_analysis_outcome=_SEARCH_SOURCE_INTERNAL_OBSERVATION,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-REFERENCE-BOUNDED-INPUT-ACCEPTED-001",
+        "Beacon-owned source reference is accepted as untrusted bounded input",
+        _REQUEST_SOURCE_BOUNDARY_ACCEPTED,
+        _TRANSPORT_SOURCE_BOUNDARY_ACCEPTED,
+        _ATTEMPT_SOURCE_BOUNDARY_ACCEPTED,
+        source_boundary_outcome=_BOUNDARY_ACCEPTED,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-MALFORMED-REJECTED-001",
+        "malformed source boundary is rejected",
+        _REQUEST_SOURCE_BOUNDARY_MALFORMED,
+        _TRANSPORT_SOURCE_BOUNDARY_MALFORMED,
+        _ATTEMPT_SOURCE_BOUNDARY_MALFORMED,
+        source_boundary_outcome=_BOUNDARY_MALFORMED,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-UNSUPPORTED-BLOCKED-001",
+        "unsupported source boundary is blocked",
+        _REQUEST_SOURCE_BOUNDARY_UNSUPPORTED,
+        _TRANSPORT_SOURCE_BOUNDARY_UNSUPPORTED,
+        _ATTEMPT_SOURCE_BOUNDARY_UNSUPPORTED,
+        source_boundary_outcome=_BOUNDARY_UNSUPPORTED,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-POLICY-MISSING-001",
+        "missing host/path/query policy blocks validation",
+        _REQUEST_SOURCE_BOUNDARY_POLICY_MISSING,
+        _TRANSPORT_SOURCE_BOUNDARY_POLICY_MISSING,
+        _ATTEMPT_SOURCE_BOUNDARY_POLICY_MISSING,
+        source_boundary_outcome=_BOUNDARY_POLICY_MISSING,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-REDIRECT-POLICY-MISSING-001",
+        "missing redirect policy blocks live follow",
+        _REQUEST_SOURCE_BOUNDARY_REDIRECT,
+        _TRANSPORT_SOURCE_BOUNDARY_REDIRECT,
+        _ATTEMPT_SOURCE_BOUNDARY_REDIRECT,
+        source_boundary_outcome=_BOUNDARY_REDIRECT_POLICY_MISSING,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-DNS-POLICY-MISSING-001",
+        "missing DNS policy blocks probing",
+        _REQUEST_SOURCE_BOUNDARY_DNS,
+        _TRANSPORT_SOURCE_BOUNDARY_DNS,
+        _ATTEMPT_SOURCE_BOUNDARY_DNS,
+        source_boundary_outcome=_BOUNDARY_DNS_POLICY_MISSING,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-CANONICALIZATION-UNPROVEN-001",
+        "canonicalization and equivalence remain unproven",
+        _REQUEST_SOURCE_BOUNDARY_CANONICALIZATION,
+        _TRANSPORT_SOURCE_BOUNDARY_CANONICALIZATION,
+        _ATTEMPT_SOURCE_BOUNDARY_CANONICALIZATION,
+        source_boundary_outcome=_BOUNDARY_CANONICALIZATION_UNPROVEN,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-SHELL-TARGET-BLOCKED-001",
+        "shell interpolation target is blocked",
+        _REQUEST_SOURCE_BOUNDARY_SHELL,
+        _TRANSPORT_SOURCE_BOUNDARY_SHELL,
+        _ATTEMPT_SOURCE_BOUNDARY_SHELL,
+        source_boundary_outcome=_BOUNDARY_SHELL_BLOCKED,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-FILESYSTEM-TARGET-BLOCKED-001",
+        "filesystem target interpolation is blocked",
+        _REQUEST_SOURCE_BOUNDARY_FILESYSTEM,
+        _TRANSPORT_SOURCE_BOUNDARY_FILESYSTEM,
+        _ATTEMPT_SOURCE_BOUNDARY_FILESYSTEM,
+        source_boundary_outcome=_BOUNDARY_FILESYSTEM_BLOCKED,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-NETWORK-TARGET-BLOCKED-001",
+        "arbitrary network target is blocked",
+        _REQUEST_SOURCE_BOUNDARY_NETWORK,
+        _TRANSPORT_SOURCE_BOUNDARY_NETWORK,
+        _ATTEMPT_SOURCE_BOUNDARY_NETWORK,
+        source_boundary_outcome=_BOUNDARY_NETWORK_BLOCKED,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
+    ),
+    _fixture(
+        "FX-APA04-SOURCE-BOUNDARY-PARSER-OUTPUT-PRESERVES-BEACON-SOURCE-001",
+        "parser output preserves Beacon-owned source ownership",
+        _REQUEST_SOURCE_BOUNDARY_PRESERVED,
+        _TRANSPORT_SOURCE_BOUNDARY_PRESERVED,
+        _ATTEMPT_SOURCE_BOUNDARY_PRESERVED,
+        source_boundary_outcome=_BOUNDARY_OUTPUT_PRESERVED,
+        compatibility_profile=_PROFILE_SOURCE_BOUNDARY,
     ),
 )
 

@@ -11,7 +11,12 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityRevalidationTrigger,
     FIXTURE_IDS,
     ParserOutcomeStatus,
+    ParserWarningCode,
     ReferenceOutcomeStatus,
+    SourceBoundaryPolicyRequirement,
+    SourceBoundaryRiskCode,
+    SourceBoundaryStatus,
+    SourceReferenceKind,
     SYNTHETIC_FIXTURE_BY_ID,
     TransportOutcomeStatus,
 )
@@ -77,6 +82,59 @@ def test_apa03_compatibility_enums_are_stable() -> None:
     ]
 
 
+def test_apa04_source_boundary_enums_are_stable() -> None:
+    assert [member.value for member in SourceReferenceKind] == [
+        "BEACON_SUBMITTED_URL",
+        "SAFE_BOUNDED_VALUE",
+        "APPROVED_REQUEST_REFERENCE",
+        "BEACON_PERSISTED_REFERENCE",
+    ]
+    assert [member.value for member in SourceBoundaryStatus] == [
+        "ACCEPTED",
+        "BLOCKED",
+        "REJECTED",
+        "POLICY_MISSING",
+        "MALFORMED",
+        "UNSUPPORTED",
+        "UNPROVEN",
+    ]
+    assert [member.value for member in SourceBoundaryPolicyRequirement] == [
+        "BEACON_OWNERSHIP_PRESERVED",
+        "SAFE_REFERENCE_ONLY",
+        "HOST_PATH_QUERY_POLICY",
+        "REDIRECT_POLICY",
+        "DNS_POLICY",
+        "CANONICALIZATION_POLICY",
+        "NO_SHELL_TARGETS",
+        "NO_FILESYSTEM_TARGETS",
+        "NO_NETWORK_TARGETS",
+    ]
+    assert [member.value for member in SourceBoundaryRiskCode] == [
+        "SOURCE_URL_UNTRUSTED",
+        "SOURCE_URL_POLICY_MISSING",
+        "SOURCE_URL_MALFORMED",
+        "SOURCE_URL_UNSUPPORTED",
+        "SOURCE_URL_CANONICALIZATION_UNPROVEN",
+        "SOURCE_URL_REDIRECT_POLICY_BLOCKED",
+        "SOURCE_URL_DNS_POLICY_BLOCKED",
+        "SOURCE_VALUE_SHELL_TARGET_BLOCKED",
+        "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED",
+        "SOURCE_VALUE_NETWORK_TARGET_BLOCKED",
+    ]
+    assert {member.value for member in ParserWarningCode} >= {
+        "SOURCE_URL_UNTRUSTED",
+        "SOURCE_URL_POLICY_MISSING",
+        "SOURCE_URL_MALFORMED",
+        "SOURCE_URL_UNSUPPORTED",
+        "SOURCE_URL_CANONICALIZATION_UNPROVEN",
+        "SOURCE_URL_REDIRECT_POLICY_BLOCKED",
+        "SOURCE_URL_DNS_POLICY_BLOCKED",
+        "SOURCE_VALUE_SHELL_TARGET_BLOCKED",
+        "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED",
+        "SOURCE_VALUE_NETWORK_TARGET_BLOCKED",
+    }
+
+
 def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
     assert FIXTURE_IDS == tuple(fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_BY_ID.values())
     assert len(FIXTURE_IDS) == len(set(FIXTURE_IDS))
@@ -102,6 +160,17 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA03-UNSUPPORTED-EXTRACTION-CLAIM-001",
         "FX-APA03-REFERENCE-COMMIT-REVALIDATION-001",
         "FX-APA03-INTERNAL-ENDPOINT-OBSERVATION-NOT-STABLE-001",
+        "FX-APA04-SOURCE-REFERENCE-BOUNDED-INPUT-ACCEPTED-001",
+        "FX-APA04-SOURCE-BOUNDARY-MALFORMED-REJECTED-001",
+        "FX-APA04-SOURCE-BOUNDARY-UNSUPPORTED-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-POLICY-MISSING-001",
+        "FX-APA04-SOURCE-BOUNDARY-REDIRECT-POLICY-MISSING-001",
+        "FX-APA04-SOURCE-BOUNDARY-DNS-POLICY-MISSING-001",
+        "FX-APA04-SOURCE-BOUNDARY-CANONICALIZATION-UNPROVEN-001",
+        "FX-APA04-SOURCE-BOUNDARY-SHELL-TARGET-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-FILESYSTEM-TARGET-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-NETWORK-TARGET-BLOCKED-001",
+        "FX-APA04-SOURCE-BOUNDARY-PARSER-OUTPUT-PRESERVES-BEACON-SOURCE-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
@@ -229,3 +298,110 @@ def test_apa03_reference_metadata_stays_observation_only_and_claim_scoped() -> N
     assert internal.compatibility_profile.authority_class is CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
     assert internal.compatibility_outcome is not None
     assert internal.compatibility_outcome.change_class is CompatibilityChangeClass.UNKNOWN
+
+
+def test_apa04_source_boundary_accepts_only_safe_bounded_metadata() -> None:
+    accepted = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-REFERENCE-BOUNDED-INPUT-ACCEPTED-001"]
+    preserved = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-PARSER-OUTPUT-PRESERVES-BEACON-SOURCE-001"]
+
+    assert accepted.source_boundary_outcome is not None
+    assert accepted.source_boundary_outcome.status is SourceBoundaryStatus.ACCEPTED
+    assert accepted.source_boundary_outcome.source_reference.owner == "Beacon Management"
+    assert accepted.source_boundary_outcome.source_reference.untrusted_input is True
+    assert accepted.request_envelope.source_reference is not None
+    assert accepted.request_envelope.source_reference.bounded_value == "source-ref:beacon-revision-001"
+    assert accepted.request_envelope.safe_source_reference == "source-ref:beacon-revision-001"
+    assert accepted.attempt_outcome.transport_status is TransportOutcomeStatus.NOT_SENT
+    assert accepted.attempt_outcome.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert not hasattr(accepted.attempt_outcome, "source_reference")
+    assert not hasattr(accepted.transport_outcome, "source_reference")
+
+    assert preserved.source_boundary_outcome is not None
+    assert preserved.source_boundary_outcome.status is SourceBoundaryStatus.ACCEPTED
+    assert preserved.request_envelope.source_reference is not None
+    assert preserved.request_envelope.source_reference.source_reference_kind is SourceReferenceKind.BEACON_PERSISTED_REFERENCE
+    assert preserved.request_envelope.source_boundary_outcome is preserved.source_boundary_outcome
+    assert preserved.attempt_outcome.transport_status is TransportOutcomeStatus.NOT_SENT
+    assert preserved.attempt_outcome.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert not hasattr(preserved.attempt_outcome, "source_reference")
+
+
+def test_apa04_source_boundary_malformed_unsupported_and_policy_missing_are_explicit() -> None:
+    malformed = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-MALFORMED-REJECTED-001"]
+    unsupported = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-UNSUPPORTED-BLOCKED-001"]
+    policy_missing = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-POLICY-MISSING-001"]
+    redirect_missing = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-REDIRECT-POLICY-MISSING-001"]
+    dns_missing = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-DNS-POLICY-MISSING-001"]
+
+    assert malformed.source_boundary_outcome is not None
+    assert malformed.source_boundary_outcome.status is SourceBoundaryStatus.MALFORMED
+    assert malformed.source_boundary_outcome.risk_codes == (SourceBoundaryRiskCode.SOURCE_URL_MALFORMED,)
+    assert malformed.attempt_outcome.parser_status is ParserOutcomeStatus.MALFORMED_RESPONSE
+
+    assert unsupported.source_boundary_outcome is not None
+    assert unsupported.source_boundary_outcome.status is SourceBoundaryStatus.UNSUPPORTED
+    assert unsupported.source_boundary_outcome.risk_codes == (SourceBoundaryRiskCode.SOURCE_URL_UNSUPPORTED,)
+    assert unsupported.attempt_outcome.parser_status is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
+
+    assert policy_missing.source_boundary_outcome is not None
+    assert policy_missing.source_boundary_outcome.status is SourceBoundaryStatus.POLICY_MISSING
+    assert policy_missing.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.HOST_PATH_QUERY_POLICY,
+    )
+    assert policy_missing.source_boundary_outcome.risk_codes == (SourceBoundaryRiskCode.SOURCE_URL_POLICY_MISSING,)
+    assert policy_missing.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+
+    assert redirect_missing.source_boundary_outcome is not None
+    assert redirect_missing.source_boundary_outcome.status is SourceBoundaryStatus.POLICY_MISSING
+    assert redirect_missing.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.REDIRECT_POLICY,
+    )
+    assert redirect_missing.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_URL_REDIRECT_POLICY_BLOCKED,
+    )
+    assert redirect_missing.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+
+    assert dns_missing.source_boundary_outcome is not None
+    assert dns_missing.source_boundary_outcome.status is SourceBoundaryStatus.POLICY_MISSING
+    assert dns_missing.source_boundary_outcome.policy_requirements == (
+        SourceBoundaryPolicyRequirement.DNS_POLICY,
+    )
+    assert dns_missing.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_URL_DNS_POLICY_BLOCKED,
+    )
+    assert dns_missing.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+
+
+def test_apa04_canonicalization_and_target_blocking_remain_explicit() -> None:
+    canonicalization = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-CANONICALIZATION-UNPROVEN-001"]
+    shell = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-SHELL-TARGET-BLOCKED-001"]
+    filesystem = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-FILESYSTEM-TARGET-BLOCKED-001"]
+    network = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SOURCE-BOUNDARY-NETWORK-TARGET-BLOCKED-001"]
+
+    assert canonicalization.source_boundary_outcome is not None
+    assert canonicalization.source_boundary_outcome.status is SourceBoundaryStatus.UNPROVEN
+    assert canonicalization.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_URL_CANONICALIZATION_UNPROVEN,
+    )
+    assert canonicalization.attempt_outcome.parser_status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+
+    assert shell.source_boundary_outcome is not None
+    assert shell.source_boundary_outcome.status is SourceBoundaryStatus.BLOCKED
+    assert shell.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_VALUE_SHELL_TARGET_BLOCKED,
+    )
+    assert shell.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+
+    assert filesystem.source_boundary_outcome is not None
+    assert filesystem.source_boundary_outcome.status is SourceBoundaryStatus.BLOCKED
+    assert filesystem.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED,
+    )
+    assert filesystem.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+
+    assert network.source_boundary_outcome is not None
+    assert network.source_boundary_outcome.status is SourceBoundaryStatus.BLOCKED
+    assert network.source_boundary_outcome.risk_codes == (
+        SourceBoundaryRiskCode.SOURCE_VALUE_NETWORK_TARGET_BLOCKED,
+    )
+    assert network.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION

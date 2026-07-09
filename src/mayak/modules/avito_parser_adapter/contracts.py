@@ -16,6 +16,15 @@ class TransportOutcomeStatus(str, Enum):
     RESPONSE_RECEIVED_UNCLASSIFIED = "RESPONSE_RECEIVED_UNCLASSIFIED"
 
 
+class SourceReferenceKind(str, Enum):
+    """Kinds of parser-visible source references."""
+
+    BEACON_SUBMITTED_URL = "BEACON_SUBMITTED_URL"
+    SAFE_BOUNDED_VALUE = "SAFE_BOUNDED_VALUE"
+    APPROVED_REQUEST_REFERENCE = "APPROVED_REQUEST_REFERENCE"
+    BEACON_PERSISTED_REFERENCE = "BEACON_PERSISTED_REFERENCE"
+
+
 class ParserOutcomeStatus(str, Enum):
     """Parser-level classifications for transport-neutral outcomes."""
 
@@ -30,6 +39,18 @@ class ParserOutcomeStatus(str, Enum):
     RESULT_AMBIGUOUS = "RESULT_AMBIGUOUS"
 
 
+class SourceBoundaryStatus(str, Enum):
+    """Semantic classifications for source boundary validation outcomes."""
+
+    ACCEPTED = "ACCEPTED"
+    BLOCKED = "BLOCKED"
+    REJECTED = "REJECTED"
+    POLICY_MISSING = "POLICY_MISSING"
+    MALFORMED = "MALFORMED"
+    UNSUPPORTED = "UNSUPPORTED"
+    UNPROVEN = "UNPROVEN"
+
+
 class ReferenceOutcomeStatus(str, Enum):
     """Reference-profile classifications that gate semantic acceptance."""
 
@@ -37,6 +58,35 @@ class ReferenceOutcomeStatus(str, Enum):
     REFERENCE_MISSING = "REFERENCE_MISSING"
     REFERENCE_DISPUTED = "REFERENCE_DISPUTED"
     CURRENT = "CURRENT"
+
+
+class SourceBoundaryPolicyRequirement(str, Enum):
+    """Policy requirements that stay explicit in source boundary outcomes."""
+
+    BEACON_OWNERSHIP_PRESERVED = "BEACON_OWNERSHIP_PRESERVED"
+    SAFE_REFERENCE_ONLY = "SAFE_REFERENCE_ONLY"
+    HOST_PATH_QUERY_POLICY = "HOST_PATH_QUERY_POLICY"
+    REDIRECT_POLICY = "REDIRECT_POLICY"
+    DNS_POLICY = "DNS_POLICY"
+    CANONICALIZATION_POLICY = "CANONICALIZATION_POLICY"
+    NO_SHELL_TARGETS = "NO_SHELL_TARGETS"
+    NO_FILESYSTEM_TARGETS = "NO_FILESYSTEM_TARGETS"
+    NO_NETWORK_TARGETS = "NO_NETWORK_TARGETS"
+
+
+class SourceBoundaryRiskCode(str, Enum):
+    """Risk codes for source boundary validation and target blocking."""
+
+    SOURCE_URL_UNTRUSTED = "SOURCE_URL_UNTRUSTED"
+    SOURCE_URL_POLICY_MISSING = "SOURCE_URL_POLICY_MISSING"
+    SOURCE_URL_MALFORMED = "SOURCE_URL_MALFORMED"
+    SOURCE_URL_UNSUPPORTED = "SOURCE_URL_UNSUPPORTED"
+    SOURCE_URL_CANONICALIZATION_UNPROVEN = "SOURCE_URL_CANONICALIZATION_UNPROVEN"
+    SOURCE_URL_REDIRECT_POLICY_BLOCKED = "SOURCE_URL_REDIRECT_POLICY_BLOCKED"
+    SOURCE_URL_DNS_POLICY_BLOCKED = "SOURCE_URL_DNS_POLICY_BLOCKED"
+    SOURCE_VALUE_SHELL_TARGET_BLOCKED = "SOURCE_VALUE_SHELL_TARGET_BLOCKED"
+    SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED = "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED"
+    SOURCE_VALUE_NETWORK_TARGET_BLOCKED = "SOURCE_VALUE_NETWORK_TARGET_BLOCKED"
 
 
 class CompatibilityProfileLifecycleStatus(str, Enum):
@@ -107,6 +157,56 @@ class ParserWarningCode(str, Enum):
     WITHDRAWN_PROFILE_BLOCKED = "WITHDRAWN_PROFILE_BLOCKED"
     DISPUTED_PROFILE_WARNING = "DISPUTED_PROFILE_WARNING"
     UNAVAILABLE_PROFILE_WARNING = "UNAVAILABLE_PROFILE_WARNING"
+    SOURCE_URL_UNTRUSTED = "SOURCE_URL_UNTRUSTED"
+    SOURCE_URL_POLICY_MISSING = "SOURCE_URL_POLICY_MISSING"
+    SOURCE_URL_MALFORMED = "SOURCE_URL_MALFORMED"
+    SOURCE_URL_UNSUPPORTED = "SOURCE_URL_UNSUPPORTED"
+    SOURCE_URL_CANONICALIZATION_UNPROVEN = "SOURCE_URL_CANONICALIZATION_UNPROVEN"
+    SOURCE_URL_REDIRECT_POLICY_BLOCKED = "SOURCE_URL_REDIRECT_POLICY_BLOCKED"
+    SOURCE_URL_DNS_POLICY_BLOCKED = "SOURCE_URL_DNS_POLICY_BLOCKED"
+    SOURCE_VALUE_SHELL_TARGET_BLOCKED = "SOURCE_VALUE_SHELL_TARGET_BLOCKED"
+    SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED = "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED"
+    SOURCE_VALUE_NETWORK_TARGET_BLOCKED = "SOURCE_VALUE_NETWORK_TARGET_BLOCKED"
+
+
+@dataclass(frozen=True, slots=True)
+class ParserSourceReference:
+    """Safe source reference or bounded value, never a live-open contract."""
+
+    source_reference_id: str
+    source_reference_kind: SourceReferenceKind
+    bounded_value: str
+    owner: str = "Beacon Management"
+    untrusted_input: bool = True
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.source_reference_id.strip():
+            raise ValueError("source_reference_id must not be blank")
+        if not self.bounded_value.strip():
+            raise ValueError("bounded_value must not be blank")
+        if not self.owner.strip():
+            raise ValueError("owner must not be blank")
+        if not self.untrusted_input:
+            raise ValueError("source references must remain untrusted input")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceBoundaryOutcome:
+    """Explicit source-boundary decision with bounded safe metadata only."""
+
+    source_boundary_id: str
+    source_reference: ParserSourceReference
+    status: SourceBoundaryStatus
+    policy_requirements: tuple[SourceBoundaryPolicyRequirement, ...] = ()
+    risk_codes: tuple[SourceBoundaryRiskCode, ...] = ()
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    explanation: ParserOutcomeExplanation | None = None
+
+    def __post_init__(self) -> None:
+        if not self.source_boundary_id.strip():
+            raise ValueError("source_boundary_id must not be blank")
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +390,8 @@ class ParserRequestEnvelope:
     producer: str
     purpose: str
     compatibility_profile: ParserCompatibilityProfile
+    source_reference: ParserSourceReference | None = None
+    source_boundary_outcome: SourceBoundaryOutcome | None = None
     safe_source_reference: str | None = None
     configuration_revision_id: str | None = None
     safe_transport_reference: str | None = None
@@ -304,6 +406,14 @@ class ParserRequestEnvelope:
         for field_name in ("request_id", "contract_name", "contract_version", "producer", "purpose"):
             if not getattr(self, field_name).strip():
                 raise ValueError(f"{field_name} must not be blank")
+        if self.source_boundary_outcome is not None and self.source_reference is None:
+            object.__setattr__(self, "source_reference", self.source_boundary_outcome.source_reference)
+        if self.source_reference is not None and self.safe_source_reference is None:
+            object.__setattr__(self, "safe_source_reference", self.source_reference.bounded_value)
+        if self.source_reference is not None and self.safe_source_reference != self.source_reference.bounded_value:
+            raise ValueError("safe_source_reference must match source_reference.bounded_value")
+        if self.source_boundary_outcome is not None and self.source_boundary_outcome.source_reference != self.source_reference:
+            raise ValueError("source_boundary_outcome.source_reference must match source_reference")
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,6 +442,7 @@ class ParserOutcomeExplanation:
     status: (
         ParserOutcomeStatus
         | TransportOutcomeStatus
+        | SourceBoundaryStatus
         | ReferenceOutcomeStatus
         | CompatibilityProfileLifecycleStatus
         | CompatibilityChangeClass
@@ -537,13 +648,19 @@ class ParserCompatibilityOutcome:
 
 __all__: Final[tuple[str, ...]] = (
     "TransportOutcomeStatus",
+    "SourceReferenceKind",
     "ParserOutcomeStatus",
+    "SourceBoundaryStatus",
     "ReferenceOutcomeStatus",
+    "SourceBoundaryPolicyRequirement",
+    "SourceBoundaryRiskCode",
     "CompatibilityProfileLifecycleStatus",
     "CompatibilityProfileAuthorityClass",
     "CompatibilityChangeClass",
     "CompatibilityRevalidationTrigger",
     "ParserWarningCode",
+    "ParserSourceReference",
+    "SourceBoundaryOutcome",
     "ParserEvidenceReference",
     "ParserWarning",
     "ParserCompatibilityProfile",
