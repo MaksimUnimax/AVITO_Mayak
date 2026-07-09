@@ -1092,6 +1092,25 @@ no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementati
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-11+ remain gated.
 
+### SOLS-HISTORY-0013 — 2026-07-09 — Privacy, observability and retention boundary
+
+SOLS-12 created docs-only privacy, observability and retention boundary documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-04 lifecycle/commit-point rules, SOLS-05 baseline/rolling anchor state, SOLS-06 difference rules, SOLS-07 lost-anchor recovery, SOLS-08 external failure/recovery, SOLS-09 overlap/mid-run rules, SOLS-10 parser outcome/reconciliation rules and SOLS-11 notification/status handoff;
+Scan keeps only minimal safe technical and semantic state needed for lifecycle, idempotency, replay, comparison, recovery and diagnostics;
+rolling anchors remain compact memory, not full listing archive;
+allowed safe observability signals include run/attempt/claim IDs, beacon/revision references, lifecycle/status classes, parser outcome references/classes, counts, classifications, safe failure reason, freshness/latency and correlation/causation IDs;
+raw provider payloads, full HTML/JSON, cookies/tokens/session values, private route details, foreign-account data, phone/seller/full description, full listing-card archive, unbounded observation history, views/analytics history and secrets are excluded by default;
+Notification delivery/outbox history is not Scan-owned;
+Web/Admin analytics history is not Scan-owned;
+physical retention/compaction/deletion remains gated by OD-013 and DB/persistence decisions;
+OD-013 remains open and is not closed by assumption;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no retention job, deletion job, compaction job, read-model rebuild job or numeric retention default was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-13+ remain gated.
+
 ### SOLS-HISTORY-0012 — 2026-07-09 — Notification/status handoff
 
 SOLS-11 created docs-only Notification/status handoff documentation;
