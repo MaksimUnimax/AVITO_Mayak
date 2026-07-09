@@ -2909,6 +2909,7 @@ def test_bm08_free_and_basic_activation_rules_are_enforced(
     expected_outcome: BeaconLifecycleEntitlementOutcome,
     expected_reason: BeaconLifecycleEntitlementRejectionReason | None,
 ) -> None:
+    assert decision is not None
     assert decision.outcome is expected_outcome
     assert decision.rejection_reason is expected_reason
     snapshot = decision.effective_entitlement_snapshot

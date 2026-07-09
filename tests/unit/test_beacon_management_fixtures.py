@@ -1085,18 +1085,22 @@ def test_bm08_basic_and_free_activation_fixtures_cover_allowed_and_blocked_seman
     assert snapshot is not None
 
     if fixture_id == "FX-BM08-BASIC-ALLOWED-001":
+        assert snapshot is not None
         assert decision.active_beacon_count == 4
         assert snapshot.tariff_policy_band.active_beacon_limit == 5
         assert snapshot.requested_interval_minutes == 5
         assert snapshot.requested_country_wide is True
     elif fixture_id == "FX-BM08-FREE-ALLOWED-001":
+        assert snapshot is not None
         assert snapshot.selected_city == "synthetic-city"
         assert snapshot.tariff_policy_band.active_beacon_limit == 1
         assert snapshot.requested_interval_minutes == 180
     elif fixture_id == "FX-BM08-FREE-COUNTRY-WIDE-BLOCKED-001":
+        assert snapshot is not None
         assert decision.requested_country_wide is True
         assert decision.selected_city is None
     elif fixture_id == "FX-BM08-FREE-ACTIVE-LIMIT-BLOCKED-001":
+        assert snapshot is not None
         assert decision.active_beacon_count == 1
         assert snapshot.tariff_policy_band.active_beacon_limit == 1
 
