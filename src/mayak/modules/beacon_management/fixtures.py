@@ -10,7 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from .contracts import (
     Beacon,
     BeaconAccessTier,
+    BeaconActionCausation,
     BeaconActivationDecision,
+    BeaconActorContext,
+    BeaconActorKind,
+    BeaconAuthorizationDecision,
+    BeaconAuthorizationOutcome,
     BeaconCurrentConfiguration,
     BeaconDecisionStatus,
     BeaconExpiryOutcome,
@@ -22,8 +27,11 @@ from .contracts import (
     BeaconNameOrigin,
     BeaconNamingMetadata,
     BeaconOverrideStatus,
+    BeaconOwnershipDecision,
     BeaconParserOutcomeStatus,
+    BeaconProtectedAction,
     BeaconSourceUrl,
+    BeaconSystemActorClass,
     ExtractedSearchConfigurationSnapshot,
 )
 
@@ -45,11 +53,14 @@ class SyntheticFixtureCase(BaseModel):
     current_configuration: BeaconCurrentConfiguration | None = None
     activation_decision: BeaconActivationDecision | None = None
     mutation_decision: BeaconMutationDecision | None = None
+    ownership_decision: BeaconOwnershipDecision | None = None
+    authorization_decision: BeaconAuthorizationDecision | None = None
     history_entry: BeaconHistoryEntry | None = None
 
 
 _OWN_ACCOUNT_ID = "acct-bm-synth-own-001"
 _FOREIGN_ACCOUNT_ID = "acct-bm-synth-foreign-001"
+_SUPPORT_ACCOUNT_ID = "acct-bm-synth-support-001"
 _BASE_URL = "https://example.invalid/search?query=beacon-management&city=synthetic"
 _SUBMITTED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc)
 _RECORD_AT = datetime(2026, 7, 9, 10, 5, tzinfo=timezone.utc)
@@ -149,6 +160,92 @@ def _naming(
         source_title=source_title,
         source_context_reference=source_context_reference,
         default_name=default_name,
+    )
+
+
+def _actor_context(
+    *,
+    actor_context_id: str,
+    actor_kind: BeaconActorKind,
+    is_verified: bool,
+    account_id: str | None = None,
+    actor_reference_id: str | None = None,
+    client_channel_flag: str | None = None,
+    client_channel_flag_is_authorization_proof: bool = False,
+) -> BeaconActorContext:
+    return BeaconActorContext(
+        actor_context_id=actor_context_id,
+        actor_kind=actor_kind,
+        is_verified=is_verified,
+        account_id=account_id,
+        actor_reference_id=actor_reference_id,
+        client_channel_flag=client_channel_flag,
+        client_channel_flag_is_authorization_proof=client_channel_flag_is_authorization_proof,
+    )
+
+
+def _ownership_decision(
+    *,
+    decision_id: str,
+    protected_action: BeaconProtectedAction,
+    actor_context: BeaconActorContext,
+    beacon_id: str,
+    beacon_account_id: str,
+    outcome: BeaconAuthorizationOutcome,
+    safe_reason_code: str,
+    reason: str,
+) -> BeaconOwnershipDecision:
+    return BeaconOwnershipDecision(
+        decision_id=decision_id,
+        protected_action=protected_action,
+        actor_context=actor_context,
+        beacon_id=beacon_id,
+        beacon_account_id=beacon_account_id,
+        outcome=outcome,
+        safe_reason_code=safe_reason_code,
+        reason=reason,
+    )
+
+
+def _authorization_decision(
+    *,
+    decision_id: str,
+    protected_action: BeaconProtectedAction,
+    actor_context: BeaconActorContext,
+    beacon_id: str,
+    beacon_account_id: str,
+    outcome: BeaconAuthorizationOutcome,
+    safe_reason_code: str,
+    reason: str,
+    server_role_scope_reference: str | None = None,
+    server_audit_reference: str | None = None,
+    action_causation: BeaconActionCausation | None = None,
+) -> BeaconAuthorizationDecision:
+    return BeaconAuthorizationDecision(
+        decision_id=decision_id,
+        protected_action=protected_action,
+        actor_context=actor_context,
+        beacon_id=beacon_id,
+        beacon_account_id=beacon_account_id,
+        outcome=outcome,
+        safe_reason_code=safe_reason_code,
+        reason=reason,
+        server_role_scope_reference=server_role_scope_reference,
+        server_audit_reference=server_audit_reference,
+        action_causation=action_causation,
+    )
+
+
+def _causation(
+    *,
+    service_actor_class: BeaconSystemActorClass,
+    causation_reference: str,
+    policy_source_reference: str,
+) -> BeaconActionCausation:
+    return BeaconActionCausation(
+        service_actor_class=service_actor_class,
+        causation_reference=causation_reference,
+        policy_source_reference=policy_source_reference,
     )
 
 
@@ -464,6 +561,198 @@ _LAST_WRITE_WINS_MUTATION = BeaconMutationDecision(
     reason="Synthetic same-field conflict resolves by later successful save.",
 )
 
+_OWNER_VERIFIED_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-001",
+    actor_kind=BeaconActorKind.ACCOUNT_OWNER,
+    is_verified=True,
+    account_id=_OWN_ACCOUNT_ID,
+    actor_reference_id="actor-ref-bm-owner-001",
+)
+
+_OWNER_UNVERIFIED_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-002",
+    actor_kind=BeaconActorKind.ACCOUNT_OWNER,
+    is_verified=False,
+    account_id=_OWN_ACCOUNT_ID,
+    actor_reference_id="actor-ref-bm-owner-002",
+)
+
+_FOREIGN_OWNER_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-003",
+    actor_kind=BeaconActorKind.ACCOUNT_OWNER,
+    is_verified=True,
+    account_id=_OWN_ACCOUNT_ID,
+    actor_reference_id="actor-ref-bm-owner-003",
+)
+
+_ADMIN_SUPPORT_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-004",
+    actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+    is_verified=True,
+    account_id=_SUPPORT_ACCOUNT_ID,
+    actor_reference_id="actor-ref-bm-support-001",
+)
+
+_TELEGRAM_CLIENT_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-005",
+    actor_kind=BeaconActorKind.ANONYMOUS,
+    is_verified=False,
+    client_channel_flag="TELEGRAM",
+    actor_reference_id="actor-ref-bm-telegram-001",
+)
+
+_WEB_CLIENT_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-006",
+    actor_kind=BeaconActorKind.ANONYMOUS,
+    is_verified=False,
+    client_channel_flag="WEB",
+    actor_reference_id="actor-ref-bm-web-001",
+)
+
+_ADMIN_CLIENT_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-007",
+    actor_kind=BeaconActorKind.ANONYMOUS,
+    is_verified=False,
+    client_channel_flag="ADMIN",
+    actor_reference_id="actor-ref-bm-admin-flag-001",
+)
+
+_SYSTEM_CONTEXT = _actor_context(
+    actor_context_id="actor-bm-008",
+    actor_kind=BeaconActorKind.SYSTEM,
+    is_verified=False,
+    actor_reference_id="actor-ref-bm-system-001",
+)
+
+_OWN_UPDATE_ALLOWED = _ownership_decision(
+    decision_id="decision-bm-001",
+    protected_action=BeaconProtectedAction.UPDATE_BEACON,
+    actor_context=_OWNER_VERIFIED_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.ALLOWED,
+    safe_reason_code="OWNER_UPDATE_ALLOWED",
+    reason="Verified owner may update the owned Beacon.",
+)
+
+_OWN_UPDATE_REQUIRES_VERIFIED = _ownership_decision(
+    decision_id="decision-bm-002",
+    protected_action=BeaconProtectedAction.UPDATE_BEACON,
+    actor_context=_OWNER_UNVERIFIED_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR,
+    safe_reason_code="OWNER_UPDATE_REQUIRES_VERIFIED_ACTOR",
+    reason="Unverified owner mutation is blocked until the actor is verified.",
+)
+
+_FOREIGN_READ_BLOCKED = _ownership_decision(
+    decision_id="decision-bm-003",
+    protected_action=BeaconProtectedAction.READ_BEACON,
+    actor_context=_FOREIGN_OWNER_CONTEXT,
+    beacon_id="beacon-bm-002",
+    beacon_account_id=_FOREIGN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.BLOCKED,
+    safe_reason_code="FOREIGN_READ_BLOCKED",
+    reason="Foreign-account read is blocked without existence-sensitive detail.",
+)
+
+_FOREIGN_MUTATE_BLOCKED = _ownership_decision(
+    decision_id="decision-bm-004",
+    protected_action=BeaconProtectedAction.UPDATE_BEACON,
+    actor_context=_FOREIGN_OWNER_CONTEXT,
+    beacon_id="beacon-bm-002",
+    beacon_account_id=_FOREIGN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.BLOCKED,
+    safe_reason_code="FOREIGN_MUTATE_BLOCKED",
+    reason="Foreign-account mutation is blocked without existence-sensitive detail.",
+)
+
+_ADMIN_SUPPORT_READ_ALLOWED = _authorization_decision(
+    decision_id="decision-bm-005",
+    protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+    actor_context=_ADMIN_SUPPORT_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.ALLOWED,
+    safe_reason_code="ADMIN_SUPPORT_READ_ALLOWED",
+    reason="Admin/support read is allowed only with server-side scope and audit reference.",
+    server_role_scope_reference="support-scope-bm-001",
+    server_audit_reference="audit-bm-005",
+)
+
+_ADMIN_SUPPORT_MUTATE_REQUIRES_AUDIT = _authorization_decision(
+    decision_id="decision-bm-006",
+    protected_action=BeaconProtectedAction.ADMIN_SUPPORT_MUTATE,
+    actor_context=_ADMIN_SUPPORT_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.REQUIRES_AUDIT,
+    safe_reason_code="ADMIN_SUPPORT_MUTATE_REQUIRES_AUDIT",
+    reason="Admin/support mutation is blocked until an audit reference is supplied.",
+    server_role_scope_reference="support-scope-bm-001",
+)
+
+_TELEGRAM_CLIENT_FLAG_DENIED = _ownership_decision(
+    decision_id="decision-bm-007",
+    protected_action=BeaconProtectedAction.READ_BEACON,
+    actor_context=_TELEGRAM_CLIENT_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.DENIED,
+    safe_reason_code="TELEGRAM_CLIENT_FLAG_DENIED",
+    reason="Telegram client flag alone is not authorization.",
+)
+
+_WEB_CLIENT_FLAG_DENIED = _ownership_decision(
+    decision_id="decision-bm-008",
+    protected_action=BeaconProtectedAction.READ_BEACON,
+    actor_context=_WEB_CLIENT_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.DENIED,
+    safe_reason_code="WEB_CLIENT_FLAG_DENIED",
+    reason="Web client flag alone is not authorization.",
+)
+
+_ADMIN_CLIENT_FLAG_DENIED = _ownership_decision(
+    decision_id="decision-bm-009",
+    protected_action=BeaconProtectedAction.READ_BEACON,
+    actor_context=_ADMIN_CLIENT_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.DENIED,
+    safe_reason_code="ADMIN_CLIENT_FLAG_DENIED",
+    reason="Admin client flag alone is not authorization.",
+)
+
+_SYSTEM_FREEZE_ALLOWED = _authorization_decision(
+    decision_id="decision-bm-010",
+    protected_action=BeaconProtectedAction.SYSTEM_FREEZE_AFTER_EXPIRY,
+    actor_context=_SYSTEM_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.ALLOWED,
+    safe_reason_code="SYSTEM_FREEZE_ALLOWED",
+    reason="System freeze after expiry is allowed only with causation and policy source.",
+    action_causation=_causation(
+        service_actor_class=BeaconSystemActorClass.MAINTENANCE_SERVICE,
+        causation_reference="causation-bm-001",
+        policy_source_reference="policy-source-bm-001",
+    ),
+)
+
+_SYSTEM_FREEZE_BLOCKED = _authorization_decision(
+    decision_id="decision-bm-011",
+    protected_action=BeaconProtectedAction.SYSTEM_FREEZE_AFTER_EXPIRY,
+    actor_context=_SYSTEM_CONTEXT,
+    beacon_id="beacon-bm-001",
+    beacon_account_id=_OWN_ACCOUNT_ID,
+    outcome=BeaconAuthorizationOutcome.BLOCKED,
+    safe_reason_code="SYSTEM_FREEZE_BLOCKED",
+    reason="System freeze after expiry is blocked until causation and policy source exist.",
+)
+
 SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
     SyntheticFixtureCase(
         fixture_id="FX-BM-ACTIVE-OWN-001",
@@ -604,6 +893,94 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         account_id=_OWN_ACCOUNT_ID,
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         mutation_decision=_LAST_WRITE_WINS_MUTATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-OWNER-UPDATE-VERIFIED-001",
+        summary="Verified owner can update the owned Beacon.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        ownership_decision=_OWN_UPDATE_ALLOWED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-OWNER-UPDATE-UNVERIFIED-001",
+        summary="Unverified owner mutation is blocked until verification.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        ownership_decision=_OWN_UPDATE_REQUIRES_VERIFIED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-FOREIGN-READ-BLOCKED-001",
+        summary="Foreign-account read is blocked without existence-sensitive detail.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_FOREIGN_ACCESS_BEACON,
+        ownership_decision=_FOREIGN_READ_BLOCKED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-FOREIGN-MUTATE-BLOCKED-001",
+        summary="Foreign-account mutation is blocked without existence-sensitive detail.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_FOREIGN_ACCESS_BEACON,
+        ownership_decision=_FOREIGN_MUTATE_BLOCKED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-ADMIN-SUPPORT-READ-ALLOWED-001",
+        summary="Admin/support read requires server-side scope and audit reference.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        authorization_decision=_ADMIN_SUPPORT_READ_ALLOWED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-ADMIN-SUPPORT-MUTATE-REQUIRES-AUDIT-001",
+        summary="Admin/support mutate is blocked when audit reference is missing.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        authorization_decision=_ADMIN_SUPPORT_MUTATE_REQUIRES_AUDIT,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-CLIENT-FLAG-TELEGRAM-DENIED-001",
+        summary="Telegram client flag alone is not authorization.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        ownership_decision=_TELEGRAM_CLIENT_FLAG_DENIED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-CLIENT-FLAG-WEB-DENIED-001",
+        summary="Web client flag alone is not authorization.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        ownership_decision=_WEB_CLIENT_FLAG_DENIED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-CLIENT-FLAG-ADMIN-DENIED-001",
+        summary="Admin client flag alone is not authorization.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        ownership_decision=_ADMIN_CLIENT_FLAG_DENIED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-SYSTEM-FREEZE-ALLOWED-001",
+        summary="System freeze after expiry requires causation and policy source.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        authorization_decision=_SYSTEM_FREEZE_ALLOWED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-AUTHZ-SYSTEM-FREEZE-BLOCKED-001",
+        summary="System freeze after expiry is blocked when causation or policy source is missing.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_OWN_ACTIVE_BEACON,
+        authorization_decision=_SYSTEM_FREEZE_BLOCKED,
     ),
 )
 

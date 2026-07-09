@@ -10,6 +10,16 @@ from pydantic import ValidationError
 
 from mayak.modules import beacon_management
 from mayak.modules.beacon_management import contracts
+from mayak.modules.beacon_management.contracts import (
+    BeaconActionCausation,
+    BeaconActorContext,
+    BeaconActorKind,
+    BeaconAuthorizationDecision,
+    BeaconAuthorizationOutcome,
+    BeaconOwnershipDecision,
+    BeaconProtectedAction,
+    BeaconSystemActorClass,
+)
 from mayak.platform import boundaries
 
 _SUBMITTED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc)
@@ -42,6 +52,221 @@ def test_beacon_management_package_exports_contract_primitives() -> None:
     for name in contracts.__all__:
         assert hasattr(beacon_management, name)
         assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
+def test_beacon_management_package_exports_bm03_authorization_primitives() -> None:
+    bm03_names = (
+        "BeaconActionCausation",
+        "BeaconActorContext",
+        "BeaconActorKind",
+        "BeaconAuthorizationDecision",
+        "BeaconAuthorizationOutcome",
+        "BeaconOwnershipDecision",
+        "BeaconProtectedAction",
+        "BeaconSystemActorClass",
+    )
+
+    for name in bm03_names:
+        assert hasattr(beacon_management, name)
+        assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
+def test_verified_owner_update_decision_is_allowed_for_matching_account() -> None:
+    decision = BeaconOwnershipDecision(
+        decision_id="decision-contract-bm03-001",
+        protected_action=BeaconProtectedAction.UPDATE_BEACON,
+        actor_context=BeaconActorContext(
+            actor_context_id="actor-contract-bm03-001",
+            actor_kind=BeaconActorKind.ACCOUNT_OWNER,
+            is_verified=True,
+            account_id="acct-contract-bm03-001",
+            actor_reference_id="actor-ref-contract-bm03-001",
+        ),
+        beacon_id="beacon-contract-bm03-001",
+        beacon_account_id="acct-contract-bm03-001",
+        outcome=BeaconAuthorizationOutcome.ALLOWED,
+        safe_reason_code="OWNER_UPDATE_ALLOWED",
+        reason="verified owner may update own Beacon",
+    )
+
+    assert decision.outcome is BeaconAuthorizationOutcome.ALLOWED
+    assert decision.actor_context.account_id == decision.beacon_account_id
+    assert decision.actor_context.is_verified is True
+
+
+def test_unverified_actor_cannot_receive_allowed_mutation_decision() -> None:
+    with pytest.raises(ValidationError):
+        BeaconOwnershipDecision(
+            decision_id="decision-contract-bm03-002",
+            protected_action=BeaconProtectedAction.UPDATE_BEACON,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-002",
+                actor_kind=BeaconActorKind.ACCOUNT_OWNER,
+                is_verified=False,
+                account_id="acct-contract-bm03-002",
+                actor_reference_id="actor-ref-contract-bm03-002",
+            ),
+            beacon_id="beacon-contract-bm03-002",
+            beacon_account_id="acct-contract-bm03-002",
+            outcome=BeaconAuthorizationOutcome.ALLOWED,
+            safe_reason_code="OWNER_UPDATE_ALLOWED",
+            reason="unverified owner must not be allowed to mutate",
+        )
+
+
+def test_actor_account_mismatch_cannot_receive_allowed_owner_mutation_decision() -> None:
+    with pytest.raises(ValidationError):
+        BeaconOwnershipDecision(
+            decision_id="decision-contract-bm03-003",
+            protected_action=BeaconProtectedAction.UPDATE_BEACON,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-003",
+                actor_kind=BeaconActorKind.ACCOUNT_OWNER,
+                is_verified=True,
+                account_id="acct-contract-bm03-003-actor",
+                actor_reference_id="actor-ref-contract-bm03-003",
+            ),
+            beacon_id="beacon-contract-bm03-003",
+            beacon_account_id="acct-contract-bm03-003-target",
+            outcome=BeaconAuthorizationOutcome.ALLOWED,
+            safe_reason_code="OWNER_UPDATE_ALLOWED",
+            reason="mismatched account must not be allowed",
+        )
+
+
+def test_foreign_account_denial_is_non_existence_sensitive() -> None:
+    decision = BeaconOwnershipDecision(
+        decision_id="decision-contract-bm03-004",
+        protected_action=BeaconProtectedAction.READ_BEACON,
+        actor_context=BeaconActorContext(
+            actor_context_id="actor-contract-bm03-004",
+            actor_kind=BeaconActorKind.ACCOUNT_OWNER,
+            is_verified=True,
+            account_id="acct-contract-bm03-004-actor",
+            actor_reference_id="actor-ref-contract-bm03-004",
+        ),
+        beacon_id="beacon-contract-bm03-004",
+        beacon_account_id="acct-contract-bm03-004-target",
+        outcome=BeaconAuthorizationOutcome.BLOCKED,
+        safe_reason_code="FOREIGN_READ_BLOCKED",
+        reason="foreign account must not receive existence-sensitive detail",
+    )
+
+    assert decision.outcome is BeaconAuthorizationOutcome.BLOCKED
+    assert decision.existence_sensitive_detail is None
+    assert decision.foreign_account_existence_sensitive_detail is False
+
+
+def test_admin_support_allowed_action_requires_server_side_scope_reference() -> None:
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id="decision-contract-bm03-005",
+            protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-005",
+                actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+                is_verified=True,
+                account_id="acct-contract-bm03-support",
+                actor_reference_id="actor-ref-contract-bm03-005",
+            ),
+            beacon_id="beacon-contract-bm03-005",
+            beacon_account_id="acct-contract-bm03-005-target",
+            outcome=BeaconAuthorizationOutcome.ALLOWED,
+            safe_reason_code="ADMIN_SUPPORT_READ_ALLOWED",
+            reason="admin/support read must require server-side scope",
+            server_audit_reference="audit-contract-bm03-005",
+        )
+
+
+def test_admin_support_allowed_action_requires_audit_reference() -> None:
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id="decision-contract-bm03-006",
+            protected_action=BeaconProtectedAction.ADMIN_SUPPORT_READ,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-006",
+                actor_kind=BeaconActorKind.ADMIN_SUPPORT,
+                is_verified=True,
+                account_id="acct-contract-bm03-support",
+                actor_reference_id="actor-ref-contract-bm03-006",
+            ),
+            beacon_id="beacon-contract-bm03-006",
+            beacon_account_id="acct-contract-bm03-006-target",
+            outcome=BeaconAuthorizationOutcome.ALLOWED,
+            safe_reason_code="ADMIN_SUPPORT_READ_ALLOWED",
+            reason="admin/support read must require audit",
+            server_role_scope_reference="support-scope-contract-bm03-006",
+        )
+
+
+def test_client_channel_flags_are_not_authorization_proof() -> None:
+    with pytest.raises(ValidationError):
+        BeaconActorContext(
+            actor_context_id="actor-contract-bm03-007",
+            actor_kind=BeaconActorKind.ANONYMOUS,
+            is_verified=False,
+            client_channel_flag="TELEGRAM",
+            client_channel_flag_is_authorization_proof=True,
+        )
+
+
+def test_system_lifecycle_action_requires_service_actor_class_causation_and_policy_source() -> None:
+    causation = BeaconActionCausation(
+        service_actor_class=BeaconSystemActorClass.MAINTENANCE_SERVICE,
+        causation_reference="causation-contract-bm03-001",
+        policy_source_reference="policy-source-contract-bm03-001",
+    )
+
+    decision = BeaconAuthorizationDecision(
+        decision_id="decision-contract-bm03-007",
+        protected_action=BeaconProtectedAction.SYSTEM_FREEZE_AFTER_EXPIRY,
+        actor_context=BeaconActorContext(
+            actor_context_id="actor-contract-bm03-007",
+            actor_kind=BeaconActorKind.SYSTEM,
+            is_verified=False,
+            actor_reference_id="actor-ref-contract-bm03-007",
+        ),
+        beacon_id="beacon-contract-bm03-007",
+        beacon_account_id="acct-contract-bm03-007-target",
+        outcome=BeaconAuthorizationOutcome.ALLOWED,
+        safe_reason_code="SYSTEM_FREEZE_ALLOWED",
+        reason="system freeze requires service actor causation and policy source",
+        action_causation=causation,
+    )
+
+    assert decision.action_causation == causation
+    assert (
+        decision.action_causation.service_actor_class
+        is BeaconSystemActorClass.MAINTENANCE_SERVICE
+    )
+
+
+def test_system_lifecycle_allowed_action_requires_causation() -> None:
+    with pytest.raises(ValidationError):
+        BeaconAuthorizationDecision(
+            decision_id="decision-contract-bm03-008",
+            protected_action=BeaconProtectedAction.SYSTEM_FREEZE_AFTER_EXPIRY,
+            actor_context=BeaconActorContext(
+                actor_context_id="actor-contract-bm03-008",
+                actor_kind=BeaconActorKind.SYSTEM,
+                is_verified=False,
+                actor_reference_id="actor-ref-contract-bm03-008",
+            ),
+            beacon_id="beacon-contract-bm03-008",
+            beacon_account_id="acct-contract-bm03-008-target",
+            outcome=BeaconAuthorizationOutcome.ALLOWED,
+            safe_reason_code="SYSTEM_FREEZE_ALLOWED",
+            reason="system freeze without causation must be rejected",
+        )
+
+
+def test_blank_policy_source_is_rejected_for_system_lifecycle_causation() -> None:
+    with pytest.raises(ValidationError):
+        BeaconActionCausation(
+            service_actor_class=BeaconSystemActorClass.MAINTENANCE_SERVICE,
+            causation_reference="causation-contract-bm03-002",
+            policy_source_reference="",
+        )
 
 
 def test_beacon_management_source_url_duplicates_are_allowed_when_beacon_ids_differ() -> None:

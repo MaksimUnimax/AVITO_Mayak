@@ -96,6 +96,178 @@ class BeaconNameOrigin(str, Enum):
     USER_RENAMED = "USER_RENAMED"
 
 
+class BeaconActorKind(str, Enum):
+    """Semantic actor kinds for account and service authorization."""
+
+    ACCOUNT_OWNER = "ACCOUNT_OWNER"
+    ADMIN_SUPPORT = "ADMIN_SUPPORT"
+    SYSTEM = "SYSTEM"
+    ANONYMOUS = "ANONYMOUS"
+
+
+class BeaconAuthorizationOutcome(str, Enum):
+    """Deterministic authorization outcomes for protected Beacon actions."""
+
+    ALLOWED = "ALLOWED"
+    DENIED = "DENIED"
+    BLOCKED = "BLOCKED"
+    REQUIRES_VERIFIED_ACTOR = "REQUIRES_VERIFIED_ACTOR"
+    REQUIRES_SCOPE = "REQUIRES_SCOPE"
+    REQUIRES_AUDIT = "REQUIRES_AUDIT"
+    NO_EXISTENCE_SENSITIVE_DETAIL = "NO_EXISTENCE_SENSITIVE_DETAIL"
+
+
+class BeaconProtectedAction(str, Enum):
+    """Protected Beacon action identifiers for semantic authorization contracts."""
+
+    CREATE_BEACON = "CREATE_BEACON"
+    READ_BEACON = "READ_BEACON"
+    UPDATE_BEACON = "UPDATE_BEACON"
+    ARCHIVE_BEACON = "ARCHIVE_BEACON"
+    RESTORE_BEACON = "RESTORE_BEACON"
+    PERMANENTLY_DELETE_BEACON = "PERMANENTLY_DELETE_BEACON"
+    ACTIVATE_BEACON = "ACTIVATE_BEACON"
+    PAUSE_BEACON = "PAUSE_BEACON"
+    SYSTEM_FREEZE_AFTER_EXPIRY = "SYSTEM_FREEZE_AFTER_EXPIRY"
+    ADMIN_SUPPORT_READ = "ADMIN_SUPPORT_READ"
+    ADMIN_SUPPORT_MUTATE = "ADMIN_SUPPORT_MUTATE"
+
+
+class BeaconSystemActorClass(str, Enum):
+    """Semantic service-actor classes for system lifecycle actions."""
+
+    BEACON_MANAGEMENT_SERVICE = "BEACON_MANAGEMENT_SERVICE"
+    ENTITLEMENTS_AND_BILLING_SERVICE = "ENTITLEMENTS_AND_BILLING_SERVICE"
+    MAINTENANCE_SERVICE = "MAINTENANCE_SERVICE"
+    SCHEDULER_SERVICE = "SCHEDULER_SERVICE"
+
+
+class BeaconActorContext(BaseModel):
+    """Verified actor context with primitive authorization references only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    actor_context_id: str = Field(min_length=1)
+    actor_kind: BeaconActorKind
+    is_verified: bool = False
+    account_id: str | None = Field(default=None, min_length=1)
+    actor_reference_id: str | None = Field(default=None, min_length=1)
+    client_channel_flag: str | None = Field(default=None, min_length=1)
+    client_channel_flag_is_authorization_proof: bool = False
+
+    @model_validator(mode="after")
+    def _validate_actor_context(self) -> "BeaconActorContext":
+        if self.actor_kind in {BeaconActorKind.ACCOUNT_OWNER, BeaconActorKind.ADMIN_SUPPORT}:
+            if self.account_id is None:
+                raise ValueError("account-backed actor context requires account_id")
+        elif self.account_id is not None:
+            raise ValueError("anonymous or system actor context must not carry account_id")
+
+        if self.actor_kind is BeaconActorKind.ANONYMOUS and self.is_verified:
+            raise ValueError("anonymous actor context cannot be verified")
+
+        if self.client_channel_flag_is_authorization_proof:
+            raise ValueError("client channel flag is not authorization proof")
+
+        return self
+
+
+class BeaconActionCausation(BaseModel):
+    """System lifecycle causation primitive with policy source reference."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    service_actor_class: BeaconSystemActorClass
+    causation_reference: str = Field(min_length=1)
+    policy_source_reference: str = Field(min_length=1)
+
+
+class BeaconOwnershipDecision(BaseModel):
+    """Owner-scoped authorization decision for protected Beacon actions."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    protected_action: BeaconProtectedAction
+    actor_context: BeaconActorContext
+    beacon_id: str = Field(min_length=1)
+    beacon_account_id: str = Field(min_length=1)
+    outcome: BeaconAuthorizationOutcome
+    safe_reason_code: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    existence_sensitive_detail: str | None = None
+    foreign_account_existence_sensitive_detail: bool = False
+
+    @model_validator(mode="after")
+    def _validate_ownership_decision(self) -> "BeaconOwnershipDecision":
+        owner_actions = {
+            BeaconProtectedAction.CREATE_BEACON,
+            BeaconProtectedAction.READ_BEACON,
+            BeaconProtectedAction.UPDATE_BEACON,
+            BeaconProtectedAction.ARCHIVE_BEACON,
+            BeaconProtectedAction.RESTORE_BEACON,
+            BeaconProtectedAction.PERMANENTLY_DELETE_BEACON,
+            BeaconProtectedAction.ACTIVATE_BEACON,
+            BeaconProtectedAction.PAUSE_BEACON,
+        }
+        mutation_actions = owner_actions - {BeaconProtectedAction.READ_BEACON}
+
+        if self.existence_sensitive_detail is not None:
+            if not self.existence_sensitive_detail.strip():
+                raise ValueError("existence sensitive detail must not be blank")
+            raise ValueError("foreign-account denial must not reveal existence-sensitive detail")
+
+        if self.foreign_account_existence_sensitive_detail:
+            raise ValueError("foreign-account denial must not reveal existence-sensitive detail")
+
+        if (
+            self.protected_action in owner_actions
+            and self.outcome is BeaconAuthorizationOutcome.ALLOWED
+        ):
+            if self.actor_context.actor_kind is not BeaconActorKind.ACCOUNT_OWNER:
+                raise ValueError("owner action requires an account owner actor context")
+            if self.actor_context.account_id != self.beacon_account_id:
+                raise ValueError("owner action requires matching actor account_id")
+
+            if self.protected_action in mutation_actions and not self.actor_context.is_verified:
+                raise ValueError("mutation requires verified actor context")
+
+        return self
+
+
+class BeaconAuthorizationDecision(BeaconOwnershipDecision):
+    """Extended authorization decision for support and system lifecycle actions."""
+
+    server_role_scope_reference: str | None = Field(default=None, min_length=1)
+    server_audit_reference: str | None = Field(default=None, min_length=1)
+    action_causation: BeaconActionCausation | None = None
+
+    @model_validator(mode="after")
+    def _validate_authorization_decision(self) -> "BeaconAuthorizationDecision":
+        if self.protected_action in {
+            BeaconProtectedAction.ADMIN_SUPPORT_READ,
+            BeaconProtectedAction.ADMIN_SUPPORT_MUTATE,
+        }:
+            if self.outcome is BeaconAuthorizationOutcome.ALLOWED:
+                if self.actor_context.actor_kind is not BeaconActorKind.ADMIN_SUPPORT:
+                    raise ValueError("admin/support action requires an admin/support actor context")
+                if self.server_role_scope_reference is None:
+                    raise ValueError(
+                        "admin/support action requires server-side role scope reference"
+                    )
+                if self.server_audit_reference is None:
+                    raise ValueError("admin/support action requires audit reference")
+
+        if self.protected_action is BeaconProtectedAction.SYSTEM_FREEZE_AFTER_EXPIRY:
+            if self.outcome is BeaconAuthorizationOutcome.ALLOWED:
+                if self.actor_context.actor_kind is not BeaconActorKind.SYSTEM:
+                    raise ValueError("system lifecycle action requires a system actor context")
+                if self.action_causation is None:
+                    raise ValueError("system lifecycle action requires service actor causation")
+
+        return self
+
+
 def _reject_blank_values(label: str, values: tuple[str, ...]) -> None:
     if any(not value.strip() for value in values):
         raise ValueError(f"{label} must not contain blank values")
@@ -418,9 +590,14 @@ class Beacon(BaseModel):
 
 
 __all__: Final[tuple[str, ...]] = (
+    "BeaconActionCausation",
+    "BeaconActorContext",
+    "BeaconActorKind",
     "Beacon",
     "BeaconAccessTier",
     "BeaconActivationDecision",
+    "BeaconAuthorizationDecision",
+    "BeaconAuthorizationOutcome",
     "BeaconCurrentConfiguration",
     "BeaconDecisionStatus",
     "BeaconExpiryOutcome",
@@ -432,7 +609,10 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconNameOrigin",
     "BeaconNamingMetadata",
     "BeaconOverrideStatus",
+    "BeaconProtectedAction",
     "BeaconParserOutcomeStatus",
     "BeaconSourceUrl",
+    "BeaconSystemActorClass",
+    "BeaconOwnershipDecision",
     "ExtractedSearchConfigurationSnapshot",
 )

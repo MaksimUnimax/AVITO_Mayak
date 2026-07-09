@@ -6,8 +6,11 @@ from mayak.modules.beacon_management import (
     SYNTHETIC_FIXTURE_CASES,
 )
 from mayak.modules.beacon_management.contracts import (
+    BeaconAuthorizationOutcome,
     BeaconDecisionStatus,
     BeaconParserOutcomeStatus,
+    BeaconProtectedAction,
+    BeaconSystemActorClass,
 )
 
 
@@ -141,3 +144,116 @@ def test_parser_unsafe_fixtures_remain_not_clean() -> None:
     assert captcha.snapshot.parser_outcome_status is BeaconParserOutcomeStatus.CAPTCHA_AFFECTED
     assert malformed.snapshot.accepted_as_clean is False
     assert captcha.snapshot.accepted_as_clean is False
+
+
+def test_authorization_fixture_ids_are_present_and_appended_deterministically() -> None:
+    expected_ids = (
+        "FX-BM-AUTHZ-OWNER-UPDATE-VERIFIED-001",
+        "FX-BM-AUTHZ-OWNER-UPDATE-UNVERIFIED-001",
+        "FX-BM-AUTHZ-FOREIGN-READ-BLOCKED-001",
+        "FX-BM-AUTHZ-FOREIGN-MUTATE-BLOCKED-001",
+        "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-ALLOWED-001",
+        "FX-BM-AUTHZ-ADMIN-SUPPORT-MUTATE-REQUIRES-AUDIT-001",
+        "FX-BM-AUTHZ-CLIENT-FLAG-TELEGRAM-DENIED-001",
+        "FX-BM-AUTHZ-CLIENT-FLAG-WEB-DENIED-001",
+        "FX-BM-AUTHZ-CLIENT-FLAG-ADMIN-DENIED-001",
+        "FX-BM-AUTHZ-SYSTEM-FREEZE-ALLOWED-001",
+        "FX-BM-AUTHZ-SYSTEM-FREEZE-BLOCKED-001",
+    )
+
+    assert FIXTURE_IDS[-len(expected_ids) :] == expected_ids
+    for fixture_id in expected_ids:
+        assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
+        assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
+
+
+def test_owner_verified_update_fixture_is_allowed() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-OWNER-UPDATE-VERIFIED-001"]
+
+    assert fixture.ownership_decision is not None
+    assert fixture.ownership_decision.outcome is BeaconAuthorizationOutcome.ALLOWED
+    assert fixture.ownership_decision.protected_action is BeaconProtectedAction.UPDATE_BEACON
+    assert fixture.ownership_decision.actor_context.is_verified is True
+    assert (
+        fixture.ownership_decision.actor_context.account_id
+        == fixture.ownership_decision.beacon_account_id
+    )
+
+
+def test_unverified_mutation_fixture_is_blocked_and_requires_verified_actor() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-OWNER-UPDATE-UNVERIFIED-001"]
+
+    assert fixture.ownership_decision is not None
+    assert fixture.ownership_decision.outcome is BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR
+    assert fixture.ownership_decision.actor_context.is_verified is False
+
+
+def test_foreign_account_fixtures_deny_without_existence_sensitive_detail() -> None:
+    read_fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-FOREIGN-READ-BLOCKED-001"]
+    mutate_fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-FOREIGN-MUTATE-BLOCKED-001"]
+
+    for fixture in (read_fixture, mutate_fixture):
+        assert fixture.ownership_decision is not None
+        assert fixture.ownership_decision.outcome is BeaconAuthorizationOutcome.BLOCKED
+        assert fixture.ownership_decision.existence_sensitive_detail is None
+        assert fixture.ownership_decision.foreign_account_existence_sensitive_detail is False
+
+
+def test_admin_support_read_fixture_has_server_side_scope_and_audit_reference() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-ADMIN-SUPPORT-READ-ALLOWED-001"]
+
+    assert fixture.authorization_decision is not None
+    assert fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.ALLOWED
+    assert (
+        fixture.authorization_decision.protected_action
+        is BeaconProtectedAction.ADMIN_SUPPORT_READ
+    )
+    assert fixture.authorization_decision.server_role_scope_reference is not None
+    assert fixture.authorization_decision.server_audit_reference is not None
+
+
+def test_admin_support_missing_audit_fixture_is_blocked() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-ADMIN-SUPPORT-MUTATE-REQUIRES-AUDIT-001"]
+
+    assert fixture.authorization_decision is not None
+    assert fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.REQUIRES_AUDIT
+    assert fixture.authorization_decision.server_role_scope_reference is not None
+    assert fixture.authorization_decision.server_audit_reference is None
+
+
+def test_client_flag_only_fixtures_are_denied_not_authorization() -> None:
+    for fixture_id in (
+        "FX-BM-AUTHZ-CLIENT-FLAG-TELEGRAM-DENIED-001",
+        "FX-BM-AUTHZ-CLIENT-FLAG-WEB-DENIED-001",
+        "FX-BM-AUTHZ-CLIENT-FLAG-ADMIN-DENIED-001",
+    ):
+        fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+        assert fixture.ownership_decision is not None
+        assert fixture.ownership_decision.outcome is BeaconAuthorizationOutcome.DENIED
+        assert fixture.ownership_decision.actor_context.client_channel_flag is not None
+        assert (
+            fixture.ownership_decision.actor_context.client_channel_flag_is_authorization_proof
+            is False
+        )
+
+
+def test_system_freeze_fixture_has_service_actor_class_causation_and_policy_source() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-SYSTEM-FREEZE-ALLOWED-001"]
+
+    assert fixture.authorization_decision is not None
+    assert fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.ALLOWED
+    assert fixture.authorization_decision.action_causation is not None
+    assert (
+        fixture.authorization_decision.action_causation.service_actor_class
+        is BeaconSystemActorClass.MAINTENANCE_SERVICE
+    )
+    assert fixture.authorization_decision.action_causation.causation_reference is not None
+    assert fixture.authorization_decision.action_causation.policy_source_reference is not None
+
+
+def test_system_lifecycle_missing_causation_policy_fixture_is_blocked() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-AUTHZ-SYSTEM-FREEZE-BLOCKED-001"]
+
+    assert fixture.authorization_decision is not None
+    assert fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.BLOCKED
+    assert fixture.authorization_decision.action_causation is None
