@@ -979,3 +979,13 @@ Fixture definitions are markdown-only, synthetic and non-executable.
 Parser Adapter module 05 is referenced only as documentation/placeholder contract boundary.
 OD-011 and OD-013 remain open.
 SOLS-03+ remain gated.
+
+### SOLS-HISTORY-0004 — 2026-07-09 — Scan eligibility and intent boundary
+
+SOLS-03 created docs-only scan eligibility and intent boundary documentation;
+it uses SOLS-01 owner decisions and SOLS-02 semantic record families;
+Beacon/Entitlements/Parser modules are referenced only as documentation/placeholder contract boundaries;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no numeric intervals, anchor window size, retry/backoff, due-slot or claim lease values were introduced;
+scheduler/worker/DB/runtime remain gated;
+SOLS-04+ remain gated.
