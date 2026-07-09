@@ -265,6 +265,7 @@ def _beacon(
     current_revision_id: str,
     source_reference: str,
     snapshot: ExtractedSearchConfigurationSnapshot,
+    source_url: BeaconSourceUrl | None = None,
     overrides: tuple[BeaconFilterOverride, ...] = (),
     restorable: bool = True,
     counts_toward_active_limit: bool = True,
@@ -272,7 +273,7 @@ def _beacon(
     source_title: str = "synthetic search source",
     source_context_reference: str = "ctx-synth-001",
 ) -> Beacon:
-    source_url = _source_url(source_reference)
+    source_url = source_url or _source_url(source_reference)
     current_configuration = _configuration(
         beacon_id=beacon_id,
         account_id=account_id,
@@ -906,8 +907,7 @@ _SOURCE_URL_PREP_SHELL_DECISION = _source_url_preparation_decision(
     outcome=BeaconSourceUrlPreparationOutcome.BLOCKED,
     safe_reason_code="EXTERNAL_URL_NOT_INTERPOLATED_INTO_SHELL",
     idempotency_basis=_SOURCE_URL_SHELL_BASIS,
-    shell_command_text="curl --fail --silent '${submitted_source_url}'",
-    shell_interpolation_field="submitted_source_url",
+    shell_command_text="curl --fail --silent <blocked-source-url>",
 )
 
 _OWNER_VERIFIED_CONTEXT = _actor_context(
@@ -1287,6 +1287,7 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             current_revision_id="rev-bm-prep-created-001",
             source_reference="source-ref-bm-prep-created-001",
             snapshot=_ACTIVE_SNAPSHOT,
+            source_url=_SOURCE_URL_PREPARED_CREATED,
         ),
         source_url=_SOURCE_URL_PREPARED_CREATED,
         current_configuration=_configuration(
@@ -1313,6 +1314,7 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             current_revision_id="rev-bm-prep-replayed-001",
             source_reference="source-ref-bm-prep-replayed-001",
             snapshot=_ACTIVE_SNAPSHOT,
+            source_url=_SOURCE_URL_PREPARED_REPLAYED,
         ),
         source_url=_SOURCE_URL_PREPARED_REPLAYED,
         current_configuration=_configuration(
@@ -1381,6 +1383,7 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             current_revision_id="rev-bm-prep-override-001",
             source_reference="source-ref-bm-prep-override-001",
             snapshot=_ACTIVE_SNAPSHOT,
+            source_url=_SOURCE_URL_PREPARED_OVERRIDE,
             overrides=(_ACTIVE_OVERRIDE,),
         ),
         source_url=_SOURCE_URL_PREPARED_OVERRIDE,
@@ -1409,6 +1412,7 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             current_revision_id="rev-bm-prep-fingerprint-001",
             source_reference="source-ref-bm-prep-fingerprint-001",
             snapshot=_ACTIVE_SNAPSHOT,
+            source_url=_SOURCE_URL_PREPARED_FINGERPRINT,
         ),
         source_url=_SOURCE_URL_PREPARED_FINGERPRINT,
         current_configuration=_configuration(
@@ -1435,6 +1439,7 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             current_revision_id="rev-bm-prep-tracking-001",
             source_reference="source-ref-bm-prep-tracking-001",
             snapshot=_ACTIVE_SNAPSHOT,
+            source_url=_SOURCE_URL_PREPARED_TRACKING,
         ),
         source_url=_SOURCE_URL_PREPARED_TRACKING,
         current_configuration=_configuration(
@@ -1450,7 +1455,7 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
     ),
     SyntheticFixtureCase(
         fixture_id="FX-BM-SOURCE-URL-PREP-SHELL-BLOCKED-001",
-        summary="Shell command field does not interpolate the submitted external URL.",
+        summary="Blocked shell command remains non-interpolating for the submitted URL.",
         account_id=_OWN_ACCOUNT_ID,
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         source_url=_SOURCE_URL_PREPARED_SHELL,

@@ -4,6 +4,7 @@ import ast
 from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -11,12 +12,18 @@ from pydantic import ValidationError
 from mayak.modules import beacon_management
 from mayak.modules.beacon_management import contracts
 from mayak.modules.beacon_management.contracts import (
+    Beacon,
     BeaconActionCausation,
     BeaconActorContext,
     BeaconActorKind,
     BeaconAuthorizationDecision,
     BeaconAuthorizationOutcome,
+    BeaconCurrentConfiguration,
+    BeaconLifecycleState,
+    BeaconNameOrigin,
+    BeaconNamingMetadata,
     BeaconOwnershipDecision,
+    BeaconParserOutcomeStatus,
     BeaconPreparedSourceUrl,
     BeaconProtectedAction,
     BeaconSourceUrl,
@@ -26,19 +33,27 @@ from mayak.modules.beacon_management.contracts import (
     BeaconSourceUrlPreparationOutcome,
     BeaconSourceUrlSafetyClassification,
     BeaconSystemActorClass,
+    ExtractedSearchConfigurationSnapshot,
 )
 from mayak.platform import boundaries
 
 _SUBMITTED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc)
 
 
-def _bm04_source_url(submitted_url: str, evidence_reference: str) -> BeaconSourceUrl:
+def _bm04_source_url(
+    submitted_url: str,
+    evidence_reference: str,
+    *,
+    source_channel: str = "user-submitted",
+    submitted_at: datetime | None = _SUBMITTED_AT,
+    submitted_by_label: str | None = "synthetic-user",
+) -> BeaconSourceUrl:
     return BeaconSourceUrl(
         submitted_url=submitted_url,
         evidence_reference=evidence_reference,
-        submitted_at=_SUBMITTED_AT,
-        source_channel="user-submitted",
-        submitted_by_label="synthetic-user",
+        submitted_at=submitted_at,
+        source_channel=source_channel,
+        submitted_by_label=submitted_by_label,
     )
 
 
@@ -90,6 +105,114 @@ def _bm04_idempotency_basis(
         beacon_id=beacon_id,
         requested_beacon_id=requested_beacon_id,
         source_url_only_basis=source_url_only_basis,
+    )
+
+
+def _bm04_snapshot(evidence_reference: str) -> ExtractedSearchConfigurationSnapshot:
+    return ExtractedSearchConfigurationSnapshot(
+        snapshot_id="snapshot-contract-bm04-001",
+        parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        normalized_filter_values=("city=synthetic",),
+        unsupported_parameters=(),
+        warning_codes=(),
+        evidence_reference=evidence_reference,
+    )
+
+
+def _bm04_current_configuration(
+    *,
+    beacon_id: str,
+    account_id: str,
+    source_url: BeaconSourceUrl,
+    display_name: str,
+    lifecycle_state: BeaconLifecycleState,
+    current_revision_id: str,
+) -> BeaconCurrentConfiguration:
+    return BeaconCurrentConfiguration(
+        beacon_id=beacon_id,
+        account_id=account_id,
+        source_url=source_url,
+        accepted_snapshot=_bm04_snapshot(f"{beacon_id}-snapshot-evidence"),
+        overrides=(),
+        current_revision_id=current_revision_id,
+        display_name=display_name,
+        lifecycle_state=lifecycle_state,
+        retained_evidence_references=(f"{beacon_id}-retained-evidence",),
+        previous_user_facing_revision_ids=(),
+    )
+
+
+def _bm04_beacon(
+    *,
+    beacon_id: str,
+    account_id: str,
+    source_url: BeaconSourceUrl,
+    display_name: str,
+    lifecycle_state: BeaconLifecycleState,
+    current_revision_id: str,
+    source_title: str = "synthetic search source",
+    source_context_reference: str = "ctx-contract-bm04-001",
+) -> Beacon:
+    return Beacon(
+        beacon_id=beacon_id,
+        account_id=account_id,
+        naming=BeaconNamingMetadata(
+            display_name=display_name,
+            name_origin=BeaconNameOrigin.USER_PROVIDED,
+            source_title=source_title,
+            source_context_reference=source_context_reference,
+            default_name="synthetic-default-name",
+        ),
+        source_url=source_url,
+        current_configuration=_bm04_current_configuration(
+            beacon_id=beacon_id,
+            account_id=account_id,
+            source_url=source_url,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            current_revision_id=current_revision_id,
+        ),
+        lifecycle_state=lifecycle_state,
+        restorable=True,
+        counts_toward_active_limit=True,
+        history_entries=(),
+    )
+
+
+def _bm04_beacon_with_current_source_url(
+    *,
+    beacon_id: str,
+    account_id: str,
+    source_url: BeaconSourceUrl,
+    current_configuration_source_url: BeaconSourceUrl,
+    display_name: str,
+    lifecycle_state: BeaconLifecycleState,
+    current_revision_id: str,
+) -> Beacon:
+    return Beacon(
+        beacon_id=beacon_id,
+        account_id=account_id,
+        naming=BeaconNamingMetadata(
+            display_name=display_name,
+            name_origin=BeaconNameOrigin.USER_PROVIDED,
+            source_title="synthetic search source",
+            source_context_reference="ctx-contract-bm04-001",
+            default_name="synthetic-default-name",
+        ),
+        source_url=source_url,
+        current_configuration=_bm04_current_configuration(
+            beacon_id=beacon_id,
+            account_id=account_id,
+            source_url=current_configuration_source_url,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            current_revision_id=current_revision_id,
+        ),
+        lifecycle_state=lifecycle_state,
+        restorable=True,
+        counts_toward_active_limit=True,
+        history_entries=(),
     )
 
 
@@ -230,6 +353,124 @@ def test_submitted_source_url_is_preserved_and_not_overwritten() -> None:
     assert decision.prepared_source_url.preserved_submitted_url == source_url.submitted_url
     assert decision.prepared_source_url.source_url_overwritten_by_snapshot is False
     assert decision.prepared_source_url.source_url_overwritten_by_override is False
+
+
+def test_beacon_accepts_matching_source_url_and_current_configuration_source_url() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=beacon-source-match&city=synthetic",
+        "evidence-contract-bm04-beacon-match-001",
+    )
+    beacon = _bm04_beacon(
+        beacon_id="beacon-contract-bm04-match-001",
+        account_id="acct-contract-bm04-001",
+        source_url=source_url,
+        display_name="Synthetic matching beacon",
+        lifecycle_state=BeaconLifecycleState.ACTIVE,
+        current_revision_id="rev-contract-bm04-match-001",
+    )
+
+    assert beacon.source_url == beacon.current_configuration.source_url
+    assert (
+        beacon.source_url.submitted_url
+        == beacon.current_configuration.source_url.submitted_url
+    )
+    assert (
+        beacon.source_url.evidence_reference
+        == beacon.current_configuration.source_url.evidence_reference
+    )
+
+
+def test_beacon_rejects_mismatched_source_url_submitted_url() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=beacon-source-match&city=synthetic",
+        "evidence-contract-bm04-beacon-mismatch-url-001",
+    )
+    current_configuration_source_url = _bm04_source_url(
+        "https://example.invalid/search?query=beacon-current-config-different&city=synthetic",
+        "evidence-contract-bm04-beacon-mismatch-url-001",
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="source URL must match current configuration source URL",
+    ):
+        _bm04_beacon_with_current_source_url(
+            beacon_id="beacon-contract-bm04-mismatch-url-001",
+            account_id="acct-contract-bm04-001",
+            source_url=source_url,
+            current_configuration_source_url=current_configuration_source_url,
+            display_name="Synthetic mismatched beacon URL",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-contract-bm04-mismatch-url-001",
+        )
+
+
+def test_beacon_rejects_mismatched_source_url_evidence_reference() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=beacon-source-match&city=synthetic",
+        "evidence-contract-bm04-beacon-mismatch-evidence-001",
+    )
+    current_configuration_source_url = _bm04_source_url(
+        "https://example.invalid/search?query=beacon-source-match&city=synthetic",
+        "evidence-contract-bm04-beacon-mismatch-evidence-different-001",
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="evidence reference must match current configuration source URL",
+    ):
+        _bm04_beacon_with_current_source_url(
+            beacon_id="beacon-contract-bm04-mismatch-evidence-001",
+            account_id="acct-contract-bm04-001",
+            source_url=source_url,
+            current_configuration_source_url=current_configuration_source_url,
+            display_name="Synthetic mismatched beacon evidence",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-contract-bm04-mismatch-evidence-001",
+        )
+
+
+@pytest.mark.parametrize(
+    "source_url_kwargs, expected_message",
+    (
+        (
+            {"source_channel": "parser-adapter"},
+            "source channel must not contradict current configuration",
+        ),
+        (
+            {"submitted_at": datetime(2026, 7, 9, 10, 1, tzinfo=timezone.utc)},
+            "submitted_at must not contradict current configuration",
+        ),
+        (
+            {"submitted_by_label": "different-label"},
+            "submitted_by_label must not contradict current configuration",
+        ),
+    ),
+)
+def test_beacon_rejects_contradictory_source_url_metadata(
+    source_url_kwargs: dict[str, Any],
+    expected_message: str,
+) -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=beacon-source-match&city=synthetic",
+        "evidence-contract-bm04-beacon-metadata-001",
+    )
+    current_configuration_source_url = _bm04_source_url(
+        "https://example.invalid/search?query=beacon-source-match&city=synthetic",
+        "evidence-contract-bm04-beacon-metadata-001",
+        **source_url_kwargs,
+    )
+
+    with pytest.raises(ValidationError, match=expected_message):
+        _bm04_beacon_with_current_source_url(
+            beacon_id="beacon-contract-bm04-metadata-001",
+            account_id="acct-contract-bm04-001",
+            source_url=source_url,
+            current_configuration_source_url=current_configuration_source_url,
+            display_name="Synthetic mismatched beacon metadata",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-contract-bm04-metadata-001",
+        )
 
 
 def test_same_account_duplicate_source_url_allowed_when_beacon_ids_differ() -> None:
@@ -473,16 +714,7 @@ def test_duplicate_url_blocking_policy_cannot_be_default_valid_behavior() -> Non
         )
 
 
-@pytest.mark.parametrize(
-    "field_name",
-    (
-        "shell_command_text",
-        "shell_interpolation_field",
-    ),
-)
-def test_external_source_url_cannot_appear_in_shell_command_text(
-    field_name: str,
-) -> None:
+def test_external_source_url_cannot_appear_in_shell_command_text() -> None:
     source_url = _bm04_source_url(
         "https://example.invalid/search?query=shell-boundary&city=synthetic",
         "evidence-contract-bm04-shell-001",
@@ -492,42 +724,60 @@ def test_external_source_url_cannot_appear_in_shell_command_text(
         classification=BeaconSourceUrlSafetyClassification.BLOCKED,
     )
     with pytest.raises(ValidationError):
-        if field_name == "shell_command_text":
-            BeaconSourceUrlPreparationDecision(
-                decision_id="decision-contract-bm04-shell-001",
+        BeaconSourceUrlPreparationDecision(
+            decision_id="decision-contract-bm04-shell-001",
+            account_id="acct-contract-bm04-001",
+            requested_beacon_id="requested-beacon-contract-bm04-shell-001",
+            submitted_source_url=source_url,
+            prepared_source_url=prepared_source_url,
+            outcome=BeaconSourceUrlPreparationOutcome.BLOCKED,
+            safe_reason_code="EXTERNAL_URL_MUST_NOT_BE_INTERPOLATED",
+            idempotency_basis=_bm04_idempotency_basis(
+                source_url,
+                command_reference="command-contract-bm04-shell-001",
                 account_id="acct-contract-bm04-001",
                 requested_beacon_id="requested-beacon-contract-bm04-shell-001",
-                submitted_source_url=source_url,
-                prepared_source_url=prepared_source_url,
-                outcome=BeaconSourceUrlPreparationOutcome.BLOCKED,
-                safe_reason_code="EXTERNAL_URL_MUST_NOT_BE_INTERPOLATED",
-                idempotency_basis=_bm04_idempotency_basis(
-                    source_url,
-                    command_reference="command-contract-bm04-shell-001",
-                    account_id="acct-contract-bm04-001",
-                    requested_beacon_id="requested-beacon-contract-bm04-shell-001",
-                ),
-                shell_command_text=f"curl --fail {source_url.submitted_url}",
-            )
-        elif field_name == "shell_interpolation_field":
-            BeaconSourceUrlPreparationDecision(
-                decision_id="decision-contract-bm04-shell-001",
+            ),
+            shell_command_text=f"curl --fail {source_url.submitted_url}",
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    (
+        BeaconSourceUrlPreparationOutcome.CREATED,
+        BeaconSourceUrlPreparationOutcome.REPLAYED,
+    ),
+)
+def test_shell_interpolation_field_cannot_represent_external_source_url_interpolation(
+    outcome: BeaconSourceUrlPreparationOutcome,
+) -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=shell-field&city=synthetic",
+        "evidence-contract-bm04-shell-field-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+
+    with pytest.raises(ValidationError, match="shell interpolation field"):
+        BeaconSourceUrlPreparationDecision(
+            decision_id=f"decision-contract-bm04-shell-field-{outcome.value.lower()}",
+            account_id="acct-contract-bm04-001",
+            requested_beacon_id="requested-beacon-contract-bm04-shell-field-001",
+            submitted_source_url=source_url,
+            prepared_source_url=prepared_source_url,
+            outcome=outcome,
+            safe_reason_code="SHELL_INTERPOLATION_FIELD_NOT_ALLOWED",
+            idempotency_basis=_bm04_idempotency_basis(
+                source_url,
+                command_reference="command-contract-bm04-shell-field-001",
                 account_id="acct-contract-bm04-001",
-                requested_beacon_id="requested-beacon-contract-bm04-shell-001",
-                submitted_source_url=source_url,
-                prepared_source_url=prepared_source_url,
-                outcome=BeaconSourceUrlPreparationOutcome.BLOCKED,
-                safe_reason_code="EXTERNAL_URL_MUST_NOT_BE_INTERPOLATED",
-                idempotency_basis=_bm04_idempotency_basis(
-                    source_url,
-                    command_reference="command-contract-bm04-shell-001",
-                    account_id="acct-contract-bm04-001",
-                    requested_beacon_id="requested-beacon-contract-bm04-shell-001",
-                ),
-                shell_interpolation_field=source_url.submitted_url,
-            )
-        else:
-            raise AssertionError(f"unsupported field name: {field_name}")
+                requested_beacon_id="requested-beacon-contract-bm04-shell-field-001",
+            ),
+            shell_interpolation_field="submitted_source_url",
+        )
 
 
 def test_canonical_fingerprint_cannot_be_marked_as_configuration_authority() -> None:

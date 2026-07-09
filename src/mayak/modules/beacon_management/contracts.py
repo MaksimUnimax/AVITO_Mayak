@@ -293,6 +293,32 @@ def _reject_blank_values(label: str, values: tuple[str, ...]) -> None:
         raise ValueError(f"{label} must not contain blank values")
 
 
+def _validate_source_url_match(
+    source_url: BeaconSourceUrl,
+    current_configuration_source_url: BeaconSourceUrl,
+) -> None:
+    if source_url.submitted_url != current_configuration_source_url.submitted_url:
+        raise ValueError("Beacon source URL must match current configuration source URL")
+
+    if source_url.evidence_reference != current_configuration_source_url.evidence_reference:
+        raise ValueError(
+            "Beacon source URL evidence reference must match current configuration source URL"
+        )
+
+    if source_url.source_channel != current_configuration_source_url.source_channel:
+        raise ValueError(
+            "Beacon source URL source channel must not contradict current configuration"
+        )
+
+    if source_url.submitted_at != current_configuration_source_url.submitted_at:
+        raise ValueError("Beacon source URL submitted_at must not contradict current configuration")
+
+    if source_url.submitted_by_label != current_configuration_source_url.submitted_by_label:
+        raise ValueError(
+            "Beacon source URL submitted_by_label must not contradict current configuration"
+        )
+
+
 class BeaconSourceUrl(BaseModel):
     """User-submitted source URL preserved as evidence."""
 
@@ -473,11 +499,10 @@ class BeaconSourceUrlPreparationDecision(BaseModel):
         if self.shell_command_text is not None and submitted_url in self.shell_command_text:
             raise ValueError("external URL must not be interpolated into shell command text")
 
-        if (
-            self.shell_interpolation_field is not None
-            and submitted_url in self.shell_interpolation_field
-        ):
-            raise ValueError("external URL must not be interpolated into shell field text")
+        if self.shell_interpolation_field is not None:
+            raise ValueError(
+                "shell interpolation field must not represent external source URL interpolation"
+            )
 
         if self.tracking_params_ignored and self.tracking_policy_reference is None:
             raise ValueError("tracking params may be ignored only with captured policy reference")
@@ -788,6 +813,7 @@ class Beacon(BaseModel):
             raise ValueError("current configuration must remain isolated by beacon_id")
         if self.current_configuration.account_id != self.account_id:
             raise ValueError("current configuration must remain owned by the same account_id")
+        _validate_source_url_match(self.source_url, self.current_configuration.source_url)
         if (
             self.lifecycle_state
             in {

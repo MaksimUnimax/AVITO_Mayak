@@ -45,6 +45,13 @@ def test_all_fixtures_are_synthetic_and_have_no_real_avito_url() -> None:
             assert fixture.current_configuration.source_url.submitted_url.startswith(
                 "https://example.invalid/"
             )
+        if fixture.beacon is not None and fixture.current_configuration is not None:
+            assert fixture.beacon.source_url == fixture.current_configuration.source_url
+        if fixture.peer_beacon is not None:
+            assert (
+                fixture.peer_beacon.source_url
+                == fixture.peer_beacon.current_configuration.source_url
+            )
 
 
 def test_bm04_source_url_fixture_ids_are_present() -> None:
@@ -74,6 +81,7 @@ def test_created_source_url_fixture_preserves_submitted_url() -> None:
     assert fixture.source_url_preparation_decision is not None
     assert fixture.source_url is not None
     assert fixture.current_configuration is not None
+    assert fixture.beacon.source_url == fixture.current_configuration.source_url
     assert (
         fixture.current_configuration.source_url.submitted_url == fixture.source_url.submitted_url
     )
@@ -116,6 +124,8 @@ def test_bm04_duplicate_same_account_source_url_fixture_has_same_url_and_differe
 
     assert fixture.beacon is not None
     assert fixture.peer_beacon is not None
+    assert fixture.beacon.source_url == fixture.beacon.current_configuration.source_url
+    assert fixture.peer_beacon.source_url == fixture.peer_beacon.current_configuration.source_url
     assert fixture.beacon.source_url.submitted_url == fixture.peer_beacon.source_url.submitted_url
     assert fixture.beacon.beacon_id != fixture.peer_beacon.beacon_id
     assert fixture.beacon.account_id == fixture.peer_beacon.account_id
@@ -126,6 +136,8 @@ def test_bm04_duplicate_cross_account_source_url_allowed() -> None:
 
     assert fixture.beacon is not None
     assert fixture.peer_beacon is not None
+    assert fixture.beacon.source_url == fixture.beacon.current_configuration.source_url
+    assert fixture.peer_beacon.source_url == fixture.peer_beacon.current_configuration.source_url
     assert fixture.beacon.source_url.submitted_url == fixture.peer_beacon.source_url.submitted_url
     assert fixture.beacon.account_id != fixture.peer_beacon.account_id
 
@@ -176,6 +188,7 @@ def test_original_source_url_is_not_overwritten_by_snapshot_or_override_fixture(
     assert fixture.current_configuration is not None
     assert fixture.source_url_preparation_decision is not None
     assert fixture.source_url is not None
+    assert fixture.beacon.source_url == fixture.current_configuration.source_url
     assert (
         fixture.current_configuration.source_url.submitted_url == fixture.source_url.submitted_url
     )
@@ -207,7 +220,14 @@ def test_tracking_params_fixture_requires_explicit_captured_policy_reference() -
     assert fixture.source_url_preparation_decision.tracking_policy_reference is not None
 
 
-def test_shell_interpolation_fixture_blocks_external_url_in_shell_command_field() -> None:
+def test_no_valid_fixture_contains_unsafe_shell_interpolation_channel() -> None:
+    for fixture in SYNTHETIC_FIXTURE_CASES:
+        if fixture.source_url_preparation_decision is None:
+            continue
+        assert fixture.source_url_preparation_decision.shell_interpolation_field is None
+
+
+def test_shell_blocked_fixture_remains_blocked_without_interpolation_channel() -> None:
     fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-SHELL-BLOCKED-001"]
 
     assert fixture.source_url_preparation_decision is not None
@@ -215,8 +235,10 @@ def test_shell_interpolation_fixture_blocks_external_url_in_shell_command_field(
     shell_command_text = fixture.source_url_preparation_decision.shell_command_text
     assert shell_command_text is not None
     assert fixture.source_url.submitted_url not in shell_command_text
+    assert fixture.source_url_preparation_decision.shell_interpolation_field is None
     assert (
-        fixture.source_url_preparation_decision.shell_interpolation_field == "submitted_source_url"
+        fixture.source_url_preparation_decision.outcome
+        is BeaconSourceUrlPreparationOutcome.BLOCKED
     )
 
 
