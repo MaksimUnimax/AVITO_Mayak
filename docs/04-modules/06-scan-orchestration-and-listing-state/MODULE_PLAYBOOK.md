@@ -989,3 +989,13 @@ no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were
 no numeric intervals, anchor window size, retry/backoff, due-slot or claim lease values were introduced;
 scheduler/worker/DB/runtime remain gated;
 SOLS-04+ remain gated.
+
+### SOLS-HISTORY-0005 — 2026-07-09 — Scan run lifecycle, idempotency and commit points
+
+SOLS-04 created docs-only lifecycle, idempotency and commit-point documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records and SOLS-03 eligibility boundary;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-05+ remain gated.
