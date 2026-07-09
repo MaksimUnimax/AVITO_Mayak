@@ -19,6 +19,14 @@ from mayak.modules.avito_parser_adapter import (
     ParserRequestEnvelope,
     ParserWarning,
     ParserWarningCode,
+    SearchConfigurationCandidate,
+    SearchConfigurationEvidence,
+    SearchConfigurationExtractionField,
+    SearchConfigurationExtractionOutcome,
+    SearchConfigurationFieldStatus,
+    SearchConfigurationParameterCandidate,
+    SearchConfigurationValueKind,
+    SearchConfigurationWarningCode,
     ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
@@ -61,6 +69,14 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ParserOutcomeExplanation",
         "ParserResponseClassificationRule",
         "ParserSourceReference",
+        "SearchConfigurationCandidate",
+        "SearchConfigurationEvidence",
+        "SearchConfigurationExtractionField",
+        "SearchConfigurationExtractionOutcome",
+        "SearchConfigurationFieldStatus",
+        "SearchConfigurationParameterCandidate",
+        "SearchConfigurationValueKind",
+        "SearchConfigurationWarningCode",
         "SourceBoundaryOutcome",
         "SourceBoundaryPolicyRequirement",
         "SourceBoundaryRiskCode",
@@ -266,6 +282,236 @@ def test_contract_objects_are_frozen_and_safe() -> None:
         raise AssertionError("ParserCompatibilityProfile must be frozen")
 
 
+def test_search_configuration_contracts_are_evidence_bound_and_frozen() -> None:
+    evidence_reference = ParserEvidenceReference(
+        reference_id="fx::search-config::evidence",
+        evidence_kind="search-configuration",
+    )
+    warning = ParserWarning(
+        code=SearchConfigurationWarningCode.MULTIVALUE_PARAMETER_PRESERVED,
+        message="repeated parameter values are preserved",
+        evidence_reference=evidence_reference,
+    )
+    profile = ParserCompatibilityProfile(
+        profile_id="fx::search-config::profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only", "synthetic"),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        supported_extraction_claims=("search configuration candidates are evidence-bound",),
+        unsupported_extraction_claims=("filter editability authority",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("compatibility profile and source boundary gate confidence",),
+        warning_mappings=("MULTIVALUE_PARAMETER_PRESERVED->PRESERVED",),
+        error_mappings=("LOSSY_NORMALIZATION_BLOCKED->BLOCKED",),
+        fixture_ids=("FX-APA06-REPEATED-MULTIVALUE-PARAM-PRESERVED-001",),
+        acceptance_matrix_rows=("APA06::MULTIVALUE::PRESERVED",),
+    )
+    source_reference = ParserSourceReference(
+        source_reference_id="fx::search-config::source-reference",
+        source_reference_kind=SourceReferenceKind.SAFE_REFERENCE,
+        beacon_source_reference="source-ref:beacon-revision-060",
+        bounded_value="source-ref:beacon-revision-060",
+        host_reference="provider.example",
+        path_reference="/search",
+        query_reference="q=synthetic-search-config",
+        policy_requirements=(
+            SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+        ),
+        risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+    )
+    boundary = SourceBoundaryOutcome(
+        boundary_id="fx::search-config::boundary",
+        source_reference=source_reference,
+        status=SourceBoundaryStatus.SOURCE_URL_UNTRUSTED,
+        policy_requirements=(
+            SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+            SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+        ),
+        risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+        warnings=(warning,),
+    )
+    request = ParserRequestEnvelope(
+        request_id="fx::search-config::request",
+        contract_name="mayak.avito.parser.request",
+        contract_version="1.0",
+        producer="mayak.tests.synthetic",
+        purpose="search-configuration-extraction",
+        compatibility_profile=profile,
+        safe_source_reference=source_reference.bounded_value,
+        source_reference=source_reference,
+        source_boundary_outcome=boundary,
+        configuration_revision_id="cfg::search-config::001",
+        safe_transport_reference="transport::search-config",
+    )
+    transport = TransportOutcomeReference(
+        transport_reference_id="fx::search-config::transport",
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        request_reference=request.request_id,
+        response_reference="response::search-config",
+        route_reference="route::synthetic",
+    )
+    evidence = SearchConfigurationEvidence(
+        evidence_id="fx::search-config::evidence-bundle",
+        request_envelope=request,
+        compatibility_profile=profile,
+        source_reference=source_reference,
+        source_boundary_outcome=boundary,
+        transport_outcome=transport,
+        evidence_references=(evidence_reference,),
+        notes=("search configuration extraction stays evidence-bound",),
+    )
+    parameter = SearchConfigurationParameterCandidate(
+        parameter_key="filter-key:synthetic-color",
+        parameter_value="value:synthetic-red",
+        field_status=SearchConfigurationFieldStatus.PRESERVED,
+        value_kind=SearchConfigurationValueKind.COLLECTION,
+        repeated_values=("value:synthetic-red", "value:synthetic-blue"),
+        evidence_references=(evidence_reference,),
+        warnings=(warning,),
+        notes=("repeated values are preserved",),
+    )
+    candidate = SearchConfigurationCandidate(
+        candidate_id="fx::search-config::candidate",
+        extraction_field=SearchConfigurationExtractionField.REPEATED_PARAMETER,
+        field_status=SearchConfigurationFieldStatus.PRESERVED,
+        value_kind=SearchConfigurationValueKind.COLLECTION,
+        parameter_candidates=(parameter,),
+        evidence_references=(evidence_reference,),
+        warnings=(warning,),
+        notes=("repeated values are preserved",),
+    )
+    outcome = SearchConfigurationExtractionOutcome(
+        extraction_id="fx::search-config::outcome",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=profile,
+        search_configuration_evidence=evidence,
+        search_configuration_candidates=(candidate,),
+        parameter_candidates=(parameter,),
+        normalized_geography_candidates=("synthetic-city",),
+        normalized_category_candidates=("synthetic-category",),
+        normalized_filter_candidates=("filter-key:synthetic-color=value:synthetic-red",),
+        observed_sort_context_reference="sort-context::synthetic-newest",
+        warnings=(warning,),
+        evidence_references=(evidence_reference,),
+        explanation=ParserOutcomeExplanation(
+            summary="search configuration extraction stays evidence-bound",
+            reason_code="FX::search-config",
+            status=ParserOutcomeStatus.USABLE_RESPONSE,
+            evidence_references=(evidence_reference,),
+            warnings=(warning,),
+        ),
+    )
+
+    assert warning.code is SearchConfigurationWarningCode.MULTIVALUE_PARAMETER_PRESERVED
+    assert evidence.source_reference is source_reference
+    assert evidence.source_boundary_outcome is boundary
+    assert evidence.compatibility_profile is profile
+    assert parameter.repeated_values == ("value:synthetic-red", "value:synthetic-blue")
+    assert candidate.parameter_candidates == (parameter,)
+    assert candidate.field_status is SearchConfigurationFieldStatus.PRESERVED
+    assert outcome.search_configuration_evidence is evidence
+    assert outcome.search_configuration_candidates == (candidate,)
+    assert outcome.parameter_candidates == (parameter,)
+    assert outcome.request_envelope.safe_source_reference == source_reference.bounded_value
+    assert outcome.request_envelope.source_boundary_outcome is boundary
+    assert {field.name for field in fields(SearchConfigurationEvidence)} >= {
+        "evidence_id",
+        "request_envelope",
+        "compatibility_profile",
+        "source_reference",
+        "source_boundary_outcome",
+        "transport_outcome",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(SearchConfigurationParameterCandidate)} >= {
+        "parameter_key",
+        "parameter_value",
+        "field_status",
+        "value_kind",
+        "repeated_values",
+        "evidence_references",
+        "warnings",
+        "notes",
+    }
+    assert {field.name for field in fields(SearchConfigurationCandidate)} >= {
+        "candidate_id",
+        "extraction_field",
+        "field_status",
+        "value_kind",
+        "parameter_candidates",
+        "evidence_references",
+        "warnings",
+        "notes",
+    }
+    assert {field.name for field in fields(SearchConfigurationExtractionOutcome)} >= {
+        "search_configuration_evidence",
+        "search_configuration_candidates",
+        "parameter_candidates",
+        "normalized_geography_candidates",
+        "normalized_category_candidates",
+        "normalized_filter_candidates",
+        "observed_sort_context_reference",
+    }
+    assert {member.value for member in SearchConfigurationWarningCode} >= {
+        "MULTIVALUE_PARAMETER_PRESERVED",
+        "UNSUPPORTED_PARAMETER_EXPLICIT",
+        "AMBIGUOUS_PARAMETER_EXPLICIT",
+        "LOSSY_NORMALIZATION_BLOCKED",
+    }
+    assert [member.value for member in SearchConfigurationExtractionField] == [
+        "GEOGRAPHY_CONTEXT",
+        "CATEGORY_CONTEXT",
+        "PRICE_LOWER_BOUND",
+        "PRICE_UPPER_BOUND",
+        "STRUCTURED_FILTER",
+        "REPEATED_PARAMETER",
+        "SORT_CONTEXT",
+        "PAGINATION_CONTEXT",
+        "UNSUPPORTED_PARAMETER",
+        "AMBIGUOUS_PARAMETER",
+        "COUNTRY_WIDE_CONTEXT",
+        "FILTER_EDITABILITY_CONTEXT",
+        "BEACON_SNAPSHOT_CONTEXT",
+    ]
+    assert [member.value for member in SearchConfigurationFieldStatus] == [
+        "EVIDENCE_BOUND",
+        "PRESERVED",
+        "UNPROVEN",
+        "UNSUPPORTED",
+        "AMBIGUOUS",
+        "POLICY_GATED",
+        "LOSSY_NORMALIZATION_BLOCKED",
+    ]
+    assert [member.value for member in SearchConfigurationValueKind] == [
+        "SCALAR",
+        "RANGE_BOUND",
+        "KEY_VALUE_PAIR",
+        "COLLECTION",
+        "CONTEXT",
+        "PROVENANCE",
+        "UNSUPPORTED",
+        "AMBIGUOUS",
+    ]
+
+    try:
+        parameter.parameter_key = "changed"  # type: ignore[misc]
+    except FrozenInstanceError:
+        pass
+    else:  # pragma: no cover - defensive
+        raise AssertionError("SearchConfigurationParameterCandidate must be frozen")
+
+
 def test_source_boundary_contracts_keep_bounded_references_explicit() -> None:
     evidence = ParserEvidenceReference(
         reference_id="fx::boundary::evidence",
@@ -371,5 +617,5 @@ def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
     assert len(SYNTHETIC_FIXTURE_BY_ID) == len({fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_BY_ID.values()})
     avito_live_url_marker = "".join(("a", "v", "i", "t", "o", ".", "r", "u"))
     for fixture in SYNTHETIC_FIXTURE_BY_ID.values():
-        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-", "FX-APA05-"))
+        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-", "FX-APA05-", "FX-APA06-"))
         assert avito_live_url_marker not in fixture.summary.lower()

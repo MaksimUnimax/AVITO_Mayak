@@ -159,6 +159,67 @@ class ParserWarningCode(str, Enum):
     SOURCE_VALUE_NETWORK_TARGET_BLOCKED = "SOURCE_VALUE_NETWORK_TARGET_BLOCKED"
 
 
+class SearchConfigurationWarningCode(str, Enum):
+    """Search-configuration warning codes for evidence-bound extraction."""
+
+    GEOGRAPHY_CANDIDATE_EVIDENCE_BOUND = "GEOGRAPHY_CANDIDATE_EVIDENCE_BOUND"
+    CATEGORY_CANDIDATE_EVIDENCE_BOUND = "CATEGORY_CANDIDATE_EVIDENCE_BOUND"
+    PRICE_BOUNDS_CANDIDATE_EVIDENCE_BOUND = "PRICE_BOUNDS_CANDIDATE_EVIDENCE_BOUND"
+    STRUCTURED_FILTER_CANDIDATE_EVIDENCE_BOUND = "STRUCTURED_FILTER_CANDIDATE_EVIDENCE_BOUND"
+    MULTIVALUE_PARAMETER_PRESERVED = "MULTIVALUE_PARAMETER_PRESERVED"
+    UNSUPPORTED_PARAMETER_EXPLICIT = "UNSUPPORTED_PARAMETER_EXPLICIT"
+    AMBIGUOUS_PARAMETER_EXPLICIT = "AMBIGUOUS_PARAMETER_EXPLICIT"
+    LOSSY_NORMALIZATION_BLOCKED = "LOSSY_NORMALIZATION_BLOCKED"
+    SORT_CONTEXT_UNPROVEN = "SORT_CONTEXT_UNPROVEN"
+    PAGINATION_CONTEXT_BLOCKED = "PAGINATION_CONTEXT_BLOCKED"
+    COUNTRY_WIDE_POLICY_GATED = "COUNTRY_WIDE_POLICY_GATED"
+    FILTER_EDITABILITY_NOT_DECLARED = "FILTER_EDITABILITY_NOT_DECLARED"
+    BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED = "BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED"
+
+
+class SearchConfigurationExtractionField(str, Enum):
+    """Search-configuration field families extracted from evidence."""
+
+    GEOGRAPHY_CONTEXT = "GEOGRAPHY_CONTEXT"
+    CATEGORY_CONTEXT = "CATEGORY_CONTEXT"
+    PRICE_LOWER_BOUND = "PRICE_LOWER_BOUND"
+    PRICE_UPPER_BOUND = "PRICE_UPPER_BOUND"
+    STRUCTURED_FILTER = "STRUCTURED_FILTER"
+    REPEATED_PARAMETER = "REPEATED_PARAMETER"
+    SORT_CONTEXT = "SORT_CONTEXT"
+    PAGINATION_CONTEXT = "PAGINATION_CONTEXT"
+    UNSUPPORTED_PARAMETER = "UNSUPPORTED_PARAMETER"
+    AMBIGUOUS_PARAMETER = "AMBIGUOUS_PARAMETER"
+    COUNTRY_WIDE_CONTEXT = "COUNTRY_WIDE_CONTEXT"
+    FILTER_EDITABILITY_CONTEXT = "FILTER_EDITABILITY_CONTEXT"
+    BEACON_SNAPSHOT_CONTEXT = "BEACON_SNAPSHOT_CONTEXT"
+
+
+class SearchConfigurationFieldStatus(str, Enum):
+    """Confidence and policy status for search-configuration candidates."""
+
+    EVIDENCE_BOUND = "EVIDENCE_BOUND"
+    PRESERVED = "PRESERVED"
+    UNPROVEN = "UNPROVEN"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    POLICY_GATED = "POLICY_GATED"
+    LOSSY_NORMALIZATION_BLOCKED = "LOSSY_NORMALIZATION_BLOCKED"
+
+
+class SearchConfigurationValueKind(str, Enum):
+    """Value-shape kinds for search-configuration candidates."""
+
+    SCALAR = "SCALAR"
+    RANGE_BOUND = "RANGE_BOUND"
+    KEY_VALUE_PAIR = "KEY_VALUE_PAIR"
+    COLLECTION = "COLLECTION"
+    CONTEXT = "CONTEXT"
+    PROVENANCE = "PROVENANCE"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
 class SourceReferenceKind(str, Enum):
     """Semantic kinds for bounded source references consumed by the parser."""
 
@@ -316,7 +377,7 @@ def _validate_nonblank_values(field_name: str, values: tuple[str, ...]) -> None:
 class ParserWarning:
     """Explicit warning that stays attached to an outcome or candidate."""
 
-    code: ParserWarningCode
+    code: ParserWarningCode | SearchConfigurationWarningCode
     message: str
     evidence_reference: ParserEvidenceReference | None = None
     details: tuple[str, ...] = ()
@@ -625,6 +686,64 @@ class SearchSourceAnalysisOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class SearchConfigurationEvidence:
+    """Safe provenance bundle for search-configuration extraction."""
+
+    evidence_id: str
+    request_envelope: ParserRequestEnvelope
+    compatibility_profile: ParserCompatibilityProfile
+    source_reference: ParserSourceReference | None = None
+    source_boundary_outcome: SourceBoundaryOutcome | None = None
+    transport_outcome: TransportOutcomeReference | None = None
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.evidence_id.strip():
+            raise ValueError("evidence_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchConfigurationParameterCandidate:
+    """Evidence-bound search parameter candidate with preserved values."""
+
+    parameter_key: str
+    parameter_value: str | None = None
+    field_status: SearchConfigurationFieldStatus = SearchConfigurationFieldStatus.EVIDENCE_BOUND
+    value_kind: SearchConfigurationValueKind = SearchConfigurationValueKind.KEY_VALUE_PAIR
+    repeated_values: tuple[str, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    warnings: tuple[ParserWarning, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.parameter_key.strip():
+            raise ValueError("parameter_key must not be blank")
+        _validate_nonblank_values("repeated_values", self.repeated_values)
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchConfigurationCandidate:
+    """Evidence-bound search-configuration candidate."""
+
+    candidate_id: str
+    extraction_field: SearchConfigurationExtractionField
+    field_status: SearchConfigurationFieldStatus
+    value_kind: SearchConfigurationValueKind
+    parameter_candidates: tuple[SearchConfigurationParameterCandidate, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    warnings: tuple[ParserWarning, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.candidate_id.strip():
+            raise ValueError("candidate_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
 class SearchConfigurationExtractionOutcome:
     """Normalized search-configuration evidence for Scan handoff."""
 
@@ -640,6 +759,9 @@ class SearchConfigurationExtractionOutcome:
         | SourceBoundaryStatus
     )
     compatibility_profile: ParserCompatibilityProfile
+    search_configuration_evidence: SearchConfigurationEvidence | None = None
+    search_configuration_candidates: tuple[SearchConfigurationCandidate, ...] = ()
+    parameter_candidates: tuple[SearchConfigurationParameterCandidate, ...] = ()
     normalized_geography_candidates: tuple[str, ...] = ()
     normalized_category_candidates: tuple[str, ...] = ()
     normalized_filter_candidates: tuple[str, ...] = ()
@@ -651,6 +773,11 @@ class SearchConfigurationExtractionOutcome:
     def __post_init__(self) -> None:
         if not self.extraction_id.strip():
             raise ValueError("extraction_id must not be blank")
+        if self.search_configuration_evidence is not None:
+            if self.search_configuration_evidence.request_envelope != self.request_envelope:
+                raise ValueError("search_configuration_evidence.request_envelope must match request_envelope")
+            if self.search_configuration_evidence.compatibility_profile != self.compatibility_profile:
+                raise ValueError("search_configuration_evidence.compatibility_profile must match compatibility_profile")
 
 
 @dataclass(frozen=True, slots=True)
@@ -784,6 +911,10 @@ __all__: Final[tuple[str, ...]] = (
     "CompatibilityChangeClass",
     "CompatibilityRevalidationTrigger",
     "ParserWarningCode",
+    "SearchConfigurationWarningCode",
+    "SearchConfigurationExtractionField",
+    "SearchConfigurationFieldStatus",
+    "SearchConfigurationValueKind",
     "SourceReferenceKind",
     "SourceBoundaryStatus",
     "SourceBoundaryRiskCode",
@@ -801,6 +932,9 @@ __all__: Final[tuple[str, ...]] = (
     "ParserOutcomeExplanation",
     "ParserAttemptOutcome",
     "SearchSourceAnalysisOutcome",
+    "SearchConfigurationEvidence",
+    "SearchConfigurationParameterCandidate",
+    "SearchConfigurationCandidate",
     "SearchConfigurationExtractionOutcome",
     "ListingCardCandidate",
     "NormalizedListingCandidate",

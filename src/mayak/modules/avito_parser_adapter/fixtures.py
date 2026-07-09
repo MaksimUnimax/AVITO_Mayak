@@ -25,6 +25,13 @@ from .contracts import (
     ParserRequestEnvelope,
     ParserWarning,
     ParserWarningCode,
+    SearchConfigurationCandidate,
+    SearchConfigurationEvidence,
+    SearchConfigurationExtractionField,
+    SearchConfigurationFieldStatus,
+    SearchConfigurationParameterCandidate,
+    SearchConfigurationValueKind,
+    SearchConfigurationWarningCode,
     ProviderResponseEvidenceClass,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
@@ -580,6 +587,9 @@ def _search_configuration(
     normalized_category_candidates: tuple[str, ...] = ("synthetic-category",),
     normalized_filters: tuple[str, ...] = (),
     sort_context_reference: str | None = None,
+    search_configuration_evidence: SearchConfigurationEvidence | None = None,
+    search_configuration_candidates: tuple[SearchConfigurationCandidate, ...] = (),
+    parameter_candidates: tuple[SearchConfigurationParameterCandidate, ...] = (),
     warnings: tuple[ParserWarning, ...] = (),
 ) -> SearchConfigurationExtractionOutcome:
     return SearchConfigurationExtractionOutcome(
@@ -588,6 +598,9 @@ def _search_configuration(
         transport_outcome=transport,
         status=status,
         compatibility_profile=profile,
+        search_configuration_evidence=search_configuration_evidence,
+        search_configuration_candidates=search_configuration_candidates,
+        parameter_candidates=parameter_candidates,
         normalized_geography_candidates=normalized_geography_candidates,
         normalized_category_candidates=normalized_category_candidates,
         normalized_filter_candidates=normalized_filters,
@@ -605,6 +618,157 @@ def _search_configuration(
             status=status,
             warnings=warnings,
         ),
+    )
+
+
+def _search_configuration_evidence(
+    evidence_id: str,
+    request: ParserRequestEnvelope,
+    transport: TransportOutcomeReference,
+    profile: ParserCompatibilityProfile,
+    *,
+    source_reference: ParserSourceReference | None = None,
+    source_boundary_outcome: SourceBoundaryOutcome | None = None,
+    evidence_suffix: str,
+    notes: tuple[str, ...] = (),
+) -> SearchConfigurationEvidence:
+    return SearchConfigurationEvidence(
+        evidence_id=evidence_id,
+        request_envelope=request,
+        compatibility_profile=profile,
+        source_reference=source_reference,
+        source_boundary_outcome=source_boundary_outcome,
+        transport_outcome=transport,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::search-configuration-provenance",
+                evidence_kind="search-configuration-provenance",
+            ),
+        ),
+        notes=notes,
+    )
+
+
+def _search_configuration_parameter_candidate(
+    parameter_key: str,
+    *,
+    parameter_value: str | None = None,
+    field_status: SearchConfigurationFieldStatus = SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+    value_kind: SearchConfigurationValueKind = SearchConfigurationValueKind.KEY_VALUE_PAIR,
+    repeated_values: tuple[str, ...] = (),
+    evidence_suffix: str,
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> SearchConfigurationParameterCandidate:
+    return SearchConfigurationParameterCandidate(
+        parameter_key=parameter_key,
+        parameter_value=parameter_value,
+        field_status=field_status,
+        value_kind=value_kind,
+        repeated_values=repeated_values,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::parameter::{parameter_key}",
+                evidence_kind="search-configuration-parameter",
+            ),
+        ),
+        warnings=warnings,
+        notes=notes,
+    )
+
+
+def _search_configuration_candidate(
+    candidate_id: str,
+    extraction_field: SearchConfigurationExtractionField,
+    *,
+    field_status: SearchConfigurationFieldStatus,
+    value_kind: SearchConfigurationValueKind,
+    parameter_candidates: tuple[SearchConfigurationParameterCandidate, ...] = (),
+    evidence_suffix: str,
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> SearchConfigurationCandidate:
+    return SearchConfigurationCandidate(
+        candidate_id=candidate_id,
+        extraction_field=extraction_field,
+        field_status=field_status,
+        value_kind=value_kind,
+        parameter_candidates=parameter_candidates,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::candidate::{candidate_id}",
+                evidence_kind="search-configuration-candidate",
+            ),
+        ),
+        warnings=warnings,
+        notes=notes,
+    )
+
+
+def _search_configuration_fixture(
+    fixture_id: str,
+    summary: str,
+    *,
+    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus = ParserOutcomeStatus.USABLE_RESPONSE,
+    evidence_suffix: str,
+    normalized_geography_candidates: tuple[str, ...] = (),
+    normalized_category_candidates: tuple[str, ...] = (),
+    normalized_filters: tuple[str, ...] = (),
+    sort_context_reference: str | None = None,
+    search_configuration_candidates: tuple[SearchConfigurationCandidate, ...] = (),
+    parameter_candidates: tuple[SearchConfigurationParameterCandidate, ...] = (),
+    warnings: tuple[ParserWarning, ...] = (),
+    parser_status: ParserOutcomeStatus | None = ParserOutcomeStatus.USABLE_RESPONSE,
+    source_reference: ParserSourceReference | None = None,
+    source_boundary_outcome: SourceBoundaryOutcome | None = None,
+) -> SyntheticFixtureCase:
+    effective_source_reference = source_reference if source_reference is not None else _SEARCH_CONFIG_SOURCE_REFERENCE
+    effective_source_boundary_outcome = (
+        source_boundary_outcome if source_boundary_outcome is not None else _SEARCH_CONFIG_SOURCE_BOUNDARY
+    )
+    search_configuration_evidence = _search_configuration_evidence(
+        f"fx-apa06-evidence-{evidence_suffix}",
+        _REQUEST_SEARCH_CONFIGURATION,
+        _TRANSPORT_SEARCH_CONFIGURATION,
+        _PROFILE_SEARCH_CONFIGURATION,
+        source_reference=effective_source_reference,
+        source_boundary_outcome=effective_source_boundary_outcome,
+        evidence_suffix=evidence_suffix,
+        notes=(f"synthetic search configuration fixture {fixture_id}",),
+    )
+    search_configuration_extraction_outcome = _search_configuration(
+        f"fx-apa06-extraction-{evidence_suffix}",
+        _REQUEST_SEARCH_CONFIGURATION,
+        _TRANSPORT_SEARCH_CONFIGURATION,
+        _PROFILE_SEARCH_CONFIGURATION,
+        status=status,
+        evidence_suffix=evidence_suffix,
+        normalized_geography_candidates=normalized_geography_candidates,
+        normalized_category_candidates=normalized_category_candidates,
+        normalized_filters=normalized_filters,
+        sort_context_reference=sort_context_reference,
+        search_configuration_evidence=search_configuration_evidence,
+        search_configuration_candidates=search_configuration_candidates,
+        parameter_candidates=parameter_candidates,
+        warnings=warnings,
+    )
+    attempt = _usable_attempt(
+        f"fx-apa06-attempt-{evidence_suffix}",
+        _PROFILE_SEARCH_CONFIGURATION,
+        _REQUEST_SEARCH_CONFIGURATION,
+        _TRANSPORT_SEARCH_CONFIGURATION,
+        parser_status=parser_status,
+        warnings=warnings,
+        evidence_suffix=evidence_suffix,
+    )
+    return _fixture(
+        fixture_id,
+        summary,
+        _REQUEST_SEARCH_CONFIGURATION,
+        _TRANSPORT_SEARCH_CONFIGURATION,
+        attempt,
+        compatibility_profile=_PROFILE_SEARCH_CONFIGURATION,
+        search_configuration_extraction_outcome=search_configuration_extraction_outcome,
     )
 
 
@@ -1110,6 +1274,86 @@ _PROFILE_SOURCE_BOUNDARY = _profile(
     ),
 )
 
+_PROFILE_SEARCH_CONFIGURATION = _profile(
+    "fx-apa06-profile-search-configuration",
+    evidence_suffix="apa06-search-configuration",
+    supported_extraction_claims=(
+        "evidence-bound geography candidate extraction",
+        "evidence-bound category candidate extraction",
+        "evidence-bound price bound candidate extraction",
+        "structured filter key/value candidates are preserved",
+        "repeated values are preserved as collections",
+        "sort and pagination context remain evidence-bound candidates",
+        "unsupported, ambiguous, lossy or policy-gated extraction stays explicit",
+    ),
+    unsupported_extraction_claims=(
+        "user-editable filter authority",
+        "country-wide activation policy",
+        "beacon snapshot acceptance",
+        "live pagination",
+        "raw query rewrite",
+        "filter catalog implementation",
+        "live validation",
+    ),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=(
+        "search configuration extraction stays evidence-bound",
+        "compatibility profile and source boundary gate confidence",
+        "unsupported and ambiguous parameters remain explicit",
+    ),
+    warning_mappings=(
+        "GEOGRAPHY_CANDIDATE_EVIDENCE_BOUND->EVIDENCE_BOUND",
+        "CATEGORY_CANDIDATE_EVIDENCE_BOUND->EVIDENCE_BOUND",
+        "PRICE_BOUNDS_CANDIDATE_EVIDENCE_BOUND->EVIDENCE_BOUND",
+        "STRUCTURED_FILTER_CANDIDATE_EVIDENCE_BOUND->EVIDENCE_BOUND",
+        "MULTIVALUE_PARAMETER_PRESERVED->PRESERVED",
+        "UNSUPPORTED_PARAMETER_EXPLICIT->UNSUPPORTED",
+        "AMBIGUOUS_PARAMETER_EXPLICIT->AMBIGUOUS",
+        "LOSSY_NORMALIZATION_BLOCKED->BLOCKED",
+        "SORT_CONTEXT_UNPROVEN->UNPROVEN",
+        "PAGINATION_CONTEXT_BLOCKED->BLOCKED",
+        "COUNTRY_WIDE_POLICY_GATED->POLICY_GATED",
+        "FILTER_EDITABILITY_NOT_DECLARED->POLICY_GATED",
+        "BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED->POLICY_GATED",
+    ),
+    error_mappings=(
+        "UNSUPPORTED_PARAMETER_EXPLICIT->UNSUPPORTED",
+        "AMBIGUOUS_PARAMETER_EXPLICIT->AMBIGUOUS",
+        "LOSSY_NORMALIZATION_BLOCKED->BLOCKED",
+        "PAGINATION_CONTEXT_BLOCKED->BLOCKED",
+    ),
+    fixture_ids=(
+        "FX-APA06-GEOGRAPHY-CANDIDATE-001",
+        "FX-APA06-CATEGORY-CANDIDATE-001",
+        "FX-APA06-PRICE-BOUNDS-CANDIDATE-001",
+        "FX-APA06-STRUCTURED-FILTER-KV-CANDIDATE-001",
+        "FX-APA06-REPEATED-MULTIVALUE-PARAM-PRESERVED-001",
+        "FX-APA06-UNSUPPORTED-PARAMETER-WARNING-001",
+        "FX-APA06-AMBIGUOUS-PARAMETER-WARNING-001",
+        "FX-APA06-LOSSY-NORMALIZATION-BLOCKED-001",
+        "FX-APA06-SORT-CONTEXT-UNPROVEN-001",
+        "FX-APA06-PAGINATION-CONTEXT-BLOCKED-001",
+        "FX-APA06-COUNTRY-WIDE-CANDIDATE-POLICY-GATED-001",
+        "FX-APA06-FILTER-EDITABILITY-NOT-DECLARED-001",
+        "FX-APA06-BEACON-SNAPSHOT-ACCEPTANCE-NOT-PERFORMED-001",
+    ),
+    acceptance_matrix_rows=(
+        "APA06::GEOGRAPHY::EVIDENCE_BOUND",
+        "APA06::CATEGORY::EVIDENCE_BOUND",
+        "APA06::PRICE_BOUNDS::EVIDENCE_BOUND",
+        "APA06::STRUCTURED_FILTER::PRESERVED",
+        "APA06::MULTIVALUE::PRESERVED",
+        "APA06::UNSUPPORTED_PARAMETER::EXPLICIT",
+        "APA06::AMBIGUOUS_PARAMETER::EXPLICIT",
+        "APA06::LOSSY_NORMALIZATION::BLOCKED",
+        "APA06::SORT_CONTEXT::UNPROVEN",
+        "APA06::PAGINATION_CONTEXT::BLOCKED",
+        "APA06::COUNTRY_WIDE::POLICY_GATED",
+        "APA06::FILTER_EDITABILITY::NOT_DECLARED",
+        "APA06::BEACON_SNAPSHOT_ACCEPTANCE::NOT_PERFORMED",
+    ),
+)
+
 
 _RULE_TRANSPORT_GATE = _classification_rule(
     "fx-apa05-rule-transport-gate",
@@ -1385,6 +1629,51 @@ _TRANSPORT_STALE = _transport(
     response_reference="response::stale",
     route_reference="route::synthetic",
     evidence_reference_suffix="stale",
+)
+
+_SEARCH_CONFIG_SOURCE_REFERENCE = _source_reference(
+    "fx-apa06-source-reference-search-configuration",
+    kind=SourceReferenceKind.SAFE_REFERENCE,
+    beacon_source_reference="source-ref:beacon-revision-060",
+    bounded_value="source-ref:beacon-revision-060",
+    host_reference="provider.example",
+    path_reference="/search",
+    query_reference="q=synthetic-search-config",
+    policy_requirements=(
+        SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+    ),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+    notes=("synthetic search configuration source reference",),
+)
+_SEARCH_CONFIG_SOURCE_BOUNDARY = _source_boundary(
+    "fx-apa06-boundary-search-configuration",
+    _SEARCH_CONFIG_SOURCE_REFERENCE,
+    status=SourceBoundaryStatus.SOURCE_URL_UNTRUSTED,
+    policy_requirements=(
+        SourceBoundaryPolicyRequirement.HOST_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.PATH_POLICY_REQUIRED,
+        SourceBoundaryPolicyRequirement.QUERY_POLICY_REQUIRED,
+    ),
+    risk_codes=(SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,),
+)
+_REQUEST_SEARCH_CONFIGURATION = _request(
+    "fx-apa06-request-search-configuration",
+    _PROFILE_SEARCH_CONFIGURATION,
+    purpose="search-configuration-extraction",
+    safe_source_reference="source-ref:beacon-revision-060",
+    source_reference=_SEARCH_CONFIG_SOURCE_REFERENCE,
+    source_boundary_outcome=_SEARCH_CONFIG_SOURCE_BOUNDARY,
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_SEARCH_CONFIGURATION = _transport(
+    "fx-apa06-transport-search-configuration",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_SEARCH_CONFIGURATION.request_id,
+    response_reference="response::synthetic::search-configuration",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa06-search-configuration",
 )
 
 _REQUEST_CURRENT_REFERENCE = _request(
@@ -3428,6 +3717,627 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         classification_rule=_RULE_HTTP_200_NON_EMPTY_NOT_ENOUGH,
         evidence_suffix="apa05-http-200-non-empty",
         parser_status=None,
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-GEOGRAPHY-CANDIDATE-001",
+        "geography candidate from safe source evidence",
+        evidence_suffix="apa06-geography",
+        normalized_geography_candidates=("synthetic-city",),
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-geography",
+                SearchConfigurationExtractionField.GEOGRAPHY_CONTEXT,
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.SCALAR,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "geography",
+                        parameter_value="synthetic-city",
+                        field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                        value_kind=SearchConfigurationValueKind.SCALAR,
+                        evidence_suffix="apa06-geography",
+                    ),
+                ),
+                evidence_suffix="apa06-geography",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.GEOGRAPHY_CANDIDATE_EVIDENCE_BOUND,
+                        message="geography candidate remains evidence-bound",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "geography",
+                parameter_value="synthetic-city",
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.SCALAR,
+                evidence_suffix="apa06-geography",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.GEOGRAPHY_CANDIDATE_EVIDENCE_BOUND,
+                message="geography candidate remains evidence-bound",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-CATEGORY-CANDIDATE-001",
+        "category candidate from safe source evidence",
+        evidence_suffix="apa06-category",
+        normalized_category_candidates=("synthetic-category",),
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-category",
+                SearchConfigurationExtractionField.CATEGORY_CONTEXT,
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.SCALAR,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "category",
+                        parameter_value="synthetic-category",
+                        field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                        value_kind=SearchConfigurationValueKind.SCALAR,
+                        evidence_suffix="apa06-category",
+                    ),
+                ),
+                evidence_suffix="apa06-category",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.CATEGORY_CANDIDATE_EVIDENCE_BOUND,
+                        message="category candidate remains evidence-bound",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "category",
+                parameter_value="synthetic-category",
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.SCALAR,
+                evidence_suffix="apa06-category",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.CATEGORY_CANDIDATE_EVIDENCE_BOUND,
+                message="category candidate remains evidence-bound",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-PRICE-BOUNDS-CANDIDATE-001",
+        "price lower and upper bound candidates",
+        evidence_suffix="apa06-price-bounds",
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-price-lower",
+                SearchConfigurationExtractionField.PRICE_LOWER_BOUND,
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.RANGE_BOUND,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "price_min",
+                        parameter_value="1000",
+                        field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                        value_kind=SearchConfigurationValueKind.RANGE_BOUND,
+                        evidence_suffix="apa06-price-bounds",
+                    ),
+                ),
+                evidence_suffix="apa06-price-bounds",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.PRICE_BOUNDS_CANDIDATE_EVIDENCE_BOUND,
+                        message="price lower bound remains evidence-bound",
+                    ),
+                ),
+            ),
+            _search_configuration_candidate(
+                "fx-apa06-candidate-price-upper",
+                SearchConfigurationExtractionField.PRICE_UPPER_BOUND,
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.RANGE_BOUND,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "price_max",
+                        parameter_value="5000",
+                        field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                        value_kind=SearchConfigurationValueKind.RANGE_BOUND,
+                        evidence_suffix="apa06-price-bounds",
+                    ),
+                ),
+                evidence_suffix="apa06-price-bounds",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.PRICE_BOUNDS_CANDIDATE_EVIDENCE_BOUND,
+                        message="price upper bound remains evidence-bound",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "price_min",
+                parameter_value="1000",
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.RANGE_BOUND,
+                evidence_suffix="apa06-price-bounds",
+            ),
+            _search_configuration_parameter_candidate(
+                "price_max",
+                parameter_value="5000",
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.RANGE_BOUND,
+                evidence_suffix="apa06-price-bounds",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.PRICE_BOUNDS_CANDIDATE_EVIDENCE_BOUND,
+                message="price bounds remain evidence-bound",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-STRUCTURED-FILTER-KV-CANDIDATE-001",
+        "structured filter key/value candidate from safe evidence",
+        evidence_suffix="apa06-structured-filter",
+        normalized_filters=("filter-key:synthetic-color=value:synthetic-red",),
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-structured-filter",
+                SearchConfigurationExtractionField.STRUCTURED_FILTER,
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.KEY_VALUE_PAIR,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "filter-key:synthetic-color",
+                        parameter_value="value:synthetic-red",
+                        field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                        value_kind=SearchConfigurationValueKind.KEY_VALUE_PAIR,
+                        evidence_suffix="apa06-structured-filter",
+                    ),
+                ),
+                evidence_suffix="apa06-structured-filter",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.STRUCTURED_FILTER_CANDIDATE_EVIDENCE_BOUND,
+                        message="structured filter candidate remains evidence-bound",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "filter-key:synthetic-color",
+                parameter_value="value:synthetic-red",
+                field_status=SearchConfigurationFieldStatus.EVIDENCE_BOUND,
+                value_kind=SearchConfigurationValueKind.KEY_VALUE_PAIR,
+                evidence_suffix="apa06-structured-filter",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.STRUCTURED_FILTER_CANDIDATE_EVIDENCE_BOUND,
+                message="structured filter candidate remains evidence-bound",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-REPEATED-MULTIVALUE-PARAM-PRESERVED-001",
+        "repeated multivalue parameter preserved as collection",
+        evidence_suffix="apa06-multivalue",
+        normalized_filters=(
+            "filter-key:synthetic-color=value:synthetic-red",
+            "filter-key:synthetic-color=value:synthetic-blue",
+        ),
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-multivalue",
+                SearchConfigurationExtractionField.REPEATED_PARAMETER,
+                field_status=SearchConfigurationFieldStatus.PRESERVED,
+                value_kind=SearchConfigurationValueKind.COLLECTION,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "filter-key:synthetic-color",
+                        parameter_value="value:synthetic-red",
+                        field_status=SearchConfigurationFieldStatus.PRESERVED,
+                        value_kind=SearchConfigurationValueKind.COLLECTION,
+                        repeated_values=("value:synthetic-red", "value:synthetic-blue"),
+                        evidence_suffix="apa06-multivalue",
+                    ),
+                ),
+                evidence_suffix="apa06-multivalue",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.MULTIVALUE_PARAMETER_PRESERVED,
+                        message="repeated parameter values are preserved",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "filter-key:synthetic-color",
+                parameter_value="value:synthetic-red",
+                field_status=SearchConfigurationFieldStatus.PRESERVED,
+                value_kind=SearchConfigurationValueKind.COLLECTION,
+                repeated_values=("value:synthetic-red", "value:synthetic-blue"),
+                evidence_suffix="apa06-multivalue",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.MULTIVALUE_PARAMETER_PRESERVED,
+                message="repeated parameter values are preserved",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-UNSUPPORTED-PARAMETER-WARNING-001",
+        "unsupported parameter remains explicit",
+        evidence_suffix="apa06-unsupported-parameter",
+        status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+        parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-unsupported",
+                SearchConfigurationExtractionField.UNSUPPORTED_PARAMETER,
+                field_status=SearchConfigurationFieldStatus.UNSUPPORTED,
+                value_kind=SearchConfigurationValueKind.UNSUPPORTED,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "unsupported:synthetic-mode",
+                        parameter_value="value:legacy",
+                        field_status=SearchConfigurationFieldStatus.UNSUPPORTED,
+                        value_kind=SearchConfigurationValueKind.UNSUPPORTED,
+                        evidence_suffix="apa06-unsupported-parameter",
+                    ),
+                ),
+                evidence_suffix="apa06-unsupported-parameter",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT,
+                        message="unsupported parameter remains explicit",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "unsupported:synthetic-mode",
+                parameter_value="value:legacy",
+                field_status=SearchConfigurationFieldStatus.UNSUPPORTED,
+                value_kind=SearchConfigurationValueKind.UNSUPPORTED,
+                evidence_suffix="apa06-unsupported-parameter",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT,
+                message="unsupported parameter remains explicit",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-AMBIGUOUS-PARAMETER-WARNING-001",
+        "ambiguous parameter remains explicit",
+        evidence_suffix="apa06-ambiguous-parameter",
+        status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+        parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-ambiguous",
+                SearchConfigurationExtractionField.AMBIGUOUS_PARAMETER,
+                field_status=SearchConfigurationFieldStatus.AMBIGUOUS,
+                value_kind=SearchConfigurationValueKind.AMBIGUOUS,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "mode",
+                        parameter_value="synthetic-ambiguous",
+                        field_status=SearchConfigurationFieldStatus.AMBIGUOUS,
+                        value_kind=SearchConfigurationValueKind.AMBIGUOUS,
+                        evidence_suffix="apa06-ambiguous-parameter",
+                    ),
+                ),
+                evidence_suffix="apa06-ambiguous-parameter",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT,
+                        message="ambiguous parameter remains explicit",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "mode",
+                parameter_value="synthetic-ambiguous",
+                field_status=SearchConfigurationFieldStatus.AMBIGUOUS,
+                value_kind=SearchConfigurationValueKind.AMBIGUOUS,
+                evidence_suffix="apa06-ambiguous-parameter",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT,
+                message="ambiguous parameter remains explicit",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-LOSSY-NORMALIZATION-BLOCKED-001",
+        "lossy normalization is blocked and warned",
+        evidence_suffix="apa06-lossy-normalization",
+        status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+        parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-lossy-normalization",
+                SearchConfigurationExtractionField.STRUCTURED_FILTER,
+                field_status=SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED,
+                value_kind=SearchConfigurationValueKind.COLLECTION,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "filter-key:synthetic-size",
+                        parameter_value="value:synthetic-large",
+                        field_status=SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED,
+                        value_kind=SearchConfigurationValueKind.COLLECTION,
+                        repeated_values=("value:synthetic-large", "value:synthetic-medium"),
+                        evidence_suffix="apa06-lossy-normalization",
+                    ),
+                ),
+                evidence_suffix="apa06-lossy-normalization",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED,
+                        message="lossy normalization is blocked",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "filter-key:synthetic-size",
+                parameter_value="value:synthetic-large",
+                field_status=SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED,
+                value_kind=SearchConfigurationValueKind.COLLECTION,
+                repeated_values=("value:synthetic-large", "value:synthetic-medium"),
+                evidence_suffix="apa06-lossy-normalization",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED,
+                message="lossy normalization is blocked",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-SORT-CONTEXT-UNPROVEN-001",
+        "sort context candidate is present but unproven",
+        evidence_suffix="apa06-sort-context",
+        sort_context_reference="sort-context::synthetic-newest",
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-sort-context",
+                SearchConfigurationExtractionField.SORT_CONTEXT,
+                field_status=SearchConfigurationFieldStatus.UNPROVEN,
+                value_kind=SearchConfigurationValueKind.CONTEXT,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "sort",
+                        parameter_value="newest",
+                        field_status=SearchConfigurationFieldStatus.UNPROVEN,
+                        value_kind=SearchConfigurationValueKind.CONTEXT,
+                        evidence_suffix="apa06-sort-context",
+                    ),
+                ),
+                evidence_suffix="apa06-sort-context",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.SORT_CONTEXT_UNPROVEN,
+                        message="sort context is present but not proven",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "sort",
+                parameter_value="newest",
+                field_status=SearchConfigurationFieldStatus.UNPROVEN,
+                value_kind=SearchConfigurationValueKind.CONTEXT,
+                evidence_suffix="apa06-sort-context",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.SORT_CONTEXT_UNPROVEN,
+                message="sort context is present but not proven",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-PAGINATION-CONTEXT-BLOCKED-001",
+        "pagination context candidate is blocked from live pagination",
+        evidence_suffix="apa06-pagination-context",
+        status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+        parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-pagination-context",
+                SearchConfigurationExtractionField.PAGINATION_CONTEXT,
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.CONTEXT,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "page",
+                        parameter_value="2",
+                        field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                        value_kind=SearchConfigurationValueKind.CONTEXT,
+                        evidence_suffix="apa06-pagination-context",
+                    ),
+                ),
+                evidence_suffix="apa06-pagination-context",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED,
+                        message="pagination context is blocked from live pagination",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "page",
+                parameter_value="2",
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.CONTEXT,
+                evidence_suffix="apa06-pagination-context",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED,
+                message="pagination context is blocked from live pagination",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-COUNTRY-WIDE-CANDIDATE-POLICY-GATED-001",
+        "country-wide candidate evidence is policy gated",
+        evidence_suffix="apa06-country-wide",
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-country-wide",
+                SearchConfigurationExtractionField.COUNTRY_WIDE_CONTEXT,
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.CONTEXT,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "country-wide",
+                        parameter_value="synthetic-country-wide",
+                        field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                        value_kind=SearchConfigurationValueKind.CONTEXT,
+                        evidence_suffix="apa06-country-wide",
+                    ),
+                ),
+                evidence_suffix="apa06-country-wide",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.COUNTRY_WIDE_POLICY_GATED,
+                        message="country-wide activation remains a policy decision outside Parser",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "country-wide",
+                parameter_value="synthetic-country-wide",
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.CONTEXT,
+                evidence_suffix="apa06-country-wide",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.COUNTRY_WIDE_POLICY_GATED,
+                message="country-wide activation remains a policy decision outside Parser",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-FILTER-EDITABILITY-NOT-DECLARED-001",
+        "filter editability is not declared by Parser",
+        evidence_suffix="apa06-filter-editability",
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-filter-editability",
+                SearchConfigurationExtractionField.FILTER_EDITABILITY_CONTEXT,
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.PROVENANCE,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "filter-editability",
+                        parameter_value="not-declared",
+                        field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                        value_kind=SearchConfigurationValueKind.PROVENANCE,
+                        evidence_suffix="apa06-filter-editability",
+                    ),
+                ),
+                evidence_suffix="apa06-filter-editability",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED,
+                        message="filter editability is owned by Filter Catalog, not Parser",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "filter-editability",
+                parameter_value="not-declared",
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.PROVENANCE,
+                evidence_suffix="apa06-filter-editability",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED,
+                message="filter editability is owned by Filter Catalog, not Parser",
+            ),
+        ),
+    ),
+    _search_configuration_fixture(
+        "FX-APA06-BEACON-SNAPSHOT-ACCEPTANCE-NOT-PERFORMED-001",
+        "beacon snapshot acceptance is not performed by Parser",
+        evidence_suffix="apa06-beacon-snapshot",
+        search_configuration_candidates=(
+            _search_configuration_candidate(
+                "fx-apa06-candidate-beacon-snapshot",
+                SearchConfigurationExtractionField.BEACON_SNAPSHOT_CONTEXT,
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.PROVENANCE,
+                parameter_candidates=(
+                    _search_configuration_parameter_candidate(
+                        "beacon-snapshot",
+                        parameter_value="not-performed",
+                        field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                        value_kind=SearchConfigurationValueKind.PROVENANCE,
+                        evidence_suffix="apa06-beacon-snapshot",
+                    ),
+                ),
+                evidence_suffix="apa06-beacon-snapshot",
+                warnings=(
+                    ParserWarning(
+                        code=SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED,
+                        message="beacon snapshot acceptance is not performed by Parser",
+                    ),
+                ),
+            ),
+        ),
+        parameter_candidates=(
+            _search_configuration_parameter_candidate(
+                "beacon-snapshot",
+                parameter_value="not-performed",
+                field_status=SearchConfigurationFieldStatus.POLICY_GATED,
+                value_kind=SearchConfigurationValueKind.PROVENANCE,
+                evidence_suffix="apa06-beacon-snapshot",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED,
+                message="beacon snapshot acceptance is not performed by Parser",
+            ),
+        ),
     ),
 )
 

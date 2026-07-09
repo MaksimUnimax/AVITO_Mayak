@@ -17,6 +17,10 @@ from mayak.modules.avito_parser_adapter import (
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
     SYNTHETIC_FIXTURE_BY_ID,
+    SearchConfigurationExtractionField,
+    SearchConfigurationFieldStatus,
+    SearchConfigurationValueKind,
+    SearchConfigurationWarningCode,
     SourceBoundaryPolicyRequirement,
     SourceBoundaryRiskCode,
     SourceBoundaryStatus,
@@ -170,6 +174,19 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA05-AMBIGUOUS-RESULT-001",
         "FX-APA05-CLEAN-EMPTY-BLOCKED-WITHOUT-PROOF-001",
         "FX-APA05-HTTP-200-NON-EMPTY-NOT-ENOUGH-001",
+        "FX-APA06-GEOGRAPHY-CANDIDATE-001",
+        "FX-APA06-CATEGORY-CANDIDATE-001",
+        "FX-APA06-PRICE-BOUNDS-CANDIDATE-001",
+        "FX-APA06-STRUCTURED-FILTER-KV-CANDIDATE-001",
+        "FX-APA06-REPEATED-MULTIVALUE-PARAM-PRESERVED-001",
+        "FX-APA06-UNSUPPORTED-PARAMETER-WARNING-001",
+        "FX-APA06-AMBIGUOUS-PARAMETER-WARNING-001",
+        "FX-APA06-LOSSY-NORMALIZATION-BLOCKED-001",
+        "FX-APA06-SORT-CONTEXT-UNPROVEN-001",
+        "FX-APA06-PAGINATION-CONTEXT-BLOCKED-001",
+        "FX-APA06-COUNTRY-WIDE-CANDIDATE-POLICY-GATED-001",
+        "FX-APA06-FILTER-EDITABILITY-NOT-DECLARED-001",
+        "FX-APA06-BEACON-SNAPSHOT-ACCEPTANCE-NOT-PERFORMED-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
@@ -475,4 +492,114 @@ def test_apa04_parser_output_preserves_beacon_source_ownership() -> None:
     assert fixture.search_configuration_extraction_outcome.normalized_geography_candidates == ("safe-geography",)
     assert fixture.search_configuration_extraction_outcome.normalized_category_candidates == ("safe-category",)
     assert fixture.search_configuration_extraction_outcome.normalized_filter_candidates == ("ownership=beacon",)
+    assert not hasattr(fixture.search_configuration_extraction_outcome, "source_reference")
+
+
+def test_apa06_search_configuration_candidates_keep_provenance_and_repeated_values_explicit() -> None:
+    geography = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-GEOGRAPHY-CANDIDATE-001"]
+    category = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-CATEGORY-CANDIDATE-001"]
+    price = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-PRICE-BOUNDS-CANDIDATE-001"]
+    structured = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-STRUCTURED-FILTER-KV-CANDIDATE-001"]
+    multivalue = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-REPEATED-MULTIVALUE-PARAM-PRESERVED-001"]
+
+    assert geography.search_configuration_extraction_outcome is not None
+    assert geography.search_configuration_extraction_outcome.search_configuration_evidence is not None
+    assert geography.search_configuration_extraction_outcome.search_configuration_candidates[0].extraction_field is SearchConfigurationExtractionField.GEOGRAPHY_CONTEXT
+    assert geography.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.EVIDENCE_BOUND
+    assert geography.search_configuration_extraction_outcome.search_configuration_candidates[0].parameter_candidates[0].evidence_references
+
+    assert category.search_configuration_extraction_outcome is not None
+    assert category.search_configuration_extraction_outcome.search_configuration_candidates[0].extraction_field is SearchConfigurationExtractionField.CATEGORY_CONTEXT
+    assert category.search_configuration_extraction_outcome.search_configuration_candidates[0].value_kind is SearchConfigurationValueKind.SCALAR
+
+    assert price.search_configuration_extraction_outcome is not None
+    assert [candidate.extraction_field for candidate in price.search_configuration_extraction_outcome.search_configuration_candidates] == [
+        SearchConfigurationExtractionField.PRICE_LOWER_BOUND,
+        SearchConfigurationExtractionField.PRICE_UPPER_BOUND,
+    ]
+    assert [parameter.parameter_value for parameter in price.search_configuration_extraction_outcome.parameter_candidates] == ["1000", "5000"]
+
+    assert structured.search_configuration_extraction_outcome is not None
+    assert structured.search_configuration_extraction_outcome.normalized_filter_candidates == ("filter-key:synthetic-color=value:synthetic-red",)
+    assert structured.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.EVIDENCE_BOUND
+
+    assert multivalue.search_configuration_extraction_outcome is not None
+    assert multivalue.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.PRESERVED
+    assert multivalue.search_configuration_extraction_outcome.search_configuration_candidates[0].parameter_candidates[0].repeated_values == (
+        "value:synthetic-red",
+        "value:synthetic-blue",
+    )
+    assert multivalue.search_configuration_extraction_outcome.parameter_candidates[0].repeated_values == (
+        "value:synthetic-red",
+        "value:synthetic-blue",
+    )
+    assert multivalue.search_configuration_extraction_outcome.search_configuration_evidence is not None
+    assert multivalue.search_configuration_extraction_outcome.search_configuration_evidence.request_envelope.safe_source_reference == "source-ref:beacon-revision-060"
+    assert not hasattr(multivalue.search_configuration_extraction_outcome, "source_reference")
+
+
+def test_apa06_search_configuration_negative_and_policy_gated_cases_remain_explicit() -> None:
+    unsupported = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-UNSUPPORTED-PARAMETER-WARNING-001"]
+    ambiguous = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-AMBIGUOUS-PARAMETER-WARNING-001"]
+    lossy = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-LOSSY-NORMALIZATION-BLOCKED-001"]
+    sort = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-SORT-CONTEXT-UNPROVEN-001"]
+    pagination = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-PAGINATION-CONTEXT-BLOCKED-001"]
+    country_wide = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-COUNTRY-WIDE-CANDIDATE-POLICY-GATED-001"]
+    filter_editability = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-FILTER-EDITABILITY-NOT-DECLARED-001"]
+    beacon_snapshot = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-BEACON-SNAPSHOT-ACCEPTANCE-NOT-PERFORMED-001"]
+
+    assert unsupported.search_configuration_extraction_outcome is not None
+    assert unsupported.search_configuration_extraction_outcome.status is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
+    assert unsupported.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.UNSUPPORTED
+    assert unsupported.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT
+
+    assert ambiguous.search_configuration_extraction_outcome is not None
+    assert ambiguous.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert ambiguous.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.AMBIGUOUS
+    assert ambiguous.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT
+
+    assert lossy.search_configuration_extraction_outcome is not None
+    assert lossy.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert lossy.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED
+    assert lossy.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+
+    assert sort.search_configuration_extraction_outcome is not None
+    assert sort.search_configuration_extraction_outcome.observed_sort_context_reference == "sort-context::synthetic-newest"
+    assert sort.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.UNPROVEN
+    assert sort.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.SORT_CONTEXT_UNPROVEN
+
+    assert pagination.search_configuration_extraction_outcome is not None
+    assert pagination.search_configuration_extraction_outcome.status is ParserOutcomeStatus.EXPLICIT_REJECTION
+    assert pagination.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
+    assert pagination.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED
+
+    assert country_wide.search_configuration_extraction_outcome is not None
+    assert country_wide.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
+    assert country_wide.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.COUNTRY_WIDE_POLICY_GATED
+
+    assert filter_editability.search_configuration_extraction_outcome is not None
+    assert filter_editability.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
+    assert filter_editability.search_configuration_extraction_outcome.parameter_candidates[0].parameter_value == "not-declared"
+    assert filter_editability.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED
+
+    assert beacon_snapshot.search_configuration_extraction_outcome is not None
+    assert beacon_snapshot.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
+    assert beacon_snapshot.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED
+
+
+def test_apa06_search_configuration_depends_on_profile_and_source_boundary_gates() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-GEOGRAPHY-CANDIDATE-001"]
+
+    assert fixture.compatibility_profile is not None
+    assert fixture.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.CURRENT
+    assert fixture.request_envelope.source_reference is not None
+    assert fixture.request_envelope.source_reference.bounded_value == "source-ref:beacon-revision-060"
+    assert fixture.request_envelope.source_reference.beacon_source_reference == "source-ref:beacon-revision-060"
+    assert fixture.request_envelope.source_boundary_outcome is not None
+    assert fixture.request_envelope.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert fixture.search_configuration_extraction_outcome is not None
+    assert fixture.search_configuration_extraction_outcome.search_configuration_evidence is not None
+    assert fixture.search_configuration_extraction_outcome.search_configuration_evidence.compatibility_profile is fixture.compatibility_profile
+    assert fixture.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome is fixture.request_envelope.source_boundary_outcome
+    assert fixture.search_configuration_extraction_outcome.request_envelope.safe_source_reference == fixture.request_envelope.safe_source_reference
     assert not hasattr(fixture.search_configuration_extraction_outcome, "source_reference")
