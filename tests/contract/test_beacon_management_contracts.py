@@ -13,6 +13,7 @@ from mayak.modules import beacon_management
 from mayak.modules.beacon_management import SYNTHETIC_FIXTURE_BY_ID, contracts
 from mayak.modules.beacon_management.contracts import (
     Beacon,
+    BeaconAccessTier,
     BeaconActionCausation,
     BeaconActorContext,
     BeaconActorKind,
@@ -28,6 +29,13 @@ from mayak.modules.beacon_management.contracts import (
     BeaconDecisionStatus,
     BeaconEffectiveConfigurationDecision,
     BeaconEffectiveConfigurationRejectionReason,
+    BeaconEffectiveEntitlementSnapshot,
+    BeaconEntitlementEvidenceFreshnessStatus,
+    BeaconEntitlementEvidenceReference,
+    BeaconLifecycleActionKind,
+    BeaconLifecycleEntitlementDecision,
+    BeaconLifecycleEntitlementOutcome,
+    BeaconLifecycleEntitlementRejectionReason,
     BeaconLifecycleState,
     BeaconNameOrigin,
     BeaconNamingMetadata,
@@ -53,6 +61,7 @@ from mayak.modules.beacon_management.contracts import (
     BeaconSourceUrlPreparationOutcome,
     BeaconSourceUrlSafetyClassification,
     BeaconSystemActorClass,
+    BeaconTariffPolicyBand,
     ExtractedSearchConfigurationSnapshot,
 )
 from mayak.platform import boundaries
@@ -313,6 +322,278 @@ def _bm04_preparation_decision(
         tracking_policy_reference=tracking_policy_reference,
         opaque_fingerprint_reference=opaque_fingerprint_reference,
     )
+
+
+def _bm08_evidence_reference(
+    evidence_reference: str,
+    *,
+    source_reference: str,
+    freshness_status: BeaconEntitlementEvidenceFreshnessStatus = (
+        BeaconEntitlementEvidenceFreshnessStatus.FRESH
+    ),
+    freshness_reference: str,
+) -> BeaconEntitlementEvidenceReference:
+    return BeaconEntitlementEvidenceReference(
+        evidence_reference=evidence_reference,
+        source_reference=source_reference,
+        freshness_status=freshness_status,
+        freshness_reference=freshness_reference,
+    )
+
+
+def _bm08_band(
+    *,
+    access_tier: BeaconAccessTier,
+    active_beacon_limit: int,
+    minimum_interval_minutes: int,
+    interval_step_minutes: int,
+    country_wide_allowed: bool,
+    country_wide_city_required: bool,
+) -> BeaconTariffPolicyBand:
+    return BeaconTariffPolicyBand(
+        access_tier=access_tier,
+        active_beacon_limit=active_beacon_limit,
+        minimum_interval_minutes=minimum_interval_minutes,
+        interval_step_minutes=interval_step_minutes,
+        country_wide_allowed=country_wide_allowed,
+        country_wide_city_required=country_wide_city_required,
+    )
+
+
+def _bm08_snapshot(
+    *,
+    snapshot_reference: str,
+    beacon_source_reference: str,
+    entitlement_source_reference: str,
+    entitlement_evidence_reference: BeaconEntitlementEvidenceReference,
+    tariff_policy_band: BeaconTariffPolicyBand,
+    effective_outcome: BeaconLifecycleEntitlementOutcome,
+    active_beacon_count: int,
+    requested_interval_minutes: int,
+    requested_country_wide: bool,
+    provenance_reference: str,
+    selected_city: str | None = None,
+    selected_free_beacon_id: str | None = None,
+    selected_free_beacon_user_choice_reference: str | None = None,
+    free_compliance_reference: str | None = None,
+    expired_paid_active_beacon_count: int = 0,
+    future_notification_reference: str | None = None,
+    archived_beacon_count: int = 0,
+    history_beacon_count: int = 0,
+    deleted_beacon_count: int = 0,
+) -> BeaconEffectiveEntitlementSnapshot:
+    return BeaconEffectiveEntitlementSnapshot(
+        snapshot_reference=snapshot_reference,
+        beacon_source_reference=beacon_source_reference,
+        entitlement_source_reference=entitlement_source_reference,
+        entitlement_evidence_reference=entitlement_evidence_reference,
+        tariff_policy_band=tariff_policy_band,
+        effective_outcome=effective_outcome,
+        active_beacon_count=active_beacon_count,
+        requested_interval_minutes=requested_interval_minutes,
+        requested_country_wide=requested_country_wide,
+        provenance_reference=provenance_reference,
+        selected_city=selected_city,
+        selected_free_beacon_id=selected_free_beacon_id,
+        selected_free_beacon_user_choice_reference=selected_free_beacon_user_choice_reference,
+        free_compliance_reference=free_compliance_reference,
+        expired_paid_active_beacon_count=expired_paid_active_beacon_count,
+        future_notification_reference=future_notification_reference,
+        archived_beacon_count=archived_beacon_count,
+        history_beacon_count=history_beacon_count,
+        deleted_beacon_count=deleted_beacon_count,
+    )
+
+
+def _bm08_decision(
+    *,
+    decision_id: str,
+    beacon_id: str,
+    account_id: str,
+    action_kind: BeaconLifecycleActionKind,
+    outcome: BeaconLifecycleEntitlementOutcome,
+    beacon_source_reference: str,
+    entitlement_evidence_reference: BeaconEntitlementEvidenceReference | None,
+    effective_entitlement_snapshot: BeaconEffectiveEntitlementSnapshot | None,
+    requested_interval_minutes: int,
+    active_beacon_count: int,
+    requested_country_wide: bool,
+    selected_city: str | None = None,
+    paid_access_expired: bool = False,
+    selected_free_beacon_id: str | None = None,
+    selected_free_beacon_user_choice_reference: str | None = None,
+    free_compliance_reference: str | None = None,
+    entitlement_recheck_reference: str | None = None,
+    future_notification_reference: str | None = None,
+    client_channel_flag: str | None = None,
+    client_channel_flag_is_authorization_proof: bool = False,
+    notification_sending_claimed: bool = False,
+    billing_payment_tariff_mutation_claimed: bool = False,
+    scheduler_runtime_claimed: bool = False,
+    db_repository_runtime_persistence_claimed: bool = False,
+    scanrun_listing_history_state_claimed: bool = False,
+    parser_filter_catalog_ownership_claimed: bool = False,
+    provenance_boundary_changed: bool = False,
+    rejection_reason: BeaconLifecycleEntitlementRejectionReason | None = None,
+) -> BeaconLifecycleEntitlementDecision:
+    return BeaconLifecycleEntitlementDecision(
+        decision_id=decision_id,
+        beacon_id=beacon_id,
+        account_id=account_id,
+        action_kind=action_kind,
+        outcome=outcome,
+        beacon_source_reference=beacon_source_reference,
+        entitlement_evidence_reference=entitlement_evidence_reference,
+        effective_entitlement_snapshot=effective_entitlement_snapshot,
+        requested_interval_minutes=requested_interval_minutes,
+        active_beacon_count=active_beacon_count,
+        requested_country_wide=requested_country_wide,
+        selected_city=selected_city,
+        paid_access_expired=paid_access_expired,
+        selected_free_beacon_id=selected_free_beacon_id,
+        selected_free_beacon_user_choice_reference=selected_free_beacon_user_choice_reference,
+        free_compliance_reference=free_compliance_reference,
+        entitlement_recheck_reference=entitlement_recheck_reference,
+        future_notification_reference=future_notification_reference,
+        client_channel_flag=client_channel_flag,
+        client_channel_flag_is_authorization_proof=client_channel_flag_is_authorization_proof,
+        notification_sending_claimed=notification_sending_claimed,
+        billing_payment_tariff_mutation_claimed=billing_payment_tariff_mutation_claimed,
+        scheduler_runtime_claimed=scheduler_runtime_claimed,
+        db_repository_runtime_persistence_claimed=db_repository_runtime_persistence_claimed,
+        scanrun_listing_history_state_claimed=scanrun_listing_history_state_claimed,
+        parser_filter_catalog_ownership_claimed=parser_filter_catalog_ownership_claimed,
+        provenance_boundary_changed=provenance_boundary_changed,
+        rejection_reason=rejection_reason,
+    )
+
+
+_BM08_BASIC_ALLOWED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-BASIC-ALLOWED-001"]
+_BM08_BASIC_LIMIT_BLOCKED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-BASIC-LIMIT-BLOCKED-001"]
+_BM08_BASIC_INTERVAL_BELOW_FLOOR_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-BASIC-INTERVAL-BELOW-FLOOR-BLOCKED-001"
+]
+_BM08_BASIC_INTERVAL_STEP_BLOCKED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-BASIC-INTERVAL-STEP-BLOCKED-001"
+]
+_BM08_FREE_ALLOWED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-FREE-ALLOWED-001"]
+_BM08_FREE_COUNTRY_WIDE_BLOCKED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-FREE-COUNTRY-WIDE-BLOCKED-001"
+]
+_BM08_FREE_INTERVAL_BELOW_FLOOR_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-FREE-INTERVAL-BELOW-FLOOR-BLOCKED-001"
+]
+_BM08_FREE_INTERVAL_STEP_BLOCKED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-FREE-INTERVAL-STEP-BLOCKED-001"
+]
+_BM08_FREE_ACTIVE_LIMIT_BLOCKED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-FREE-ACTIVE-LIMIT-BLOCKED-001"
+]
+_BM08_DELETED_HISTORY_ARCHIVED_EXCLUDED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-DELETED-HISTORY-ARCHIVED-EXCLUDED-001"
+]
+_BM08_AMBIGUOUS_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-AMBIGUOUS-ENTITLEMENT-BLOCKED-001"]
+_BM08_DENIED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-DENIED-ENTITLEMENT-BLOCKED-001"]
+_BM08_RECHECK_REQUIRED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-RESUME-RECHECK-REQUIRED-001"]
+_BM08_FROZEN_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-EXPIRED-PAID-FROZEN-001"]
+_BM08_USER_CHOICE_REQUIRED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-EXPIRED-PAID-USER-CHOICE-REQUIRED-001"
+]
+_BM08_FREE_COMPLIANCE_REQUIRED_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-SELECTED-FREE-COMPLIANCE-REQUIRED-001"
+]
+_BM08_NOTIFICATION_ONLY_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-NOTIFICATION-FUTURE-REFERENCE-ONLY-001"
+]
+_BM08_NOTIFICATION_SENTING_CLAIM_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-NOTIFICATION-SENDING-CLAIM-REJECTED-001"
+]
+_BM08_BILLING_CLAIM_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-BILLING-PAYMENT-TARIFF-MUTATION-CLAIM-REJECTED-001"
+]
+_BM08_SCHEDULER_CLAIM_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-SCHEDULER-RUNTIME-CLAIM-REJECTED-001"
+]
+_BM08_DB_CLAIM_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-DB-REPOSITORY-RUNTIME-CLAIM-REJECTED-001"]
+_BM08_SCANRUN_CLAIM_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-SCANRUN-HISTORY-CLAIM-REJECTED-001"]
+_BM08_PARSER_FILTER_CLAIM_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-PARSER-FILTER-CATALOG-CLAIM-REJECTED-001"
+]
+_BM08_CLIENT_FLAG_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-CLIENT-FLAG-NOT-AUTHORIZATION-REJECTED-001"
+]
+_BM08_MISSING_EVIDENCE_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-ACTIVATE-MISSING-EVIDENCE-REJECTED-001"
+]
+_BM08_STALE_EVIDENCE_FIXTURE = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-RESUME-STALE-EVIDENCE-REJECTED-001"]
+_BM08_NO_AUTO_CHOICE_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-EXPIRED-PAID-NO-AUTO-CHOICE-REJECTED-001"
+]
+_BM08_PROVENANCE_DISTINCT_FIXTURE = SYNTHETIC_FIXTURE_BY_ID[
+    "FX-BM08-PROVENANCE-BOUNDARIES-DISTINCT-001"
+]
+
+_BM08_BASIC_EVIDENCE = _BM08_BASIC_ALLOWED_FIXTURE.entitlement_evidence_reference
+_BM08_BASIC_BAND = _BM08_BASIC_ALLOWED_FIXTURE.tariff_policy_band
+_BM08_BASIC_ALLOWED_SNAPSHOT = _BM08_BASIC_ALLOWED_FIXTURE.effective_entitlement_snapshot
+_BM08_BASIC_ALLOWED_DECISION = _BM08_BASIC_ALLOWED_FIXTURE.lifecycle_entitlement_decision
+_BM08_BASIC_LIMIT_BLOCKED_DECISION = (
+    _BM08_BASIC_LIMIT_BLOCKED_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_BASIC_INTERVAL_BELOW_FLOOR_DECISION = (
+    _BM08_BASIC_INTERVAL_BELOW_FLOOR_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_BASIC_INTERVAL_STEP_BLOCKED_DECISION = (
+    _BM08_BASIC_INTERVAL_STEP_BLOCKED_FIXTURE.lifecycle_entitlement_decision
+)
+
+_BM08_FREE_EVIDENCE = _BM08_FREE_ALLOWED_FIXTURE.entitlement_evidence_reference
+_BM08_FREE_BAND = _BM08_FREE_ALLOWED_FIXTURE.tariff_policy_band
+_BM08_FREE_ALLOWED_DECISION = _BM08_FREE_ALLOWED_FIXTURE.lifecycle_entitlement_decision
+_BM08_FREE_COUNTRY_WIDE_BLOCKED_DECISION = (
+    _BM08_FREE_COUNTRY_WIDE_BLOCKED_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_FREE_INTERVAL_BELOW_FLOOR_DECISION = (
+    _BM08_FREE_INTERVAL_BELOW_FLOOR_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_FREE_INTERVAL_STEP_BLOCKED_DECISION = (
+    _BM08_FREE_INTERVAL_STEP_BLOCKED_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_FREE_ACTIVE_LIMIT_BLOCKED_DECISION = (
+    _BM08_FREE_ACTIVE_LIMIT_BLOCKED_FIXTURE.lifecycle_entitlement_decision
+)
+
+_BM08_EXCLUDED_COUNTS_DECISION = (
+    _BM08_DELETED_HISTORY_ARCHIVED_EXCLUDED_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_AMBIGUOUS_DECISION = _BM08_AMBIGUOUS_FIXTURE.lifecycle_entitlement_decision
+_BM08_DENIED_DECISION = _BM08_DENIED_FIXTURE.lifecycle_entitlement_decision
+_BM08_RECHECK_REQUIRED_DECISION = _BM08_RECHECK_REQUIRED_FIXTURE.lifecycle_entitlement_decision
+_BM08_FROZEN_DECISION = _BM08_FROZEN_FIXTURE.lifecycle_entitlement_decision
+_BM08_USER_CHOICE_REQUIRED_DECISION = (
+    _BM08_USER_CHOICE_REQUIRED_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_FREE_COMPLIANCE_REQUIRED_DECISION = (
+    _BM08_FREE_COMPLIANCE_REQUIRED_FIXTURE.lifecycle_entitlement_decision
+)
+_BM08_NOTIFICATION_ONLY_DECISION = _BM08_NOTIFICATION_ONLY_FIXTURE.lifecycle_entitlement_decision
+_BM08_PROVENANCE_DISTINCT_DECISION = (
+    _BM08_PROVENANCE_DISTINCT_FIXTURE.lifecycle_entitlement_decision
+)
+
+_BM08_NOTIFICATION_EVIDENCE = _BM08_NOTIFICATION_ONLY_FIXTURE.entitlement_evidence_reference
+_BM08_PROVENANCE_EVIDENCE = _BM08_PROVENANCE_DISTINCT_FIXTURE.entitlement_evidence_reference
+_BM08_USER_CHOICE_REQUIRED_SNAPSHOT = (
+    _BM08_USER_CHOICE_REQUIRED_FIXTURE.effective_entitlement_snapshot
+)
+_BM08_STALE_RECHECK_SNAPSHOT = _BM08_STALE_EVIDENCE_FIXTURE.effective_entitlement_snapshot
+_BM08_FREE_COMPLIANCE_REQUIRED_SNAPSHOT = (
+    _BM08_FREE_COMPLIANCE_REQUIRED_FIXTURE.effective_entitlement_snapshot
+)
+_BM08_NOTIFICATION_ONLY_SNAPSHOT = _BM08_NOTIFICATION_ONLY_FIXTURE.effective_entitlement_snapshot
+_BM08_PROVENANCE_DISTINCT_SNAPSHOT = (
+    _BM08_PROVENANCE_DISTINCT_FIXTURE.effective_entitlement_snapshot
+)
 
 
 def _assert_no_forbidden_imports(module_path: Path, allowed_roots: set[str]) -> None:
@@ -2002,6 +2283,23 @@ def test_beacon_management_package_exports_bm07_current_configuration_storage_pr
         assert getattr(beacon_management, name) is getattr(contracts, name)
 
 
+def test_beacon_management_package_exports_bm08_lifecycle_entitlement_primitives() -> None:
+    bm08_names = (
+        "BeaconLifecycleActionKind",
+        "BeaconLifecycleEntitlementDecision",
+        "BeaconLifecycleEntitlementOutcome",
+        "BeaconLifecycleEntitlementRejectionReason",
+        "BeaconEntitlementEvidenceFreshnessStatus",
+        "BeaconEntitlementEvidenceReference",
+        "BeaconEffectiveEntitlementSnapshot",
+        "BeaconTariffPolicyBand",
+    )
+
+    for name in bm08_names:
+        assert hasattr(beacon_management, name)
+        assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
 def test_beacon_management_contract_exports_bm07_storage_primitives() -> None:
     assert (
         BeaconCurrentConfigurationAuthorityStatus.__name__
@@ -2021,6 +2319,23 @@ def test_beacon_management_contract_exports_bm07_storage_primitives() -> None:
         BeaconConfigurationStoragePolicyRejectionReason.__name__
         == "BeaconConfigurationStoragePolicyRejectionReason"
     )
+
+
+def test_beacon_management_contract_exports_bm08_lifecycle_entitlement_primitives() -> None:
+    assert BeaconLifecycleActionKind.__name__ == "BeaconLifecycleActionKind"
+    assert BeaconLifecycleEntitlementDecision.__name__ == "BeaconLifecycleEntitlementDecision"
+    assert BeaconLifecycleEntitlementOutcome.__name__ == "BeaconLifecycleEntitlementOutcome"
+    assert (
+        BeaconLifecycleEntitlementRejectionReason.__name__
+        == "BeaconLifecycleEntitlementRejectionReason"
+    )
+    assert (
+        BeaconEntitlementEvidenceFreshnessStatus.__name__
+        == "BeaconEntitlementEvidenceFreshnessStatus"
+    )
+    assert BeaconEntitlementEvidenceReference.__name__ == "BeaconEntitlementEvidenceReference"
+    assert BeaconEffectiveEntitlementSnapshot.__name__ == "BeaconEffectiveEntitlementSnapshot"
+    assert BeaconTariffPolicyBand.__name__ == "BeaconTariffPolicyBand"
 
 
 def test_supported_explicit_field_override_can_be_applied() -> None:
@@ -2460,6 +2775,370 @@ def test_different_clients_editing_different_fields_does_not_create_conflict_by_
 
     assert decision.different_field_updates_merge is True
     assert decision.rejection_reason is None
+
+
+@pytest.mark.parametrize(
+    "decision_factory,expected_message",
+    (
+        (
+            lambda: BeaconLifecycleEntitlementDecision.model_construct(
+                decision_id="decision-contract-bm08-missing-evidence-001",
+                beacon_id="beacon-contract-bm08-missing-evidence-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.ACTIVATE,
+                outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+                beacon_source_reference="beacon-source-contract-bm08-missing-evidence-001",
+                entitlement_evidence_reference=None,
+                effective_entitlement_snapshot=None,
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.MISSING_ENTITLEMENT_EVIDENCE_REFERENCE,
+            ),
+            "activation/resume requires entitlement evidence reference",
+        ),
+        (
+            lambda: _bm08_decision(
+                decision_id="decision-contract-bm08-stale-evidence-001",
+                beacon_id="beacon-contract-bm08-stale-evidence-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.RESUME,
+                outcome=BeaconLifecycleEntitlementOutcome.RECHECK_REQUIRED,
+                beacon_source_reference="beacon-source-contract-bm08-stale-evidence-001",
+                entitlement_evidence_reference=_bm08_evidence_reference(
+                    "entitlement-evidence-contract-bm08-stale-001",
+                    source_reference="entitlement-source-contract-bm08-stale-001",
+                    freshness_status=BeaconEntitlementEvidenceFreshnessStatus.STALE,
+                    freshness_reference="freshness-contract-bm08-stale-001",
+                ),
+                effective_entitlement_snapshot=_bm08_snapshot(
+                    snapshot_reference="effective-entitlement-snapshot-contract-bm08-stale-001",
+                    beacon_source_reference="beacon-source-contract-bm08-stale-001",
+                    entitlement_source_reference="entitlement-source-contract-bm08-stale-001",
+                    entitlement_evidence_reference=_bm08_evidence_reference(
+                        "entitlement-evidence-contract-bm08-stale-001",
+                        source_reference="entitlement-source-contract-bm08-stale-001",
+                        freshness_status=BeaconEntitlementEvidenceFreshnessStatus.STALE,
+                        freshness_reference="freshness-contract-bm08-stale-001",
+                    ),
+                    tariff_policy_band=_bm08_band(
+                        access_tier=BeaconAccessTier.BASIC,
+                        active_beacon_limit=5,
+                        minimum_interval_minutes=5,
+                        interval_step_minutes=5,
+                        country_wide_allowed=True,
+                        country_wide_city_required=False,
+                    ),
+                    effective_outcome=BeaconLifecycleEntitlementOutcome.RECHECK_REQUIRED,
+                    active_beacon_count=0,
+                    requested_interval_minutes=5,
+                    requested_country_wide=False,
+                    provenance_reference="provenance-contract-bm08-stale-001",
+                ),
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                paid_access_expired=True,
+                entitlement_recheck_reference="entitlement-recheck-contract-bm08-stale-001",
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.STALE_ENTITLEMENT_EVIDENCE_REFERENCE,
+            ),
+            "fresh entitlement evidence reference",
+        ),
+    ),
+)
+def test_bm08_activation_and_resume_require_fresh_entitlement_evidence_reference(
+    decision_factory: Any,
+    expected_message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_message):
+        BeaconLifecycleEntitlementDecision.model_validate(decision_factory().model_dump())
+
+
+@pytest.mark.parametrize(
+    "decision,expected_outcome,expected_reason",
+    (
+        (
+            _BM08_BASIC_ALLOWED_DECISION,
+            BeaconLifecycleEntitlementOutcome.ALLOWED,
+            None,
+        ),
+        (
+            _BM08_BASIC_LIMIT_BLOCKED_DECISION,
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.ACTIVE_LIMIT_EXCEEDED,
+        ),
+        (
+            _BM08_BASIC_INTERVAL_BELOW_FLOOR_DECISION,
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.BASIC_INTERVAL_BELOW_FLOOR,
+        ),
+        (
+            _BM08_BASIC_INTERVAL_STEP_BLOCKED_DECISION,
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.BASIC_INTERVAL_NOT_STEP,
+        ),
+        (
+            _BM08_FREE_ALLOWED_DECISION,
+            BeaconLifecycleEntitlementOutcome.ALLOWED,
+            None,
+        ),
+        (
+            _BM08_FREE_COUNTRY_WIDE_BLOCKED_DECISION,
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_COUNTRY_WIDE_REQUIRES_CITY,
+        ),
+        (
+            _BM08_FREE_INTERVAL_BELOW_FLOOR_DECISION,
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_INTERVAL_BELOW_FLOOR,
+        ),
+        (
+            _BM08_FREE_INTERVAL_STEP_BLOCKED_DECISION,
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_INTERVAL_NOT_STEP,
+        ),
+        (
+            _BM08_FREE_ACTIVE_LIMIT_BLOCKED_DECISION,
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.ACTIVE_LIMIT_EXCEEDED,
+        ),
+    ),
+)
+def test_bm08_free_and_basic_activation_rules_are_enforced(
+    decision: BeaconLifecycleEntitlementDecision,
+    expected_outcome: BeaconLifecycleEntitlementOutcome,
+    expected_reason: BeaconLifecycleEntitlementRejectionReason | None,
+) -> None:
+    assert decision.outcome is expected_outcome
+    assert decision.rejection_reason is expected_reason
+    snapshot = decision.effective_entitlement_snapshot
+    if decision.outcome is BeaconLifecycleEntitlementOutcome.ALLOWED:
+        assert snapshot is not None
+        assert decision.active_beacon_count < snapshot.tariff_policy_band.active_beacon_limit
+
+
+def test_bm08_deleted_history_archived_beacons_do_not_count_toward_active_limits() -> None:
+    decision = _BM08_EXCLUDED_COUNTS_DECISION
+    assert decision is not None
+    snapshot = decision.effective_entitlement_snapshot
+
+    assert decision.outcome is BeaconLifecycleEntitlementOutcome.ALLOWED
+    assert decision.active_beacon_count == 0
+    assert decision.archived_beacon_count == 1
+    assert decision.history_beacon_count == 1
+    assert decision.deleted_beacon_count == 1
+    assert snapshot is not None
+    assert snapshot.active_beacon_count == 0
+    assert snapshot.tariff_policy_band.active_beacon_limit == 5
+
+
+@pytest.mark.parametrize(
+    "decision,expected_outcome,expected_reason",
+    (
+        (
+            _BM08_AMBIGUOUS_DECISION,
+            BeaconLifecycleEntitlementOutcome.AMBIGUOUS,
+            BeaconLifecycleEntitlementRejectionReason.AMBIGUOUS_ENTITLEMENT,
+        ),
+        (
+            _BM08_DENIED_DECISION,
+            BeaconLifecycleEntitlementOutcome.DENIED,
+            BeaconLifecycleEntitlementRejectionReason.DENIED_ENTITLEMENT,
+        ),
+        (
+            _BM08_RECHECK_REQUIRED_DECISION,
+            BeaconLifecycleEntitlementOutcome.RECHECK_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.RECHECK_REQUIRED,
+        ),
+        (
+            _BM08_FROZEN_DECISION,
+            BeaconLifecycleEntitlementOutcome.FROZEN,
+            BeaconLifecycleEntitlementRejectionReason.EXPIRED_ENTITLEMENT,
+        ),
+        (
+            _BM08_USER_CHOICE_REQUIRED_DECISION,
+            BeaconLifecycleEntitlementOutcome.USER_CHOICE_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.EXPIRED_ENTITLEMENT,
+        ),
+        (
+            _BM08_FREE_COMPLIANCE_REQUIRED_DECISION,
+            BeaconLifecycleEntitlementOutcome.FREE_COMPLIANCE_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_COMPLIANCE_REQUIRED,
+        ),
+        (
+            _BM08_NOTIFICATION_ONLY_DECISION,
+            BeaconLifecycleEntitlementOutcome.USER_CHOICE_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.EXPIRED_ENTITLEMENT,
+        ),
+        (
+            _BM08_PROVENANCE_DISTINCT_DECISION,
+            BeaconLifecycleEntitlementOutcome.ALLOWED,
+            None,
+        ),
+    ),
+)
+def test_bm08_expired_paid_and_provenance_semantics_are_explicit(
+    decision: BeaconLifecycleEntitlementDecision,
+    expected_outcome: BeaconLifecycleEntitlementOutcome,
+    expected_reason: BeaconLifecycleEntitlementRejectionReason | None,
+) -> None:
+    assert decision.outcome is expected_outcome
+    assert decision.rejection_reason is expected_reason
+    assert decision.effective_entitlement_snapshot is not None
+    assert (
+        decision.effective_entitlement_snapshot.beacon_source_reference
+        != decision.effective_entitlement_snapshot.entitlement_source_reference
+    )
+    assert (
+        decision.effective_entitlement_snapshot.entitlement_source_reference
+        != decision.effective_entitlement_snapshot.provenance_reference
+    )
+    if decision.paid_access_expired:
+        assert decision.future_notification_reference is not None
+
+
+def test_bm08_notification_sending_claim_is_rejected() -> None:
+    decision = BeaconLifecycleEntitlementDecision.model_construct(
+        decision_id="decision-contract-bm08-notification-claim-001",
+        beacon_id="beacon-contract-bm08-notification-claim-001",
+        account_id="acct-contract-001",
+        action_kind=BeaconLifecycleActionKind.ACTIVATE,
+        outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+        beacon_source_reference="beacon-source-contract-bm08-notification-claim-001",
+        entitlement_evidence_reference=_BM08_BASIC_EVIDENCE,
+        effective_entitlement_snapshot=_BM08_BASIC_ALLOWED_SNAPSHOT,
+        requested_interval_minutes=5,
+        active_beacon_count=0,
+        requested_country_wide=False,
+        future_notification_reference="future-notification-reference-contract-bm08-notification-claim-001",
+        notification_sending_claimed=True,
+        rejection_reason=BeaconLifecycleEntitlementRejectionReason.NOTIFICATION_SENDING_CLAIM,
+    )
+
+    with pytest.raises(ValidationError, match="notification sending claim is forbidden"):
+        BeaconLifecycleEntitlementDecision.model_validate(decision.model_dump())
+
+
+@pytest.mark.parametrize(
+    "decision,expected_message",
+    (
+        (
+            BeaconLifecycleEntitlementDecision.model_construct(
+                decision_id="decision-contract-bm08-billing-claim-001",
+                beacon_id="beacon-contract-bm08-billing-claim-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.ACTIVATE,
+                outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+                beacon_source_reference="beacon-source-contract-bm08-billing-claim-001",
+                entitlement_evidence_reference=_BM08_BASIC_EVIDENCE,
+                effective_entitlement_snapshot=_BM08_BASIC_ALLOWED_SNAPSHOT,
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                billing_payment_tariff_mutation_claimed=True,
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.BILLING_PAYMENT_TARIFF_MUTATION_CLAIM,
+            ),
+            "billing/payment/tariff mutation claim is forbidden",
+        ),
+        (
+            BeaconLifecycleEntitlementDecision.model_construct(
+                decision_id="decision-contract-bm08-scheduler-claim-001",
+                beacon_id="beacon-contract-bm08-scheduler-claim-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.ACTIVATE,
+                outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+                beacon_source_reference="beacon-source-contract-bm08-scheduler-claim-001",
+                entitlement_evidence_reference=_BM08_BASIC_EVIDENCE,
+                effective_entitlement_snapshot=_BM08_BASIC_ALLOWED_SNAPSHOT,
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                scheduler_runtime_claimed=True,
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.SCHEDULER_RUNTIME_CLAIM,
+            ),
+            "scheduler/runtime claim is forbidden",
+        ),
+        (
+            BeaconLifecycleEntitlementDecision.model_construct(
+                decision_id="decision-contract-bm08-db-claim-001",
+                beacon_id="beacon-contract-bm08-db-claim-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.ACTIVATE,
+                outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+                beacon_source_reference="beacon-source-contract-bm08-db-claim-001",
+                entitlement_evidence_reference=_BM08_BASIC_EVIDENCE,
+                effective_entitlement_snapshot=_BM08_BASIC_ALLOWED_SNAPSHOT,
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                db_repository_runtime_persistence_claimed=True,
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM,
+            ),
+            "DB/repository/runtime persistence implementation claim is forbidden",
+        ),
+        (
+            BeaconLifecycleEntitlementDecision.model_construct(
+                decision_id="decision-contract-bm08-scanrun-claim-001",
+                beacon_id="beacon-contract-bm08-scanrun-claim-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.ACTIVATE,
+                outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+                beacon_source_reference="beacon-source-contract-bm08-scanrun-claim-001",
+                entitlement_evidence_reference=_BM08_BASIC_EVIDENCE,
+                effective_entitlement_snapshot=_BM08_BASIC_ALLOWED_SNAPSHOT,
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                scanrun_listing_history_state_claimed=True,
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.SCANRUN_LISTING_HISTORY_STATE_CLAIM,
+            ),
+            "ScanRun/listing history state claim is forbidden",
+        ),
+        (
+            BeaconLifecycleEntitlementDecision.model_construct(
+                decision_id="decision-contract-bm08-parser-filter-claim-001",
+                beacon_id="beacon-contract-bm08-parser-filter-claim-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.ACTIVATE,
+                outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+                beacon_source_reference="beacon-source-contract-bm08-parser-filter-claim-001",
+                entitlement_evidence_reference=_BM08_BASIC_EVIDENCE,
+                effective_entitlement_snapshot=_BM08_BASIC_ALLOWED_SNAPSHOT,
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                parser_filter_catalog_ownership_claimed=True,
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.PARSER_FILTER_CATALOG_OWNERSHIP_CLAIM,
+            ),
+            "Parser/Filter Catalog ownership claim is forbidden",
+        ),
+        (
+            BeaconLifecycleEntitlementDecision.model_construct(
+                decision_id="decision-contract-bm08-client-flag-001",
+                beacon_id="beacon-contract-bm08-client-flag-001",
+                account_id="acct-contract-001",
+                action_kind=BeaconLifecycleActionKind.ACTIVATE,
+                outcome=BeaconLifecycleEntitlementOutcome.BLOCKED,
+                beacon_source_reference="beacon-source-contract-bm08-client-flag-001",
+                entitlement_evidence_reference=_BM08_BASIC_EVIDENCE,
+                effective_entitlement_snapshot=_BM08_BASIC_ALLOWED_SNAPSHOT,
+                requested_interval_minutes=5,
+                active_beacon_count=0,
+                requested_country_wide=False,
+                client_channel_flag="TELEGRAM",
+                client_channel_flag_is_authorization_proof=True,
+                rejection_reason=BeaconLifecycleEntitlementRejectionReason.CLIENT_FLAG_NOT_AUTHORIZATION,
+            ),
+            "client channel flag is not authorization proof",
+        ),
+    ),
+)
+def test_bm08_forbidden_runtime_claims_are_rejected(
+    decision: BeaconLifecycleEntitlementDecision,
+    expected_message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_message):
+        BeaconLifecycleEntitlementDecision.model_validate(decision.model_dump())
 
 
 def test_beacon_management_contracts_do_not_import_forbidden_modules() -> None:

@@ -1310,6 +1310,387 @@ class BeaconActivationDecision(BaseModel):
         return self
 
 
+class BeaconLifecycleActionKind(str, Enum):
+    """Semantic lifecycle actions gated by entitlement evidence."""
+
+    ACTIVATE = "ACTIVATE"
+    RESUME = "RESUME"
+    FREEZE_AFTER_EXPIRY = "FREEZE_AFTER_EXPIRY"
+
+
+class BeaconLifecycleEntitlementOutcome(str, Enum):
+    """Semantic outcomes for entitlement-gated lifecycle decisions."""
+
+    ALLOWED = "ALLOWED"
+    DENIED = "DENIED"
+    BLOCKED = "BLOCKED"
+    FROZEN = "FROZEN"
+    USER_CHOICE_REQUIRED = "USER_CHOICE_REQUIRED"
+    FREE_COMPLIANCE_REQUIRED = "FREE_COMPLIANCE_REQUIRED"
+    RECHECK_REQUIRED = "RECHECK_REQUIRED"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class BeaconLifecycleEntitlementRejectionReason(str, Enum):
+    """Semantic rejection reasons for entitlement-gated lifecycle decisions."""
+
+    MISSING_ENTITLEMENT_EVIDENCE_REFERENCE = "MISSING_ENTITLEMENT_EVIDENCE_REFERENCE"
+    STALE_ENTITLEMENT_EVIDENCE_REFERENCE = "STALE_ENTITLEMENT_EVIDENCE_REFERENCE"
+    MISSING_SOURCE_REFERENCE = "MISSING_SOURCE_REFERENCE"
+    AMBIGUOUS_ENTITLEMENT = "AMBIGUOUS_ENTITLEMENT"
+    DENIED_ENTITLEMENT = "DENIED_ENTITLEMENT"
+    EXPIRED_ENTITLEMENT = "EXPIRED_ENTITLEMENT"
+    FREE_COUNTRY_WIDE_REQUIRES_CITY = "FREE_COUNTRY_WIDE_REQUIRES_CITY"
+    FREE_INTERVAL_BELOW_FLOOR = "FREE_INTERVAL_BELOW_FLOOR"
+    FREE_INTERVAL_NOT_STEP = "FREE_INTERVAL_NOT_STEP"
+    BASIC_INTERVAL_BELOW_FLOOR = "BASIC_INTERVAL_BELOW_FLOOR"
+    BASIC_INTERVAL_NOT_STEP = "BASIC_INTERVAL_NOT_STEP"
+    ACTIVE_LIMIT_EXCEEDED = "ACTIVE_LIMIT_EXCEEDED"
+    DELETED_HISTORY_ARCHIVED_COUNTED = "DELETED_HISTORY_ARCHIVED_COUNTED"
+    EXPIRED_PAID_AUTO_CHOICE_FORBIDDEN = "EXPIRED_PAID_AUTO_CHOICE_FORBIDDEN"
+    EXPIRED_PAID_ACTIVATION_FORBIDDEN = "EXPIRED_PAID_ACTIVATION_FORBIDDEN"
+    FREE_COMPLIANCE_REQUIRED = "FREE_COMPLIANCE_REQUIRED"
+    NOTIFICATION_SENDING_CLAIM = "NOTIFICATION_SENDING_CLAIM"
+    BILLING_PAYMENT_TARIFF_MUTATION_CLAIM = "BILLING_PAYMENT_TARIFF_MUTATION_CLAIM"
+    SCHEDULER_RUNTIME_CLAIM = "SCHEDULER_RUNTIME_CLAIM"
+    DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM = "DB_REPOSITORY_RUNTIME_PERSISTENCE_CLAIM"
+    SCANRUN_LISTING_HISTORY_STATE_CLAIM = "SCANRUN_LISTING_HISTORY_STATE_CLAIM"
+    PARSER_FILTER_CATALOG_OWNERSHIP_CLAIM = "PARSER_FILTER_CATALOG_OWNERSHIP_CLAIM"
+    PROVENANCE_BOUNDARY_COLLAPSED = "PROVENANCE_BOUNDARY_COLLAPSED"
+    CLIENT_FLAG_NOT_AUTHORIZATION = "CLIENT_FLAG_NOT_AUTHORIZATION"
+    RECHECK_REQUIRED = "RECHECK_REQUIRED"
+
+
+class BeaconEntitlementEvidenceFreshnessStatus(str, Enum):
+    """Semantic freshness labels for entitlement evidence references."""
+
+    FRESH = "FRESH"
+    STALE = "STALE"
+    MISSING = "MISSING"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class BeaconEntitlementEvidenceReference(BaseModel):
+    """Opaque entitlement evidence reference consumed by Beacon Management."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    evidence_reference: str = Field(min_length=1)
+    source_reference: str = Field(min_length=1)
+    freshness_status: BeaconEntitlementEvidenceFreshnessStatus
+    freshness_reference: str = Field(min_length=1)
+
+
+class BeaconTariffPolicyBand(BaseModel):
+    """Semantic tariff-policy placeholder consumed by Beacon lifecycle evaluation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    access_tier: BeaconAccessTier
+    active_beacon_limit: int = Field(gt=0)
+    minimum_interval_minutes: int = Field(gt=0)
+    interval_step_minutes: int = Field(gt=0)
+    country_wide_allowed: bool
+    country_wide_city_required: bool
+
+    @model_validator(mode="after")
+    def _validate_tariff_policy_band(self) -> "BeaconTariffPolicyBand":
+        if self.access_tier is BeaconAccessTier.FREE:
+            if self.active_beacon_limit != 1:
+                raise ValueError("free tariff active beacon limit must be 1")
+            if self.minimum_interval_minutes != 180:
+                raise ValueError("free tariff minimum interval must be 180 minutes")
+            if self.interval_step_minutes != 180:
+                raise ValueError("free tariff interval step must be 180 minutes")
+            if self.country_wide_allowed:
+                raise ValueError("free tariff country-wide activation is not allowed")
+            if self.country_wide_city_required is not True:
+                raise ValueError("free tariff requires city selection before country-wide use")
+        elif self.access_tier is BeaconAccessTier.BASIC:
+            if self.active_beacon_limit != 5:
+                raise ValueError("basic tariff active beacon limit must be 5")
+            if self.minimum_interval_minutes != 5:
+                raise ValueError("basic tariff minimum interval must be 5 minutes")
+            if self.interval_step_minutes != 5:
+                raise ValueError("basic tariff interval step must be 5 minutes")
+            if self.country_wide_allowed is not True:
+                raise ValueError("basic tariff country-wide activation must be allowed")
+            if self.country_wide_city_required:
+                raise ValueError(
+                    "basic tariff must not require city selection for country-wide use"
+                )
+        return self
+
+
+class BeaconEffectiveEntitlementSnapshot(BaseModel):
+    """Deterministic effective entitlement snapshot used by lifecycle decisions."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    snapshot_reference: str = Field(min_length=1)
+    beacon_source_reference: str = Field(min_length=1)
+    entitlement_source_reference: str = Field(min_length=1)
+    entitlement_evidence_reference: BeaconEntitlementEvidenceReference
+    tariff_policy_band: BeaconTariffPolicyBand
+    effective_outcome: BeaconLifecycleEntitlementOutcome
+    active_beacon_count: int = Field(ge=0)
+    archived_beacon_count: int = Field(ge=0)
+    history_beacon_count: int = Field(ge=0)
+    deleted_beacon_count: int = Field(ge=0)
+    requested_interval_minutes: int = Field(gt=0)
+    requested_country_wide: bool
+    selected_city: str | None = Field(default=None, min_length=1)
+    selected_free_beacon_id: str | None = Field(default=None, min_length=1)
+    selected_free_beacon_user_choice_reference: str | None = Field(default=None, min_length=1)
+    free_compliance_reference: str | None = Field(default=None, min_length=1)
+    expired_paid_active_beacon_count: int = Field(default=0, ge=0)
+    future_notification_reference: str | None = Field(default=None, min_length=1)
+    provenance_reference: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_effective_entitlement_snapshot(self) -> "BeaconEffectiveEntitlementSnapshot":
+        if (
+            self.entitlement_evidence_reference.source_reference
+            != self.entitlement_source_reference
+        ):
+            raise ValueError("entitlement evidence source reference must remain distinct")
+
+        if (
+            len(
+                {
+                    self.beacon_source_reference,
+                    self.entitlement_source_reference,
+                    self.provenance_reference,
+                    self.snapshot_reference,
+                    self.entitlement_evidence_reference.evidence_reference,
+                }
+            )
+            != 5
+        ):
+            raise ValueError("provenance boundaries must remain distinct")
+
+        if (
+            self.selected_free_beacon_id is None
+            and self.selected_free_beacon_user_choice_reference is not None
+        ):
+            raise ValueError("free beacon choice reference requires selected free beacon")
+
+        if (
+            self.selected_free_beacon_id is not None
+            and self.selected_free_beacon_user_choice_reference is None
+        ):
+            raise ValueError("system must not choose a free beacon automatically")
+
+        if self.effective_outcome is BeaconLifecycleEntitlementOutcome.ALLOWED:
+            if self.tariff_policy_band.access_tier is BeaconAccessTier.FREE:
+                if self.requested_country_wide and self.selected_city is None:
+                    raise ValueError("free country-wide activation requires a city")
+                if self.requested_country_wide and not self.tariff_policy_band.country_wide_allowed:
+                    raise ValueError("free country-wide activation is not allowed")
+            if self.requested_interval_minutes < self.tariff_policy_band.minimum_interval_minutes:
+                raise ValueError("requested interval is below the approved floor")
+            interval_delta = (
+                self.requested_interval_minutes - self.tariff_policy_band.minimum_interval_minutes
+            )
+            if interval_delta % self.tariff_policy_band.interval_step_minutes != 0:
+                raise ValueError("requested interval must follow the approved step")
+            if self.active_beacon_count >= self.tariff_policy_band.active_beacon_limit:
+                raise ValueError("active Beacon limit exceeded")
+            if self.selected_free_beacon_id is not None and self.free_compliance_reference is None:
+                raise ValueError("selected free Beacon requires free compliance before activation")
+
+        if self.effective_outcome is BeaconLifecycleEntitlementOutcome.FROZEN:
+            if self.expired_paid_active_beacon_count <= 0:
+                raise ValueError("frozen paid access requires active paid Beacons")
+            if self.selected_free_beacon_id is not None:
+                raise ValueError("frozen paid access must not choose a free Beacon automatically")
+
+        if self.effective_outcome is BeaconLifecycleEntitlementOutcome.USER_CHOICE_REQUIRED:
+            if self.expired_paid_active_beacon_count <= 0:
+                raise ValueError("user choice required state requires expired paid access")
+            if self.selected_free_beacon_id is not None:
+                raise ValueError(
+                    "user choice required state must not select a Beacon automatically"
+                )
+
+        if self.effective_outcome is BeaconLifecycleEntitlementOutcome.FREE_COMPLIANCE_REQUIRED:
+            if self.selected_free_beacon_id is None:
+                raise ValueError("free compliance required state requires a selected free Beacon")
+            if self.selected_free_beacon_user_choice_reference is None:
+                raise ValueError("free compliance required state requires explicit user choice")
+            if self.free_compliance_reference is not None:
+                raise ValueError("free compliance required state must not already be compliant")
+
+        return self
+
+
+class BeaconLifecycleEntitlementDecision(BaseModel):
+    """Semantic lifecycle decision gated by entitlement evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    beacon_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    action_kind: BeaconLifecycleActionKind
+    outcome: BeaconLifecycleEntitlementOutcome
+    beacon_source_reference: str = Field(min_length=1)
+    entitlement_evidence_reference: BeaconEntitlementEvidenceReference | None = None
+    effective_entitlement_snapshot: BeaconEffectiveEntitlementSnapshot | None = None
+    requested_interval_minutes: int = Field(gt=0)
+    active_beacon_count: int = Field(ge=0)
+    archived_beacon_count: int = Field(default=0, ge=0)
+    history_beacon_count: int = Field(default=0, ge=0)
+    deleted_beacon_count: int = Field(default=0, ge=0)
+    requested_country_wide: bool
+    selected_city: str | None = Field(default=None, min_length=1)
+    paid_access_expired: bool = False
+    selected_free_beacon_id: str | None = Field(default=None, min_length=1)
+    selected_free_beacon_user_choice_reference: str | None = Field(default=None, min_length=1)
+    free_compliance_reference: str | None = Field(default=None, min_length=1)
+    entitlement_recheck_reference: str | None = Field(default=None, min_length=1)
+    future_notification_reference: str | None = Field(default=None, min_length=1)
+    client_channel_flag: str | None = Field(default=None, min_length=1)
+    client_channel_flag_is_authorization_proof: bool = False
+    notification_sending_claimed: bool = False
+    billing_payment_tariff_mutation_claimed: bool = False
+    scheduler_runtime_claimed: bool = False
+    db_repository_runtime_persistence_claimed: bool = False
+    scanrun_listing_history_state_claimed: bool = False
+    parser_filter_catalog_ownership_claimed: bool = False
+    provenance_boundary_changed: bool = False
+    rejection_reason: BeaconLifecycleEntitlementRejectionReason | None = None
+
+    @model_validator(mode="after")
+    def _validate_lifecycle_entitlement_decision(
+        self,
+    ) -> "BeaconLifecycleEntitlementDecision":
+        if self.client_channel_flag_is_authorization_proof:
+            raise ValueError("client channel flag is not authorization proof")
+
+        if self.notification_sending_claimed:
+            raise ValueError("notification sending claim is forbidden")
+
+        if self.billing_payment_tariff_mutation_claimed:
+            raise ValueError("billing/payment/tariff mutation claim is forbidden")
+
+        if self.scheduler_runtime_claimed:
+            raise ValueError("scheduler/runtime claim is forbidden")
+
+        if self.db_repository_runtime_persistence_claimed:
+            raise ValueError("DB/repository/runtime persistence implementation claim is forbidden")
+
+        if self.scanrun_listing_history_state_claimed:
+            raise ValueError("ScanRun/listing history state claim is forbidden")
+
+        if self.parser_filter_catalog_ownership_claimed:
+            raise ValueError("Parser/Filter Catalog ownership claim is forbidden")
+
+        if self.provenance_boundary_changed:
+            raise ValueError("provenance boundaries must remain distinct")
+
+        if self.action_kind in {
+            BeaconLifecycleActionKind.ACTIVATE,
+            BeaconLifecycleActionKind.RESUME,
+        }:
+            if self.entitlement_evidence_reference is None:
+                raise ValueError("activation/resume requires entitlement evidence reference")
+            if (
+                self.entitlement_evidence_reference.freshness_status
+                is not BeaconEntitlementEvidenceFreshnessStatus.FRESH
+            ):
+                raise ValueError("activation/resume requires fresh entitlement evidence reference")
+            if self.effective_entitlement_snapshot is None:
+                raise ValueError("activation/resume requires effective entitlement snapshot")
+            if (
+                self.effective_entitlement_snapshot.entitlement_evidence_reference
+                != self.entitlement_evidence_reference
+            ):
+                raise ValueError(
+                    "effective entitlement snapshot must consume the provided evidence"
+                )
+            if (
+                self.effective_entitlement_snapshot.beacon_source_reference
+                != self.beacon_source_reference
+            ):
+                raise ValueError("beacon source reference must remain distinct")
+            if self.effective_entitlement_snapshot.effective_outcome is not self.outcome:
+                raise ValueError("decision outcome must match the effective entitlement snapshot")
+            if (
+                self.action_kind is BeaconLifecycleActionKind.RESUME
+                and self.entitlement_recheck_reference is None
+            ):
+                raise ValueError("resume requires entitlement re-check")
+
+        if self.outcome is BeaconLifecycleEntitlementOutcome.ALLOWED:
+            if self.rejection_reason is not None:
+                raise ValueError("allowed lifecycle decision must not carry rejection reason")
+            if self.effective_entitlement_snapshot is None:
+                raise ValueError(
+                    "allowed lifecycle decision requires effective entitlement snapshot"
+                )
+            band = self.effective_entitlement_snapshot.tariff_policy_band
+            if self.requested_interval_minutes < band.minimum_interval_minutes:
+                raise ValueError("requested interval is below the approved floor")
+            interval_delta = self.requested_interval_minutes - band.minimum_interval_minutes
+            if interval_delta % band.interval_step_minutes != 0:
+                raise ValueError("requested interval must follow the approved step")
+            if self.active_beacon_count >= band.active_beacon_limit:
+                raise ValueError("active Beacon limit exceeded")
+            if self.requested_country_wide and not band.country_wide_allowed:
+                raise ValueError("country-wide activation is not allowed")
+            if (
+                self.requested_country_wide
+                and band.country_wide_city_required
+                and self.selected_city is None
+            ):
+                raise ValueError("country-wide activation requires selected city")
+            if self.entitlement_evidence_reference is not None and (
+                self.entitlement_evidence_reference.source_reference
+                != self.effective_entitlement_snapshot.entitlement_source_reference
+            ):
+                raise ValueError("entitlement source reference must remain distinct")
+            if self.selected_free_beacon_id is not None and self.free_compliance_reference is None:
+                raise ValueError("selected free Beacon requires free compliance before activation")
+
+        if (
+            self.outcome is not BeaconLifecycleEntitlementOutcome.ALLOWED
+            and self.rejection_reason is None
+        ):
+            raise ValueError("blocked lifecycle decision requires a rejection reason")
+
+        if self.paid_access_expired:
+            if self.outcome is BeaconLifecycleEntitlementOutcome.ALLOWED:
+                raise ValueError("expired paid access cannot activate without Free compliance")
+            if (
+                self.selected_free_beacon_id is not None
+                and self.selected_free_beacon_user_choice_reference is None
+            ):
+                raise ValueError("expired paid access must not choose a free Beacon automatically")
+            if (
+                self.outcome is BeaconLifecycleEntitlementOutcome.FROZEN
+                and self.selected_free_beacon_id is not None
+            ):
+                raise ValueError("frozen paid access must not choose a free Beacon automatically")
+            if (
+                self.outcome is BeaconLifecycleEntitlementOutcome.USER_CHOICE_REQUIRED
+                and self.selected_free_beacon_id is not None
+            ):
+                raise ValueError("user choice required state must not auto-select a Beacon")
+            if self.outcome is BeaconLifecycleEntitlementOutcome.FREE_COMPLIANCE_REQUIRED:
+                if self.selected_free_beacon_id is None:
+                    raise ValueError("free compliance required state requires selected free Beacon")
+                if self.free_compliance_reference is not None:
+                    raise ValueError("free compliance required state must not already be compliant")
+
+        if self.future_notification_reference is not None and self.notification_sending_claimed:
+            raise ValueError("notification sending claim is forbidden")
+
+        return self
+
+
 class BeaconMutationDecision(BaseModel):
     """Semantic mutation decision with patch and concurrency rules."""
 
@@ -1526,14 +1907,21 @@ __all__: Final[tuple[str, ...]] = (
     "Beacon",
     "BeaconAccessTier",
     "BeaconActivationDecision",
+    "BeaconLifecycleActionKind",
+    "BeaconLifecycleEntitlementDecision",
+    "BeaconLifecycleEntitlementOutcome",
+    "BeaconLifecycleEntitlementRejectionReason",
     "BeaconAuthorizationDecision",
     "BeaconAuthorizationOutcome",
+    "BeaconEffectiveEntitlementSnapshot",
     "BeaconCurrentConfiguration",
     "BeaconCurrentConfigurationAuthorityStatus",
     "BeaconCurrentConfigurationDecision",
     "BeaconDecisionStatus",
     "BeaconEffectiveConfigurationDecision",
     "BeaconEffectiveConfigurationRejectionReason",
+    "BeaconEntitlementEvidenceFreshnessStatus",
+    "BeaconEntitlementEvidenceReference",
     "BeaconConfigurationEvidenceRetentionDecision",
     "BeaconConfigurationRetentionBoundary",
     "BeaconConfigurationStoragePolicyOutcome",
@@ -1554,6 +1942,7 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconPatchSaveDecision",
     "BeaconPatchSaveRejectionReason",
     "BeaconProtectedAction",
+    "BeaconTariffPolicyBand",
     "BeaconParserOutcomeStatus",
     "BeaconParserEvidenceReference",
     "BeaconParserEvidenceSafetyClass",

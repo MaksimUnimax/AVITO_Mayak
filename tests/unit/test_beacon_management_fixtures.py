@@ -19,6 +19,10 @@ from mayak.modules.beacon_management.contracts import (
     BeaconDecisionStatus,
     BeaconEffectiveConfigurationDecision,
     BeaconEffectiveConfigurationRejectionReason,
+    BeaconEntitlementEvidenceFreshnessStatus,
+    BeaconLifecycleEntitlementDecision,
+    BeaconLifecycleEntitlementOutcome,
+    BeaconLifecycleEntitlementRejectionReason,
     BeaconOverrideApplicationOutcome,
     BeaconOverrideFieldSupportStatus,
     BeaconOverridePatchOperation,
@@ -118,6 +122,37 @@ EXPECTED_BM07_FIXTURE_IDS = (
     "FX-BM07-RUNTIME-PERSISTENCE-CLAIM-REJECTED-001",
     "FX-BM07-SCANRUN-HISTORY-CLAIM-REJECTED-001",
     "FX-BM07-MINIMAL-COMMITTED-EVIDENCE-NOT-EDITABLE-001",
+)
+
+EXPECTED_BM08_FIXTURE_IDS = (
+    "FX-BM08-BASIC-ALLOWED-001",
+    "FX-BM08-BASIC-LIMIT-BLOCKED-001",
+    "FX-BM08-BASIC-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+    "FX-BM08-BASIC-INTERVAL-STEP-BLOCKED-001",
+    "FX-BM08-FREE-ALLOWED-001",
+    "FX-BM08-FREE-COUNTRY-WIDE-BLOCKED-001",
+    "FX-BM08-FREE-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+    "FX-BM08-FREE-INTERVAL-STEP-BLOCKED-001",
+    "FX-BM08-FREE-ACTIVE-LIMIT-BLOCKED-001",
+    "FX-BM08-DELETED-HISTORY-ARCHIVED-EXCLUDED-001",
+    "FX-BM08-AMBIGUOUS-ENTITLEMENT-BLOCKED-001",
+    "FX-BM08-DENIED-ENTITLEMENT-BLOCKED-001",
+    "FX-BM08-RESUME-RECHECK-REQUIRED-001",
+    "FX-BM08-EXPIRED-PAID-FROZEN-001",
+    "FX-BM08-EXPIRED-PAID-USER-CHOICE-REQUIRED-001",
+    "FX-BM08-EXPIRED-PAID-NO-AUTO-CHOICE-REJECTED-001",
+    "FX-BM08-SELECTED-FREE-COMPLIANCE-REQUIRED-001",
+    "FX-BM08-NOTIFICATION-FUTURE-REFERENCE-ONLY-001",
+    "FX-BM08-NOTIFICATION-SENDING-CLAIM-REJECTED-001",
+    "FX-BM08-BILLING-PAYMENT-TARIFF-MUTATION-CLAIM-REJECTED-001",
+    "FX-BM08-SCHEDULER-RUNTIME-CLAIM-REJECTED-001",
+    "FX-BM08-DB-REPOSITORY-RUNTIME-CLAIM-REJECTED-001",
+    "FX-BM08-SCANRUN-HISTORY-CLAIM-REJECTED-001",
+    "FX-BM08-PARSER-FILTER-CATALOG-CLAIM-REJECTED-001",
+    "FX-BM08-CLIENT-FLAG-NOT-AUTHORIZATION-REJECTED-001",
+    "FX-BM08-ACTIVATE-MISSING-EVIDENCE-REJECTED-001",
+    "FX-BM08-RESUME-STALE-EVIDENCE-REJECTED-001",
+    "FX-BM08-PROVENANCE-BOUNDARIES-DISTINCT-001",
 )
 
 
@@ -969,13 +1004,341 @@ def test_pre_bm06_fixture_order_is_preserved_and_bm07_fixtures_are_appended() ->
     bm06_start = len(EXPECTED_PRE_BM06_FIXTURE_IDS)
     bm06_end = bm06_start + len(EXPECTED_BM06_FIXTURE_IDS)
     assert FIXTURE_IDS[bm06_start:bm06_end] == EXPECTED_BM06_FIXTURE_IDS
-    assert FIXTURE_IDS[bm06_end:] == EXPECTED_BM07_FIXTURE_IDS
+    bm07_end = bm06_end + len(EXPECTED_BM07_FIXTURE_IDS)
+    assert FIXTURE_IDS[bm06_end:bm07_end] == EXPECTED_BM07_FIXTURE_IDS
+    assert FIXTURE_IDS[bm07_end:] == EXPECTED_BM08_FIXTURE_IDS
     for fixture_id in EXPECTED_BM06_FIXTURE_IDS:
         assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
         assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
     for fixture_id in EXPECTED_BM07_FIXTURE_IDS:
         assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
         assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
+    for fixture_id in EXPECTED_BM08_FIXTURE_IDS:
+        assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
+        assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
+
+
+@pytest.mark.parametrize(
+    "fixture_id,expected_outcome,expected_reason",
+    (
+        (
+            "FX-BM08-BASIC-ALLOWED-001",
+            BeaconLifecycleEntitlementOutcome.ALLOWED,
+            None,
+        ),
+        (
+            "FX-BM08-BASIC-LIMIT-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.ACTIVE_LIMIT_EXCEEDED,
+        ),
+        (
+            "FX-BM08-BASIC-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.BASIC_INTERVAL_BELOW_FLOOR,
+        ),
+        (
+            "FX-BM08-BASIC-INTERVAL-STEP-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.BASIC_INTERVAL_NOT_STEP,
+        ),
+        (
+            "FX-BM08-FREE-ALLOWED-001",
+            BeaconLifecycleEntitlementOutcome.ALLOWED,
+            None,
+        ),
+        (
+            "FX-BM08-FREE-COUNTRY-WIDE-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_COUNTRY_WIDE_REQUIRES_CITY,
+        ),
+        (
+            "FX-BM08-FREE-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_INTERVAL_BELOW_FLOOR,
+        ),
+        (
+            "FX-BM08-FREE-INTERVAL-STEP-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_INTERVAL_NOT_STEP,
+        ),
+        (
+            "FX-BM08-FREE-ACTIVE-LIMIT-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.BLOCKED,
+            BeaconLifecycleEntitlementRejectionReason.ACTIVE_LIMIT_EXCEEDED,
+        ),
+    ),
+)
+def test_bm08_basic_and_free_activation_fixtures_cover_allowed_and_blocked_semantics(
+    fixture_id: str,
+    expected_outcome: BeaconLifecycleEntitlementOutcome,
+    expected_reason: BeaconLifecycleEntitlementRejectionReason | None,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+    decision = fixture.lifecycle_entitlement_decision
+    snapshot = fixture.effective_entitlement_snapshot
+
+    assert decision is not None
+    assert decision.outcome is expected_outcome
+    assert decision.rejection_reason is expected_reason
+    assert fixture.entitlement_evidence_reference is not None
+    assert fixture.tariff_policy_band is not None
+    assert snapshot is not None
+
+    if fixture_id == "FX-BM08-BASIC-ALLOWED-001":
+        assert decision.active_beacon_count == 4
+        assert snapshot.tariff_policy_band.active_beacon_limit == 5
+        assert snapshot.requested_interval_minutes == 5
+        assert snapshot.requested_country_wide is True
+    elif fixture_id == "FX-BM08-FREE-ALLOWED-001":
+        assert snapshot.selected_city == "synthetic-city"
+        assert snapshot.tariff_policy_band.active_beacon_limit == 1
+        assert snapshot.requested_interval_minutes == 180
+    elif fixture_id == "FX-BM08-FREE-COUNTRY-WIDE-BLOCKED-001":
+        assert decision.requested_country_wide is True
+        assert decision.selected_city is None
+    elif fixture_id == "FX-BM08-FREE-ACTIVE-LIMIT-BLOCKED-001":
+        assert decision.active_beacon_count == 1
+        assert snapshot.tariff_policy_band.active_beacon_limit == 1
+
+
+def test_bm08_deleted_history_archived_excluded_fixture_keeps_non_active_counts_out_of_limit() -> (
+    None
+):
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-DELETED-HISTORY-ARCHIVED-EXCLUDED-001"]
+
+    assert fixture.lifecycle_entitlement_decision is not None
+    decision = fixture.lifecycle_entitlement_decision
+    snapshot = decision.effective_entitlement_snapshot
+    assert decision.outcome is BeaconLifecycleEntitlementOutcome.ALLOWED
+    assert decision.active_beacon_count == 0
+    assert decision.archived_beacon_count == 1
+    assert decision.history_beacon_count == 1
+    assert decision.deleted_beacon_count == 1
+    assert snapshot is not None
+    assert snapshot.active_beacon_count == 0
+    assert snapshot.tariff_policy_band.active_beacon_limit == 5
+
+
+@pytest.mark.parametrize(
+    "fixture_id,expected_message",
+    (
+        (
+            "FX-BM08-ACTIVATE-MISSING-EVIDENCE-REJECTED-001",
+            "activation/resume requires entitlement evidence reference",
+        ),
+        (
+            "FX-BM08-RESUME-STALE-EVIDENCE-REJECTED-001",
+            "activation/resume requires fresh entitlement evidence reference",
+        ),
+    ),
+)
+def test_bm08_activation_and_resume_missing_or_stale_evidence_are_rejected(
+    fixture_id: str,
+    expected_message: str,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+    decision = fixture.lifecycle_entitlement_decision
+    assert decision is not None
+    if fixture_id == "FX-BM08-RESUME-STALE-EVIDENCE-REJECTED-001":
+        assert decision.entitlement_evidence_reference is not None
+        assert (
+            decision.entitlement_evidence_reference.freshness_status
+            is BeaconEntitlementEvidenceFreshnessStatus.STALE
+        )
+
+    with pytest.raises(ValidationError, match=expected_message):
+        BeaconLifecycleEntitlementDecision.model_validate(decision.model_dump())
+
+
+@pytest.mark.parametrize(
+    "fixture_id,expected_outcome,expected_reason",
+    (
+        (
+            "FX-BM08-AMBIGUOUS-ENTITLEMENT-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.AMBIGUOUS,
+            BeaconLifecycleEntitlementRejectionReason.AMBIGUOUS_ENTITLEMENT,
+        ),
+        (
+            "FX-BM08-DENIED-ENTITLEMENT-BLOCKED-001",
+            BeaconLifecycleEntitlementOutcome.DENIED,
+            BeaconLifecycleEntitlementRejectionReason.DENIED_ENTITLEMENT,
+        ),
+        (
+            "FX-BM08-RESUME-RECHECK-REQUIRED-001",
+            BeaconLifecycleEntitlementOutcome.RECHECK_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.RECHECK_REQUIRED,
+        ),
+        (
+            "FX-BM08-EXPIRED-PAID-FROZEN-001",
+            BeaconLifecycleEntitlementOutcome.FROZEN,
+            BeaconLifecycleEntitlementRejectionReason.EXPIRED_ENTITLEMENT,
+        ),
+        (
+            "FX-BM08-EXPIRED-PAID-USER-CHOICE-REQUIRED-001",
+            BeaconLifecycleEntitlementOutcome.USER_CHOICE_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.EXPIRED_ENTITLEMENT,
+        ),
+        (
+            "FX-BM08-SELECTED-FREE-COMPLIANCE-REQUIRED-001",
+            BeaconLifecycleEntitlementOutcome.FREE_COMPLIANCE_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.FREE_COMPLIANCE_REQUIRED,
+        ),
+        (
+            "FX-BM08-NOTIFICATION-FUTURE-REFERENCE-ONLY-001",
+            BeaconLifecycleEntitlementOutcome.USER_CHOICE_REQUIRED,
+            BeaconLifecycleEntitlementRejectionReason.EXPIRED_ENTITLEMENT,
+        ),
+        (
+            "FX-BM08-PROVENANCE-BOUNDARIES-DISTINCT-001",
+            BeaconLifecycleEntitlementOutcome.ALLOWED,
+            None,
+        ),
+    ),
+)
+def test_bm08_expired_paid_flow_and_provenance_semantics_are_explicit(
+    fixture_id: str,
+    expected_outcome: BeaconLifecycleEntitlementOutcome,
+    expected_reason: BeaconLifecycleEntitlementRejectionReason | None,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+    decision = fixture.lifecycle_entitlement_decision
+    assert decision is not None
+    assert decision.outcome is expected_outcome
+    assert decision.rejection_reason is expected_reason
+    assert decision.effective_entitlement_snapshot is not None
+    assert (
+        decision.effective_entitlement_snapshot.beacon_source_reference
+        != decision.effective_entitlement_snapshot.entitlement_source_reference
+    )
+    assert (
+        decision.effective_entitlement_snapshot.entitlement_source_reference
+        != decision.effective_entitlement_snapshot.provenance_reference
+    )
+    if fixture_id in {
+        "FX-BM08-RESUME-RECHECK-REQUIRED-001",
+        "FX-BM08-EXPIRED-PAID-FROZEN-001",
+        "FX-BM08-EXPIRED-PAID-USER-CHOICE-REQUIRED-001",
+        "FX-BM08-NOTIFICATION-FUTURE-REFERENCE-ONLY-001",
+        "FX-BM08-SELECTED-FREE-COMPLIANCE-REQUIRED-001",
+    }:
+        assert decision.future_notification_reference is not None
+    if fixture_id == "FX-BM08-RESUME-RECHECK-REQUIRED-001":
+        assert decision.entitlement_recheck_reference is not None
+    if fixture_id == "FX-BM08-SELECTED-FREE-COMPLIANCE-REQUIRED-001":
+        assert decision.selected_free_beacon_id is not None
+        assert decision.selected_free_beacon_user_choice_reference is not None
+        assert decision.free_compliance_reference is None
+
+
+def test_bm08_no_auto_choice_fixture_is_rejected() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM08-EXPIRED-PAID-NO-AUTO-CHOICE-REJECTED-001"]
+    decision = fixture.lifecycle_entitlement_decision
+    assert decision is not None
+
+    with pytest.raises(
+        ValidationError, match="expired paid access must not choose a free Beacon automatically"
+    ):
+        BeaconLifecycleEntitlementDecision.model_validate(decision.model_dump())
+
+
+@pytest.mark.parametrize(
+    "fixture_id,expected_message",
+    (
+        (
+            "FX-BM08-NOTIFICATION-SENDING-CLAIM-REJECTED-001",
+            "notification sending claim is forbidden",
+        ),
+        (
+            "FX-BM08-BILLING-PAYMENT-TARIFF-MUTATION-CLAIM-REJECTED-001",
+            "billing/payment/tariff mutation claim is forbidden",
+        ),
+        (
+            "FX-BM08-SCHEDULER-RUNTIME-CLAIM-REJECTED-001",
+            "scheduler/runtime claim is forbidden",
+        ),
+        (
+            "FX-BM08-DB-REPOSITORY-RUNTIME-CLAIM-REJECTED-001",
+            "DB/repository/runtime persistence implementation claim is forbidden",
+        ),
+        (
+            "FX-BM08-SCANRUN-HISTORY-CLAIM-REJECTED-001",
+            "ScanRun/listing history state claim is forbidden",
+        ),
+        (
+            "FX-BM08-PARSER-FILTER-CATALOG-CLAIM-REJECTED-001",
+            "Parser/Filter Catalog ownership claim is forbidden",
+        ),
+        (
+            "FX-BM08-CLIENT-FLAG-NOT-AUTHORIZATION-REJECTED-001",
+            "client channel flag is not authorization proof",
+        ),
+    ),
+)
+def test_bm08_claim_fixtures_are_rejected(
+    fixture_id: str,
+    expected_message: str,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+    decision = fixture.lifecycle_entitlement_decision
+    assert decision is not None
+
+    with pytest.raises(ValidationError, match=expected_message):
+        BeaconLifecycleEntitlementDecision.model_validate(decision.model_dump())
+
+
+def test_bm08_validator_rejects_unsafe_allowed_semantics_for_interval_limit_and_city() -> None:
+    blocked_fixtures = (
+        "FX-BM08-BASIC-LIMIT-BLOCKED-001",
+        "FX-BM08-BASIC-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+        "FX-BM08-BASIC-INTERVAL-STEP-BLOCKED-001",
+        "FX-BM08-FREE-COUNTRY-WIDE-BLOCKED-001",
+        "FX-BM08-FREE-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+        "FX-BM08-FREE-INTERVAL-STEP-BLOCKED-001",
+        "FX-BM08-FREE-ACTIVE-LIMIT-BLOCKED-001",
+    )
+
+    for fixture_id in blocked_fixtures:
+        fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+        decision = fixture.lifecycle_entitlement_decision
+        assert decision is not None
+        unsafe_decision = decision.model_copy(
+            update={
+                "outcome": BeaconLifecycleEntitlementOutcome.ALLOWED,
+                "rejection_reason": None,
+                "effective_entitlement_snapshot": (
+                    decision.effective_entitlement_snapshot.model_copy(
+                        update={"effective_outcome": BeaconLifecycleEntitlementOutcome.ALLOWED}
+                    )
+                )
+                if decision.effective_entitlement_snapshot is not None
+                else None,
+            }
+        )
+
+        expected_message = (
+            "active Beacon limit exceeded"
+            if fixture_id
+            in {
+                "FX-BM08-BASIC-LIMIT-BLOCKED-001",
+                "FX-BM08-FREE-ACTIVE-LIMIT-BLOCKED-001",
+            }
+            else "requested interval is below the approved floor"
+            if fixture_id
+            in {
+                "FX-BM08-BASIC-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+                "FX-BM08-FREE-INTERVAL-BELOW-FLOOR-BLOCKED-001",
+            }
+            else "requested interval must follow the approved step"
+            if fixture_id
+            in {
+                "FX-BM08-BASIC-INTERVAL-STEP-BLOCKED-001",
+                "FX-BM08-FREE-INTERVAL-STEP-BLOCKED-001",
+            }
+            else "free country-wide activation requires a city"
+        )
+
+        with pytest.raises(ValidationError, match=expected_message):
+            BeaconLifecycleEntitlementDecision.model_validate(unsafe_decision.model_dump())
 
 
 def test_owner_verified_update_fixture_is_allowed() -> None:

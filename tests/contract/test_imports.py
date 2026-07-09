@@ -53,6 +53,14 @@ from mayak.modules.beacon_management import (
     BeaconConfigurationStoragePolicyRejectionReason,
     BeaconCurrentConfigurationAuthorityStatus,
     BeaconCurrentConfigurationDecision,
+    BeaconEffectiveEntitlementSnapshot,
+    BeaconEntitlementEvidenceFreshnessStatus,
+    BeaconEntitlementEvidenceReference,
+    BeaconLifecycleActionKind,
+    BeaconLifecycleEntitlementDecision,
+    BeaconLifecycleEntitlementOutcome,
+    BeaconLifecycleEntitlementRejectionReason,
+    BeaconTariffPolicyBand,
 )
 from mayak.modules.beacon_management import contracts as beacon_management_contracts
 from mayak.platform import (
@@ -192,4 +200,44 @@ def test_beacon_management_package_exports_bm07_current_configuration_storage_pr
     )
     assert beacon_management.BeaconConfigurationStoragePolicyRejectionReason is (
         beacon_management_contracts.BeaconConfigurationStoragePolicyRejectionReason
+    )
+
+
+def test_beacon_management_package_exports_bm08_lifecycle_entitlement_primitives() -> None:
+    assert BeaconLifecycleActionKind.__name__ == "BeaconLifecycleActionKind"
+    assert BeaconLifecycleEntitlementOutcome.__name__ == "BeaconLifecycleEntitlementOutcome"
+    assert BeaconLifecycleEntitlementRejectionReason.__name__ == (
+        "BeaconLifecycleEntitlementRejectionReason"
+    )
+    assert BeaconEntitlementEvidenceFreshnessStatus.__name__ == (
+        "BeaconEntitlementEvidenceFreshnessStatus"
+    )
+    assert BeaconEntitlementEvidenceReference.__name__ == "BeaconEntitlementEvidenceReference"
+    assert BeaconTariffPolicyBand.__name__ == "BeaconTariffPolicyBand"
+    assert BeaconEffectiveEntitlementSnapshot.__name__ == "BeaconEffectiveEntitlementSnapshot"
+    assert BeaconLifecycleEntitlementDecision.__name__ == "BeaconLifecycleEntitlementDecision"
+
+    assert beacon_management.BeaconLifecycleActionKind is (
+        beacon_management_contracts.BeaconLifecycleActionKind
+    )
+    assert beacon_management.BeaconLifecycleEntitlementOutcome is (
+        beacon_management_contracts.BeaconLifecycleEntitlementOutcome
+    )
+    assert beacon_management.BeaconLifecycleEntitlementRejectionReason is (
+        beacon_management_contracts.BeaconLifecycleEntitlementRejectionReason
+    )
+    assert beacon_management.BeaconEntitlementEvidenceFreshnessStatus is (
+        beacon_management_contracts.BeaconEntitlementEvidenceFreshnessStatus
+    )
+    assert beacon_management.BeaconEntitlementEvidenceReference is (
+        beacon_management_contracts.BeaconEntitlementEvidenceReference
+    )
+    assert beacon_management.BeaconTariffPolicyBand is (
+        beacon_management_contracts.BeaconTariffPolicyBand
+    )
+    assert beacon_management.BeaconEffectiveEntitlementSnapshot is (
+        beacon_management_contracts.BeaconEffectiveEntitlementSnapshot
+    )
+    assert beacon_management.BeaconLifecycleEntitlementDecision is (
+        beacon_management_contracts.BeaconLifecycleEntitlementDecision
     )
