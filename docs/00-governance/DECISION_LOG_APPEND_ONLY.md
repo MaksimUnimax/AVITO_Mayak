@@ -627,3 +627,53 @@ An Admin capability may change limits and tariffs in the future. Admin UI/runtim
 **Границы и запреты:** This ADR does not authorize product-code, parser implementation, live Avito calls, source URL live validation, Filter Catalog implementation, Scan Orchestration runtime, scheduler runtime, notification sending, Telegram/MAX/Web Cabinet UI, Admin UI, database schema, migrations, physical delete implementation, retention job, runtime services, Docker/CI/CD/deploy, ports/listeners, credentials or secrets.
 
 **Последствие:** Beacon Management BM-01 may use these decisions only as governance-captured owner decisions. Later steps may reference them in semantic contracts and synthetic documentation only when their own gates allow it. Runtime, persistence, parser, scan, UI and infrastructure remain separately gated.
+## ADR-0017 — 2026-07-09 — Avito Parser Adapter owner decisions for APA-01
+
+**Статус:** APPROVED owner decision capture for Avito Parser Adapter governance.
+
+**Модуль:** `05-avito-parser-adapter`
+
+**Открывает gate:** APA-02 semantic request/outcome contracts and synthetic fixture identifiers only, after an exact task.
+
+**Не открывает:** product-code beyond separately authorized semantic contracts, live Avito calls, endpoint probing, source URL live validation, HTML/JSON parser runtime, HTTPX live client, provider SDK/client, cookies, sessions, proxy/VPN/CAPTCHA tooling, browser automation, real Avito fixtures, raw provider payload retention, listing detail enrichment runtime, phone extraction runtime, database schema, migrations, repositories, persistence, Scan Orchestration runtime, Egress Routing runtime, Notification Delivery runtime, Filter Catalog implementation, Admin UI, Web Cabinet UI, Telegram/MAX UI, Docker, CI/CD, deploy, runtime services, ports/listeners, credentials, secrets or tokens.
+
+**Контекст:** Module `05-avito-parser-adapter` is the external boundary between untrusted Avito/search transport outcomes and internal transport-neutral Mayak contracts. The approved module playbook uses `AVITO-PRIMARY-PARSER-001` as implementation observation only and explicitly rejects automatic inheritance of endpoint stability, local history, phone extraction, unrestricted details/views collection, retry/cookie/proxy choices and production/legal suitability. Owner decisions are required before Parser Adapter contracts, synthetic fixtures, tests or later implementation may use listing-card field-family policy, raw-retention policy, newest-sort handoff or lost-anchor handoff semantics.
+
+**Решение:**
+
+1. Parser Adapter is a Mayak module, not a copy of the reference parser. `AVITO-PRIMARY-PARSER-001` may be used only as technical evidence / observation within its exact commit and scope.
+2. Current stage live Avito calls are forbidden. The allowed current scope is semantic contracts, synthetic fixtures, fake response classifications, safe parser outcome models, reference-profile placeholders, negative safety outcomes and no-live-traffic evidence.
+3. Forbidden current-stage actions include real requests to Avito, endpoint probing, browser automation, live source URL validation, cookies, sessions, proxy/VPN/CAPTCHA tooling and production parser implementation.
+4. The observed internal later-page endpoint `/web/1/js/items` is reference observation only. It is not an official consumer-search API, not a stability guarantee, not legal/access permission and not a production route design.
+5. Owner wants a useful listing card that can avoid unnecessary user transitions to Avito when fields are technically and safely obtainable.
+6. Free users must not be intentionally deprived of convenient listing-card fields. The primary monetization boundary is active Beacon count, monitoring interval and geography, not hiding phone/seller/rating/description from Free by default.
+7. Desired listing-card field families are title, normalized price, source/listing URL, preview/image reference, geography, category, publication/order signal if proven, full description if proven, seller identity/name/profile if proven, seller rating if proven and phone/contact availability if proven.
+8. Phone value itself is allowed only after a separate approved phone-enrichment evidence gate. Phone extraction runtime is not authorized by this decision.
+9. Listing data must be represented in tiers: Tier 1 search-result fields, Tier 2 listing-detail fields and Tier 3 contact/phone fields.
+10. Tier 1 may be described in semantic contracts and synthetic fixtures when exact tasks allow it. Tier 2 remains gated by listing-detail enrichment proof. Tier 3 remains gated by phone-enrichment proof.
+11. Phone, seller, seller rating and description are evidence-gated optional candidate field families. They are not globally mandatory parser success criteria.
+12. Absence or unavailability of phone, seller, rating or description must not make an otherwise usable search-result listing candidate fail unless a future exact compatibility profile explicitly requires that field for that scope.
+13. Parser Adapter must return field-level provenance, quality and warnings. If an active compatibility profile does not prove a field, Parser returns unavailable, unknown or warning semantics rather than inventing a value.
+14. Category-specific characteristics are not mandatory in the first parser scope. Parser may return evidence-bound parameter candidates only when they are safely present in source URL or search extraction evidence. Filter Catalog & Builder remains owner of supported filter definitions, editable filter definitions, category-specific option schema and UI-neutral builder semantics.
+15. Monitoring new listings should prefer newest-first observed ordering when evidence proves the sort context. Parser Adapter must return observed order, sort-context candidate if proven, publication/order timestamp candidate if proven and warning if sort context is missing, ambiguous, unsupported or unproven.
+16. Parser Adapter does not decide baseline, new listing, price-change event, anchor window, lost-anchor recovery or notification creation. Scan Orchestration & Listing State owns those decisions.
+17. Future Scan design should use top-window newest-first logic, first successful scan should create baseline without mass-sending old listings, and anchor window size should become future admin-configurable setting rather than a Parser constant.
+18. Future lost-anchor behavior: if all anchors are lost, the system must not label top results as confirmed new. It may show the latest 3 fresh listings as “latest fresh listings / state restored” and then store a new anchor window so the same recovery does not repeat those listings as newly found again. This is a Scan handoff policy, not Parser implementation.
+19. Raw provider payloads are not stored by default. Full raw HTML, full raw JSON, hidden provider structures, cookies, session values, tokens and unnecessary provider fields must not be retained, logged, added to Git, placed in ordinary reports or used as public contracts without a separate OD-013 / evidence-retention gate.
+20. Allowed safe evidence forms are hash/fingerprint, counts, profile ID, retrieval timestamp, field availability, redacted reason code, safe selector/profile version and synthetic sample data that is not a real Avito raw dump.
+21. A clean usable empty result is allowed only when a future approved compatibility profile proves that the request was sent through an approved route, the response was explicit and usable, required structure was present and validated, no restriction/CAPTCHA/malformed/incomplete/ambiguous signal exists and evidence is current for that scope.
+22. No request sent, route failure, timeout, CAPTCHA, restriction, malformed response, incomplete response, unsupported structure, ambiguous response, stale reference profile or parser uncertainty must not become clean empty success.
+23. Live pagination is forbidden now. Pagination may be represented only as semantic page/batch outcomes, synthetic pagination fixtures, per-page outcome models and partial/ambiguous/interrupted placeholders until a future exact evidence/access gate exists.
+24. Parser Adapter does not own cookies, sessions, browser profiles, proxy selection, VPN selection, mobile proxy choice, CAPTCHA solving, route fallback, route quarantine, agent health or lease management. Egress Routing owns route selection, lease, assignment, transport outcome, quarantine and fallback policy.
+25. Parser Adapter may classify outcomes such as `CAPTCHA_OR_CHALLENGE`, `RATE_OR_ACCESS_RESTRICTED`, `TRANSPORT_UNAVAILABLE`, `TRANSPORT_AMBIGUOUS`, `RESPONSE_RECEIVED_UNCLASSIFIED`, `USABLE_RESPONSE`, `MALFORMED_RESPONSE`, `INCOMPLETE_RESPONSE`, `UNSUPPORTED_STRUCTURE`, `REFERENCE_STALE` and `RESULT_AMBIGUOUS` only as semantic outcomes within approved contracts and fixtures.
+26. Owner decisions captured here may be used only by later exact Parser Adapter roadmap tasks. They do not authorize runtime provider traffic, persistence, UI, notifications, Egress runtime, Scan runtime or Filter Catalog implementation.
+
+**Последствие:**
+
+- APA-02 may use these owner decisions only for semantic Parser request/outcome contracts and synthetic fixture identifiers after an exact task.
+- APA-08 may later model phone/seller/rating/description as desired evidence-gated optional listing-card field families, not as mandatory runtime extraction.
+- APA-09 may later capture ordering/newest-sort evidence and Scan handoff semantics, but Parser must not implement Scan newness, baseline, anchor-window or notification behavior.
+- APA-10 remains blocked for live pagination.
+- APA-11 remains blocked for raw-retention/storage implementation until OD-013 / evidence policy gates.
+- `OD-009`, `OD-010`, `OD-011` and `OD-013` remain open except where this ADR provides Parser-specific governance input for semantic planning.
+- Product-code, live Avito calls, provider implementation, persistence, UI and infrastructure remain separately gated.

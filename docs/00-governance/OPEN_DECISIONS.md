@@ -214,3 +214,32 @@ The following open-decision areas have owner decisions captured for Beacon Manag
 - `OD-013`: History / Archive / delete / permanent delete semantics are captured for Beacon Management semantic use; physical deletion, retention jobs, privacy/legal retention and DB implementation remain gated.
 
 These captured decisions are not product-code authorization and do not implement runtime behavior. Other open decisions remain unresolved unless separately captured by append-only decision record.
+## Governance capture update — 2026-07-09 — APA-01 parser owner decisions
+
+`ADR-0017` captures owner decisions for `05-avito-parser-adapter` before Parser Adapter contracts, synthetic fixtures, tests or later implementation may use listing-card field-family policy, raw-retention policy, newest-sort handoff or lost-anchor handoff semantics.
+
+This update does not authorize live Avito calls, endpoint probing, source URL live validation, HTML/JSON parser runtime, provider clients, cookies/sessions/proxy/CAPTCHA tooling, browser automation, real Avito fixtures, raw provider payload retention, listing detail enrichment runtime, phone extraction runtime, persistence, migrations, database schema, Scan runtime, Egress runtime, Notification runtime, Filter Catalog implementation, Admin/Web/Telegram/MAX UI, Docker, CI/CD, deploy, runtime services, credentials, secrets or tokens.
+
+For current planning after `ADR-0017`:
+
+| Item | Status after ADR-0017 | Notes |
+|---|---|---|
+| APA-01 owner Parser decision capture | CLOSED_BY_ADR_0017 | Owner decisions are captured for Parser Adapter governance use. |
+| APA-02 semantic request/outcome contracts | ALLOWED_AFTER_EXACT_TASK | Only semantic contracts and synthetic fixture identifiers are allowed. |
+| Reference parser authority | OBSERVATION_ONLY | `AVITO-PRIMARY-PARSER-001` is technical evidence only, not product model or official API proof. |
+| Live Avito calls | BLOCKED | No provider traffic, endpoint probing or live source URL validation is authorized. |
+| Internal endpoint `/web/1/js/items` | OBSERVATION_ONLY | Not stable contract, not official consumer-search API and not production permission. |
+| Listing-card field families | EVIDENCE_GATED_OPTIONAL_CANDIDATES | Phone, seller, rating and full description are desired if technically and safely obtainable, but not mandatory globally. |
+| Free listing-card convenience | OWNER_POLICY_CAPTURED | Free is not intentionally deprived of convenience fields; monetization is primarily active Beacon count, interval and geography. |
+| Phone value extraction | BLOCKED | Requires separate phone-enrichment proof gate and exact task. |
+| Listing detail enrichment | BLOCKED | Requires separate evidence gate and exact task. |
+| Category-specific characteristics | FILTER_CATALOG_BOUNDARY | Parser may return evidence-bound candidates only; Filter Catalog owns supported/editable definitions. |
+| Newest-sort / ordering handoff | SEMANTIC_INPUT_CAPTURED | Parser may later return observed order and sort evidence; Scan owns baseline/newness. |
+| Lost-anchor behavior | FUTURE_SCAN_POLICY_INPUT | Top 3 latest fresh listings after lost anchors are not confirmed new; Scan owns recovery. |
+| Raw provider payload retention | BLOCKED_BY_DEFAULT | Only safe fingerprints/counts/profile IDs/redacted evidence/synthetic samples are allowed without OD-013/evidence gate. |
+| Clean empty result | PROOF_REQUIRED | Empty is clean only under future approved compatibility profile proof. |
+| Live pagination | BLOCKED | Only semantic page/batch/partial placeholders are allowed before evidence/access gate. |
+| OD-009 | OPEN_WITH_PARSER_INPUT | Supported editable filters remain Filter Catalog / evidence-bound; not closed globally. |
+| OD-010 | OPEN_WITH_PARSER_INPUT | Country-wide support remains entitlement/beacon/parser evidence scoped; not closed globally. |
+| OD-011 | OPEN_WITH_PARSER_INPUT | Minimum monitoring frequency safety remains open; newest-sort handoff does not close it. |
+| OD-013 | OPEN_WITH_PARSER_INPUT | Raw retention and personal-data storage remain open; default raw payload retention is blocked. |
