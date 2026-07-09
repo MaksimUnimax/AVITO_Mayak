@@ -1091,3 +1091,25 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-11+ remain gated.
+
+### SOLS-HISTORY-0012 — 2026-07-09 — Notification/status handoff
+
+SOLS-11 created docs-only Notification/status handoff documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-04 lifecycle/commit-point rules, SOLS-06 difference rules, SOLS-07 lost-anchor recovery, SOLS-08 external failure/recovery, SOLS-09 overlap/mid-run rules and SOLS-10 parser outcome/reconciliation rules;
+Scan emits scan-domain facts and safe status facts only;
+Notification Delivery owns delivery, outbox, attempts, retries, provider success and delivery deduplication;
+Telegram/MAX/Web/UI modules own channel rendering and presentation after their gates;
+baseline emits no new-listing user result;
+NewListingsFound may be consumed later by Notification Delivery;
+NoNewListingsStatus is anti-spam/read-model oriented and must not be sent every interval by default;
+ExternalUnavailableStatus may produce one clear status when the problem begins or materially changes;
+PendingRecoveryScanRegistered keeps one pending recovery obligation, not missed-scan backlog;
+RecoveryScanCompleted may produce one recovery result;
+LostAnchorsRecovered is state-restored/latest-fresh, not confirmed-new;
+Notification failure never rolls back committed Scan state;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no delivery/outbox/provider retry/channel rendering implementation was introduced;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation or Egress implementation or Notification delivery was introduced;
+SOLS-12+ remain gated.
