@@ -1165,6 +1165,17 @@ _BM06_MULTIVALUE_COLLAPSE_OVERRIDE_OPERATION = _override_patch_operation(
     rejection_reason=BeaconOverrideRejectionReason.MULTIVALUE_COLLAPSE,
 )
 
+_BM06_SINGLE_VALUE_MISMATCH_OVERRIDE_OPERATION = BeaconOverridePatchOperation.model_construct(
+    field_name="district",
+    support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+    outcome=BeaconOverrideApplicationOutcome.APPLIED,
+    requested_values=("north",),
+    applied_values=("south",),
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-single-value-mismatch-001",
+    override_evidence_reference="override-evidence-bm06-single-value-mismatch-001",
+    rejection_reason=None,
+)
+
 _BM06_ACCEPTED_EFFECTIVE_SOURCE_URL = _source_url(
     "evidence-bm06-effective-accepted-001",
     "https://example.invalid/search?query=beacon-management&city=synthetic&case=bm06-effective",
@@ -1211,6 +1222,27 @@ _BM06_ACCEPTED_EFFECTIVE_CONFIGURATION = _effective_configuration_decision(
     status=BeaconDecisionStatus.ALLOWED,
     effective_configuration_reference="effective-config-bm06-001",
     authoritative_state_reference="authoritative-state-bm06-effective-001",
+)
+
+_BM06_SINGLE_VALUE_MISMATCH_EFFECTIVE_CONFIGURATION = (
+    BeaconEffectiveConfigurationDecision.model_construct(
+        decision_id="decision-bm06-effective-single-value-mismatch-001",
+        beacon_id="beacon-bm06-effective-single-value-mismatch-001",
+        account_id=_OWN_ACCOUNT_ID,
+        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
+        accepted_snapshot=_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT,
+        override_operations=(
+            _BM06_SINGLE_VALUE_MISMATCH_OVERRIDE_OPERATION,
+        ),
+        status=BeaconDecisionStatus.ALLOWED,
+        effective_configuration_reference="effective-config-bm06-single-value-mismatch-001",
+        authoritative_state_reference=(
+            "authoritative-state-bm06-effective-single-value-mismatch-001"
+        ),
+        source_url_overwritten_by_snapshot=False,
+        source_url_overwritten_by_override=False,
+        rejection_reason=None,
+    )
 )
 
 _BM06_REJECTED_EFFECTIVE_CONFIGURATION = _effective_configuration_decision(
@@ -1999,95 +2031,6 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         mutation_decision=_LAST_WRITE_WINS_MUTATION,
     ),
     SyntheticFixtureCase(
-        fixture_id="FX-BM06-OVERRIDE-SUPPORTED-APPLIED-001",
-        summary="Supported explicit field override is applied.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        override_patch_operation=_BM06_SUPPORTED_OVERRIDE_OPERATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-OVERRIDE-UNSUPPORTED-BLOCKED-001",
-        summary="Unsupported field override is blocked and not applied.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        override_patch_operation=_BM06_UNSUPPORTED_OVERRIDE_OPERATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-OVERRIDE-UNCERTAIN-BLOCKED-001",
-        summary="Uncertain field evidence is blocked and not applied.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        override_patch_operation=_BM06_UNCERTAIN_OVERRIDE_OPERATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-OVERRIDE-AMBIGUOUS-BLOCKED-001",
-        summary="Ambiguous field evidence is blocked and not applied.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        override_patch_operation=_BM06_AMBIGUOUS_OVERRIDE_OPERATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-OVERRIDE-SOURCE-URL-REJECTED-001",
-        summary="Source URL override is rejected.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
-        override_patch_operation=_BM06_SOURCE_URL_OVERRIDE_OPERATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-OVERRIDE-MULTIVALUE-PRESERVED-001",
-        summary="Multivalue approved values are preserved.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        override_patch_operation=_BM06_MULTIVALUE_OVERRIDE_OPERATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-OVERRIDE-MULTIVALUE-COLLAPSE-REJECTED-001",
-        summary="Silent multivalue collapse is rejected.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        override_patch_operation=_BM06_MULTIVALUE_COLLAPSE_OVERRIDE_OPERATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001",
-        summary="Effective config is assembled from accepted snapshot and explicit overrides.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
-        snapshot=_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT,
-        effective_configuration_decision=_BM06_ACCEPTED_EFFECTIVE_CONFIGURATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-EFFECTIVE-CONFIG-NON-ACCEPTED-REJECTED-001",
-        summary="Non-accepted snapshot assembly is rejected.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        source_url=_BM06_REJECTED_EFFECTIVE_SOURCE_URL,
-        snapshot=_BM06_REJECTED_EFFECTIVE_SNAPSHOT,
-        effective_configuration_decision=_BM06_REJECTED_EFFECTIVE_CONFIGURATION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-PATCH-MERGE-NONOVERLAP-001",
-        summary="Non-overlapping patch updates merge and preserve absent fields.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        patch_save_decision=_BM06_PATCH_MERGE_DECISION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-PATCH-LAST-WRITE-WINS-001",
-        summary="Same-field later successful save is authoritative without DB/runtime claim.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        patch_save_decision=_BM06_PATCH_LAST_WRITE_WINS_DECISION,
-    ),
-    SyntheticFixtureCase(
-        fixture_id="FX-BM06-PATCH-STALE-FULL-FORM-REJECTED-001",
-        summary="Stale full-form overwrite is rejected.",
-        account_id=_OWN_ACCOUNT_ID,
-        foreign_account_id=_FOREIGN_ACCOUNT_ID,
-        patch_save_decision=_BM06_PATCH_STALE_FULL_FORM_DECISION,
-    ),
-    SyntheticFixtureCase(
         fixture_id="FX-BM-SOURCE-URL-PREP-CREATED-001",
         summary="Prepared source URL creates a Beacon while preserving submitted evidence.",
         account_id=_OWN_ACCOUNT_ID,
@@ -2377,6 +2320,111 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         beacon=_OWN_ACTIVE_BEACON,
         authorization_decision=_SYSTEM_FREEZE_BLOCKED,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-SUPPORTED-APPLIED-001",
+        summary="Supported explicit field override is applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_SUPPORTED_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-UNSUPPORTED-BLOCKED-001",
+        summary="Unsupported field override is blocked and not applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_UNSUPPORTED_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-UNCERTAIN-BLOCKED-001",
+        summary="Uncertain field evidence is blocked and not applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_UNCERTAIN_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-AMBIGUOUS-BLOCKED-001",
+        summary="Ambiguous field evidence is blocked and not applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_AMBIGUOUS_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-SOURCE-URL-REJECTED-001",
+        summary="Source URL override is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
+        override_patch_operation=_BM06_SOURCE_URL_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-MULTIVALUE-PRESERVED-001",
+        summary="Multivalue approved values are preserved.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_MULTIVALUE_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-MULTIVALUE-COLLAPSE-REJECTED-001",
+        summary="Silent multivalue collapse is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_MULTIVALUE_COLLAPSE_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM06-OVERRIDE-SINGLE-VALUE-MISMATCH-REJECTED-001",
+        summary="Single-value applied override mismatch is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_SINGLE_VALUE_MISMATCH_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001",
+        summary="Effective config is assembled from accepted snapshot and explicit overrides.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
+        snapshot=_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT,
+        effective_configuration_decision=_BM06_ACCEPTED_EFFECTIVE_CONFIGURATION,
+    ),
+    SyntheticFixtureCase.model_construct(
+        fixture_id="FX-BM06-EFFECTIVE-CONFIG-SINGLE-VALUE-MISMATCH-REJECTED-001",
+        summary="Single-value applied override mismatch is rejected in effective config.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
+        snapshot=_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT,
+        effective_configuration_decision=_BM06_SINGLE_VALUE_MISMATCH_EFFECTIVE_CONFIGURATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-EFFECTIVE-CONFIG-NON-ACCEPTED-REJECTED-001",
+        summary="Non-accepted snapshot assembly is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_BM06_REJECTED_EFFECTIVE_SOURCE_URL,
+        snapshot=_BM06_REJECTED_EFFECTIVE_SNAPSHOT,
+        effective_configuration_decision=_BM06_REJECTED_EFFECTIVE_CONFIGURATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-PATCH-MERGE-NONOVERLAP-001",
+        summary="Non-overlapping patch updates merge and preserve absent fields.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        patch_save_decision=_BM06_PATCH_MERGE_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-PATCH-LAST-WRITE-WINS-001",
+        summary="Same-field later successful save is authoritative without DB/runtime claim.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        patch_save_decision=_BM06_PATCH_LAST_WRITE_WINS_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-PATCH-STALE-FULL-FORM-REJECTED-001",
+        summary="Stale full-form overwrite is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        patch_save_decision=_BM06_PATCH_STALE_FULL_FORM_DECISION,
     ),
 )
 

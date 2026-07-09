@@ -1915,16 +1915,27 @@ def test_rejected_override_outcomes_can_carry_rejection_reason() -> None:
     assert override.rejection_reason is BeaconOverrideRejectionReason.UNSUPPORTED_FIELD
 
 
-def test_silent_multivalue_collapse_is_rejected() -> None:
-    with pytest.raises(ValidationError, match="multivalue approved values must be preserved"):
+@pytest.mark.parametrize(
+    "field_name,requested_values,applied_values",
+    (
+        ("district", ("north",), ("south",)),
+        ("amenities", ("wifi", "parking"), ("wifi",)),
+    ),
+)
+def test_applied_override_value_mismatches_are_rejected(
+    field_name: str,
+    requested_values: tuple[str, ...],
+    applied_values: tuple[str, ...],
+) -> None:
+    with pytest.raises(ValidationError, match="applied override must match requested values"):
         BeaconOverridePatchOperation(
-            field_name="amenities",
+            field_name=field_name,
             support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
             outcome=BeaconOverrideApplicationOutcome.APPLIED,
-            requested_values=("wifi", "parking"),
-            applied_values=("wifi",),
-            parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-collapse-001",
-            override_evidence_reference="override-evidence-contract-bm06-collapse-001",
+            requested_values=requested_values,
+            applied_values=applied_values,
+            parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-mismatch-001",
+            override_evidence_reference="override-evidence-contract-bm06-mismatch-001",
         )
 
 
@@ -1978,6 +1989,62 @@ def test_effective_configuration_requires_accepted_snapshot_and_supported_overri
     expected_authoritative_state_reference = "authoritative-state-contract-bm06-effective-001"
     assert decision.authoritative_state_reference == expected_authoritative_state_reference
     assert decision.source_url.submitted_url.startswith("https://example.invalid/")
+
+
+@pytest.mark.parametrize(
+    "field_name,requested_values,applied_values",
+    (
+        ("district", ("north",), ("south",)),
+        ("amenities", ("wifi", "parking"), ("wifi",)),
+    ),
+)
+def test_effective_configuration_rejects_applied_override_value_mismatches(
+    field_name: str,
+    requested_values: tuple[str, ...],
+    applied_values: tuple[str, ...],
+) -> None:
+    source_url = contracts.BeaconSourceUrl(
+        submitted_url="https://example.invalid/search?query=effective-config-mismatch&city=synthetic",
+        evidence_reference="evidence-contract-bm06-effective-mismatch-001",
+        submitted_at=_SUBMITTED_AT,
+        source_channel="user-submitted",
+        submitted_by_label="synthetic-user",
+    )
+    snapshot = contracts.ExtractedSearchConfigurationSnapshot(
+        snapshot_id="snap-contract-bm06-effective-mismatch-001",
+        parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        normalized_filter_values=("city=synthetic-city", "category=synthetic-category"),
+        evidence_reference="evidence-contract-bm06-effective-mismatch-snapshot-001",
+        parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+            evidence_reference="parser-evidence-contract-bm06-effective-mismatch-001"
+        ),
+    )
+    override = BeaconOverridePatchOperation.model_construct(
+        field_name=field_name,
+        support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+        outcome=BeaconOverrideApplicationOutcome.APPLIED,
+        requested_values=requested_values,
+        applied_values=applied_values,
+        parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-effective-mismatch-001",
+        override_evidence_reference="override-evidence-contract-bm06-effective-mismatch-001",
+        rejection_reason=None,
+    )
+
+    with pytest.raises(
+        ValidationError, match="applied override must match requested values"
+    ):
+        BeaconEffectiveConfigurationDecision(
+            decision_id="decision-contract-bm06-effective-mismatch-001",
+            beacon_id="beacon-contract-bm06-effective-mismatch-001",
+            account_id="acct-contract-001",
+            source_url=source_url,
+            accepted_snapshot=snapshot,
+            override_operations=(override,),
+            status=BeaconDecisionStatus.ALLOWED,
+            effective_configuration_reference="effective-config-contract-bm06-mismatch-001",
+            authoritative_state_reference="authoritative-state-contract-bm06-effective-mismatch-001",
+        )
 
 
 @pytest.mark.parametrize(

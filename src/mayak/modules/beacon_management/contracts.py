@@ -870,9 +870,9 @@ class BeaconOverridePatchOperation(BaseModel):
 
         if self.outcome is BeaconOverrideApplicationOutcome.APPLIED:
             if self.applied_values is None:
-                raise ValueError("applied override must preserve applied values")
-            if len(self.requested_values) > 1 and self.applied_values != self.requested_values:
-                raise ValueError("multivalue approved values must be preserved")
+                raise ValueError("applied override must match requested values")
+            if self.applied_values != self.requested_values:
+                raise ValueError("applied override must match requested values")
         elif self.applied_values is not None:
             raise ValueError("non-applied override must not carry applied values")
 
@@ -1120,10 +1120,10 @@ class BeaconEffectiveConfigurationDecision(BaseModel):
                     raise ValueError("effective configuration requires applied override operations")
                 if override_operation.field_name == "source_url":
                     raise ValueError("source URL override must not be overwritten")
-                if len(override_operation.requested_values) > 1 and (
-                    override_operation.applied_values != override_operation.requested_values
-                ):
-                    raise ValueError("multivalue approved values must be preserved")
+                if override_operation.applied_values != override_operation.requested_values:
+                    raise ValueError(
+                        "effective configuration override values must match requested values"
+                    )
 
         if self.rejection_reason is not None and self.status in {
             BeaconDecisionStatus.ALLOWED,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from mayak.modules.beacon_management import (
     FIXTURE_IDS,
@@ -10,9 +11,11 @@ from mayak.modules.beacon_management import (
 from mayak.modules.beacon_management.contracts import (
     BeaconAuthorizationOutcome,
     BeaconDecisionStatus,
+    BeaconEffectiveConfigurationDecision,
     BeaconEffectiveConfigurationRejectionReason,
     BeaconOverrideApplicationOutcome,
     BeaconOverrideFieldSupportStatus,
+    BeaconOverridePatchOperation,
     BeaconOverrideRejectionReason,
     BeaconParserEvidenceSafetyClass,
     BeaconParserOutcomeStatus,
@@ -22,6 +25,80 @@ from mayak.modules.beacon_management.contracts import (
     BeaconSourceUrlPreparationOutcome,
     BeaconSourceUrlSafetyClassification,
     BeaconSystemActorClass,
+)
+
+EXPECTED_PRE_BM06_FIXTURE_IDS = (
+    "FX-BM-ACTIVE-OWN-001",
+    "FX-BM-FOREIGN-DENIED-001",
+    "FX-BM-DUPLICATE-SAME-ACCOUNT-001",
+    "FX-BM-DUPLICATE-CROSS-ACCOUNT-001",
+    "FX-BM-FREE-COUNTRY-WIDE-BLOCKED-001",
+    "FX-BM-BASIC-COUNTRY-WIDE-ALLOWED-001",
+    "FX-BM-FREE-INTERVAL-180-ACCEPTED-001",
+    "FX-BM-BASIC-INTERVAL-5-ACCEPTED-001",
+    "FX-BM-UNSUPPORTED-OVERRIDE-001",
+    "FX-BM-MULTIVALUE-OVERRIDE-001",
+    "FX-BM-PARSER-UNSAFE-001",
+    "FX-BM-PARSER-CAPTCHA-001",
+    "FX-BM-PARSER-BM05-CLEAN-OPAQUE-ACCEPTED-001",
+    "FX-BM-PARSER-BM05-MALFORMED-REJECTED-001",
+    "FX-BM-PARSER-BM05-INCOMPLETE-REJECTED-001",
+    "FX-BM-PARSER-BM05-CAPTCHA-REJECTED-001",
+    "FX-BM-PARSER-BM05-BLOCKED-REJECTED-001",
+    "FX-BM-PARSER-BM05-ROUTE-FAILED-REJECTED-001",
+    "FX-BM-PARSER-BM05-AMBIGUOUS-REJECTED-001",
+    "FX-BM-PARSER-BM05-UNSUPPORTED-REJECTED-001",
+    "FX-BM-PARSER-BM05-RAW-PROVIDER-AUTHORITY-REJECTED-001",
+    "FX-BM-PARSER-BM05-RAW-HTML-REJECTED-001",
+    "FX-BM-PARSER-BM05-RAW-SEARCHCORE-REJECTED-001",
+    "FX-BM-PARSER-BM05-RAW-CONTEXT-REJECTED-001",
+    "FX-BM-PARSER-BM05-THRESHOLD-DEFERRED-001",
+    "FX-BM-PARSER-BM05-UNSUPPORTED-PARAMETERS-REJECTED-001",
+    "FX-BM-ARCHIVED-EXCLUDED-001",
+    "FX-BM-PERMANENTLY-DELETED-001",
+    "FX-BM-PATCH-SAVE-001",
+    "FX-BM-LAST-WRITE-WINS-001",
+    "FX-BM-SOURCE-URL-PREP-CREATED-001",
+    "FX-BM-SOURCE-URL-PREP-REPLAYED-001",
+    "FX-BM-SOURCE-URL-PREP-DUPLICATE-SAME-ACCOUNT-001",
+    "FX-BM-SOURCE-URL-PREP-DUPLICATE-CROSS-ACCOUNT-001",
+    "FX-BM-SOURCE-URL-PREP-MALFORMED-REJECTED-001",
+    "FX-BM-SOURCE-URL-PREP-SOURCE-ONLY-IDEMPOTENCY-REJECTED-001",
+    "FX-BM-SOURCE-URL-PREP-DUPLICATE-BLOCKING-POLICY-REJECTED-001",
+    "FX-BM-SOURCE-URL-PREP-SNAPSHOT-OVERRIDE-PRESERVED-001",
+    "FX-BM-SOURCE-URL-PREP-FINGERPRINT-OPAQUE-001",
+    "FX-BM-SOURCE-URL-PREP-TRACKING-POLICY-001",
+    "FX-BM-SOURCE-URL-PREP-SHELL-BLOCKED-001",
+    "FX-BM-AUTHZ-OWNER-UPDATE-VERIFIED-001",
+    "FX-BM-AUTHZ-OWNER-UPDATE-UNVERIFIED-001",
+    "FX-BM-AUTHZ-FOREIGN-READ-BLOCKED-001",
+    "FX-BM-AUTHZ-FOREIGN-MUTATE-BLOCKED-001",
+    "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-ALLOWED-001",
+    "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-VERIFIED-001",
+    "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-SCOPE-001",
+    "FX-BM-AUTHZ-ADMIN-SUPPORT-MUTATE-REQUIRES-AUDIT-001",
+    "FX-BM-AUTHZ-CLIENT-FLAG-TELEGRAM-DENIED-001",
+    "FX-BM-AUTHZ-CLIENT-FLAG-WEB-DENIED-001",
+    "FX-BM-AUTHZ-CLIENT-FLAG-ADMIN-DENIED-001",
+    "FX-BM-AUTHZ-SYSTEM-FREEZE-ALLOWED-001",
+    "FX-BM-AUTHZ-SYSTEM-FREEZE-BLOCKED-001",
+)
+
+EXPECTED_BM06_FIXTURE_IDS = (
+    "FX-BM06-OVERRIDE-SUPPORTED-APPLIED-001",
+    "FX-BM06-OVERRIDE-UNSUPPORTED-BLOCKED-001",
+    "FX-BM06-OVERRIDE-UNCERTAIN-BLOCKED-001",
+    "FX-BM06-OVERRIDE-AMBIGUOUS-BLOCKED-001",
+    "FX-BM06-OVERRIDE-SOURCE-URL-REJECTED-001",
+    "FX-BM06-OVERRIDE-MULTIVALUE-PRESERVED-001",
+    "FX-BM06-OVERRIDE-MULTIVALUE-COLLAPSE-REJECTED-001",
+    "FX-BM06-OVERRIDE-SINGLE-VALUE-MISMATCH-REJECTED-001",
+    "FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001",
+    "FX-BM06-EFFECTIVE-CONFIG-SINGLE-VALUE-MISMATCH-REJECTED-001",
+    "FX-BM06-EFFECTIVE-CONFIG-NON-ACCEPTED-REJECTED-001",
+    "FX-BM06-PATCH-MERGE-NONOVERLAP-001",
+    "FX-BM06-PATCH-LAST-WRITE-WINS-001",
+    "FX-BM06-PATCH-STALE-FULL-FORM-REJECTED-001",
 )
 
 
@@ -517,7 +594,9 @@ def test_bm06_fixture_ids_are_present() -> None:
         "FX-BM06-OVERRIDE-SOURCE-URL-REJECTED-001",
         "FX-BM06-OVERRIDE-MULTIVALUE-PRESERVED-001",
         "FX-BM06-OVERRIDE-MULTIVALUE-COLLAPSE-REJECTED-001",
+        "FX-BM06-OVERRIDE-SINGLE-VALUE-MISMATCH-REJECTED-001",
         "FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001",
+        "FX-BM06-EFFECTIVE-CONFIG-SINGLE-VALUE-MISMATCH-REJECTED-001",
         "FX-BM06-EFFECTIVE-CONFIG-NON-ACCEPTED-REJECTED-001",
         "FX-BM06-PATCH-MERGE-NONOVERLAP-001",
         "FX-BM06-PATCH-LAST-WRITE-WINS-001",
@@ -597,6 +676,18 @@ def test_bm06_multivalue_fixture_preserves_approved_values() -> None:
     )
 
 
+def test_bm06_single_value_override_mismatch_fixture_is_rejected() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-OVERRIDE-SINGLE-VALUE-MISMATCH-REJECTED-001"]
+
+    assert fixture.override_patch_operation is not None
+    assert fixture.override_patch_operation.requested_values == ("north",)
+    assert fixture.override_patch_operation.applied_values == ("south",)
+    with pytest.raises(ValidationError, match="applied override must match requested values"):
+        BeaconOverridePatchOperation.model_validate(
+            fixture.override_patch_operation.model_dump()
+        )
+
+
 def test_bm06_effective_config_evidence_is_distinct() -> None:
     fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001"]
 
@@ -619,6 +710,33 @@ def test_bm06_effective_config_evidence_is_distinct() -> None:
     expected_authoritative_state_reference = "authoritative-state-bm06-effective-001"
     assert decision.effective_configuration_reference == expected_effective_configuration_reference
     assert decision.authoritative_state_reference == expected_authoritative_state_reference
+
+
+def test_bm06_effective_config_single_value_mismatch_fixture_is_rejected() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-BM06-EFFECTIVE-CONFIG-SINGLE-VALUE-MISMATCH-REJECTED-001"
+    ]
+
+    assert fixture.effective_configuration_decision is not None
+    invalid_decision = fixture.effective_configuration_decision
+    assert invalid_decision.override_operations[0].requested_values == ("north",)
+    assert invalid_decision.override_operations[0].applied_values == ("south",)
+    with pytest.raises(
+        ValidationError, match="applied override must match requested values"
+    ):
+        BeaconEffectiveConfigurationDecision(
+            decision_id=invalid_decision.decision_id,
+            beacon_id=invalid_decision.beacon_id,
+            account_id=invalid_decision.account_id,
+            source_url=invalid_decision.source_url,
+            accepted_snapshot=invalid_decision.accepted_snapshot,
+            override_operations=invalid_decision.override_operations,
+            status=invalid_decision.status,
+            effective_configuration_reference=invalid_decision.effective_configuration_reference,
+            authoritative_state_reference=invalid_decision.authoritative_state_reference,
+            source_url_overwritten_by_snapshot=invalid_decision.source_url_overwritten_by_snapshot,
+            source_url_overwritten_by_override=invalid_decision.source_url_overwritten_by_override,
+        )
 
 
 def test_bm06_non_accepted_snapshot_effective_config_fixture_is_rejected() -> None:
@@ -674,25 +792,10 @@ def test_bm06_stale_full_form_overwrite_fixture_is_rejected() -> None:
     assert fixture.patch_save_decision.authoritative_state_reference is None
 
 
-def test_authorization_fixture_ids_are_present_and_appended_deterministically() -> None:
-    expected_ids = (
-        "FX-BM-AUTHZ-OWNER-UPDATE-VERIFIED-001",
-        "FX-BM-AUTHZ-OWNER-UPDATE-UNVERIFIED-001",
-        "FX-BM-AUTHZ-FOREIGN-READ-BLOCKED-001",
-        "FX-BM-AUTHZ-FOREIGN-MUTATE-BLOCKED-001",
-        "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-ALLOWED-001",
-        "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-VERIFIED-001",
-        "FX-BM-AUTHZ-ADMIN-SUPPORT-READ-REQUIRES-SCOPE-001",
-        "FX-BM-AUTHZ-ADMIN-SUPPORT-MUTATE-REQUIRES-AUDIT-001",
-        "FX-BM-AUTHZ-CLIENT-FLAG-TELEGRAM-DENIED-001",
-        "FX-BM-AUTHZ-CLIENT-FLAG-WEB-DENIED-001",
-        "FX-BM-AUTHZ-CLIENT-FLAG-ADMIN-DENIED-001",
-        "FX-BM-AUTHZ-SYSTEM-FREEZE-ALLOWED-001",
-        "FX-BM-AUTHZ-SYSTEM-FREEZE-BLOCKED-001",
-    )
-
-    assert FIXTURE_IDS[-len(expected_ids) :] == expected_ids
-    for fixture_id in expected_ids:
+def test_pre_bm06_fixture_order_is_preserved_and_bm06_fixtures_are_appended() -> None:
+    assert FIXTURE_IDS[: len(EXPECTED_PRE_BM06_FIXTURE_IDS)] == EXPECTED_PRE_BM06_FIXTURE_IDS
+    assert FIXTURE_IDS[len(EXPECTED_PRE_BM06_FIXTURE_IDS) :] == EXPECTED_BM06_FIXTURE_IDS
+    for fixture_id in EXPECTED_BM06_FIXTURE_IDS:
         assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
         assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
 
