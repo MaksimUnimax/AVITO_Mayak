@@ -963,3 +963,9 @@ Existing entries in this section must never be edited or deleted. Corrections ar
 - OD-003, OD-004, OD-009, OD-010, OD-011 and OD-013 remain unresolved.
 - No scheduler, worker, queue, product code, database, migration, provider request, notification delivery, runtime or infrastructure artifact created.
 - Run acceptance remains pending until the server checkout is synchronized to the exact published SHA and independently verified.
+
+### SOLS-HISTORY-0002 — 2026-07-09 — Owner Scan decisions captured by ADR-0018
+
+This history entry records the SOLS-01 governance capture now fixed in `OWNER_SCAN_DECISIONS_CAPTURE_v1.0.md`.
+
+The captured owner decisions keep Scan on new listings only, require newest-first monitoring, leave price as candidate data while price-change tracking and price-pair notification remain deferred, assign observed order and sort/publication signals to Parser Adapter, treat missing or unproven sort context as blocked/ambiguous rather than false no-new, use compact rolling anchors with future Admin-configurable size, distinguish lost anchors from window overflow, allow latest 3 lost-anchor items to restore as latest-fresh rather than confirmed-new, keep the current one pending recovery scan model, treat external failure/CAPTCHA/route/parser/ambiguity as not no-new, preserve baseline and anchors on failure, prevent default no-new spam, forbid parallel active comparison commits for one Beacon, require lifecycle and entitlement re-check before user-visible commit, keep safe facts/status only at Scan, and leave scheduler, worker, DB, parser/provider, Egress, Notification, UI, deploy, secrets and raw provider payload retention gated. Older playbook v1.0 price-pair direction is superseded for current owner scope, but history is preserved; OD-011 and OD-013 remain open and no open decision is closed by assumption.

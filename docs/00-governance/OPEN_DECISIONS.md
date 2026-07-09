@@ -243,3 +243,11 @@ For current planning after `ADR-0017`:
 | OD-010 | OPEN_WITH_PARSER_INPUT | Country-wide support remains entitlement/beacon/parser evidence scoped; not closed globally. |
 | OD-011 | OPEN_WITH_PARSER_INPUT | Minimum monitoring frequency safety remains open; newest-sort handoff does not close it. |
 | OD-013 | OPEN_WITH_PARSER_INPUT | Raw retention and personal-data storage remain open; default raw payload retention is blocked. |
+
+## Governance capture update — 2026-07-09 — SOLS-01 scan owner decisions
+
+This update records the owner decisions captured in `docs/04-modules/06-scan-orchestration-and-listing-state/OWNER_SCAN_DECISIONS_CAPTURE_v1.0.md` for `06-scan-orchestration-and-listing-state`.
+
+The captured scope is new-listings-only Scan behavior with newest-first monitoring, Parser Adapter-owned observed order and sort/publication signals, compact rolling anchors, future Admin-configurable anchor size, explicit lost-anchor versus window-overflow separation, blocked/ambiguous handling for missing sort context and external failure, one pending recovery scan, one recovery grace result after entitlement expiry when failure started while access was active, no-no-new spam by default, single active comparison commit per Beacon, lifecycle and entitlement re-check before user-visible commit, safe facts/status only from Scan, and continued gating for scheduler, worker, DB, parser/provider, Egress, Notification, UI, deploy, secrets and raw provider payload retention.
+
+OD-011 and OD-013 remain open, and no open decision is closed by assumption. Older playbook v1.0 price-pair direction is superseded for the current owner scope, but not deleted from history.
