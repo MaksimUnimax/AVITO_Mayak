@@ -1058,3 +1058,19 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-09+ remain gated.
+
+### SOLS-HISTORY-0010 — 2026-07-09 — Overlap, concurrency and mid-run changes
+
+SOLS-09 created docs-only overlap, concurrency and mid-run change documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-03 eligibility boundary, SOLS-04 lifecycle/commit-point rules, SOLS-05 baseline/rolling anchor state, SOLS-06 difference rules, SOLS-07 lost-anchor recovery and SOLS-08 pending recovery/external failure rules;
+one Beacon comparison state must be serialized or conflict-detected;
+new due interval while one scan is active is overlap/pending/claimed, not duplicate parser dispatch or duplicate comparison commit;
+stale concurrent commit has conflict/no effect; no silent last-write-wins;
+Beacon lifecycle/revision and entitlement must be re-checked before user-visible commit;
+paused/archived/deleted/frozen Beacon before normal commit blocks normal user-visible new-listing result;
+denied/expired/ambiguous entitlement before normal commit blocks normal user-visible result except the already accepted one-time recovery grace;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-10+ remain gated.
