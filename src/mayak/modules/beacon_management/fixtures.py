@@ -29,8 +29,14 @@ from .contracts import (
     BeaconOverrideStatus,
     BeaconOwnershipDecision,
     BeaconParserOutcomeStatus,
+    BeaconPreparedSourceUrl,
     BeaconProtectedAction,
     BeaconSourceUrl,
+    BeaconSourceUrlFingerprintPolicy,
+    BeaconSourceUrlIdempotencyBasis,
+    BeaconSourceUrlPreparationDecision,
+    BeaconSourceUrlPreparationOutcome,
+    BeaconSourceUrlSafetyClassification,
     BeaconSystemActorClass,
     ExtractedSearchConfigurationSnapshot,
 )
@@ -53,6 +59,7 @@ class SyntheticFixtureCase(BaseModel):
     current_configuration: BeaconCurrentConfiguration | None = None
     activation_decision: BeaconActivationDecision | None = None
     mutation_decision: BeaconMutationDecision | None = None
+    source_url_preparation_decision: BeaconSourceUrlPreparationDecision | None = None
     ownership_decision: BeaconOwnershipDecision | None = None
     authorization_decision: BeaconAuthorizationDecision | None = None
     history_entry: BeaconHistoryEntry | None = None
@@ -67,9 +74,9 @@ _RECORD_AT = datetime(2026, 7, 9, 10, 5, tzinfo=timezone.utc)
 _REVISION_AT = datetime(2026, 7, 9, 10, 10, tzinfo=timezone.utc)
 
 
-def _source_url(reference: str) -> BeaconSourceUrl:
+def _source_url(reference: str, submitted_url: str = _BASE_URL) -> BeaconSourceUrl:
     return BeaconSourceUrl(
-        submitted_url=_BASE_URL,
+        submitted_url=submitted_url,
         evidence_reference=reference,
         submitted_at=_SUBMITTED_AT,
         source_channel="user-submitted",
@@ -293,6 +300,101 @@ def _beacon(
         restorable=restorable,
         counts_toward_active_limit=counts_toward_active_limit,
         history_entries=history_entries,
+    )
+
+
+def _fingerprint_policy(
+    *,
+    policy_reference: str,
+    comparison_reference: str,
+    idempotency_reference: str,
+    debug_reference: str,
+) -> BeaconSourceUrlFingerprintPolicy:
+    return BeaconSourceUrlFingerprintPolicy(
+        policy_reference=policy_reference,
+        comparison_reference=comparison_reference,
+        idempotency_reference=idempotency_reference,
+        debug_reference=debug_reference,
+    )
+
+
+def _idempotency_basis(
+    *,
+    source_url_reference: str,
+    command_reference: str | None = None,
+    account_id: str | None = None,
+    beacon_id: str | None = None,
+    requested_beacon_id: str | None = None,
+) -> BeaconSourceUrlIdempotencyBasis:
+    return BeaconSourceUrlIdempotencyBasis(
+        source_url_reference=source_url_reference,
+        command_reference=command_reference,
+        account_id=account_id,
+        beacon_id=beacon_id,
+        requested_beacon_id=requested_beacon_id,
+    )
+
+
+def _prepared_source_url(
+    *,
+    prepared_source_url_reference: str,
+    source_url: BeaconSourceUrl,
+    classification: BeaconSourceUrlSafetyClassification,
+    opaque_fingerprint_reference: str | None = None,
+    fingerprint_policy: BeaconSourceUrlFingerprintPolicy | None = None,
+    source_url_overwritten_by_snapshot: bool = False,
+    source_url_overwritten_by_override: bool = False,
+    source_url_rewritten: bool = False,
+) -> BeaconPreparedSourceUrl:
+    return BeaconPreparedSourceUrl(
+        prepared_source_url_reference=prepared_source_url_reference,
+        submitted_source_url=source_url,
+        preserved_submitted_url=source_url.submitted_url,
+        safety_classification=classification,
+        source_url_overwritten_by_snapshot=source_url_overwritten_by_snapshot,
+        source_url_overwritten_by_override=source_url_overwritten_by_override,
+        source_url_rewritten=source_url_rewritten,
+        opaque_fingerprint_reference=opaque_fingerprint_reference,
+        fingerprint_policy=fingerprint_policy,
+    )
+
+
+def _source_url_preparation_decision(
+    *,
+    decision_id: str,
+    account_id: str,
+    beacon_id: str | None = None,
+    requested_beacon_id: str | None = None,
+    source_url: BeaconSourceUrl,
+    prepared_source_url: BeaconPreparedSourceUrl,
+    outcome: BeaconSourceUrlPreparationOutcome,
+    safe_reason_code: str,
+    duplicate_source_url_blocking_policy: bool = False,
+    idempotency_basis: BeaconSourceUrlIdempotencyBasis,
+    source_url_is_unique_key: bool = False,
+    shell_command_text: str | None = None,
+    shell_interpolation_field: str | None = None,
+    tracking_params_ignored: bool = False,
+    tracking_policy_reference: str | None = None,
+    opaque_fingerprint_reference: str | None = None,
+) -> BeaconSourceUrlPreparationDecision:
+    return BeaconSourceUrlPreparationDecision(
+        decision_id=decision_id,
+        account_id=account_id,
+        beacon_id=beacon_id,
+        requested_beacon_id=requested_beacon_id,
+        submitted_source_url=source_url,
+        prepared_source_url=prepared_source_url,
+        outcome=outcome,
+        safe_reason_code=safe_reason_code,
+        duplicate_source_url_blocking_policy=duplicate_source_url_blocking_policy,
+        idempotency_basis=idempotency_basis,
+        source_url_is_unique_key=source_url_is_unique_key,
+        shell_command_text=shell_command_text,
+        shell_interpolation_field=shell_interpolation_field,
+        tracking_params_ignored=tracking_params_ignored,
+        tracking_policy_reference=tracking_policy_reference,
+        opaque_fingerprint_reference=opaque_fingerprint_reference,
     )
 
 
@@ -559,6 +661,253 @@ _LAST_WRITE_WINS_MUTATION = BeaconMutationDecision(
     conflict_fields=("interval_minutes",),
     reason_code="LAST_WRITE_WINS_AUTHORITATIVE",
     reason="Synthetic same-field conflict resolves by later successful save.",
+)
+
+_SOURCE_URL_PREPARED_CREATED = _source_url(
+    "evidence-bm-prep-created-001",
+    "https://example.invalid/search?query=beacon-management&city=synthetic&case=created",
+)
+
+_SOURCE_URL_PREPARED_REPLAYED = _source_url(
+    "evidence-bm-prep-replayed-001",
+    "https://example.invalid/search?query=beacon-management&city=synthetic&case=replayed",
+)
+
+_SOURCE_URL_PREPARED_MALFORMED = _source_url(
+    "evidence-bm-prep-malformed-001",
+    "https://example.invalid/%zz-malformed-source-url",
+)
+
+_SOURCE_URL_PREPARED_TRACKING = _source_url(
+    "evidence-bm-prep-tracking-001",
+    "https://example.invalid/search?query=beacon-management&utm_source=synthetic&utm_campaign=fixture",
+)
+
+_SOURCE_URL_PREPARED_SHELL = _source_url(
+    "evidence-bm-prep-shell-001",
+    "https://example.invalid/search?query=beacon-management&city=synthetic&case=shell",
+)
+
+_SOURCE_URL_PREPARED_FINGERPRINT = _source_url(
+    "evidence-bm-prep-fingerprint-001",
+    "https://example.invalid/search?query=beacon-management&city=synthetic&case=fingerprint",
+)
+
+_SOURCE_URL_PREPARED_OVERRIDE = _source_url(
+    "evidence-bm-prep-override-001",
+    "https://example.invalid/search?query=beacon-management&city=synthetic&case=override",
+)
+
+_SOURCE_URL_PREPARED_CREATED_POLICY = _prepared_source_url(
+    prepared_source_url_reference="prepared-ref-bm-prep-created-001",
+    source_url=_SOURCE_URL_PREPARED_CREATED,
+    classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+)
+
+_SOURCE_URL_PREPARED_REPLAYED_POLICY = _prepared_source_url(
+    prepared_source_url_reference="prepared-ref-bm-prep-replayed-001",
+    source_url=_SOURCE_URL_PREPARED_REPLAYED,
+    classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+)
+
+_SOURCE_URL_PREPARED_MALFORMED_POLICY = _prepared_source_url(
+    prepared_source_url_reference="prepared-ref-bm-prep-malformed-001",
+    source_url=_SOURCE_URL_PREPARED_MALFORMED,
+    classification=BeaconSourceUrlSafetyClassification.MALFORMED,
+)
+
+_SOURCE_URL_PREPARED_FINGERPRINT_POLICY = _prepared_source_url(
+    prepared_source_url_reference="prepared-ref-bm-prep-fingerprint-001",
+    source_url=_SOURCE_URL_PREPARED_FINGERPRINT,
+    classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    opaque_fingerprint_reference="fingerprint-bm-prep-001",
+    fingerprint_policy=_fingerprint_policy(
+        policy_reference="policy-bm-prep-fingerprint-001",
+        comparison_reference="comparison-bm-prep-001",
+        idempotency_reference="idempotency-bm-prep-001",
+        debug_reference="debug-bm-prep-001",
+    ),
+)
+
+_SOURCE_URL_PREPARED_OVERRIDE_POLICY = _prepared_source_url(
+    prepared_source_url_reference="prepared-ref-bm-prep-override-001",
+    source_url=_SOURCE_URL_PREPARED_OVERRIDE,
+    classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+)
+
+_SOURCE_URL_PREPARED_TRACKING_POLICY = _prepared_source_url(
+    prepared_source_url_reference="prepared-ref-bm-prep-tracking-001",
+    source_url=_SOURCE_URL_PREPARED_TRACKING,
+    classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+)
+
+_SOURCE_URL_PREPARED_SHELL_POLICY = _prepared_source_url(
+    prepared_source_url_reference="prepared-ref-bm-prep-shell-001",
+    source_url=_SOURCE_URL_PREPARED_SHELL,
+    classification=BeaconSourceUrlSafetyClassification.BLOCKED,
+)
+
+_SOURCE_URL_CREATED_BASIS = _idempotency_basis(
+    source_url_reference=_SOURCE_URL_PREPARED_CREATED.evidence_reference,
+    command_reference="command-bm-prep-created-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-created-001",
+)
+
+_SOURCE_URL_REPLAYED_BASIS = _idempotency_basis(
+    source_url_reference=_SOURCE_URL_PREPARED_REPLAYED.evidence_reference,
+    command_reference="command-bm-prep-replayed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-replayed-001",
+    requested_beacon_id="requested-beacon-bm-prep-replayed-001",
+)
+
+_SOURCE_URL_MALFORMED_BASIS = _idempotency_basis(
+    source_url_reference=_SOURCE_URL_PREPARED_MALFORMED.evidence_reference,
+    command_reference="command-bm-prep-malformed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    requested_beacon_id="requested-beacon-bm-prep-malformed-001",
+)
+
+_SOURCE_URL_TRACKING_BASIS = _idempotency_basis(
+    source_url_reference=_SOURCE_URL_PREPARED_TRACKING.evidence_reference,
+    command_reference="command-bm-prep-tracking-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-tracking-001",
+)
+
+_SOURCE_URL_SHELL_BASIS = _idempotency_basis(
+    source_url_reference=_SOURCE_URL_PREPARED_SHELL.evidence_reference,
+    command_reference="command-bm-prep-shell-001",
+    account_id=_OWN_ACCOUNT_ID,
+    requested_beacon_id="requested-beacon-bm-prep-shell-001",
+)
+
+_SOURCE_URL_OVERRIDE_BASIS = _idempotency_basis(
+    source_url_reference=_SOURCE_URL_PREPARED_OVERRIDE.evidence_reference,
+    command_reference="command-bm-prep-override-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-override-001",
+)
+
+_SOURCE_URL_PREP_CREATED_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-created-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-created-001",
+    source_url=_SOURCE_URL_PREPARED_CREATED,
+    prepared_source_url=_SOURCE_URL_PREPARED_CREATED_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+    safe_reason_code="SOURCE_URL_CREATED_WITH_PRESERVATION",
+    idempotency_basis=_SOURCE_URL_CREATED_BASIS,
+)
+
+_SOURCE_URL_PREP_REPLAYED_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-replayed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-replayed-001",
+    requested_beacon_id="requested-beacon-bm-prep-replayed-001",
+    source_url=_SOURCE_URL_PREPARED_REPLAYED,
+    prepared_source_url=_SOURCE_URL_PREPARED_REPLAYED_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.REPLAYED,
+    safe_reason_code="SOURCE_URL_REPLAYED_WITH_EXPLICIT_SCOPE",
+    idempotency_basis=_SOURCE_URL_REPLAYED_BASIS,
+)
+
+_SOURCE_URL_PREP_MALFORMED_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-malformed-001",
+    account_id=_OWN_ACCOUNT_ID,
+    requested_beacon_id="requested-beacon-bm-prep-malformed-001",
+    source_url=_SOURCE_URL_PREPARED_MALFORMED,
+    prepared_source_url=_SOURCE_URL_PREPARED_MALFORMED_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.REJECTED,
+    safe_reason_code="SOURCE_URL_MALFORMED_REJECTED",
+    idempotency_basis=_SOURCE_URL_MALFORMED_BASIS,
+)
+
+_SOURCE_URL_PREP_DUPLICATE_BLOCKING_POLICY_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-duplicate-blocking-001",
+    account_id=_OWN_ACCOUNT_ID,
+    requested_beacon_id="requested-beacon-bm-prep-duplicate-blocking-001",
+    source_url=_SOURCE_URL_PREPARED_CREATED,
+    prepared_source_url=_SOURCE_URL_PREPARED_CREATED_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.REJECTED,
+    safe_reason_code="DUPLICATE_URL_BLOCKING_POLICY_NOT_ALLOWED",
+    idempotency_basis=_idempotency_basis(
+        source_url_reference=_SOURCE_URL_PREPARED_CREATED.evidence_reference,
+        command_reference="command-bm-prep-duplicate-blocking-001",
+        account_id=_OWN_ACCOUNT_ID,
+        requested_beacon_id="requested-beacon-bm-prep-duplicate-blocking-001",
+    ),
+)
+
+_SOURCE_URL_PREP_SOURCE_ONLY_IDEMPOTENCY_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-source-only-idempotency-001",
+    account_id=_OWN_ACCOUNT_ID,
+    requested_beacon_id="requested-beacon-bm-prep-source-only-idempotency-001",
+    source_url=_SOURCE_URL_PREPARED_CREATED,
+    prepared_source_url=_SOURCE_URL_PREPARED_CREATED_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.REJECTED,
+    safe_reason_code="SOURCE_URL_ONLY_IDEMPOTENCY_BASIS_REJECTED",
+    idempotency_basis=_idempotency_basis(
+        source_url_reference=_SOURCE_URL_PREPARED_CREATED.evidence_reference,
+        command_reference="command-bm-prep-source-only-idempotency-001",
+        account_id=_OWN_ACCOUNT_ID,
+        requested_beacon_id="requested-beacon-bm-prep-source-only-idempotency-001",
+    ),
+)
+
+_SOURCE_URL_PREP_OVERRIDE_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-override-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-override-001",
+    source_url=_SOURCE_URL_PREPARED_OVERRIDE,
+    prepared_source_url=_SOURCE_URL_PREPARED_OVERRIDE_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+    safe_reason_code="SOURCE_URL_PRESERVED_ACROSS_OVERRIDE",
+    idempotency_basis=_SOURCE_URL_OVERRIDE_BASIS,
+)
+
+_SOURCE_URL_PREP_FINGERPRINT_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-fingerprint-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-fingerprint-001",
+    source_url=_SOURCE_URL_PREPARED_FINGERPRINT,
+    prepared_source_url=_SOURCE_URL_PREPARED_FINGERPRINT_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+    safe_reason_code="OPAQUE_FINGERPRINT_REFERENCE_ONLY",
+    idempotency_basis=_idempotency_basis(
+        source_url_reference=_SOURCE_URL_PREPARED_FINGERPRINT.evidence_reference,
+        command_reference="command-bm-prep-fingerprint-001",
+        account_id=_OWN_ACCOUNT_ID,
+        beacon_id="beacon-bm-prep-fingerprint-001",
+    ),
+    opaque_fingerprint_reference="fingerprint-bm-prep-001",
+)
+
+_SOURCE_URL_PREP_TRACKING_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-tracking-001",
+    account_id=_OWN_ACCOUNT_ID,
+    beacon_id="beacon-bm-prep-tracking-001",
+    source_url=_SOURCE_URL_PREPARED_TRACKING,
+    prepared_source_url=_SOURCE_URL_PREPARED_TRACKING_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+    safe_reason_code="TRACKING_PARAMS_IGNORED_ONLY_WITH_POLICY",
+    idempotency_basis=_SOURCE_URL_TRACKING_BASIS,
+    tracking_params_ignored=True,
+    tracking_policy_reference="policy-bm-prep-tracking-001",
+)
+
+_SOURCE_URL_PREP_SHELL_DECISION = _source_url_preparation_decision(
+    decision_id="decision-bm-prep-shell-001",
+    account_id=_OWN_ACCOUNT_ID,
+    requested_beacon_id="requested-beacon-bm-prep-shell-001",
+    source_url=_SOURCE_URL_PREPARED_SHELL,
+    prepared_source_url=_SOURCE_URL_PREPARED_SHELL_POLICY,
+    outcome=BeaconSourceUrlPreparationOutcome.BLOCKED,
+    safe_reason_code="EXTERNAL_URL_NOT_INTERPOLATED_INTO_SHELL",
+    idempotency_basis=_SOURCE_URL_SHELL_BASIS,
+    shell_command_text="curl --fail --silent '${submitted_source_url}'",
+    shell_interpolation_field="submitted_source_url",
 )
 
 _OWNER_VERIFIED_CONTEXT = _actor_context(
@@ -924,6 +1273,188 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         account_id=_OWN_ACCOUNT_ID,
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         mutation_decision=_LAST_WRITE_WINS_MUTATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-CREATED-001",
+        summary="Prepared source URL creates a Beacon while preserving submitted evidence.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_beacon(
+            beacon_id="beacon-bm-prep-created-001",
+            account_id=_OWN_ACCOUNT_ID,
+            display_name="Synthetic source URL created beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-created-001",
+            source_reference="source-ref-bm-prep-created-001",
+            snapshot=_ACTIVE_SNAPSHOT,
+        ),
+        source_url=_SOURCE_URL_PREPARED_CREATED,
+        current_configuration=_configuration(
+            beacon_id="beacon-bm-prep-created-001",
+            account_id=_OWN_ACCOUNT_ID,
+            source_url=_SOURCE_URL_PREPARED_CREATED,
+            snapshot=_ACTIVE_SNAPSHOT,
+            display_name="Synthetic source URL created beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-created-001",
+        ),
+        source_url_preparation_decision=_SOURCE_URL_PREP_CREATED_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-REPLAYED-001",
+        summary="Replayed source URL preparation uses explicit scope and idempotency basis.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_beacon(
+            beacon_id="beacon-bm-prep-replayed-001",
+            account_id=_OWN_ACCOUNT_ID,
+            display_name="Synthetic source URL replayed beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-replayed-001",
+            source_reference="source-ref-bm-prep-replayed-001",
+            snapshot=_ACTIVE_SNAPSHOT,
+        ),
+        source_url=_SOURCE_URL_PREPARED_REPLAYED,
+        current_configuration=_configuration(
+            beacon_id="beacon-bm-prep-replayed-001",
+            account_id=_OWN_ACCOUNT_ID,
+            source_url=_SOURCE_URL_PREPARED_REPLAYED,
+            snapshot=_ACTIVE_SNAPSHOT,
+            display_name="Synthetic source URL replayed beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-replayed-001",
+        ),
+        source_url_preparation_decision=_SOURCE_URL_PREP_REPLAYED_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-DUPLICATE-SAME-ACCOUNT-001",
+        summary="Same-account duplicate source URL is allowed for two Beacon IDs.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_DUPLICATE_SAME_ACCOUNT_FIRST,
+        peer_beacon=_DUPLICATE_SAME_ACCOUNT_SECOND,
+        source_url=_DUPLICATE_SAME_ACCOUNT_FIRST.source_url,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-DUPLICATE-CROSS-ACCOUNT-001",
+        summary="Cross-account duplicate source URL is allowed.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_DUPLICATE_SAME_ACCOUNT_FIRST,
+        peer_beacon=_DUPLICATE_CROSS_ACCOUNT,
+        source_url=_DUPLICATE_SAME_ACCOUNT_FIRST.source_url,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-MALFORMED-REJECTED-001",
+        summary="Malformed submitted source URL is rejected before effect.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_SOURCE_URL_PREPARED_MALFORMED,
+        source_url_preparation_decision=_SOURCE_URL_PREP_MALFORMED_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-SOURCE-ONLY-IDEMPOTENCY-REJECTED-001",
+        summary="Source URL alone is not a valid idempotency basis.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_SOURCE_URL_PREPARED_CREATED,
+        source_url_preparation_decision=_SOURCE_URL_PREP_SOURCE_ONLY_IDEMPOTENCY_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-DUPLICATE-BLOCKING-POLICY-REJECTED-001",
+        summary="Duplicate source URL blocking policy is rejected by default.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_SOURCE_URL_PREPARED_CREATED,
+        source_url_preparation_decision=_SOURCE_URL_PREP_DUPLICATE_BLOCKING_POLICY_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-SNAPSHOT-OVERRIDE-PRESERVED-001",
+        summary="Original source URL is preserved across snapshot and override evidence.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_beacon(
+            beacon_id="beacon-bm-prep-override-001",
+            account_id=_OWN_ACCOUNT_ID,
+            display_name="Synthetic source URL override-preserved beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-override-001",
+            source_reference="source-ref-bm-prep-override-001",
+            snapshot=_ACTIVE_SNAPSHOT,
+            overrides=(_ACTIVE_OVERRIDE,),
+        ),
+        source_url=_SOURCE_URL_PREPARED_OVERRIDE,
+        current_configuration=_configuration(
+            beacon_id="beacon-bm-prep-override-001",
+            account_id=_OWN_ACCOUNT_ID,
+            source_url=_SOURCE_URL_PREPARED_OVERRIDE,
+            snapshot=_ACTIVE_SNAPSHOT,
+            display_name="Synthetic source URL override-preserved beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-override-001",
+            overrides=(_ACTIVE_OVERRIDE,),
+        ),
+        source_url_preparation_decision=_SOURCE_URL_PREP_OVERRIDE_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-FINGERPRINT-OPAQUE-001",
+        summary="Opaque fingerprint reference is allowed only under captured policy.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_beacon(
+            beacon_id="beacon-bm-prep-fingerprint-001",
+            account_id=_OWN_ACCOUNT_ID,
+            display_name="Synthetic source URL fingerprint beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-fingerprint-001",
+            source_reference="source-ref-bm-prep-fingerprint-001",
+            snapshot=_ACTIVE_SNAPSHOT,
+        ),
+        source_url=_SOURCE_URL_PREPARED_FINGERPRINT,
+        current_configuration=_configuration(
+            beacon_id="beacon-bm-prep-fingerprint-001",
+            account_id=_OWN_ACCOUNT_ID,
+            source_url=_SOURCE_URL_PREPARED_FINGERPRINT,
+            snapshot=_ACTIVE_SNAPSHOT,
+            display_name="Synthetic source URL fingerprint beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-fingerprint-001",
+        ),
+        source_url_preparation_decision=_SOURCE_URL_PREP_FINGERPRINT_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-TRACKING-POLICY-001",
+        summary="Tracking params are ignored only with explicit captured policy reference.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_beacon(
+            beacon_id="beacon-bm-prep-tracking-001",
+            account_id=_OWN_ACCOUNT_ID,
+            display_name="Synthetic source URL tracking-policy beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-tracking-001",
+            source_reference="source-ref-bm-prep-tracking-001",
+            snapshot=_ACTIVE_SNAPSHOT,
+        ),
+        source_url=_SOURCE_URL_PREPARED_TRACKING,
+        current_configuration=_configuration(
+            beacon_id="beacon-bm-prep-tracking-001",
+            account_id=_OWN_ACCOUNT_ID,
+            source_url=_SOURCE_URL_PREPARED_TRACKING,
+            snapshot=_ACTIVE_SNAPSHOT,
+            display_name="Synthetic source URL tracking-policy beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm-prep-tracking-001",
+        ),
+        source_url_preparation_decision=_SOURCE_URL_PREP_TRACKING_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-SOURCE-URL-PREP-SHELL-BLOCKED-001",
+        summary="Shell command field does not interpolate the submitted external URL.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_SOURCE_URL_PREPARED_SHELL,
+        source_url_preparation_decision=_SOURCE_URL_PREP_SHELL_DECISION,
     ),
     SyntheticFixtureCase(
         fixture_id="FX-BM-AUTHZ-OWNER-UPDATE-VERIFIED-001",

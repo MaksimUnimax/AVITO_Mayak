@@ -10,6 +10,8 @@ from mayak.modules.beacon_management.contracts import (
     BeaconDecisionStatus,
     BeaconParserOutcomeStatus,
     BeaconProtectedAction,
+    BeaconSourceUrlPreparationOutcome,
+    BeaconSourceUrlSafetyClassification,
     BeaconSystemActorClass,
 )
 
@@ -32,25 +34,190 @@ def test_all_fixtures_are_synthetic_and_have_no_real_avito_url() -> None:
         payload_text = fixture.model_dump_json().lower()
         assert all(fragment not in payload_text for fragment in forbidden_fragments)
         if fixture.source_url is not None:
-            assert (
-                fixture.source_url.submitted_url
-                == "https://example.invalid/search?query=beacon-management&city=synthetic"
-            )
+            assert fixture.source_url.submitted_url.startswith("https://example.invalid/")
         if fixture.beacon is not None:
-            assert (
-                fixture.beacon.source_url.submitted_url
-                == "https://example.invalid/search?query=beacon-management&city=synthetic"
-            )
+            assert fixture.beacon.source_url.submitted_url.startswith("https://example.invalid/")
         if fixture.peer_beacon is not None:
-            assert (
-                fixture.peer_beacon.source_url.submitted_url
-                == "https://example.invalid/search?query=beacon-management&city=synthetic"
+            assert fixture.peer_beacon.source_url.submitted_url.startswith(
+                "https://example.invalid/"
             )
         if fixture.current_configuration is not None:
-            assert (
-                fixture.current_configuration.source_url.submitted_url
-                == "https://example.invalid/search?query=beacon-management&city=synthetic"
+            assert fixture.current_configuration.source_url.submitted_url.startswith(
+                "https://example.invalid/"
             )
+
+
+def test_bm04_source_url_fixture_ids_are_present() -> None:
+    expected_ids = (
+        "FX-BM-SOURCE-URL-PREP-CREATED-001",
+        "FX-BM-SOURCE-URL-PREP-REPLAYED-001",
+        "FX-BM-SOURCE-URL-PREP-DUPLICATE-SAME-ACCOUNT-001",
+        "FX-BM-SOURCE-URL-PREP-DUPLICATE-CROSS-ACCOUNT-001",
+        "FX-BM-SOURCE-URL-PREP-MALFORMED-REJECTED-001",
+        "FX-BM-SOURCE-URL-PREP-SOURCE-ONLY-IDEMPOTENCY-REJECTED-001",
+        "FX-BM-SOURCE-URL-PREP-DUPLICATE-BLOCKING-POLICY-REJECTED-001",
+        "FX-BM-SOURCE-URL-PREP-SNAPSHOT-OVERRIDE-PRESERVED-001",
+        "FX-BM-SOURCE-URL-PREP-FINGERPRINT-OPAQUE-001",
+        "FX-BM-SOURCE-URL-PREP-TRACKING-POLICY-001",
+        "FX-BM-SOURCE-URL-PREP-SHELL-BLOCKED-001",
+    )
+
+    for fixture_id in expected_ids:
+        assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
+        assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
+
+
+def test_created_source_url_fixture_preserves_submitted_url() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-CREATED-001"]
+
+    assert fixture.beacon is not None
+    assert fixture.source_url_preparation_decision is not None
+    assert fixture.source_url is not None
+    assert fixture.current_configuration is not None
+    assert (
+        fixture.current_configuration.source_url.submitted_url == fixture.source_url.submitted_url
+    )
+    assert (
+        fixture.source_url_preparation_decision.prepared_source_url.preserved_submitted_url
+        == fixture.source_url.submitted_url
+    )
+    assert (
+        fixture.source_url_preparation_decision.prepared_source_url.source_url_overwritten_by_snapshot
+        is False
+    )
+    assert (
+        fixture.source_url_preparation_decision.prepared_source_url.source_url_overwritten_by_override
+        is False
+    )
+    assert (
+        fixture.source_url_preparation_decision.outcome is BeaconSourceUrlPreparationOutcome.CREATED
+    )
+
+
+def test_replayed_source_url_fixture_does_not_use_source_url_alone_as_idempotency_basis() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-REPLAYED-001"]
+
+    assert fixture.source_url_preparation_decision is not None
+    basis = fixture.source_url_preparation_decision.idempotency_basis
+    assert basis.source_url_only_basis is False
+    assert basis.command_reference is not None
+    assert basis.account_id is not None
+    assert basis.beacon_id is not None
+    assert (
+        fixture.source_url_preparation_decision.outcome
+        is BeaconSourceUrlPreparationOutcome.REPLAYED
+    )
+
+
+def test_bm04_duplicate_same_account_source_url_fixture_has_same_url_and_different_beacon_ids() -> (
+    None
+):
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-DUPLICATE-SAME-ACCOUNT-001"]
+
+    assert fixture.beacon is not None
+    assert fixture.peer_beacon is not None
+    assert fixture.beacon.source_url.submitted_url == fixture.peer_beacon.source_url.submitted_url
+    assert fixture.beacon.beacon_id != fixture.peer_beacon.beacon_id
+    assert fixture.beacon.account_id == fixture.peer_beacon.account_id
+
+
+def test_bm04_duplicate_cross_account_source_url_allowed() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-DUPLICATE-CROSS-ACCOUNT-001"]
+
+    assert fixture.beacon is not None
+    assert fixture.peer_beacon is not None
+    assert fixture.beacon.source_url.submitted_url == fixture.peer_beacon.source_url.submitted_url
+    assert fixture.beacon.account_id != fixture.peer_beacon.account_id
+
+
+def test_malformed_source_url_fixture_is_rejected_before_effect() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-MALFORMED-REJECTED-001"]
+
+    assert fixture.source_url_preparation_decision is not None
+    assert (
+        fixture.source_url_preparation_decision.outcome
+        is BeaconSourceUrlPreparationOutcome.REJECTED
+    )
+    assert (
+        fixture.source_url_preparation_decision.prepared_source_url.safety_classification
+        is BeaconSourceUrlSafetyClassification.MALFORMED
+    )
+
+
+def test_source_url_alone_idempotency_basis_fixture_is_rejected_or_blocked() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-SOURCE-ONLY-IDEMPOTENCY-REJECTED-001"]
+
+    assert fixture.source_url_preparation_decision is not None
+    assert (
+        fixture.source_url_preparation_decision.outcome
+        is BeaconSourceUrlPreparationOutcome.REJECTED
+    )
+    assert fixture.source_url_preparation_decision.idempotency_basis.source_url_only_basis is False
+    assert fixture.source_url_preparation_decision.idempotency_basis.command_reference is not None
+
+
+def test_duplicate_url_blocking_policy_fixture_is_rejected_by_default() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-BM-SOURCE-URL-PREP-DUPLICATE-BLOCKING-POLICY-REJECTED-001"
+    ]
+
+    assert fixture.source_url_preparation_decision is not None
+    assert (
+        fixture.source_url_preparation_decision.outcome
+        is BeaconSourceUrlPreparationOutcome.REJECTED
+    )
+    assert fixture.source_url_preparation_decision.duplicate_source_url_blocking_policy is False
+
+
+def test_original_source_url_is_not_overwritten_by_snapshot_or_override_fixture() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-SNAPSHOT-OVERRIDE-PRESERVED-001"]
+
+    assert fixture.beacon is not None
+    assert fixture.current_configuration is not None
+    assert fixture.source_url_preparation_decision is not None
+    assert fixture.source_url is not None
+    assert (
+        fixture.current_configuration.source_url.submitted_url == fixture.source_url.submitted_url
+    )
+    assert (
+        fixture.source_url_preparation_decision.prepared_source_url.source_url_overwritten_by_snapshot
+        is False
+    )
+    assert (
+        fixture.source_url_preparation_decision.prepared_source_url.source_url_overwritten_by_override
+        is False
+    )
+
+
+def test_canonical_fingerprint_fixture_is_opaque_and_not_configuration_authority() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-FINGERPRINT-OPAQUE-001"]
+
+    assert fixture.source_url_preparation_decision is not None
+    prepared = fixture.source_url_preparation_decision.prepared_source_url
+    assert prepared.opaque_fingerprint_reference is not None
+    assert prepared.fingerprint_policy is not None
+    assert prepared.fingerprint_policy.authoritative_configuration_source is False
+
+
+def test_tracking_params_fixture_requires_explicit_captured_policy_reference() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-TRACKING-POLICY-001"]
+
+    assert fixture.source_url_preparation_decision is not None
+    assert fixture.source_url_preparation_decision.tracking_params_ignored is True
+    assert fixture.source_url_preparation_decision.tracking_policy_reference is not None
+
+
+def test_shell_interpolation_fixture_blocks_external_url_in_shell_command_field() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-SOURCE-URL-PREP-SHELL-BLOCKED-001"]
+
+    assert fixture.source_url_preparation_decision is not None
+    assert fixture.source_url is not None
+    shell_command_text = fixture.source_url_preparation_decision.shell_command_text
+    assert shell_command_text is not None
+    assert fixture.source_url.submitted_url not in shell_command_text
+    assert (
+        fixture.source_url_preparation_decision.shell_interpolation_field == "submitted_source_url"
+    )
 
 
 def test_duplicate_same_account_source_url_fixture_has_same_url_and_different_beacon_ids() -> None:
@@ -207,8 +374,7 @@ def test_admin_support_read_fixture_has_server_side_scope_and_audit_reference() 
     assert fixture.authorization_decision is not None
     assert fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.ALLOWED
     assert (
-        fixture.authorization_decision.protected_action
-        is BeaconProtectedAction.ADMIN_SUPPORT_READ
+        fixture.authorization_decision.protected_action is BeaconProtectedAction.ADMIN_SUPPORT_READ
     )
     assert fixture.authorization_decision.actor_context.is_verified is True
     assert fixture.authorization_decision.server_role_scope_reference is not None
@@ -220,8 +386,7 @@ def test_admin_support_requires_verified_fixture_is_unverified() -> None:
 
     assert fixture.authorization_decision is not None
     assert (
-        fixture.authorization_decision.outcome
-        is BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR
+        fixture.authorization_decision.outcome is BeaconAuthorizationOutcome.REQUIRES_VERIFIED_ACTOR
     )
     assert fixture.authorization_decision.actor_context.is_verified is False
     assert fixture.authorization_decision.server_role_scope_reference is None

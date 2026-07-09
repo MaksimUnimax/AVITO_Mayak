@@ -17,12 +17,118 @@ from mayak.modules.beacon_management.contracts import (
     BeaconAuthorizationDecision,
     BeaconAuthorizationOutcome,
     BeaconOwnershipDecision,
+    BeaconPreparedSourceUrl,
     BeaconProtectedAction,
+    BeaconSourceUrl,
+    BeaconSourceUrlFingerprintPolicy,
+    BeaconSourceUrlIdempotencyBasis,
+    BeaconSourceUrlPreparationDecision,
+    BeaconSourceUrlPreparationOutcome,
+    BeaconSourceUrlSafetyClassification,
     BeaconSystemActorClass,
 )
 from mayak.platform import boundaries
 
 _SUBMITTED_AT = datetime(2026, 7, 9, 10, 0, tzinfo=timezone.utc)
+
+
+def _bm04_source_url(submitted_url: str, evidence_reference: str) -> BeaconSourceUrl:
+    return BeaconSourceUrl(
+        submitted_url=submitted_url,
+        evidence_reference=evidence_reference,
+        submitted_at=_SUBMITTED_AT,
+        source_channel="user-submitted",
+        submitted_by_label="synthetic-user",
+    )
+
+
+def _bm04_fingerprint_policy() -> BeaconSourceUrlFingerprintPolicy:
+    return BeaconSourceUrlFingerprintPolicy(
+        policy_reference="policy-contract-bm04-001",
+        comparison_reference="comparison-contract-bm04-001",
+        idempotency_reference="idempotency-contract-bm04-001",
+        debug_reference="debug-contract-bm04-001",
+    )
+
+
+def _bm04_prepared_source_url(
+    source_url: BeaconSourceUrl,
+    *,
+    classification: BeaconSourceUrlSafetyClassification,
+    opaque_fingerprint_reference: str | None = None,
+    fingerprint_policy: BeaconSourceUrlFingerprintPolicy | None = None,
+    source_url_overwritten_by_snapshot: bool = False,
+    source_url_overwritten_by_override: bool = False,
+    source_url_rewritten: bool = False,
+) -> BeaconPreparedSourceUrl:
+    return BeaconPreparedSourceUrl(
+        prepared_source_url_reference="prepared-contract-bm04-001",
+        submitted_source_url=source_url,
+        preserved_submitted_url=source_url.submitted_url,
+        safety_classification=classification,
+        source_url_overwritten_by_snapshot=source_url_overwritten_by_snapshot,
+        source_url_overwritten_by_override=source_url_overwritten_by_override,
+        source_url_rewritten=source_url_rewritten,
+        opaque_fingerprint_reference=opaque_fingerprint_reference,
+        fingerprint_policy=fingerprint_policy,
+    )
+
+
+def _bm04_idempotency_basis(
+    source_url: BeaconSourceUrl,
+    *,
+    command_reference: str,
+    account_id: str,
+    beacon_id: str | None = None,
+    requested_beacon_id: str | None = None,
+    source_url_only_basis: bool = False,
+) -> BeaconSourceUrlIdempotencyBasis:
+    return BeaconSourceUrlIdempotencyBasis(
+        source_url_reference=source_url.evidence_reference,
+        command_reference=command_reference,
+        account_id=account_id,
+        beacon_id=beacon_id,
+        requested_beacon_id=requested_beacon_id,
+        source_url_only_basis=source_url_only_basis,
+    )
+
+
+def _bm04_preparation_decision(
+    source_url: BeaconSourceUrl,
+    *,
+    prepared_source_url: BeaconPreparedSourceUrl,
+    outcome: BeaconSourceUrlPreparationOutcome,
+    safe_reason_code: str,
+    account_id: str = "acct-contract-bm04-001",
+    beacon_id: str | None = None,
+    requested_beacon_id: str | None = None,
+    duplicate_source_url_blocking_policy: bool = False,
+    idempotency_basis: BeaconSourceUrlIdempotencyBasis,
+    source_url_is_unique_key: bool = False,
+    shell_command_text: str | None = None,
+    shell_interpolation_field: str | None = None,
+    tracking_params_ignored: bool = False,
+    tracking_policy_reference: str | None = None,
+    opaque_fingerprint_reference: str | None = None,
+) -> BeaconSourceUrlPreparationDecision:
+    return BeaconSourceUrlPreparationDecision(
+        decision_id="decision-contract-bm04-001",
+        account_id=account_id,
+        beacon_id=beacon_id,
+        requested_beacon_id=requested_beacon_id,
+        submitted_source_url=source_url,
+        prepared_source_url=prepared_source_url,
+        outcome=outcome,
+        safe_reason_code=safe_reason_code,
+        duplicate_source_url_blocking_policy=duplicate_source_url_blocking_policy,
+        idempotency_basis=idempotency_basis,
+        source_url_is_unique_key=source_url_is_unique_key,
+        shell_command_text=shell_command_text,
+        shell_interpolation_field=shell_interpolation_field,
+        tracking_params_ignored=tracking_params_ignored,
+        tracking_policy_reference=tracking_policy_reference,
+        opaque_fingerprint_reference=opaque_fingerprint_reference,
+    )
 
 
 def _assert_no_forbidden_imports(module_path: Path, allowed_roots: set[str]) -> None:
@@ -69,6 +175,470 @@ def test_beacon_management_package_exports_bm03_authorization_primitives() -> No
     for name in bm03_names:
         assert hasattr(beacon_management, name)
         assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
+def test_beacon_management_package_exports_bm04_source_url_primitives() -> None:
+    bm04_names = (
+        "BeaconPreparedSourceUrl",
+        "BeaconSourceUrl",
+        "BeaconSourceUrlFingerprintPolicy",
+        "BeaconSourceUrlIdempotencyBasis",
+        "BeaconSourceUrlPreparationDecision",
+        "BeaconSourceUrlPreparationOutcome",
+        "BeaconSourceUrlSafetyClassification",
+    )
+
+    for name in bm04_names:
+        assert hasattr(beacon_management, name)
+        assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
+def test_beacon_management_contract_module_exports_bm04_source_url_primitives() -> None:
+    assert BeaconPreparedSourceUrl.__name__ == "BeaconPreparedSourceUrl"
+    assert BeaconSourceUrl.__name__ == "BeaconSourceUrl"
+    assert BeaconSourceUrlFingerprintPolicy.__name__ == "BeaconSourceUrlFingerprintPolicy"
+    assert BeaconSourceUrlIdempotencyBasis.__name__ == "BeaconSourceUrlIdempotencyBasis"
+    assert BeaconSourceUrlPreparationDecision.__name__ == "BeaconSourceUrlPreparationDecision"
+    assert BeaconSourceUrlPreparationOutcome.__name__ == "BeaconSourceUrlPreparationOutcome"
+    assert BeaconSourceUrlSafetyClassification.__name__ == "BeaconSourceUrlSafetyClassification"
+
+
+def test_submitted_source_url_is_preserved_and_not_overwritten() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=preserved-source&city=synthetic",
+        "evidence-contract-bm04-preserved-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+    decision = _bm04_preparation_decision(
+        source_url,
+        prepared_source_url=prepared_source_url,
+        outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+        safe_reason_code="SOURCE_URL_PRESERVED",
+        beacon_id="beacon-contract-bm04-preserved-001",
+        idempotency_basis=_bm04_idempotency_basis(
+            source_url,
+            command_reference="command-contract-bm04-preserved-001",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-preserved-001",
+        ),
+    )
+
+    assert decision.submitted_source_url.submitted_url == source_url.submitted_url
+    assert decision.prepared_source_url.preserved_submitted_url == source_url.submitted_url
+    assert decision.prepared_source_url.source_url_overwritten_by_snapshot is False
+    assert decision.prepared_source_url.source_url_overwritten_by_override is False
+
+
+def test_same_account_duplicate_source_url_allowed_when_beacon_ids_differ() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=duplicate-source&city=synthetic",
+        "evidence-contract-bm04-duplicate-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+    first = _bm04_preparation_decision(
+        source_url,
+        prepared_source_url=prepared_source_url,
+        outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+        safe_reason_code="DUPLICATE_SOURCE_URL_ALLOWED",
+        beacon_id="beacon-contract-bm04-duplicate-a",
+        idempotency_basis=_bm04_idempotency_basis(
+            source_url,
+            command_reference="command-contract-bm04-duplicate-a",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-duplicate-a",
+        ),
+    )
+    second = _bm04_preparation_decision(
+        source_url,
+        prepared_source_url=prepared_source_url,
+        outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+        safe_reason_code="DUPLICATE_SOURCE_URL_ALLOWED",
+        beacon_id="beacon-contract-bm04-duplicate-b",
+        idempotency_basis=_bm04_idempotency_basis(
+            source_url,
+            command_reference="command-contract-bm04-duplicate-b",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-duplicate-b",
+        ),
+    )
+
+    assert first.submitted_source_url.submitted_url == second.submitted_source_url.submitted_url
+    assert first.beacon_id != second.beacon_id
+    assert first.account_id == second.account_id
+    assert first.outcome is BeaconSourceUrlPreparationOutcome.CREATED
+    assert second.outcome is BeaconSourceUrlPreparationOutcome.CREATED
+
+
+def test_cross_account_duplicate_source_url_can_be_represented_as_allowed() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=cross-account-duplicate&city=synthetic",
+        "evidence-contract-bm04-cross-duplicate-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+    own = _bm04_preparation_decision(
+        source_url,
+        prepared_source_url=prepared_source_url,
+        outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+        safe_reason_code="CROSS_ACCOUNT_DUPLICATE_ALLOWED",
+        account_id="acct-contract-bm04-001",
+        beacon_id="beacon-contract-bm04-cross-a",
+        idempotency_basis=_bm04_idempotency_basis(
+            source_url,
+            command_reference="command-contract-bm04-cross-a",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-cross-a",
+        ),
+    )
+    foreign = _bm04_preparation_decision(
+        source_url,
+        prepared_source_url=prepared_source_url,
+        outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+        safe_reason_code="CROSS_ACCOUNT_DUPLICATE_ALLOWED",
+        account_id="acct-contract-bm04-002",
+        beacon_id="beacon-contract-bm04-cross-b",
+        idempotency_basis=_bm04_idempotency_basis(
+            source_url,
+            command_reference="command-contract-bm04-cross-b",
+            account_id="acct-contract-bm04-002",
+            beacon_id="beacon-contract-bm04-cross-b",
+        ),
+    )
+
+    assert own.submitted_source_url.submitted_url == foreign.submitted_source_url.submitted_url
+    assert own.account_id != foreign.account_id
+
+
+def test_source_url_alone_cannot_be_valid_idempotency_basis() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=idempotency-source-only&city=synthetic",
+        "evidence-contract-bm04-idempotency-001",
+    )
+
+    with pytest.raises(ValidationError):
+        BeaconSourceUrlIdempotencyBasis(
+            source_url_reference=source_url.evidence_reference,
+            source_url_only_basis=True,
+        )
+
+
+def _assert_blank_preparation_identity_fields_are_rejected(
+    field_name: str,
+) -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=blank-field&city=synthetic",
+        "evidence-contract-bm04-blank-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+    idempotency_basis = _bm04_idempotency_basis(
+        source_url,
+        command_reference="command-contract-bm04-blank-001",
+        account_id="acct-contract-bm04-001",
+        beacon_id="beacon-contract-bm04-blank-001",
+    )
+    with pytest.raises(ValidationError):
+        if field_name == "account_id":
+            BeaconSourceUrlPreparationDecision(
+                decision_id="decision-contract-bm04-blank-001",
+                account_id="",
+                beacon_id="beacon-contract-bm04-blank-001",
+                submitted_source_url=source_url,
+                prepared_source_url=prepared_source_url,
+                outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+                safe_reason_code="BLANK_FIELD_REJECTED",
+                idempotency_basis=idempotency_basis,
+            )
+        elif field_name == "beacon_id":
+            BeaconSourceUrlPreparationDecision(
+                decision_id="decision-contract-bm04-blank-001",
+                account_id="acct-contract-bm04-001",
+                beacon_id="",
+                submitted_source_url=source_url,
+                prepared_source_url=prepared_source_url,
+                outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+                safe_reason_code="BLANK_FIELD_REJECTED",
+                idempotency_basis=idempotency_basis,
+            )
+        elif field_name == "requested_beacon_id":
+            BeaconSourceUrlPreparationDecision(
+                decision_id="decision-contract-bm04-blank-001",
+                account_id="acct-contract-bm04-001",
+                requested_beacon_id="",
+                submitted_source_url=source_url,
+                prepared_source_url=prepared_source_url,
+                outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+                safe_reason_code="BLANK_FIELD_REJECTED",
+                idempotency_basis=idempotency_basis,
+            )
+        else:
+            raise AssertionError(f"unsupported field name: {field_name}")
+
+
+@pytest.mark.parametrize("field_name", ("account_id", "beacon_id", "requested_beacon_id"))
+def test_blank_preparation_identity_fields_are_rejected_parametrized(
+    field_name: str,
+) -> None:
+    _assert_blank_preparation_identity_fields_are_rejected(field_name)
+
+
+def test_blank_idempotency_command_reference_is_rejected() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=blank-command&city=synthetic",
+        "evidence-contract-bm04-command-001",
+    )
+
+    with pytest.raises(ValidationError):
+        BeaconSourceUrlIdempotencyBasis(
+            source_url_reference=source_url.evidence_reference,
+            command_reference="",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-command-001",
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    (
+        BeaconSourceUrlPreparationOutcome.CREATED,
+        BeaconSourceUrlPreparationOutcome.REPLAYED,
+    ),
+)
+def test_malformed_source_url_cannot_produce_created_or_replayed(
+    outcome: BeaconSourceUrlPreparationOutcome,
+) -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/%zz-malformed-source-url",
+        "evidence-contract-bm04-malformed-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.MALFORMED,
+    )
+
+    with pytest.raises(ValidationError):
+        BeaconSourceUrlPreparationDecision(
+            decision_id=f"decision-contract-bm04-malformed-{outcome.value.lower()}",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-malformed-001",
+            submitted_source_url=source_url,
+            prepared_source_url=prepared_source_url,
+            outcome=outcome,
+            safe_reason_code="MALFORMED_URL_CANNOT_BE_CREATED_OR_REPLAYED",
+            idempotency_basis=_bm04_idempotency_basis(
+                source_url,
+                command_reference="command-contract-bm04-malformed-001",
+                account_id="acct-contract-bm04-001",
+                beacon_id="beacon-contract-bm04-malformed-001",
+            ),
+        )
+
+
+def test_duplicate_url_blocking_policy_cannot_be_default_valid_behavior() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=blocking-policy&city=synthetic",
+        "evidence-contract-bm04-blocking-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+
+    with pytest.raises(ValidationError):
+        BeaconSourceUrlPreparationDecision(
+            decision_id="decision-contract-bm04-blocking-001",
+            account_id="acct-contract-bm04-001",
+            requested_beacon_id="requested-beacon-contract-bm04-blocking-001",
+            submitted_source_url=source_url,
+            prepared_source_url=prepared_source_url,
+            outcome=BeaconSourceUrlPreparationOutcome.REJECTED,
+            safe_reason_code="DUPLICATE_BLOCKING_POLICY_NOT_ALLOWED",
+            duplicate_source_url_blocking_policy=True,
+            idempotency_basis=_bm04_idempotency_basis(
+                source_url,
+                command_reference="command-contract-bm04-blocking-001",
+                account_id="acct-contract-bm04-001",
+                requested_beacon_id="requested-beacon-contract-bm04-blocking-001",
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "shell_command_text",
+        "shell_interpolation_field",
+    ),
+)
+def test_external_source_url_cannot_appear_in_shell_command_text(
+    field_name: str,
+) -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=shell-boundary&city=synthetic",
+        "evidence-contract-bm04-shell-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.BLOCKED,
+    )
+    with pytest.raises(ValidationError):
+        if field_name == "shell_command_text":
+            BeaconSourceUrlPreparationDecision(
+                decision_id="decision-contract-bm04-shell-001",
+                account_id="acct-contract-bm04-001",
+                requested_beacon_id="requested-beacon-contract-bm04-shell-001",
+                submitted_source_url=source_url,
+                prepared_source_url=prepared_source_url,
+                outcome=BeaconSourceUrlPreparationOutcome.BLOCKED,
+                safe_reason_code="EXTERNAL_URL_MUST_NOT_BE_INTERPOLATED",
+                idempotency_basis=_bm04_idempotency_basis(
+                    source_url,
+                    command_reference="command-contract-bm04-shell-001",
+                    account_id="acct-contract-bm04-001",
+                    requested_beacon_id="requested-beacon-contract-bm04-shell-001",
+                ),
+                shell_command_text=f"curl --fail {source_url.submitted_url}",
+            )
+        elif field_name == "shell_interpolation_field":
+            BeaconSourceUrlPreparationDecision(
+                decision_id="decision-contract-bm04-shell-001",
+                account_id="acct-contract-bm04-001",
+                requested_beacon_id="requested-beacon-contract-bm04-shell-001",
+                submitted_source_url=source_url,
+                prepared_source_url=prepared_source_url,
+                outcome=BeaconSourceUrlPreparationOutcome.BLOCKED,
+                safe_reason_code="EXTERNAL_URL_MUST_NOT_BE_INTERPOLATED",
+                idempotency_basis=_bm04_idempotency_basis(
+                    source_url,
+                    command_reference="command-contract-bm04-shell-001",
+                    account_id="acct-contract-bm04-001",
+                    requested_beacon_id="requested-beacon-contract-bm04-shell-001",
+                ),
+                shell_interpolation_field=source_url.submitted_url,
+            )
+        else:
+            raise AssertionError(f"unsupported field name: {field_name}")
+
+
+def test_canonical_fingerprint_cannot_be_marked_as_configuration_authority() -> None:
+    with pytest.raises(ValidationError):
+        BeaconSourceUrlFingerprintPolicy(
+            policy_reference="policy-contract-bm04-authority-001",
+            comparison_reference="comparison-contract-bm04-authority-001",
+            idempotency_reference="idempotency-contract-bm04-authority-001",
+            debug_reference="debug-contract-bm04-authority-001",
+            authoritative_configuration_source=True,
+        )
+
+
+def test_tracking_params_cannot_be_ignored_without_captured_policy_reference() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=tracking-policy&city=synthetic&utm_source=test",
+        "evidence-contract-bm04-tracking-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+
+    with pytest.raises(ValidationError):
+        BeaconSourceUrlPreparationDecision(
+            decision_id="decision-contract-bm04-tracking-001",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-tracking-001",
+            submitted_source_url=source_url,
+            prepared_source_url=prepared_source_url,
+            outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+            safe_reason_code="TRACKING_POLICY_REFERENCE_REQUIRED",
+            idempotency_basis=_bm04_idempotency_basis(
+                source_url,
+                command_reference="command-contract-bm04-tracking-001",
+                account_id="acct-contract-bm04-001",
+                beacon_id="beacon-contract-bm04-tracking-001",
+            ),
+            tracking_params_ignored=True,
+        )
+
+
+def test_source_url_unique_key_cannot_be_represented_as_valid_behavior() -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=unique-key&city=synthetic",
+        "evidence-contract-bm04-unique-key-001",
+    )
+    prepared_source_url = _bm04_prepared_source_url(
+        source_url,
+        classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+    )
+
+    with pytest.raises(ValidationError):
+        BeaconSourceUrlPreparationDecision(
+            decision_id="decision-contract-bm04-unique-key-001",
+            account_id="acct-contract-bm04-001",
+            beacon_id="beacon-contract-bm04-unique-key-001",
+            submitted_source_url=source_url,
+            prepared_source_url=prepared_source_url,
+            outcome=BeaconSourceUrlPreparationOutcome.CREATED,
+            safe_reason_code="SOURCE_URL_UNIQUE_KEY_NOT_ALLOWED",
+            idempotency_basis=_bm04_idempotency_basis(
+                source_url,
+                command_reference="command-contract-bm04-unique-key-001",
+                account_id="acct-contract-bm04-001",
+                beacon_id="beacon-contract-bm04-unique-key-001",
+            ),
+            source_url_is_unique_key=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "overwritten_field",
+    (
+        "source_url_overwritten_by_snapshot",
+        "source_url_overwritten_by_override",
+        "source_url_rewritten",
+    ),
+)
+def test_prepared_source_url_overwrite_flags_are_rejected(overwritten_field: str) -> None:
+    source_url = _bm04_source_url(
+        "https://example.invalid/search?query=overwrite-boundary&city=synthetic",
+        "evidence-contract-bm04-overwrite-001",
+    )
+    with pytest.raises(ValidationError):
+        if overwritten_field == "source_url_overwritten_by_snapshot":
+            BeaconPreparedSourceUrl(
+                prepared_source_url_reference="prepared-contract-bm04-overwrite-001",
+                submitted_source_url=source_url,
+                preserved_submitted_url=source_url.submitted_url,
+                safety_classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+                source_url_overwritten_by_snapshot=True,
+            )
+        elif overwritten_field == "source_url_overwritten_by_override":
+            BeaconPreparedSourceUrl(
+                prepared_source_url_reference="prepared-contract-bm04-overwrite-001",
+                submitted_source_url=source_url,
+                preserved_submitted_url=source_url.submitted_url,
+                safety_classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+                source_url_overwritten_by_override=True,
+            )
+        elif overwritten_field == "source_url_rewritten":
+            BeaconPreparedSourceUrl(
+                prepared_source_url_reference="prepared-contract-bm04-overwrite-001",
+                submitted_source_url=source_url,
+                preserved_submitted_url=source_url.submitted_url,
+                safety_classification=BeaconSourceUrlSafetyClassification.PRESERVED,
+                source_url_rewritten=True,
+            )
+        else:
+            raise AssertionError(f"unsupported field name: {overwritten_field}")
 
 
 def test_verified_owner_update_decision_is_allowed_for_matching_account() -> None:
@@ -427,8 +997,7 @@ def test_system_lifecycle_action_requires_service_actor_class_causation_and_poli
 
     assert decision.action_causation == causation
     assert (
-        decision.action_causation.service_actor_class
-        is BeaconSystemActorClass.MAINTENANCE_SERVICE
+        decision.action_causation.service_actor_class is BeaconSystemActorClass.MAINTENANCE_SERVICE
     )
 
 

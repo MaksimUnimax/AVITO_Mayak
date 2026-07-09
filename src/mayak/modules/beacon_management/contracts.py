@@ -305,6 +305,199 @@ class BeaconSourceUrl(BaseModel):
     submitted_by_label: str | None = None
 
 
+class BeaconSourceUrlSafetyClassification(str, Enum):
+    """Semantic safety classifications for source URL preparation."""
+
+    PRESERVED = "PRESERVED"
+    MALFORMED = "MALFORMED"
+    BLOCKED = "BLOCKED"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+    REWRITTEN = "REWRITTEN"
+
+
+class BeaconSourceUrlPreparationOutcome(str, Enum):
+    """Deterministic outcomes for source URL preparation semantics."""
+
+    CREATED = "CREATED"
+    REPLAYED = "REPLAYED"
+    REJECTED = "REJECTED"
+    BLOCKED = "BLOCKED"
+    IDEMPOTENCY_MISMATCH = "IDEMPOTENCY_MISMATCH"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class BeaconSourceUrlFingerprintPolicy(BaseModel):
+    """Opaque policy reference for fingerprint comparison and debug semantics."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    policy_reference: str = Field(min_length=1)
+    comparison_reference: str | None = Field(default=None, min_length=1)
+    idempotency_reference: str | None = Field(default=None, min_length=1)
+    debug_reference: str | None = Field(default=None, min_length=1)
+    authoritative_configuration_source: bool = False
+
+    @model_validator(mode="after")
+    def _validate_fingerprint_policy(self) -> "BeaconSourceUrlFingerprintPolicy":
+        if self.authoritative_configuration_source:
+            raise ValueError("fingerprint policy must not be authoritative configuration source")
+
+        if (
+            self.comparison_reference is None
+            and self.idempotency_reference is None
+            and self.debug_reference is None
+        ):
+            raise ValueError(
+                "fingerprint policy must carry at least one opaque comparison or debug reference"
+            )
+
+        return self
+
+
+class BeaconSourceUrlIdempotencyBasis(BaseModel):
+    """Opaque idempotency basis for source URL preparation semantics."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    source_url_reference: str = Field(min_length=1)
+    command_reference: str | None = Field(default=None, min_length=1)
+    account_id: str | None = Field(default=None, min_length=1)
+    beacon_id: str | None = Field(default=None, min_length=1)
+    requested_beacon_id: str | None = Field(default=None, min_length=1)
+    source_url_only_basis: bool = False
+
+    @model_validator(mode="after")
+    def _validate_idempotency_basis(self) -> "BeaconSourceUrlIdempotencyBasis":
+        if self.source_url_only_basis:
+            raise ValueError("source URL alone is not a valid idempotency basis")
+
+        if (
+            self.command_reference is None
+            and self.account_id is None
+            and self.beacon_id is None
+            and self.requested_beacon_id is None
+        ):
+            raise ValueError("idempotency basis requires explicit command, account or beacon scope")
+
+        return self
+
+
+class BeaconPreparedSourceUrl(BaseModel):
+    """Prepared source URL evidence that preserves the submitted URL."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    prepared_source_url_reference: str = Field(min_length=1)
+    submitted_source_url: BeaconSourceUrl
+    preserved_submitted_url: str = Field(min_length=1)
+    safety_classification: BeaconSourceUrlSafetyClassification
+    source_url_overwritten_by_snapshot: bool = False
+    source_url_overwritten_by_override: bool = False
+    source_url_rewritten: bool = False
+    opaque_fingerprint_reference: str | None = Field(default=None, min_length=1)
+    fingerprint_policy: BeaconSourceUrlFingerprintPolicy | None = None
+
+    @model_validator(mode="after")
+    def _validate_prepared_source_url(self) -> "BeaconPreparedSourceUrl":
+        if self.preserved_submitted_url != self.submitted_source_url.submitted_url:
+            raise ValueError("submitted source URL must not be rewritten")
+
+        if self.source_url_overwritten_by_snapshot:
+            raise ValueError("submitted source URL must not be overwritten by snapshot")
+
+        if self.source_url_overwritten_by_override:
+            raise ValueError("submitted source URL must not be overwritten by override")
+
+        if self.source_url_rewritten:
+            raise ValueError("submitted source URL must not be rewritten in prepared form")
+
+        if self.opaque_fingerprint_reference is not None and self.fingerprint_policy is None:
+            raise ValueError("opaque fingerprint reference requires captured policy")
+
+        return self
+
+
+class BeaconSourceUrlPreparationDecision(BaseModel):
+    """Semantic preparation decision for a submitted source URL."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    beacon_id: str | None = Field(default=None, min_length=1)
+    requested_beacon_id: str | None = Field(default=None, min_length=1)
+    submitted_source_url: BeaconSourceUrl
+    prepared_source_url: BeaconPreparedSourceUrl
+    outcome: BeaconSourceUrlPreparationOutcome
+    safe_reason_code: str = Field(min_length=1)
+    duplicate_source_url_blocking_policy: bool = False
+    idempotency_basis: BeaconSourceUrlIdempotencyBasis
+    source_url_is_unique_key: bool = False
+    shell_command_text: str | None = Field(default=None, min_length=1)
+    shell_interpolation_field: str | None = Field(default=None, min_length=1)
+    tracking_params_ignored: bool = False
+    tracking_policy_reference: str | None = Field(default=None, min_length=1)
+    opaque_fingerprint_reference: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_preparation_decision(self) -> "BeaconSourceUrlPreparationDecision":
+        if self.beacon_id is None and self.requested_beacon_id is None:
+            raise ValueError("preparation decision requires beacon_id or requested_beacon_id")
+
+        if self.duplicate_source_url_blocking_policy:
+            raise ValueError("duplicate source URL must not be blocking by default")
+
+        if self.source_url_is_unique_key:
+            raise ValueError("source URL alone is not a unique key")
+
+        submitted_url = self.submitted_source_url.submitted_url
+        if self.prepared_source_url.submitted_source_url != self.submitted_source_url:
+            raise ValueError("submitted source URL must be preserved in the prepared form")
+
+        if self.prepared_source_url.preserved_submitted_url != submitted_url:
+            raise ValueError("prepared source URL must preserve the submitted URL")
+
+        if (
+            self.prepared_source_url.safety_classification
+            is BeaconSourceUrlSafetyClassification.MALFORMED
+            and self.outcome
+            in {
+                BeaconSourceUrlPreparationOutcome.CREATED,
+                BeaconSourceUrlPreparationOutcome.REPLAYED,
+            }
+        ):
+            raise ValueError("malformed URL cannot be represented as created or replayed")
+
+        if self.shell_command_text is not None and submitted_url in self.shell_command_text:
+            raise ValueError("external URL must not be interpolated into shell command text")
+
+        if (
+            self.shell_interpolation_field is not None
+            and submitted_url in self.shell_interpolation_field
+        ):
+            raise ValueError("external URL must not be interpolated into shell field text")
+
+        if self.tracking_params_ignored and self.tracking_policy_reference is None:
+            raise ValueError("tracking params may be ignored only with captured policy reference")
+
+        if (
+            self.opaque_fingerprint_reference is not None
+            and self.prepared_source_url.opaque_fingerprint_reference
+            != self.opaque_fingerprint_reference
+        ):
+            raise ValueError("opaque fingerprint reference must remain captured, not rewritten")
+
+        if (
+            self.opaque_fingerprint_reference is not None
+            and self.prepared_source_url.fingerprint_policy is None
+        ):
+            raise ValueError("opaque fingerprint reference requires captured policy")
+
+        return self
+
+
 class BeaconNamingMetadata(BaseModel):
     """Presentation metadata for a Beacon."""
 
@@ -631,7 +824,13 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconOverrideStatus",
     "BeaconProtectedAction",
     "BeaconParserOutcomeStatus",
+    "BeaconPreparedSourceUrl",
     "BeaconSourceUrl",
+    "BeaconSourceUrlFingerprintPolicy",
+    "BeaconSourceUrlIdempotencyBasis",
+    "BeaconSourceUrlPreparationDecision",
+    "BeaconSourceUrlPreparationOutcome",
+    "BeaconSourceUrlSafetyClassification",
     "BeaconSystemActorClass",
     "BeaconOwnershipDecision",
     "ExtractedSearchConfigurationSnapshot",
