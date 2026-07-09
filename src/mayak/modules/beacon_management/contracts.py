@@ -767,6 +767,124 @@ class BeaconFilterOverride(BaseModel):
         return self
 
 
+class BeaconOverrideFieldSupportStatus(str, Enum):
+    """Semantic support classification for a structured override field."""
+
+    SUPPORTED = "SUPPORTED"
+    UNSUPPORTED = "UNSUPPORTED"
+    UNCERTAIN = "UNCERTAIN"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class BeaconOverrideApplicationOutcome(str, Enum):
+    """Semantic application outcomes for a structured override field."""
+
+    APPLIED = "APPLIED"
+    REJECTED = "REJECTED"
+    BLOCKED = "BLOCKED"
+    CONFLICT = "CONFLICT"
+    REPLAYED = "REPLAYED"
+
+
+class BeaconOverrideRejectionReason(str, Enum):
+    """Semantic rejection reasons for structured override application."""
+
+    UNSUPPORTED_FIELD = "UNSUPPORTED_FIELD"
+    UNCERTAIN_EVIDENCE = "UNCERTAIN_EVIDENCE"
+    AMBIGUOUS_EVIDENCE = "AMBIGUOUS_EVIDENCE"
+    SOURCE_URL_OVERRIDE = "SOURCE_URL_OVERRIDE"
+    MULTIVALUE_COLLAPSE = "MULTIVALUE_COLLAPSE"
+    INVALID_SOURCE_SNAPSHOT = "INVALID_SOURCE_SNAPSHOT"
+    RAW_PROVIDER_PAYLOAD_AUTHORITY = "RAW_PROVIDER_PAYLOAD_AUTHORITY"
+    TARGET_STATE_GONE = "TARGET_STATE_GONE"
+
+
+class BeaconEffectiveConfigurationRejectionReason(str, Enum):
+    """Semantic rejection reasons for effective configuration assembly."""
+
+    NON_ACCEPTED_SNAPSHOT = "NON_ACCEPTED_SNAPSHOT"
+    UNSAFE_SNAPSHOT = "UNSAFE_SNAPSHOT"
+    RAW_PROVIDER_PAYLOAD_AUTHORITY = "RAW_PROVIDER_PAYLOAD_AUTHORITY"
+    SOURCE_URL_OVERWRITE_ATTEMPT = "SOURCE_URL_OVERWRITE_ATTEMPT"
+    UNSUPPORTED_FIELD_APPLIED = "UNSUPPORTED_FIELD_APPLIED"
+    UNCERTAIN_EVIDENCE_APPLIED = "UNCERTAIN_EVIDENCE_APPLIED"
+    AMBIGUOUS_EVIDENCE_APPLIED = "AMBIGUOUS_EVIDENCE_APPLIED"
+    MULTIVALUE_COLLAPSE = "MULTIVALUE_COLLAPSE"
+    UNSUPPORTED_PARAMETER_SILENTLY_CHANGED = "UNSUPPORTED_PARAMETER_SILENTLY_CHANGED"
+
+
+class BeaconPatchSaveRejectionReason(str, Enum):
+    """Semantic rejection reasons for patch-based save semantics."""
+
+    STALE_FULL_FORM_OVERWRITE = "STALE_FULL_FORM_OVERWRITE"
+    CHANGE_OUTSIDE_PATCH = "CHANGE_OUTSIDE_PATCH"
+    RUNTIME_PERSISTENCE_IMPLEMENTATION_CLAIM = "RUNTIME_PERSISTENCE_IMPLEMENTATION_CLAIM"
+    UNAUTHORIZED_ACTOR = "UNAUTHORIZED_ACTOR"
+    TARGET_STATE_GONE = "TARGET_STATE_GONE"
+    UNSUPPORTED_FIELD = "UNSUPPORTED_FIELD"
+    INVALID_SOURCE_OR_SNAPSHOT = "INVALID_SOURCE_OR_SNAPSHOT"
+    ENTITLEMENT_DENIED = "ENTITLEMENT_DENIED"
+    REQUIRED_CONFIRMATION_MISSING = "REQUIRED_CONFIRMATION_MISSING"
+
+
+class BeaconOverridePatchOperation(BaseModel):
+    """Structured override application primitive with explicit field-scoped evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    field_name: str = Field(min_length=1)
+    support_status: BeaconOverrideFieldSupportStatus
+    outcome: BeaconOverrideApplicationOutcome
+    requested_values: tuple[str, ...] = Field(min_length=1)
+    applied_values: tuple[str, ...] | None = None
+    parser_filter_evidence_reference: str = Field(min_length=1)
+    override_evidence_reference: str = Field(min_length=1)
+    rejection_reason: BeaconOverrideRejectionReason | None = None
+
+    @model_validator(mode="after")
+    def _validate_override_patch_operation(self) -> "BeaconOverridePatchOperation":
+        _reject_blank_values("requested_values", self.requested_values)
+        if self.applied_values is not None:
+            _reject_blank_values("applied_values", self.applied_values)
+
+        if (
+            self.field_name == "source_url"
+            and self.outcome is BeaconOverrideApplicationOutcome.APPLIED
+        ):
+            raise ValueError("source URL override must not be applied")
+
+        if self.support_status is BeaconOverrideFieldSupportStatus.UNSUPPORTED and self.outcome in {
+            BeaconOverrideApplicationOutcome.APPLIED,
+            BeaconOverrideApplicationOutcome.REPLAYED,
+        }:
+            raise ValueError("unsupported field cannot be applied")
+
+        if self.support_status in {
+            BeaconOverrideFieldSupportStatus.UNCERTAIN,
+            BeaconOverrideFieldSupportStatus.AMBIGUOUS,
+        } and self.outcome in {
+            BeaconOverrideApplicationOutcome.APPLIED,
+            BeaconOverrideApplicationOutcome.REPLAYED,
+        }:
+            raise ValueError("uncertain or ambiguous evidence cannot be silently applied")
+
+        if self.outcome is BeaconOverrideApplicationOutcome.APPLIED:
+            if self.applied_values is None:
+                raise ValueError("applied override must preserve applied values")
+            if len(self.requested_values) > 1 and self.applied_values != self.requested_values:
+                raise ValueError("multivalue approved values must be preserved")
+        elif self.applied_values is not None:
+            raise ValueError("non-applied override must not carry applied values")
+
+        if (
+            self.rejection_reason is not None
+            and self.outcome is BeaconOverrideApplicationOutcome.APPLIED
+        ):
+            raise ValueError("applied override must not carry rejection reason")
+
+        return self
+
+
 class BeaconCurrentConfiguration(BaseModel):
     """User-facing current working configuration for a Beacon."""
 
@@ -948,6 +1066,133 @@ class BeaconMutationDecision(BaseModel):
         return self
 
 
+class BeaconEffectiveConfigurationDecision(BaseModel):
+    """Semantic effective-configuration assembly decision."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    beacon_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    source_url: BeaconSourceUrl
+    accepted_snapshot: ExtractedSearchConfigurationSnapshot
+    override_operations: tuple[BeaconOverridePatchOperation, ...] = Field(default_factory=tuple)
+    status: BeaconDecisionStatus
+    effective_configuration_reference: str = Field(min_length=1)
+    authoritative_state_reference: str = Field(min_length=1)
+    source_url_overwritten_by_snapshot: bool = False
+    source_url_overwritten_by_override: bool = False
+    rejection_reason: BeaconEffectiveConfigurationRejectionReason | None = None
+
+    @model_validator(mode="after")
+    def _validate_effective_configuration_semantics(
+        self,
+    ) -> "BeaconEffectiveConfigurationDecision":
+        if self.status in {BeaconDecisionStatus.ALLOWED, BeaconDecisionStatus.REPLAYED}:
+            if self.accepted_snapshot.parser_evidence_reference is not None and (
+                self.accepted_snapshot.parser_evidence_reference.raw_provider_payload_authority
+            ):
+                raise ValueError(
+                    "raw provider payload must not become effective configuration authority"
+                )
+
+            if not self.accepted_snapshot.accepted_as_clean:
+                raise ValueError("effective configuration requires accepted snapshot")
+
+            if self.accepted_snapshot.parser_evidence_reference is None:
+                raise ValueError("accepted snapshot requires parser evidence reference")
+
+            if self.source_url_overwritten_by_snapshot:
+                raise ValueError("source URL must not be overwritten by snapshot")
+
+            if self.source_url_overwritten_by_override:
+                raise ValueError("source URL must not be overwritten by override")
+
+            for override_operation in self.override_operations:
+                if (
+                    override_operation.support_status
+                    is not BeaconOverrideFieldSupportStatus.SUPPORTED
+                ):
+                    raise ValueError(
+                        "effective configuration cannot silently apply unsupported evidence"
+                    )
+                if override_operation.outcome is not BeaconOverrideApplicationOutcome.APPLIED:
+                    raise ValueError("effective configuration requires applied override operations")
+                if override_operation.field_name == "source_url":
+                    raise ValueError("source URL override must not be overwritten")
+                if len(override_operation.requested_values) > 1 and (
+                    override_operation.applied_values != override_operation.requested_values
+                ):
+                    raise ValueError("multivalue approved values must be preserved")
+
+        if self.rejection_reason is not None and self.status in {
+            BeaconDecisionStatus.ALLOWED,
+            BeaconDecisionStatus.REPLAYED,
+        }:
+            raise ValueError("effective configuration decision must not carry rejection reason")
+
+        return self
+
+
+class BeaconPatchSaveDecision(BaseModel):
+    """Semantic patch-based save decision for current Beacon configuration."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    beacon_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    status: BeaconDecisionStatus
+    patch_fields: tuple[str, ...] = Field(min_length=1)
+    applied_fields: tuple[str, ...] = Field(min_length=1)
+    preserved_fields: tuple[str, ...] = Field(default_factory=tuple)
+    same_field_concurrent_change: bool = False
+    last_write_wins: bool = False
+    different_field_updates_merge: bool = False
+    stale_full_form_overwrite: bool = False
+    authoritative_state_reference: str | None = Field(default=None, min_length=1)
+    claims_db_repository_runtime_persistence_implementation: bool = False
+    rejection_reason: BeaconPatchSaveRejectionReason | None = None
+
+    @model_validator(mode="after")
+    def _validate_patch_save_semantics(self) -> "BeaconPatchSaveDecision":
+        _reject_blank_values("patch_fields", self.patch_fields)
+        _reject_blank_values("applied_fields", self.applied_fields)
+        _reject_blank_values("preserved_fields", self.preserved_fields)
+
+        if not set(self.applied_fields).issubset(self.patch_fields):
+            raise ValueError("patch save may change only fields present in patch")
+
+        if set(self.preserved_fields) & set(self.patch_fields):
+            raise ValueError("absent fields must remain outside the patch")
+
+        if self.same_field_concurrent_change and not self.last_write_wins:
+            raise ValueError("same-field concurrent change must use last-write-wins")
+
+        if self.stale_full_form_overwrite and self.status in {
+            BeaconDecisionStatus.ALLOWED,
+            BeaconDecisionStatus.REPLAYED,
+        }:
+            raise ValueError("stale full-form overwrite is forbidden")
+
+        if self.claims_db_repository_runtime_persistence_implementation:
+            raise ValueError(
+                "patch save decision must not claim database or runtime persistence implementation"
+            )
+
+        if self.status in {BeaconDecisionStatus.ALLOWED, BeaconDecisionStatus.REPLAYED}:
+            if self.authoritative_state_reference is None:
+                raise ValueError("post-save state must be read from authoritative storage")
+
+        if self.rejection_reason is not None and self.status in {
+            BeaconDecisionStatus.ALLOWED,
+            BeaconDecisionStatus.REPLAYED,
+        }:
+            raise ValueError("successful patch save decision must not carry rejection reason")
+
+        return self
+
+
 class Beacon(BaseModel):
     """Semantic Beacon root record."""
 
@@ -995,6 +1240,8 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconAuthorizationOutcome",
     "BeaconCurrentConfiguration",
     "BeaconDecisionStatus",
+    "BeaconEffectiveConfigurationDecision",
+    "BeaconEffectiveConfigurationRejectionReason",
     "BeaconExpiryOutcome",
     "BeaconFilterOverride",
     "BeaconHistoryEntry",
@@ -1003,7 +1250,13 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconMutationDecision",
     "BeaconNameOrigin",
     "BeaconNamingMetadata",
+    "BeaconOverrideApplicationOutcome",
+    "BeaconOverrideFieldSupportStatus",
+    "BeaconOverridePatchOperation",
+    "BeaconOverrideRejectionReason",
     "BeaconOverrideStatus",
+    "BeaconPatchSaveDecision",
+    "BeaconPatchSaveRejectionReason",
     "BeaconProtectedAction",
     "BeaconParserOutcomeStatus",
     "BeaconParserEvidenceReference",

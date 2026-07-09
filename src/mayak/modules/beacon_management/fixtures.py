@@ -18,6 +18,8 @@ from .contracts import (
     BeaconAuthorizationOutcome,
     BeaconCurrentConfiguration,
     BeaconDecisionStatus,
+    BeaconEffectiveConfigurationDecision,
+    BeaconEffectiveConfigurationRejectionReason,
     BeaconExpiryOutcome,
     BeaconFilterOverride,
     BeaconHistoryEntry,
@@ -26,11 +28,17 @@ from .contracts import (
     BeaconMutationDecision,
     BeaconNameOrigin,
     BeaconNamingMetadata,
+    BeaconOverrideApplicationOutcome,
+    BeaconOverrideFieldSupportStatus,
+    BeaconOverridePatchOperation,
+    BeaconOverrideRejectionReason,
     BeaconOverrideStatus,
     BeaconOwnershipDecision,
     BeaconParserEvidenceReference,
     BeaconParserEvidenceSafetyClass,
     BeaconParserOutcomeStatus,
+    BeaconPatchSaveDecision,
+    BeaconPatchSaveRejectionReason,
     BeaconPreparedSourceUrl,
     BeaconProtectedAction,
     BeaconSnapshotAcceptanceDecision,
@@ -62,9 +70,12 @@ class SyntheticFixtureCase(BaseModel):
     snapshot: ExtractedSearchConfigurationSnapshot | None = None
     snapshot_acceptance_decision: BeaconSnapshotAcceptanceDecision | None = None
     override: BeaconFilterOverride | None = None
+    override_patch_operation: BeaconOverridePatchOperation | None = None
     current_configuration: BeaconCurrentConfiguration | None = None
+    effective_configuration_decision: BeaconEffectiveConfigurationDecision | None = None
     activation_decision: BeaconActivationDecision | None = None
     mutation_decision: BeaconMutationDecision | None = None
+    patch_save_decision: BeaconPatchSaveDecision | None = None
     source_url_preparation_decision: BeaconSourceUrlPreparationDecision | None = None
     ownership_decision: BeaconOwnershipDecision | None = None
     authorization_decision: BeaconAuthorizationDecision | None = None
@@ -172,6 +183,29 @@ def _override(
     )
 
 
+def _override_patch_operation(
+    *,
+    field_name: str,
+    support_status: BeaconOverrideFieldSupportStatus,
+    outcome: BeaconOverrideApplicationOutcome,
+    requested_values: tuple[str, ...],
+    applied_values: tuple[str, ...] | None,
+    parser_filter_evidence_reference: str,
+    override_evidence_reference: str,
+    rejection_reason: BeaconOverrideRejectionReason | None = None,
+) -> BeaconOverridePatchOperation:
+    return BeaconOverridePatchOperation(
+        field_name=field_name,
+        support_status=support_status,
+        outcome=outcome,
+        requested_values=requested_values,
+        applied_values=applied_values,
+        parser_filter_evidence_reference=parser_filter_evidence_reference,
+        override_evidence_reference=override_evidence_reference,
+        rejection_reason=rejection_reason,
+    )
+
+
 def _configuration(
     *,
     beacon_id: str,
@@ -196,6 +230,72 @@ def _configuration(
         lifecycle_state=lifecycle_state,
         retained_evidence_references=retained_evidence_references,
         previous_user_facing_revision_ids=previous_user_facing_revision_ids,
+    )
+
+
+def _effective_configuration_decision(
+    *,
+    decision_id: str,
+    beacon_id: str,
+    account_id: str,
+    source_url: BeaconSourceUrl,
+    accepted_snapshot: ExtractedSearchConfigurationSnapshot,
+    override_operations: tuple[BeaconOverridePatchOperation, ...] = (),
+    status: BeaconDecisionStatus,
+    effective_configuration_reference: str,
+    authoritative_state_reference: str,
+    source_url_overwritten_by_snapshot: bool = False,
+    source_url_overwritten_by_override: bool = False,
+    rejection_reason: BeaconEffectiveConfigurationRejectionReason | None = None,
+) -> BeaconEffectiveConfigurationDecision:
+    return BeaconEffectiveConfigurationDecision(
+        decision_id=decision_id,
+        beacon_id=beacon_id,
+        account_id=account_id,
+        source_url=source_url,
+        accepted_snapshot=accepted_snapshot,
+        override_operations=override_operations,
+        status=status,
+        effective_configuration_reference=effective_configuration_reference,
+        authoritative_state_reference=authoritative_state_reference,
+        source_url_overwritten_by_snapshot=source_url_overwritten_by_snapshot,
+        source_url_overwritten_by_override=source_url_overwritten_by_override,
+        rejection_reason=rejection_reason,
+    )
+
+
+def _patch_save_decision(
+    *,
+    decision_id: str,
+    beacon_id: str,
+    account_id: str,
+    status: BeaconDecisionStatus,
+    patch_fields: tuple[str, ...],
+    applied_fields: tuple[str, ...],
+    preserved_fields: tuple[str, ...] = (),
+    same_field_concurrent_change: bool = False,
+    last_write_wins: bool = False,
+    different_field_updates_merge: bool = False,
+    stale_full_form_overwrite: bool = False,
+    authoritative_state_reference: str | None = None,
+    claims_db_repository_runtime_persistence_implementation: bool = False,
+    rejection_reason: BeaconPatchSaveRejectionReason | None = None,
+) -> BeaconPatchSaveDecision:
+    return BeaconPatchSaveDecision(
+        decision_id=decision_id,
+        beacon_id=beacon_id,
+        account_id=account_id,
+        status=status,
+        patch_fields=patch_fields,
+        applied_fields=applied_fields,
+        preserved_fields=preserved_fields,
+        same_field_concurrent_change=same_field_concurrent_change,
+        last_write_wins=last_write_wins,
+        different_field_updates_merge=different_field_updates_merge,
+        stale_full_form_overwrite=stale_full_form_overwrite,
+        authoritative_state_reference=authoritative_state_reference,
+        claims_db_repository_runtime_persistence_implementation=claims_db_repository_runtime_persistence_implementation,
+        rejection_reason=rejection_reason,
     )
 
 
@@ -990,6 +1090,179 @@ _LAST_WRITE_WINS_MUTATION = BeaconMutationDecision(
     reason="Synthetic same-field conflict resolves by later successful save.",
 )
 
+_BM06_SUPPORTED_OVERRIDE_OPERATION = _override_patch_operation(
+    field_name="district",
+    support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+    outcome=BeaconOverrideApplicationOutcome.APPLIED,
+    requested_values=("north",),
+    applied_values=("north",),
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-supported-001",
+    override_evidence_reference="override-evidence-bm06-supported-001",
+)
+
+_BM06_UNSUPPORTED_OVERRIDE_OPERATION = _override_patch_operation(
+    field_name="unsupported_field",
+    support_status=BeaconOverrideFieldSupportStatus.UNSUPPORTED,
+    outcome=BeaconOverrideApplicationOutcome.BLOCKED,
+    requested_values=("unexpected",),
+    applied_values=None,
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-unsupported-001",
+    override_evidence_reference="override-evidence-bm06-unsupported-001",
+    rejection_reason=BeaconOverrideRejectionReason.UNSUPPORTED_FIELD,
+)
+
+_BM06_UNCERTAIN_OVERRIDE_OPERATION = _override_patch_operation(
+    field_name="uncertain_field",
+    support_status=BeaconOverrideFieldSupportStatus.UNCERTAIN,
+    outcome=BeaconOverrideApplicationOutcome.REJECTED,
+    requested_values=("maybe",),
+    applied_values=None,
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-uncertain-001",
+    override_evidence_reference="override-evidence-bm06-uncertain-001",
+    rejection_reason=BeaconOverrideRejectionReason.UNCERTAIN_EVIDENCE,
+)
+
+_BM06_AMBIGUOUS_OVERRIDE_OPERATION = _override_patch_operation(
+    field_name="ambiguous_field",
+    support_status=BeaconOverrideFieldSupportStatus.AMBIGUOUS,
+    outcome=BeaconOverrideApplicationOutcome.BLOCKED,
+    requested_values=("ambiguous",),
+    applied_values=None,
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-ambiguous-001",
+    override_evidence_reference="override-evidence-bm06-ambiguous-001",
+    rejection_reason=BeaconOverrideRejectionReason.AMBIGUOUS_EVIDENCE,
+)
+
+_BM06_SOURCE_URL_OVERRIDE_OPERATION = _override_patch_operation(
+    field_name="source_url",
+    support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+    outcome=BeaconOverrideApplicationOutcome.REJECTED,
+    requested_values=("https://example.invalid/search?query=blocked-source-url",),
+    applied_values=None,
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-source-url-001",
+    override_evidence_reference="override-evidence-bm06-source-url-001",
+    rejection_reason=BeaconOverrideRejectionReason.SOURCE_URL_OVERRIDE,
+)
+
+_BM06_MULTIVALUE_OVERRIDE_OPERATION = _override_patch_operation(
+    field_name="amenities",
+    support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+    outcome=BeaconOverrideApplicationOutcome.APPLIED,
+    requested_values=("wifi", "parking"),
+    applied_values=("wifi", "parking"),
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-multivalue-001",
+    override_evidence_reference="override-evidence-bm06-multivalue-001",
+)
+
+_BM06_MULTIVALUE_COLLAPSE_OVERRIDE_OPERATION = _override_patch_operation(
+    field_name="amenities",
+    support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+    outcome=BeaconOverrideApplicationOutcome.BLOCKED,
+    requested_values=("wifi", "parking"),
+    applied_values=None,
+    parser_filter_evidence_reference="parser-filter-evidence-bm06-multivalue-collapse-001",
+    override_evidence_reference="override-evidence-bm06-multivalue-collapse-001",
+    rejection_reason=BeaconOverrideRejectionReason.MULTIVALUE_COLLAPSE,
+)
+
+_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL = _source_url(
+    "evidence-bm06-effective-accepted-001",
+    "https://example.invalid/search?query=beacon-management&city=synthetic&case=bm06-effective",
+)
+
+_BM06_REJECTED_EFFECTIVE_SOURCE_URL = _source_url(
+    "evidence-bm06-effective-rejected-001",
+    "https://example.invalid/search?query=beacon-management&city=synthetic&case=bm06-rejected",
+)
+
+_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm06-effective-001",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=True,
+    evidence_reference="evidence-bm06-effective-snapshot-accepted-001",
+    parser_evidence_reference=_parser_evidence_reference(
+        evidence_reference="parser-evidence-bm06-effective-accepted-001"
+    ),
+    normalized_filter_values=("city=synthetic-city", "category=synthetic-category"),
+)
+
+_BM06_REJECTED_EFFECTIVE_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm06-effective-002",
+    status=BeaconParserOutcomeStatus.AMBIGUOUS,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm06-effective-snapshot-rejected-001",
+    parser_evidence_reference=_parser_evidence_reference(
+        evidence_reference="parser-evidence-bm06-effective-rejected-001",
+        safety_class=BeaconParserEvidenceSafetyClass.AMBIGUOUS,
+    ),
+    warning_codes=("AMBIGUOUS_SNAPSHOT",),
+)
+
+_BM06_ACCEPTED_EFFECTIVE_CONFIGURATION = _effective_configuration_decision(
+    decision_id="decision-bm06-effective-accepted-001",
+    beacon_id="beacon-bm06-effective-001",
+    account_id=_OWN_ACCOUNT_ID,
+    source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
+    accepted_snapshot=_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT,
+    override_operations=(
+        _BM06_SUPPORTED_OVERRIDE_OPERATION,
+        _BM06_MULTIVALUE_OVERRIDE_OPERATION,
+    ),
+    status=BeaconDecisionStatus.ALLOWED,
+    effective_configuration_reference="effective-config-bm06-001",
+    authoritative_state_reference="authoritative-state-bm06-effective-001",
+)
+
+_BM06_REJECTED_EFFECTIVE_CONFIGURATION = _effective_configuration_decision(
+    decision_id="decision-bm06-effective-rejected-001",
+    beacon_id="beacon-bm06-effective-002",
+    account_id=_OWN_ACCOUNT_ID,
+    source_url=_BM06_REJECTED_EFFECTIVE_SOURCE_URL,
+    accepted_snapshot=_BM06_REJECTED_EFFECTIVE_SNAPSHOT,
+    override_operations=(),
+    status=BeaconDecisionStatus.REJECTED,
+    effective_configuration_reference="effective-config-bm06-rejected-001",
+    authoritative_state_reference="authoritative-state-bm06-effective-rejected-001",
+    rejection_reason=BeaconEffectiveConfigurationRejectionReason.NON_ACCEPTED_SNAPSHOT,
+)
+
+_BM06_PATCH_MERGE_DECISION = _patch_save_decision(
+    decision_id="decision-bm06-patch-merge-001",
+    beacon_id="beacon-bm06-patch-merge-001",
+    account_id=_OWN_ACCOUNT_ID,
+    status=BeaconDecisionStatus.ALLOWED,
+    patch_fields=("display_name", "interval_minutes"),
+    applied_fields=("display_name", "interval_minutes"),
+    preserved_fields=("source_url", "accepted_snapshot"),
+    different_field_updates_merge=True,
+    authoritative_state_reference="authoritative-state-bm06-patch-merge-001",
+)
+
+_BM06_PATCH_LAST_WRITE_WINS_DECISION = _patch_save_decision(
+    decision_id="decision-bm06-patch-last-write-wins-001",
+    beacon_id="beacon-bm06-patch-lww-001",
+    account_id=_OWN_ACCOUNT_ID,
+    status=BeaconDecisionStatus.ALLOWED,
+    patch_fields=("interval_minutes",),
+    applied_fields=("interval_minutes",),
+    preserved_fields=("display_name", "source_url"),
+    same_field_concurrent_change=True,
+    last_write_wins=True,
+    authoritative_state_reference="authoritative-state-bm06-patch-lww-001",
+)
+
+_BM06_PATCH_STALE_FULL_FORM_DECISION = _patch_save_decision(
+    decision_id="decision-bm06-patch-stale-full-form-001",
+    beacon_id="beacon-bm06-patch-stale-001",
+    account_id=_OWN_ACCOUNT_ID,
+    status=BeaconDecisionStatus.REJECTED,
+    patch_fields=("display_name", "interval_minutes", "source_url"),
+    applied_fields=("display_name", "interval_minutes"),
+    preserved_fields=(),
+    stale_full_form_overwrite=True,
+    rejection_reason=BeaconPatchSaveRejectionReason.STALE_FULL_FORM_OVERWRITE,
+)
+
 _SOURCE_URL_PREPARED_CREATED = _source_url(
     "evidence-bm-prep-created-001",
     "https://example.invalid/search?query=beacon-management&city=synthetic&case=created",
@@ -1724,6 +1997,95 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         account_id=_OWN_ACCOUNT_ID,
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         mutation_decision=_LAST_WRITE_WINS_MUTATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-SUPPORTED-APPLIED-001",
+        summary="Supported explicit field override is applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_SUPPORTED_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-UNSUPPORTED-BLOCKED-001",
+        summary="Unsupported field override is blocked and not applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_UNSUPPORTED_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-UNCERTAIN-BLOCKED-001",
+        summary="Uncertain field evidence is blocked and not applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_UNCERTAIN_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-AMBIGUOUS-BLOCKED-001",
+        summary="Ambiguous field evidence is blocked and not applied.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_AMBIGUOUS_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-SOURCE-URL-REJECTED-001",
+        summary="Source URL override is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
+        override_patch_operation=_BM06_SOURCE_URL_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-MULTIVALUE-PRESERVED-001",
+        summary="Multivalue approved values are preserved.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_MULTIVALUE_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-OVERRIDE-MULTIVALUE-COLLAPSE-REJECTED-001",
+        summary="Silent multivalue collapse is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        override_patch_operation=_BM06_MULTIVALUE_COLLAPSE_OVERRIDE_OPERATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001",
+        summary="Effective config is assembled from accepted snapshot and explicit overrides.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_BM06_ACCEPTED_EFFECTIVE_SOURCE_URL,
+        snapshot=_BM06_ACCEPTED_EFFECTIVE_SNAPSHOT,
+        effective_configuration_decision=_BM06_ACCEPTED_EFFECTIVE_CONFIGURATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-EFFECTIVE-CONFIG-NON-ACCEPTED-REJECTED-001",
+        summary="Non-accepted snapshot assembly is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        source_url=_BM06_REJECTED_EFFECTIVE_SOURCE_URL,
+        snapshot=_BM06_REJECTED_EFFECTIVE_SNAPSHOT,
+        effective_configuration_decision=_BM06_REJECTED_EFFECTIVE_CONFIGURATION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-PATCH-MERGE-NONOVERLAP-001",
+        summary="Non-overlapping patch updates merge and preserve absent fields.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        patch_save_decision=_BM06_PATCH_MERGE_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-PATCH-LAST-WRITE-WINS-001",
+        summary="Same-field later successful save is authoritative without DB/runtime claim.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        patch_save_decision=_BM06_PATCH_LAST_WRITE_WINS_DECISION,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM06-PATCH-STALE-FULL-FORM-REJECTED-001",
+        summary="Stale full-form overwrite is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        patch_save_decision=_BM06_PATCH_STALE_FULL_FORM_DECISION,
     ),
     SyntheticFixtureCase(
         fixture_id="FX-BM-SOURCE-URL-PREP-CREATED-001",

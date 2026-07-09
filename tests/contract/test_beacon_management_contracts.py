@@ -19,13 +19,22 @@ from mayak.modules.beacon_management.contracts import (
     BeaconAuthorizationDecision,
     BeaconAuthorizationOutcome,
     BeaconCurrentConfiguration,
+    BeaconDecisionStatus,
+    BeaconEffectiveConfigurationDecision,
+    BeaconEffectiveConfigurationRejectionReason,
     BeaconLifecycleState,
     BeaconNameOrigin,
     BeaconNamingMetadata,
+    BeaconOverrideApplicationOutcome,
+    BeaconOverrideFieldSupportStatus,
+    BeaconOverridePatchOperation,
+    BeaconOverrideRejectionReason,
     BeaconOwnershipDecision,
     BeaconParserEvidenceReference,
     BeaconParserEvidenceSafetyClass,
     BeaconParserOutcomeStatus,
+    BeaconPatchSaveDecision,
+    BeaconPatchSaveRejectionReason,
     BeaconPreparedSourceUrl,
     BeaconProtectedAction,
     BeaconSnapshotAcceptanceDecision,
@@ -1769,6 +1778,413 @@ def test_permanently_deleted_beacon_cannot_be_restorable() -> None:
             restorable=True,
             counts_toward_active_limit=False,
         )
+
+
+def test_beacon_management_package_exports_bm06_override_effective_config_primitives() -> None:
+    bm06_names = (
+        "BeaconOverrideFieldSupportStatus",
+        "BeaconOverrideApplicationOutcome",
+        "BeaconOverridePatchOperation",
+        "BeaconOverrideRejectionReason",
+        "BeaconEffectiveConfigurationDecision",
+        "BeaconEffectiveConfigurationRejectionReason",
+        "BeaconPatchSaveDecision",
+        "BeaconPatchSaveRejectionReason",
+    )
+
+    for name in bm06_names:
+        assert hasattr(beacon_management, name)
+        assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
+def test_beacon_management_contract_module_exports_bm06_override_effective_config_primitives() -> (
+    None
+):
+    assert BeaconOverrideFieldSupportStatus.__name__ == "BeaconOverrideFieldSupportStatus"
+    assert BeaconOverrideApplicationOutcome.__name__ == "BeaconOverrideApplicationOutcome"
+    assert BeaconOverridePatchOperation.__name__ == "BeaconOverridePatchOperation"
+    assert BeaconOverrideRejectionReason.__name__ == "BeaconOverrideRejectionReason"
+    assert BeaconEffectiveConfigurationDecision.__name__ == "BeaconEffectiveConfigurationDecision"
+    assert (
+        BeaconEffectiveConfigurationRejectionReason.__name__
+        == "BeaconEffectiveConfigurationRejectionReason"
+    )
+    assert BeaconPatchSaveDecision.__name__ == "BeaconPatchSaveDecision"
+    assert BeaconPatchSaveRejectionReason.__name__ == "BeaconPatchSaveRejectionReason"
+
+
+def test_supported_explicit_field_override_can_be_applied() -> None:
+    override = BeaconOverridePatchOperation(
+        field_name="district",
+        support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+        outcome=BeaconOverrideApplicationOutcome.APPLIED,
+        requested_values=("north",),
+        applied_values=("north",),
+        parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-supported-001",
+        override_evidence_reference="override-evidence-contract-bm06-supported-001",
+    )
+
+    assert override.support_status is BeaconOverrideFieldSupportStatus.SUPPORTED
+    assert override.outcome is BeaconOverrideApplicationOutcome.APPLIED
+    assert override.applied_values == ("north",)
+
+
+@pytest.mark.parametrize(
+    "field_name,support_status,outcome,requested_values,applied_values,expected_message",
+    (
+        (
+            "unsupported_field",
+            BeaconOverrideFieldSupportStatus.UNSUPPORTED,
+            BeaconOverrideApplicationOutcome.APPLIED,
+            ("unexpected",),
+            ("unexpected",),
+            "unsupported field cannot be applied",
+        ),
+        (
+            "uncertain_field",
+            BeaconOverrideFieldSupportStatus.UNCERTAIN,
+            BeaconOverrideApplicationOutcome.APPLIED,
+            ("maybe",),
+            ("maybe",),
+            "uncertain or ambiguous evidence cannot be silently applied",
+        ),
+        (
+            "ambiguous_field",
+            BeaconOverrideFieldSupportStatus.AMBIGUOUS,
+            BeaconOverrideApplicationOutcome.APPLIED,
+            ("ambiguous",),
+            ("ambiguous",),
+            "uncertain or ambiguous evidence cannot be silently applied",
+        ),
+        (
+            "source_url",
+            BeaconOverrideFieldSupportStatus.SUPPORTED,
+            BeaconOverrideApplicationOutcome.APPLIED,
+            ("https://example.invalid/search?query=blocked-source-url",),
+            ("https://example.invalid/search?query=blocked-source-url",),
+            "source URL override must not be applied",
+        ),
+    ),
+)
+def test_unsafe_override_application_outcomes_are_rejected(
+    field_name: str,
+    support_status: BeaconOverrideFieldSupportStatus,
+    outcome: BeaconOverrideApplicationOutcome,
+    requested_values: tuple[str, ...],
+    applied_values: tuple[str, ...],
+    expected_message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_message):
+        BeaconOverridePatchOperation(
+            field_name=field_name,
+            support_status=support_status,
+            outcome=outcome,
+            requested_values=requested_values,
+            applied_values=applied_values,
+            parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-rejected-001",
+            override_evidence_reference="override-evidence-contract-bm06-rejected-001",
+        )
+
+
+def test_multivalue_approved_values_are_preserved() -> None:
+    override = BeaconOverridePatchOperation(
+        field_name="amenities",
+        support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+        outcome=BeaconOverrideApplicationOutcome.APPLIED,
+        requested_values=("wifi", "parking"),
+        applied_values=("wifi", "parking"),
+        parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-multivalue-001",
+        override_evidence_reference="override-evidence-contract-bm06-multivalue-001",
+    )
+
+    assert override.applied_values == override.requested_values
+
+
+def test_rejected_override_outcomes_can_carry_rejection_reason() -> None:
+    override = BeaconOverridePatchOperation(
+        field_name="unsupported_field",
+        support_status=BeaconOverrideFieldSupportStatus.UNSUPPORTED,
+        outcome=BeaconOverrideApplicationOutcome.BLOCKED,
+        requested_values=("unexpected",),
+        applied_values=None,
+        parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-reason-001",
+        override_evidence_reference="override-evidence-contract-bm06-reason-001",
+        rejection_reason=BeaconOverrideRejectionReason.UNSUPPORTED_FIELD,
+    )
+
+    assert override.rejection_reason is BeaconOverrideRejectionReason.UNSUPPORTED_FIELD
+
+
+def test_silent_multivalue_collapse_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="multivalue approved values must be preserved"):
+        BeaconOverridePatchOperation(
+            field_name="amenities",
+            support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+            outcome=BeaconOverrideApplicationOutcome.APPLIED,
+            requested_values=("wifi", "parking"),
+            applied_values=("wifi",),
+            parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-collapse-001",
+            override_evidence_reference="override-evidence-contract-bm06-collapse-001",
+        )
+
+
+def test_effective_configuration_requires_accepted_snapshot_and_supported_overrides() -> None:
+    source_url = contracts.BeaconSourceUrl(
+        submitted_url="https://example.invalid/search?query=effective-config&city=synthetic",
+        evidence_reference="evidence-contract-bm06-effective-001",
+        submitted_at=_SUBMITTED_AT,
+        source_channel="user-submitted",
+        submitted_by_label="synthetic-user",
+    )
+    snapshot = contracts.ExtractedSearchConfigurationSnapshot(
+        snapshot_id="snap-contract-bm06-effective-001",
+        parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        normalized_filter_values=("city=synthetic-city", "category=synthetic-category"),
+        evidence_reference="evidence-contract-bm06-effective-snapshot-001",
+        parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+            evidence_reference="parser-evidence-contract-bm06-effective-001"
+        ),
+    )
+    override = BeaconOverridePatchOperation(
+        field_name="district",
+        support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+        outcome=BeaconOverrideApplicationOutcome.APPLIED,
+        requested_values=("north",),
+        applied_values=("north",),
+        parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-effective-001",
+        override_evidence_reference="override-evidence-contract-bm06-effective-001",
+    )
+    decision = BeaconEffectiveConfigurationDecision(
+        decision_id="decision-contract-bm06-effective-001",
+        beacon_id="beacon-contract-bm06-effective-001",
+        account_id="acct-contract-001",
+        source_url=source_url,
+        accepted_snapshot=snapshot,
+        override_operations=(override,),
+        status=BeaconDecisionStatus.ALLOWED,
+        effective_configuration_reference="effective-config-contract-bm06-001",
+        authoritative_state_reference="authoritative-state-contract-bm06-effective-001",
+    )
+
+    assert decision.accepted_snapshot.accepted_as_clean is True
+    assert decision.override_operations[0].parser_filter_evidence_reference.startswith(
+        "parser-filter-evidence-contract-bm06-effective-"
+    )
+    first_override = decision.override_operations[0]
+    assert (
+        decision.accepted_snapshot.evidence_reference != first_override.override_evidence_reference
+    )
+    expected_authoritative_state_reference = "authoritative-state-contract-bm06-effective-001"
+    assert decision.authoritative_state_reference == expected_authoritative_state_reference
+    assert decision.source_url.submitted_url.startswith("https://example.invalid/")
+
+
+@pytest.mark.parametrize(
+    "snapshot,expected_message",
+    (
+        (
+            contracts.ExtractedSearchConfigurationSnapshot(
+                snapshot_id="snap-contract-bm06-unsafe-001",
+                parser_outcome_status=contracts.BeaconParserOutcomeStatus.MALFORMED,
+                accepted_as_clean=False,
+                normalized_filter_values=(),
+                evidence_reference="evidence-contract-bm06-unsafe-001",
+                parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+                    evidence_reference="parser-evidence-contract-bm06-unsafe-001"
+                ),
+            ),
+            "effective configuration requires accepted snapshot",
+        ),
+        (
+            contracts.ExtractedSearchConfigurationSnapshot(
+                snapshot_id="snap-contract-bm06-raw-provider-001",
+                parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+                accepted_as_clean=False,
+                normalized_filter_values=(),
+                evidence_reference="evidence-contract-bm06-raw-provider-001",
+                parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+                    evidence_reference="parser-evidence-contract-bm06-raw-provider-001",
+                    safety_class=contracts.BeaconParserEvidenceSafetyClass.RAW_PROVIDER_PAYLOAD_AUTHORITY,
+                    raw_provider_payload_authority=True,
+                ),
+            ),
+            "raw provider payload must not become effective configuration authority",
+        ),
+    ),
+)
+def test_effective_configuration_from_non_accepted_or_unsafe_snapshot_is_rejected(
+    snapshot: contracts.ExtractedSearchConfigurationSnapshot,
+    expected_message: str,
+) -> None:
+    source_url = contracts.BeaconSourceUrl(
+        submitted_url="https://example.invalid/search?query=effective-config-unsafe&city=synthetic",
+        evidence_reference="evidence-contract-bm06-effective-unsafe-001",
+        submitted_at=_SUBMITTED_AT,
+        source_channel="user-submitted",
+        submitted_by_label="synthetic-user",
+    )
+    override = BeaconOverridePatchOperation(
+        field_name="district",
+        support_status=BeaconOverrideFieldSupportStatus.SUPPORTED,
+        outcome=BeaconOverrideApplicationOutcome.APPLIED,
+        requested_values=("north",),
+        applied_values=("north",),
+        parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-effective-unsafe-001",
+        override_evidence_reference="override-evidence-contract-bm06-effective-unsafe-001",
+    )
+
+    with pytest.raises(ValidationError, match=expected_message):
+        BeaconEffectiveConfigurationDecision(
+            decision_id="decision-contract-bm06-effective-unsafe-001",
+            beacon_id="beacon-contract-bm06-effective-unsafe-001",
+            account_id="acct-contract-001",
+            source_url=source_url,
+            accepted_snapshot=snapshot,
+            override_operations=(override,),
+            status=BeaconDecisionStatus.ALLOWED,
+            effective_configuration_reference="effective-config-contract-bm06-unsafe-001",
+            authoritative_state_reference="authoritative-state-contract-bm06-effective-unsafe-001",
+        )
+
+
+def test_effective_configuration_rejects_unsupported_override_application() -> None:
+    source_url = contracts.BeaconSourceUrl(
+        submitted_url="https://example.invalid/search?query=effective-config-unsupported&city=synthetic",
+        evidence_reference="evidence-contract-bm06-effective-unsupported-001",
+        submitted_at=_SUBMITTED_AT,
+        source_channel="user-submitted",
+        submitted_by_label="synthetic-user",
+    )
+    snapshot = contracts.ExtractedSearchConfigurationSnapshot(
+        snapshot_id="snap-contract-bm06-effective-unsupported-001",
+        parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        normalized_filter_values=("city=synthetic-city",),
+        evidence_reference="evidence-contract-bm06-effective-unsupported-snapshot-001",
+        parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+            evidence_reference="parser-evidence-contract-bm06-effective-unsupported-001"
+        ),
+    )
+    override = BeaconOverridePatchOperation(
+        field_name="unsupported_field",
+        support_status=BeaconOverrideFieldSupportStatus.UNSUPPORTED,
+        outcome=BeaconOverrideApplicationOutcome.BLOCKED,
+        requested_values=("unexpected",),
+        applied_values=None,
+        parser_filter_evidence_reference="parser-filter-evidence-contract-bm06-unsupported-001",
+        override_evidence_reference="override-evidence-contract-bm06-unsupported-001",
+        rejection_reason=BeaconOverrideRejectionReason.UNSUPPORTED_FIELD,
+    )
+
+    expected_message = "effective configuration cannot silently apply unsupported evidence"
+
+    with pytest.raises(ValidationError, match=expected_message):
+        BeaconEffectiveConfigurationDecision(
+            decision_id="decision-contract-bm06-effective-unsupported-001",
+            beacon_id="beacon-contract-bm06-effective-unsupported-001",
+            account_id="acct-contract-001",
+            source_url=source_url,
+            accepted_snapshot=snapshot,
+            override_operations=(override,),
+            status=BeaconDecisionStatus.ALLOWED,
+            effective_configuration_reference="effective-config-contract-bm06-unsupported-001",
+            authoritative_state_reference="authoritative-state-contract-bm06-effective-unsupported-001",
+        )
+
+
+def test_patch_save_only_changes_fields_present_in_patch_and_preserves_absent_fields() -> None:
+    decision = BeaconPatchSaveDecision(
+        decision_id="decision-contract-bm06-patch-merge-001",
+        beacon_id="beacon-contract-bm06-patch-merge-001",
+        account_id="acct-contract-001",
+        status=BeaconDecisionStatus.ALLOWED,
+        patch_fields=("display_name", "interval_minutes"),
+        applied_fields=("display_name",),
+        preserved_fields=("source_url", "accepted_snapshot"),
+        different_field_updates_merge=True,
+        authoritative_state_reference="authoritative-state-contract-bm06-patch-merge-001",
+    )
+
+    assert decision.applied_fields == ("display_name",)
+    assert set(decision.applied_fields).issubset(decision.patch_fields)
+    assert decision.preserved_fields == ("source_url", "accepted_snapshot")
+    expected_authoritative_state_reference = "authoritative-state-contract-bm06-patch-merge-001"
+    assert decision.authoritative_state_reference == expected_authoritative_state_reference
+    assert decision.claims_db_repository_runtime_persistence_implementation is False
+
+
+def test_non_overlapping_patch_updates_merge_without_conflict() -> None:
+    decision = BeaconPatchSaveDecision(
+        decision_id="decision-contract-bm06-patch-merge-002",
+        beacon_id="beacon-contract-bm06-patch-merge-002",
+        account_id="acct-contract-001",
+        status=BeaconDecisionStatus.ALLOWED,
+        patch_fields=("display_name", "interval_minutes"),
+        applied_fields=("display_name", "interval_minutes"),
+        preserved_fields=("source_url", "accepted_snapshot"),
+        different_field_updates_merge=True,
+        authoritative_state_reference="authoritative-state-contract-bm06-patch-merge-002",
+    )
+
+    assert decision.different_field_updates_merge is True
+    assert decision.status is BeaconDecisionStatus.ALLOWED
+    assert decision.authoritative_state_reference is not None
+    assert decision.authoritative_state_reference.startswith(
+        "authoritative-state-contract-bm06-patch-merge-"
+    )
+
+
+def test_same_field_concurrent_save_uses_last_write_wins_semantic_outcome() -> None:
+    decision = BeaconPatchSaveDecision(
+        decision_id="decision-contract-bm06-patch-lww-001",
+        beacon_id="beacon-contract-bm06-patch-lww-001",
+        account_id="acct-contract-001",
+        status=BeaconDecisionStatus.ALLOWED,
+        patch_fields=("interval_minutes",),
+        applied_fields=("interval_minutes",),
+        preserved_fields=("display_name", "source_url"),
+        same_field_concurrent_change=True,
+        last_write_wins=True,
+        authoritative_state_reference="authoritative-state-contract-bm06-patch-lww-001",
+    )
+
+    assert decision.same_field_concurrent_change is True
+    assert decision.last_write_wins is True
+    assert decision.status is BeaconDecisionStatus.ALLOWED
+    assert decision.claims_db_repository_runtime_persistence_implementation is False
+
+
+def test_stale_full_form_overwrite_is_forbidden() -> None:
+    with pytest.raises(ValidationError, match="stale full-form overwrite is forbidden"):
+        BeaconPatchSaveDecision(
+            decision_id="decision-contract-bm06-patch-stale-001",
+            beacon_id="beacon-contract-bm06-patch-stale-001",
+            account_id="acct-contract-001",
+            status=BeaconDecisionStatus.ALLOWED,
+            patch_fields=("display_name", "interval_minutes", "source_url"),
+            applied_fields=("display_name", "interval_minutes"),
+            preserved_fields=(),
+            stale_full_form_overwrite=True,
+            authoritative_state_reference="authoritative-state-contract-bm06-patch-stale-001",
+        )
+
+
+def test_different_clients_editing_different_fields_does_not_create_conflict_by_itself() -> None:
+    decision = BeaconPatchSaveDecision(
+        decision_id="decision-contract-bm06-patch-no-conflict-001",
+        beacon_id="beacon-contract-bm06-patch-no-conflict-001",
+        account_id="acct-contract-001",
+        status=BeaconDecisionStatus.ALLOWED,
+        patch_fields=("display_name", "interval_minutes"),
+        applied_fields=("display_name", "interval_minutes"),
+        preserved_fields=("source_url", "accepted_snapshot"),
+        different_field_updates_merge=True,
+        authoritative_state_reference="authoritative-state-contract-bm06-patch-no-conflict-001",
+    )
+
+    assert decision.different_field_updates_merge is True
+    assert decision.rejection_reason is None
 
 
 def test_beacon_management_contracts_do_not_import_forbidden_modules() -> None:

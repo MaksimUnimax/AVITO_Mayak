@@ -10,8 +10,13 @@ from mayak.modules.beacon_management import (
 from mayak.modules.beacon_management.contracts import (
     BeaconAuthorizationOutcome,
     BeaconDecisionStatus,
+    BeaconEffectiveConfigurationRejectionReason,
+    BeaconOverrideApplicationOutcome,
+    BeaconOverrideFieldSupportStatus,
+    BeaconOverrideRejectionReason,
     BeaconParserEvidenceSafetyClass,
     BeaconParserOutcomeStatus,
+    BeaconPatchSaveRejectionReason,
     BeaconProtectedAction,
     BeaconSnapshotAcceptanceOutcome,
     BeaconSourceUrlPreparationOutcome,
@@ -501,6 +506,172 @@ def test_bm05_unsupported_parameters_fixture_does_not_silently_accept_unsupporte
         fixture.snapshot_acceptance_decision.acceptance_outcome
         is BeaconSnapshotAcceptanceOutcome.REJECTED
     )
+
+
+def test_bm06_fixture_ids_are_present() -> None:
+    expected_ids = (
+        "FX-BM06-OVERRIDE-SUPPORTED-APPLIED-001",
+        "FX-BM06-OVERRIDE-UNSUPPORTED-BLOCKED-001",
+        "FX-BM06-OVERRIDE-UNCERTAIN-BLOCKED-001",
+        "FX-BM06-OVERRIDE-AMBIGUOUS-BLOCKED-001",
+        "FX-BM06-OVERRIDE-SOURCE-URL-REJECTED-001",
+        "FX-BM06-OVERRIDE-MULTIVALUE-PRESERVED-001",
+        "FX-BM06-OVERRIDE-MULTIVALUE-COLLAPSE-REJECTED-001",
+        "FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001",
+        "FX-BM06-EFFECTIVE-CONFIG-NON-ACCEPTED-REJECTED-001",
+        "FX-BM06-PATCH-MERGE-NONOVERLAP-001",
+        "FX-BM06-PATCH-LAST-WRITE-WINS-001",
+        "FX-BM06-PATCH-STALE-FULL-FORM-REJECTED-001",
+    )
+
+    for fixture_id in expected_ids:
+        assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
+        assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
+
+
+def test_bm06_supported_override_fixture_is_applied() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-OVERRIDE-SUPPORTED-APPLIED-001"]
+
+    assert fixture.override_patch_operation is not None
+    assert fixture.override_patch_operation.support_status is (
+        BeaconOverrideFieldSupportStatus.SUPPORTED
+    )
+    assert fixture.override_patch_operation.outcome is BeaconOverrideApplicationOutcome.APPLIED
+    assert fixture.override_patch_operation.applied_values == ("north",)
+
+
+@pytest.mark.parametrize(
+    "fixture_id,expected_outcome,expected_reason",
+    (
+        (
+            "FX-BM06-OVERRIDE-UNSUPPORTED-BLOCKED-001",
+            BeaconOverrideApplicationOutcome.BLOCKED,
+            BeaconOverrideRejectionReason.UNSUPPORTED_FIELD,
+        ),
+        (
+            "FX-BM06-OVERRIDE-UNCERTAIN-BLOCKED-001",
+            BeaconOverrideApplicationOutcome.REJECTED,
+            BeaconOverrideRejectionReason.UNCERTAIN_EVIDENCE,
+        ),
+        (
+            "FX-BM06-OVERRIDE-AMBIGUOUS-BLOCKED-001",
+            BeaconOverrideApplicationOutcome.BLOCKED,
+            BeaconOverrideRejectionReason.AMBIGUOUS_EVIDENCE,
+        ),
+        (
+            "FX-BM06-OVERRIDE-SOURCE-URL-REJECTED-001",
+            BeaconOverrideApplicationOutcome.REJECTED,
+            BeaconOverrideRejectionReason.SOURCE_URL_OVERRIDE,
+        ),
+        (
+            "FX-BM06-OVERRIDE-MULTIVALUE-COLLAPSE-REJECTED-001",
+            BeaconOverrideApplicationOutcome.BLOCKED,
+            BeaconOverrideRejectionReason.MULTIVALUE_COLLAPSE,
+        ),
+    ),
+)
+def test_bm06_override_fixtures_are_rejected_or_blocked_and_not_applied(
+    fixture_id: str,
+    expected_outcome: BeaconOverrideApplicationOutcome,
+    expected_reason: BeaconOverrideRejectionReason,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+
+    assert fixture.override_patch_operation is not None
+    assert fixture.override_patch_operation.outcome is expected_outcome
+    assert fixture.override_patch_operation.applied_values is None
+    assert fixture.override_patch_operation.rejection_reason is expected_reason
+
+
+def test_bm06_multivalue_fixture_preserves_approved_values() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-OVERRIDE-MULTIVALUE-PRESERVED-001"]
+
+    assert fixture.override_patch_operation is not None
+    assert fixture.override_patch_operation.applied_values == (
+        "wifi",
+        "parking",
+    )
+    assert fixture.override_patch_operation.requested_values == (
+        "wifi",
+        "parking",
+    )
+
+
+def test_bm06_effective_config_evidence_is_distinct() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-EFFECTIVE-CONFIG-ACCEPTED-001"]
+
+    assert fixture.source_url is not None
+    assert fixture.snapshot is not None
+    assert fixture.effective_configuration_decision is not None
+    decision = fixture.effective_configuration_decision
+    assert decision.status is BeaconDecisionStatus.ALLOWED
+    assert decision.accepted_snapshot == fixture.snapshot
+    assert decision.source_url == fixture.source_url
+    first_override = decision.override_operations[0]
+    second_override = decision.override_operations[1]
+    assert (
+        decision.accepted_snapshot.evidence_reference != first_override.override_evidence_reference
+    )
+    assert (
+        decision.accepted_snapshot.evidence_reference != second_override.override_evidence_reference
+    )
+    expected_effective_configuration_reference = "effective-config-bm06-001"
+    expected_authoritative_state_reference = "authoritative-state-bm06-effective-001"
+    assert decision.effective_configuration_reference == expected_effective_configuration_reference
+    assert decision.authoritative_state_reference == expected_authoritative_state_reference
+
+
+def test_bm06_non_accepted_snapshot_effective_config_fixture_is_rejected() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-EFFECTIVE-CONFIG-NON-ACCEPTED-REJECTED-001"]
+
+    assert fixture.effective_configuration_decision is not None
+    assert fixture.effective_configuration_decision.status is BeaconDecisionStatus.REJECTED
+    assert (
+        fixture.effective_configuration_decision.rejection_reason
+        is BeaconEffectiveConfigurationRejectionReason.NON_ACCEPTED_SNAPSHOT
+    )
+    assert fixture.effective_configuration_decision.accepted_snapshot.accepted_as_clean is False
+
+
+def test_bm06_patch_merge_fixture_preserves_non_overlapping_updates() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-PATCH-MERGE-NONOVERLAP-001"]
+
+    assert fixture.patch_save_decision is not None
+    assert fixture.patch_save_decision.status is BeaconDecisionStatus.ALLOWED
+    assert fixture.patch_save_decision.different_field_updates_merge is True
+    assert fixture.patch_save_decision.authoritative_state_reference == (
+        "authoritative-state-bm06-patch-merge-001"
+    )
+    assert (
+        fixture.patch_save_decision.claims_db_repository_runtime_persistence_implementation is False
+    )
+
+
+def test_bm06_patch_last_write_wins_fixture_is_semantic_only() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-PATCH-LAST-WRITE-WINS-001"]
+
+    assert fixture.patch_save_decision is not None
+    assert fixture.patch_save_decision.same_field_concurrent_change is True
+    assert fixture.patch_save_decision.last_write_wins is True
+    assert (
+        fixture.patch_save_decision.claims_db_repository_runtime_persistence_implementation is False
+    )
+    assert fixture.patch_save_decision.authoritative_state_reference == (
+        "authoritative-state-bm06-patch-lww-001"
+    )
+
+
+def test_bm06_stale_full_form_overwrite_fixture_is_rejected() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM06-PATCH-STALE-FULL-FORM-REJECTED-001"]
+
+    assert fixture.patch_save_decision is not None
+    assert fixture.patch_save_decision.status is BeaconDecisionStatus.REJECTED
+    assert fixture.patch_save_decision.stale_full_form_overwrite is True
+    assert (
+        fixture.patch_save_decision.rejection_reason
+        is BeaconPatchSaveRejectionReason.STALE_FULL_FORM_OVERWRITE
+    )
+    assert fixture.patch_save_decision.authoritative_state_reference is None
 
 
 def test_authorization_fixture_ids_are_present_and_appended_deterministically() -> None:
