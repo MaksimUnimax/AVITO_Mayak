@@ -1074,3 +1074,20 @@ no DB transaction/lock/table/index/migration was introduced;
 no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
 no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
 SOLS-10+ remain gated.
+
+### SOLS-HISTORY-0011 — 2026-07-09 — Parser outcome, partial results and reconciliation
+
+SOLS-10 created docs-only Parser outcome, partial result and reconciliation documentation;
+it uses SOLS-01 owner decisions, SOLS-02 semantic records, SOLS-03 eligibility boundary, SOLS-04 lifecycle/commit-point rules, SOLS-05 baseline/rolling anchor state, SOLS-06 difference rules, SOLS-08 external failure/recovery rules and SOLS-09 overlap/mid-run re-check rules;
+Scan receives explicit Parser outcome references and does not parse Avito;
+Parser outcome recording commit is not comparison commit;
+transport success is not parser success and parser success is not comparison success;
+partial/ambiguous/malformed/incomplete/CAPTCHA/restricted outcomes do not become no-new-listings and do not advance baseline/anchors in the current safety boundary;
+unknown dispatch/outcome requires reconciliation-required state;
+replay after recorded outcome or committed comparison must not duplicate parser records, anchor updates or facts;
+Parser owns provider response classification and parser details; Egress owns route mechanics; Notification Delivery/UI/channel owns report/delivery;
+no code/tests/runtime/schema/parser/egress/notification/UI/deploy artifacts were created;
+no DB transaction/lock/table/index/migration was introduced;
+no scheduler/worker/queue/cache/claim lease/heartbeat/retry/backoff implementation or numeric default was introduced;
+no live Avito/provider traffic, parser implementation, Egress implementation or Notification delivery was introduced;
+SOLS-11+ remain gated.
