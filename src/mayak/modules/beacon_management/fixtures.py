@@ -28,9 +28,14 @@ from .contracts import (
     BeaconNamingMetadata,
     BeaconOverrideStatus,
     BeaconOwnershipDecision,
+    BeaconParserEvidenceReference,
+    BeaconParserEvidenceSafetyClass,
     BeaconParserOutcomeStatus,
     BeaconPreparedSourceUrl,
     BeaconProtectedAction,
+    BeaconSnapshotAcceptanceDecision,
+    BeaconSnapshotAcceptanceOutcome,
+    BeaconSnapshotRejectionReason,
     BeaconSourceUrl,
     BeaconSourceUrlFingerprintPolicy,
     BeaconSourceUrlIdempotencyBasis,
@@ -55,6 +60,7 @@ class SyntheticFixtureCase(BaseModel):
     peer_beacon: Beacon | None = None
     source_url: BeaconSourceUrl | None = None
     snapshot: ExtractedSearchConfigurationSnapshot | None = None
+    snapshot_acceptance_decision: BeaconSnapshotAcceptanceDecision | None = None
     override: BeaconFilterOverride | None = None
     current_configuration: BeaconCurrentConfiguration | None = None
     activation_decision: BeaconActivationDecision | None = None
@@ -90,6 +96,7 @@ def _snapshot(
     status: BeaconParserOutcomeStatus,
     accepted_as_clean: bool,
     evidence_reference: str,
+    parser_evidence_reference: BeaconParserEvidenceReference | None = None,
     normalized_filter_values: tuple[str, ...] = (),
     unsupported_parameters: tuple[str, ...] = (),
     warning_codes: tuple[str, ...] = (),
@@ -102,6 +109,45 @@ def _snapshot(
         unsupported_parameters=unsupported_parameters,
         warning_codes=warning_codes,
         evidence_reference=evidence_reference,
+        parser_evidence_reference=parser_evidence_reference,
+    )
+
+
+def _parser_evidence_reference(
+    *,
+    evidence_reference: str,
+    safety_class: BeaconParserEvidenceSafetyClass = BeaconParserEvidenceSafetyClass.OPAQUE,
+    raw_provider_payload_authority: bool = False,
+) -> BeaconParserEvidenceReference:
+    return BeaconParserEvidenceReference(
+        evidence_reference=evidence_reference,
+        safety_class=safety_class,
+        raw_provider_payload_authority=raw_provider_payload_authority,
+    )
+
+
+def _snapshot_acceptance_decision(
+    *,
+    decision_id: str,
+    parser_outcome_status: BeaconParserOutcomeStatus,
+    parser_evidence_reference: BeaconParserEvidenceReference | None,
+    acceptance_outcome: BeaconSnapshotAcceptanceOutcome,
+    rejection_reason: BeaconSnapshotRejectionReason | None = None,
+    parser_adapter_evidence_gate_reference: str | None = None,
+    exact_acceptance_threshold_percent: int | None = None,
+    unsupported_parameters: tuple[str, ...] = (),
+    claims_full_parser_adapter_implementation_present: bool = False,
+) -> BeaconSnapshotAcceptanceDecision:
+    return BeaconSnapshotAcceptanceDecision(
+        decision_id=decision_id,
+        parser_outcome_status=parser_outcome_status,
+        parser_evidence_reference=parser_evidence_reference,
+        acceptance_outcome=acceptance_outcome,
+        rejection_reason=rejection_reason,
+        parser_adapter_evidence_gate_reference=parser_adapter_evidence_gate_reference,
+        exact_acceptance_threshold_percent=exact_acceptance_threshold_percent,
+        unsupported_parameters=unsupported_parameters,
+        claims_full_parser_adapter_implementation_present=claims_full_parser_adapter_implementation_present,
     )
 
 
@@ -404,6 +450,9 @@ _ACTIVE_SNAPSHOT = _snapshot(
     status=BeaconParserOutcomeStatus.CLEAN,
     accepted_as_clean=True,
     evidence_reference="evidence-bm-001",
+    parser_evidence_reference=_parser_evidence_reference(
+        evidence_reference="parser-evidence-bm04-active-001"
+    ),
     normalized_filter_values=("city=synthetic-city", "category=synthetic-category"),
 )
 
@@ -451,6 +500,283 @@ _CAPTCHA_SNAPSHOT = _snapshot(
     accepted_as_clean=False,
     evidence_reference="evidence-bm-003",
     warning_codes=("CAPTCHA_BLOCK",),
+)
+
+_BM05_CLEAN_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-clean-accepted-001"
+)
+_BM05_MALFORMED_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-malformed-001"
+)
+_BM05_INCOMPLETE_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-incomplete-001"
+)
+_BM05_CAPTCHA_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-captcha-001"
+)
+_BM05_BLOCKED_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-blocked-001"
+)
+_BM05_ROUTE_FAILED_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-route-failed-001"
+)
+_BM05_AMBIGUOUS_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-ambiguous-001",
+    safety_class=BeaconParserEvidenceSafetyClass.AMBIGUOUS,
+)
+_BM05_UNSUPPORTED_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-unsupported-001",
+    safety_class=BeaconParserEvidenceSafetyClass.UNSUPPORTED,
+)
+_BM05_RAW_PROVIDER_AUTHORITY_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-raw-provider-authority-001",
+    safety_class=BeaconParserEvidenceSafetyClass.RAW_PROVIDER_PAYLOAD_AUTHORITY,
+    raw_provider_payload_authority=True,
+)
+_BM05_RAW_HTML_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-raw-html-001",
+    safety_class=BeaconParserEvidenceSafetyClass.RAW_HTML,
+)
+_BM05_RAW_SEARCH_CORE_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-search-core-ref-001",
+    safety_class=BeaconParserEvidenceSafetyClass.RAW_SEARCH_CORE,
+)
+_BM05_RAW_CONTEXT_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-raw-context-001",
+    safety_class=BeaconParserEvidenceSafetyClass.RAW_CONTEXT,
+)
+_BM05_THRESHOLD_DEFERRED_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-threshold-deferred-001"
+)
+_BM05_UNSUPPORTED_PARAMETERS_EVIDENCE = _parser_evidence_reference(
+    evidence_reference="parser-evidence-bm05-unsupported-parameters-001"
+)
+_BM05_CLEAN_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-clean-accepted-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+    parser_evidence_reference=_BM05_CLEAN_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.ACCEPTED,
+    parser_adapter_evidence_gate_reference="parser-adapter-evidence-gate-bm05-001",
+)
+
+_BM05_MALFORMED_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-malformed-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.MALFORMED,
+    parser_evidence_reference=_BM05_MALFORMED_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.NON_CLEAN_PARSER_OUTCOME,
+)
+
+_BM05_INCOMPLETE_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-incomplete-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.INCOMPLETE,
+    parser_evidence_reference=_BM05_INCOMPLETE_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.NON_CLEAN_PARSER_OUTCOME,
+)
+
+_BM05_CAPTCHA_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-captcha-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CAPTCHA_AFFECTED,
+    parser_evidence_reference=_BM05_CAPTCHA_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.BLOCKED,
+    rejection_reason=BeaconSnapshotRejectionReason.NON_CLEAN_PARSER_OUTCOME,
+)
+
+_BM05_BLOCKED_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-blocked-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.BLOCKED,
+    parser_evidence_reference=_BM05_BLOCKED_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.BLOCKED,
+    rejection_reason=BeaconSnapshotRejectionReason.NON_CLEAN_PARSER_OUTCOME,
+)
+
+_BM05_ROUTE_FAILED_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-route-failed-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.ROUTE_FAILED,
+    parser_evidence_reference=_BM05_ROUTE_FAILED_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.BLOCKED,
+    rejection_reason=BeaconSnapshotRejectionReason.NON_CLEAN_PARSER_OUTCOME,
+)
+
+_BM05_AMBIGUOUS_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-ambiguous-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.AMBIGUOUS,
+    parser_evidence_reference=_BM05_AMBIGUOUS_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.AMBIGUOUS_PARSER_EVIDENCE,
+)
+
+_BM05_UNSUPPORTED_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-unsupported-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.UNSUPPORTED,
+    parser_evidence_reference=_BM05_UNSUPPORTED_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.UNSUPPORTED,
+    rejection_reason=BeaconSnapshotRejectionReason.UNSUPPORTED_PARSER_OUTCOME,
+)
+
+_BM05_RAW_PROVIDER_AUTHORITY_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-raw-provider-authority-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+    parser_evidence_reference=_BM05_RAW_PROVIDER_AUTHORITY_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.RAW_PROVIDER_PAYLOAD_AUTHORITY,
+)
+
+_BM05_RAW_HTML_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-raw-html-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+    parser_evidence_reference=_BM05_RAW_HTML_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.RAW_HTML_SEARCH_CORE_CONTEXT_PAYLOAD,
+)
+
+_BM05_RAW_SEARCH_CORE_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-raw-searchcore-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+    parser_evidence_reference=_BM05_RAW_SEARCH_CORE_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.RAW_HTML_SEARCH_CORE_CONTEXT_PAYLOAD,
+)
+
+_BM05_RAW_CONTEXT_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-raw-context-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+    parser_evidence_reference=_BM05_RAW_CONTEXT_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.RAW_HTML_SEARCH_CORE_CONTEXT_PAYLOAD,
+)
+
+_BM05_THRESHOLD_DEFERRED_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-threshold-deferred-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+    parser_evidence_reference=_BM05_THRESHOLD_DEFERRED_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.DEFERRED,
+    rejection_reason=BeaconSnapshotRejectionReason.INVENTED_NUMERIC_ACCEPTANCE_THRESHOLD,
+)
+
+_BM05_UNSUPPORTED_PARAMETERS_ACCEPTANCE = _snapshot_acceptance_decision(
+    decision_id="decision-bm05-unsupported-parameters-rejected-001",
+    parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+    parser_evidence_reference=_BM05_UNSUPPORTED_PARAMETERS_EVIDENCE,
+    acceptance_outcome=BeaconSnapshotAcceptanceOutcome.REJECTED,
+    rejection_reason=BeaconSnapshotRejectionReason.UNSUPPORTED_PARAMETERS_SILENTLY_ACCEPTED,
+    unsupported_parameters=("unsupported=synthetic",),
+)
+
+_BM05_CLEAN_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-050",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=True,
+    evidence_reference="evidence-bm-050",
+    parser_evidence_reference=_BM05_CLEAN_EVIDENCE,
+    normalized_filter_values=("city=synthetic-city", "category=synthetic-category"),
+)
+_BM05_MALFORMED_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-051",
+    status=BeaconParserOutcomeStatus.MALFORMED,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-051",
+    parser_evidence_reference=_BM05_MALFORMED_EVIDENCE,
+    warning_codes=("MALFORMED_SHAPE",),
+)
+_BM05_INCOMPLETE_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-052",
+    status=BeaconParserOutcomeStatus.INCOMPLETE,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-052",
+    parser_evidence_reference=_BM05_INCOMPLETE_EVIDENCE,
+    warning_codes=("INCOMPLETE_RESULT",),
+)
+_BM05_CAPTCHA_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-053",
+    status=BeaconParserOutcomeStatus.CAPTCHA_AFFECTED,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-053",
+    parser_evidence_reference=_BM05_CAPTCHA_EVIDENCE,
+    warning_codes=("CAPTCHA_BLOCK",),
+)
+_BM05_BLOCKED_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-054",
+    status=BeaconParserOutcomeStatus.BLOCKED,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-054",
+    parser_evidence_reference=_BM05_BLOCKED_EVIDENCE,
+    warning_codes=("BLOCKED_ROUTE",),
+)
+_BM05_ROUTE_FAILED_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-055",
+    status=BeaconParserOutcomeStatus.ROUTE_FAILED,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-055",
+    parser_evidence_reference=_BM05_ROUTE_FAILED_EVIDENCE,
+    warning_codes=("ROUTE_FAILED",),
+)
+_BM05_AMBIGUOUS_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-056",
+    status=BeaconParserOutcomeStatus.AMBIGUOUS,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-056",
+    parser_evidence_reference=_BM05_AMBIGUOUS_EVIDENCE,
+    warning_codes=("AMBIGUOUS_EVIDENCE",),
+)
+_BM05_UNSUPPORTED_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-057",
+    status=BeaconParserOutcomeStatus.UNSUPPORTED,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-057",
+    parser_evidence_reference=_BM05_UNSUPPORTED_EVIDENCE,
+    unsupported_parameters=("unsupported=synthetic",),
+    warning_codes=("UNSUPPORTED_OUTCOME",),
+)
+_BM05_RAW_PROVIDER_AUTHORITY_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-058",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-058",
+    parser_evidence_reference=_BM05_RAW_PROVIDER_AUTHORITY_EVIDENCE,
+    warning_codes=("RAW_PROVIDER_PAYLOAD_AUTHORITY",),
+)
+_BM05_RAW_HTML_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-059",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-059",
+    parser_evidence_reference=_BM05_RAW_HTML_EVIDENCE,
+    warning_codes=("RAW_HTML_PAYLOAD",),
+)
+_BM05_RAW_SEARCH_CORE_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-060",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-060",
+    parser_evidence_reference=_BM05_RAW_SEARCH_CORE_EVIDENCE,
+    warning_codes=("RAW_SEARCH_CORE_PAYLOAD",),
+)
+_BM05_RAW_CONTEXT_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-061",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-061",
+    parser_evidence_reference=_BM05_RAW_CONTEXT_EVIDENCE,
+    warning_codes=("RAW_CONTEXT_PAYLOAD",),
+)
+_BM05_THRESHOLD_DEFERRED_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-062",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-062",
+    parser_evidence_reference=_BM05_THRESHOLD_DEFERRED_EVIDENCE,
+    warning_codes=("THRESHOLD_DEFERRED",),
+)
+_BM05_UNSUPPORTED_PARAMETERS_SNAPSHOT = _snapshot(
+    snapshot_id="snap-bm-063",
+    status=BeaconParserOutcomeStatus.CLEAN,
+    accepted_as_clean=False,
+    evidence_reference="evidence-bm-063",
+    parser_evidence_reference=_BM05_UNSUPPORTED_PARAMETERS_EVIDENCE,
+    unsupported_parameters=("unsupported=synthetic",),
+    warning_codes=("UNSUPPORTED_PARAMETERS",),
 )
 
 _OWN_ACTIVE_BEACON = _beacon(
@@ -1243,6 +1569,131 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         account_id=_OWN_ACCOUNT_ID,
         foreign_account_id=_FOREIGN_ACCOUNT_ID,
         snapshot=_CAPTCHA_SNAPSHOT,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-CLEAN-OPAQUE-ACCEPTED-001",
+        summary="Clean parser outcome is accepted only with opaque parser evidence.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        beacon=_beacon(
+            beacon_id="beacon-bm05-clean-accepted-001",
+            account_id=_OWN_ACCOUNT_ID,
+            display_name="Synthetic BM05 clean accepted beacon",
+            lifecycle_state=BeaconLifecycleState.ACTIVE,
+            current_revision_id="rev-bm05-clean-accepted-001",
+            source_reference="source-ref-bm05-clean-accepted-001",
+            snapshot=_BM05_CLEAN_SNAPSHOT,
+        ),
+        source_url=_source_url(
+            "source-ref-bm05-clean-accepted-001",
+            "https://example.invalid/search?query=bm05-clean-accepted&city=synthetic",
+        ),
+        snapshot=_BM05_CLEAN_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_CLEAN_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-MALFORMED-REJECTED-001",
+        summary="Malformed parser outcome is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_MALFORMED_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_MALFORMED_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-INCOMPLETE-REJECTED-001",
+        summary="Incomplete parser outcome is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_INCOMPLETE_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_INCOMPLETE_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-CAPTCHA-REJECTED-001",
+        summary="CAPTCHA-affected parser outcome is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_CAPTCHA_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_CAPTCHA_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-BLOCKED-REJECTED-001",
+        summary="Blocked parser outcome is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_BLOCKED_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_BLOCKED_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-ROUTE-FAILED-REJECTED-001",
+        summary="Route-failed parser outcome is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_ROUTE_FAILED_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_ROUTE_FAILED_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-AMBIGUOUS-REJECTED-001",
+        summary="Ambiguous parser outcome is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_AMBIGUOUS_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_AMBIGUOUS_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-UNSUPPORTED-REJECTED-001",
+        summary="Unsupported parser outcome is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_UNSUPPORTED_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_UNSUPPORTED_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-RAW-PROVIDER-AUTHORITY-REJECTED-001",
+        summary="Raw provider payload authority is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_RAW_PROVIDER_AUTHORITY_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_RAW_PROVIDER_AUTHORITY_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-RAW-HTML-REJECTED-001",
+        summary="Raw HTML parser evidence reference is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_RAW_HTML_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_RAW_HTML_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-RAW-SEARCHCORE-REJECTED-001",
+        summary="Raw searchCore parser evidence reference is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_RAW_SEARCH_CORE_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_RAW_SEARCH_CORE_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-RAW-CONTEXT-REJECTED-001",
+        summary="Raw context parser evidence reference is rejected.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_RAW_CONTEXT_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_RAW_CONTEXT_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-THRESHOLD-DEFERRED-001",
+        summary="Acceptance threshold stays deferred without inventing a numeric threshold.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_THRESHOLD_DEFERRED_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_THRESHOLD_DEFERRED_ACCEPTANCE,
+    ),
+    SyntheticFixtureCase(
+        fixture_id="FX-BM-PARSER-BM05-UNSUPPORTED-PARAMETERS-REJECTED-001",
+        summary="Unsupported parameters are not silently accepted.",
+        account_id=_OWN_ACCOUNT_ID,
+        foreign_account_id=_FOREIGN_ACCOUNT_ID,
+        snapshot=_BM05_UNSUPPORTED_PARAMETERS_SNAPSHOT,
+        snapshot_acceptance_decision=_BM05_UNSUPPORTED_PARAMETERS_ACCEPTANCE,
     ),
     SyntheticFixtureCase(
         fixture_id="FX-BM-ARCHIVED-EXCLUDED-001",

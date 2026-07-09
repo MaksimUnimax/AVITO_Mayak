@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from mayak.modules.beacon_management import (
     FIXTURE_IDS,
     SYNTHETIC_FIXTURE_BY_ID,
@@ -8,8 +10,10 @@ from mayak.modules.beacon_management import (
 from mayak.modules.beacon_management.contracts import (
     BeaconAuthorizationOutcome,
     BeaconDecisionStatus,
+    BeaconParserEvidenceSafetyClass,
     BeaconParserOutcomeStatus,
     BeaconProtectedAction,
+    BeaconSnapshotAcceptanceOutcome,
     BeaconSourceUrlPreparationOutcome,
     BeaconSourceUrlSafetyClassification,
     BeaconSystemActorClass,
@@ -67,6 +71,29 @@ def test_bm04_source_url_fixture_ids_are_present() -> None:
         "FX-BM-SOURCE-URL-PREP-FINGERPRINT-OPAQUE-001",
         "FX-BM-SOURCE-URL-PREP-TRACKING-POLICY-001",
         "FX-BM-SOURCE-URL-PREP-SHELL-BLOCKED-001",
+    )
+
+    for fixture_id in expected_ids:
+        assert fixture_id in SYNTHETIC_FIXTURE_BY_ID
+        assert SYNTHETIC_FIXTURE_BY_ID[fixture_id].fixture_id == fixture_id
+
+
+def test_bm05_parser_snapshot_fixture_ids_are_present() -> None:
+    expected_ids = (
+        "FX-BM-PARSER-BM05-CLEAN-OPAQUE-ACCEPTED-001",
+        "FX-BM-PARSER-BM05-MALFORMED-REJECTED-001",
+        "FX-BM-PARSER-BM05-INCOMPLETE-REJECTED-001",
+        "FX-BM-PARSER-BM05-CAPTCHA-REJECTED-001",
+        "FX-BM-PARSER-BM05-BLOCKED-REJECTED-001",
+        "FX-BM-PARSER-BM05-ROUTE-FAILED-REJECTED-001",
+        "FX-BM-PARSER-BM05-AMBIGUOUS-REJECTED-001",
+        "FX-BM-PARSER-BM05-UNSUPPORTED-REJECTED-001",
+        "FX-BM-PARSER-BM05-RAW-PROVIDER-AUTHORITY-REJECTED-001",
+        "FX-BM-PARSER-BM05-RAW-HTML-REJECTED-001",
+        "FX-BM-PARSER-BM05-RAW-SEARCHCORE-REJECTED-001",
+        "FX-BM-PARSER-BM05-RAW-CONTEXT-REJECTED-001",
+        "FX-BM-PARSER-BM05-THRESHOLD-DEFERRED-001",
+        "FX-BM-PARSER-BM05-UNSUPPORTED-PARAMETERS-REJECTED-001",
     )
 
     for fixture_id in expected_ids:
@@ -237,8 +264,7 @@ def test_shell_blocked_fixture_remains_blocked_without_interpolation_channel() -
     assert fixture.source_url.submitted_url not in shell_command_text
     assert fixture.source_url_preparation_decision.shell_interpolation_field is None
     assert (
-        fixture.source_url_preparation_decision.outcome
-        is BeaconSourceUrlPreparationOutcome.BLOCKED
+        fixture.source_url_preparation_decision.outcome is BeaconSourceUrlPreparationOutcome.BLOCKED
     )
 
 
@@ -333,6 +359,148 @@ def test_parser_unsafe_fixtures_remain_not_clean() -> None:
     assert captcha.snapshot.parser_outcome_status is BeaconParserOutcomeStatus.CAPTCHA_AFFECTED
     assert malformed.snapshot.accepted_as_clean is False
     assert captcha.snapshot.accepted_as_clean is False
+
+
+def test_bm05_clean_accepted_fixture_uses_opaque_parser_evidence_reference() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-PARSER-BM05-CLEAN-OPAQUE-ACCEPTED-001"]
+
+    assert fixture.snapshot is not None
+    assert fixture.snapshot_acceptance_decision is not None
+    assert fixture.snapshot.accepted_as_clean is True
+    assert fixture.snapshot.parser_evidence_reference is not None
+    assert fixture.snapshot.parser_evidence_reference.safety_class is (
+        BeaconParserEvidenceSafetyClass.OPAQUE
+    )
+    assert (
+        fixture.snapshot_acceptance_decision.acceptance_outcome
+        is BeaconSnapshotAcceptanceOutcome.ACCEPTED
+    )
+    assert fixture.snapshot_acceptance_decision.parser_adapter_evidence_gate_reference is not None
+
+
+@pytest.mark.parametrize(
+    "fixture_id,expected_outcome",
+    (
+        (
+            "FX-BM-PARSER-BM05-MALFORMED-REJECTED-001",
+            BeaconSnapshotAcceptanceOutcome.REJECTED,
+        ),
+        (
+            "FX-BM-PARSER-BM05-INCOMPLETE-REJECTED-001",
+            BeaconSnapshotAcceptanceOutcome.REJECTED,
+        ),
+        (
+            "FX-BM-PARSER-BM05-CAPTCHA-REJECTED-001",
+            BeaconSnapshotAcceptanceOutcome.BLOCKED,
+        ),
+        (
+            "FX-BM-PARSER-BM05-BLOCKED-REJECTED-001",
+            BeaconSnapshotAcceptanceOutcome.BLOCKED,
+        ),
+        (
+            "FX-BM-PARSER-BM05-ROUTE-FAILED-REJECTED-001",
+            BeaconSnapshotAcceptanceOutcome.BLOCKED,
+        ),
+        (
+            "FX-BM-PARSER-BM05-AMBIGUOUS-REJECTED-001",
+            BeaconSnapshotAcceptanceOutcome.REJECTED,
+        ),
+        (
+            "FX-BM-PARSER-BM05-UNSUPPORTED-REJECTED-001",
+            BeaconSnapshotAcceptanceOutcome.UNSUPPORTED,
+        ),
+    ),
+)
+def test_bm05_negative_parser_fixtures_are_not_accepted(
+    fixture_id: str,
+    expected_outcome: BeaconSnapshotAcceptanceOutcome,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+
+    assert fixture.snapshot is not None
+    assert fixture.snapshot_acceptance_decision is not None
+    assert fixture.snapshot.accepted_as_clean is False
+    assert fixture.snapshot_acceptance_decision.acceptance_outcome is expected_outcome
+    assert fixture.snapshot_acceptance_decision.acceptance_outcome is not (
+        BeaconSnapshotAcceptanceOutcome.ACCEPTED
+    )
+
+
+def test_bm05_raw_provider_payload_authority_fixture_is_rejected() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-PARSER-BM05-RAW-PROVIDER-AUTHORITY-REJECTED-001"]
+
+    assert fixture.snapshot is not None
+    assert fixture.snapshot_acceptance_decision is not None
+    assert fixture.snapshot.parser_evidence_reference is not None
+    assert (
+        fixture.snapshot.parser_evidence_reference.safety_class
+        is BeaconParserEvidenceSafetyClass.RAW_PROVIDER_PAYLOAD_AUTHORITY
+    )
+    assert fixture.snapshot.parser_evidence_reference.raw_provider_payload_authority is True
+    assert (
+        fixture.snapshot_acceptance_decision.acceptance_outcome
+        is BeaconSnapshotAcceptanceOutcome.REJECTED
+    )
+
+
+@pytest.mark.parametrize(
+    "fixture_id,expected_safety_class",
+    (
+        (
+            "FX-BM-PARSER-BM05-RAW-HTML-REJECTED-001",
+            BeaconParserEvidenceSafetyClass.RAW_HTML,
+        ),
+        (
+            "FX-BM-PARSER-BM05-RAW-SEARCHCORE-REJECTED-001",
+            BeaconParserEvidenceSafetyClass.RAW_SEARCH_CORE,
+        ),
+        (
+            "FX-BM-PARSER-BM05-RAW-CONTEXT-REJECTED-001",
+            BeaconParserEvidenceSafetyClass.RAW_CONTEXT,
+        ),
+    ),
+)
+def test_bm05_raw_payload_reference_fixtures_are_rejected(
+    fixture_id: str,
+    expected_safety_class: BeaconParserEvidenceSafetyClass,
+) -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+
+    assert fixture.snapshot is not None
+    assert fixture.snapshot_acceptance_decision is not None
+    assert fixture.snapshot.parser_evidence_reference is not None
+    assert fixture.snapshot.parser_evidence_reference.safety_class is expected_safety_class
+    assert (
+        fixture.snapshot_acceptance_decision.acceptance_outcome
+        is BeaconSnapshotAcceptanceOutcome.REJECTED
+    )
+
+
+def test_bm05_threshold_deferred_fixture_does_not_invent_numeric_threshold() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-PARSER-BM05-THRESHOLD-DEFERRED-001"]
+
+    assert fixture.snapshot is not None
+    assert fixture.snapshot_acceptance_decision is not None
+    assert fixture.snapshot_acceptance_decision.acceptance_outcome is (
+        BeaconSnapshotAcceptanceOutcome.DEFERRED
+    )
+    assert fixture.snapshot_acceptance_decision.exact_acceptance_threshold_percent is None
+    assert fixture.snapshot_acceptance_decision.parser_adapter_evidence_gate_reference is None
+
+
+def test_bm05_unsupported_parameters_fixture_does_not_silently_accept_unsupported_parameters() -> (
+    None
+):
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-BM-PARSER-BM05-UNSUPPORTED-PARAMETERS-REJECTED-001"]
+
+    assert fixture.snapshot is not None
+    assert fixture.snapshot_acceptance_decision is not None
+    assert fixture.snapshot.unsupported_parameters == ("unsupported=synthetic",)
+    assert fixture.snapshot_acceptance_decision.unsupported_parameters == ("unsupported=synthetic",)
+    assert (
+        fixture.snapshot_acceptance_decision.acceptance_outcome
+        is BeaconSnapshotAcceptanceOutcome.REJECTED
+    )
 
 
 def test_authorization_fixture_ids_are_present_and_appended_deterministically() -> None:

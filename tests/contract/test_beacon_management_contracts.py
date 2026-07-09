@@ -23,9 +23,14 @@ from mayak.modules.beacon_management.contracts import (
     BeaconNameOrigin,
     BeaconNamingMetadata,
     BeaconOwnershipDecision,
+    BeaconParserEvidenceReference,
+    BeaconParserEvidenceSafetyClass,
     BeaconParserOutcomeStatus,
     BeaconPreparedSourceUrl,
     BeaconProtectedAction,
+    BeaconSnapshotAcceptanceDecision,
+    BeaconSnapshotAcceptanceOutcome,
+    BeaconSnapshotRejectionReason,
     BeaconSourceUrl,
     BeaconSourceUrlFingerprintPolicy,
     BeaconSourceUrlIdempotencyBasis,
@@ -117,6 +122,47 @@ def _bm04_snapshot(evidence_reference: str) -> ExtractedSearchConfigurationSnaps
         unsupported_parameters=(),
         warning_codes=(),
         evidence_reference=evidence_reference,
+        parser_evidence_reference=BeaconParserEvidenceReference(
+            evidence_reference="parser-evidence-contract-bm04-001",
+        ),
+    )
+
+
+def _bm05_parser_evidence_reference(
+    evidence_reference: str,
+    *,
+    safety_class: BeaconParserEvidenceSafetyClass = BeaconParserEvidenceSafetyClass.OPAQUE,
+    raw_provider_payload_authority: bool = False,
+) -> BeaconParserEvidenceReference:
+    return BeaconParserEvidenceReference(
+        evidence_reference=evidence_reference,
+        safety_class=safety_class,
+        raw_provider_payload_authority=raw_provider_payload_authority,
+    )
+
+
+def _bm05_acceptance_decision(
+    *,
+    decision_id: str,
+    parser_outcome_status: BeaconParserOutcomeStatus,
+    parser_evidence_reference: BeaconParserEvidenceReference | None,
+    acceptance_outcome: BeaconSnapshotAcceptanceOutcome,
+    rejection_reason: BeaconSnapshotRejectionReason | None = None,
+    parser_adapter_evidence_gate_reference: str | None = None,
+    exact_acceptance_threshold_percent: int | None = None,
+    unsupported_parameters: tuple[str, ...] = (),
+    claims_full_parser_adapter_implementation_present: bool = False,
+) -> BeaconSnapshotAcceptanceDecision:
+    return BeaconSnapshotAcceptanceDecision(
+        decision_id=decision_id,
+        parser_outcome_status=parser_outcome_status,
+        parser_evidence_reference=parser_evidence_reference,
+        acceptance_outcome=acceptance_outcome,
+        rejection_reason=rejection_reason,
+        parser_adapter_evidence_gate_reference=parser_adapter_evidence_gate_reference,
+        exact_acceptance_threshold_percent=exact_acceptance_threshold_percent,
+        unsupported_parameters=unsupported_parameters,
+        claims_full_parser_adapter_implementation_present=claims_full_parser_adapter_implementation_present,
     )
 
 
@@ -316,6 +362,20 @@ def test_beacon_management_package_exports_bm04_source_url_primitives() -> None:
         assert getattr(beacon_management, name) is getattr(contracts, name)
 
 
+def test_beacon_management_package_exports_bm05_parser_snapshot_primitives() -> None:
+    bm05_names = (
+        "BeaconParserEvidenceReference",
+        "BeaconParserEvidenceSafetyClass",
+        "BeaconSnapshotAcceptanceDecision",
+        "BeaconSnapshotAcceptanceOutcome",
+        "BeaconSnapshotRejectionReason",
+    )
+
+    for name in bm05_names:
+        assert hasattr(beacon_management, name)
+        assert getattr(beacon_management, name) is getattr(contracts, name)
+
+
 def test_beacon_management_contract_module_exports_bm04_source_url_primitives() -> None:
     assert BeaconPreparedSourceUrl.__name__ == "BeaconPreparedSourceUrl"
     assert BeaconSourceUrl.__name__ == "BeaconSourceUrl"
@@ -324,6 +384,14 @@ def test_beacon_management_contract_module_exports_bm04_source_url_primitives() 
     assert BeaconSourceUrlPreparationDecision.__name__ == "BeaconSourceUrlPreparationDecision"
     assert BeaconSourceUrlPreparationOutcome.__name__ == "BeaconSourceUrlPreparationOutcome"
     assert BeaconSourceUrlSafetyClassification.__name__ == "BeaconSourceUrlSafetyClassification"
+
+
+def test_beacon_management_contract_module_exports_bm05_parser_snapshot_primitives() -> None:
+    assert BeaconParserEvidenceReference.__name__ == "BeaconParserEvidenceReference"
+    assert BeaconParserEvidenceSafetyClass.__name__ == "BeaconParserEvidenceSafetyClass"
+    assert BeaconSnapshotAcceptanceDecision.__name__ == "BeaconSnapshotAcceptanceDecision"
+    assert BeaconSnapshotAcceptanceOutcome.__name__ == "BeaconSnapshotAcceptanceOutcome"
+    assert BeaconSnapshotRejectionReason.__name__ == "BeaconSnapshotRejectionReason"
 
 
 def test_submitted_source_url_is_preserved_and_not_overwritten() -> None:
@@ -370,10 +438,7 @@ def test_beacon_accepts_matching_source_url_and_current_configuration_source_url
     )
 
     assert beacon.source_url == beacon.current_configuration.source_url
-    assert (
-        beacon.source_url.submitted_url
-        == beacon.current_configuration.source_url.submitted_url
-    )
+    assert beacon.source_url.submitted_url == beacon.current_configuration.source_url.submitted_url
     assert (
         beacon.source_url.evidence_reference
         == beacon.current_configuration.source_url.evidence_reference
@@ -1319,6 +1384,9 @@ def test_beacon_management_source_url_duplicates_are_allowed_when_beacon_ids_dif
         accepted_as_clean=True,
         normalized_filter_values=("city=synthetic-city",),
         evidence_reference="evidence-contract-001",
+        parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+            evidence_reference="parser-evidence-contract-001"
+        ),
     )
     configuration_a = contracts.BeaconCurrentConfiguration(
         beacon_id="beacon-contract-a",
@@ -1383,6 +1451,9 @@ def test_beacon_management_source_url_is_preserved_separately_from_snapshot_and_
         accepted_as_clean=True,
         normalized_filter_values=("city=synthetic-city", "category=synthetic-category"),
         evidence_reference="evidence-contract-002",
+        parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+            evidence_reference="parser-evidence-contract-002"
+        ),
     )
     override = contracts.BeaconFilterOverride(
         field_name="amenities",
@@ -1515,22 +1586,142 @@ def test_unsupported_filter_override_cannot_be_represented_as_applied() -> None:
         )
 
 
-def test_malformed_and_captcha_parser_outcomes_cannot_be_clean_accepted_snapshots() -> None:
-    for status in (
+def test_clean_parser_outcome_can_be_accepted_with_opaque_evidence_reference() -> None:
+    evidence_reference = _bm05_parser_evidence_reference("parser-evidence-contract-bm05-clean-001")
+    snapshot = contracts.ExtractedSearchConfigurationSnapshot(
+        snapshot_id="snap-contract-bm05-clean-001",
+        parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+        accepted_as_clean=True,
+        normalized_filter_values=("city=synthetic-city",),
+        evidence_reference="evidence-contract-bm05-clean-001",
+        parser_evidence_reference=evidence_reference,
+    )
+    decision = _bm05_acceptance_decision(
+        decision_id="decision-contract-bm05-clean-001",
+        parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+        parser_evidence_reference=evidence_reference,
+        acceptance_outcome=contracts.BeaconSnapshotAcceptanceOutcome.ACCEPTED,
+        parser_adapter_evidence_gate_reference="parser-adapter-evidence-gate-contract-bm05-001",
+    )
+
+    assert snapshot.accepted_as_clean is True
+    assert snapshot.parser_evidence_reference == evidence_reference
+    assert decision.acceptance_outcome is contracts.BeaconSnapshotAcceptanceOutcome.ACCEPTED
+    assert decision.parser_evidence_reference == evidence_reference
+
+
+@pytest.mark.parametrize(
+    "status",
+    (
         contracts.BeaconParserOutcomeStatus.MALFORMED,
+        contracts.BeaconParserOutcomeStatus.INCOMPLETE,
         contracts.BeaconParserOutcomeStatus.CAPTCHA_AFFECTED,
         contracts.BeaconParserOutcomeStatus.BLOCKED,
         contracts.BeaconParserOutcomeStatus.ROUTE_FAILED,
         contracts.BeaconParserOutcomeStatus.AMBIGUOUS,
-    ):
-        with pytest.raises(ValidationError):
-            contracts.ExtractedSearchConfigurationSnapshot(
-                snapshot_id=f"snap-contract-{status.value.lower()}",
-                parser_outcome_status=status,
-                accepted_as_clean=True,
-                normalized_filter_values=(),
-                evidence_reference="evidence-contract-unsafe",
-            )
+        contracts.BeaconParserOutcomeStatus.UNSUPPORTED,
+    ),
+)
+def test_unsafe_parser_outcomes_cannot_be_clean_accepted_snapshots(
+    status: contracts.BeaconParserOutcomeStatus,
+) -> None:
+    with pytest.raises(ValidationError):
+        contracts.ExtractedSearchConfigurationSnapshot(
+            snapshot_id=f"snap-contract-{status.value.lower()}",
+            parser_outcome_status=status,
+            accepted_as_clean=True,
+            normalized_filter_values=(),
+            evidence_reference="evidence-contract-unsafe",
+        )
+
+
+@pytest.mark.parametrize(
+    "raw_reference,safety_class,expected_message",
+    (
+        (
+            "<html><body>raw</body></html>",
+            contracts.BeaconParserEvidenceSafetyClass.RAW_HTML,
+            "raw HTML payload text",
+        ),
+        (
+            'searchCore={"raw": true}',
+            contracts.BeaconParserEvidenceSafetyClass.RAW_SEARCH_CORE,
+            "raw searchCore payload text",
+        ),
+        (
+            'context={"raw": true}',
+            contracts.BeaconParserEvidenceSafetyClass.RAW_CONTEXT,
+            "raw context payload text",
+        ),
+    ),
+)
+def test_raw_payload_text_cannot_be_represented_in_public_parser_evidence_reference(
+    raw_reference: str,
+    safety_class: contracts.BeaconParserEvidenceSafetyClass,
+    expected_message: str,
+) -> None:
+    with pytest.raises(ValidationError, match=expected_message):
+        contracts.BeaconParserEvidenceReference(
+            evidence_reference=raw_reference,
+            safety_class=safety_class,
+        )
+
+
+def test_raw_provider_payload_authority_cannot_be_accepted_as_clean_snapshot_evidence() -> None:
+    with pytest.raises(ValidationError, match="non-ambiguous parser evidence"):
+        contracts.ExtractedSearchConfigurationSnapshot(
+            snapshot_id="snap-contract-bm05-raw-provider-authority-001",
+            parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+            accepted_as_clean=True,
+            normalized_filter_values=(),
+            evidence_reference="evidence-contract-bm05-raw-provider-authority-001",
+            parser_evidence_reference=_bm05_parser_evidence_reference(
+                "parser-evidence-contract-bm05-raw-provider-authority-001",
+                safety_class=contracts.BeaconParserEvidenceSafetyClass.RAW_PROVIDER_PAYLOAD_AUTHORITY,
+                raw_provider_payload_authority=True,
+            ),
+        )
+
+
+def test_invented_numeric_threshold_without_explicit_parser_adapter_evidence_gate_is_rejected() -> (
+    None
+):
+    with pytest.raises(ValidationError, match="explicit parser adapter evidence gate"):
+        _bm05_acceptance_decision(
+            decision_id="decision-contract-bm05-threshold-001",
+            parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+            parser_evidence_reference=_bm05_parser_evidence_reference(
+                "parser-evidence-contract-bm05-threshold-001"
+            ),
+            acceptance_outcome=contracts.BeaconSnapshotAcceptanceOutcome.ACCEPTED,
+            exact_acceptance_threshold_percent=97,
+        )
+
+
+def test_unsupported_parameters_cannot_be_silently_accepted() -> None:
+    with pytest.raises(ValidationError, match="unsupported parameters cannot be silently accepted"):
+        _bm05_acceptance_decision(
+            decision_id="decision-contract-bm05-unsupported-params-001",
+            parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+            parser_evidence_reference=_bm05_parser_evidence_reference(
+                "parser-evidence-contract-bm05-unsupported-params-001"
+            ),
+            acceptance_outcome=contracts.BeaconSnapshotAcceptanceOutcome.ACCEPTED,
+            unsupported_parameters=("unsupported=synthetic",),
+        )
+
+
+def test_full_parser_adapter_implementation_claim_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="must not claim full Parser Adapter implementation"):
+        _bm05_acceptance_decision(
+            decision_id="decision-contract-bm05-full-parser-adapter-claim-001",
+            parser_outcome_status=contracts.BeaconParserOutcomeStatus.CLEAN,
+            parser_evidence_reference=_bm05_parser_evidence_reference(
+                "parser-evidence-contract-bm05-full-parser-adapter-claim-001"
+            ),
+            acceptance_outcome=contracts.BeaconSnapshotAcceptanceOutcome.REJECTED,
+            claims_full_parser_adapter_implementation_present=True,
+        )
 
 
 def test_permanently_deleted_beacon_cannot_be_restorable() -> None:
@@ -1540,6 +1731,9 @@ def test_permanently_deleted_beacon_cannot_be_restorable() -> None:
         accepted_as_clean=True,
         normalized_filter_values=("city=synthetic-city",),
         evidence_reference="evidence-contract-003",
+        parser_evidence_reference=contracts.BeaconParserEvidenceReference(
+            evidence_reference="parser-evidence-contract-003"
+        ),
     )
     source_url = contracts.BeaconSourceUrl(
         submitted_url="https://example.invalid/search?query=permanently-deleted",

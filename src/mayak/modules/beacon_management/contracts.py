@@ -38,6 +38,70 @@ class BeaconParserOutcomeStatus(str, Enum):
     BLOCKED = "BLOCKED"
     ROUTE_FAILED = "ROUTE_FAILED"
     AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class BeaconParserEvidenceSafetyClass(str, Enum):
+    """Safety classification for opaque parser evidence references."""
+
+    OPAQUE = "OPAQUE"
+    RAW_PROVIDER_PAYLOAD = "RAW_PROVIDER_PAYLOAD"
+    RAW_PROVIDER_PAYLOAD_AUTHORITY = "RAW_PROVIDER_PAYLOAD_AUTHORITY"
+    RAW_HTML = "RAW_HTML"
+    RAW_SEARCH_CORE = "RAW_SEARCH_CORE"
+    RAW_CONTEXT = "RAW_CONTEXT"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class BeaconSnapshotAcceptanceOutcome(str, Enum):
+    """Semantic acceptance outcomes for extracted snapshots."""
+
+    ACCEPTED = "ACCEPTED"
+    REJECTED = "REJECTED"
+    BLOCKED = "BLOCKED"
+    DEFERRED = "DEFERRED"
+    REPLAYED = "REPLAYED"
+    CONFLICT = "CONFLICT"
+    UNSUPPORTED = "UNSUPPORTED"
+
+
+class BeaconSnapshotRejectionReason(str, Enum):
+    """Semantic rejection reasons for extracted snapshot acceptance decisions."""
+
+    NON_CLEAN_PARSER_OUTCOME = "NON_CLEAN_PARSER_OUTCOME"
+    MISSING_PARSER_EVIDENCE_REFERENCE = "MISSING_PARSER_EVIDENCE_REFERENCE"
+    NON_OPAQUE_PARSER_EVIDENCE_REFERENCE = "NON_OPAQUE_PARSER_EVIDENCE_REFERENCE"
+    AMBIGUOUS_PARSER_EVIDENCE = "AMBIGUOUS_PARSER_EVIDENCE"
+    RAW_PROVIDER_PAYLOAD_AUTHORITY = "RAW_PROVIDER_PAYLOAD_AUTHORITY"
+    RAW_HTML_SEARCH_CORE_CONTEXT_PAYLOAD = "RAW_HTML_SEARCH_CORE_CONTEXT_PAYLOAD"
+    INVENTED_NUMERIC_ACCEPTANCE_THRESHOLD = "INVENTED_NUMERIC_ACCEPTANCE_THRESHOLD"
+    FULL_PARSER_ADAPTER_IMPLEMENTATION_CLAIM = "FULL_PARSER_ADAPTER_IMPLEMENTATION_CLAIM"
+    UNSUPPORTED_PARAMETERS_SILENTLY_ACCEPTED = "UNSUPPORTED_PARAMETERS_SILENTLY_ACCEPTED"
+    UNSUPPORTED_PARSER_OUTCOME = "UNSUPPORTED_PARSER_OUTCOME"
+
+
+class BeaconParserEvidenceReference(BaseModel):
+    """Opaque parser evidence reference with a non-authoritative safety class."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    evidence_reference: str = Field(min_length=1)
+    safety_class: BeaconParserEvidenceSafetyClass = BeaconParserEvidenceSafetyClass.OPAQUE
+    raw_provider_payload_authority: bool = False
+
+    @model_validator(mode="after")
+    def _validate_parser_evidence_reference(self) -> "BeaconParserEvidenceReference":
+        evidence_reference = self.evidence_reference.lower()
+        if "<html" in evidence_reference or "</html" in evidence_reference:
+            raise ValueError("parser evidence reference must not contain raw HTML payload text")
+        if "searchcore" in evidence_reference:
+            raise ValueError(
+                "parser evidence reference must not contain raw searchCore payload text"
+            )
+        if "context=" in evidence_reference or "context{" in evidence_reference:
+            raise ValueError("parser evidence reference must not contain raw context payload text")
+        return self
 
 
 class BeaconOverrideStatus(str, Enum):
@@ -547,6 +611,7 @@ class ExtractedSearchConfigurationSnapshot(BaseModel):
     unsupported_parameters: tuple[str, ...] = Field(default_factory=tuple)
     warning_codes: tuple[str, ...] = Field(default_factory=tuple)
     evidence_reference: str = Field(min_length=1)
+    parser_evidence_reference: BeaconParserEvidenceReference | None = None
 
     @model_validator(mode="after")
     def _validate_clean_snapshot(self) -> "ExtractedSearchConfigurationSnapshot":
@@ -561,9 +626,100 @@ class ExtractedSearchConfigurationSnapshot(BaseModel):
             BeaconParserOutcomeStatus.BLOCKED,
             BeaconParserOutcomeStatus.ROUTE_FAILED,
             BeaconParserOutcomeStatus.AMBIGUOUS,
+            BeaconParserOutcomeStatus.UNSUPPORTED,
         }
         if self.accepted_as_clean and self.parser_outcome_status in unsafe_parser_outcomes:
             raise ValueError("unsafe parser outcome cannot become a clean accepted snapshot")
+        if self.accepted_as_clean:
+            if self.parser_outcome_status is not BeaconParserOutcomeStatus.CLEAN:
+                raise ValueError("clean accepted snapshot requires clean parser outcome")
+            if self.parser_evidence_reference is None:
+                raise ValueError("clean accepted snapshot requires parser evidence reference")
+            evidence_is_opaque = (
+                self.parser_evidence_reference.safety_class
+                is BeaconParserEvidenceSafetyClass.OPAQUE
+            )
+            if not evidence_is_opaque:
+                raise ValueError("clean accepted snapshot requires non-ambiguous parser evidence")
+        return self
+
+
+class BeaconSnapshotAcceptanceDecision(BaseModel):
+    """Semantic decision for accepting or rejecting an extracted parser snapshot."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    decision_id: str = Field(min_length=1)
+    parser_outcome_status: BeaconParserOutcomeStatus
+    parser_evidence_reference: BeaconParserEvidenceReference | None = None
+    acceptance_outcome: BeaconSnapshotAcceptanceOutcome
+    rejection_reason: BeaconSnapshotRejectionReason | None = None
+    parser_adapter_evidence_gate_reference: str | None = Field(default=None, min_length=1)
+    exact_acceptance_threshold_percent: int | None = Field(default=None, gt=0)
+    unsupported_parameters: tuple[str, ...] = Field(default_factory=tuple)
+    claims_full_parser_adapter_implementation_present: bool = False
+
+    @model_validator(mode="after")
+    def _validate_snapshot_acceptance_decision(
+        self,
+    ) -> "BeaconSnapshotAcceptanceDecision":
+        _reject_blank_values("unsupported_parameters", self.unsupported_parameters)
+
+        unsafe_parser_outcomes = {
+            BeaconParserOutcomeStatus.MALFORMED,
+            BeaconParserOutcomeStatus.INCOMPLETE,
+            BeaconParserOutcomeStatus.CAPTCHA_AFFECTED,
+            BeaconParserOutcomeStatus.BLOCKED,
+            BeaconParserOutcomeStatus.ROUTE_FAILED,
+            BeaconParserOutcomeStatus.AMBIGUOUS,
+            BeaconParserOutcomeStatus.UNSUPPORTED,
+        }
+
+        if self.acceptance_outcome is BeaconSnapshotAcceptanceOutcome.ACCEPTED:
+            if self.parser_outcome_status in unsafe_parser_outcomes:
+                raise ValueError("unsafe parser outcome cannot become an accepted snapshot")
+            if self.parser_outcome_status is not BeaconParserOutcomeStatus.CLEAN:
+                raise ValueError("accepted snapshot requires clean parser outcome")
+            if self.parser_evidence_reference is None:
+                raise ValueError("accepted snapshot requires parser evidence reference")
+            evidence_is_opaque = (
+                self.parser_evidence_reference.safety_class
+                is BeaconParserEvidenceSafetyClass.OPAQUE
+            )
+            if not evidence_is_opaque:
+                raise ValueError("accepted snapshot requires non-ambiguous parser evidence")
+            if self.parser_evidence_reference.raw_provider_payload_authority:
+                raise ValueError("raw provider payload is not public contract authority")
+            if self.unsupported_parameters:
+                raise ValueError("unsupported parameters cannot be silently accepted")
+
+        if self.claims_full_parser_adapter_implementation_present:
+            raise ValueError("Beacon Management must not claim full Parser Adapter implementation")
+
+        if self.exact_acceptance_threshold_percent is not None and (
+            self.parser_adapter_evidence_gate_reference is None
+        ):
+            raise ValueError(
+                "invented numeric acceptance threshold requires explicit parser adapter "
+                "evidence gate"
+            )
+
+        if self.parser_evidence_reference is not None:
+            if (
+                self.parser_evidence_reference.safety_class
+                in {
+                    BeaconParserEvidenceSafetyClass.RAW_PROVIDER_PAYLOAD,
+                    BeaconParserEvidenceSafetyClass.RAW_PROVIDER_PAYLOAD_AUTHORITY,
+                    BeaconParserEvidenceSafetyClass.RAW_HTML,
+                    BeaconParserEvidenceSafetyClass.RAW_SEARCH_CORE,
+                    BeaconParserEvidenceSafetyClass.RAW_CONTEXT,
+                    BeaconParserEvidenceSafetyClass.AMBIGUOUS,
+                    BeaconParserEvidenceSafetyClass.UNSUPPORTED,
+                }
+                and self.acceptance_outcome is BeaconSnapshotAcceptanceOutcome.ACCEPTED
+            ):
+                raise ValueError("raw or ambiguous parser evidence cannot become accepted")
+
         return self
 
 
@@ -850,6 +1006,8 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconOverrideStatus",
     "BeaconProtectedAction",
     "BeaconParserOutcomeStatus",
+    "BeaconParserEvidenceReference",
+    "BeaconParserEvidenceSafetyClass",
     "BeaconPreparedSourceUrl",
     "BeaconSourceUrl",
     "BeaconSourceUrlFingerprintPolicy",
@@ -860,4 +1018,7 @@ __all__: Final[tuple[str, ...]] = (
     "BeaconSystemActorClass",
     "BeaconOwnershipDecision",
     "ExtractedSearchConfigurationSnapshot",
+    "BeaconSnapshotAcceptanceDecision",
+    "BeaconSnapshotAcceptanceOutcome",
+    "BeaconSnapshotRejectionReason",
 )
