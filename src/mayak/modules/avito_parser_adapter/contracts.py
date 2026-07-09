@@ -30,6 +30,46 @@ class ParserOutcomeStatus(str, Enum):
     RESULT_AMBIGUOUS = "RESULT_AMBIGUOUS"
 
 
+class ProviderResponseEvidenceClass(str, Enum):
+    """Provider-response evidence classes used by semantic classification."""
+
+    UNCLASSIFIED = "UNCLASSIFIED"
+    BODY_PRESENT_UNCLASSIFIED = "BODY_PRESENT_UNCLASSIFIED"
+    USABLE_RESPONSE = "USABLE_RESPONSE"
+    EXPLICIT_REJECTION = "EXPLICIT_REJECTION"
+    RATE_OR_ACCESS_RESTRICTED = "RATE_OR_ACCESS_RESTRICTED"
+    CAPTCHA_OR_CHALLENGE = "CAPTCHA_OR_CHALLENGE"
+    MALFORMED_RESPONSE = "MALFORMED_RESPONSE"
+    INCOMPLETE_RESPONSE = "INCOMPLETE_RESPONSE"
+    UNSUPPORTED_STRUCTURE = "UNSUPPORTED_STRUCTURE"
+    PARTIAL = "PARTIAL"
+    RESULT_AMBIGUOUS = "RESULT_AMBIGUOUS"
+    EMPTY_WITH_PROOF = "EMPTY_WITH_PROOF"
+    EMPTY_WITHOUT_PROOF = "EMPTY_WITHOUT_PROOF"
+
+
+class ResponseCompletenessStatus(str, Enum):
+    """Completeness classifications for response semantics."""
+
+    UNVERIFIED = "UNVERIFIED"
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"
+    INCOMPLETE = "INCOMPLETE"
+    EMPTY_PROVEN = "EMPTY_PROVEN"
+    EMPTY_BLOCKED = "EMPTY_BLOCKED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class ResponseRestrictionSignal(str, Enum):
+    """Explicit restriction signals that must not be hidden as empty."""
+
+    NONE = "NONE"
+    RATE_LIMIT = "RATE_LIMIT"
+    ACCESS_RESTRICTED = "ACCESS_RESTRICTED"
+    CAPTCHA = "CAPTCHA"
+    CHALLENGE = "CHALLENGE"
+
+
 class ReferenceOutcomeStatus(str, Enum):
     """Reference-profile classifications that gate semantic acceptance."""
 
@@ -287,6 +327,33 @@ class ParserWarning:
 
 
 @dataclass(frozen=True, slots=True)
+class ParserResponseClassificationRule:
+    """Semantic rule that explains how a response classification is derived."""
+
+    rule_id: str
+    summary: str
+    required_transport_statuses: tuple[TransportOutcomeStatus, ...] = ()
+    required_parser_statuses: tuple[ParserOutcomeStatus, ...] = ()
+    required_reference_statuses: tuple[
+        ReferenceOutcomeStatus | CompatibilityProfileLifecycleStatus,
+        ...,
+    ] = ()
+    required_provider_evidence_classes: tuple[ProviderResponseEvidenceClass, ...] = ()
+    required_response_completeness_statuses: tuple[ResponseCompletenessStatus, ...] = ()
+    required_response_restriction_signals: tuple[ResponseRestrictionSignal, ...] = ()
+    requires_current_profile_proof: bool = False
+    requires_required_structure: bool = True
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.rule_id.strip():
+            raise ValueError("rule_id must not be blank")
+        if not self.summary.strip():
+            raise ValueError("summary must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
 class ParserCompatibilityProfile:
     """Versioned reference profile that gates semantic parsing behavior."""
 
@@ -442,6 +509,39 @@ class TransportOutcomeReference:
 
 
 @dataclass(frozen=True, slots=True)
+class TransportResponseClassificationOutcome:
+    """Semantic transport/provider/response classification for one adapter attempt."""
+
+    classification_id: str
+    status: (
+        TransportOutcomeStatus
+        | ParserOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | SourceBoundaryStatus
+    )
+    transport_status: TransportOutcomeStatus | None = None
+    parser_status: ParserOutcomeStatus | None = None
+    reference_status: ReferenceOutcomeStatus | CompatibilityProfileLifecycleStatus | None = None
+    provider_response_evidence_class: ProviderResponseEvidenceClass = ProviderResponseEvidenceClass.UNCLASSIFIED
+    response_completeness_status: ResponseCompletenessStatus = ResponseCompletenessStatus.UNVERIFIED
+    response_restriction_signal: ResponseRestrictionSignal = ResponseRestrictionSignal.NONE
+    classification_rule: ParserResponseClassificationRule | None = None
+    transport_outcome: TransportOutcomeReference | None = None
+    request_envelope: ParserRequestEnvelope | None = None
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    explanation: ParserOutcomeExplanation | None = None
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.classification_id.strip():
+            raise ValueError("classification_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
 class ParserOutcomeExplanation:
     """Read-only explanation that links outcome reason codes to safe evidence."""
 
@@ -476,6 +576,7 @@ class ParserAttemptOutcome:
     request_envelope: ParserRequestEnvelope | None = None
     transport_outcome: TransportOutcomeReference | None = None
     response_reference: str | None = None
+    transport_response_classification: TransportResponseClassificationOutcome | None = None
     warnings: tuple[ParserWarning, ...] = ()
     evidence_references: tuple[ParserEvidenceReference, ...] = ()
     explanation: ParserOutcomeExplanation | None = None
@@ -483,6 +584,19 @@ class ParserAttemptOutcome:
     def __post_init__(self) -> None:
         if not self.attempt_id.strip():
             raise ValueError("attempt_id must not be blank")
+        if self.transport_response_classification is not None:
+            classification = self.transport_response_classification
+            if classification.transport_outcome is not None and self.transport_outcome is not None:
+                if classification.transport_outcome != self.transport_outcome:
+                    raise ValueError("transport_response_classification.transport_outcome must match transport_outcome")
+            if classification.transport_status is not None and classification.transport_status != self.transport_status:
+                raise ValueError("transport_response_classification.transport_status must match transport_status")
+            if classification.parser_status is not None and self.parser_status is not None:
+                if classification.parser_status != self.parser_status:
+                    raise ValueError("transport_response_classification.parser_status must match parser_status")
+            if classification.reference_status is not None and self.reference_status is not None:
+                if classification.reference_status != self.reference_status:
+                    raise ValueError("transport_response_classification.reference_status must match reference_status")
 
 
 @dataclass(frozen=True, slots=True)
@@ -661,6 +775,9 @@ class ParserCompatibilityOutcome:
 __all__: Final[tuple[str, ...]] = (
     "TransportOutcomeStatus",
     "ParserOutcomeStatus",
+    "ProviderResponseEvidenceClass",
+    "ResponseCompletenessStatus",
+    "ResponseRestrictionSignal",
     "ReferenceOutcomeStatus",
     "CompatibilityProfileLifecycleStatus",
     "CompatibilityProfileAuthorityClass",
@@ -675,10 +792,12 @@ __all__: Final[tuple[str, ...]] = (
     "SourceBoundaryOutcome",
     "ParserEvidenceReference",
     "ParserWarning",
+    "ParserResponseClassificationRule",
     "ParserCompatibilityProfile",
     "ParserCompatibilityOutcome",
     "ParserRequestEnvelope",
     "TransportOutcomeReference",
+    "TransportResponseClassificationOutcome",
     "ParserOutcomeExplanation",
     "ParserAttemptOutcome",
     "SearchSourceAnalysisOutcome",

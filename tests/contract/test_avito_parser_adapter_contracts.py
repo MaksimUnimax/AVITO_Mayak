@@ -9,14 +9,20 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
     MODULE_ID,
+    ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
     ParserEvidenceReference,
     ParserOutcomeExplanation,
+    ParserOutcomeStatus,
+    ParserResponseClassificationRule,
     ParserRequestEnvelope,
     ParserWarning,
     ParserWarningCode,
+    ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
+    ResponseCompletenessStatus,
+    ResponseRestrictionSignal,
     SYNTHETIC_FIXTURE_BY_ID,
     ParserSourceReference,
     SourceBoundaryOutcome,
@@ -24,7 +30,9 @@ from mayak.modules.avito_parser_adapter import (
     SourceBoundaryRiskCode,
     SourceBoundaryStatus,
     SourceReferenceKind,
+    TransportOutcomeReference,
     TransportOutcomeStatus,
+    TransportResponseClassificationOutcome,
 )
 from mayak.platform import boundaries
 
@@ -42,6 +50,7 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ParserCompatibilityOutcome",
         "ParserRequestEnvelope",
         "TransportOutcomeReference",
+        "TransportResponseClassificationOutcome",
         "ParserAttemptOutcome",
         "SearchSourceAnalysisOutcome",
         "SearchConfigurationExtractionOutcome",
@@ -50,12 +59,16 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ParserWarning",
         "ParserEvidenceReference",
         "ParserOutcomeExplanation",
+        "ParserResponseClassificationRule",
         "ParserSourceReference",
         "SourceBoundaryOutcome",
         "SourceBoundaryPolicyRequirement",
         "SourceBoundaryRiskCode",
         "SourceBoundaryStatus",
         "SourceReferenceKind",
+        "ProviderResponseEvidenceClass",
+        "ResponseCompletenessStatus",
+        "ResponseRestrictionSignal",
         "NormalizedListingCandidate",
         "ListingCardCandidate",
         "FIXTURE_IDS",
@@ -117,6 +130,64 @@ def test_contract_objects_are_frozen_and_safe() -> None:
         evidence_references=(evidence,),
         explanation=explanation,
     )
+    request = ParserRequestEnvelope(
+        request_id="fx::contract::request",
+        contract_name="mayak.avito.parser.request",
+        contract_version="1.0",
+        producer="mayak.tests.synthetic",
+        purpose="response-classification",
+        compatibility_profile=profile,
+        safe_source_reference="bounded-source-value",
+        configuration_revision_id="cfg::contract::001",
+        safe_transport_reference="transport::contract",
+    )
+    transport_outcome = TransportOutcomeReference(
+        transport_reference_id="fx::contract::transport",
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        request_reference=request.request_id,
+        response_reference="response::contract",
+        route_reference="route::contract",
+    )
+    classification_rule = ParserResponseClassificationRule(
+        rule_id="fx::contract::classification-rule",
+        summary="transport success alone is insufficient",
+        required_transport_statuses=(TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,),
+        required_parser_statuses=(ParserOutcomeStatus.USABLE_RESPONSE,),
+        required_provider_evidence_classes=(ProviderResponseEvidenceClass.USABLE_RESPONSE,),
+        required_response_completeness_statuses=(ResponseCompletenessStatus.COMPLETE,),
+        required_response_restriction_signals=(ResponseRestrictionSignal.NONE,),
+        requires_current_profile_proof=True,
+        notes=("transport success alone is insufficient",),
+    )
+    classification = TransportResponseClassificationOutcome(
+        classification_id="fx::contract::classification",
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        parser_status=ParserOutcomeStatus.USABLE_RESPONSE,
+        reference_status=ReferenceOutcomeStatus.CURRENT,
+        provider_response_evidence_class=ProviderResponseEvidenceClass.USABLE_RESPONSE,
+        response_completeness_status=ResponseCompletenessStatus.COMPLETE,
+        response_restriction_signal=ResponseRestrictionSignal.NONE,
+        classification_rule=classification_rule,
+        transport_outcome=transport_outcome,
+        request_envelope=request,
+        evidence_references=(evidence,),
+        explanation=explanation,
+        notes=("synthetic transport/response classification",),
+    )
+    attempt = ParserAttemptOutcome(
+        attempt_id="fx::contract::attempt",
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        parser_status=ParserOutcomeStatus.USABLE_RESPONSE,
+        reference_status=ReferenceOutcomeStatus.CURRENT,
+        request_envelope=request,
+        transport_outcome=transport_outcome,
+        response_reference="response::contract",
+        transport_response_classification=classification,
+        warnings=(warning,),
+        evidence_references=(evidence,),
+        explanation=explanation,
+    )
 
     assert profile.evidence_reference is evidence
     assert explanation.warnings == (warning,)
@@ -124,6 +195,49 @@ def test_contract_objects_are_frozen_and_safe() -> None:
     assert outcome.change_class is CompatibilityChangeClass.COMPATIBLE
     assert outcome.lifecycle_status is CompatibilityProfileLifecycleStatus.CURRENT
     assert outcome.revalidation_triggers == (CompatibilityRevalidationTrigger.REFERENCE_CHANGED,)
+    assert attempt.transport_response_classification is classification
+    assert classification.classification_rule is classification_rule
+    assert classification.provider_response_evidence_class is ProviderResponseEvidenceClass.USABLE_RESPONSE
+    assert classification.response_completeness_status is ResponseCompletenessStatus.COMPLETE
+    assert classification.response_restriction_signal is ResponseRestrictionSignal.NONE
+    assert {field.name for field in fields(ParserAttemptOutcome)} >= {
+        "transport_response_classification",
+        "transport_status",
+        "parser_status",
+        "reference_status",
+        "request_envelope",
+        "transport_outcome",
+        "response_reference",
+    }
+    assert {field.name for field in fields(TransportResponseClassificationOutcome)} >= {
+        "classification_id",
+        "status",
+        "transport_status",
+        "parser_status",
+        "reference_status",
+        "provider_response_evidence_class",
+        "response_completeness_status",
+        "response_restriction_signal",
+        "classification_rule",
+        "transport_outcome",
+        "request_envelope",
+        "evidence_references",
+        "explanation",
+        "notes",
+    }
+    assert {field.name for field in fields(ParserResponseClassificationRule)} >= {
+        "rule_id",
+        "summary",
+        "required_transport_statuses",
+        "required_parser_statuses",
+        "required_reference_statuses",
+        "required_provider_evidence_classes",
+        "required_response_completeness_statuses",
+        "required_response_restriction_signals",
+        "requires_current_profile_proof",
+        "requires_required_structure",
+        "notes",
+    }
     assert {field.name for field in fields(ParserCompatibilityProfile)} >= {
         "semantic_version",
         "lifecycle_status",
@@ -257,5 +371,5 @@ def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
     assert len(SYNTHETIC_FIXTURE_BY_ID) == len({fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_BY_ID.values()})
     avito_live_url_marker = "".join(("a", "v", "i", "t", "o", ".", "r", "u"))
     for fixture in SYNTHETIC_FIXTURE_BY_ID.values():
-        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-"))
+        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-", "FX-APA05-"))
         assert avito_live_url_marker not in fixture.summary.lower()

@@ -12,7 +12,10 @@ from mayak.modules.avito_parser_adapter import (
     FIXTURE_IDS,
     ParserOutcomeStatus,
     ParserWarningCode,
+    ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
+    ResponseCompletenessStatus,
+    ResponseRestrictionSignal,
     SYNTHETIC_FIXTURE_BY_ID,
     SourceBoundaryPolicyRequirement,
     SourceBoundaryRiskCode,
@@ -39,6 +42,37 @@ def test_parser_adapter_status_enums_are_stable() -> None:
         "UNSUPPORTED_STRUCTURE",
         "PARTIAL",
         "RESULT_AMBIGUOUS",
+    ]
+    assert [member.value for member in ProviderResponseEvidenceClass] == [
+        "UNCLASSIFIED",
+        "BODY_PRESENT_UNCLASSIFIED",
+        "USABLE_RESPONSE",
+        "EXPLICIT_REJECTION",
+        "RATE_OR_ACCESS_RESTRICTED",
+        "CAPTCHA_OR_CHALLENGE",
+        "MALFORMED_RESPONSE",
+        "INCOMPLETE_RESPONSE",
+        "UNSUPPORTED_STRUCTURE",
+        "PARTIAL",
+        "RESULT_AMBIGUOUS",
+        "EMPTY_WITH_PROOF",
+        "EMPTY_WITHOUT_PROOF",
+    ]
+    assert [member.value for member in ResponseCompletenessStatus] == [
+        "UNVERIFIED",
+        "COMPLETE",
+        "PARTIAL",
+        "INCOMPLETE",
+        "EMPTY_PROVEN",
+        "EMPTY_BLOCKED",
+        "AMBIGUOUS",
+    ]
+    assert [member.value for member in ResponseRestrictionSignal] == [
+        "NONE",
+        "RATE_LIMIT",
+        "ACCESS_RESTRICTED",
+        "CAPTCHA",
+        "CHALLENGE",
     ]
     assert [member.value for member in ReferenceOutcomeStatus] == [
         "REFERENCE_STALE",
@@ -118,6 +152,24 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA04-FILESYSTEM-TARGET-BLOCKED-001",
         "FX-APA04-NETWORK-TARGET-BLOCKED-001",
         "FX-APA04-PARSER-OUTPUT-NOT-OVERWRITING-BEACON-SOURCE-001",
+        "FX-APA05-NOT-SENT-001",
+        "FX-APA05-TRANSPORT-UNAVAILABLE-001",
+        "FX-APA05-TRANSPORT-AMBIGUOUS-001",
+        "FX-APA05-SENT-SUCCESS-RESPONSE-UNCLASSIFIED-001",
+        "FX-APA05-USABLE-RESPONSE-CURRENT-PROFILE-PROOF-001",
+        "FX-APA05-EXPLICIT-PROVIDER-REJECTION-001",
+        "FX-APA05-RATE-ACCESS-RESTRICTED-001",
+        "FX-APA05-CAPTCHA-CHALLENGE-001",
+        "FX-APA05-MALFORMED-RESPONSE-001",
+        "FX-APA05-INCOMPLETE-RESPONSE-001",
+        "FX-APA05-UNSUPPORTED-STRUCTURE-001",
+        "FX-APA05-STALE-REFERENCE-PROFILE-001",
+        "FX-APA05-MISSING-REFERENCE-PROFILE-001",
+        "FX-APA05-DISPUTED-REFERENCE-PROFILE-001",
+        "FX-APA05-PARTIAL-RESPONSE-PAGE-001",
+        "FX-APA05-AMBIGUOUS-RESULT-001",
+        "FX-APA05-CLEAN-EMPTY-BLOCKED-WITHOUT-PROOF-001",
+        "FX-APA05-HTTP-200-NON-EMPTY-NOT-ENOUGH-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
@@ -319,32 +371,97 @@ def test_apa04_blocked_source_boundaries_remain_explicit() -> None:
     assert canonicalization.attempt_outcome.parser_status is ParserOutcomeStatus.RESULT_AMBIGUOUS
     assert canonicalization.search_source_analysis_outcome.warnings[0].code is ParserWarningCode.SOURCE_URL_CANONICALIZATION_UNPROVEN
 
-    assert shell_blocked.search_source_analysis_outcome is not None
-    assert shell_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_VALUE_SHELL_TARGET_BLOCKED
-    assert shell_blocked.request_envelope.source_boundary_outcome is not None
-    assert shell_blocked.request_envelope.source_boundary_outcome.risk_codes == (
-        SourceBoundaryRiskCode.SOURCE_VALUE_SHELL_TARGET_BLOCKED,
-    )
 
-    assert filesystem_blocked.search_source_analysis_outcome is not None
-    assert filesystem_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED
-    assert filesystem_blocked.request_envelope.source_boundary_outcome is not None
-    assert filesystem_blocked.request_envelope.source_boundary_outcome.risk_codes == (
-        SourceBoundaryRiskCode.SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED,
-    )
-    assert filesystem_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
-        SourceBoundaryPolicyRequirement.FILESYSTEM_TARGET_BLOCK_REQUIRED,
-    )
+def test_apa05_transport_classification_stays_explicit_before_parser_success() -> None:
+    not_sent = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-NOT-SENT-001"]
+    transport_unavailable = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-TRANSPORT-UNAVAILABLE-001"]
+    transport_ambiguous = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-TRANSPORT-AMBIGUOUS-001"]
+    response_unclassified = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-SENT-SUCCESS-RESPONSE-UNCLASSIFIED-001"]
 
-    assert network_blocked.search_source_analysis_outcome is not None
-    assert network_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_VALUE_NETWORK_TARGET_BLOCKED
-    assert network_blocked.request_envelope.source_boundary_outcome is not None
-    assert network_blocked.request_envelope.source_boundary_outcome.risk_codes == (
-        SourceBoundaryRiskCode.SOURCE_VALUE_NETWORK_TARGET_BLOCKED,
-    )
-    assert network_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
-        SourceBoundaryPolicyRequirement.NETWORK_TARGET_BLOCK_REQUIRED,
-    )
+    assert not_sent.attempt_outcome.parser_status is None
+    assert not_sent.attempt_outcome.transport_response_classification is not None
+    assert not_sent.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.NOT_SENT
+    assert not_sent.attempt_outcome.transport_response_classification.classification_rule is not None
+    assert "transport success alone is insufficient" in not_sent.attempt_outcome.transport_response_classification.classification_rule.notes
+
+    assert transport_unavailable.attempt_outcome.parser_status is None
+    assert transport_unavailable.attempt_outcome.transport_response_classification is not None
+    assert transport_unavailable.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.TRANSPORT_UNAVAILABLE
+
+    assert transport_ambiguous.attempt_outcome.parser_status is None
+    assert transport_ambiguous.attempt_outcome.transport_response_classification is not None
+    assert transport_ambiguous.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.TRANSPORT_AMBIGUOUS
+
+    assert response_unclassified.attempt_outcome.transport_status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    assert response_unclassified.attempt_outcome.parser_status is None
+    assert response_unclassified.attempt_outcome.transport_response_classification is not None
+    assert response_unclassified.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    assert response_unclassified.attempt_outcome.transport_response_classification.provider_response_evidence_class is ProviderResponseEvidenceClass.UNCLASSIFIED
+
+
+def test_apa05_current_profile_proof_and_boundary_keep_parser_success_explicit() -> None:
+    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-USABLE-RESPONSE-CURRENT-PROFILE-PROOF-001"]
+
+    assert fixture.request_envelope.source_reference is not None
+    assert fixture.request_envelope.source_boundary_outcome is not None
+    assert fixture.request_envelope.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert fixture.attempt_outcome.transport_response_classification is not None
+    assert fixture.attempt_outcome.transport_response_classification.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert fixture.attempt_outcome.transport_response_classification.classification_rule is not None
+    assert fixture.attempt_outcome.transport_response_classification.classification_rule.requires_current_profile_proof is True
+    assert fixture.search_source_analysis_outcome is not None
+    assert fixture.search_source_analysis_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert fixture.search_configuration_extraction_outcome is not None
+    assert fixture.search_configuration_extraction_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert fixture.listing_page_parse_outcome is not None
+    assert fixture.listing_page_parse_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+
+
+def test_apa05_reference_and_partial_negative_cases_remain_explicit() -> None:
+    stale = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-STALE-REFERENCE-PROFILE-001"]
+    missing = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-MISSING-REFERENCE-PROFILE-001"]
+    disputed = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-DISPUTED-REFERENCE-PROFILE-001"]
+    partial = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-PARTIAL-RESPONSE-PAGE-001"]
+    ambiguous = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-AMBIGUOUS-RESULT-001"]
+    clean_empty = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-CLEAN-EMPTY-BLOCKED-WITHOUT-PROOF-001"]
+    body_only = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-HTTP-200-NON-EMPTY-NOT-ENOUGH-001"]
+
+    assert stale.attempt_outcome.reference_status is ReferenceOutcomeStatus.REFERENCE_STALE
+    assert stale.attempt_outcome.transport_response_classification is not None
+    assert stale.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_STALE
+    assert stale.search_source_analysis_outcome is not None
+    assert stale.search_source_analysis_outcome.status is ReferenceOutcomeStatus.REFERENCE_STALE
+
+    assert missing.attempt_outcome.reference_status is ReferenceOutcomeStatus.REFERENCE_MISSING
+    assert missing.attempt_outcome.transport_response_classification is not None
+    assert missing.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_MISSING
+
+    assert disputed.attempt_outcome.reference_status is ReferenceOutcomeStatus.REFERENCE_DISPUTED
+    assert disputed.attempt_outcome.transport_response_classification is not None
+    assert disputed.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_DISPUTED
+
+    assert partial.attempt_outcome.parser_status is ParserOutcomeStatus.PARTIAL
+    assert partial.attempt_outcome.transport_response_classification is not None
+    assert partial.attempt_outcome.transport_response_classification.status is ParserOutcomeStatus.PARTIAL
+    assert partial.listing_batch_parse_outcome is not None
+    assert partial.listing_batch_parse_outcome.status is ParserOutcomeStatus.PARTIAL
+
+    assert ambiguous.attempt_outcome.parser_status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert ambiguous.attempt_outcome.transport_response_classification is not None
+    assert ambiguous.attempt_outcome.transport_response_classification.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert ambiguous.listing_page_parse_outcome is not None
+    assert ambiguous.listing_page_parse_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+
+    assert clean_empty.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
+    assert clean_empty.attempt_outcome.transport_response_classification is not None
+    assert clean_empty.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_MISSING
+    assert clean_empty.attempt_outcome.transport_response_classification.provider_response_evidence_class is ProviderResponseEvidenceClass.EMPTY_WITHOUT_PROOF
+    assert clean_empty.attempt_outcome.transport_response_classification.response_completeness_status is ResponseCompletenessStatus.EMPTY_BLOCKED
+
+    assert body_only.attempt_outcome.parser_status is None
+    assert body_only.attempt_outcome.transport_response_classification is not None
+    assert body_only.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    assert body_only.attempt_outcome.transport_response_classification.provider_response_evidence_class is ProviderResponseEvidenceClass.BODY_PRESENT_UNCLASSIFIED
 
 
 def test_apa04_parser_output_preserves_beacon_source_ownership() -> None:

@@ -139,3 +139,10 @@ def test_avito_parser_adapter_module_has_only_allowed_imports_and_static_text() 
         if relative_path == Path("src/mayak/modules/avito_parser_adapter/contracts.py"):
             parser_outcome_members = _enum_member_names(source, "ParserOutcomeStatus")
             assert "CAPTCHA_OR_CHALLENGE" in parser_outcome_members
+            provider_response_members = _enum_member_names(source, "ProviderResponseEvidenceClass")
+            assert "BODY_PRESENT_UNCLASSIFIED" in provider_response_members
+            assert "EMPTY_WITHOUT_PROOF" in provider_response_members
+            completeness_members = _enum_member_names(source, "ResponseCompletenessStatus")
+            assert "EMPTY_BLOCKED" in completeness_members
+            restriction_members = _enum_member_names(source, "ResponseRestrictionSignal")
+            assert "CAPTCHA" in restriction_members
