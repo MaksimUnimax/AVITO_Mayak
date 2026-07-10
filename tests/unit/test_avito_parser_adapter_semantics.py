@@ -10,6 +10,9 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
     FIXTURE_IDS,
+    MultivalueLossReason,
+    MultivalueNormalizationStatus,
+    MultivaluePreservationMode,
     ParserOutcomeStatus,
     ParserWarningCode,
     ProviderResponseEvidenceClass,
@@ -187,6 +190,23 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA06-COUNTRY-WIDE-CANDIDATE-POLICY-GATED-001",
         "FX-APA06-FILTER-EDITABILITY-NOT-DECLARED-001",
         "FX-APA06-BEACON-SNAPSHOT-ACCEPTANCE-NOT-PERFORMED-001",
+        "FX-APA07-REPEATED-VALUES-ORDER-PRESERVED-001",
+        "FX-APA07-DUPLICATES-PRESERVED-001",
+        "FX-APA07-FIRST-VALUE-OVERWRITE-BLOCKED-001",
+        "FX-APA07-LATER-VALUE-LOSS-BLOCKED-001",
+        "FX-APA07-COLLECTION-TO-SCALAR-BLOCKED-001",
+        "FX-APA07-UNSUPPORTED-MULTIVALUE-EXPLICIT-001",
+        "FX-APA07-AMBIGUOUS-MULTIVALUE-EXPLICIT-001",
+        "FX-APA07-LOSSY-NORMALIZATION-EXPLICIT-001",
+        "FX-APA07-PROFILE-BOUND-COLLECTION-PRESERVED-001",
+        "FX-APA07-PROFILE-NOT-CURRENT-BLOCKS-001",
+        "FX-APA07-PROFILE-MISSING-BLOCKS-001",
+        "FX-APA07-PROFILE-DISPUTED-BLOCKS-001",
+        "FX-APA07-SOURCE-BOUNDARY-BLOCKS-001",
+        "FX-APA07-RESPONSE-CLASSIFICATION-BLOCKS-001",
+        "FX-APA07-FILTER-EDITABILITY-NOT-DECLARED-001",
+        "FX-APA07-BEACON-NO-MUTATION-001",
+        "FX-APA07-SCAN-NO-MUTATION-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
@@ -603,3 +623,155 @@ def test_apa06_search_configuration_depends_on_profile_and_source_boundary_gates
     assert fixture.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome is fixture.request_envelope.source_boundary_outcome
     assert fixture.search_configuration_extraction_outcome.request_envelope.safe_source_reference == fixture.request_envelope.safe_source_reference
     assert not hasattr(fixture.search_configuration_extraction_outcome, "source_reference")
+
+
+def test_apa07_multivalue_normalization_preserves_order_and_duplicates_without_silent_overwrite() -> None:
+    repeated = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-REPEATED-VALUES-ORDER-PRESERVED-001"]
+    duplicates = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-DUPLICATES-PRESERVED-001"]
+    approved = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-PROFILE-BOUND-COLLECTION-PRESERVED-001"]
+    first_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-FIRST-VALUE-OVERWRITE-BLOCKED-001"]
+    later_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-LATER-VALUE-LOSS-BLOCKED-001"]
+    scalar_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-COLLECTION-TO-SCALAR-BLOCKED-001"]
+
+    assert repeated.search_configuration_extraction_outcome is not None
+    assert repeated.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert repeated.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.PRESERVED
+    assert repeated.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == (
+        "value:synthetic-red",
+        "value:synthetic-blue",
+    )
+    assert repeated.search_configuration_extraction_outcome.normalized_filter_candidates == (
+        "filter-key:synthetic-color=value:synthetic-red",
+        "filter-key:synthetic-color=value:synthetic-blue",
+    )
+
+    assert duplicates.search_configuration_extraction_outcome is not None
+    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[0].repeated_values == (
+        "value:synthetic-red",
+        "value:synthetic-red",
+        "value:synthetic-blue",
+    )
+    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == (
+        "value:synthetic-red",
+        "value:synthetic-red",
+        "value:synthetic-blue",
+    )
+
+    assert approved.search_configuration_extraction_outcome is not None
+    assert approved.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert approved.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == (
+        "value:synthetic-red",
+        "value:synthetic-blue",
+    )
+
+    assert first_blocked.search_configuration_extraction_outcome is not None
+    assert first_blocked.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.LOSSY
+    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.FIRST_VALUE_OVERWRITE_BLOCKED
+    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == ()
+
+    assert later_blocked.search_configuration_extraction_outcome is not None
+    assert later_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert later_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.LATER_VALUE_LOSS_BLOCKED
+    assert later_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == ()
+
+    assert scalar_blocked.search_configuration_extraction_outcome is not None
+    assert scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.COLLECTION_TO_SCALAR_COLLAPSE_BLOCKED
+    assert scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == ()
+
+
+def test_apa07_multivalue_unsupported_ambiguous_and_lossy_states_remain_explicit() -> None:
+    unsupported = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-UNSUPPORTED-MULTIVALUE-EXPLICIT-001"]
+    ambiguous = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-AMBIGUOUS-MULTIVALUE-EXPLICIT-001"]
+    lossy = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-LOSSY-NORMALIZATION-EXPLICIT-001"]
+
+    assert unsupported.search_configuration_extraction_outcome is not None
+    assert unsupported.search_configuration_extraction_outcome.status is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
+    assert unsupported.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.UNSUPPORTED
+    assert unsupported.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert unsupported.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.UNSUPPORTED
+    assert unsupported.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.UNSUPPORTED_MULTIVALUE_PARAMETER
+    assert unsupported.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT
+
+    assert ambiguous.search_configuration_extraction_outcome is not None
+    assert ambiguous.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert ambiguous.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.AMBIGUOUS
+    assert ambiguous.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert ambiguous.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.AMBIGUOUS
+    assert ambiguous.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.AMBIGUOUS_MULTIVALUE_PARAMETER
+    assert ambiguous.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT
+
+    assert lossy.search_configuration_extraction_outcome is not None
+    assert lossy.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert lossy.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED
+    assert lossy.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert lossy.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.LOSSY
+    assert lossy.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.DUPLICATE_REMOVAL_BLOCKED
+    assert lossy.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+
+
+def test_apa07_multivalue_profile_source_response_and_ownership_gates_are_explicit() -> None:
+    stale = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-PROFILE-NOT-CURRENT-BLOCKS-001"]
+    missing = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-PROFILE-MISSING-BLOCKS-001"]
+    disputed = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-PROFILE-DISPUTED-BLOCKS-001"]
+    source_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-SOURCE-BOUNDARY-BLOCKS-001"]
+    response_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-RESPONSE-CLASSIFICATION-BLOCKS-001"]
+    filter_editability = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-FILTER-EDITABILITY-NOT-DECLARED-001"]
+    beacon = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-BEACON-NO-MUTATION-001"]
+    scan = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-SCAN-NO-MUTATION-001"]
+
+    assert stale.compatibility_profile is not None
+    assert stale.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.STALE
+    assert stale.search_configuration_extraction_outcome is not None
+    assert stale.search_configuration_extraction_outcome.status is CompatibilityProfileLifecycleStatus.STALE
+    assert stale.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert stale.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.PROFILE_STALE
+    assert stale.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.STALE_COMPATIBILITY_PROFILE
+
+    assert missing.compatibility_profile is not None
+    assert missing.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.UNAVAILABLE
+    assert missing.search_configuration_extraction_outcome is not None
+    assert missing.search_configuration_extraction_outcome.status is ReferenceOutcomeStatus.REFERENCE_MISSING
+    assert missing.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert missing.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.PROFILE_MISSING
+    assert missing.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.UNAVAILABLE_PROFILE_WARNING
+
+    assert disputed.compatibility_profile is not None
+    assert disputed.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.DISPUTED
+    assert disputed.search_configuration_extraction_outcome is not None
+    assert disputed.search_configuration_extraction_outcome.status is ReferenceOutcomeStatus.REFERENCE_DISPUTED
+    assert disputed.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert disputed.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.PROFILE_DISPUTED
+    assert disputed.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.DISPUTED_PROFILE_WARNING
+
+    assert source_blocked.search_configuration_extraction_outcome is not None
+    assert source_blocked.search_configuration_extraction_outcome.status is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+    assert source_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert source_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.SOURCE_BOUNDARY_INVALID
+    assert source_blocked.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.SOURCE_URL_MALFORMED
+    assert source_blocked.search_configuration_extraction_outcome.search_configuration_evidence is not None
+    assert source_blocked.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome is not None
+    assert source_blocked.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+
+    assert response_blocked.search_configuration_extraction_outcome is not None
+    assert response_blocked.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
+    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.RESPONSE_CLASSIFICATION_NOT_TRUSTED
+    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.transport_response_classification is not None
+    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.transport_response_classification.response_completeness_status is ResponseCompletenessStatus.AMBIGUOUS
+    assert response_blocked.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+
+    assert filter_editability.search_configuration_extraction_outcome is not None
+    assert filter_editability.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
+    assert filter_editability.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED
+
+    assert beacon.search_configuration_extraction_outcome is not None
+    assert beacon.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
+    assert beacon.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED
+
+    assert scan.search_configuration_extraction_outcome is not None
+    assert scan.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
+    assert scan.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED

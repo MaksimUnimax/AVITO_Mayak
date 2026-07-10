@@ -8,6 +8,11 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    MultivalueLossReason,
+    MultivalueNormalizationOutcome,
+    MultivalueNormalizationRule,
+    MultivalueNormalizationStatus,
+    MultivaluePreservationMode,
     MODULE_ID,
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
@@ -75,6 +80,11 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "SearchConfigurationExtractionOutcome",
         "SearchConfigurationFieldStatus",
         "SearchConfigurationParameterCandidate",
+        "MultivalueNormalizationOutcome",
+        "MultivalueNormalizationRule",
+        "MultivalueNormalizationStatus",
+        "MultivaluePreservationMode",
+        "MultivalueLossReason",
         "SearchConfigurationValueKind",
         "SearchConfigurationWarningCode",
         "SourceBoundaryOutcome",
@@ -370,10 +380,28 @@ def test_search_configuration_contracts_are_evidence_bound_and_frozen() -> None:
     )
     parameter = SearchConfigurationParameterCandidate(
         parameter_key="filter-key:synthetic-color",
-        parameter_value="value:synthetic-red",
+        parameter_value=None,
         field_status=SearchConfigurationFieldStatus.PRESERVED,
         value_kind=SearchConfigurationValueKind.COLLECTION,
         repeated_values=("value:synthetic-red", "value:synthetic-blue"),
+        multivalue_normalization=MultivalueNormalizationOutcome(
+            normalization_id="fx::search-config::normalization",
+            parameter_key="filter-key:synthetic-color",
+            input_values=("value:synthetic-red", "value:synthetic-blue"),
+            normalization_rule=MultivalueNormalizationRule(
+                rule_id="fx::search-config::rule",
+                status=MultivalueNormalizationStatus.PRESERVED,
+                preservation_mode=MultivaluePreservationMode.ORDERED_COLLECTION,
+            ),
+            status=MultivalueNormalizationStatus.PRESERVED,
+            preservation_mode=MultivaluePreservationMode.ORDERED_COLLECTION,
+            normalized_values=("value:synthetic-red", "value:synthetic-blue"),
+            compatibility_profile=profile,
+            source_boundary_outcome=boundary,
+            warnings=(warning,),
+            evidence_references=(evidence_reference,),
+            notes=("repeated values are preserved",),
+        ),
         evidence_references=(evidence_reference,),
         warnings=(warning,),
         notes=("repeated values are preserved",),
@@ -417,6 +445,9 @@ def test_search_configuration_contracts_are_evidence_bound_and_frozen() -> None:
     assert evidence.source_boundary_outcome is boundary
     assert evidence.compatibility_profile is profile
     assert parameter.repeated_values == ("value:synthetic-red", "value:synthetic-blue")
+    assert parameter.multivalue_normalization is not None
+    assert parameter.multivalue_normalization.normalized_values == ("value:synthetic-red", "value:synthetic-blue")
+    assert parameter.multivalue_normalization.normalization_rule.status is MultivalueNormalizationStatus.PRESERVED
     assert candidate.parameter_candidates == (parameter,)
     assert candidate.field_status is SearchConfigurationFieldStatus.PRESERVED
     assert outcome.search_configuration_evidence is evidence
@@ -440,8 +471,32 @@ def test_search_configuration_contracts_are_evidence_bound_and_frozen() -> None:
         "field_status",
         "value_kind",
         "repeated_values",
+        "multivalue_normalization",
         "evidence_references",
         "warnings",
+        "notes",
+    }
+    assert {field.name for field in fields(MultivalueNormalizationRule)} >= {
+        "rule_id",
+        "status",
+        "preservation_mode",
+        "loss_reason",
+        "notes",
+    }
+    assert {field.name for field in fields(MultivalueNormalizationOutcome)} >= {
+        "normalization_id",
+        "parameter_key",
+        "input_values",
+        "normalization_rule",
+        "status",
+        "preservation_mode",
+        "normalized_values",
+        "loss_reason",
+        "compatibility_profile",
+        "source_boundary_outcome",
+        "transport_response_classification",
+        "warnings",
+        "evidence_references",
         "notes",
     }
     assert {field.name for field in fields(SearchConfigurationCandidate)} >= {
@@ -469,6 +524,32 @@ def test_search_configuration_contracts_are_evidence_bound_and_frozen() -> None:
         "AMBIGUOUS_PARAMETER_EXPLICIT",
         "LOSSY_NORMALIZATION_BLOCKED",
     }
+    assert [member.value for member in MultivalueNormalizationStatus] == [
+        "PRESERVED",
+        "BLOCKED",
+        "UNSUPPORTED",
+        "AMBIGUOUS",
+        "LOSSY",
+    ]
+    assert [member.value for member in MultivaluePreservationMode] == [
+        "ORDERED_TUPLE",
+        "ORDERED_COLLECTION",
+        "SCALAR_BLOCKED",
+    ]
+    assert [member.value for member in MultivalueLossReason] == [
+        "FIRST_VALUE_OVERWRITE_BLOCKED",
+        "LATER_VALUE_LOSS_BLOCKED",
+        "DUPLICATE_REMOVAL_BLOCKED",
+        "COLLECTION_TO_SCALAR_COLLAPSE_BLOCKED",
+        "UNSUPPORTED_MULTIVALUE_PARAMETER",
+        "AMBIGUOUS_MULTIVALUE_PARAMETER",
+        "LOSSY_NORMALIZATION_BLOCKED",
+        "PROFILE_STALE",
+        "PROFILE_MISSING",
+        "PROFILE_DISPUTED",
+        "SOURCE_BOUNDARY_INVALID",
+        "RESPONSE_CLASSIFICATION_NOT_TRUSTED",
+    ]
     assert [member.value for member in SearchConfigurationExtractionField] == [
         "GEOGRAPHY_CONTEXT",
         "CATEGORY_CONTEXT",
@@ -617,5 +698,5 @@ def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
     assert len(SYNTHETIC_FIXTURE_BY_ID) == len({fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_BY_ID.values()})
     avito_live_url_marker = "".join(("a", "v", "i", "t", "o", ".", "r", "u"))
     for fixture in SYNTHETIC_FIXTURE_BY_ID.values():
-        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-", "FX-APA05-", "FX-APA06-"))
+        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-", "FX-APA05-", "FX-APA06-", "FX-APA07-"))
         assert avito_live_url_marker not in fixture.summary.lower()

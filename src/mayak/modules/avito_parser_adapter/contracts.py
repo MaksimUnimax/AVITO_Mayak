@@ -207,6 +207,41 @@ class SearchConfigurationFieldStatus(str, Enum):
     LOSSY_NORMALIZATION_BLOCKED = "LOSSY_NORMALIZATION_BLOCKED"
 
 
+class MultivalueNormalizationStatus(str, Enum):
+    """Explicit normalization states for repeated values."""
+
+    PRESERVED = "PRESERVED"
+    BLOCKED = "BLOCKED"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    LOSSY = "LOSSY"
+
+
+class MultivaluePreservationMode(str, Enum):
+    """Safe preservation shapes for repeated values."""
+
+    ORDERED_TUPLE = "ORDERED_TUPLE"
+    ORDERED_COLLECTION = "ORDERED_COLLECTION"
+    SCALAR_BLOCKED = "SCALAR_BLOCKED"
+
+
+class MultivalueLossReason(str, Enum):
+    """Explicit reasons why normalization cannot silently collapse values."""
+
+    FIRST_VALUE_OVERWRITE_BLOCKED = "FIRST_VALUE_OVERWRITE_BLOCKED"
+    LATER_VALUE_LOSS_BLOCKED = "LATER_VALUE_LOSS_BLOCKED"
+    DUPLICATE_REMOVAL_BLOCKED = "DUPLICATE_REMOVAL_BLOCKED"
+    COLLECTION_TO_SCALAR_COLLAPSE_BLOCKED = "COLLECTION_TO_SCALAR_COLLAPSE_BLOCKED"
+    UNSUPPORTED_MULTIVALUE_PARAMETER = "UNSUPPORTED_MULTIVALUE_PARAMETER"
+    AMBIGUOUS_MULTIVALUE_PARAMETER = "AMBIGUOUS_MULTIVALUE_PARAMETER"
+    LOSSY_NORMALIZATION_BLOCKED = "LOSSY_NORMALIZATION_BLOCKED"
+    PROFILE_STALE = "PROFILE_STALE"
+    PROFILE_MISSING = "PROFILE_MISSING"
+    PROFILE_DISPUTED = "PROFILE_DISPUTED"
+    SOURCE_BOUNDARY_INVALID = "SOURCE_BOUNDARY_INVALID"
+    RESPONSE_CLASSIFICATION_NOT_TRUSTED = "RESPONSE_CLASSIFICATION_NOT_TRUSTED"
+
+
 class SearchConfigurationValueKind(str, Enum):
     """Value-shape kinds for search-configuration candidates."""
 
@@ -705,6 +740,66 @@ class SearchConfigurationEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class MultivalueNormalizationRule:
+    """Explicit safe-normalization rule for repeated values."""
+
+    rule_id: str
+    status: MultivalueNormalizationStatus
+    preservation_mode: MultivaluePreservationMode
+    loss_reason: MultivalueLossReason | None = None
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.rule_id.strip():
+            raise ValueError("rule_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+        if self.status is MultivalueNormalizationStatus.PRESERVED:
+            if self.loss_reason is not None:
+                raise ValueError("preserved normalization cannot have a loss_reason")
+        elif self.loss_reason is None:
+            raise ValueError("non-preserved normalization must declare a loss_reason")
+
+
+@dataclass(frozen=True, slots=True)
+class MultivalueNormalizationOutcome:
+    """Compatibility/profile/source/response-aware repeated-value normalization."""
+
+    normalization_id: str
+    parameter_key: str
+    input_values: tuple[str, ...]
+    normalization_rule: MultivalueNormalizationRule
+    status: MultivalueNormalizationStatus
+    preservation_mode: MultivaluePreservationMode
+    normalized_values: tuple[str, ...] = ()
+    loss_reason: MultivalueLossReason | None = None
+    compatibility_profile: ParserCompatibilityProfile | None = None
+    source_boundary_outcome: SourceBoundaryOutcome | None = None
+    transport_response_classification: TransportResponseClassificationOutcome | None = None
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.normalization_id.strip():
+            raise ValueError("normalization_id must not be blank")
+        if not self.parameter_key.strip():
+            raise ValueError("parameter_key must not be blank")
+        _validate_nonblank_values("input_values", self.input_values)
+        _validate_nonblank_values("normalized_values", self.normalized_values)
+        _validate_nonblank_values("notes", self.notes)
+        if self.status is MultivalueNormalizationStatus.PRESERVED:
+            if self.loss_reason is not None:
+                raise ValueError("preserved normalization cannot have a loss_reason")
+            if self.normalized_values != self.input_values:
+                raise ValueError("preserved normalization must keep input_values unchanged")
+        else:
+            if self.loss_reason is None:
+                raise ValueError("non-preserved normalization must declare a loss_reason")
+            if self.normalized_values:
+                raise ValueError("non-preserved normalization must not silently emit normalized_values")
+
+
+@dataclass(frozen=True, slots=True)
 class SearchConfigurationParameterCandidate:
     """Evidence-bound search parameter candidate with preserved values."""
 
@@ -713,6 +808,7 @@ class SearchConfigurationParameterCandidate:
     field_status: SearchConfigurationFieldStatus = SearchConfigurationFieldStatus.EVIDENCE_BOUND
     value_kind: SearchConfigurationValueKind = SearchConfigurationValueKind.KEY_VALUE_PAIR
     repeated_values: tuple[str, ...] = ()
+    multivalue_normalization: MultivalueNormalizationOutcome | None = None
     evidence_references: tuple[ParserEvidenceReference, ...] = ()
     warnings: tuple[ParserWarning, ...] = ()
     notes: tuple[str, ...] = ()
@@ -722,6 +818,11 @@ class SearchConfigurationParameterCandidate:
             raise ValueError("parameter_key must not be blank")
         _validate_nonblank_values("repeated_values", self.repeated_values)
         _validate_nonblank_values("notes", self.notes)
+        if self.multivalue_normalization is not None:
+            if self.multivalue_normalization.parameter_key != self.parameter_key:
+                raise ValueError("multivalue_normalization.parameter_key must match parameter_key")
+            if self.multivalue_normalization.input_values != self.repeated_values:
+                raise ValueError("multivalue_normalization.input_values must match repeated_values")
 
 
 @dataclass(frozen=True, slots=True)
@@ -914,6 +1015,9 @@ __all__: Final[tuple[str, ...]] = (
     "SearchConfigurationWarningCode",
     "SearchConfigurationExtractionField",
     "SearchConfigurationFieldStatus",
+    "MultivalueNormalizationStatus",
+    "MultivaluePreservationMode",
+    "MultivalueLossReason",
     "SearchConfigurationValueKind",
     "SourceReferenceKind",
     "SourceBoundaryStatus",
@@ -933,6 +1037,8 @@ __all__: Final[tuple[str, ...]] = (
     "ParserAttemptOutcome",
     "SearchSourceAnalysisOutcome",
     "SearchConfigurationEvidence",
+    "MultivalueNormalizationRule",
+    "MultivalueNormalizationOutcome",
     "SearchConfigurationParameterCandidate",
     "SearchConfigurationCandidate",
     "SearchConfigurationExtractionOutcome",
