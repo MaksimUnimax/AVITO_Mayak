@@ -1438,15 +1438,13 @@ class ListingBatchParseOutcome:
             raise ValueError("batch_id must not be blank")
         if self.pagination_evidence is not None:
             pagination_evidence = self.pagination_evidence
-            if pagination_evidence.page_observations:
-                expected_page_outcomes = tuple(
-                    observation.page_outcome
-                    for observation in pagination_evidence.page_observations
+            expected_page_outcomes = tuple(
+                observation.page_outcome for observation in pagination_evidence.page_observations
+            )
+            if self.page_outcomes != expected_page_outcomes:
+                raise ValueError(
+                    "page_outcomes must match pagination_evidence.page_observations"
                 )
-                if self.page_outcomes != expected_page_outcomes:
-                    raise ValueError(
-                        "page_outcomes must match pagination_evidence.page_observations"
-                    )
             if pagination_evidence.status is PaginationBatchStatus.COMPLETE:
                 if self.status is not ParserOutcomeStatus.USABLE_RESPONSE:
                     raise ValueError("COMPLETE pagination evidence requires usable batch status")

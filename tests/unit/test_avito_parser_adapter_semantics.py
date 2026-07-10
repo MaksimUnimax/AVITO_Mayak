@@ -11,6 +11,7 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    ListingBatchParseOutcome,
     ListingCandidateStatus,
     ListingCardCandidate,
     ListingFieldAvailability,
@@ -22,9 +23,11 @@ from mayak.modules.avito_parser_adapter import (
     MultivalueNormalizationStatus,
     NormalizedListingCandidate,
     ObservedListingPosition,
+    PaginationBatchEvidence,
     PaginationBatchStatus,
     PaginationContinuationStatus,
     PaginationLimitKind,
+    PaginationPageObservation,
     PaginationStopReason,
     ParserCompatibilityProfile,
     ParserEvidenceReference,
@@ -2378,3 +2381,136 @@ def test_apa10_pagination_fixtures_are_registered_once_and_explicit() -> None:
         ].listing_batch_parse_outcome.pagination_evidence
         is None
     )
+
+
+def test_apa10_batch_page_outcome_equality_matrix() -> None:
+    evidence_reference = ParserEvidenceReference(
+        reference_id="fx::apa10::matrix::evidence",
+        evidence_kind="pagination",
+    )
+    profile = ParserCompatibilityProfile(
+        profile_id="fx::apa10::matrix::profile",
+        semantic_version="2026.07.10",
+    )
+    request = ParserRequestEnvelope(
+        request_id="fx::apa10::matrix::request",
+        contract_name="mayak.avito.parser.request",
+        contract_version="1.0",
+        producer="mayak.tests.synthetic",
+        purpose="listing-batch-parse",
+        compatibility_profile=profile,
+        safe_source_reference="source::apa10::matrix",
+    )
+    transport = TransportOutcomeReference(
+        transport_reference_id="fx::apa10::matrix::transport",
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        request_reference=request.request_id,
+    )
+    page_1 = ListingPageParseOutcome(
+        page_id="fx::apa10::matrix::page::1",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=profile,
+        evidence_references=(evidence_reference,),
+    )
+    page_2 = ListingPageParseOutcome(
+        page_id="fx::apa10::matrix::page::2",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=profile,
+        evidence_references=(evidence_reference,),
+    )
+    empty_evidence = PaginationBatchEvidence(
+        pagination_evidence_id="fx::apa10::matrix::empty",
+        status=PaginationBatchStatus.BLOCKED,
+        page_observations=(),
+        stop_reason=PaginationStopReason.PROVIDER_RESTRICTED,
+        evidence_references=(evidence_reference,),
+    )
+    matching_evidence = PaginationBatchEvidence(
+        pagination_evidence_id="fx::apa10::matrix::matching",
+        status=PaginationBatchStatus.COMPLETE,
+        page_observations=(
+            PaginationPageObservation(
+                observation_id="fx::apa10::matrix::observation::1",
+                page_sequence=1,
+                page_outcome=page_1,
+                continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+                continuation_reference="page-token::apa10::matrix::next::1",
+                compatibility_profile=profile,
+                evidence_references=(evidence_reference,),
+            ),
+            PaginationPageObservation(
+                observation_id="fx::apa10::matrix::observation::2",
+                page_sequence=2,
+                page_outcome=page_2,
+                continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+                compatibility_profile=profile,
+                evidence_references=(evidence_reference,),
+            ),
+        ),
+        stop_reason=PaginationStopReason.EXPLICITLY_EXHAUSTED,
+        evidence_references=(evidence_reference,),
+    )
+
+    empty_batch = ListingBatchParseOutcome(
+        batch_id="fx::apa10::matrix::batch::empty",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+        compatibility_profile=profile,
+        page_outcomes=(),
+        pagination_evidence=empty_evidence,
+        evidence_references=(evidence_reference,),
+    )
+    assert empty_batch.page_outcomes == ()
+
+    with pytest.raises(ValueError):
+        ListingBatchParseOutcome(
+            batch_id="fx::apa10::matrix::batch::nonempty-empty",
+            request_envelope=request,
+            transport_outcome=transport,
+            status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+            compatibility_profile=profile,
+            page_outcomes=(page_1,),
+            pagination_evidence=empty_evidence,
+            evidence_references=(evidence_reference,),
+        )
+
+    with pytest.raises(ValueError):
+        ListingBatchParseOutcome(
+            batch_id="fx::apa10::matrix::batch::empty-nonempty",
+            request_envelope=request,
+            transport_outcome=transport,
+            status=ParserOutcomeStatus.USABLE_RESPONSE,
+            compatibility_profile=profile,
+            page_outcomes=(),
+            pagination_evidence=matching_evidence,
+            evidence_references=(evidence_reference,),
+        )
+
+    matching_batch = ListingBatchParseOutcome(
+        batch_id="fx::apa10::matrix::batch::matching",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=profile,
+        page_outcomes=(page_1, page_2),
+        pagination_evidence=matching_evidence,
+        evidence_references=(evidence_reference,),
+    )
+    assert matching_batch.page_outcomes == (page_1, page_2)
+
+    with pytest.raises(ValueError):
+        ListingBatchParseOutcome(
+            batch_id="fx::apa10::matrix::batch::reordered",
+            request_envelope=request,
+            transport_outcome=transport,
+            status=ParserOutcomeStatus.USABLE_RESPONSE,
+            compatibility_profile=profile,
+            page_outcomes=(page_2, page_1),
+            pagination_evidence=matching_evidence,
+            evidence_references=(evidence_reference,),
+        )

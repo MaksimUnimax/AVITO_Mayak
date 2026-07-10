@@ -1620,3 +1620,58 @@ def test_pagination_contracts_are_frozen_and_bounded() -> None:
             ),
             evidence_references=(evidence,),
         )
+
+
+def test_batch_parse_outcome_rejects_empty_pagination_evidence_mismatch() -> None:
+    evidence_reference = ParserEvidenceReference(
+        reference_id="fx::pagination::regression::evidence",
+        evidence_kind="pagination",
+    )
+    profile = ParserCompatibilityProfile(
+        profile_id="fx::pagination::regression::profile",
+        semantic_version="2026.07.10",
+    )
+    request = ParserRequestEnvelope(
+        request_id="fx::pagination::regression::request",
+        contract_name="mayak.avito.parser.request",
+        contract_version="1.0",
+        producer="mayak.tests.synthetic",
+        purpose="listing-batch-parse",
+        compatibility_profile=profile,
+        safe_source_reference="source::pagination::regression",
+    )
+    transport = TransportOutcomeReference(
+        transport_reference_id="fx::pagination::regression::transport",
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        request_reference=request.request_id,
+    )
+    page_outcome = ListingPageParseOutcome(
+        page_id="fx::pagination::regression::page::1",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+        compatibility_profile=profile,
+        evidence_references=(evidence_reference,),
+    )
+    pagination_evidence = PaginationBatchEvidence(
+        pagination_evidence_id="fx::pagination::regression::empty",
+        status=PaginationBatchStatus.BLOCKED,
+        page_observations=(),
+        stop_reason=PaginationStopReason.PROVIDER_RESTRICTED,
+        evidence_references=(evidence_reference,),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"page_outcomes must match pagination_evidence\.page_observations",
+    ):
+        ListingBatchParseOutcome(
+            batch_id="fx::pagination::regression::batch",
+            request_envelope=request,
+            transport_outcome=transport,
+            status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+            compatibility_profile=profile,
+            page_outcomes=(page_outcome,),
+            pagination_evidence=pagination_evidence,
+            evidence_references=(evidence_reference,),
+        )
