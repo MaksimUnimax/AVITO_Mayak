@@ -12,6 +12,8 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    DuplicateListingObservation,
+    ListingBatchParseOutcome,
     ListingCandidateStatus,
     ListingCardCandidate,
     ListingFieldAvailability,
@@ -29,6 +31,13 @@ from mayak.modules.avito_parser_adapter import (
     MultivaluePreservationMode,
     NormalizedListingCandidate,
     ObservedListingPosition,
+    PaginationBatchEvidence,
+    PaginationBatchStatus,
+    PaginationContinuationStatus,
+    PaginationLimitKind,
+    PaginationPageObservation,
+    PaginationPolicyBound,
+    PaginationStopReason,
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
@@ -110,6 +119,10 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ListingCandidateStatus",
         "ListingSortContextStatus",
         "ScanOrderingHandoffStatus",
+        "PaginationBatchStatus",
+        "PaginationContinuationStatus",
+        "PaginationStopReason",
+        "PaginationLimitKind",
         "SourceBoundaryOutcome",
         "SourceBoundaryPolicyRequirement",
         "SourceBoundaryRiskCode",
@@ -127,6 +140,10 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "FIXTURE_IDS",
         "SYNTHETIC_FIXTURE_CASES",
         "SYNTHETIC_FIXTURE_BY_ID",
+        "PaginationPolicyBound",
+        "PaginationPageObservation",
+        "DuplicateListingObservation",
+        "PaginationBatchEvidence",
     }
     assert expected_symbols.issubset(set(avito_parser_adapter.__all__))
 
@@ -1137,6 +1154,17 @@ def test_source_boundary_contracts_keep_bounded_references_explicit() -> None:
         "SORT_CONTEXT_UNPROVEN",
         "SORT_CONTEXT_CONTRADICTORY",
         "PUBLICATION_ORDER_SIGNAL_UNAVAILABLE",
+        "PAGINATION_ORDER_PRESERVED",
+        "PAGINATION_COMPLETE_PROVEN",
+        "PAGINATION_PARTIAL",
+        "PAGINATION_INTERRUPTED",
+        "PAGINATION_CONTINUATION_MISSING",
+        "PAGINATION_CONTINUATION_AMBIGUOUS",
+        "PAGINATION_CONTINUATION_UNSUPPORTED",
+        "PAGINATION_LIMIT_REACHED",
+        "PAGINATION_DUPLICATE_PRESERVED",
+        "PAGINATION_GENERIC_SUCCESS_BLOCKED",
+        "LIVE_PAGINATION_NOT_PERFORMED",
         "SCAN_NEWNESS_DECISION_NOT_PERFORMED",
         "SCAN_ANCHOR_STATE_NOT_MUTATED",
     }
@@ -1158,6 +1186,437 @@ def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
                 "FX-APA07-",
                 "FX-APA08-",
                 "FX-APA09-",
+                "FX-APA10-",
             )
         )
         assert avito_live_url_marker not in fixture.summary.lower()
+
+
+def test_pagination_contracts_are_frozen_and_bounded() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::pagination::evidence",
+        evidence_kind="pagination",
+    )
+    current_profile = ParserCompatibilityProfile(
+        profile_id="fx::pagination::profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only",),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        reference_status=ReferenceOutcomeStatus.CURRENT,
+        evidence_reference=evidence,
+        supported_extraction_claims=("pagination evidence is bounded",),
+        unsupported_extraction_claims=("live endpoint authority",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("current profile only",),
+        warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+        error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+        fixture_ids=("FX-APA10-SINGLE-PAGE-EXHAUSTED-COMPLETE-001",),
+        acceptance_matrix_rows=("APA10::CURRENT::PAGINATION::ACCEPT",),
+        revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+        compatibility_change_classes=(CompatibilityChangeClass.COMPATIBLE,),
+    )
+    stale_profile = ParserCompatibilityProfile(
+        profile_id="fx::pagination::stale-profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.STALE,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only",),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
+        evidence_reference=evidence,
+        supported_extraction_claims=("pagination evidence is bounded",),
+        unsupported_extraction_claims=("live endpoint authority",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("current profile only",),
+        warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+        error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+        fixture_ids=("FX-APA10-SINGLE-PAGE-EXHAUSTED-COMPLETE-001",),
+        acceptance_matrix_rows=("APA10::STALE::PAGINATION::BLOCK",),
+        revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+        compatibility_change_classes=(CompatibilityChangeClass.BREAKING,),
+    )
+    request = ParserRequestEnvelope(
+        request_id="fx::pagination::request",
+        contract_name="mayak.avito.parser.request",
+        contract_version="1.0",
+        producer="mayak.tests.synthetic",
+        purpose="listing-pagination",
+        compatibility_profile=current_profile,
+        safe_source_reference="bounded-source-value",
+        configuration_revision_id="cfg::pagination::001",
+        safe_transport_reference="transport::pagination",
+        requested_page_numbers=(1, 2),
+    )
+    transport = TransportOutcomeReference(
+        transport_reference_id="fx::pagination::transport",
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        request_reference=request.request_id,
+        response_reference="response::pagination",
+        route_reference="route::pagination",
+    )
+    card_1 = ListingCardCandidate(
+        listing_card_id="fx::pagination::card::1",
+        field_candidates=(),
+        evidence_references=(evidence,),
+    )
+    card_2 = ListingCardCandidate(
+        listing_card_id="fx::pagination::card::2",
+        field_candidates=(),
+        evidence_references=(evidence,),
+    )
+    card_3 = ListingCardCandidate(
+        listing_card_id="fx::pagination::card::3",
+        field_candidates=(),
+        evidence_references=(evidence,),
+    )
+    candidate_1 = NormalizedListingCandidate(
+        listing_candidate_id="fx::pagination::candidate::1",
+        status=ListingCandidateStatus.USABLE,
+        card_candidate=card_1,
+        evidence_references=(evidence,),
+    )
+    candidate_2 = NormalizedListingCandidate(
+        listing_candidate_id="fx::pagination::candidate::2",
+        status=ListingCandidateStatus.USABLE,
+        card_candidate=card_2,
+        evidence_references=(evidence,),
+    )
+    candidate_3 = NormalizedListingCandidate(
+        listing_candidate_id="fx::pagination::candidate::3",
+        status=ListingCandidateStatus.USABLE,
+        card_candidate=card_3,
+        evidence_references=(evidence,),
+    )
+    page_1 = ListingPageParseOutcome(
+        page_id="fx::pagination::page::1",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=current_profile,
+        normalized_listing_candidates=(candidate_1, candidate_2),
+        card_candidates=(card_1, card_2),
+        evidence_references=(evidence,),
+    )
+    page_2 = ListingPageParseOutcome(
+        page_id="fx::pagination::page::2",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=current_profile,
+        normalized_listing_candidates=(candidate_3,),
+        card_candidates=(card_3,),
+        evidence_references=(evidence,),
+    )
+    available_observation = PaginationPageObservation(
+        observation_id="fx::pagination::observation::available",
+        page_sequence=1,
+        page_outcome=page_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::pagination::next::1",
+        compatibility_profile=current_profile,
+        evidence_references=(evidence,),
+    )
+    exhausted_observation = PaginationPageObservation(
+        observation_id="fx::pagination::observation::exhausted",
+        page_sequence=2,
+        page_outcome=page_2,
+        continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+        compatibility_profile=current_profile,
+        evidence_references=(evidence,),
+    )
+    complete_evidence = PaginationBatchEvidence(
+        pagination_evidence_id="fx::pagination::complete",
+        status=PaginationBatchStatus.COMPLETE,
+        page_observations=(available_observation, exhausted_observation),
+        stop_reason=PaginationStopReason.EXPLICITLY_EXHAUSTED,
+        flattened_listing_candidate_ids=(
+            "fx::pagination::candidate::1",
+            "fx::pagination::candidate::2",
+            "fx::pagination::candidate::3",
+        ),
+        evidence_references=(evidence,),
+    )
+    batch = ListingBatchParseOutcome(
+        batch_id="fx::pagination::batch::complete",
+        request_envelope=request,
+        transport_outcome=transport,
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=current_profile,
+        page_outcomes=(page_1, page_2),
+        pagination_evidence=complete_evidence,
+        evidence_references=(evidence,),
+    )
+
+    assert batch.pagination_evidence is complete_evidence
+    assert tuple(
+        observation.page_outcome for observation in complete_evidence.page_observations
+    ) == (
+        page_1,
+        page_2,
+    )
+    assert complete_evidence.flattened_listing_candidate_ids == (
+        "fx::pagination::candidate::1",
+        "fx::pagination::candidate::2",
+        "fx::pagination::candidate::3",
+    )
+    assert complete_evidence.duplicate_observations == ()
+    assert {field.name for field in fields(PaginationPolicyBound)} >= {
+        "bound_id",
+        "kind",
+        "maximum",
+        "policy_reference",
+        "notes",
+    }
+    assert {field.name for field in fields(PaginationPageObservation)} >= {
+        "observation_id",
+        "page_sequence",
+        "page_outcome",
+        "continuation_status",
+        "continuation_reference",
+        "compatibility_profile",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(DuplicateListingObservation)} >= {
+        "duplicate_observation_id",
+        "listing_candidate_id",
+        "first_page_sequence",
+        "first_observed_rank",
+        "repeated_page_sequence",
+        "repeated_observed_rank",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(PaginationBatchEvidence)} >= {
+        "pagination_evidence_id",
+        "status",
+        "page_observations",
+        "stop_reason",
+        "policy_bounds",
+        "duplicate_observations",
+        "flattened_listing_candidate_ids",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(ListingBatchParseOutcome)} >= {
+        "pagination_evidence",
+        "page_outcomes",
+    }
+    for forbidden in {"request", "route", "cookies", "endpoint", "retry", "scroll", "browser"}:
+        assert forbidden not in {field.name for field in fields(PaginationPageObservation)}
+        assert forbidden not in {field.name for field in fields(PaginationBatchEvidence)}
+
+    with pytest.raises(FrozenInstanceError):
+        complete_evidence.status = PaginationBatchStatus.PARTIAL  # type: ignore[misc]
+    with pytest.raises(ValueError):
+        PaginationPolicyBound(
+            bound_id="fx::pagination::bound::bool",
+            kind=PaginationLimitKind.PAGES,
+            maximum=True,  # type: ignore[arg-type]
+            policy_reference="policy::synthetic::bool",
+        )
+    with pytest.raises(ValueError):
+        PaginationPageObservation(
+            observation_id="fx::pagination::observation::bool",
+            page_sequence=True,  # type: ignore[arg-type]
+            page_outcome=page_1,
+            continuation_status=PaginationContinuationStatus.MISSING,
+        )
+    with pytest.raises(ValueError):
+        DuplicateListingObservation(
+            duplicate_observation_id="fx::pagination::duplicate::bool",
+            listing_candidate_id="fx::pagination::candidate::1",
+            first_page_sequence=1,
+            first_observed_rank=True,  # type: ignore[arg-type]
+            repeated_page_sequence=2,
+            repeated_observed_rank=1,
+        )
+    with pytest.raises(ValueError):
+        PaginationPageObservation(
+            observation_id="fx::pagination::proven-available::missing-ref",
+            page_sequence=1,
+            page_outcome=page_1,
+            continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+            compatibility_profile=current_profile,
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        PaginationPageObservation(
+            observation_id="fx::pagination::proven-exhausted::bad-ref",
+            page_sequence=1,
+            page_outcome=page_1,
+            continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+            continuation_reference="page-token::synthetic::unexpected",
+            compatibility_profile=current_profile,
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        PaginationPageObservation(
+            observation_id="fx::pagination::proven-exhausted::stale-profile",
+            page_sequence=1,
+            page_outcome=page_1,
+            continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+            compatibility_profile=stale_profile,
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        PaginationBatchEvidence(
+            pagination_evidence_id="fx::pagination::duplicate-page-ids",
+            status=PaginationBatchStatus.COMPLETE,
+            page_observations=(
+                available_observation,
+                PaginationPageObservation(
+                    observation_id="fx::pagination::duplicate-page-ids::observation",
+                    page_sequence=2,
+                    page_outcome=page_1,
+                    continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+                    continuation_reference="page-token::synthetic::duplicate-page-id",
+                    compatibility_profile=current_profile,
+                    evidence_references=(evidence,),
+                ),
+            ),
+            stop_reason=PaginationStopReason.EXPLICITLY_EXHAUSTED,
+            flattened_listing_candidate_ids=(
+                "fx::pagination::candidate::1",
+                "fx::pagination::candidate::2",
+                "fx::pagination::candidate::2",
+                "fx::pagination::candidate::1",
+                "fx::pagination::candidate::2",
+            ),
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        PaginationBatchEvidence(
+            pagination_evidence_id="fx::pagination::duplicate-observation-ids",
+            status=PaginationBatchStatus.COMPLETE,
+            page_observations=(
+                available_observation,
+                PaginationPageObservation(
+                    observation_id="fx::pagination::observation::available",
+                    page_sequence=2,
+                    page_outcome=page_2,
+                    continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+                    compatibility_profile=current_profile,
+                    evidence_references=(evidence,),
+                ),
+            ),
+            stop_reason=PaginationStopReason.EXPLICITLY_EXHAUSTED,
+            flattened_listing_candidate_ids=(
+                "fx::pagination::candidate::1",
+                "fx::pagination::candidate::2",
+                "fx::pagination::candidate::2",
+            ),
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        PaginationBatchEvidence(
+            pagination_evidence_id="fx::pagination::duplicate-bound-ids",
+            status=PaginationBatchStatus.INTERRUPTED,
+            page_observations=(available_observation,),
+            stop_reason=PaginationStopReason.MAX_PAGES_REACHED,
+            policy_bounds=(
+                PaginationPolicyBound(
+                    bound_id="fx::pagination::bound::duplicate",
+                    kind=PaginationLimitKind.PAGES,
+                    maximum=2,
+                    policy_reference="policy::synthetic::pages::2",
+                ),
+                PaginationPolicyBound(
+                    bound_id="fx::pagination::bound::duplicate",
+                    kind=PaginationLimitKind.ITEMS,
+                    maximum=2,
+                    policy_reference="policy::synthetic::items::2",
+                ),
+            ),
+            flattened_listing_candidate_ids=(
+                "fx::pagination::candidate::1",
+                "fx::pagination::candidate::2",
+            ),
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        PaginationBatchEvidence(
+            pagination_evidence_id="fx::pagination::duplicate-bound-kinds",
+            status=PaginationBatchStatus.INTERRUPTED,
+            page_observations=(available_observation,),
+            stop_reason=PaginationStopReason.MAX_PAGES_REACHED,
+            policy_bounds=(
+                PaginationPolicyBound(
+                    bound_id="fx::pagination::bound::pages",
+                    kind=PaginationLimitKind.PAGES,
+                    maximum=2,
+                    policy_reference="policy::synthetic::pages::2",
+                ),
+                PaginationPolicyBound(
+                    bound_id="fx::pagination::bound::items",
+                    kind=PaginationLimitKind.PAGES,
+                    maximum=3,
+                    policy_reference="policy::synthetic::pages::3",
+                ),
+            ),
+            flattened_listing_candidate_ids=(
+                "fx::pagination::candidate::1",
+                "fx::pagination::candidate::2",
+            ),
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        PaginationBatchEvidence(
+            pagination_evidence_id="fx::pagination::missing-limit-bound",
+            status=PaginationBatchStatus.INTERRUPTED,
+            page_observations=(available_observation,),
+            stop_reason=PaginationStopReason.MAX_PAGES_REACHED,
+            flattened_listing_candidate_ids=(
+                "fx::pagination::candidate::1",
+                "fx::pagination::candidate::2",
+            ),
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        ListingBatchParseOutcome(
+            batch_id="fx::pagination::bad-success",
+            request_envelope=request,
+            transport_outcome=transport,
+            status=ParserOutcomeStatus.USABLE_RESPONSE,
+            compatibility_profile=current_profile,
+            page_outcomes=(page_1, page_2),
+            pagination_evidence=PaginationBatchEvidence(
+                pagination_evidence_id="fx::pagination::partial-evidence",
+                status=PaginationBatchStatus.PARTIAL,
+                page_observations=(
+                    available_observation,
+                    PaginationPageObservation(
+                        observation_id="fx::pagination::partial::observation",
+                        page_sequence=2,
+                        page_outcome=ListingPageParseOutcome(
+                            page_id="fx::pagination::page::partial",
+                            request_envelope=request,
+                            transport_outcome=transport,
+                            status=ParserOutcomeStatus.INCOMPLETE_RESPONSE,
+                            compatibility_profile=current_profile,
+                            evidence_references=(evidence,),
+                        ),
+                        continuation_status=PaginationContinuationStatus.BLOCKED,
+                        compatibility_profile=current_profile,
+                        evidence_references=(evidence,),
+                    ),
+                ),
+                stop_reason=PaginationStopReason.PAGE_NOT_USABLE,
+                flattened_listing_candidate_ids=(
+                    "fx::pagination::candidate::1",
+                    "fx::pagination::candidate::2",
+                ),
+                evidence_references=(evidence,),
+            ),
+            evidence_references=(evidence,),
+        )

@@ -154,6 +154,17 @@ class ParserWarningCode(str, Enum):
     SORT_CONTEXT_UNPROVEN = "SORT_CONTEXT_UNPROVEN"
     SORT_CONTEXT_CONTRADICTORY = "SORT_CONTEXT_CONTRADICTORY"
     PUBLICATION_ORDER_SIGNAL_UNAVAILABLE = "PUBLICATION_ORDER_SIGNAL_UNAVAILABLE"
+    PAGINATION_ORDER_PRESERVED = "PAGINATION_ORDER_PRESERVED"
+    PAGINATION_COMPLETE_PROVEN = "PAGINATION_COMPLETE_PROVEN"
+    PAGINATION_PARTIAL = "PAGINATION_PARTIAL"
+    PAGINATION_INTERRUPTED = "PAGINATION_INTERRUPTED"
+    PAGINATION_CONTINUATION_MISSING = "PAGINATION_CONTINUATION_MISSING"
+    PAGINATION_CONTINUATION_AMBIGUOUS = "PAGINATION_CONTINUATION_AMBIGUOUS"
+    PAGINATION_CONTINUATION_UNSUPPORTED = "PAGINATION_CONTINUATION_UNSUPPORTED"
+    PAGINATION_LIMIT_REACHED = "PAGINATION_LIMIT_REACHED"
+    PAGINATION_DUPLICATE_PRESERVED = "PAGINATION_DUPLICATE_PRESERVED"
+    PAGINATION_GENERIC_SUCCESS_BLOCKED = "PAGINATION_GENERIC_SUCCESS_BLOCKED"
+    LIVE_PAGINATION_NOT_PERFORMED = "LIVE_PAGINATION_NOT_PERFORMED"
     SCAN_NEWNESS_DECISION_NOT_PERFORMED = "SCAN_NEWNESS_DECISION_NOT_PERFORMED"
     SCAN_ANCHOR_STATE_NOT_MUTATED = "SCAN_ANCHOR_STATE_NOT_MUTATED"
     SOURCE_URL_UNTRUSTED = "SOURCE_URL_UNTRUSTED"
@@ -344,6 +355,55 @@ class ScanOrderingHandoffStatus(str, Enum):
     BLOCKED_ORDER_MISMATCH = "BLOCKED_ORDER_MISMATCH"
 
 
+class PaginationBatchStatus(str, Enum):
+    """Semantic classifications for bounded pagination batches."""
+
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"
+    INTERRUPTED = "INTERRUPTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+class PaginationContinuationStatus(str, Enum):
+    """Semantic classifications for pagination continuation evidence."""
+
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    PROVEN_AVAILABLE = "PROVEN_AVAILABLE"
+    PROVEN_EXHAUSTED = "PROVEN_EXHAUSTED"
+    MISSING = "MISSING"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+    BLOCKED = "BLOCKED"
+
+
+class PaginationStopReason(str, Enum):
+    """Explicit reasons why pagination stopped or cannot continue."""
+
+    EXPLICITLY_EXHAUSTED = "EXPLICITLY_EXHAUSTED"
+    REQUEST_SCOPE_COMPLETE = "REQUEST_SCOPE_COMPLETE"
+    MAX_PAGES_REACHED = "MAX_PAGES_REACHED"
+    MAX_ITEMS_REACHED = "MAX_ITEMS_REACHED"
+    MAX_BYTES_REACHED = "MAX_BYTES_REACHED"
+    MAX_DURATION_REACHED = "MAX_DURATION_REACHED"
+    PAGE_NOT_USABLE = "PAGE_NOT_USABLE"
+    CONTINUATION_MISSING = "CONTINUATION_MISSING"
+    CONTINUATION_AMBIGUOUS = "CONTINUATION_AMBIGUOUS"
+    CONTINUATION_UNSUPPORTED = "CONTINUATION_UNSUPPORTED"
+    PROFILE_NOT_CURRENT = "PROFILE_NOT_CURRENT"
+    EXTERNAL_INTERRUPTION = "EXTERNAL_INTERRUPTION"
+    PROVIDER_RESTRICTED = "PROVIDER_RESTRICTED"
+
+
+class PaginationLimitKind(str, Enum):
+    """Explicit kinds of approved pagination bounds."""
+
+    PAGES = "PAGES"
+    ITEMS = "ITEMS"
+    BYTES = "BYTES"
+    DURATION_MILLISECONDS = "DURATION_MILLISECONDS"
+
+
 _LISTING_FIELD_TIER_BY_FAMILY: Final[dict[ListingFieldFamily, ListingFieldTier]] = {
     ListingFieldFamily.TITLE: ListingFieldTier.TIER_1_SEARCH_RESULT,
     ListingFieldFamily.NORMALIZED_PRICE: ListingFieldTier.TIER_1_SEARCH_RESULT,
@@ -516,6 +576,11 @@ def _validate_nonblank_values(field_name: str, values: tuple[str, ...]) -> None:
     for value in values:
         if not value.strip():
             raise ValueError(f"{field_name} must not contain blank values")
+
+
+def _validate_positive_int(field_name: str, value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{field_name} must be a positive integer starting at 1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1363,6 +1428,7 @@ class ListingBatchParseOutcome:
     )
     compatibility_profile: ParserCompatibilityProfile
     page_outcomes: tuple[ListingPageParseOutcome, ...] = ()
+    pagination_evidence: PaginationBatchEvidence | None = None
     warnings: tuple[ParserWarning, ...] = ()
     evidence_references: tuple[ParserEvidenceReference, ...] = ()
     explanation: ParserOutcomeExplanation | None = None
@@ -1370,6 +1436,308 @@ class ListingBatchParseOutcome:
     def __post_init__(self) -> None:
         if not self.batch_id.strip():
             raise ValueError("batch_id must not be blank")
+        if self.pagination_evidence is not None:
+            pagination_evidence = self.pagination_evidence
+            if pagination_evidence.page_observations:
+                expected_page_outcomes = tuple(
+                    observation.page_outcome
+                    for observation in pagination_evidence.page_observations
+                )
+                if self.page_outcomes != expected_page_outcomes:
+                    raise ValueError(
+                        "page_outcomes must match pagination_evidence.page_observations"
+                    )
+            if pagination_evidence.status is PaginationBatchStatus.COMPLETE:
+                if self.status is not ParserOutcomeStatus.USABLE_RESPONSE:
+                    raise ValueError("COMPLETE pagination evidence requires usable batch status")
+            elif self.status is ParserOutcomeStatus.USABLE_RESPONSE:
+                raise ValueError("generic batch success is blocked for non-complete pagination")
+
+
+@dataclass(frozen=True, slots=True)
+class PaginationPolicyBound:
+    """Approved pagination-policy evidence bound."""
+
+    bound_id: str
+    kind: PaginationLimitKind
+    maximum: int
+    policy_reference: str
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.bound_id.strip():
+            raise ValueError("bound_id must not be blank")
+        if not self.policy_reference.strip():
+            raise ValueError("policy_reference must not be blank")
+        _validate_positive_int("maximum", self.maximum)
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
+class PaginationPageObservation:
+    """Evidence-bound observation for one parsed listing page."""
+
+    observation_id: str
+    page_sequence: int
+    page_outcome: ListingPageParseOutcome
+    continuation_status: PaginationContinuationStatus
+    continuation_reference: str | None = None
+    compatibility_profile: ParserCompatibilityProfile | None = None
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.observation_id.strip():
+            raise ValueError("observation_id must not be blank")
+        _validate_positive_int("page_sequence", self.page_sequence)
+        if self.continuation_reference is not None and not self.continuation_reference.strip():
+            raise ValueError("continuation_reference must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+        if self.continuation_status is PaginationContinuationStatus.PROVEN_AVAILABLE:
+            if self.continuation_reference is None:
+                raise ValueError("PROVEN_AVAILABLE requires continuation_reference")
+            if self.compatibility_profile is None:
+                raise ValueError("PROVEN_AVAILABLE requires compatibility_profile")
+            if (
+                self.compatibility_profile.lifecycle_status
+                is not CompatibilityProfileLifecycleStatus.CURRENT
+            ):
+                raise ValueError("PROVEN_AVAILABLE requires CURRENT compatibility_profile")
+            if not self.evidence_references:
+                raise ValueError("PROVEN_AVAILABLE requires evidence_references")
+        elif self.continuation_status is PaginationContinuationStatus.PROVEN_EXHAUSTED:
+            if self.continuation_reference is not None:
+                raise ValueError("PROVEN_EXHAUSTED cannot declare continuation_reference")
+            if self.compatibility_profile is None:
+                raise ValueError("PROVEN_EXHAUSTED requires compatibility_profile")
+            if (
+                self.compatibility_profile.lifecycle_status
+                is not CompatibilityProfileLifecycleStatus.CURRENT
+            ):
+                raise ValueError("PROVEN_EXHAUSTED requires CURRENT compatibility_profile")
+            if not self.evidence_references:
+                raise ValueError("PROVEN_EXHAUSTED requires evidence_references")
+        elif self.continuation_reference is not None:
+            raise ValueError("only proven continuation may declare continuation_reference")
+
+
+@dataclass(frozen=True, slots=True)
+class DuplicateListingObservation:
+    """Explicit record of a repeated listing candidate observation."""
+
+    duplicate_observation_id: str
+    listing_candidate_id: str
+    first_page_sequence: int
+    first_observed_rank: int
+    repeated_page_sequence: int
+    repeated_observed_rank: int
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.duplicate_observation_id.strip():
+            raise ValueError("duplicate_observation_id must not be blank")
+        if not self.listing_candidate_id.strip():
+            raise ValueError("listing_candidate_id must not be blank")
+        for field_name in (
+            "first_page_sequence",
+            "first_observed_rank",
+            "repeated_page_sequence",
+            "repeated_observed_rank",
+        ):
+            _validate_positive_int(field_name, getattr(self, field_name))
+        if (
+            self.first_page_sequence,
+            self.first_observed_rank,
+        ) == (
+            self.repeated_page_sequence,
+            self.repeated_observed_rank,
+        ):
+            raise ValueError("repeated location must differ from first location")
+        if (
+            self.repeated_page_sequence,
+            self.repeated_observed_rank,
+        ) <= (
+            self.first_page_sequence,
+            self.first_observed_rank,
+        ):
+            raise ValueError("repeated location must come after first location")
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
+class PaginationBatchEvidence:
+    """Bounded pagination evidence that preserves page and listing order."""
+
+    pagination_evidence_id: str
+    status: PaginationBatchStatus
+    page_observations: tuple[PaginationPageObservation, ...]
+    stop_reason: PaginationStopReason
+    policy_bounds: tuple[PaginationPolicyBound, ...] = ()
+    duplicate_observations: tuple[DuplicateListingObservation, ...] = ()
+    flattened_listing_candidate_ids: tuple[str, ...] = ()
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.pagination_evidence_id.strip():
+            raise ValueError("pagination_evidence_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+        page_observations = self.page_observations
+        observation_ids = [observation.observation_id for observation in page_observations]
+        page_ids = [observation.page_outcome.page_id for observation in page_observations]
+        page_sequences = [observation.page_sequence for observation in page_observations]
+        if len(set(observation_ids)) != len(observation_ids):
+            raise ValueError("page observation IDs must be unique")
+        if len(set(page_ids)) != len(page_ids):
+            raise ValueError("page IDs must be unique")
+        if len(set(page_sequences)) != len(page_sequences):
+            raise ValueError("page sequences must be unique")
+        if tuple(page_sequences) != tuple(range(1, len(page_observations) + 1)):
+            raise ValueError("page sequences must be strictly 1..N in observation order")
+        for index, observation in enumerate(page_observations, start=1):
+            if observation.page_sequence != index:
+                raise ValueError("page observations must be ordered by page_sequence")
+
+        bound_ids = [bound.bound_id for bound in self.policy_bounds]
+        bound_kinds = [bound.kind for bound in self.policy_bounds]
+        if len(set(bound_ids)) != len(bound_ids):
+            raise ValueError("policy bound IDs must be unique")
+        if len(set(bound_kinds)) != len(bound_kinds):
+            raise ValueError("policy bound kinds must be unique")
+
+        flattened_candidate_ids = tuple(self.flattened_listing_candidate_ids)
+        if any(not candidate_id.strip() for candidate_id in flattened_candidate_ids):
+            raise ValueError("flattened_listing_candidate_ids must not contain blank values")
+        observed_candidate_ids: list[str] = []
+        candidate_positions: dict[str, tuple[int, int]] = {}
+        repeated_positions: list[tuple[str, tuple[int, int], tuple[int, int]]] = []
+        for observation in page_observations:
+            page_sequence = observation.page_sequence
+            for rank, candidate in enumerate(
+                observation.page_outcome.normalized_listing_candidates, start=1
+            ):
+                candidate_id = candidate.listing_candidate_id
+                observed_candidate_ids.append(candidate_id)
+                current_position = (page_sequence, rank)
+                if candidate_id not in candidate_positions:
+                    candidate_positions[candidate_id] = current_position
+                else:
+                    first_position = candidate_positions[candidate_id]
+                    repeated_positions.append((candidate_id, first_position, current_position))
+        if flattened_candidate_ids != tuple(observed_candidate_ids):
+            raise ValueError(
+                "flattened_listing_candidate_ids must match observed page listing order"
+            )
+        duplicate_specs = [
+            (
+                duplicate.listing_candidate_id,
+                (duplicate.first_page_sequence, duplicate.first_observed_rank),
+                (duplicate.repeated_page_sequence, duplicate.repeated_observed_rank),
+            )
+            for duplicate in self.duplicate_observations
+        ]
+        if len(duplicate_specs) != len(repeated_positions):
+            raise ValueError("duplicate observations must cover every repeated occurrence")
+        if duplicate_specs != repeated_positions:
+            raise ValueError("duplicate observations must exactly match repeated locations")
+
+        if self.status is PaginationBatchStatus.COMPLETE:
+            if not page_observations:
+                raise ValueError("COMPLETE pagination requires at least one page observation")
+            if any(
+                observation.page_outcome.status is not ParserOutcomeStatus.USABLE_RESPONSE
+                for observation in page_observations
+            ):
+                raise ValueError("COMPLETE pagination requires usable page outcomes")
+            last_observation = page_observations[-1]
+            if last_observation.continuation_status not in (
+                PaginationContinuationStatus.PROVEN_EXHAUSTED,
+                PaginationContinuationStatus.NOT_APPLICABLE,
+            ):
+                raise ValueError("COMPLETE pagination requires final exhaustion evidence")
+            if (
+                last_observation.continuation_status is PaginationContinuationStatus.NOT_APPLICABLE
+                and self.stop_reason is not PaginationStopReason.REQUEST_SCOPE_COMPLETE
+            ):
+                raise ValueError(
+                    "NOT_APPLICABLE completion requires REQUEST_SCOPE_COMPLETE stop reason"
+                )
+            if (
+                last_observation.continuation_status
+                is PaginationContinuationStatus.PROVEN_EXHAUSTED
+                and self.stop_reason is not PaginationStopReason.EXPLICITLY_EXHAUSTED
+            ):
+                raise ValueError(
+                    "PROVEN_EXHAUSTED completion requires EXPLICITLY_EXHAUSTED stop reason"
+                )
+        elif self.status is PaginationBatchStatus.PARTIAL:
+            if not any(
+                observation.page_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+                for observation in page_observations
+            ):
+                raise ValueError("PARTIAL pagination requires at least one usable page")
+            if self.stop_reason in (
+                PaginationStopReason.EXPLICITLY_EXHAUSTED,
+                PaginationStopReason.REQUEST_SCOPE_COMPLETE,
+            ):
+                raise ValueError("PARTIAL pagination cannot claim exhaustion")
+        elif self.status is PaginationBatchStatus.INTERRUPTED:
+            if self.stop_reason not in (
+                PaginationStopReason.MAX_PAGES_REACHED,
+                PaginationStopReason.MAX_ITEMS_REACHED,
+                PaginationStopReason.MAX_BYTES_REACHED,
+                PaginationStopReason.MAX_DURATION_REACHED,
+                PaginationStopReason.EXTERNAL_INTERRUPTION,
+            ):
+                raise ValueError("INTERRUPTED pagination requires interruption stop reason")
+            if self.stop_reason is PaginationStopReason.MAX_PAGES_REACHED and not any(
+                bound.kind is PaginationLimitKind.PAGES for bound in self.policy_bounds
+            ):
+                raise ValueError("MAX_PAGES_REACHED requires matching PAGES policy bound")
+            if self.stop_reason is PaginationStopReason.MAX_ITEMS_REACHED and not any(
+                bound.kind is PaginationLimitKind.ITEMS for bound in self.policy_bounds
+            ):
+                raise ValueError("MAX_ITEMS_REACHED requires matching ITEMS policy bound")
+            if self.stop_reason is PaginationStopReason.MAX_BYTES_REACHED and not any(
+                bound.kind is PaginationLimitKind.BYTES for bound in self.policy_bounds
+            ):
+                raise ValueError("MAX_BYTES_REACHED requires matching BYTES policy bound")
+            if self.stop_reason is PaginationStopReason.MAX_DURATION_REACHED and not any(
+                bound.kind is PaginationLimitKind.DURATION_MILLISECONDS
+                for bound in self.policy_bounds
+            ):
+                raise ValueError(
+                    "MAX_DURATION_REACHED requires matching DURATION_MILLISECONDS policy bound"
+                )
+        elif self.status is PaginationBatchStatus.AMBIGUOUS:
+            if not any(
+                observation.continuation_status
+                in (
+                    PaginationContinuationStatus.MISSING,
+                    PaginationContinuationStatus.AMBIGUOUS,
+                    PaginationContinuationStatus.UNSUPPORTED,
+                )
+                for observation in page_observations
+            ):
+                raise ValueError("AMBIGUOUS pagination requires ambiguous continuation evidence")
+        elif self.status is PaginationBatchStatus.BLOCKED:
+            if any(
+                observation.page_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+                for observation in page_observations
+            ):
+                raise ValueError("BLOCKED pagination cannot contain usable page data")
+            if self.stop_reason not in (
+                PaginationStopReason.PROVIDER_RESTRICTED,
+                PaginationStopReason.CONTINUATION_MISSING,
+                PaginationStopReason.CONTINUATION_AMBIGUOUS,
+                PaginationStopReason.CONTINUATION_UNSUPPORTED,
+                PaginationStopReason.PAGE_NOT_USABLE,
+            ):
+                raise ValueError("BLOCKED pagination requires blocked stop reason")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1425,6 +1793,10 @@ __all__: Final[tuple[str, ...]] = (
     "ListingCandidateStatus",
     "ListingSortContextStatus",
     "ScanOrderingHandoffStatus",
+    "PaginationBatchStatus",
+    "PaginationContinuationStatus",
+    "PaginationStopReason",
+    "PaginationLimitKind",
     "SourceReferenceKind",
     "SourceBoundaryStatus",
     "SourceBoundaryRiskCode",
@@ -1456,4 +1828,8 @@ __all__: Final[tuple[str, ...]] = (
     "ParserScanOrderingHandoff",
     "ListingPageParseOutcome",
     "ListingBatchParseOutcome",
+    "PaginationPolicyBound",
+    "PaginationPageObservation",
+    "DuplicateListingObservation",
+    "PaginationBatchEvidence",
 )

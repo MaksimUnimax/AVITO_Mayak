@@ -22,6 +22,10 @@ from mayak.modules.avito_parser_adapter import (
     MultivalueNormalizationStatus,
     NormalizedListingCandidate,
     ObservedListingPosition,
+    PaginationBatchStatus,
+    PaginationContinuationStatus,
+    PaginationLimitKind,
+    PaginationStopReason,
     ParserCompatibilityProfile,
     ParserEvidenceReference,
     ParserOutcomeStatus,
@@ -166,9 +170,60 @@ def test_apa09_warning_codes_are_explicit_and_stable() -> None:
         "SORT_CONTEXT_UNPROVEN",
         "SORT_CONTEXT_CONTRADICTORY",
         "PUBLICATION_ORDER_SIGNAL_UNAVAILABLE",
+        "PAGINATION_ORDER_PRESERVED",
+        "PAGINATION_COMPLETE_PROVEN",
+        "PAGINATION_PARTIAL",
+        "PAGINATION_INTERRUPTED",
+        "PAGINATION_CONTINUATION_MISSING",
+        "PAGINATION_CONTINUATION_AMBIGUOUS",
+        "PAGINATION_CONTINUATION_UNSUPPORTED",
+        "PAGINATION_LIMIT_REACHED",
+        "PAGINATION_DUPLICATE_PRESERVED",
+        "PAGINATION_GENERIC_SUCCESS_BLOCKED",
+        "LIVE_PAGINATION_NOT_PERFORMED",
         "SCAN_NEWNESS_DECISION_NOT_PERFORMED",
         "SCAN_ANCHOR_STATE_NOT_MUTATED",
     }
+
+
+def test_apa10_pagination_enums_are_explicit_and_stable() -> None:
+    assert [member.value for member in PaginationBatchStatus] == [
+        "COMPLETE",
+        "PARTIAL",
+        "INTERRUPTED",
+        "AMBIGUOUS",
+        "BLOCKED",
+    ]
+    assert [member.value for member in PaginationContinuationStatus] == [
+        "NOT_APPLICABLE",
+        "PROVEN_AVAILABLE",
+        "PROVEN_EXHAUSTED",
+        "MISSING",
+        "AMBIGUOUS",
+        "UNSUPPORTED",
+        "BLOCKED",
+    ]
+    assert [member.value for member in PaginationStopReason] == [
+        "EXPLICITLY_EXHAUSTED",
+        "REQUEST_SCOPE_COMPLETE",
+        "MAX_PAGES_REACHED",
+        "MAX_ITEMS_REACHED",
+        "MAX_BYTES_REACHED",
+        "MAX_DURATION_REACHED",
+        "PAGE_NOT_USABLE",
+        "CONTINUATION_MISSING",
+        "CONTINUATION_AMBIGUOUS",
+        "CONTINUATION_UNSUPPORTED",
+        "PROFILE_NOT_CURRENT",
+        "EXTERNAL_INTERRUPTION",
+        "PROVIDER_RESTRICTED",
+    ]
+    assert [member.value for member in PaginationLimitKind] == [
+        "PAGES",
+        "ITEMS",
+        "BYTES",
+        "DURATION_MILLISECONDS",
+    ]
 
 
 def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
@@ -273,6 +328,18 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA09-PARTIAL-PAGE-NOT-COMPARISON-ELIGIBLE-001",
         "FX-APA09-NO-SCAN-NEWNESS-DECISION-001",
         "FX-APA09-NO-ANCHOR-STATE-MUTATION-001",
+        "FX-APA10-SINGLE-PAGE-EXHAUSTED-COMPLETE-001",
+        "FX-APA10-MULTIPAGE-COMPLETE-001",
+        "FX-APA10-PARTIAL-LATER-PAGE-FAILED-001",
+        "FX-APA10-INTERRUPTED-MAX-PAGES-001",
+        "FX-APA10-CONTINUATION-MISSING-AMBIGUOUS-001",
+        "FX-APA10-CONTINUATION-UNSUPPORTED-001",
+        "FX-APA10-DUPLICATE-PRESERVED-001",
+        "FX-APA10-PAGE-ORDER-PRESERVED-001",
+        "FX-APA10-NO-GENERIC-SUCCESS-MIXED-PAGES-001",
+        "FX-APA10-NO-UNBOUNDED-PAGINATION-001",
+        "FX-APA10-NO-LIVE-ENDPOINT-AUTHORITY-001",
+        "FX-APA10-NO-SCAN-NEWNESS-MUTATION-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
@@ -2056,4 +2123,258 @@ def test_apa07_multivalue_profile_source_response_and_ownership_gates_are_explic
     assert (
         scan.search_configuration_extraction_outcome.warnings[0].code
         is SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED
+    )
+
+
+def test_apa10_pagination_fixtures_are_registered_once_and_explicit() -> None:
+    apa10_ids = {fixture_id for fixture_id in FIXTURE_IDS if fixture_id.startswith("FX-APA10-")}
+
+    assert apa10_ids == {
+        "FX-APA10-SINGLE-PAGE-EXHAUSTED-COMPLETE-001",
+        "FX-APA10-MULTIPAGE-COMPLETE-001",
+        "FX-APA10-PARTIAL-LATER-PAGE-FAILED-001",
+        "FX-APA10-INTERRUPTED-MAX-PAGES-001",
+        "FX-APA10-CONTINUATION-MISSING-AMBIGUOUS-001",
+        "FX-APA10-CONTINUATION-UNSUPPORTED-001",
+        "FX-APA10-DUPLICATE-PRESERVED-001",
+        "FX-APA10-PAGE-ORDER-PRESERVED-001",
+        "FX-APA10-NO-GENERIC-SUCCESS-MIXED-PAGES-001",
+        "FX-APA10-NO-UNBOUNDED-PAGINATION-001",
+        "FX-APA10-NO-LIVE-ENDPOINT-AUTHORITY-001",
+        "FX-APA10-NO-SCAN-NEWNESS-MUTATION-001",
+    }
+    assert len(apa10_ids) == 12
+
+    single = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-SINGLE-PAGE-EXHAUSTED-COMPLETE-001"]
+    multi = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-MULTIPAGE-COMPLETE-001"]
+    partial = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-PARTIAL-LATER-PAGE-FAILED-001"]
+    interrupted = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-INTERRUPTED-MAX-PAGES-001"]
+    missing = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-CONTINUATION-MISSING-AMBIGUOUS-001"]
+    unsupported = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-CONTINUATION-UNSUPPORTED-001"]
+    duplicate = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-DUPLICATE-PRESERVED-001"]
+    ordered = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-PAGE-ORDER-PRESERVED-001"]
+    mixed = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-NO-GENERIC-SUCCESS-MIXED-PAGES-001"]
+    bounded = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-NO-UNBOUNDED-PAGINATION-001"]
+    live_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-NO-LIVE-ENDPOINT-AUTHORITY-001"]
+    no_scan = SYNTHETIC_FIXTURE_BY_ID["FX-APA10-NO-SCAN-NEWNESS-MUTATION-001"]
+
+    assert single.listing_batch_parse_outcome is not None
+    assert single.listing_batch_parse_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert single.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        single.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.COMPLETE
+    )
+    assert (
+        single.listing_batch_parse_outcome.pagination_evidence.stop_reason
+        is PaginationStopReason.EXPLICITLY_EXHAUSTED
+    )
+    assert (
+        single.listing_batch_parse_outcome.pagination_evidence.page_observations[
+            0
+        ].continuation_status
+        is PaginationContinuationStatus.PROVEN_EXHAUSTED
+    )
+    assert (
+        single.listing_batch_parse_outcome.pagination_evidence.flattened_listing_candidate_ids
+        == (
+            "fx-apa10-single-candidate-1",
+            "fx-apa10-single-candidate-2",
+        )
+    )
+
+    assert multi.listing_batch_parse_outcome is not None
+    assert tuple(
+        observation.continuation_status
+        for observation in multi.listing_batch_parse_outcome.pagination_evidence.page_observations
+    ) == (
+        PaginationContinuationStatus.PROVEN_AVAILABLE,
+        PaginationContinuationStatus.PROVEN_EXHAUSTED,
+    )
+    assert tuple(
+        observation.page_sequence
+        for observation in multi.listing_batch_parse_outcome.pagination_evidence.page_observations
+    ) == (1, 2)
+    assert multi.listing_batch_parse_outcome.page_outcomes == tuple(
+        observation.page_outcome
+        for observation in multi.listing_batch_parse_outcome.pagination_evidence.page_observations
+    )
+
+    assert partial.listing_batch_parse_outcome is not None
+    assert partial.listing_batch_parse_outcome.status is ParserOutcomeStatus.PARTIAL
+    assert partial.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        partial.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.PARTIAL
+    )
+    assert (
+        partial.listing_batch_parse_outcome.page_outcomes[1].status
+        is ParserOutcomeStatus.INCOMPLETE_RESPONSE
+    )
+
+    assert interrupted.listing_batch_parse_outcome is not None
+    assert interrupted.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        interrupted.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.INTERRUPTED
+    )
+    assert (
+        interrupted.listing_batch_parse_outcome.pagination_evidence.stop_reason
+        is PaginationStopReason.MAX_PAGES_REACHED
+    )
+    assert (
+        interrupted.listing_batch_parse_outcome.pagination_evidence.policy_bounds[0].kind
+        is PaginationLimitKind.PAGES
+    )
+
+    assert missing.listing_batch_parse_outcome is not None
+    assert missing.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        missing.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.AMBIGUOUS
+    )
+    assert (
+        missing.listing_batch_parse_outcome.pagination_evidence.stop_reason
+        is PaginationStopReason.CONTINUATION_MISSING
+    )
+    assert (
+        missing.listing_batch_parse_outcome.pagination_evidence.page_observations[
+            0
+        ].continuation_status
+        is PaginationContinuationStatus.MISSING
+    )
+
+    assert unsupported.listing_batch_parse_outcome is not None
+    assert unsupported.listing_batch_parse_outcome.status is ParserOutcomeStatus.PARTIAL
+    assert unsupported.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        unsupported.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.PARTIAL
+    )
+    assert (
+        unsupported.listing_batch_parse_outcome.pagination_evidence.stop_reason
+        is PaginationStopReason.CONTINUATION_UNSUPPORTED
+    )
+    assert (
+        unsupported.listing_batch_parse_outcome.pagination_evidence.page_observations[
+            0
+        ].continuation_status
+        is PaginationContinuationStatus.UNSUPPORTED
+    )
+
+    assert duplicate.listing_batch_parse_outcome is not None
+    assert duplicate.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        duplicate.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.COMPLETE
+    )
+    assert (
+        duplicate.listing_batch_parse_outcome.pagination_evidence.duplicate_observations[
+            0
+        ].listing_candidate_id
+        == "fx-apa10-duplicate-candidate-shared"
+    )
+    assert (
+        duplicate.listing_batch_parse_outcome.pagination_evidence.flattened_listing_candidate_ids
+        == (
+            "fx-apa10-duplicate-candidate-shared",
+            "fx-apa10-duplicate-candidate-first",
+            "fx-apa10-duplicate-candidate-shared",
+            "fx-apa10-duplicate-candidate-second",
+        )
+    )
+
+    assert ordered.listing_batch_parse_outcome is not None
+    assert ordered.listing_batch_parse_outcome.pagination_evidence is not None
+    assert ordered.listing_batch_parse_outcome.page_outcomes == tuple(
+        observation.page_outcome
+        for observation in ordered.listing_batch_parse_outcome.pagination_evidence.page_observations
+    )
+    assert (
+        ordered.listing_batch_parse_outcome.pagination_evidence.flattened_listing_candidate_ids
+        == (
+            "fx-apa10-order-candidate-1",
+            "fx-apa10-order-candidate-2",
+            "fx-apa10-order-candidate-3",
+            "fx-apa10-order-candidate-4",
+        )
+    )
+
+    assert mixed.listing_batch_parse_outcome is not None
+    assert mixed.listing_batch_parse_outcome.status is ParserOutcomeStatus.PARTIAL
+    assert mixed.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        mixed.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.PARTIAL
+    )
+    assert (
+        mixed.listing_batch_parse_outcome.pagination_evidence.warnings[0].code
+        is ParserWarningCode.PAGINATION_GENERIC_SUCCESS_BLOCKED
+    )
+    assert (
+        mixed.listing_batch_parse_outcome.page_outcomes[1].status
+        is ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED
+    )
+
+    assert bounded.listing_batch_parse_outcome is not None
+    assert bounded.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        bounded.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.INTERRUPTED
+    )
+    assert (
+        bounded.listing_batch_parse_outcome.pagination_evidence.stop_reason
+        is PaginationStopReason.MAX_ITEMS_REACHED
+    )
+    assert (
+        bounded.listing_batch_parse_outcome.pagination_evidence.policy_bounds[0].kind
+        is PaginationLimitKind.ITEMS
+    )
+
+    assert live_blocked.listing_batch_parse_outcome is not None
+    assert live_blocked.listing_batch_parse_outcome.status is ParserOutcomeStatus.EXPLICIT_REJECTION
+    assert live_blocked.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        live_blocked.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.BLOCKED
+    )
+    assert live_blocked.listing_batch_parse_outcome.pagination_evidence.page_observations == ()
+    assert (
+        live_blocked.listing_batch_parse_outcome.pagination_evidence.warnings[0].code
+        is ParserWarningCode.LIVE_PAGINATION_NOT_PERFORMED
+    )
+
+    assert no_scan.listing_batch_parse_outcome is not None
+    assert no_scan.listing_batch_parse_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert no_scan.listing_batch_parse_outcome.pagination_evidence is not None
+    assert (
+        no_scan.listing_batch_parse_outcome.pagination_evidence.status
+        is PaginationBatchStatus.COMPLETE
+    )
+    assert (
+        no_scan.listing_batch_parse_outcome.pagination_evidence.stop_reason
+        is PaginationStopReason.REQUEST_SCOPE_COMPLETE
+    )
+    assert (
+        no_scan.listing_batch_parse_outcome.pagination_evidence.page_observations[
+            0
+        ].continuation_status
+        is PaginationContinuationStatus.NOT_APPLICABLE
+    )
+    assert {
+        warning.code for warning in no_scan.listing_batch_parse_outcome.pagination_evidence.warnings
+    } == {
+        ParserWarningCode.SCAN_NEWNESS_DECISION_NOT_PERFORMED,
+        ParserWarningCode.SCAN_ANCHOR_STATE_NOT_MUTATED,
+    }
+
+    assert (
+        SYNTHETIC_FIXTURE_BY_ID["FX-APA02-PARTIAL-PAGE-BATCH-001"].listing_batch_parse_outcome
+        is not None
+    )
+    assert (
+        SYNTHETIC_FIXTURE_BY_ID[
+            "FX-APA02-PARTIAL-PAGE-BATCH-001"
+        ].listing_batch_parse_outcome.pagination_evidence
+        is None
     )

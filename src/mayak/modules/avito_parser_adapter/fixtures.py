@@ -10,6 +10,7 @@ from .contracts import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    DuplicateListingObservation,
     ListingBatchParseOutcome,
     ListingCandidateStatus,
     ListingCardCandidate,
@@ -28,6 +29,13 @@ from .contracts import (
     MultivaluePreservationMode,
     NormalizedListingCandidate,
     ObservedListingPosition,
+    PaginationBatchEvidence,
+    PaginationBatchStatus,
+    PaginationContinuationStatus,
+    PaginationLimitKind,
+    PaginationPageObservation,
+    PaginationPolicyBound,
+    PaginationStopReason,
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
@@ -1477,6 +1485,7 @@ def _listing_batch(
     ),
     page_outcomes: tuple[ListingPageParseOutcome, ...],
     evidence_suffix: str,
+    pagination_evidence: PaginationBatchEvidence | None = None,
     warnings: tuple[ParserWarning, ...] = (),
 ) -> ListingBatchParseOutcome:
     return ListingBatchParseOutcome(
@@ -1486,6 +1495,7 @@ def _listing_batch(
         status=status,
         compatibility_profile=profile,
         page_outcomes=page_outcomes,
+        pagination_evidence=pagination_evidence,
         warnings=warnings,
         evidence_references=(
             ParserEvidenceReference(
@@ -1499,6 +1509,166 @@ def _listing_batch(
             status=status,
             warnings=warnings,
         ),
+    )
+
+
+def _pagination_policy_bound(
+    bound_id: str,
+    kind: PaginationLimitKind,
+    maximum: int,
+    *,
+    policy_reference: str,
+    notes: tuple[str, ...] = (),
+) -> PaginationPolicyBound:
+    return PaginationPolicyBound(
+        bound_id=bound_id,
+        kind=kind,
+        maximum=maximum,
+        policy_reference=policy_reference,
+        notes=notes,
+    )
+
+
+def _pagination_page_observation(
+    observation_id: str,
+    page_sequence: int,
+    page_outcome: ListingPageParseOutcome,
+    *,
+    continuation_status: PaginationContinuationStatus,
+    continuation_reference: str | None = None,
+    compatibility_profile: ParserCompatibilityProfile | None = None,
+    evidence_suffix: str,
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> PaginationPageObservation:
+    return PaginationPageObservation(
+        observation_id=observation_id,
+        page_sequence=page_sequence,
+        page_outcome=page_outcome,
+        continuation_status=continuation_status,
+        continuation_reference=continuation_reference,
+        compatibility_profile=compatibility_profile,
+        warnings=warnings,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::pagination::page::{observation_id}",
+                evidence_kind="pagination-page-observation",
+            ),
+        ),
+        notes=notes,
+    )
+
+
+def _duplicate_listing_observation(
+    duplicate_observation_id: str,
+    listing_candidate_id: str,
+    first_page_sequence: int,
+    first_observed_rank: int,
+    repeated_page_sequence: int,
+    repeated_observed_rank: int,
+    *,
+    evidence_suffix: str,
+    notes: tuple[str, ...] = (),
+) -> DuplicateListingObservation:
+    return DuplicateListingObservation(
+        duplicate_observation_id=duplicate_observation_id,
+        listing_candidate_id=listing_candidate_id,
+        first_page_sequence=first_page_sequence,
+        first_observed_rank=first_observed_rank,
+        repeated_page_sequence=repeated_page_sequence,
+        repeated_observed_rank=repeated_observed_rank,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::pagination::duplicate::{duplicate_observation_id}",
+                evidence_kind="pagination-duplicate-observation",
+            ),
+        ),
+        notes=notes,
+    )
+
+
+def _pagination_batch_evidence(
+    pagination_evidence_id: str,
+    status: PaginationBatchStatus,
+    page_observations: tuple[PaginationPageObservation, ...],
+    stop_reason: PaginationStopReason,
+    *,
+    evidence_suffix: str,
+    policy_bounds: tuple[PaginationPolicyBound, ...] = (),
+    duplicate_observations: tuple[DuplicateListingObservation, ...] = (),
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> PaginationBatchEvidence:
+    flattened_listing_candidate_ids = tuple(
+        candidate.listing_candidate_id
+        for observation in page_observations
+        for candidate in observation.page_outcome.normalized_listing_candidates
+    )
+    return PaginationBatchEvidence(
+        pagination_evidence_id=pagination_evidence_id,
+        status=status,
+        page_observations=page_observations,
+        stop_reason=stop_reason,
+        policy_bounds=policy_bounds,
+        duplicate_observations=duplicate_observations,
+        flattened_listing_candidate_ids=flattened_listing_candidate_ids,
+        warnings=warnings,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::pagination::batch",
+                evidence_kind="pagination-batch",
+            ),
+        ),
+        notes=notes,
+    )
+
+
+def _pagination_listing_page(
+    page_id: str,
+    request: ParserRequestEnvelope,
+    transport: TransportOutcomeReference,
+    profile: ParserCompatibilityProfile,
+    *,
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | SourceBoundaryStatus
+    ),
+    candidate_ids: tuple[str, ...],
+    evidence_suffix: str,
+    warnings: tuple[ParserWarning, ...] = (),
+) -> ListingPageParseOutcome:
+    cards = tuple(
+        _listing_card(
+            f"fx::{evidence_suffix}::card::{index}",
+            field_candidates=_tier_1_listing_field_candidates(
+                f"{evidence_suffix}::{index}", profile
+            ),
+            evidence_suffix=f"{evidence_suffix}::{index}",
+        )
+        for index, _candidate_id in enumerate(candidate_ids, start=1)
+    )
+    candidates = tuple(
+        _listing_candidate(
+            candidate_id,
+            cards[index - 1],
+            evidence_suffix=f"{evidence_suffix}::{index}",
+        )
+        for index, candidate_id in enumerate(candidate_ids, start=1)
+    )
+    return _listing_page(
+        page_id,
+        request,
+        transport,
+        profile,
+        status=status,
+        normalized_listing_candidates=candidates,
+        card_candidates=cards,
+        evidence_suffix=evidence_suffix,
+        warnings=warnings,
     )
 
 
@@ -3750,6 +3920,789 @@ _PAGE_APA09_NO_ANCHOR = _listing_page(
     ordering_evidence=_APA09_ORDERING_PROVEN,
     scan_ordering_handoff=_HANDOFF_APA09_NO_ANCHOR,
     evidence_suffix="apa09-no-anchor",
+)
+
+_APA10_SINGLE_PAGE_COMPLETE = _pagination_listing_page(
+    "fx-apa10-page-single-complete",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-single-candidate-1",
+        "fx-apa10-single-candidate-2",
+    ),
+    evidence_suffix="apa10-single",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_ORDER_PRESERVED,
+            message="single-page pagination preserves observed listing order",
+        ),
+    ),
+)
+_APA10_SINGLE_PAGE_OBSERVATION = _pagination_page_observation(
+    "fx-apa10-page-single-complete-observation",
+    1,
+    _APA10_SINGLE_PAGE_COMPLETE,
+    continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+    compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+    evidence_suffix="apa10-single",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_COMPLETE_PROVEN,
+            message="single-page batch completion is proven by explicit exhaustion",
+        ),
+    ),
+)
+_APA10_SINGLE_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-single-complete",
+    PaginationBatchStatus.COMPLETE,
+    (_APA10_SINGLE_PAGE_OBSERVATION,),
+    PaginationStopReason.EXPLICITLY_EXHAUSTED,
+    evidence_suffix="apa10-single",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_COMPLETE_PROVEN,
+            message="pagination completion is explicitly proven",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_ORDER_PRESERVED,
+            message="page and listing order are preserved exactly",
+        ),
+    ),
+)
+_APA10_SINGLE_PAGE_COMPLETE_BATCH = _listing_batch(
+    "fx-apa10-batch-single-complete",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    page_outcomes=(_APA10_SINGLE_PAGE_COMPLETE,),
+    evidence_suffix="apa10-single",
+    pagination_evidence=_APA10_SINGLE_PAGINATION_EVIDENCE,
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_COMPLETE_PROVEN,
+            message="batch completion is explicitly proven",
+        ),
+    ),
+)
+
+_APA10_MULTIPAGE_PAGE_1 = _pagination_listing_page(
+    "fx-apa10-page-multi-1",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-multi-candidate-1",
+        "fx-apa10-multi-candidate-2",
+    ),
+    evidence_suffix="apa10-multi-1",
+)
+_APA10_MULTIPAGE_PAGE_2 = _pagination_listing_page(
+    "fx-apa10-page-multi-2",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-multi-candidate-3",
+        "fx-apa10-multi-candidate-4",
+    ),
+    evidence_suffix="apa10-multi-2",
+)
+_APA10_MULTIPAGE_PAGE_OBSERVATIONS = (
+    _pagination_page_observation(
+        "fx-apa10-page-multi-1-observation",
+        1,
+        _APA10_MULTIPAGE_PAGE_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-multi::next::1",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-multi-1",
+    ),
+    _pagination_page_observation(
+        "fx-apa10-page-multi-2-observation",
+        2,
+        _APA10_MULTIPAGE_PAGE_2,
+        continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-multi-2",
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.PAGINATION_COMPLETE_PROVEN,
+                message="final page exhausts the approved request scope",
+            ),
+        ),
+    ),
+)
+_APA10_MULTIPAGE_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-multi-complete",
+    PaginationBatchStatus.COMPLETE,
+    _APA10_MULTIPAGE_PAGE_OBSERVATIONS,
+    PaginationStopReason.EXPLICITLY_EXHAUSTED,
+    evidence_suffix="apa10-multi",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_COMPLETE_PROVEN,
+            message="multi-page completion is explicitly proven",
+        ),
+    ),
+)
+_APA10_MULTIPAGE_COMPLETE_BATCH = _listing_batch(
+    "fx-apa10-batch-multi-complete",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    page_outcomes=(_APA10_MULTIPAGE_PAGE_1, _APA10_MULTIPAGE_PAGE_2),
+    evidence_suffix="apa10-multi",
+    pagination_evidence=_APA10_MULTIPAGE_PAGINATION_EVIDENCE,
+)
+
+_APA10_PARTIAL_PAGE_1 = _pagination_listing_page(
+    "fx-apa10-page-partial-1",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-partial-candidate-1",
+        "fx-apa10-partial-candidate-2",
+    ),
+    evidence_suffix="apa10-partial-1",
+)
+_APA10_PARTIAL_PAGE_2 = _pagination_listing_page(
+    "fx-apa10-page-partial-2",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.INCOMPLETE_RESPONSE,
+    candidate_ids=(),
+    evidence_suffix="apa10-partial-2",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_PARTIAL,
+            message="later page could not be safely completed",
+        ),
+    ),
+)
+_APA10_PARTIAL_PAGE_OBSERVATIONS = (
+    _pagination_page_observation(
+        "fx-apa10-page-partial-1-observation",
+        1,
+        _APA10_PARTIAL_PAGE_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-partial::next::1",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-partial-1",
+    ),
+    _pagination_page_observation(
+        "fx-apa10-page-partial-2-observation",
+        2,
+        _APA10_PARTIAL_PAGE_2,
+        continuation_status=PaginationContinuationStatus.BLOCKED,
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-partial-2",
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.PAGINATION_PARTIAL,
+                message="later page failure remains explicit",
+            ),
+        ),
+    ),
+)
+_APA10_PARTIAL_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-partial",
+    PaginationBatchStatus.PARTIAL,
+    _APA10_PARTIAL_PAGE_OBSERVATIONS,
+    PaginationStopReason.PAGE_NOT_USABLE,
+    evidence_suffix="apa10-partial",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_PARTIAL,
+            message="usable first page with failed later page remains partial",
+        ),
+    ),
+)
+_APA10_PARTIAL_BATCH = _listing_batch(
+    "fx-apa10-batch-partial",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.PARTIAL,
+    page_outcomes=(_APA10_PARTIAL_PAGE_1, _APA10_PARTIAL_PAGE_2),
+    evidence_suffix="apa10-partial",
+    pagination_evidence=_APA10_PARTIAL_PAGINATION_EVIDENCE,
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_PARTIAL,
+            message="partial pagination evidence remains explicit",
+        ),
+    ),
+)
+
+_APA10_INTERRUPTED_PAGE_1 = _pagination_listing_page(
+    "fx-apa10-page-interrupted-1",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-interrupted-candidate-1",
+        "fx-apa10-interrupted-candidate-2",
+    ),
+    evidence_suffix="apa10-interrupted-1",
+)
+_APA10_INTERRUPTED_PAGE_2 = _pagination_listing_page(
+    "fx-apa10-page-interrupted-2",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=("fx-apa10-interrupted-candidate-3",),
+    evidence_suffix="apa10-interrupted-2",
+)
+_APA10_INTERRUPTED_PAGE_OBSERVATIONS = (
+    _pagination_page_observation(
+        "fx-apa10-page-interrupted-1-observation",
+        1,
+        _APA10_INTERRUPTED_PAGE_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-interrupted::next::1",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-interrupted-1",
+    ),
+    _pagination_page_observation(
+        "fx-apa10-page-interrupted-2-observation",
+        2,
+        _APA10_INTERRUPTED_PAGE_2,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-interrupted::next::2",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-interrupted-2",
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.PAGINATION_INTERRUPTED,
+                message="approved page bound interrupts pagination before exhaustion",
+            ),
+        ),
+    ),
+)
+_APA10_INTERRUPTED_POLICY_BOUND = _pagination_policy_bound(
+    "fx-apa10-bound-pages",
+    PaginationLimitKind.PAGES,
+    2,
+    policy_reference="policy::synthetic::pagination::pages::2",
+    notes=("approved pagination bound",),
+)
+_APA10_INTERRUPTED_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-interrupted",
+    PaginationBatchStatus.INTERRUPTED,
+    _APA10_INTERRUPTED_PAGE_OBSERVATIONS,
+    PaginationStopReason.MAX_PAGES_REACHED,
+    evidence_suffix="apa10-interrupted",
+    policy_bounds=(_APA10_INTERRUPTED_POLICY_BOUND,),
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_INTERRUPTED,
+            message="pagination stops at the approved page bound",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_LIMIT_REACHED,
+            message="page limit is reached by approved policy evidence",
+        ),
+    ),
+)
+_APA10_INTERRUPTED_BATCH = _listing_batch(
+    "fx-apa10-batch-interrupted",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.PARTIAL,
+    page_outcomes=(_APA10_INTERRUPTED_PAGE_1, _APA10_INTERRUPTED_PAGE_2),
+    evidence_suffix="apa10-interrupted",
+    pagination_evidence=_APA10_INTERRUPTED_PAGINATION_EVIDENCE,
+)
+
+_APA10_CONTINUATION_MISSING_PAGE = _pagination_listing_page(
+    "fx-apa10-page-continuation-missing",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=("fx-apa10-continuation-missing-candidate-1",),
+    evidence_suffix="apa10-continuation-missing",
+)
+_APA10_CONTINUATION_MISSING_OBSERVATION = _pagination_page_observation(
+    "fx-apa10-page-continuation-missing-observation",
+    1,
+    _APA10_CONTINUATION_MISSING_PAGE,
+    continuation_status=PaginationContinuationStatus.MISSING,
+    evidence_suffix="apa10-continuation-missing",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_CONTINUATION_MISSING,
+            message="continuation evidence is missing and cannot be invented",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_CONTINUATION_AMBIGUOUS,
+            message="missing continuation also leaves coverage ambiguous",
+        ),
+    ),
+)
+_APA10_CONTINUATION_MISSING_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-continuation-missing",
+    PaginationBatchStatus.AMBIGUOUS,
+    (_APA10_CONTINUATION_MISSING_OBSERVATION,),
+    PaginationStopReason.CONTINUATION_MISSING,
+    evidence_suffix="apa10-continuation-missing",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_CONTINUATION_MISSING,
+            message="continuation is missing and batch coverage is ambiguous",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_CONTINUATION_AMBIGUOUS,
+            message="missing continuation remains ambiguous",
+        ),
+    ),
+)
+_APA10_CONTINUATION_MISSING_BATCH = _listing_batch(
+    "fx-apa10-batch-continuation-missing",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+    page_outcomes=(_APA10_CONTINUATION_MISSING_PAGE,),
+    evidence_suffix="apa10-continuation-missing",
+    pagination_evidence=_APA10_CONTINUATION_MISSING_PAGINATION_EVIDENCE,
+)
+
+_APA10_CONTINUATION_UNSUPPORTED_PAGE = _pagination_listing_page(
+    "fx-apa10-page-continuation-unsupported",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=("fx-apa10-continuation-unsupported-candidate-1",),
+    evidence_suffix="apa10-continuation-unsupported",
+)
+_APA10_CONTINUATION_UNSUPPORTED_OBSERVATION = _pagination_page_observation(
+    "fx-apa10-page-continuation-unsupported-observation",
+    1,
+    _APA10_CONTINUATION_UNSUPPORTED_PAGE,
+    continuation_status=PaginationContinuationStatus.UNSUPPORTED,
+    evidence_suffix="apa10-continuation-unsupported",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_CONTINUATION_UNSUPPORTED,
+            message="continuation is unsupported and cannot be treated as success",
+        ),
+    ),
+)
+_APA10_CONTINUATION_UNSUPPORTED_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-continuation-unsupported",
+    PaginationBatchStatus.PARTIAL,
+    (_APA10_CONTINUATION_UNSUPPORTED_OBSERVATION,),
+    PaginationStopReason.CONTINUATION_UNSUPPORTED,
+    evidence_suffix="apa10-continuation-unsupported",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_CONTINUATION_UNSUPPORTED,
+            message="unsupported continuation remains outside generic success",
+        ),
+    ),
+)
+_APA10_CONTINUATION_UNSUPPORTED_BATCH = _listing_batch(
+    "fx-apa10-batch-continuation-unsupported",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.PARTIAL,
+    page_outcomes=(_APA10_CONTINUATION_UNSUPPORTED_PAGE,),
+    evidence_suffix="apa10-continuation-unsupported",
+    pagination_evidence=_APA10_CONTINUATION_UNSUPPORTED_PAGINATION_EVIDENCE,
+)
+
+_APA10_DUPLICATE_PAGE_1 = _pagination_listing_page(
+    "fx-apa10-page-duplicate-1",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-duplicate-candidate-shared",
+        "fx-apa10-duplicate-candidate-first",
+    ),
+    evidence_suffix="apa10-duplicate-1",
+)
+_APA10_DUPLICATE_PAGE_2 = _pagination_listing_page(
+    "fx-apa10-page-duplicate-2",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-duplicate-candidate-shared",
+        "fx-apa10-duplicate-candidate-second",
+    ),
+    evidence_suffix="apa10-duplicate-2",
+)
+_APA10_DUPLICATE_PAGE_OBSERVATIONS = (
+    _pagination_page_observation(
+        "fx-apa10-page-duplicate-1-observation",
+        1,
+        _APA10_DUPLICATE_PAGE_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-duplicate::next::1",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-duplicate-1",
+    ),
+    _pagination_page_observation(
+        "fx-apa10-page-duplicate-2-observation",
+        2,
+        _APA10_DUPLICATE_PAGE_2,
+        continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-duplicate-2",
+    ),
+)
+_APA10_DUPLICATE_OBSERVATION = _duplicate_listing_observation(
+    "fx-apa10-duplicate-observation-1",
+    "fx-apa10-duplicate-candidate-shared",
+    1,
+    1,
+    2,
+    1,
+    evidence_suffix="apa10-duplicate",
+    notes=("duplicate listing candidate is preserved across pages",),
+)
+_APA10_DUPLICATE_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-duplicate",
+    PaginationBatchStatus.COMPLETE,
+    _APA10_DUPLICATE_PAGE_OBSERVATIONS,
+    PaginationStopReason.EXPLICITLY_EXHAUSTED,
+    evidence_suffix="apa10-duplicate",
+    duplicate_observations=(_APA10_DUPLICATE_OBSERVATION,),
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_DUPLICATE_PRESERVED,
+            message="duplicate listing observation is preserved without silent dedupe",
+        ),
+    ),
+)
+_APA10_DUPLICATE_BATCH = _listing_batch(
+    "fx-apa10-batch-duplicate",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    page_outcomes=(_APA10_DUPLICATE_PAGE_1, _APA10_DUPLICATE_PAGE_2),
+    evidence_suffix="apa10-duplicate",
+    pagination_evidence=_APA10_DUPLICATE_PAGINATION_EVIDENCE,
+)
+
+_APA10_PAGE_ORDER_PAGE_1 = _pagination_listing_page(
+    "fx-apa10-page-order-1",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-order-candidate-1",
+        "fx-apa10-order-candidate-2",
+    ),
+    evidence_suffix="apa10-order-1",
+)
+_APA10_PAGE_ORDER_PAGE_2 = _pagination_listing_page(
+    "fx-apa10-page-order-2",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-order-candidate-3",
+        "fx-apa10-order-candidate-4",
+    ),
+    evidence_suffix="apa10-order-2",
+)
+_APA10_PAGE_ORDER_OBSERVATIONS = (
+    _pagination_page_observation(
+        "fx-apa10-page-order-1-observation",
+        1,
+        _APA10_PAGE_ORDER_PAGE_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-order::next::1",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-order-1",
+    ),
+    _pagination_page_observation(
+        "fx-apa10-page-order-2-observation",
+        2,
+        _APA10_PAGE_ORDER_PAGE_2,
+        continuation_status=PaginationContinuationStatus.PROVEN_EXHAUSTED,
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-order-2",
+    ),
+)
+_APA10_PAGE_ORDER_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-page-order",
+    PaginationBatchStatus.COMPLETE,
+    _APA10_PAGE_ORDER_OBSERVATIONS,
+    PaginationStopReason.EXPLICITLY_EXHAUSTED,
+    evidence_suffix="apa10-order",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_ORDER_PRESERVED,
+            message="page and listing order stay in observed sequence",
+        ),
+    ),
+)
+_APA10_PAGE_ORDER_BATCH = _listing_batch(
+    "fx-apa10-batch-page-order",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    page_outcomes=(_APA10_PAGE_ORDER_PAGE_1, _APA10_PAGE_ORDER_PAGE_2),
+    evidence_suffix="apa10-order",
+    pagination_evidence=_APA10_PAGE_ORDER_PAGINATION_EVIDENCE,
+)
+
+_APA10_NO_GENERIC_SUCCESS_PAGE_1 = _pagination_listing_page(
+    "fx-apa10-page-no-generic-success-1",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=("fx-apa10-no-generic-success-candidate-1",),
+    evidence_suffix="apa10-no-generic-success-1",
+)
+_APA10_NO_GENERIC_SUCCESS_PAGE_2 = _pagination_listing_page(
+    "fx-apa10-page-no-generic-success-2",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
+    candidate_ids=(),
+    evidence_suffix="apa10-no-generic-success-2",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_GENERIC_SUCCESS_BLOCKED,
+            message="mixed page outcomes cannot be collapsed into generic success",
+        ),
+    ),
+)
+_APA10_NO_GENERIC_SUCCESS_OBSERVATIONS = (
+    _pagination_page_observation(
+        "fx-apa10-page-no-generic-success-1-observation",
+        1,
+        _APA10_NO_GENERIC_SUCCESS_PAGE_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-no-generic-success::next::1",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-no-generic-success-1",
+    ),
+    _pagination_page_observation(
+        "fx-apa10-page-no-generic-success-2-observation",
+        2,
+        _APA10_NO_GENERIC_SUCCESS_PAGE_2,
+        continuation_status=PaginationContinuationStatus.BLOCKED,
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-no-generic-success-2",
+    ),
+)
+_APA10_NO_GENERIC_SUCCESS_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-no-generic-success",
+    PaginationBatchStatus.PARTIAL,
+    _APA10_NO_GENERIC_SUCCESS_OBSERVATIONS,
+    PaginationStopReason.PROVIDER_RESTRICTED,
+    evidence_suffix="apa10-no-generic-success",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_GENERIC_SUCCESS_BLOCKED,
+            message="generic batch success is blocked when page outcomes differ",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_PARTIAL,
+            message="mixed outcomes remain partial rather than successful",
+        ),
+    ),
+)
+_APA10_NO_GENERIC_SUCCESS_BATCH = _listing_batch(
+    "fx-apa10-batch-no-generic-success",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.PARTIAL,
+    page_outcomes=(_APA10_NO_GENERIC_SUCCESS_PAGE_1, _APA10_NO_GENERIC_SUCCESS_PAGE_2),
+    evidence_suffix="apa10-no-generic-success",
+    pagination_evidence=_APA10_NO_GENERIC_SUCCESS_PAGINATION_EVIDENCE,
+)
+
+_APA10_NO_UNBOUNDED_PAGE_1 = _pagination_listing_page(
+    "fx-apa10-page-no-unbounded-1",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=("fx-apa10-no-unbounded-candidate-1",),
+    evidence_suffix="apa10-no-unbounded-1",
+)
+_APA10_NO_UNBOUNDED_PAGE_2 = _pagination_listing_page(
+    "fx-apa10-page-no-unbounded-2",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=("fx-apa10-no-unbounded-candidate-2",),
+    evidence_suffix="apa10-no-unbounded-2",
+)
+_APA10_NO_UNBOUNDED_POLICY_BOUND = _pagination_policy_bound(
+    "fx-apa10-bound-items",
+    PaginationLimitKind.ITEMS,
+    2,
+    policy_reference="policy::synthetic::pagination::items::2",
+    notes=("approved item-count bound",),
+)
+_APA10_NO_UNBOUNDED_OBSERVATIONS = (
+    _pagination_page_observation(
+        "fx-apa10-page-no-unbounded-1-observation",
+        1,
+        _APA10_NO_UNBOUNDED_PAGE_1,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-no-unbounded::next::1",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-no-unbounded-1",
+    ),
+    _pagination_page_observation(
+        "fx-apa10-page-no-unbounded-2-observation",
+        2,
+        _APA10_NO_UNBOUNDED_PAGE_2,
+        continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
+        continuation_reference="page-token::synthetic::apa10-no-unbounded::next::2",
+        compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+        evidence_suffix="apa10-no-unbounded-2",
+    ),
+)
+_APA10_NO_UNBOUNDED_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-no-unbounded",
+    PaginationBatchStatus.INTERRUPTED,
+    _APA10_NO_UNBOUNDED_OBSERVATIONS,
+    PaginationStopReason.MAX_ITEMS_REACHED,
+    evidence_suffix="apa10-no-unbounded",
+    policy_bounds=(_APA10_NO_UNBOUNDED_POLICY_BOUND,),
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_INTERRUPTED,
+            message="approved item bound interrupts pagination before unbounded growth",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.PAGINATION_LIMIT_REACHED,
+            message="item limit is reached by approved policy evidence",
+        ),
+    ),
+)
+_APA10_NO_UNBOUNDED_BATCH = _listing_batch(
+    "fx-apa10-batch-no-unbounded",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.PARTIAL,
+    page_outcomes=(_APA10_NO_UNBOUNDED_PAGE_1, _APA10_NO_UNBOUNDED_PAGE_2),
+    evidence_suffix="apa10-no-unbounded",
+    pagination_evidence=_APA10_NO_UNBOUNDED_PAGINATION_EVIDENCE,
+)
+
+_APA10_NO_LIVE_ENDPOINT_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-no-live-endpoint",
+    PaginationBatchStatus.BLOCKED,
+    (),
+    PaginationStopReason.PROVIDER_RESTRICTED,
+    evidence_suffix="apa10-no-live-endpoint",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.LIVE_PAGINATION_NOT_PERFORMED,
+            message="live pagination and endpoint authority are not performed here",
+        ),
+    ),
+    notes=("internal endpoint observations do not establish a pagination contract",),
+)
+_APA10_NO_LIVE_ENDPOINT_BATCH = _listing_batch(
+    "fx-apa10-batch-no-live-endpoint",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+    page_outcomes=(),
+    evidence_suffix="apa10-no-live-endpoint",
+    pagination_evidence=_APA10_NO_LIVE_ENDPOINT_PAGINATION_EVIDENCE,
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.LIVE_PAGINATION_NOT_PERFORMED,
+            message="no live endpoint authority is asserted by the adapter",
+        ),
+    ),
+)
+
+_APA10_NO_SCAN_NEWNESS_PAGE = _pagination_listing_page(
+    "fx-apa10-page-no-scan-newness",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate_ids=(
+        "fx-apa10-no-scan-newness-candidate-1",
+        "fx-apa10-no-scan-newness-candidate-2",
+    ),
+    evidence_suffix="apa10-no-scan-newness",
+)
+_APA10_NO_SCAN_NEWNESS_OBSERVATION = _pagination_page_observation(
+    "fx-apa10-page-no-scan-newness-observation",
+    1,
+    _APA10_NO_SCAN_NEWNESS_PAGE,
+    continuation_status=PaginationContinuationStatus.NOT_APPLICABLE,
+    compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+    evidence_suffix="apa10-no-scan-newness",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SCAN_NEWNESS_DECISION_NOT_PERFORMED,
+            message="pagination does not decide scan newness",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.SCAN_ANCHOR_STATE_NOT_MUTATED,
+            message="pagination does not mutate scan anchor state",
+        ),
+    ),
+)
+_APA10_NO_SCAN_NEWNESS_PAGINATION_EVIDENCE = _pagination_batch_evidence(
+    "fx-apa10-pagination-no-scan-newness",
+    PaginationBatchStatus.COMPLETE,
+    (_APA10_NO_SCAN_NEWNESS_OBSERVATION,),
+    PaginationStopReason.REQUEST_SCOPE_COMPLETE,
+    evidence_suffix="apa10-no-scan-newness",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SCAN_NEWNESS_DECISION_NOT_PERFORMED,
+            message="scan newness decisions stay outside Parser",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.SCAN_ANCHOR_STATE_NOT_MUTATED,
+            message="scan anchor state stays outside Parser",
+        ),
+    ),
+)
+_APA10_NO_SCAN_NEWNESS_BATCH = _listing_batch(
+    "fx-apa10-batch-no-scan-newness",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    page_outcomes=(_APA10_NO_SCAN_NEWNESS_PAGE,),
+    evidence_suffix="apa10-no-scan-newness",
+    pagination_evidence=_APA10_NO_SCAN_NEWNESS_PAGINATION_EVIDENCE,
 )
 
 SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
@@ -6503,6 +7456,102 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         _TRANSPORT_CURRENT_REFERENCE,
         _ATTEMPT_CURRENT_REFERENCE,
         listing_page_parse_outcome=_PAGE_APA09_NO_ANCHOR,
+    ),
+    _fixture(
+        "FX-APA10-SINGLE-PAGE-EXHAUSTED-COMPLETE-001",
+        "single-page pagination ends with explicit exhaustion",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_SINGLE_PAGE_COMPLETE_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-MULTIPAGE-COMPLETE-001",
+        "multi-page pagination remains complete and ordered",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_MULTIPAGE_COMPLETE_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-PARTIAL-LATER-PAGE-FAILED-001",
+        "later page failure keeps pagination partial",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_PARTIAL_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-INTERRUPTED-MAX-PAGES-001",
+        "approved page bound interrupts pagination",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_INTERRUPTED_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-CONTINUATION-MISSING-AMBIGUOUS-001",
+        "missing continuation leaves pagination ambiguous",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_CONTINUATION_MISSING_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-CONTINUATION-UNSUPPORTED-001",
+        "unsupported continuation never becomes success",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_CONTINUATION_UNSUPPORTED_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-DUPLICATE-PRESERVED-001",
+        "duplicate listing observations are preserved explicitly",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_DUPLICATE_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-PAGE-ORDER-PRESERVED-001",
+        "page and listing order are preserved exactly",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_PAGE_ORDER_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-NO-GENERIC-SUCCESS-MIXED-PAGES-001",
+        "mixed page outcomes do not collapse into generic success",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_NO_GENERIC_SUCCESS_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-NO-UNBOUNDED-PAGINATION-001",
+        "pagination uses an explicit bounded policy contract",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_NO_UNBOUNDED_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-NO-LIVE-ENDPOINT-AUTHORITY-001",
+        "live pagination and endpoint authority are not performed",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_NO_LIVE_ENDPOINT_BATCH,
+    ),
+    _fixture(
+        "FX-APA10-NO-SCAN-NEWNESS-MUTATION-001",
+        "pagination does not mutate scan newness or anchors",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_batch_parse_outcome=_APA10_NO_SCAN_NEWNESS_BATCH,
     ),
 )
 
