@@ -5,21 +5,23 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from mayak.modules.avito_parser_adapter import (
+    FIXTURE_IDS,
+    SYNTHETIC_FIXTURE_BY_ID,
     CompatibilityChangeClass,
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
-    FIXTURE_IDS,
+    ListingCandidateStatus,
+    ListingFieldAvailability,
+    ListingFieldFamily,
     MultivalueLossReason,
     MultivalueNormalizationStatus,
-    MultivaluePreservationMode,
     ParserOutcomeStatus,
     ParserWarningCode,
     ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
-    SYNTHETIC_FIXTURE_BY_ID,
     SearchConfigurationExtractionField,
     SearchConfigurationFieldStatus,
     SearchConfigurationValueKind,
@@ -207,19 +209,157 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA07-FILTER-EDITABILITY-NOT-DECLARED-001",
         "FX-APA07-BEACON-NO-MUTATION-001",
         "FX-APA07-SCAN-NO-MUTATION-001",
+        "FX-APA08-TIER1-LISTING-CARD-PROVEN-001",
+        "FX-APA08-OPTIONAL-DETAIL-FIELDS-UNAVAILABLE-001",
+        "FX-APA08-PHONE-VALUE-PROOF-GATED-001",
+        "FX-APA08-OPTIONAL-FIELD-AMBIGUOUS-WARNING-001",
+        "FX-APA08-FIELD-PROVENANCE-REQUIRED-001",
+        "FX-APA08-NO-SCAN-NEWNESS-MUTATION-001",
+        "FX-APA08-NO-RAW-PROVIDER-PAYLOAD-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
 
 def test_optional_listing_fields_do_not_fail_parser_semantics() -> None:
-    fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA02-OPTIONAL-PHONE-UNAVAILABLE-001"]
+    phone_fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA02-OPTIONAL-PHONE-UNAVAILABLE-001"]
+    detail_fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA02-SELLER-RATING-DESCRIPTION-UNAVAILABLE-001"]
 
-    assert fixture.attempt_outcome.transport_status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
-    assert fixture.attempt_outcome.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
-    assert fixture.listing_page_parse_outcome is not None
-    assert fixture.listing_page_parse_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
-    assert fixture.listing_page_parse_outcome.card_candidates[0].phone is None
-    assert fixture.listing_page_parse_outcome.card_candidates[0].seller is None
+    assert (
+        phone_fixture.attempt_outcome.transport_status
+        is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    )
+    assert phone_fixture.attempt_outcome.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert phone_fixture.listing_page_parse_outcome is not None
+    assert phone_fixture.listing_page_parse_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert (
+        phone_fixture.listing_page_parse_outcome.normalized_listing_candidates[0].status
+        is ListingCandidateStatus.USABLE
+    )
+    phone_fields = {
+        field.field_family: field
+        for field in phone_fixture.listing_page_parse_outcome.card_candidates[0].field_candidates
+    }
+    assert (
+        phone_fields[ListingFieldFamily.PHONE_AVAILABILITY].availability
+        is ListingFieldAvailability.PROOF_GATED
+    )
+    assert (
+        phone_fields[ListingFieldFamily.PHONE_VALUE].availability
+        is ListingFieldAvailability.PROOF_GATED
+    )
+    assert phone_fields[ListingFieldFamily.PHONE_VALUE].value is None
+
+    assert (
+        detail_fixture.attempt_outcome.transport_status
+        is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    )
+    assert detail_fixture.attempt_outcome.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert detail_fixture.listing_page_parse_outcome is not None
+    assert detail_fixture.listing_page_parse_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert (
+        detail_fixture.listing_page_parse_outcome.normalized_listing_candidates[0].status
+        is ListingCandidateStatus.USABLE
+    )
+    detail_fields = {
+        field.field_family: field
+        for field in detail_fixture.listing_page_parse_outcome.card_candidates[0].field_candidates
+    }
+    assert (
+        detail_fields[ListingFieldFamily.DESCRIPTION].availability
+        is ListingFieldAvailability.PROVEN_UNAVAILABLE
+    )
+    assert (
+        detail_fields[ListingFieldFamily.SELLER].availability
+        is ListingFieldAvailability.PROVEN_UNAVAILABLE
+    )
+    assert (
+        detail_fields[ListingFieldFamily.SELLER_RATING].availability
+        is ListingFieldAvailability.PROVEN_UNAVAILABLE
+    )
+
+
+def test_apa08_listing_fixtures_are_registered_once_and_payload_free() -> None:
+    apa08_ids = {fixture_id for fixture_id in FIXTURE_IDS if fixture_id.startswith("FX-APA08-")}
+
+    assert apa08_ids == {
+        "FX-APA08-TIER1-LISTING-CARD-PROVEN-001",
+        "FX-APA08-OPTIONAL-DETAIL-FIELDS-UNAVAILABLE-001",
+        "FX-APA08-PHONE-VALUE-PROOF-GATED-001",
+        "FX-APA08-OPTIONAL-FIELD-AMBIGUOUS-WARNING-001",
+        "FX-APA08-FIELD-PROVENANCE-REQUIRED-001",
+        "FX-APA08-NO-SCAN-NEWNESS-MUTATION-001",
+        "FX-APA08-NO-RAW-PROVIDER-PAYLOAD-001",
+    }
+    assert len(apa08_ids) == 7
+    for fixture_id in apa08_ids:
+        fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+        assert fixture.listing_page_parse_outcome is not None
+        assert not hasattr(fixture, "raw_provider_payload")
+
+
+def test_apa08_listing_semantics_keep_tier1_usable_with_optional_gaps() -> None:
+    optional_detail = SYNTHETIC_FIXTURE_BY_ID["FX-APA08-OPTIONAL-DETAIL-FIELDS-UNAVAILABLE-001"]
+    phone = SYNTHETIC_FIXTURE_BY_ID["FX-APA08-PHONE-VALUE-PROOF-GATED-001"]
+    ambiguous = SYNTHETIC_FIXTURE_BY_ID["FX-APA08-OPTIONAL-FIELD-AMBIGUOUS-WARNING-001"]
+    provenance = SYNTHETIC_FIXTURE_BY_ID["FX-APA08-FIELD-PROVENANCE-REQUIRED-001"]
+
+    assert optional_detail.listing_page_parse_outcome is not None
+    assert (
+        optional_detail.listing_page_parse_outcome.normalized_listing_candidates[0].status
+        is ListingCandidateStatus.USABLE
+    )
+    assert (
+        optional_detail.listing_page_parse_outcome.card_candidates[0]
+        .field_candidates[0]
+        .field_family
+        is ListingFieldFamily.TITLE
+    )
+    assert (
+        optional_detail.listing_page_parse_outcome.card_candidates[0]
+        .field_candidates[0]
+        .availability
+        is ListingFieldAvailability.PROVEN_AVAILABLE
+    )
+    assert (
+        optional_detail.listing_page_parse_outcome.card_candidates[0]
+        .field_candidates[-1]
+        .availability
+        is ListingFieldAvailability.PROVEN_UNAVAILABLE
+    )
+
+    assert phone.listing_page_parse_outcome is not None
+    assert (
+        phone.listing_page_parse_outcome.normalized_listing_candidates[0].status
+        is ListingCandidateStatus.USABLE
+    )
+    phone_fields = {
+        field.field_family: field
+        for field in phone.listing_page_parse_outcome.card_candidates[0].field_candidates
+    }
+    assert (
+        phone_fields[ListingFieldFamily.PHONE_VALUE].availability
+        is ListingFieldAvailability.PROOF_GATED
+    )
+    assert phone_fields[ListingFieldFamily.PHONE_VALUE].value is None
+
+    assert ambiguous.listing_page_parse_outcome is not None
+    assert (
+        ambiguous.listing_page_parse_outcome.normalized_listing_candidates[0].status
+        is ListingCandidateStatus.AMBIGUOUS
+    )
+    assert (
+        ambiguous.listing_page_parse_outcome.warnings[0].code
+        is ParserWarningCode.FIELD_CANDIDATE_OPTIONAL
+    )
+
+    assert provenance.listing_page_parse_outcome is not None
+    proven_field = provenance.listing_page_parse_outcome.card_candidates[0].field_candidates[-1]
+    assert proven_field.availability is ListingFieldAvailability.PROVEN_AVAILABLE
+    assert proven_field.compatibility_profile is not None
+    assert (
+        proven_field.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.CURRENT
+    )
 
 
 def test_repeated_filters_and_sort_context_are_preserved_as_evidence() -> None:
@@ -247,7 +387,9 @@ def test_partial_and_stale_outcomes_remain_explicit() -> None:
 
     assert partial.listing_batch_parse_outcome is not None
     assert partial.listing_batch_parse_outcome.status is ParserOutcomeStatus.PARTIAL
-    assert partial.listing_batch_parse_outcome.page_outcomes[0].status is ParserOutcomeStatus.PARTIAL
+    assert (
+        partial.listing_batch_parse_outcome.page_outcomes[0].status is ParserOutcomeStatus.PARTIAL
+    )
     assert stale.search_source_analysis_outcome is not None
     assert stale.search_source_analysis_outcome.status is ReferenceOutcomeStatus.REFERENCE_STALE
 
@@ -268,7 +410,10 @@ def test_apa03_compatibility_lifecycle_states_and_revalidation_are_explicit() ->
     unavailable = SYNTHETIC_FIXTURE_BY_ID["FX-APA03-UNAVAILABLE-REFERENCE-PROFILE-001"]
 
     assert current.compatibility_profile is not None
-    assert current.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.CURRENT
+    assert (
+        current.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.CURRENT
+    )
     assert current.compatibility_outcome is not None
     assert current.compatibility_outcome.change_class is CompatibilityChangeClass.COMPATIBLE
 
@@ -280,28 +425,45 @@ def test_apa03_compatibility_lifecycle_states_and_revalidation_are_explicit() ->
     assert stale.listing_page_parse_outcome.status is CompatibilityProfileLifecycleStatus.STALE
 
     assert disputed.compatibility_profile is not None
-    assert disputed.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.DISPUTED
+    assert (
+        disputed.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.DISPUTED
+    )
     assert disputed.compatibility_outcome is not None
     assert disputed.compatibility_outcome.change_class is CompatibilityChangeClass.DISPUTED
     assert disputed.search_source_analysis_outcome is not None
-    assert disputed.search_source_analysis_outcome.status is CompatibilityProfileLifecycleStatus.DISPUTED
+    assert (
+        disputed.search_source_analysis_outcome.status
+        is CompatibilityProfileLifecycleStatus.DISPUTED
+    )
 
     assert superseded.compatibility_profile is not None
-    assert superseded.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.SUPERSEDED
+    assert (
+        superseded.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.SUPERSEDED
+    )
     assert superseded.compatibility_outcome is not None
     assert superseded.compatibility_outcome.revalidation_triggers == (
         CompatibilityRevalidationTrigger.REFERENCE_CHANGED,
     )
 
     assert withdrawn.compatibility_profile is not None
-    assert withdrawn.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.WITHDRAWN
+    assert (
+        withdrawn.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.WITHDRAWN
+    )
     assert withdrawn.compatibility_outcome is not None
     assert withdrawn.compatibility_outcome.change_class is CompatibilityChangeClass.BREAKING
     assert withdrawn.listing_page_parse_outcome is not None
-    assert withdrawn.listing_page_parse_outcome.status is CompatibilityProfileLifecycleStatus.WITHDRAWN
+    assert (
+        withdrawn.listing_page_parse_outcome.status is CompatibilityProfileLifecycleStatus.WITHDRAWN
+    )
 
     assert unavailable.compatibility_profile is not None
-    assert unavailable.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.UNAVAILABLE
+    assert (
+        unavailable.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.UNAVAILABLE
+    )
     assert unavailable.compatibility_outcome is not None
     assert unavailable.compatibility_outcome.change_class is CompatibilityChangeClass.UNAVAILABLE
 
@@ -315,14 +477,23 @@ def test_apa03_reference_metadata_stays_observation_only_and_claim_scoped() -> N
     assert current.compatibility_profile is not None
     assert current.compatibility_profile.reference_ids == ("AVITO-PRIMARY-PARSER-001",)
     assert current.compatibility_profile.primary_reference_repository == "Duff89/parser_avito"
-    assert current.compatibility_profile.primary_reference_commit == "48441c352e36919abef13c436f41a3a62636da17"
-    assert current.compatibility_profile.authority_class is not CompatibilityProfileAuthorityClass.OFFICIAL_PRIMARY_ONLY
+    assert (
+        current.compatibility_profile.primary_reference_commit
+        == "48441c352e36919abef13c436f41a3a62636da17"
+    )
+    assert (
+        current.compatibility_profile.authority_class
+        is not CompatibilityProfileAuthorityClass.OFFICIAL_PRIMARY_ONLY
+    )
 
     assert unsupported.compatibility_profile is not None
     assert unsupported.compatibility_profile.supported_extraction_claims
     assert unsupported.compatibility_profile.unsupported_extraction_claims
     assert unsupported.search_configuration_extraction_outcome is not None
-    assert unsupported.search_configuration_extraction_outcome.status is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
+    assert (
+        unsupported.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
+    )
 
     assert changed.compatibility_outcome is not None
     assert changed.compatibility_outcome.revalidation_triggers == (
@@ -331,7 +502,10 @@ def test_apa03_reference_metadata_stays_observation_only_and_claim_scoped() -> N
     assert changed.compatibility_outcome.change_class is CompatibilityChangeClass.WARNING
 
     assert internal.compatibility_profile is not None
-    assert internal.compatibility_profile.authority_class is CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
+    assert (
+        internal.compatibility_profile.authority_class
+        is CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
+    )
     assert internal.compatibility_outcome is not None
     assert internal.compatibility_outcome.change_class is CompatibilityChangeClass.UNKNOWN
 
@@ -341,12 +515,18 @@ def test_apa04_beacon_owned_source_reference_is_bounded_and_untrusted() -> None:
     avito_live_url_marker = "".join(("a", "v", "i", "t", "o", ".", "r", "u"))
 
     assert fixture.request_envelope.source_reference is not None
-    assert fixture.request_envelope.source_reference.source_reference_kind is SourceReferenceKind.BEACON_OWNED_SUBMISSION
+    assert (
+        fixture.request_envelope.source_reference.source_reference_kind
+        is SourceReferenceKind.BEACON_OWNED_SUBMISSION
+    )
     assert fixture.request_envelope.source_reference.ownership == "Beacon Management"
     assert fixture.request_envelope.source_reference.untrusted_input is True
     assert fixture.request_envelope.safe_source_reference == "bounded-source-value"
     assert fixture.request_envelope.source_boundary_outcome is not None
-    assert fixture.request_envelope.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert (
+        fixture.request_envelope.source_boundary_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    )
     assert fixture.request_envelope.source_boundary_outcome.risk_codes == (
         SourceBoundaryRiskCode.SOURCE_URL_UNTRUSTED,
     )
@@ -358,8 +538,12 @@ def test_apa04_beacon_owned_source_reference_is_bounded_and_untrusted() -> None:
     assert fixture.transport_outcome.transport_status is TransportOutcomeStatus.NOT_SENT
     assert fixture.attempt_outcome.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
     assert fixture.search_source_analysis_outcome is not None
-    assert fixture.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
-    assert avito_live_url_marker not in fixture.request_envelope.source_reference.bounded_value.lower()
+    assert (
+        fixture.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    )
+    assert (
+        avito_live_url_marker not in fixture.request_envelope.source_reference.bounded_value.lower()
+    )
 
 
 def test_apa04_blocked_source_boundaries_remain_explicit() -> None:
@@ -369,71 +553,115 @@ def test_apa04_blocked_source_boundaries_remain_explicit() -> None:
     redirect_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-REDIRECT-POLICY-BLOCKED-001"]
     dns_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-DNS-POLICY-BLOCKED-001"]
     canonicalization = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-CANONICALIZATION-UNPROVEN-WARNING-001"]
-    shell_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-SHELL-INTERPOLATION-BLOCKED-001"]
-    filesystem_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-FILESYSTEM-TARGET-BLOCKED-001"]
-    network_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA04-NETWORK-TARGET-BLOCKED-001"]
 
     assert malformed.search_source_analysis_outcome is not None
-    assert malformed.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+    assert (
+        malformed.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+    )
     assert malformed.transport_outcome.transport_status is TransportOutcomeStatus.NOT_SENT
     assert malformed.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
 
     assert unsupported.search_source_analysis_outcome is not None
-    assert unsupported.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNSUPPORTED
+    assert (
+        unsupported.search_source_analysis_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_UNSUPPORTED
+    )
     assert unsupported.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
 
     assert policy_missing.search_source_analysis_outcome is not None
-    assert policy_missing.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_POLICY_MISSING
+    assert (
+        policy_missing.search_source_analysis_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_POLICY_MISSING
+    )
     assert policy_missing.request_envelope.source_reference is not None
     assert policy_missing.request_envelope.source_reference.host_reference == "provider.example"
     assert policy_missing.request_envelope.source_reference.path_reference == "/search"
-    assert policy_missing.request_envelope.source_reference.query_reference == "q=bounded-source-value"
+    assert (
+        policy_missing.request_envelope.source_reference.query_reference == "q=bounded-source-value"
+    )
 
     assert redirect_blocked.search_source_analysis_outcome is not None
-    assert redirect_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_REDIRECT_POLICY_BLOCKED
+    assert (
+        redirect_blocked.search_source_analysis_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_REDIRECT_POLICY_BLOCKED
+    )
     assert redirect_blocked.request_envelope.source_boundary_outcome is not None
     assert redirect_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
         SourceBoundaryPolicyRequirement.REDIRECT_POLICY_REQUIRED,
     )
 
     assert dns_blocked.search_source_analysis_outcome is not None
-    assert dns_blocked.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_DNS_POLICY_BLOCKED
+    assert (
+        dns_blocked.search_source_analysis_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_DNS_POLICY_BLOCKED
+    )
     assert dns_blocked.request_envelope.source_boundary_outcome is not None
     assert dns_blocked.request_envelope.source_boundary_outcome.policy_requirements == (
         SourceBoundaryPolicyRequirement.DNS_POLICY_REQUIRED,
     )
 
     assert canonicalization.search_source_analysis_outcome is not None
-    assert canonicalization.search_source_analysis_outcome.status is SourceBoundaryStatus.SOURCE_URL_CANONICALIZATION_UNPROVEN
+    assert (
+        canonicalization.search_source_analysis_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_CANONICALIZATION_UNPROVEN
+    )
     assert canonicalization.attempt_outcome.parser_status is ParserOutcomeStatus.RESULT_AMBIGUOUS
-    assert canonicalization.search_source_analysis_outcome.warnings[0].code is ParserWarningCode.SOURCE_URL_CANONICALIZATION_UNPROVEN
+    assert (
+        canonicalization.search_source_analysis_outcome.warnings[0].code
+        is ParserWarningCode.SOURCE_URL_CANONICALIZATION_UNPROVEN
+    )
 
 
 def test_apa05_transport_classification_stays_explicit_before_parser_success() -> None:
     not_sent = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-NOT-SENT-001"]
     transport_unavailable = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-TRANSPORT-UNAVAILABLE-001"]
     transport_ambiguous = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-TRANSPORT-AMBIGUOUS-001"]
-    response_unclassified = SYNTHETIC_FIXTURE_BY_ID["FX-APA05-SENT-SUCCESS-RESPONSE-UNCLASSIFIED-001"]
+    response_unclassified = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA05-SENT-SUCCESS-RESPONSE-UNCLASSIFIED-001"
+    ]
 
     assert not_sent.attempt_outcome.parser_status is None
     assert not_sent.attempt_outcome.transport_response_classification is not None
-    assert not_sent.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.NOT_SENT
-    assert not_sent.attempt_outcome.transport_response_classification.classification_rule is not None
-    assert "transport success alone is insufficient" in not_sent.attempt_outcome.transport_response_classification.classification_rule.notes
+    assert (
+        not_sent.attempt_outcome.transport_response_classification.status
+        is TransportOutcomeStatus.NOT_SENT
+    )
+    assert (
+        not_sent.attempt_outcome.transport_response_classification.classification_rule is not None
+    )
+    assert (
+        "transport success alone is insufficient"
+        in not_sent.attempt_outcome.transport_response_classification.classification_rule.notes
+    )
 
     assert transport_unavailable.attempt_outcome.parser_status is None
     assert transport_unavailable.attempt_outcome.transport_response_classification is not None
-    assert transport_unavailable.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.TRANSPORT_UNAVAILABLE
+    assert (
+        transport_unavailable.attempt_outcome.transport_response_classification.status
+        is TransportOutcomeStatus.TRANSPORT_UNAVAILABLE
+    )
 
     assert transport_ambiguous.attempt_outcome.parser_status is None
     assert transport_ambiguous.attempt_outcome.transport_response_classification is not None
-    assert transport_ambiguous.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.TRANSPORT_AMBIGUOUS
+    assert (
+        transport_ambiguous.attempt_outcome.transport_response_classification.status
+        is TransportOutcomeStatus.TRANSPORT_AMBIGUOUS
+    )
 
-    assert response_unclassified.attempt_outcome.transport_status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    assert (
+        response_unclassified.attempt_outcome.transport_status
+        is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    )
     assert response_unclassified.attempt_outcome.parser_status is None
     assert response_unclassified.attempt_outcome.transport_response_classification is not None
-    assert response_unclassified.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
-    assert response_unclassified.attempt_outcome.transport_response_classification.provider_response_evidence_class is ProviderResponseEvidenceClass.UNCLASSIFIED
+    assert (
+        response_unclassified.attempt_outcome.transport_response_classification.status
+        is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    )
+    assert (
+        response_unclassified.attempt_outcome.transport_response_classification.provider_response_evidence_class
+        is ProviderResponseEvidenceClass.UNCLASSIFIED
+    )
 
 
 def test_apa05_current_profile_proof_and_boundary_keep_parser_success_explicit() -> None:
@@ -441,15 +669,27 @@ def test_apa05_current_profile_proof_and_boundary_keep_parser_success_explicit()
 
     assert fixture.request_envelope.source_reference is not None
     assert fixture.request_envelope.source_boundary_outcome is not None
-    assert fixture.request_envelope.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert (
+        fixture.request_envelope.source_boundary_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    )
     assert fixture.attempt_outcome.transport_response_classification is not None
-    assert fixture.attempt_outcome.transport_response_classification.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert (
+        fixture.attempt_outcome.transport_response_classification.status
+        is ParserOutcomeStatus.USABLE_RESPONSE
+    )
     assert fixture.attempt_outcome.transport_response_classification.classification_rule is not None
-    assert fixture.attempt_outcome.transport_response_classification.classification_rule.requires_current_profile_proof is True
+    assert (
+        fixture.attempt_outcome.transport_response_classification.classification_rule.requires_current_profile_proof
+        is True
+    )
     assert fixture.search_source_analysis_outcome is not None
     assert fixture.search_source_analysis_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
     assert fixture.search_configuration_extraction_outcome is not None
-    assert fixture.search_configuration_extraction_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert (
+        fixture.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.USABLE_RESPONSE
+    )
     assert fixture.listing_page_parse_outcome is not None
     assert fixture.listing_page_parse_outcome.status is ParserOutcomeStatus.USABLE_RESPONSE
 
@@ -465,40 +705,70 @@ def test_apa05_reference_and_partial_negative_cases_remain_explicit() -> None:
 
     assert stale.attempt_outcome.reference_status is ReferenceOutcomeStatus.REFERENCE_STALE
     assert stale.attempt_outcome.transport_response_classification is not None
-    assert stale.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_STALE
+    assert (
+        stale.attempt_outcome.transport_response_classification.status
+        is ReferenceOutcomeStatus.REFERENCE_STALE
+    )
     assert stale.search_source_analysis_outcome is not None
     assert stale.search_source_analysis_outcome.status is ReferenceOutcomeStatus.REFERENCE_STALE
 
     assert missing.attempt_outcome.reference_status is ReferenceOutcomeStatus.REFERENCE_MISSING
     assert missing.attempt_outcome.transport_response_classification is not None
-    assert missing.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_MISSING
+    assert (
+        missing.attempt_outcome.transport_response_classification.status
+        is ReferenceOutcomeStatus.REFERENCE_MISSING
+    )
 
     assert disputed.attempt_outcome.reference_status is ReferenceOutcomeStatus.REFERENCE_DISPUTED
     assert disputed.attempt_outcome.transport_response_classification is not None
-    assert disputed.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_DISPUTED
+    assert (
+        disputed.attempt_outcome.transport_response_classification.status
+        is ReferenceOutcomeStatus.REFERENCE_DISPUTED
+    )
 
     assert partial.attempt_outcome.parser_status is ParserOutcomeStatus.PARTIAL
     assert partial.attempt_outcome.transport_response_classification is not None
-    assert partial.attempt_outcome.transport_response_classification.status is ParserOutcomeStatus.PARTIAL
+    assert (
+        partial.attempt_outcome.transport_response_classification.status
+        is ParserOutcomeStatus.PARTIAL
+    )
     assert partial.listing_batch_parse_outcome is not None
     assert partial.listing_batch_parse_outcome.status is ParserOutcomeStatus.PARTIAL
 
     assert ambiguous.attempt_outcome.parser_status is ParserOutcomeStatus.RESULT_AMBIGUOUS
     assert ambiguous.attempt_outcome.transport_response_classification is not None
-    assert ambiguous.attempt_outcome.transport_response_classification.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    assert (
+        ambiguous.attempt_outcome.transport_response_classification.status
+        is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
     assert ambiguous.listing_page_parse_outcome is not None
     assert ambiguous.listing_page_parse_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
 
     assert clean_empty.attempt_outcome.parser_status is ParserOutcomeStatus.EXPLICIT_REJECTION
     assert clean_empty.attempt_outcome.transport_response_classification is not None
-    assert clean_empty.attempt_outcome.transport_response_classification.status is ReferenceOutcomeStatus.REFERENCE_MISSING
-    assert clean_empty.attempt_outcome.transport_response_classification.provider_response_evidence_class is ProviderResponseEvidenceClass.EMPTY_WITHOUT_PROOF
-    assert clean_empty.attempt_outcome.transport_response_classification.response_completeness_status is ResponseCompletenessStatus.EMPTY_BLOCKED
+    assert (
+        clean_empty.attempt_outcome.transport_response_classification.status
+        is ReferenceOutcomeStatus.REFERENCE_MISSING
+    )
+    assert (
+        clean_empty.attempt_outcome.transport_response_classification.provider_response_evidence_class
+        is ProviderResponseEvidenceClass.EMPTY_WITHOUT_PROOF
+    )
+    assert (
+        clean_empty.attempt_outcome.transport_response_classification.response_completeness_status
+        is ResponseCompletenessStatus.EMPTY_BLOCKED
+    )
 
     assert body_only.attempt_outcome.parser_status is None
     assert body_only.attempt_outcome.transport_response_classification is not None
-    assert body_only.attempt_outcome.transport_response_classification.status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
-    assert body_only.attempt_outcome.transport_response_classification.provider_response_evidence_class is ProviderResponseEvidenceClass.BODY_PRESENT_UNCLASSIFIED
+    assert (
+        body_only.attempt_outcome.transport_response_classification.status
+        is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
+    )
+    assert (
+        body_only.attempt_outcome.transport_response_classification.provider_response_evidence_class
+        is ProviderResponseEvidenceClass.BODY_PRESENT_UNCLASSIFIED
+    )
 
 
 def test_apa04_parser_output_preserves_beacon_source_ownership() -> None:
@@ -506,16 +776,30 @@ def test_apa04_parser_output_preserves_beacon_source_ownership() -> None:
 
     assert fixture.request_envelope.source_reference is not None
     assert fixture.request_envelope.source_boundary_outcome is not None
-    assert fixture.request_envelope.source_boundary_outcome.source_reference is fixture.request_envelope.source_reference
+    assert (
+        fixture.request_envelope.source_boundary_outcome.source_reference
+        is fixture.request_envelope.source_reference
+    )
     assert fixture.search_configuration_extraction_outcome is not None
-    assert fixture.search_configuration_extraction_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
-    assert fixture.search_configuration_extraction_outcome.normalized_geography_candidates == ("safe-geography",)
-    assert fixture.search_configuration_extraction_outcome.normalized_category_candidates == ("safe-category",)
-    assert fixture.search_configuration_extraction_outcome.normalized_filter_candidates == ("ownership=beacon",)
+    assert (
+        fixture.search_configuration_extraction_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    )
+    assert fixture.search_configuration_extraction_outcome.normalized_geography_candidates == (
+        "safe-geography",
+    )
+    assert fixture.search_configuration_extraction_outcome.normalized_category_candidates == (
+        "safe-category",
+    )
+    assert fixture.search_configuration_extraction_outcome.normalized_filter_candidates == (
+        "ownership=beacon",
+    )
     assert not hasattr(fixture.search_configuration_extraction_outcome, "source_reference")
 
 
-def test_apa06_search_configuration_candidates_keep_provenance_and_repeated_values_explicit() -> None:
+def test_apa06_search_configuration_candidates_keep_provenance_and_repeated_values_explicit() -> (
+    None
+):
     geography = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-GEOGRAPHY-CANDIDATE-001"]
     category = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-CATEGORY-CANDIDATE-001"]
     price = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-PRICE-BOUNDS-CANDIDATE-001"]
@@ -523,38 +807,93 @@ def test_apa06_search_configuration_candidates_keep_provenance_and_repeated_valu
     multivalue = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-REPEATED-MULTIVALUE-PARAM-PRESERVED-001"]
 
     assert geography.search_configuration_extraction_outcome is not None
-    assert geography.search_configuration_extraction_outcome.search_configuration_evidence is not None
-    assert geography.search_configuration_extraction_outcome.search_configuration_candidates[0].extraction_field is SearchConfigurationExtractionField.GEOGRAPHY_CONTEXT
-    assert geography.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.EVIDENCE_BOUND
-    assert geography.search_configuration_extraction_outcome.search_configuration_candidates[0].parameter_candidates[0].evidence_references
+    assert (
+        geography.search_configuration_extraction_outcome.search_configuration_evidence is not None
+    )
+    assert (
+        geography.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].extraction_field
+        is SearchConfigurationExtractionField.GEOGRAPHY_CONTEXT
+    )
+    assert (
+        geography.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.EVIDENCE_BOUND
+    )
+    assert (
+        geography.search_configuration_extraction_outcome.search_configuration_candidates[0]
+        .parameter_candidates[0]
+        .evidence_references
+    )
 
     assert category.search_configuration_extraction_outcome is not None
-    assert category.search_configuration_extraction_outcome.search_configuration_candidates[0].extraction_field is SearchConfigurationExtractionField.CATEGORY_CONTEXT
-    assert category.search_configuration_extraction_outcome.search_configuration_candidates[0].value_kind is SearchConfigurationValueKind.SCALAR
+    assert (
+        category.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].extraction_field
+        is SearchConfigurationExtractionField.CATEGORY_CONTEXT
+    )
+    assert (
+        category.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].value_kind
+        is SearchConfigurationValueKind.SCALAR
+    )
 
     assert price.search_configuration_extraction_outcome is not None
-    assert [candidate.extraction_field for candidate in price.search_configuration_extraction_outcome.search_configuration_candidates] == [
+    assert [
+        candidate.extraction_field
+        for candidate in (
+            price.search_configuration_extraction_outcome.search_configuration_candidates
+        )
+    ] == [
         SearchConfigurationExtractionField.PRICE_LOWER_BOUND,
         SearchConfigurationExtractionField.PRICE_UPPER_BOUND,
     ]
-    assert [parameter.parameter_value for parameter in price.search_configuration_extraction_outcome.parameter_candidates] == ["1000", "5000"]
+    assert [
+        parameter.parameter_value
+        for parameter in price.search_configuration_extraction_outcome.parameter_candidates
+    ] == ["1000", "5000"]
 
     assert structured.search_configuration_extraction_outcome is not None
-    assert structured.search_configuration_extraction_outcome.normalized_filter_candidates == ("filter-key:synthetic-color=value:synthetic-red",)
-    assert structured.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.EVIDENCE_BOUND
+    assert structured.search_configuration_extraction_outcome.normalized_filter_candidates == (
+        "filter-key:synthetic-color=value:synthetic-red",
+    )
+    assert (
+        structured.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.EVIDENCE_BOUND
+    )
 
     assert multivalue.search_configuration_extraction_outcome is not None
-    assert multivalue.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.PRESERVED
-    assert multivalue.search_configuration_extraction_outcome.search_configuration_candidates[0].parameter_candidates[0].repeated_values == (
+    assert (
+        multivalue.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.PRESERVED
+    )
+    assert multivalue.search_configuration_extraction_outcome.search_configuration_candidates[
+        0
+    ].parameter_candidates[0].repeated_values == (
         "value:synthetic-red",
         "value:synthetic-blue",
     )
-    assert multivalue.search_configuration_extraction_outcome.parameter_candidates[0].repeated_values == (
+    assert multivalue.search_configuration_extraction_outcome.parameter_candidates[
+        0
+    ].repeated_values == (
         "value:synthetic-red",
         "value:synthetic-blue",
     )
-    assert multivalue.search_configuration_extraction_outcome.search_configuration_evidence is not None
-    assert multivalue.search_configuration_extraction_outcome.search_configuration_evidence.request_envelope.safe_source_reference == "source-ref:beacon-revision-060"
+    assert (
+        multivalue.search_configuration_extraction_outcome.search_configuration_evidence is not None
+    )
+    assert (
+        multivalue.search_configuration_extraction_outcome.search_configuration_evidence.request_envelope.safe_source_reference
+        == "source-ref:beacon-revision-060"
+    )
     assert not hasattr(multivalue.search_configuration_extraction_outcome, "source_reference")
 
 
@@ -566,66 +905,169 @@ def test_apa06_search_configuration_negative_and_policy_gated_cases_remain_expli
     pagination = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-PAGINATION-CONTEXT-BLOCKED-001"]
     country_wide = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-COUNTRY-WIDE-CANDIDATE-POLICY-GATED-001"]
     filter_editability = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-FILTER-EDITABILITY-NOT-DECLARED-001"]
-    beacon_snapshot = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-BEACON-SNAPSHOT-ACCEPTANCE-NOT-PERFORMED-001"]
+    beacon_snapshot = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA06-BEACON-SNAPSHOT-ACCEPTANCE-NOT-PERFORMED-001"
+    ]
 
     assert unsupported.search_configuration_extraction_outcome is not None
-    assert unsupported.search_configuration_extraction_outcome.status is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
-    assert unsupported.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.UNSUPPORTED
-    assert unsupported.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT
+    assert (
+        unsupported.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
+    )
+    assert (
+        unsupported.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.UNSUPPORTED
+    )
+    assert (
+        unsupported.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT
+    )
 
     assert ambiguous.search_configuration_extraction_outcome is not None
-    assert ambiguous.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
-    assert ambiguous.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.AMBIGUOUS
-    assert ambiguous.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT
+    assert (
+        ambiguous.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
+    assert (
+        ambiguous.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.AMBIGUOUS
+    )
+    assert (
+        ambiguous.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT
+    )
 
     assert lossy.search_configuration_extraction_outcome is not None
-    assert lossy.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
-    assert lossy.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED
-    assert lossy.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+    assert (
+        lossy.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
+    assert (
+        lossy.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED
+    )
+    assert (
+        lossy.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+    )
 
     assert sort.search_configuration_extraction_outcome is not None
-    assert sort.search_configuration_extraction_outcome.observed_sort_context_reference == "sort-context::synthetic-newest"
-    assert sort.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.UNPROVEN
-    assert sort.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.SORT_CONTEXT_UNPROVEN
+    assert (
+        sort.search_configuration_extraction_outcome.observed_sort_context_reference
+        == "sort-context::synthetic-newest"
+    )
+    assert (
+        sort.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status
+        is SearchConfigurationFieldStatus.UNPROVEN
+    )
+    assert (
+        sort.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.SORT_CONTEXT_UNPROVEN
+    )
 
     assert pagination.search_configuration_extraction_outcome is not None
-    assert pagination.search_configuration_extraction_outcome.status is ParserOutcomeStatus.EXPLICIT_REJECTION
-    assert pagination.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
-    assert pagination.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED
+    assert (
+        pagination.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.EXPLICIT_REJECTION
+    )
+    assert (
+        pagination.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.POLICY_GATED
+    )
+    assert (
+        pagination.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED
+    )
 
     assert country_wide.search_configuration_extraction_outcome is not None
-    assert country_wide.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
-    assert country_wide.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.COUNTRY_WIDE_POLICY_GATED
+    assert (
+        country_wide.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.POLICY_GATED
+    )
+    assert (
+        country_wide.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.COUNTRY_WIDE_POLICY_GATED
+    )
 
     assert filter_editability.search_configuration_extraction_outcome is not None
-    assert filter_editability.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
-    assert filter_editability.search_configuration_extraction_outcome.parameter_candidates[0].parameter_value == "not-declared"
-    assert filter_editability.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED
+    assert (
+        filter_editability.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.POLICY_GATED
+    )
+    assert (
+        filter_editability.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].parameter_value
+        == "not-declared"
+    )
+    assert (
+        filter_editability.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED
+    )
 
     assert beacon_snapshot.search_configuration_extraction_outcome is not None
-    assert beacon_snapshot.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
-    assert beacon_snapshot.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED
+    assert (
+        beacon_snapshot.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.POLICY_GATED
+    )
+    assert (
+        beacon_snapshot.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED
+    )
 
 
 def test_apa06_search_configuration_depends_on_profile_and_source_boundary_gates() -> None:
     fixture = SYNTHETIC_FIXTURE_BY_ID["FX-APA06-GEOGRAPHY-CANDIDATE-001"]
 
     assert fixture.compatibility_profile is not None
-    assert fixture.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.CURRENT
+    assert (
+        fixture.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.CURRENT
+    )
     assert fixture.request_envelope.source_reference is not None
-    assert fixture.request_envelope.source_reference.bounded_value == "source-ref:beacon-revision-060"
-    assert fixture.request_envelope.source_reference.beacon_source_reference == "source-ref:beacon-revision-060"
+    assert (
+        fixture.request_envelope.source_reference.bounded_value == "source-ref:beacon-revision-060"
+    )
+    assert (
+        fixture.request_envelope.source_reference.beacon_source_reference
+        == "source-ref:beacon-revision-060"
+    )
     assert fixture.request_envelope.source_boundary_outcome is not None
-    assert fixture.request_envelope.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    assert (
+        fixture.request_envelope.source_boundary_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_UNTRUSTED
+    )
     assert fixture.search_configuration_extraction_outcome is not None
     assert fixture.search_configuration_extraction_outcome.search_configuration_evidence is not None
-    assert fixture.search_configuration_extraction_outcome.search_configuration_evidence.compatibility_profile is fixture.compatibility_profile
-    assert fixture.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome is fixture.request_envelope.source_boundary_outcome
-    assert fixture.search_configuration_extraction_outcome.request_envelope.safe_source_reference == fixture.request_envelope.safe_source_reference
+    assert (
+        fixture.search_configuration_extraction_outcome.search_configuration_evidence.compatibility_profile
+        is fixture.compatibility_profile
+    )
+    assert (
+        fixture.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome
+        is fixture.request_envelope.source_boundary_outcome
+    )
+    assert (
+        fixture.search_configuration_extraction_outcome.request_envelope.safe_source_reference
+        == fixture.request_envelope.safe_source_reference
+    )
     assert not hasattr(fixture.search_configuration_extraction_outcome, "source_reference")
 
 
-def test_apa07_multivalue_normalization_preserves_order_and_duplicates_without_silent_overwrite() -> None:
+def test_apa07_multivalue_normalization_preserves_order_and_duplicates() -> None:
     repeated = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-REPEATED-VALUES-ORDER-PRESERVED-001"]
     duplicates = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-DUPLICATES-PRESERVED-001"]
     approved = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-PROFILE-BOUND-COLLECTION-PRESERVED-001"]
@@ -634,9 +1076,21 @@ def test_apa07_multivalue_normalization_preserves_order_and_duplicates_without_s
     scalar_blocked = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-COLLECTION-TO-SCALAR-BLOCKED-001"]
 
     assert repeated.search_configuration_extraction_outcome is not None
-    assert repeated.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert repeated.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.PRESERVED
-    assert repeated.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == (
+    assert (
+        repeated.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        repeated.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.status
+        is MultivalueNormalizationStatus.PRESERVED
+    )
+    assert repeated.search_configuration_extraction_outcome.parameter_candidates[
+        0
+    ].multivalue_normalization.normalized_values == (
         "value:synthetic-red",
         "value:synthetic-blue",
     )
@@ -646,41 +1100,110 @@ def test_apa07_multivalue_normalization_preserves_order_and_duplicates_without_s
     )
 
     assert duplicates.search_configuration_extraction_outcome is not None
-    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[0].repeated_values == (
+    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[
+        0
+    ].repeated_values == (
         "value:synthetic-red",
         "value:synthetic-red",
         "value:synthetic-blue",
     )
-    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == (
+    assert (
+        duplicates.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert duplicates.search_configuration_extraction_outcome.parameter_candidates[
+        0
+    ].multivalue_normalization.normalized_values == (
         "value:synthetic-red",
         "value:synthetic-red",
         "value:synthetic-blue",
     )
 
     assert approved.search_configuration_extraction_outcome is not None
-    assert approved.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert approved.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == (
+    assert (
+        approved.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert approved.search_configuration_extraction_outcome.parameter_candidates[
+        0
+    ].multivalue_normalization.normalized_values == (
         "value:synthetic-red",
         "value:synthetic-blue",
     )
 
     assert first_blocked.search_configuration_extraction_outcome is not None
-    assert first_blocked.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
-    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.LOSSY
-    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.FIRST_VALUE_OVERWRITE_BLOCKED
-    assert first_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == ()
+    assert (
+        first_blocked.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
+    assert (
+        first_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        first_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.status
+        is MultivalueNormalizationStatus.LOSSY
+    )
+    assert (
+        first_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.FIRST_VALUE_OVERWRITE_BLOCKED
+    )
+    assert (
+        first_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.normalized_values
+        == ()
+    )
 
     assert later_blocked.search_configuration_extraction_outcome is not None
-    assert later_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert later_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.LATER_VALUE_LOSS_BLOCKED
-    assert later_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == ()
+    assert (
+        later_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        later_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.LATER_VALUE_LOSS_BLOCKED
+    )
+    assert (
+        later_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.normalized_values
+        == ()
+    )
 
     assert scalar_blocked.search_configuration_extraction_outcome is not None
-    assert scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.COLLECTION_TO_SCALAR_COLLAPSE_BLOCKED
-    assert scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.normalized_values == ()
+    assert (
+        scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.COLLECTION_TO_SCALAR_COLLAPSE_BLOCKED
+    )
+    assert (
+        scalar_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.normalized_values
+        == ()
+    )
 
 
 def test_apa07_multivalue_unsupported_ambiguous_and_lossy_states_remain_explicit() -> None:
@@ -689,28 +1212,105 @@ def test_apa07_multivalue_unsupported_ambiguous_and_lossy_states_remain_explicit
     lossy = SYNTHETIC_FIXTURE_BY_ID["FX-APA07-LOSSY-NORMALIZATION-EXPLICIT-001"]
 
     assert unsupported.search_configuration_extraction_outcome is not None
-    assert unsupported.search_configuration_extraction_outcome.status is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
-    assert unsupported.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.UNSUPPORTED
-    assert unsupported.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert unsupported.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.UNSUPPORTED
-    assert unsupported.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.UNSUPPORTED_MULTIVALUE_PARAMETER
-    assert unsupported.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT
+    assert (
+        unsupported.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
+    )
+    assert (
+        unsupported.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.UNSUPPORTED
+    )
+    assert (
+        unsupported.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        unsupported.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.status
+        is MultivalueNormalizationStatus.UNSUPPORTED
+    )
+    assert (
+        unsupported.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.UNSUPPORTED_MULTIVALUE_PARAMETER
+    )
+    assert (
+        unsupported.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.UNSUPPORTED_PARAMETER_EXPLICIT
+    )
 
     assert ambiguous.search_configuration_extraction_outcome is not None
-    assert ambiguous.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
-    assert ambiguous.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.AMBIGUOUS
-    assert ambiguous.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert ambiguous.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.AMBIGUOUS
-    assert ambiguous.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.AMBIGUOUS_MULTIVALUE_PARAMETER
-    assert ambiguous.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT
+    assert (
+        ambiguous.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
+    assert (
+        ambiguous.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.AMBIGUOUS
+    )
+    assert (
+        ambiguous.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        ambiguous.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.status
+        is MultivalueNormalizationStatus.AMBIGUOUS
+    )
+    assert (
+        ambiguous.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.AMBIGUOUS_MULTIVALUE_PARAMETER
+    )
+    assert (
+        ambiguous.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.AMBIGUOUS_PARAMETER_EXPLICIT
+    )
 
     assert lossy.search_configuration_extraction_outcome is not None
-    assert lossy.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
-    assert lossy.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED
-    assert lossy.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert lossy.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.status is MultivalueNormalizationStatus.LOSSY
-    assert lossy.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.DUPLICATE_REMOVAL_BLOCKED
-    assert lossy.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+    assert (
+        lossy.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
+    assert (
+        lossy.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.LOSSY_NORMALIZATION_BLOCKED
+    )
+    assert (
+        lossy.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        lossy.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.status
+        is MultivalueNormalizationStatus.LOSSY
+    )
+    assert (
+        lossy.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.DUPLICATE_REMOVAL_BLOCKED
+    )
+    assert (
+        lossy.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+    )
 
 
 def test_apa07_multivalue_profile_source_response_and_ownership_gates_are_explicit() -> None:
@@ -726,52 +1326,179 @@ def test_apa07_multivalue_profile_source_response_and_ownership_gates_are_explic
     assert stale.compatibility_profile is not None
     assert stale.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.STALE
     assert stale.search_configuration_extraction_outcome is not None
-    assert stale.search_configuration_extraction_outcome.status is CompatibilityProfileLifecycleStatus.STALE
-    assert stale.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert stale.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.PROFILE_STALE
-    assert stale.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.STALE_COMPATIBILITY_PROFILE
+    assert (
+        stale.search_configuration_extraction_outcome.status
+        is CompatibilityProfileLifecycleStatus.STALE
+    )
+    assert (
+        stale.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        stale.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.PROFILE_STALE
+    )
+    assert (
+        stale.search_configuration_extraction_outcome.warnings[0].code
+        is ParserWarningCode.STALE_COMPATIBILITY_PROFILE
+    )
 
     assert missing.compatibility_profile is not None
-    assert missing.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.UNAVAILABLE
+    assert (
+        missing.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.UNAVAILABLE
+    )
     assert missing.search_configuration_extraction_outcome is not None
-    assert missing.search_configuration_extraction_outcome.status is ReferenceOutcomeStatus.REFERENCE_MISSING
-    assert missing.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert missing.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.PROFILE_MISSING
-    assert missing.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.UNAVAILABLE_PROFILE_WARNING
+    assert (
+        missing.search_configuration_extraction_outcome.status
+        is ReferenceOutcomeStatus.REFERENCE_MISSING
+    )
+    assert (
+        missing.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        missing.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.PROFILE_MISSING
+    )
+    assert (
+        missing.search_configuration_extraction_outcome.warnings[0].code
+        is ParserWarningCode.UNAVAILABLE_PROFILE_WARNING
+    )
 
     assert disputed.compatibility_profile is not None
-    assert disputed.compatibility_profile.lifecycle_status is CompatibilityProfileLifecycleStatus.DISPUTED
+    assert (
+        disputed.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.DISPUTED
+    )
     assert disputed.search_configuration_extraction_outcome is not None
-    assert disputed.search_configuration_extraction_outcome.status is ReferenceOutcomeStatus.REFERENCE_DISPUTED
-    assert disputed.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert disputed.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.PROFILE_DISPUTED
-    assert disputed.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.DISPUTED_PROFILE_WARNING
+    assert (
+        disputed.search_configuration_extraction_outcome.status
+        is ReferenceOutcomeStatus.REFERENCE_DISPUTED
+    )
+    assert (
+        disputed.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        disputed.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.PROFILE_DISPUTED
+    )
+    assert (
+        disputed.search_configuration_extraction_outcome.warnings[0].code
+        is ParserWarningCode.DISPUTED_PROFILE_WARNING
+    )
 
     assert source_blocked.search_configuration_extraction_outcome is not None
-    assert source_blocked.search_configuration_extraction_outcome.status is SourceBoundaryStatus.SOURCE_URL_MALFORMED
-    assert source_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert source_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.SOURCE_BOUNDARY_INVALID
-    assert source_blocked.search_configuration_extraction_outcome.warnings[0].code is ParserWarningCode.SOURCE_URL_MALFORMED
-    assert source_blocked.search_configuration_extraction_outcome.search_configuration_evidence is not None
-    assert source_blocked.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome is not None
-    assert source_blocked.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome.status is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+    assert (
+        source_blocked.search_configuration_extraction_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+    )
+    assert (
+        source_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        source_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.SOURCE_BOUNDARY_INVALID
+    )
+    assert (
+        source_blocked.search_configuration_extraction_outcome.warnings[0].code
+        is ParserWarningCode.SOURCE_URL_MALFORMED
+    )
+    assert (
+        source_blocked.search_configuration_extraction_outcome.search_configuration_evidence
+        is not None
+    )
+    assert (
+        source_blocked.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome
+        is not None
+    )
+    assert (
+        source_blocked.search_configuration_extraction_outcome.search_configuration_evidence.source_boundary_outcome.status
+        is SourceBoundaryStatus.SOURCE_URL_MALFORMED
+    )
 
     assert response_blocked.search_configuration_extraction_outcome is not None
-    assert response_blocked.search_configuration_extraction_outcome.status is ParserOutcomeStatus.RESULT_AMBIGUOUS
-    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization is not None
-    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.loss_reason is MultivalueLossReason.RESPONSE_CLASSIFICATION_NOT_TRUSTED
-    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.transport_response_classification is not None
-    assert response_blocked.search_configuration_extraction_outcome.parameter_candidates[0].multivalue_normalization.transport_response_classification.response_completeness_status is ResponseCompletenessStatus.AMBIGUOUS
-    assert response_blocked.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+    assert (
+        response_blocked.search_configuration_extraction_outcome.status
+        is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
+    assert (
+        response_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization
+        is not None
+    )
+    assert (
+        response_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.loss_reason
+        is MultivalueLossReason.RESPONSE_CLASSIFICATION_NOT_TRUSTED
+    )
+    assert (
+        response_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.transport_response_classification
+        is not None
+    )
+    assert (
+        response_blocked.search_configuration_extraction_outcome.parameter_candidates[
+            0
+        ].multivalue_normalization.transport_response_classification.response_completeness_status
+        is ResponseCompletenessStatus.AMBIGUOUS
+    )
+    assert (
+        response_blocked.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.LOSSY_NORMALIZATION_BLOCKED
+    )
 
     assert filter_editability.search_configuration_extraction_outcome is not None
-    assert filter_editability.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
-    assert filter_editability.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED
+    assert (
+        filter_editability.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.POLICY_GATED
+    )
+    assert (
+        filter_editability.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.FILTER_EDITABILITY_NOT_DECLARED
+    )
 
     assert beacon.search_configuration_extraction_outcome is not None
-    assert beacon.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
-    assert beacon.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED
+    assert (
+        beacon.search_configuration_extraction_outcome.search_configuration_candidates[
+            0
+        ].field_status
+        is SearchConfigurationFieldStatus.POLICY_GATED
+    )
+    assert (
+        beacon.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.BEACON_SNAPSHOT_ACCEPTANCE_NOT_PERFORMED
+    )
 
     assert scan.search_configuration_extraction_outcome is not None
-    assert scan.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status is SearchConfigurationFieldStatus.POLICY_GATED
-    assert scan.search_configuration_extraction_outcome.warnings[0].code is SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED
+    assert (
+        scan.search_configuration_extraction_outcome.search_configuration_candidates[0].field_status
+        is SearchConfigurationFieldStatus.POLICY_GATED
+    )
+    assert (
+        scan.search_configuration_extraction_outcome.warnings[0].code
+        is SearchConfigurationWarningCode.PAGINATION_CONTEXT_BLOCKED
+    )

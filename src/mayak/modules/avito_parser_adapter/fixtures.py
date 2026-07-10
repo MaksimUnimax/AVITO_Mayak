@@ -10,48 +10,54 @@ from .contracts import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    ListingBatchParseOutcome,
+    ListingCandidateStatus,
+    ListingCardCandidate,
+    ListingFieldAvailability,
+    ListingFieldCandidate,
+    ListingFieldFamily,
+    ListingFieldQuality,
+    ListingFieldTier,
+    ListingPageParseOutcome,
     MultivalueLossReason,
     MultivalueNormalizationOutcome,
     MultivalueNormalizationRule,
     MultivalueNormalizationStatus,
     MultivaluePreservationMode,
-    ListingBatchParseOutcome,
-    ListingCardCandidate,
-    ListingPageParseOutcome,
     NormalizedListingCandidate,
-    ParserCompatibilityOutcome,
     ParserAttemptOutcome,
+    ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
     ParserEvidenceReference,
     ParserOutcomeExplanation,
     ParserOutcomeStatus,
+    ParserRequestEnvelope,
     ParserResponseClassificationRule,
     ParserSourceReference,
-    ParserRequestEnvelope,
     ParserWarning,
     ParserWarningCode,
+    ProviderResponseEvidenceClass,
+    ReferenceOutcomeStatus,
+    ResponseCompletenessStatus,
+    ResponseRestrictionSignal,
     SearchConfigurationCandidate,
     SearchConfigurationEvidence,
     SearchConfigurationExtractionField,
+    SearchConfigurationExtractionOutcome,
     SearchConfigurationFieldStatus,
     SearchConfigurationParameterCandidate,
     SearchConfigurationValueKind,
     SearchConfigurationWarningCode,
-    ProviderResponseEvidenceClass,
-    ResponseCompletenessStatus,
-    ResponseRestrictionSignal,
+    SearchSourceAnalysisOutcome,
     SourceBoundaryOutcome,
     SourceBoundaryPolicyRequirement,
     SourceBoundaryRiskCode,
     SourceBoundaryStatus,
     SourceReferenceKind,
-    _lifecycle_status_from_reference_status,
-    ReferenceOutcomeStatus,
-    SearchConfigurationExtractionOutcome,
-    SearchSourceAnalysisOutcome,
     TransportOutcomeReference,
     TransportOutcomeStatus,
     TransportResponseClassificationOutcome,
+    _lifecycle_status_from_reference_status,
     _reference_status_from_lifecycle_status,
 )
 
@@ -78,14 +84,18 @@ class SyntheticFixtureCase:
         if not self.summary.strip():
             raise ValueError("summary must not be blank")
         if self.compatibility_profile is None:
-            object.__setattr__(self, "compatibility_profile", self.request_envelope.compatibility_profile)
+            object.__setattr__(
+                self, "compatibility_profile", self.request_envelope.compatibility_profile
+            )
 
 
 def _profile(
     profile_id: str,
     *,
     lifecycle_status: CompatibilityProfileLifecycleStatus | None = None,
-    authority_class: CompatibilityProfileAuthorityClass = CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+    authority_class: CompatibilityProfileAuthorityClass = (
+        CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
+    ),
     reference_status: ReferenceOutcomeStatus = ReferenceOutcomeStatus.CURRENT,
     evidence_suffix: str,
     reference_ids: tuple[str, ...] = ("AVITO-PRIMARY-PARSER-001",),
@@ -133,7 +143,9 @@ def _profile(
     ),
 ) -> ParserCompatibilityProfile:
     effective_lifecycle_status = (
-        lifecycle_status if lifecycle_status is not None else _lifecycle_status_from_reference_status(reference_status)
+        lifecycle_status
+        if lifecycle_status is not None
+        else _lifecycle_status_from_reference_status(reference_status)
     )
     evidence_reference = ParserEvidenceReference(
         reference_id=f"fx::{evidence_suffix}::profile",
@@ -160,7 +172,8 @@ def _profile(
         source_reference=f"safe-source::{evidence_suffix}",
         evidence_reference=evidence_reference,
         supported_extraction_claims=supported_extraction_claims,
-        supported_shape_signatures=supported_extraction_claims or (f"shape::{evidence_suffix}::tier1",),
+        supported_shape_signatures=supported_extraction_claims
+        or (f"shape::{evidence_suffix}::tier1",),
         unsupported_extraction_claims=unsupported_extraction_claims,
         unsupported_shape_signatures=unsupported_extraction_claims,
         required_fields=required_fields,
@@ -285,31 +298,134 @@ def _transport(
     )
 
 
-def _usable_listing_card(
+def _listing_field_candidate(
+    field_candidate_id: str,
+    field_family: ListingFieldFamily,
+    tier: ListingFieldTier,
+    availability: ListingFieldAvailability,
+    quality: ListingFieldQuality,
+    *,
+    value: str | None = None,
+    compatibility_profile: ParserCompatibilityProfile | None = None,
+    evidence_suffix: str,
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> ListingFieldCandidate:
+    evidence_references = (
+        ParserEvidenceReference(
+            reference_id=f"fx::{evidence_suffix}::{field_candidate_id}",
+            evidence_kind="listing-field",
+            notes=(f"synthetic field candidate {field_candidate_id}",),
+        ),
+    )
+    return ListingFieldCandidate(
+        field_candidate_id=field_candidate_id,
+        field_family=field_family,
+        tier=tier,
+        availability=availability,
+        quality=quality,
+        value=value,
+        compatibility_profile=compatibility_profile,
+        warnings=warnings,
+        evidence_references=evidence_references,
+        notes=notes,
+    )
+
+
+def _tier_1_listing_field_candidates(
+    evidence_suffix: str,
+    profile: ParserCompatibilityProfile,
+) -> tuple[ListingFieldCandidate, ...]:
+    return (
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-title",
+            ListingFieldFamily.TITLE,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value="Synthetic Tier 1 title",
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+        ),
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-price",
+            ListingFieldFamily.NORMALIZED_PRICE,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value="123 456",
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+        ),
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-listing-url",
+            ListingFieldFamily.LISTING_URL,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value="listing::synthetic::url",
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+        ),
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-preview-image",
+            ListingFieldFamily.PREVIEW_IMAGE,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value="image::synthetic::preview",
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+        ),
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-geography",
+            ListingFieldFamily.GEOGRAPHY,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value="synthetic-city",
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+        ),
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-category",
+            ListingFieldFamily.CATEGORY,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value="synthetic-category",
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+        ),
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-publication-order",
+            ListingFieldFamily.PUBLICATION_ORDER,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value="1",
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+        ),
+    )
+
+
+def _listing_card(
     card_id: str,
     *,
+    field_candidates: tuple[ListingFieldCandidate, ...],
     evidence_suffix: str,
-    phone: str | None = None,
-    seller: str | None = None,
-    seller_rating: str | None = None,
-    description: str | None = None,
+    warnings: tuple[ParserWarning, ...] = (),
 ) -> ListingCardCandidate:
     return ListingCardCandidate(
         listing_card_id=card_id,
-        title="Synthetic Tier 1 title",
-        price_text="123 456 ₽",
-        listing_url_reference=f"listing::{evidence_suffix}::url",
-        preview_image_reference=f"image::{evidence_suffix}::preview",
-        phone=phone,
-        seller=seller,
-        seller_rating=seller_rating,
-        description=description,
-        warnings=(),
+        field_candidates=field_candidates,
+        warnings=warnings,
         evidence_references=(
             ParserEvidenceReference(
                 reference_id=f"fx::{evidence_suffix}::card",
                 evidence_kind="listing-card",
-                notes=("synthetic tier 1 listing card",),
+                notes=("synthetic listing card",),
             ),
         ),
     )
@@ -320,25 +436,114 @@ def _listing_candidate(
     card: ListingCardCandidate,
     *,
     evidence_suffix: str,
-    geography: str = "synthetic-city",
-    category: str = "synthetic-category",
-    publication_order_reference: str | None = "publication-order::synthetic",
-    sort_context_reference: str | None = "sort-context::synthetic",
+    status: ListingCandidateStatus = ListingCandidateStatus.USABLE,
     warnings: tuple[ParserWarning, ...] = (),
 ) -> NormalizedListingCandidate:
     return NormalizedListingCandidate(
         listing_candidate_id=candidate_id,
+        status=status,
         card_candidate=card,
-        geography=geography,
-        category=category,
-        publication_order_reference=publication_order_reference,
-        sort_context_reference=sort_context_reference,
         warnings=warnings,
         evidence_references=(
             ParserEvidenceReference(
                 reference_id=f"fx::{evidence_suffix}::listing",
                 evidence_kind="normalized-listing",
+                notes=("synthetic normalized listing candidate",),
             ),
+        ),
+    )
+
+
+def _tier_2_detail_field_candidates(
+    evidence_suffix: str,
+    profile: ParserCompatibilityProfile,
+    *,
+    availability: ListingFieldAvailability,
+    warning_code: ParserWarningCode | None = None,
+) -> tuple[ListingFieldCandidate, ...]:
+    fields = []
+    for family, label in (
+        (ListingFieldFamily.DESCRIPTION, "description"),
+        (ListingFieldFamily.SELLER, "seller"),
+        (ListingFieldFamily.SELLER_RATING, "seller-rating"),
+    ):
+        field_warnings: tuple[ParserWarning, ...] = (
+            (
+                ParserWarning(
+                    code=warning_code,
+                    message=f"{label} evidence remains synthetic and explicit",
+                ),
+            )
+            if warning_code is not None
+            else ()
+        )
+        fields.append(
+            _listing_field_candidate(
+                f"fx-{evidence_suffix}-{label}",
+                family,
+                ListingFieldTier.TIER_2_LISTING_DETAIL,
+                availability,
+                ListingFieldQuality.EVIDENCE_BOUND
+                if availability is ListingFieldAvailability.PROVEN_AVAILABLE
+                else ListingFieldQuality.UNVERIFIED,
+                value=(
+                    "Synthetic listing detail"
+                    if family is ListingFieldFamily.DESCRIPTION
+                    else "Synthetic seller"
+                    if family is ListingFieldFamily.SELLER
+                    else "Synthetic seller rating"
+                )
+                if availability is ListingFieldAvailability.PROVEN_AVAILABLE
+                else None,
+                compatibility_profile=profile,
+                evidence_suffix=evidence_suffix,
+                warnings=field_warnings,
+            )
+        )
+    return tuple(fields)
+
+
+def _tier_3_phone_field_candidates(
+    evidence_suffix: str,
+    profile: ParserCompatibilityProfile,
+    *,
+    availability: ListingFieldAvailability,
+    value_label: str | None = None,
+) -> tuple[ListingFieldCandidate, ...]:
+    phone_warnings: tuple[ParserWarning, ...] = (
+        (
+            ParserWarning(
+                code=ParserWarningCode.PHONE_UNAVAILABLE,
+                message="phone value remains proof-gated in synthetic case",
+            ),
+        )
+        if availability is not ListingFieldAvailability.PROVEN_AVAILABLE
+        else ()
+    )
+    return (
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-phone-availability",
+            ListingFieldFamily.PHONE_AVAILABILITY,
+            ListingFieldTier.TIER_3_CONTACT,
+            availability,
+            ListingFieldQuality.EVIDENCE_BOUND,
+            value=value_label
+            if availability is ListingFieldAvailability.PROVEN_AVAILABLE
+            else None,
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+            warnings=phone_warnings,
+        ),
+        _listing_field_candidate(
+            f"fx-{evidence_suffix}-phone-value",
+            ListingFieldFamily.PHONE_VALUE,
+            ListingFieldTier.TIER_3_CONTACT,
+            availability,
+            ListingFieldQuality.EVIDENCE_BOUND,
+            value=None,
+            compatibility_profile=profile,
+            evidence_suffix=evidence_suffix,
+            warnings=phone_warnings,
         ),
     )
 
@@ -349,15 +554,18 @@ def _usable_attempt(
     request: ParserRequestEnvelope,
     transport: TransportOutcomeReference,
     *,
-    parser_status: ParserOutcomeStatus = ParserOutcomeStatus.USABLE_RESPONSE,
-    reference_status: ReferenceOutcomeStatus | None = None,
+    parser_status: ParserOutcomeStatus | None = ParserOutcomeStatus.USABLE_RESPONSE,
+    reference_status: ReferenceOutcomeStatus | CompatibilityProfileLifecycleStatus | None = None,
     transport_response_classification: TransportResponseClassificationOutcome | None = None,
     warnings: tuple[ParserWarning, ...] = (),
     evidence_suffix: str,
 ) -> ParserAttemptOutcome:
     evidence_references = transport.evidence_references
     if transport_response_classification is not None:
-        evidence_references = (*evidence_references, *transport_response_classification.evidence_references)
+        evidence_references = (
+            *evidence_references,
+            *transport_response_classification.evidence_references,
+        )
     return ParserAttemptOutcome(
         attempt_id=attempt_id,
         transport_status=transport.transport_status,
@@ -385,7 +593,9 @@ def _classification_rule(
     summary: str,
     required_transport_statuses: tuple[TransportOutcomeStatus, ...] = (),
     required_parser_statuses: tuple[ParserOutcomeStatus, ...] = (),
-    required_reference_statuses: tuple[ReferenceOutcomeStatus | CompatibilityProfileLifecycleStatus, ...] = (),
+    required_reference_statuses: tuple[
+        ReferenceOutcomeStatus | CompatibilityProfileLifecycleStatus, ...
+    ] = (),
     required_provider_evidence_classes: tuple[ProviderResponseEvidenceClass, ...] = (),
     required_response_completeness_statuses: tuple[ResponseCompletenessStatus, ...] = (),
     required_response_restriction_signals: tuple[ResponseRestrictionSignal, ...] = (),
@@ -469,7 +679,7 @@ def _transport_classification_fixture(
     safe_source_reference: str,
     transport_reference_id: str,
     transport_status: TransportOutcomeStatus,
-    response_reference: str,
+    response_reference: str | None,
     classification_id: str,
     classification_status: TransportOutcomeStatus
     | ParserOutcomeStatus
@@ -554,7 +764,14 @@ def _search_source_analysis(
     transport: TransportOutcomeReference,
     profile: ParserCompatibilityProfile,
     *,
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus,
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | SourceBoundaryStatus
+    ),
     evidence_suffix: str,
     warnings: tuple[ParserWarning, ...] = (),
 ) -> SearchSourceAnalysisOutcome:
@@ -586,7 +803,14 @@ def _search_configuration(
     transport: TransportOutcomeReference,
     profile: ParserCompatibilityProfile,
     *,
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus,
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | SourceBoundaryStatus
+    ),
     evidence_suffix: str,
     normalized_geography_candidates: tuple[str, ...] = ("synthetic-city",),
     normalized_category_candidates: tuple[str, ...] = ("synthetic-category",),
@@ -722,7 +946,9 @@ def _multivalue_profile(
     profile_id: str,
     *,
     evidence_suffix: str,
-    lifecycle_status: CompatibilityProfileLifecycleStatus = CompatibilityProfileLifecycleStatus.CURRENT,
+    lifecycle_status: CompatibilityProfileLifecycleStatus = (
+        CompatibilityProfileLifecycleStatus.CURRENT
+    ),
     reference_status: ReferenceOutcomeStatus = ReferenceOutcomeStatus.CURRENT,
 ) -> ParserCompatibilityProfile:
     return _profile(
@@ -768,12 +994,22 @@ def _apa07_multivalue_fixture(
     normalized_values: tuple[str, ...] = (),
     parameter_key: str = "filter-key:synthetic-color",
     parameter_value: str | None = None,
-    parameter_field_status: SearchConfigurationFieldStatus = SearchConfigurationFieldStatus.PRESERVED,
-    parameter_value_kind: SearchConfigurationValueKind = SearchConfigurationValueKind.COLLECTION,
+    parameter_field_status: SearchConfigurationFieldStatus = (
+        SearchConfigurationFieldStatus.PRESERVED
+    ),
+    parameter_value_kind: SearchConfigurationValueKind = (
+        SearchConfigurationValueKind.COLLECTION
+    ),
     candidate_id: str | None = None,
-    extraction_field: SearchConfigurationExtractionField = SearchConfigurationExtractionField.REPEATED_PARAMETER,
-    candidate_field_status: SearchConfigurationFieldStatus = SearchConfigurationFieldStatus.PRESERVED,
-    candidate_value_kind: SearchConfigurationValueKind = SearchConfigurationValueKind.COLLECTION,
+    extraction_field: SearchConfigurationExtractionField = (
+        SearchConfigurationExtractionField.REPEATED_PARAMETER
+    ),
+    candidate_field_status: SearchConfigurationFieldStatus = (
+        SearchConfigurationFieldStatus.PRESERVED
+    ),
+    candidate_value_kind: SearchConfigurationValueKind = (
+        SearchConfigurationValueKind.COLLECTION
+    ),
     warning_code: ParserWarningCode | SearchConfigurationWarningCode | None = None,
     warning_message: str | None = None,
     profile: ParserCompatibilityProfile | None = None,
@@ -801,21 +1037,29 @@ def _apa07_multivalue_fixture(
 ) -> SyntheticFixtureCase:
     effective_profile = profile if profile is not None else _PROFILE_SEARCH_CONFIGURATION
     effective_request = request if request is not None else _REQUEST_MULTIVALUE_SAFE_NORMALIZATION
-    effective_transport = transport if transport is not None else _TRANSPORT_MULTIVALUE_SAFE_NORMALIZATION
+    effective_transport = (
+        transport if transport is not None else _TRANSPORT_MULTIVALUE_SAFE_NORMALIZATION
+    )
     effective_source_reference = (
-        source_reference if source_reference is not None else _MULTIVALUE_SAFE_NORMALIZATION_SOURCE_REFERENCE
+        source_reference
+        if source_reference is not None
+        else _MULTIVALUE_SAFE_NORMALIZATION_SOURCE_REFERENCE
     )
     effective_source_boundary_outcome = (
-        source_boundary_outcome if source_boundary_outcome is not None else _MULTIVALUE_SAFE_NORMALIZATION_BOUNDARY
+        source_boundary_outcome
+        if source_boundary_outcome is not None
+        else _MULTIVALUE_SAFE_NORMALIZATION_BOUNDARY
     )
-    warnings = ()
-    if warning_code is not None and warning_message is not None:
-        warnings = (
+    warnings: tuple[ParserWarning, ...] = (
+        (
             ParserWarning(
                 code=warning_code,
                 message=warning_message,
             ),
         )
+        if warning_code is not None and warning_message is not None
+        else ()
+    )
     normalization = _multivalue_normalization_outcome(
         f"{fixture_id}::normalization",
         parameter_key,
@@ -938,7 +1182,14 @@ def _search_configuration_fixture(
     fixture_id: str,
     summary: str,
     *,
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus = ParserOutcomeStatus.USABLE_RESPONSE,
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | SourceBoundaryStatus
+    ) = ParserOutcomeStatus.USABLE_RESPONSE,
     evidence_suffix: str,
     profile: ParserCompatibilityProfile | None = None,
     request: ParserRequestEnvelope | None = None,
@@ -959,9 +1210,13 @@ def _search_configuration_fixture(
     effective_profile = profile if profile is not None else _PROFILE_SEARCH_CONFIGURATION
     effective_request = request if request is not None else _REQUEST_SEARCH_CONFIGURATION
     effective_transport = transport if transport is not None else _TRANSPORT_SEARCH_CONFIGURATION
-    effective_source_reference = source_reference if source_reference is not None else _SEARCH_CONFIG_SOURCE_REFERENCE
+    effective_source_reference = (
+        source_reference if source_reference is not None else _SEARCH_CONFIG_SOURCE_REFERENCE
+    )
     effective_source_boundary_outcome = (
-        source_boundary_outcome if source_boundary_outcome is not None else _SEARCH_CONFIG_SOURCE_BOUNDARY
+        source_boundary_outcome
+        if source_boundary_outcome is not None
+        else _SEARCH_CONFIG_SOURCE_BOUNDARY
     )
     search_configuration_evidence = _search_configuration_evidence(
         f"fx-apa06-evidence-{evidence_suffix}",
@@ -1017,7 +1272,14 @@ def _listing_page(
     transport: TransportOutcomeReference,
     profile: ParserCompatibilityProfile,
     *,
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus,
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | SourceBoundaryStatus
+    ),
     candidate: NormalizedListingCandidate | None = None,
     card: ListingCardCandidate | None = None,
     evidence_suffix: str,
@@ -1055,7 +1317,14 @@ def _listing_batch(
     transport: TransportOutcomeReference,
     profile: ParserCompatibilityProfile,
     *,
-    status: ParserOutcomeStatus | TransportOutcomeStatus | ReferenceOutcomeStatus,
+    status: (
+        ParserOutcomeStatus
+        | TransportOutcomeStatus
+        | ReferenceOutcomeStatus
+        | CompatibilityProfileLifecycleStatus
+        | CompatibilityChangeClass
+        | SourceBoundaryStatus
+    ),
     page_outcomes: tuple[ListingPageParseOutcome, ...],
     evidence_suffix: str,
     warnings: tuple[ParserWarning, ...] = (),
@@ -1336,12 +1605,8 @@ _PROFILE_STALE_REFERENCE = _profile(
     lifecycle_status=CompatibilityProfileLifecycleStatus.STALE,
     reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
     evidence_suffix="apa03-stale-reference",
-    supported_extraction_claims=(
-        "stale profile blocks clean empty without current proof",
-    ),
-    unsupported_extraction_claims=(
-        "clean empty current proof",
-    ),
+    supported_extraction_claims=("stale profile blocks clean empty without current proof",),
+    unsupported_extraction_claims=("clean empty current proof",),
     required_fields=("profile_id", "semantic_version", "reference_ids"),
     completeness_rules=("stale profiles cannot be treated as current",),
     warning_mappings=("REFERENCE_CHANGED->STALE_PROFILE_BLOCKED",),
@@ -1723,7 +1988,9 @@ _RULE_HTTP_200_NON_EMPTY_NOT_ENOUGH = _classification_rule(
     required_transport_statuses=(TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,),
     required_provider_evidence_classes=(ProviderResponseEvidenceClass.BODY_PRESENT_UNCLASSIFIED,),
     required_response_completeness_statuses=(ResponseCompletenessStatus.UNVERIFIED,),
-    notes=("HTTP 200 / non-empty body / parseable body / recognized substring alone is insufficient",),
+    notes=(
+        "HTTP 200 / non-empty body / parseable body / recognized substring alone is insufficient",
+    ),
 )
 
 _REQUEST_TIER1 = _request(
@@ -2092,22 +2359,55 @@ _TRANSPORT_INTERNAL_OBSERVATION = _transport(
     evidence_reference_suffix="apa03-internal-observation",
 )
 
-_CARD_TIER1 = _usable_listing_card("fx-apa02-card-tier1", evidence_suffix="tier1")
-_CARD_CURRENT_REFERENCE = _usable_listing_card(
+_CARD_TIER1 = _listing_card(
+    "fx-apa02-card-tier1",
+    field_candidates=_tier_1_listing_field_candidates("tier1", _PROFILE_TIER1),
+    evidence_suffix="tier1",
+)
+_CARD_CURRENT_REFERENCE = _listing_card(
     "fx-apa03-card-current-reference",
+    field_candidates=_tier_1_listing_field_candidates(
+        "apa03-current-reference", _PROFILE_CURRENT_REFERENCE
+    ),
     evidence_suffix="apa03-current-reference",
 )
-_CARD_OPTIONAL_PHONE = _usable_listing_card(
+_CARD_OPTIONAL_PHONE = _listing_card(
     "fx-apa02-card-optional-phone",
+    field_candidates=(
+        *_tier_1_listing_field_candidates("optional-phone", _PROFILE_OPTIONAL),
+        *_tier_3_phone_field_candidates(
+            "optional-phone",
+            _PROFILE_OPTIONAL,
+            availability=ListingFieldAvailability.PROOF_GATED,
+        ),
+    ),
     evidence_suffix="optional-phone",
-    phone=None,
 )
-_CARD_OPTIONAL_UNAVAILABLE = _usable_listing_card(
+_CARD_OPTIONAL_UNAVAILABLE = _listing_card(
     "fx-apa02-card-optional-unavailable",
+    field_candidates=(
+        *_tier_1_listing_field_candidates("optional-unavailable", _PROFILE_OPTIONAL),
+        *_tier_2_detail_field_candidates(
+            "optional-unavailable",
+            _PROFILE_OPTIONAL,
+            availability=ListingFieldAvailability.PROVEN_UNAVAILABLE,
+        ),
+    ),
     evidence_suffix="optional-unavailable",
-    seller=None,
-    seller_rating=None,
-    description=None,
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SELLER_UNAVAILABLE,
+            message="seller evidence unavailable in synthetic case",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.RATING_UNAVAILABLE,
+            message="rating evidence unavailable in synthetic case",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.DESCRIPTION_UNAVAILABLE,
+            message="description evidence unavailable in synthetic case",
+        ),
+    ),
 )
 
 _LISTING_TIER1 = _listing_candidate(
@@ -2129,20 +2429,7 @@ _LISTING_OPTIONAL_UNAVAILABLE = _listing_candidate(
     "fx-apa02-listing-optional-unavailable",
     _CARD_OPTIONAL_UNAVAILABLE,
     evidence_suffix="optional-unavailable",
-    warnings=(
-        ParserWarning(
-            code=ParserWarningCode.SELLER_UNAVAILABLE,
-            message="seller evidence unavailable in synthetic case",
-        ),
-        ParserWarning(
-            code=ParserWarningCode.RATING_UNAVAILABLE,
-            message="rating evidence unavailable in synthetic case",
-        ),
-        ParserWarning(
-            code=ParserWarningCode.DESCRIPTION_UNAVAILABLE,
-            message="description evidence unavailable in synthetic case",
-        ),
-    ),
+    warnings=_CARD_OPTIONAL_UNAVAILABLE.warnings,
 )
 
 _PAGE_TIER1 = _listing_page(
@@ -2303,6 +2590,405 @@ _PAGE_CURRENT_REFERENCE = _listing_page(
     candidate=_LISTING_CURRENT_REFERENCE,
     card=_CARD_CURRENT_REFERENCE,
     evidence_suffix="apa03-current-reference",
+)
+
+_CARD_APA08_TIER1_PROVEN = _listing_card(
+    "fx-apa08-card-tier1-proven",
+    field_candidates=_tier_1_listing_field_candidates(
+        "apa08-tier1-proven", _PROFILE_CURRENT_REFERENCE
+    ),
+    evidence_suffix="apa08-tier1-proven",
+)
+_LISTING_APA08_TIER1_PROVEN = _listing_candidate(
+    "fx-apa08-listing-tier1-proven",
+    _CARD_APA08_TIER1_PROVEN,
+    evidence_suffix="apa08-tier1-proven",
+)
+
+_CARD_APA08_OPTIONAL_DETAIL_UNAVAILABLE = _listing_card(
+    "fx-apa08-card-optional-detail-fields-unavailable",
+    field_candidates=(
+        *_tier_1_listing_field_candidates(
+            "apa08-optional-detail-fields-unavailable", _PROFILE_CURRENT_REFERENCE
+        ),
+        *_tier_2_detail_field_candidates(
+            "apa08-optional-detail-fields-unavailable",
+            _PROFILE_CURRENT_REFERENCE,
+            availability=ListingFieldAvailability.PROVEN_UNAVAILABLE,
+        ),
+    ),
+    evidence_suffix="apa08-optional-detail-fields-unavailable",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.DESCRIPTION_UNAVAILABLE,
+            message="description evidence unavailable in synthetic case",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.SELLER_UNAVAILABLE,
+            message="seller evidence unavailable in synthetic case",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.RATING_UNAVAILABLE,
+            message="rating evidence unavailable in synthetic case",
+        ),
+    ),
+)
+_LISTING_APA08_OPTIONAL_DETAIL_UNAVAILABLE = _listing_candidate(
+    "fx-apa08-listing-optional-detail-fields-unavailable",
+    _CARD_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    evidence_suffix="apa08-optional-detail-fields-unavailable",
+    warnings=_CARD_APA08_OPTIONAL_DETAIL_UNAVAILABLE.warnings,
+)
+
+_CARD_APA08_PHONE_VALUE_PROOF_GATED = _listing_card(
+    "fx-apa08-card-phone-value-proof-gated",
+    field_candidates=(
+        *_tier_1_listing_field_candidates(
+            "apa08-phone-value-proof-gated", _PROFILE_CURRENT_REFERENCE
+        ),
+        *_tier_3_phone_field_candidates(
+            "apa08-phone-value-proof-gated",
+            _PROFILE_CURRENT_REFERENCE,
+            availability=ListingFieldAvailability.PROOF_GATED,
+        ),
+    ),
+    evidence_suffix="apa08-phone-value-proof-gated",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PHONE_UNAVAILABLE,
+            message="phone value remains proof-gated and empty",
+        ),
+    ),
+)
+_LISTING_APA08_PHONE_VALUE_PROOF_GATED = _listing_candidate(
+    "fx-apa08-listing-phone-value-proof-gated",
+    _CARD_APA08_PHONE_VALUE_PROOF_GATED,
+    evidence_suffix="apa08-phone-value-proof-gated",
+    warnings=_CARD_APA08_PHONE_VALUE_PROOF_GATED.warnings,
+)
+
+_AMBIGUOUS_APA08_FIELD = _listing_field_candidate(
+    "fx-apa08-ambiguous-seller-rating",
+    ListingFieldFamily.SELLER_RATING,
+    ListingFieldTier.TIER_2_LISTING_DETAIL,
+    ListingFieldAvailability.AMBIGUOUS,
+    ListingFieldQuality.UNVERIFIED,
+    compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+    evidence_suffix="apa08-optional-field-ambiguous-warning",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.FIELD_CANDIDATE_OPTIONAL,
+            message="ambiguous field candidate remains explicit",
+        ),
+    ),
+)
+_CARD_APA08_OPTIONAL_FIELD_AMBIGUOUS = _listing_card(
+    "fx-apa08-card-optional-field-ambiguous-warning",
+    field_candidates=(
+        *_tier_1_listing_field_candidates(
+            "apa08-optional-field-ambiguous-warning", _PROFILE_CURRENT_REFERENCE
+        ),
+        _AMBIGUOUS_APA08_FIELD,
+    ),
+    evidence_suffix="apa08-optional-field-ambiguous-warning",
+    warnings=_AMBIGUOUS_APA08_FIELD.warnings,
+)
+_LISTING_APA08_OPTIONAL_FIELD_AMBIGUOUS = _listing_candidate(
+    "fx-apa08-listing-optional-field-ambiguous-warning",
+    _CARD_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    evidence_suffix="apa08-optional-field-ambiguous-warning",
+    status=ListingCandidateStatus.AMBIGUOUS,
+    warnings=_CARD_APA08_OPTIONAL_FIELD_AMBIGUOUS.warnings,
+)
+
+_FIELD_PROVENANCE_REQUIRED_FIELD = _listing_field_candidate(
+    "fx-apa08-field-provenance-required-seller",
+    ListingFieldFamily.SELLER,
+    ListingFieldTier.TIER_2_LISTING_DETAIL,
+    ListingFieldAvailability.PROVEN_AVAILABLE,
+    ListingFieldQuality.PROFILE_PROVEN,
+    value="Synthetic seller",
+    compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+    evidence_suffix="apa08-field-provenance-required",
+)
+_CARD_APA08_FIELD_PROVENANCE_REQUIRED = _listing_card(
+    "fx-apa08-card-field-provenance-required",
+    field_candidates=(
+        *_tier_1_listing_field_candidates(
+            "apa08-field-provenance-required", _PROFILE_CURRENT_REFERENCE
+        ),
+        _FIELD_PROVENANCE_REQUIRED_FIELD,
+    ),
+    evidence_suffix="apa08-field-provenance-required",
+)
+_LISTING_APA08_FIELD_PROVENANCE_REQUIRED = _listing_candidate(
+    "fx-apa08-listing-field-provenance-required",
+    _CARD_APA08_FIELD_PROVENANCE_REQUIRED,
+    evidence_suffix="apa08-field-provenance-required",
+)
+
+_CARD_APA08_NO_SCAN_NEWNESS_MUTATION = _listing_card(
+    "fx-apa08-card-no-scan-newness-mutation",
+    field_candidates=_tier_1_listing_field_candidates(
+        "apa08-no-scan-newness-mutation", _PROFILE_CURRENT_REFERENCE
+    ),
+    evidence_suffix="apa08-no-scan-newness-mutation",
+)
+_LISTING_APA08_NO_SCAN_NEWNESS_MUTATION = _listing_candidate(
+    "fx-apa08-listing-no-scan-newness-mutation",
+    _CARD_APA08_NO_SCAN_NEWNESS_MUTATION,
+    evidence_suffix="apa08-no-scan-newness-mutation",
+)
+
+_CARD_APA08_NO_RAW_PROVIDER_PAYLOAD = _listing_card(
+    "fx-apa08-card-no-raw-provider-payload",
+    field_candidates=_tier_1_listing_field_candidates(
+        "apa08-no-raw-provider-payload", _PROFILE_CURRENT_REFERENCE
+    ),
+    evidence_suffix="apa08-no-raw-provider-payload",
+)
+_LISTING_APA08_NO_RAW_PROVIDER_PAYLOAD = _listing_candidate(
+    "fx-apa08-listing-no-raw-provider-payload",
+    _CARD_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    evidence_suffix="apa08-no-raw-provider-payload",
+)
+
+_REQUEST_APA08_TIER1_PROVEN = _request(
+    "fx-apa08-request-tier1-proven",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::apa08::tier1-proven",
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_APA08_TIER1_PROVEN = _transport(
+    "fx-apa08-transport-tier1-proven",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_APA08_TIER1_PROVEN.request_id,
+    response_reference="response::apa08::tier1-proven",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa08-tier1-proven",
+)
+_ATTEMPT_APA08_TIER1_PROVEN = _usable_attempt(
+    "fx-apa08-attempt-tier1-proven",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_APA08_TIER1_PROVEN,
+    _TRANSPORT_APA08_TIER1_PROVEN,
+    evidence_suffix="apa08-tier1-proven",
+)
+_PAGE_APA08_TIER1_PROVEN = _listing_page(
+    "fx-apa08-page-tier1-proven",
+    _REQUEST_APA08_TIER1_PROVEN,
+    _TRANSPORT_APA08_TIER1_PROVEN,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate=_LISTING_APA08_TIER1_PROVEN,
+    card=_CARD_APA08_TIER1_PROVEN,
+    evidence_suffix="apa08-tier1-proven",
+)
+
+_REQUEST_APA08_OPTIONAL_DETAIL_UNAVAILABLE = _request(
+    "fx-apa08-request-optional-detail-fields-unavailable",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::apa08::optional-detail-fields-unavailable",
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_APA08_OPTIONAL_DETAIL_UNAVAILABLE = _transport(
+    "fx-apa08-transport-optional-detail-fields-unavailable",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_APA08_OPTIONAL_DETAIL_UNAVAILABLE.request_id,
+    response_reference="response::apa08::optional-detail-fields-unavailable",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa08-optional-detail-fields-unavailable",
+)
+_ATTEMPT_APA08_OPTIONAL_DETAIL_UNAVAILABLE = _usable_attempt(
+    "fx-apa08-attempt-optional-detail-fields-unavailable",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    _TRANSPORT_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    evidence_suffix="apa08-optional-detail-fields-unavailable",
+    warnings=_CARD_APA08_OPTIONAL_DETAIL_UNAVAILABLE.warnings,
+)
+_PAGE_APA08_OPTIONAL_DETAIL_UNAVAILABLE = _listing_page(
+    "fx-apa08-page-optional-detail-fields-unavailable",
+    _REQUEST_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    _TRANSPORT_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate=_LISTING_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    card=_CARD_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    evidence_suffix="apa08-optional-detail-fields-unavailable",
+    warnings=_CARD_APA08_OPTIONAL_DETAIL_UNAVAILABLE.warnings,
+)
+
+_REQUEST_APA08_PHONE_VALUE_PROOF_GATED = _request(
+    "fx-apa08-request-phone-value-proof-gated",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::apa08::phone-value-proof-gated",
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_APA08_PHONE_VALUE_PROOF_GATED = _transport(
+    "fx-apa08-transport-phone-value-proof-gated",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_APA08_PHONE_VALUE_PROOF_GATED.request_id,
+    response_reference="response::apa08::phone-value-proof-gated",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa08-phone-value-proof-gated",
+)
+_ATTEMPT_APA08_PHONE_VALUE_PROOF_GATED = _usable_attempt(
+    "fx-apa08-attempt-phone-value-proof-gated",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_APA08_PHONE_VALUE_PROOF_GATED,
+    _TRANSPORT_APA08_PHONE_VALUE_PROOF_GATED,
+    evidence_suffix="apa08-phone-value-proof-gated",
+    warnings=_CARD_APA08_PHONE_VALUE_PROOF_GATED.warnings,
+)
+_PAGE_APA08_PHONE_VALUE_PROOF_GATED = _listing_page(
+    "fx-apa08-page-phone-value-proof-gated",
+    _REQUEST_APA08_PHONE_VALUE_PROOF_GATED,
+    _TRANSPORT_APA08_PHONE_VALUE_PROOF_GATED,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate=_LISTING_APA08_PHONE_VALUE_PROOF_GATED,
+    card=_CARD_APA08_PHONE_VALUE_PROOF_GATED,
+    evidence_suffix="apa08-phone-value-proof-gated",
+    warnings=_CARD_APA08_PHONE_VALUE_PROOF_GATED.warnings,
+)
+
+_REQUEST_APA08_OPTIONAL_FIELD_AMBIGUOUS = _request(
+    "fx-apa08-request-optional-field-ambiguous-warning",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::apa08::optional-field-ambiguous-warning",
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_APA08_OPTIONAL_FIELD_AMBIGUOUS = _transport(
+    "fx-apa08-transport-optional-field-ambiguous-warning",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_APA08_OPTIONAL_FIELD_AMBIGUOUS.request_id,
+    response_reference="response::apa08::optional-field-ambiguous-warning",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa08-optional-field-ambiguous-warning",
+)
+_ATTEMPT_APA08_OPTIONAL_FIELD_AMBIGUOUS = _usable_attempt(
+    "fx-apa08-attempt-optional-field-ambiguous-warning",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    _TRANSPORT_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+    evidence_suffix="apa08-optional-field-ambiguous-warning",
+    warnings=_CARD_APA08_OPTIONAL_FIELD_AMBIGUOUS.warnings,
+)
+_PAGE_APA08_OPTIONAL_FIELD_AMBIGUOUS = _listing_page(
+    "fx-apa08-page-optional-field-ambiguous-warning",
+    _REQUEST_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    _TRANSPORT_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+    candidate=_LISTING_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    card=_CARD_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    evidence_suffix="apa08-optional-field-ambiguous-warning",
+    warnings=_CARD_APA08_OPTIONAL_FIELD_AMBIGUOUS.warnings,
+)
+
+_REQUEST_APA08_FIELD_PROVENANCE_REQUIRED = _request(
+    "fx-apa08-request-field-provenance-required",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::apa08::field-provenance-required",
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_APA08_FIELD_PROVENANCE_REQUIRED = _transport(
+    "fx-apa08-transport-field-provenance-required",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_APA08_FIELD_PROVENANCE_REQUIRED.request_id,
+    response_reference="response::apa08::field-provenance-required",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa08-field-provenance-required",
+)
+_ATTEMPT_APA08_FIELD_PROVENANCE_REQUIRED = _usable_attempt(
+    "fx-apa08-attempt-field-provenance-required",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_APA08_FIELD_PROVENANCE_REQUIRED,
+    _TRANSPORT_APA08_FIELD_PROVENANCE_REQUIRED,
+    evidence_suffix="apa08-field-provenance-required",
+)
+_PAGE_APA08_FIELD_PROVENANCE_REQUIRED = _listing_page(
+    "fx-apa08-page-field-provenance-required",
+    _REQUEST_APA08_FIELD_PROVENANCE_REQUIRED,
+    _TRANSPORT_APA08_FIELD_PROVENANCE_REQUIRED,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate=_LISTING_APA08_FIELD_PROVENANCE_REQUIRED,
+    card=_CARD_APA08_FIELD_PROVENANCE_REQUIRED,
+    evidence_suffix="apa08-field-provenance-required",
+)
+
+_REQUEST_APA08_NO_SCAN_NEWNESS_MUTATION = _request(
+    "fx-apa08-request-no-scan-newness-mutation",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::apa08::no-scan-newness-mutation",
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_APA08_NO_SCAN_NEWNESS_MUTATION = _transport(
+    "fx-apa08-transport-no-scan-newness-mutation",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_APA08_NO_SCAN_NEWNESS_MUTATION.request_id,
+    response_reference="response::apa08::no-scan-newness-mutation",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa08-no-scan-newness-mutation",
+)
+_ATTEMPT_APA08_NO_SCAN_NEWNESS_MUTATION = _usable_attempt(
+    "fx-apa08-attempt-no-scan-newness-mutation",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_APA08_NO_SCAN_NEWNESS_MUTATION,
+    _TRANSPORT_APA08_NO_SCAN_NEWNESS_MUTATION,
+    evidence_suffix="apa08-no-scan-newness-mutation",
+)
+_PAGE_APA08_NO_SCAN_NEWNESS_MUTATION = _listing_page(
+    "fx-apa08-page-no-scan-newness-mutation",
+    _REQUEST_APA08_NO_SCAN_NEWNESS_MUTATION,
+    _TRANSPORT_APA08_NO_SCAN_NEWNESS_MUTATION,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate=_LISTING_APA08_NO_SCAN_NEWNESS_MUTATION,
+    card=_CARD_APA08_NO_SCAN_NEWNESS_MUTATION,
+    evidence_suffix="apa08-no-scan-newness-mutation",
+)
+
+_REQUEST_APA08_NO_RAW_PROVIDER_PAYLOAD = _request(
+    "fx-apa08-request-no-raw-provider-payload",
+    _PROFILE_CURRENT_REFERENCE,
+    purpose="page-parse",
+    safe_source_reference="source::apa08::no-raw-provider-payload",
+    requested_page_numbers=(1,),
+)
+_TRANSPORT_APA08_NO_RAW_PROVIDER_PAYLOAD = _transport(
+    "fx-apa08-transport-no-raw-provider-payload",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_REQUEST_APA08_NO_RAW_PROVIDER_PAYLOAD.request_id,
+    response_reference="response::apa08::no-raw-provider-payload",
+    route_reference="route::synthetic",
+    evidence_reference_suffix="apa08-no-raw-provider-payload",
+)
+_ATTEMPT_APA08_NO_RAW_PROVIDER_PAYLOAD = _usable_attempt(
+    "fx-apa08-attempt-no-raw-provider-payload",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    _TRANSPORT_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    evidence_suffix="apa08-no-raw-provider-payload",
+)
+_PAGE_APA08_NO_RAW_PROVIDER_PAYLOAD = _listing_page(
+    "fx-apa08-page-no-raw-provider-payload",
+    _REQUEST_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    _TRANSPORT_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    candidate=_LISTING_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    card=_CARD_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    evidence_suffix="apa08-no-raw-provider-payload",
 )
 
 _COMPATIBILITY_CURRENT_REFERENCE = _compatibility_outcome(
@@ -3526,10 +4212,22 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             status=ParserOutcomeStatus.USABLE_RESPONSE,
             candidate=_listing_candidate(
                 "fx-apa05-listing-current-proof",
-                _usable_listing_card("fx-apa05-card-current-proof", evidence_suffix="apa05-current-proof"),
+                _listing_card(
+                    "fx-apa05-card-current-proof",
+                    field_candidates=_tier_1_listing_field_candidates(
+                        "apa05-current-proof", _PROFILE_CURRENT_REFERENCE
+                    ),
+                    evidence_suffix="apa05-current-proof",
+                ),
                 evidence_suffix="apa05-current-proof",
             ),
-            card=_usable_listing_card("fx-apa05-card-current-proof", evidence_suffix="apa05-current-proof"),
+            card=_listing_card(
+                "fx-apa05-card-current-proof",
+                field_candidates=_tier_1_listing_field_candidates(
+                    "apa05-current-proof", _PROFILE_CURRENT_REFERENCE
+                ),
+                evidence_suffix="apa05-current-proof",
+            ),
             evidence_suffix="apa05-current-proof",
         ),
     ),
@@ -3840,10 +4538,23 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             status=ParserOutcomeStatus.PARTIAL,
             candidate=_listing_candidate(
                 "fx-apa05-listing-partial-response",
-                _usable_listing_card("fx-apa05-card-partial-response", evidence_suffix="apa05-partial-response"),
+                _listing_card(
+                    "fx-apa05-card-partial-response",
+                    field_candidates=_tier_1_listing_field_candidates(
+                        "apa05-partial-response", _PROFILE_PARTIAL
+                    ),
+                    evidence_suffix="apa05-partial-response",
+                ),
+                evidence_suffix="apa05-partial-response",
+                status=ListingCandidateStatus.PARTIAL,
+            ),
+            card=_listing_card(
+                "fx-apa05-card-partial-response",
+                field_candidates=_tier_1_listing_field_candidates(
+                    "apa05-partial-response", _PROFILE_PARTIAL
+                ),
                 evidence_suffix="apa05-partial-response",
             ),
-            card=_usable_listing_card("fx-apa05-card-partial-response", evidence_suffix="apa05-partial-response"),
             evidence_suffix="apa05-partial-response",
             warnings=(
                 ParserWarning(
@@ -3893,10 +4604,23 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
                     status=ParserOutcomeStatus.PARTIAL,
                     candidate=_listing_candidate(
                         "fx-apa05-listing-partial-response",
-                        _usable_listing_card("fx-apa05-card-partial-response", evidence_suffix="apa05-partial-response"),
+                        _listing_card(
+                            "fx-apa05-card-partial-response",
+                            field_candidates=_tier_1_listing_field_candidates(
+                                "apa05-partial-response", _PROFILE_PARTIAL
+                            ),
+                            evidence_suffix="apa05-partial-response",
+                        ),
+                        evidence_suffix="apa05-partial-response",
+                        status=ListingCandidateStatus.PARTIAL,
+                    ),
+                    card=_listing_card(
+                        "fx-apa05-card-partial-response",
+                        field_candidates=_tier_1_listing_field_candidates(
+                            "apa05-partial-response", _PROFILE_PARTIAL
+                        ),
                         evidence_suffix="apa05-partial-response",
                     ),
-                    card=_usable_listing_card("fx-apa05-card-partial-response", evidence_suffix="apa05-partial-response"),
                     evidence_suffix="apa05-partial-response",
                     warnings=(
                         ParserWarning(
@@ -5097,13 +5821,71 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
             ),
         ),
     ),
+    _fixture(
+        "FX-APA08-TIER1-LISTING-CARD-PROVEN-001",
+        "tier 1 listing card is proven by current compatibility profile",
+        _REQUEST_APA08_TIER1_PROVEN,
+        _TRANSPORT_APA08_TIER1_PROVEN,
+        _ATTEMPT_APA08_TIER1_PROVEN,
+        listing_page_parse_outcome=_PAGE_APA08_TIER1_PROVEN,
+    ),
+    _fixture(
+        "FX-APA08-OPTIONAL-DETAIL-FIELDS-UNAVAILABLE-001",
+        "optional tier 2 fields remain unavailable without failing Tier 1 candidate",
+        _REQUEST_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+        _TRANSPORT_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+        _ATTEMPT_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+        listing_page_parse_outcome=_PAGE_APA08_OPTIONAL_DETAIL_UNAVAILABLE,
+    ),
+    _fixture(
+        "FX-APA08-PHONE-VALUE-PROOF-GATED-001",
+        "phone value remains proof-gated and empty",
+        _REQUEST_APA08_PHONE_VALUE_PROOF_GATED,
+        _TRANSPORT_APA08_PHONE_VALUE_PROOF_GATED,
+        _ATTEMPT_APA08_PHONE_VALUE_PROOF_GATED,
+        listing_page_parse_outcome=_PAGE_APA08_PHONE_VALUE_PROOF_GATED,
+    ),
+    _fixture(
+        "FX-APA08-OPTIONAL-FIELD-AMBIGUOUS-WARNING-001",
+        "ambiguous optional field emits an explicit warning",
+        _REQUEST_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+        _TRANSPORT_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+        _ATTEMPT_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+        listing_page_parse_outcome=_PAGE_APA08_OPTIONAL_FIELD_AMBIGUOUS,
+    ),
+    _fixture(
+        "FX-APA08-FIELD-PROVENANCE-REQUIRED-001",
+        "proven field requires evidence and current profile",
+        _REQUEST_APA08_FIELD_PROVENANCE_REQUIRED,
+        _TRANSPORT_APA08_FIELD_PROVENANCE_REQUIRED,
+        _ATTEMPT_APA08_FIELD_PROVENANCE_REQUIRED,
+        listing_page_parse_outcome=_PAGE_APA08_FIELD_PROVENANCE_REQUIRED,
+    ),
+    _fixture(
+        "FX-APA08-NO-SCAN-NEWNESS-MUTATION-001",
+        "listing normalization does not own scan newness mutation",
+        _REQUEST_APA08_NO_SCAN_NEWNESS_MUTATION,
+        _TRANSPORT_APA08_NO_SCAN_NEWNESS_MUTATION,
+        _ATTEMPT_APA08_NO_SCAN_NEWNESS_MUTATION,
+        listing_page_parse_outcome=_PAGE_APA08_NO_SCAN_NEWNESS_MUTATION,
+    ),
+    _fixture(
+        "FX-APA08-NO-RAW-PROVIDER-PAYLOAD-001",
+        "listing normalization carries no raw provider payload",
+        _REQUEST_APA08_NO_RAW_PROVIDER_PAYLOAD,
+        _TRANSPORT_APA08_NO_RAW_PROVIDER_PAYLOAD,
+        _ATTEMPT_APA08_NO_RAW_PROVIDER_PAYLOAD,
+        listing_page_parse_outcome=_PAGE_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    ),
 )
 
 SYNTHETIC_FIXTURE_BY_ID: Final[dict[str, SyntheticFixtureCase]] = {
     fixture.fixture_id: fixture for fixture in SYNTHETIC_FIXTURE_CASES
 }
 
-FIXTURE_IDS: Final[tuple[str, ...]] = tuple(fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_CASES)
+FIXTURE_IDS: Final[tuple[str, ...]] = tuple(
+    fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_CASES
+)
 
 __all__: Final[tuple[str, ...]] = (
     "SyntheticFixtureCase",

@@ -2,28 +2,44 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError, fields
 
+import pytest
+
 from mayak.modules import avito_parser_adapter
 from mayak.modules.avito_parser_adapter import (
+    MODULE_ID,
+    SYNTHETIC_FIXTURE_BY_ID,
     CompatibilityChangeClass,
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    ListingCandidateStatus,
+    ListingCardCandidate,
+    ListingFieldAvailability,
+    ListingFieldCandidate,
+    ListingFieldFamily,
+    ListingFieldQuality,
+    ListingFieldTier,
     MultivalueLossReason,
     MultivalueNormalizationOutcome,
     MultivalueNormalizationRule,
     MultivalueNormalizationStatus,
     MultivaluePreservationMode,
-    MODULE_ID,
+    NormalizedListingCandidate,
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
     ParserEvidenceReference,
     ParserOutcomeExplanation,
     ParserOutcomeStatus,
-    ParserResponseClassificationRule,
     ParserRequestEnvelope,
+    ParserResponseClassificationRule,
+    ParserSourceReference,
     ParserWarning,
     ParserWarningCode,
+    ProviderResponseEvidenceClass,
+    ReferenceOutcomeStatus,
+    ResponseCompletenessStatus,
+    ResponseRestrictionSignal,
     SearchConfigurationCandidate,
     SearchConfigurationEvidence,
     SearchConfigurationExtractionField,
@@ -32,12 +48,6 @@ from mayak.modules.avito_parser_adapter import (
     SearchConfigurationParameterCandidate,
     SearchConfigurationValueKind,
     SearchConfigurationWarningCode,
-    ProviderResponseEvidenceClass,
-    ReferenceOutcomeStatus,
-    ResponseCompletenessStatus,
-    ResponseRestrictionSignal,
-    SYNTHETIC_FIXTURE_BY_ID,
-    ParserSourceReference,
     SourceBoundaryOutcome,
     SourceBoundaryPolicyRequirement,
     SourceBoundaryRiskCode,
@@ -87,6 +97,11 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "MultivalueLossReason",
         "SearchConfigurationValueKind",
         "SearchConfigurationWarningCode",
+        "ListingFieldFamily",
+        "ListingFieldTier",
+        "ListingFieldAvailability",
+        "ListingFieldQuality",
+        "ListingCandidateStatus",
         "SourceBoundaryOutcome",
         "SourceBoundaryPolicyRequirement",
         "SourceBoundaryRiskCode",
@@ -95,6 +110,7 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ProviderResponseEvidenceClass",
         "ResponseCompletenessStatus",
         "ResponseRestrictionSignal",
+        "ListingFieldCandidate",
         "NormalizedListingCandidate",
         "ListingCardCandidate",
         "FIXTURE_IDS",
@@ -223,7 +239,10 @@ def test_contract_objects_are_frozen_and_safe() -> None:
     assert outcome.revalidation_triggers == (CompatibilityRevalidationTrigger.REFERENCE_CHANGED,)
     assert attempt.transport_response_classification is classification
     assert classification.classification_rule is classification_rule
-    assert classification.provider_response_evidence_class is ProviderResponseEvidenceClass.USABLE_RESPONSE
+    assert (
+        classification.provider_response_evidence_class
+        is ProviderResponseEvidenceClass.USABLE_RESPONSE
+    )
     assert classification.response_completeness_status is ResponseCompletenessStatus.COMPLETE
     assert classification.response_restriction_signal is ResponseRestrictionSignal.NONE
     assert {field.name for field in fields(ParserAttemptOutcome)} >= {
@@ -290,6 +309,242 @@ def test_contract_objects_are_frozen_and_safe() -> None:
         pass
     else:  # pragma: no cover - defensive
         raise AssertionError("ParserCompatibilityProfile must be frozen")
+
+
+def test_listing_contracts_are_frozen_and_authoritative_field_based() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::listing::evidence",
+        evidence_kind="listing-field",
+    )
+    profile = ParserCompatibilityProfile(
+        profile_id="fx::listing::profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only",),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        reference_status=ReferenceOutcomeStatus.CURRENT,
+        evidence_reference=evidence,
+        supported_extraction_claims=("tier-1 listing fields",),
+        unsupported_extraction_claims=("raw provider payload",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("current profile only",),
+        warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+        error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+        fixture_ids=("FX-APA08-TIER1-LISTING-CARD-PROVEN-001",),
+        acceptance_matrix_rows=("APA08::CURRENT::TIER1::ACCEPT",),
+        revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+        compatibility_change_classes=(CompatibilityChangeClass.COMPATIBLE,),
+    )
+    field = ListingFieldCandidate(
+        field_candidate_id="fx::listing::field::title",
+        field_family=ListingFieldFamily.TITLE,
+        tier=ListingFieldTier.TIER_1_SEARCH_RESULT,
+        availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+        quality=ListingFieldQuality.PROFILE_PROVEN,
+        value="Synthetic title",
+        compatibility_profile=profile,
+        evidence_references=(evidence,),
+    )
+    card = ListingCardCandidate(
+        listing_card_id="fx::listing::card::1",
+        field_candidates=(field,),
+        evidence_references=(evidence,),
+    )
+    candidate = NormalizedListingCandidate(
+        listing_candidate_id="fx::listing::candidate::1",
+        status=ListingCandidateStatus.USABLE,
+        card_candidate=card,
+        evidence_references=(evidence,),
+    )
+
+    assert field.field_family is ListingFieldFamily.TITLE
+    assert field.tier is ListingFieldTier.TIER_1_SEARCH_RESULT
+    assert field.availability is ListingFieldAvailability.PROVEN_AVAILABLE
+    assert field.value == "Synthetic title"
+    assert field.compatibility_profile is profile
+    assert card.field_candidates == (field,)
+    assert candidate.status is ListingCandidateStatus.USABLE
+    assert candidate.card_candidate is card
+    assert {field.name for field in fields(ListingFieldCandidate)} >= {
+        "field_candidate_id",
+        "field_family",
+        "tier",
+        "availability",
+        "quality",
+        "value",
+        "compatibility_profile",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(ListingCardCandidate)} >= {
+        "listing_card_id",
+        "field_candidates",
+        "warnings",
+        "evidence_references",
+    }
+    assert {field.name for field in fields(NormalizedListingCandidate)} >= {
+        "listing_candidate_id",
+        "status",
+        "card_candidate",
+        "warnings",
+        "evidence_references",
+    }
+    for forbidden in {"baseline", "newness", "anchor", "history", "notification", "route_state"}:
+        assert forbidden not in {field.name for field in fields(ListingCardCandidate)}
+        assert forbidden not in {field.name for field in fields(NormalizedListingCandidate)}
+    with pytest.raises(FrozenInstanceError):
+        field.value = "changed"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        card.field_candidates = ()  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        candidate.status = ListingCandidateStatus.BLOCKED  # type: ignore[misc]
+
+
+def test_listing_field_candidate_rejects_invalid_semantics() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::listing::invalid::evidence",
+        evidence_kind="listing-field",
+    )
+    current_profile = ParserCompatibilityProfile(
+        profile_id="fx::listing::current-profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only",),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        reference_status=ReferenceOutcomeStatus.CURRENT,
+        evidence_reference=evidence,
+        supported_extraction_claims=("tier-1 listing fields",),
+        unsupported_extraction_claims=("raw provider payload",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("current profile only",),
+        warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+        error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+        fixture_ids=("FX-APA08-TIER1-LISTING-CARD-PROVEN-001",),
+        acceptance_matrix_rows=("APA08::CURRENT::TIER1::ACCEPT",),
+        revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+        compatibility_change_classes=(CompatibilityChangeClass.COMPATIBLE,),
+    )
+    stale_profile = ParserCompatibilityProfile(
+        profile_id="fx::listing::stale-profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.STALE,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only",),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
+        evidence_reference=evidence,
+        supported_extraction_claims=("tier-1 listing fields",),
+        unsupported_extraction_claims=("raw provider payload",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("current profile only",),
+        warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+        error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+        fixture_ids=("FX-APA08-TIER1-LISTING-CARD-PROVEN-001",),
+        acceptance_matrix_rows=("APA08::STALE::TIER1::BLOCK",),
+        revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+        compatibility_change_classes=(CompatibilityChangeClass.BREAKING,),
+    )
+    disputed_profile = ParserCompatibilityProfile(
+        profile_id="fx::listing::disputed-profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.DISPUTED,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only",),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        reference_status=ReferenceOutcomeStatus.REFERENCE_DISPUTED,
+        evidence_reference=evidence,
+        supported_extraction_claims=("tier-1 listing fields",),
+        unsupported_extraction_claims=("raw provider payload",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("current profile only",),
+        warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+        error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+        fixture_ids=("FX-APA08-TIER1-LISTING-CARD-PROVEN-001",),
+        acceptance_matrix_rows=("APA08::DISPUTED::TIER1::BLOCK",),
+        revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+        compatibility_change_classes=(CompatibilityChangeClass.DISPUTED,),
+    )
+
+    with pytest.raises(ValueError):
+        ListingFieldCandidate(
+            field_candidate_id="fx::listing::field::wrong-tier",
+            field_family=ListingFieldFamily.TITLE,
+            tier=ListingFieldTier.TIER_2_LISTING_DETAIL,
+            availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+            quality=ListingFieldQuality.PROFILE_PROVEN,
+            value="Synthetic title",
+            compatibility_profile=current_profile,
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        ListingFieldCandidate(
+            field_candidate_id="fx::listing::field::value-on-unavailable",
+            field_family=ListingFieldFamily.SELLER,
+            tier=ListingFieldTier.TIER_2_LISTING_DETAIL,
+            availability=ListingFieldAvailability.PROVEN_UNAVAILABLE,
+            quality=ListingFieldQuality.UNVERIFIED,
+            value="Synthetic seller",
+            compatibility_profile=current_profile,
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        ListingFieldCandidate(
+            field_candidate_id="fx::listing::field::missing-evidence",
+            field_family=ListingFieldFamily.SELLER,
+            tier=ListingFieldTier.TIER_2_LISTING_DETAIL,
+            availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+            quality=ListingFieldQuality.PROFILE_PROVEN,
+            value="Synthetic seller",
+            compatibility_profile=current_profile,
+        )
+    with pytest.raises(ValueError):
+        ListingFieldCandidate(
+            field_candidate_id="fx::listing::field::missing-profile",
+            field_family=ListingFieldFamily.SELLER,
+            tier=ListingFieldTier.TIER_2_LISTING_DETAIL,
+            availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+            quality=ListingFieldQuality.PROFILE_PROVEN,
+            value="Synthetic seller",
+            evidence_references=(evidence,),
+        )
+    for invalid_profile in (stale_profile, disputed_profile):
+        with pytest.raises(ValueError):
+            ListingFieldCandidate(
+                field_candidate_id="fx::listing::field::invalid-profile",
+                field_family=ListingFieldFamily.SELLER,
+                tier=ListingFieldTier.TIER_2_LISTING_DETAIL,
+                availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+                quality=ListingFieldQuality.PROFILE_PROVEN,
+                value="Synthetic seller",
+                compatibility_profile=invalid_profile,
+                evidence_references=(evidence,),
+            )
+    with pytest.raises(ValueError):
+        ListingFieldCandidate(
+            field_candidate_id="fx::listing::field::blank-value",
+            field_family=ListingFieldFamily.PHONE_VALUE,
+            tier=ListingFieldTier.TIER_3_CONTACT,
+            availability=ListingFieldAvailability.PROOF_GATED,
+            quality=ListingFieldQuality.UNVERIFIED,
+            value=" ",
+            compatibility_profile=current_profile,
+            evidence_references=(evidence,),
+        )
 
 
 def test_search_configuration_contracts_are_evidence_bound_and_frozen() -> None:
@@ -446,8 +701,14 @@ def test_search_configuration_contracts_are_evidence_bound_and_frozen() -> None:
     assert evidence.compatibility_profile is profile
     assert parameter.repeated_values == ("value:synthetic-red", "value:synthetic-blue")
     assert parameter.multivalue_normalization is not None
-    assert parameter.multivalue_normalization.normalized_values == ("value:synthetic-red", "value:synthetic-blue")
-    assert parameter.multivalue_normalization.normalization_rule.status is MultivalueNormalizationStatus.PRESERVED
+    assert parameter.multivalue_normalization.normalized_values == (
+        "value:synthetic-red",
+        "value:synthetic-blue",
+    )
+    assert (
+        parameter.multivalue_normalization.normalization_rule.status
+        is MultivalueNormalizationStatus.PRESERVED
+    )
     assert candidate.parameter_candidates == (parameter,)
     assert candidate.field_status is SearchConfigurationFieldStatus.PRESERVED
     assert outcome.search_configuration_evidence is evidence
@@ -695,8 +956,20 @@ def test_source_boundary_contracts_keep_bounded_references_explicit() -> None:
 
 
 def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
-    assert len(SYNTHETIC_FIXTURE_BY_ID) == len({fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_BY_ID.values()})
+    assert len(SYNTHETIC_FIXTURE_BY_ID) == len(
+        {fixture.fixture_id for fixture in SYNTHETIC_FIXTURE_BY_ID.values()}
+    )
     avito_live_url_marker = "".join(("a", "v", "i", "t", "o", ".", "r", "u"))
     for fixture in SYNTHETIC_FIXTURE_BY_ID.values():
-        assert fixture.fixture_id.startswith(("FX-APA02-", "FX-APA03-", "FX-APA04-", "FX-APA05-", "FX-APA06-", "FX-APA07-"))
+        assert fixture.fixture_id.startswith(
+            (
+                "FX-APA02-",
+                "FX-APA03-",
+                "FX-APA04-",
+                "FX-APA05-",
+                "FX-APA06-",
+                "FX-APA07-",
+                "FX-APA08-",
+            )
+        )
         assert avito_live_url_marker not in fixture.summary.lower()

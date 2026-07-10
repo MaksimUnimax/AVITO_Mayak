@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
@@ -255,6 +255,77 @@ class SearchConfigurationValueKind(str, Enum):
     AMBIGUOUS = "AMBIGUOUS"
 
 
+class ListingFieldFamily(str, Enum):
+    """Canonical families for normalized listing fields."""
+
+    TITLE = "TITLE"
+    NORMALIZED_PRICE = "NORMALIZED_PRICE"
+    LISTING_URL = "LISTING_URL"
+    PREVIEW_IMAGE = "PREVIEW_IMAGE"
+    GEOGRAPHY = "GEOGRAPHY"
+    CATEGORY = "CATEGORY"
+    PUBLICATION_ORDER = "PUBLICATION_ORDER"
+    DESCRIPTION = "DESCRIPTION"
+    SELLER = "SELLER"
+    SELLER_RATING = "SELLER_RATING"
+    PHONE_AVAILABILITY = "PHONE_AVAILABILITY"
+    PHONE_VALUE = "PHONE_VALUE"
+
+
+class ListingFieldTier(str, Enum):
+    """Tier semantics for listing field provenance."""
+
+    TIER_1_SEARCH_RESULT = "TIER_1_SEARCH_RESULT"
+    TIER_2_LISTING_DETAIL = "TIER_2_LISTING_DETAIL"
+    TIER_3_CONTACT = "TIER_3_CONTACT"
+
+
+class ListingFieldAvailability(str, Enum):
+    """Evidence-aware availability states for listing fields."""
+
+    PROVEN_AVAILABLE = "PROVEN_AVAILABLE"
+    PROVEN_UNAVAILABLE = "PROVEN_UNAVAILABLE"
+    UNKNOWN = "UNKNOWN"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+    PROOF_GATED = "PROOF_GATED"
+    BLOCKED = "BLOCKED"
+
+
+class ListingFieldQuality(str, Enum):
+    """Quality classes for listing-field provenance."""
+
+    PROFILE_PROVEN = "PROFILE_PROVEN"
+    EVIDENCE_BOUND = "EVIDENCE_BOUND"
+    SYNTHETIC_ONLY = "SYNTHETIC_ONLY"
+    UNVERIFIED = "UNVERIFIED"
+
+
+class ListingCandidateStatus(str, Enum):
+    """Outcome classes for normalized listing candidates."""
+
+    USABLE = "USABLE"
+    PARTIAL = "PARTIAL"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+_LISTING_FIELD_TIER_BY_FAMILY: Final[dict[ListingFieldFamily, ListingFieldTier]] = {
+    ListingFieldFamily.TITLE: ListingFieldTier.TIER_1_SEARCH_RESULT,
+    ListingFieldFamily.NORMALIZED_PRICE: ListingFieldTier.TIER_1_SEARCH_RESULT,
+    ListingFieldFamily.LISTING_URL: ListingFieldTier.TIER_1_SEARCH_RESULT,
+    ListingFieldFamily.PREVIEW_IMAGE: ListingFieldTier.TIER_1_SEARCH_RESULT,
+    ListingFieldFamily.GEOGRAPHY: ListingFieldTier.TIER_1_SEARCH_RESULT,
+    ListingFieldFamily.CATEGORY: ListingFieldTier.TIER_1_SEARCH_RESULT,
+    ListingFieldFamily.PUBLICATION_ORDER: ListingFieldTier.TIER_1_SEARCH_RESULT,
+    ListingFieldFamily.DESCRIPTION: ListingFieldTier.TIER_2_LISTING_DETAIL,
+    ListingFieldFamily.SELLER: ListingFieldTier.TIER_2_LISTING_DETAIL,
+    ListingFieldFamily.SELLER_RATING: ListingFieldTier.TIER_2_LISTING_DETAIL,
+    ListingFieldFamily.PHONE_AVAILABILITY: ListingFieldTier.TIER_3_CONTACT,
+    ListingFieldFamily.PHONE_VALUE: ListingFieldTier.TIER_3_CONTACT,
+}
+
+
 class SourceReferenceKind(str, Enum):
     """Semantic kinds for bounded source references consumed by the parser."""
 
@@ -329,7 +400,12 @@ class ParserSourceReference:
     notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        for field_name in ("source_reference_id", "ownership", "bounded_value", "beacon_source_reference"):
+        for field_name in (
+            "source_reference_id",
+            "ownership",
+            "bounded_value",
+            "beacon_source_reference",
+        ):
             if not getattr(self, field_name).strip():
                 raise ValueError(f"{field_name} must not be blank")
         _validate_nonblank_values("header_references", self.header_references)
@@ -457,7 +533,9 @@ class ParserCompatibilityProfile:
     semantic_version: str | None = None
     profile_version: str | None = None
     lifecycle_status: CompatibilityProfileLifecycleStatus | None = None
-    authority_class: CompatibilityProfileAuthorityClass = CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
+    authority_class: CompatibilityProfileAuthorityClass = (
+        CompatibilityProfileAuthorityClass.OBSERVATION_ONLY
+    )
     authority_scope: tuple[str, ...] = ()
     reference_ids: tuple[str, ...] = ()
     primary_reference_repository: str | None = None
@@ -499,13 +577,17 @@ class ParserCompatibilityProfile:
             raise ValueError("semantic_version and profile_version must match")
 
         if self.lifecycle_status is None and self.reference_status is None:
-            object.__setattr__(self, "lifecycle_status", CompatibilityProfileLifecycleStatus.CURRENT)
+            object.__setattr__(
+                self, "lifecycle_status", CompatibilityProfileLifecycleStatus.CURRENT
+            )
             object.__setattr__(self, "reference_status", ReferenceOutcomeStatus.CURRENT)
         elif self.lifecycle_status is None:
+            reference_status = self.reference_status
+            assert reference_status is not None
             object.__setattr__(
                 self,
                 "lifecycle_status",
-                _lifecycle_status_from_reference_status(self.reference_status),
+                _lifecycle_status_from_reference_status(reference_status),
             )
         elif self.reference_status is None:
             object.__setattr__(
@@ -514,16 +596,24 @@ class ParserCompatibilityProfile:
                 _reference_status_from_lifecycle_status(self.lifecycle_status),
             )
         else:
-            expected_reference_status = _reference_status_from_lifecycle_status(self.lifecycle_status)
+            expected_reference_status = _reference_status_from_lifecycle_status(
+                self.lifecycle_status
+            )
             if self.reference_status is not expected_reference_status:
                 raise ValueError("reference_status must match lifecycle_status")
 
-        if self.primary_reference_repository is not None and not self.primary_reference_repository.strip():
+        if (
+            self.primary_reference_repository is not None
+            and not self.primary_reference_repository.strip()
+        ):
             raise ValueError("primary_reference_repository must not be blank")
         if self.primary_reference_commit is not None and not self.primary_reference_commit.strip():
             raise ValueError("primary_reference_commit must not be blank")
         if (self.primary_reference_repository is None) != (self.primary_reference_commit is None):
-            raise ValueError("primary_reference_repository and primary_reference_commit must be provided together")
+            raise ValueError(
+                "primary_reference_repository and primary_reference_commit "
+                "must be provided together"
+            )
 
         if self.supported_extraction_claims and not self.supported_shape_signatures:
             object.__setattr__(self, "supported_shape_signatures", self.supported_extraction_claims)
@@ -531,9 +621,13 @@ class ParserCompatibilityProfile:
             object.__setattr__(self, "supported_extraction_claims", self.supported_shape_signatures)
 
         if self.unsupported_extraction_claims and not self.unsupported_shape_signatures:
-            object.__setattr__(self, "unsupported_shape_signatures", self.unsupported_extraction_claims)
+            object.__setattr__(
+                self, "unsupported_shape_signatures", self.unsupported_extraction_claims
+            )
         if self.unsupported_shape_signatures and not self.unsupported_extraction_claims:
-            object.__setattr__(self, "unsupported_extraction_claims", self.unsupported_shape_signatures)
+            object.__setattr__(
+                self, "unsupported_extraction_claims", self.unsupported_shape_signatures
+            )
 
         for field_name, values in (
             ("authority_scope", self.authority_scope),
@@ -576,7 +670,13 @@ class ParserRequestEnvelope:
     requested_unit_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        for field_name in ("request_id", "contract_name", "contract_version", "producer", "purpose"):
+        for field_name in (
+            "request_id",
+            "contract_name",
+            "contract_version",
+            "producer",
+            "purpose",
+        ):
             if not getattr(self, field_name).strip():
                 raise ValueError(f"{field_name} must not be blank")
         if self.source_reference is not None and self.safe_source_reference is not None:
@@ -584,7 +684,9 @@ class ParserRequestEnvelope:
                 raise ValueError("safe_source_reference must match source_reference.bounded_value")
         if self.source_boundary_outcome is not None and self.source_reference is not None:
             if self.source_boundary_outcome.source_reference != self.source_reference:
-                raise ValueError("source_boundary_outcome.source_reference must match source_reference")
+                raise ValueError(
+                    "source_boundary_outcome.source_reference must match source_reference"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -620,7 +722,9 @@ class TransportResponseClassificationOutcome:
     transport_status: TransportOutcomeStatus | None = None
     parser_status: ParserOutcomeStatus | None = None
     reference_status: ReferenceOutcomeStatus | CompatibilityProfileLifecycleStatus | None = None
-    provider_response_evidence_class: ProviderResponseEvidenceClass = ProviderResponseEvidenceClass.UNCLASSIFIED
+    provider_response_evidence_class: ProviderResponseEvidenceClass = (
+        ProviderResponseEvidenceClass.UNCLASSIFIED
+    )
     response_completeness_status: ResponseCompletenessStatus = ResponseCompletenessStatus.UNVERIFIED
     response_restriction_signal: ResponseRestrictionSignal = ResponseRestrictionSignal.NONE
     classification_rule: ParserResponseClassificationRule | None = None
@@ -684,15 +788,28 @@ class ParserAttemptOutcome:
             classification = self.transport_response_classification
             if classification.transport_outcome is not None and self.transport_outcome is not None:
                 if classification.transport_outcome != self.transport_outcome:
-                    raise ValueError("transport_response_classification.transport_outcome must match transport_outcome")
-            if classification.transport_status is not None and classification.transport_status != self.transport_status:
-                raise ValueError("transport_response_classification.transport_status must match transport_status")
+                    raise ValueError(
+                        "transport_response_classification.transport_outcome "
+                        "must match transport_outcome"
+                    )
+            if (
+                classification.transport_status is not None
+                and classification.transport_status != self.transport_status
+            ):
+                raise ValueError(
+                    "transport_response_classification.transport_status must match transport_status"
+                )
             if classification.parser_status is not None and self.parser_status is not None:
                 if classification.parser_status != self.parser_status:
-                    raise ValueError("transport_response_classification.parser_status must match parser_status")
+                    raise ValueError(
+                        "transport_response_classification.parser_status must match parser_status"
+                    )
             if classification.reference_status is not None and self.reference_status is not None:
                 if classification.reference_status != self.reference_status:
-                    raise ValueError("transport_response_classification.reference_status must match reference_status")
+                    raise ValueError(
+                        "transport_response_classification.reference_status "
+                        "must match reference_status"
+                    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -796,7 +913,9 @@ class MultivalueNormalizationOutcome:
             if self.loss_reason is None:
                 raise ValueError("non-preserved normalization must declare a loss_reason")
             if self.normalized_values:
-                raise ValueError("non-preserved normalization must not silently emit normalized_values")
+                raise ValueError(
+                    "non-preserved normalization must not silently emit normalized_values"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -845,6 +964,74 @@ class SearchConfigurationCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class ListingFieldCandidate:
+    """Evidence-bound listing field candidate with explicit provenance."""
+
+    field_candidate_id: str
+    field_family: ListingFieldFamily
+    tier: ListingFieldTier
+    availability: ListingFieldAvailability
+    quality: ListingFieldQuality
+    value: str | None = None
+    compatibility_profile: ParserCompatibilityProfile | None = None
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.field_candidate_id.strip():
+            raise ValueError("field_candidate_id must not be blank")
+        if self.value is not None:
+            if not self.value.strip():
+                raise ValueError("value must not be blank")
+            if self.availability is not ListingFieldAvailability.PROVEN_AVAILABLE:
+                raise ValueError("value is only allowed when availability is PROVEN_AVAILABLE")
+        if self.availability is ListingFieldAvailability.PROVEN_AVAILABLE:
+            if not self.evidence_references:
+                raise ValueError("PROVEN_AVAILABLE field must declare evidence_references")
+            if self.compatibility_profile is None:
+                raise ValueError("PROVEN_AVAILABLE field must declare compatibility_profile")
+            if (
+                self.compatibility_profile.lifecycle_status
+                is not CompatibilityProfileLifecycleStatus.CURRENT
+            ):
+                raise ValueError("PROVEN_AVAILABLE field requires CURRENT compatibility_profile")
+        expected_tier = _LISTING_FIELD_TIER_BY_FAMILY[self.field_family]
+        if self.tier is not expected_tier:
+            raise ValueError("field_family and tier must match")
+        _validate_nonblank_values("notes", self.notes)
+
+
+@dataclass(frozen=True, slots=True)
+class ListingCardCandidate:
+    """Listing-card candidate whose authoritative content is field_candidates."""
+
+    listing_card_id: str
+    field_candidates: tuple[ListingFieldCandidate, ...] = ()
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.listing_card_id.strip():
+            raise ValueError("listing_card_id must not be blank")
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedListingCandidate:
+    """Normalized listing candidate with explicit status and card authority."""
+
+    listing_candidate_id: str
+    status: ListingCandidateStatus
+    card_candidate: ListingCardCandidate
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.listing_candidate_id.strip():
+            raise ValueError("listing_candidate_id must not be blank")
+
+
+@dataclass(frozen=True, slots=True)
 class SearchConfigurationExtractionOutcome:
     """Normalized search-configuration evidence for Scan handoff."""
 
@@ -876,48 +1063,17 @@ class SearchConfigurationExtractionOutcome:
             raise ValueError("extraction_id must not be blank")
         if self.search_configuration_evidence is not None:
             if self.search_configuration_evidence.request_envelope != self.request_envelope:
-                raise ValueError("search_configuration_evidence.request_envelope must match request_envelope")
-            if self.search_configuration_evidence.compatibility_profile != self.compatibility_profile:
-                raise ValueError("search_configuration_evidence.compatibility_profile must match compatibility_profile")
-
-
-@dataclass(frozen=True, slots=True)
-class ListingCardCandidate:
-    """Listing-card candidate with evidence-gated optional fields."""
-
-    listing_card_id: str
-    title: str | None = None
-    price_text: str | None = None
-    listing_url_reference: str | None = None
-    preview_image_reference: str | None = None
-    phone: str | None = None
-    seller: str | None = None
-    seller_rating: str | None = None
-    description: str | None = None
-    warnings: tuple[ParserWarning, ...] = ()
-    evidence_references: tuple[ParserEvidenceReference, ...] = ()
-
-    def __post_init__(self) -> None:
-        if not self.listing_card_id.strip():
-            raise ValueError("listing_card_id must not be blank")
-
-
-@dataclass(frozen=True, slots=True)
-class NormalizedListingCandidate:
-    """Normalized listing candidate whose card fields remain optional."""
-
-    listing_candidate_id: str
-    card_candidate: ListingCardCandidate
-    geography: str | None = None
-    category: str | None = None
-    publication_order_reference: str | None = None
-    sort_context_reference: str | None = None
-    warnings: tuple[ParserWarning, ...] = ()
-    evidence_references: tuple[ParserEvidenceReference, ...] = ()
-
-    def __post_init__(self) -> None:
-        if not self.listing_candidate_id.strip():
-            raise ValueError("listing_candidate_id must not be blank")
+                raise ValueError(
+                    "search_configuration_evidence.request_envelope must match request_envelope"
+                )
+            if (
+                self.search_configuration_evidence.compatibility_profile
+                != self.compatibility_profile
+            ):
+                raise ValueError(
+                    "search_configuration_evidence.compatibility_profile "
+                    "must match compatibility_profile"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1019,6 +1175,11 @@ __all__: Final[tuple[str, ...]] = (
     "MultivaluePreservationMode",
     "MultivalueLossReason",
     "SearchConfigurationValueKind",
+    "ListingFieldFamily",
+    "ListingFieldTier",
+    "ListingFieldAvailability",
+    "ListingFieldQuality",
+    "ListingCandidateStatus",
     "SourceReferenceKind",
     "SourceBoundaryStatus",
     "SourceBoundaryRiskCode",
@@ -1042,6 +1203,7 @@ __all__: Final[tuple[str, ...]] = (
     "SearchConfigurationParameterCandidate",
     "SearchConfigurationCandidate",
     "SearchConfigurationExtractionOutcome",
+    "ListingFieldCandidate",
     "ListingCardCandidate",
     "NormalizedListingCandidate",
     "ListingPageParseOutcome",
