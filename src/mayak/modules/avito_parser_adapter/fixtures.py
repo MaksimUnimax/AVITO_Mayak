@@ -18,13 +18,16 @@ from .contracts import (
     ListingFieldFamily,
     ListingFieldQuality,
     ListingFieldTier,
+    ListingOrderingEvidence,
     ListingPageParseOutcome,
+    ListingSortContextStatus,
     MultivalueLossReason,
     MultivalueNormalizationOutcome,
     MultivalueNormalizationRule,
     MultivalueNormalizationStatus,
     MultivaluePreservationMode,
     NormalizedListingCandidate,
+    ObservedListingPosition,
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
@@ -33,6 +36,7 @@ from .contracts import (
     ParserOutcomeStatus,
     ParserRequestEnvelope,
     ParserResponseClassificationRule,
+    ParserScanOrderingHandoff,
     ParserSourceReference,
     ParserWarning,
     ParserWarningCode,
@@ -40,6 +44,7 @@ from .contracts import (
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
+    ScanOrderingHandoffStatus,
     SearchConfigurationCandidate,
     SearchConfigurationEvidence,
     SearchConfigurationExtractionField,
@@ -452,6 +457,147 @@ def _listing_candidate(
             ),
         ),
     )
+
+
+def _observed_listing_position(
+    position_id: str,
+    listing_candidate_id: str,
+    observed_rank: int,
+    *,
+    evidence_suffix: str,
+    publication_order_signal_reference: str | None = None,
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> ObservedListingPosition:
+    return ObservedListingPosition(
+        position_id=position_id,
+        listing_candidate_id=listing_candidate_id,
+        observed_rank=observed_rank,
+        publication_order_signal_reference=publication_order_signal_reference,
+        warnings=warnings,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::{position_id}",
+                evidence_kind="observed-listing-position",
+                notes=(f"synthetic observed listing position {position_id}",),
+            ),
+        ),
+        notes=notes,
+    )
+
+
+def _listing_ordering_evidence(
+    ordering_evidence_id: str,
+    status: ListingSortContextStatus,
+    positions: tuple[ObservedListingPosition, ...],
+    *,
+    evidence_suffix: str,
+    sort_context_reference: str | None = None,
+    compatibility_profile: ParserCompatibilityProfile | None = None,
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> ListingOrderingEvidence:
+    return ListingOrderingEvidence(
+        ordering_evidence_id=ordering_evidence_id,
+        status=status,
+        positions=positions,
+        sort_context_reference=sort_context_reference,
+        compatibility_profile=compatibility_profile,
+        warnings=warnings,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::ordering",
+                evidence_kind="listing-ordering",
+                notes=(f"synthetic ordering evidence {ordering_evidence_id}",),
+            ),
+        ),
+        notes=notes,
+    )
+
+
+def _scan_ordering_handoff(
+    handoff_id: str,
+    page_id: str,
+    page_status: ParserOutcomeStatus,
+    ordering_evidence: ListingOrderingEvidence,
+    *,
+    status: ScanOrderingHandoffStatus,
+    evidence_suffix: str,
+    listing_candidate_ids: tuple[str, ...] | None = None,
+    warnings: tuple[ParserWarning, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> ParserScanOrderingHandoff:
+    if listing_candidate_ids is None:
+        listing_candidate_ids = tuple(
+            position.listing_candidate_id for position in ordering_evidence.positions
+        )
+    return ParserScanOrderingHandoff(
+        handoff_id=handoff_id,
+        page_id=page_id,
+        page_status=page_status,
+        status=status,
+        ordering_evidence=ordering_evidence,
+        listing_candidate_ids=listing_candidate_ids,
+        warnings=warnings,
+        evidence_references=(
+            ParserEvidenceReference(
+                reference_id=f"fx::{evidence_suffix}::handoff",
+                evidence_kind="scan-ordering-handoff",
+                notes=(f"synthetic scan ordering handoff {handoff_id}",),
+            ),
+        ),
+        notes=notes,
+    )
+
+
+def _apa09_listing_sequence(
+    evidence_suffix: str,
+    profile: ParserCompatibilityProfile,
+    *,
+    publication_order_signal_references: tuple[str | None, ...] = (None, None, None),
+) -> tuple[
+    tuple[ObservedListingPosition, ...],
+    tuple[ListingCardCandidate, ...],
+    tuple[NormalizedListingCandidate, ...],
+]:
+    positions: list[ObservedListingPosition] = []
+    cards: list[ListingCardCandidate] = []
+    candidates: list[NormalizedListingCandidate] = []
+    for index, publication_order_signal_reference in enumerate(
+        publication_order_signal_references, start=1
+    ):
+        field_evidence_suffix = f"{evidence_suffix}-{index}"
+        field = _listing_field_candidate(
+            f"fx-{evidence_suffix}-field-{index}",
+            ListingFieldFamily.TITLE,
+            ListingFieldTier.TIER_1_SEARCH_RESULT,
+            ListingFieldAvailability.PROVEN_AVAILABLE,
+            ListingFieldQuality.PROFILE_PROVEN,
+            value=f"Synthetic APA09 title {index}",
+            compatibility_profile=profile,
+            evidence_suffix=field_evidence_suffix,
+        )
+        card = _listing_card(
+            f"fx-{evidence_suffix}-card-{index}",
+            field_candidates=(field,),
+            evidence_suffix=field_evidence_suffix,
+        )
+        candidate = _listing_candidate(
+            f"fx-{evidence_suffix}-candidate-{index}",
+            card,
+            evidence_suffix=field_evidence_suffix,
+        )
+        position = _observed_listing_position(
+            f"fx-{evidence_suffix}-position-{index}",
+            candidate.listing_candidate_id,
+            index,
+            evidence_suffix=field_evidence_suffix,
+            publication_order_signal_reference=publication_order_signal_reference,
+        )
+        positions.append(position)
+        cards.append(card)
+        candidates.append(candidate)
+    return tuple(positions), tuple(cards), tuple(candidates)
 
 
 def _tier_2_detail_field_candidates(
@@ -997,9 +1143,7 @@ def _apa07_multivalue_fixture(
     parameter_field_status: SearchConfigurationFieldStatus = (
         SearchConfigurationFieldStatus.PRESERVED
     ),
-    parameter_value_kind: SearchConfigurationValueKind = (
-        SearchConfigurationValueKind.COLLECTION
-    ),
+    parameter_value_kind: SearchConfigurationValueKind = (SearchConfigurationValueKind.COLLECTION),
     candidate_id: str | None = None,
     extraction_field: SearchConfigurationExtractionField = (
         SearchConfigurationExtractionField.REPEATED_PARAMETER
@@ -1007,9 +1151,7 @@ def _apa07_multivalue_fixture(
     candidate_field_status: SearchConfigurationFieldStatus = (
         SearchConfigurationFieldStatus.PRESERVED
     ),
-    candidate_value_kind: SearchConfigurationValueKind = (
-        SearchConfigurationValueKind.COLLECTION
-    ),
+    candidate_value_kind: SearchConfigurationValueKind = (SearchConfigurationValueKind.COLLECTION),
     warning_code: ParserWarningCode | SearchConfigurationWarningCode | None = None,
     warning_message: str | None = None,
     profile: ParserCompatibilityProfile | None = None,
@@ -1280,21 +1422,29 @@ def _listing_page(
         | CompatibilityChangeClass
         | SourceBoundaryStatus
     ),
+    normalized_listing_candidates: tuple[NormalizedListingCandidate, ...] | None = None,
+    card_candidates: tuple[ListingCardCandidate, ...] | None = None,
     candidate: NormalizedListingCandidate | None = None,
     card: ListingCardCandidate | None = None,
+    ordering_evidence: ListingOrderingEvidence | None = None,
+    scan_ordering_handoff: ParserScanOrderingHandoff | None = None,
     evidence_suffix: str,
     warnings: tuple[ParserWarning, ...] = (),
 ) -> ListingPageParseOutcome:
-    normalized_candidates = () if candidate is None else (candidate,)
-    card_candidates = () if card is None else (card,)
+    if normalized_listing_candidates is None:
+        normalized_listing_candidates = () if candidate is None else (candidate,)
+    if card_candidates is None:
+        card_candidates = () if card is None else (card,)
     return ListingPageParseOutcome(
         page_id=page_id,
         request_envelope=request,
         transport_outcome=transport,
         status=status,
         compatibility_profile=profile,
-        normalized_listing_candidates=normalized_candidates,
+        normalized_listing_candidates=normalized_listing_candidates,
         card_candidates=card_candidates,
+        ordering_evidence=ordering_evidence,
+        scan_ordering_handoff=scan_ordering_handoff,
         warnings=warnings,
         evidence_references=(
             ParserEvidenceReference(
@@ -2591,6 +2741,13 @@ _PAGE_CURRENT_REFERENCE = _listing_page(
     card=_CARD_CURRENT_REFERENCE,
     evidence_suffix="apa03-current-reference",
 )
+_ATTEMPT_CURRENT_REFERENCE = _usable_attempt(
+    "fx-apa03-attempt-current-reference",
+    _PROFILE_CURRENT_REFERENCE,
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    evidence_suffix="apa03-current-reference",
+)
 
 _CARD_APA08_TIER1_PROVEN = _listing_card(
     "fx-apa08-card-tier1-proven",
@@ -3211,6 +3368,388 @@ _SEARCH_CONFIGURATION_CHANGED_REFERENCE = _search_configuration(
             message="changed reference commit requires revalidation",
         ),
     ),
+)
+
+_APA09_POSITIONS_STANDARD, _APA09_CARDS_STANDARD, _APA09_CANDIDATES_STANDARD = (
+    _apa09_listing_sequence(
+        "apa09-standard",
+        _PROFILE_CURRENT_REFERENCE,
+    )
+)
+_APA09_POSITIONS_PUBLICATION, _APA09_CARDS_PUBLICATION, _APA09_CANDIDATES_PUBLICATION = (
+    _apa09_listing_sequence(
+        "apa09-publication",
+        _PROFILE_CURRENT_REFERENCE,
+        publication_order_signal_references=(
+            "publication-order::apa09::1",
+            None,
+            "publication-order::apa09::3",
+        ),
+    )
+)
+
+_APA09_ORDERING_PROVEN = _listing_ordering_evidence(
+    "fx-apa09-ordering-proven",
+    ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+    _APA09_POSITIONS_STANDARD,
+    evidence_suffix="apa09-proven",
+    sort_context_reference="sort-context::apa09-newest-first",
+    compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.OBSERVED_LISTING_ORDER_PRESERVED,
+            message="observed listing order is preserved exactly",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.NEWEST_FIRST_SORT_PROVEN,
+            message="newest-first sort is proven by synthetic evidence",
+        ),
+    ),
+)
+_APA09_ORDERING_OBSERVED = _listing_ordering_evidence(
+    "fx-apa09-ordering-observed",
+    ListingSortContextStatus.UNPROVEN,
+    _APA09_POSITIONS_STANDARD,
+    evidence_suffix="apa09-observed",
+    compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.OBSERVED_LISTING_ORDER_PRESERVED,
+            message="observed listing order is preserved exactly",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.SORT_CONTEXT_UNPROVEN,
+            message="observed order is preserved but newest-first remains unproven",
+        ),
+    ),
+)
+_APA09_ORDERING_MISSING = _listing_ordering_evidence(
+    "fx-apa09-ordering-missing",
+    ListingSortContextStatus.MISSING,
+    _APA09_POSITIONS_STANDARD,
+    evidence_suffix="apa09-missing",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.OBSERVED_LISTING_ORDER_PRESERVED,
+            message="observed listing order is preserved exactly",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.SORT_CONTEXT_MISSING,
+            message="sort context evidence is missing",
+        ),
+    ),
+)
+_APA09_ORDERING_AMBIGUOUS = _listing_ordering_evidence(
+    "fx-apa09-ordering-ambiguous",
+    ListingSortContextStatus.AMBIGUOUS,
+    _APA09_POSITIONS_STANDARD,
+    evidence_suffix="apa09-ambiguous",
+    sort_context_reference="sort-context::apa09-ambiguous",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SORT_CONTEXT_AMBIGUOUS,
+            message="sort context evidence is ambiguous",
+        ),
+    ),
+)
+_APA09_ORDERING_UNSUPPORTED = _listing_ordering_evidence(
+    "fx-apa09-ordering-unsupported",
+    ListingSortContextStatus.UNSUPPORTED,
+    _APA09_POSITIONS_STANDARD,
+    evidence_suffix="apa09-unsupported",
+    sort_context_reference="sort-context::apa09-unsupported",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SORT_CONTEXT_UNSUPPORTED,
+            message="sort context evidence is unsupported",
+        ),
+    ),
+)
+_APA09_ORDERING_UNPROVEN = _listing_ordering_evidence(
+    "fx-apa09-ordering-unproven",
+    ListingSortContextStatus.UNPROVEN,
+    _APA09_POSITIONS_STANDARD,
+    evidence_suffix="apa09-unproven",
+    sort_context_reference="sort-context::apa09-unproven",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SORT_CONTEXT_UNPROVEN,
+            message="sort context evidence is present but unproven",
+        ),
+    ),
+)
+_APA09_ORDERING_CONTRADICTORY = _listing_ordering_evidence(
+    "fx-apa09-ordering-contradictory",
+    ListingSortContextStatus.CONTRADICTORY,
+    _APA09_POSITIONS_STANDARD,
+    evidence_suffix="apa09-contradictory",
+    sort_context_reference="sort-context::apa09-contradictory",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SORT_CONTEXT_CONTRADICTORY,
+            message="sort context evidence is contradictory",
+        ),
+    ),
+)
+_APA09_ORDERING_PUBLICATION_OPTIONAL = _listing_ordering_evidence(
+    "fx-apa09-ordering-publication-optional",
+    ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+    _APA09_POSITIONS_PUBLICATION,
+    evidence_suffix="apa09-publication",
+    sort_context_reference="sort-context::apa09-newest-first-publication",
+    compatibility_profile=_PROFILE_CURRENT_REFERENCE,
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PUBLICATION_ORDER_SIGNAL_UNAVAILABLE,
+            message="publication-order signal is optional and not invented for missing positions",
+        ),
+        ParserWarning(
+            code=ParserWarningCode.NEWEST_FIRST_SORT_PROVEN,
+            message="newest-first sort is proven by synthetic evidence",
+        ),
+    ),
+)
+
+_HANDOFF_APA09_PROVEN = _scan_ordering_handoff(
+    "fx-apa09-handoff-proven",
+    "fx-apa09-page-proven",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_PROVEN,
+    status=ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+    evidence_suffix="apa09-proven",
+)
+_HANDOFF_APA09_OBSERVED = _scan_ordering_handoff(
+    "fx-apa09-handoff-observed",
+    "fx-apa09-page-observed",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_OBSERVED,
+    status=ScanOrderingHandoffStatus.BLOCKED_SORT_UNPROVEN,
+    evidence_suffix="apa09-observed",
+)
+_HANDOFF_APA09_MISSING = _scan_ordering_handoff(
+    "fx-apa09-handoff-missing",
+    "fx-apa09-page-missing",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_MISSING,
+    status=ScanOrderingHandoffStatus.BLOCKED_SORT_MISSING,
+    evidence_suffix="apa09-missing",
+)
+_HANDOFF_APA09_AMBIGUOUS = _scan_ordering_handoff(
+    "fx-apa09-handoff-ambiguous",
+    "fx-apa09-page-ambiguous",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_AMBIGUOUS,
+    status=ScanOrderingHandoffStatus.BLOCKED_SORT_AMBIGUOUS,
+    evidence_suffix="apa09-ambiguous",
+)
+_HANDOFF_APA09_UNSUPPORTED = _scan_ordering_handoff(
+    "fx-apa09-handoff-unsupported",
+    "fx-apa09-page-unsupported",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_UNSUPPORTED,
+    status=ScanOrderingHandoffStatus.BLOCKED_SORT_UNSUPPORTED,
+    evidence_suffix="apa09-unsupported",
+)
+_HANDOFF_APA09_UNPROVEN = _scan_ordering_handoff(
+    "fx-apa09-handoff-unproven",
+    "fx-apa09-page-unproven",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_UNPROVEN,
+    status=ScanOrderingHandoffStatus.BLOCKED_SORT_UNPROVEN,
+    evidence_suffix="apa09-unproven",
+)
+_HANDOFF_APA09_CONTRADICTORY = _scan_ordering_handoff(
+    "fx-apa09-handoff-contradictory",
+    "fx-apa09-page-contradictory",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_CONTRADICTORY,
+    status=ScanOrderingHandoffStatus.BLOCKED_SORT_CONTRADICTORY,
+    evidence_suffix="apa09-contradictory",
+)
+_HANDOFF_APA09_PUBLICATION_OPTIONAL = _scan_ordering_handoff(
+    "fx-apa09-handoff-publication-optional",
+    "fx-apa09-page-publication-optional",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_PUBLICATION_OPTIONAL,
+    status=ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+    evidence_suffix="apa09-publication",
+)
+_HANDOFF_APA09_PARTIAL = _scan_ordering_handoff(
+    "fx-apa09-handoff-partial",
+    "fx-apa09-page-partial",
+    ParserOutcomeStatus.PARTIAL,
+    _APA09_ORDERING_PROVEN,
+    status=ScanOrderingHandoffStatus.BLOCKED_PAGE_NOT_USABLE,
+    evidence_suffix="apa09-partial",
+)
+_HANDOFF_APA09_NO_NEWNESS = _scan_ordering_handoff(
+    "fx-apa09-handoff-no-newness",
+    "fx-apa09-page-no-newness",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_PROVEN,
+    status=ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+    evidence_suffix="apa09-no-newness",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SCAN_NEWNESS_DECISION_NOT_PERFORMED,
+            message="Parser does not decide baseline or newness",
+        ),
+    ),
+    notes=("newness decisions belong to Scan",),
+)
+_HANDOFF_APA09_NO_ANCHOR = _scan_ordering_handoff(
+    "fx-apa09-handoff-no-anchor",
+    "fx-apa09-page-no-anchor",
+    ParserOutcomeStatus.USABLE_RESPONSE,
+    _APA09_ORDERING_PROVEN,
+    status=ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+    evidence_suffix="apa09-no-anchor",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.SCAN_ANCHOR_STATE_NOT_MUTATED,
+            message="Parser does not mutate anchor state",
+        ),
+    ),
+    notes=("anchor state belongs to Scan",),
+)
+
+_PAGE_APA09_PROVEN = _listing_page(
+    "fx-apa09-page-proven",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_PROVEN,
+    scan_ordering_handoff=_HANDOFF_APA09_PROVEN,
+    evidence_suffix="apa09-proven",
+)
+_PAGE_APA09_OBSERVED = _listing_page(
+    "fx-apa09-page-observed",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_OBSERVED,
+    scan_ordering_handoff=_HANDOFF_APA09_OBSERVED,
+    evidence_suffix="apa09-observed",
+)
+_PAGE_APA09_MISSING = _listing_page(
+    "fx-apa09-page-missing",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_MISSING,
+    scan_ordering_handoff=_HANDOFF_APA09_MISSING,
+    evidence_suffix="apa09-missing",
+)
+_PAGE_APA09_AMBIGUOUS = _listing_page(
+    "fx-apa09-page-ambiguous",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_AMBIGUOUS,
+    scan_ordering_handoff=_HANDOFF_APA09_AMBIGUOUS,
+    evidence_suffix="apa09-ambiguous",
+)
+_PAGE_APA09_UNSUPPORTED = _listing_page(
+    "fx-apa09-page-unsupported",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_UNSUPPORTED,
+    scan_ordering_handoff=_HANDOFF_APA09_UNSUPPORTED,
+    evidence_suffix="apa09-unsupported",
+)
+_PAGE_APA09_UNPROVEN = _listing_page(
+    "fx-apa09-page-unproven",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_UNPROVEN,
+    scan_ordering_handoff=_HANDOFF_APA09_UNPROVEN,
+    evidence_suffix="apa09-unproven",
+)
+_PAGE_APA09_CONTRADICTORY = _listing_page(
+    "fx-apa09-page-contradictory",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_CONTRADICTORY,
+    scan_ordering_handoff=_HANDOFF_APA09_CONTRADICTORY,
+    evidence_suffix="apa09-contradictory",
+)
+_PAGE_APA09_PUBLICATION_OPTIONAL = _listing_page(
+    "fx-apa09-page-publication-optional",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_PUBLICATION,
+    card_candidates=_APA09_CARDS_PUBLICATION,
+    ordering_evidence=_APA09_ORDERING_PUBLICATION_OPTIONAL,
+    scan_ordering_handoff=_HANDOFF_APA09_PUBLICATION_OPTIONAL,
+    evidence_suffix="apa09-publication",
+)
+_PAGE_APA09_PARTIAL = _listing_page(
+    "fx-apa09-page-partial",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.PARTIAL,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_PROVEN,
+    scan_ordering_handoff=_HANDOFF_APA09_PARTIAL,
+    evidence_suffix="apa09-partial",
+    warnings=(
+        ParserWarning(
+            code=ParserWarningCode.PARTIAL_PAGE,
+            message="partial page remains outside Parser comparison eligibility",
+        ),
+    ),
+)
+_PAGE_APA09_NO_NEWNESS = _listing_page(
+    "fx-apa09-page-no-newness",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_PROVEN,
+    scan_ordering_handoff=_HANDOFF_APA09_NO_NEWNESS,
+    evidence_suffix="apa09-no-newness",
+)
+_PAGE_APA09_NO_ANCHOR = _listing_page(
+    "fx-apa09-page-no-anchor",
+    _REQUEST_CURRENT_REFERENCE,
+    _TRANSPORT_CURRENT_REFERENCE,
+    _PROFILE_CURRENT_REFERENCE,
+    status=ParserOutcomeStatus.USABLE_RESPONSE,
+    normalized_listing_candidates=_APA09_CANDIDATES_STANDARD,
+    card_candidates=_APA09_CARDS_STANDARD,
+    ordering_evidence=_APA09_ORDERING_PROVEN,
+    scan_ordering_handoff=_HANDOFF_APA09_NO_ANCHOR,
+    evidence_suffix="apa09-no-anchor",
 )
 
 SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
@@ -5876,6 +6415,94 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         _TRANSPORT_APA08_NO_RAW_PROVIDER_PAYLOAD,
         _ATTEMPT_APA08_NO_RAW_PROVIDER_PAYLOAD,
         listing_page_parse_outcome=_PAGE_APA08_NO_RAW_PROVIDER_PAYLOAD,
+    ),
+    _fixture(
+        "FX-APA09-NEWEST-FIRST-PROVEN-001",
+        "listing ordering evidence proves newest-first within a current profile",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_PROVEN,
+    ),
+    _fixture(
+        "FX-APA09-OBSERVED-ORDER-PRESERVED-001",
+        "observed listing order is preserved even when newest-first remains unproven",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_OBSERVED,
+    ),
+    _fixture(
+        "FX-APA09-SORT-CONTEXT-MISSING-BLOCKS-001",
+        "missing sort context blocks comparison eligibility",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_MISSING,
+    ),
+    _fixture(
+        "FX-APA09-SORT-CONTEXT-AMBIGUOUS-BLOCKS-001",
+        "ambiguous sort context blocks comparison eligibility",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_AMBIGUOUS,
+    ),
+    _fixture(
+        "FX-APA09-SORT-CONTEXT-UNSUPPORTED-BLOCKS-001",
+        "unsupported sort context blocks comparison eligibility",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_UNSUPPORTED,
+    ),
+    _fixture(
+        "FX-APA09-SORT-CONTEXT-UNPROVEN-BLOCKS-001",
+        "unproven sort context blocks comparison eligibility",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_UNPROVEN,
+    ),
+    _fixture(
+        "FX-APA09-SORT-CONTEXT-CONTRADICTORY-BLOCKS-001",
+        "contradictory sort context blocks comparison eligibility",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_CONTRADICTORY,
+    ),
+    _fixture(
+        "FX-APA09-PUBLICATION-SIGNAL-OPTIONAL-001",
+        "publication-order signal remains optional and uninvented",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_PUBLICATION_OPTIONAL,
+    ),
+    _fixture(
+        "FX-APA09-PARTIAL-PAGE-NOT-COMPARISON-ELIGIBLE-001",
+        "partial page is not comparison eligible",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_PARTIAL,
+    ),
+    _fixture(
+        "FX-APA09-NO-SCAN-NEWNESS-DECISION-001",
+        "Parser does not decide scan newness",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_NO_NEWNESS,
+    ),
+    _fixture(
+        "FX-APA09-NO-ANCHOR-STATE-MUTATION-001",
+        "Parser does not mutate scan anchor state",
+        _REQUEST_CURRENT_REFERENCE,
+        _TRANSPORT_CURRENT_REFERENCE,
+        _ATTEMPT_CURRENT_REFERENCE,
+        listing_page_parse_outcome=_PAGE_APA09_NO_ANCHOR,
     ),
 )
 

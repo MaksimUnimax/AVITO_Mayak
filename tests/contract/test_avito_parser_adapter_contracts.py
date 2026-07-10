@@ -19,12 +19,16 @@ from mayak.modules.avito_parser_adapter import (
     ListingFieldFamily,
     ListingFieldQuality,
     ListingFieldTier,
+    ListingOrderingEvidence,
+    ListingPageParseOutcome,
+    ListingSortContextStatus,
     MultivalueLossReason,
     MultivalueNormalizationOutcome,
     MultivalueNormalizationRule,
     MultivalueNormalizationStatus,
     MultivaluePreservationMode,
     NormalizedListingCandidate,
+    ObservedListingPosition,
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
@@ -33,6 +37,7 @@ from mayak.modules.avito_parser_adapter import (
     ParserOutcomeStatus,
     ParserRequestEnvelope,
     ParserResponseClassificationRule,
+    ParserScanOrderingHandoff,
     ParserSourceReference,
     ParserWarning,
     ParserWarningCode,
@@ -40,6 +45,7 @@ from mayak.modules.avito_parser_adapter import (
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
+    ScanOrderingHandoffStatus,
     SearchConfigurationCandidate,
     SearchConfigurationEvidence,
     SearchConfigurationExtractionField,
@@ -102,6 +108,8 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ListingFieldAvailability",
         "ListingFieldQuality",
         "ListingCandidateStatus",
+        "ListingSortContextStatus",
+        "ScanOrderingHandoffStatus",
         "SourceBoundaryOutcome",
         "SourceBoundaryPolicyRequirement",
         "SourceBoundaryRiskCode",
@@ -113,6 +121,9 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "ListingFieldCandidate",
         "NormalizedListingCandidate",
         "ListingCardCandidate",
+        "ObservedListingPosition",
+        "ListingOrderingEvidence",
+        "ParserScanOrderingHandoff",
         "FIXTURE_IDS",
         "SYNTHETIC_FIXTURE_CASES",
         "SYNTHETIC_FIXTURE_BY_ID",
@@ -403,6 +414,172 @@ def test_listing_contracts_are_frozen_and_authoritative_field_based() -> None:
         card.field_candidates = ()  # type: ignore[misc]
     with pytest.raises(FrozenInstanceError):
         candidate.status = ListingCandidateStatus.BLOCKED  # type: ignore[misc]
+
+
+def test_listing_ordering_contracts_are_frozen_and_boundary_only() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::ordering::evidence",
+        evidence_kind="listing-ordering",
+    )
+    profile = ParserCompatibilityProfile(
+        profile_id="fx::ordering::profile",
+        semantic_version="2026.07.09",
+        profile_version="2026.07.09",
+        lifecycle_status=CompatibilityProfileLifecycleStatus.CURRENT,
+        authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+        authority_scope=("observation-only",),
+        reference_ids=("AVITO-PRIMARY-PARSER-001",),
+        primary_reference_repository="Duff89/parser_avito",
+        primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+        reference_status=ReferenceOutcomeStatus.CURRENT,
+        evidence_reference=evidence,
+        supported_extraction_claims=("listing order evidence only",),
+        unsupported_extraction_claims=("baseline/newness/anchor ownership",),
+        required_fields=("profile_id", "semantic_version", "reference_ids"),
+        completeness_rules=("current profile only",),
+        warning_mappings=("REFERENCE_CHANGED->COMPATIBILITY_REVALIDATION_REQUIRED",),
+        error_mappings=("REFERENCE_WITHDRAWN->WITHDRAWN_PROFILE_BLOCKED",),
+        fixture_ids=("FX-APA09-NEWEST-FIRST-PROVEN-001",),
+        acceptance_matrix_rows=("APA09::CURRENT::TIER1::ACCEPT",),
+        revalidation_triggers=(CompatibilityRevalidationTrigger.REFERENCE_CHANGED,),
+        compatibility_change_classes=(CompatibilityChangeClass.COMPATIBLE,),
+    )
+    positions = (
+        ObservedListingPosition(
+            position_id="fx::ordering::position::1",
+            listing_candidate_id="fx::ordering::candidate::1",
+            observed_rank=1,
+            evidence_references=(evidence,),
+        ),
+        ObservedListingPosition(
+            position_id="fx::ordering::position::2",
+            listing_candidate_id="fx::ordering::candidate::2",
+            observed_rank=2,
+            evidence_references=(evidence,),
+        ),
+    )
+    ordering = ListingOrderingEvidence(
+        ordering_evidence_id="fx::ordering::ordering",
+        status=ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+        positions=positions,
+        sort_context_reference="sort-context::ordering::proven",
+        compatibility_profile=profile,
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.NEWEST_FIRST_SORT_PROVEN,
+                message="newest-first sort is proven by synthetic evidence",
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+    cards = (
+        ListingCardCandidate(
+            listing_card_id="fx::ordering::card::1", evidence_references=(evidence,)
+        ),
+        ListingCardCandidate(
+            listing_card_id="fx::ordering::card::2", evidence_references=(evidence,)
+        ),
+    )
+    candidates = (
+        NormalizedListingCandidate(
+            listing_candidate_id="fx::ordering::candidate::1",
+            status=ListingCandidateStatus.USABLE,
+            card_candidate=cards[0],
+            evidence_references=(evidence,),
+        ),
+        NormalizedListingCandidate(
+            listing_candidate_id="fx::ordering::candidate::2",
+            status=ListingCandidateStatus.USABLE,
+            card_candidate=cards[1],
+            evidence_references=(evidence,),
+        ),
+    )
+    handoff = ParserScanOrderingHandoff(
+        handoff_id="fx::ordering::handoff",
+        page_id="fx::ordering::page",
+        page_status=ParserOutcomeStatus.USABLE_RESPONSE,
+        status=ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+        ordering_evidence=ordering,
+        listing_candidate_ids=("fx::ordering::candidate::1", "fx::ordering::candidate::2"),
+        evidence_references=(evidence,),
+    )
+    page = ListingPageParseOutcome(
+        page_id="fx::ordering::page",
+        request_envelope=ParserRequestEnvelope(
+            request_id="fx::ordering::request",
+            contract_name="mayak.avito.parser.request",
+            contract_version="1.0",
+            producer="mayak.tests.synthetic",
+            purpose="listing-ordering",
+            compatibility_profile=profile,
+            safe_source_reference="bounded-source-value",
+            configuration_revision_id="cfg::ordering::001",
+            safe_transport_reference="transport::ordering",
+        ),
+        transport_outcome=TransportOutcomeReference(
+            transport_reference_id="fx::ordering::transport",
+            transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+            request_reference="fx::ordering::request",
+            response_reference="response::ordering",
+            route_reference="route::ordering",
+        ),
+        status=ParserOutcomeStatus.USABLE_RESPONSE,
+        compatibility_profile=profile,
+        normalized_listing_candidates=candidates,
+        card_candidates=cards,
+        ordering_evidence=ordering,
+        scan_ordering_handoff=handoff,
+        evidence_references=(evidence,),
+    )
+
+    assert {field.name for field in fields(ObservedListingPosition)} >= {
+        "position_id",
+        "listing_candidate_id",
+        "observed_rank",
+        "publication_order_signal_reference",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(ListingOrderingEvidence)} >= {
+        "ordering_evidence_id",
+        "status",
+        "positions",
+        "sort_context_reference",
+        "compatibility_profile",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(ParserScanOrderingHandoff)} >= {
+        "handoff_id",
+        "page_id",
+        "page_status",
+        "status",
+        "ordering_evidence",
+        "listing_candidate_ids",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(ListingPageParseOutcome)} >= {
+        "ordering_evidence",
+        "scan_ordering_handoff",
+    }
+    for forbidden in {"baseline", "newness", "anchor", "notification", "is_new"}:
+        assert forbidden not in {field.name for field in fields(ObservedListingPosition)}
+        assert forbidden not in {field.name for field in fields(ListingOrderingEvidence)}
+        assert forbidden not in {field.name for field in fields(ParserScanOrderingHandoff)}
+        assert forbidden not in {field.name for field in fields(ListingPageParseOutcome)}
+
+    assert page.ordering_evidence is ordering
+    assert page.scan_ordering_handoff is handoff
+    with pytest.raises(FrozenInstanceError):
+        positions[0].observed_rank = 2  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        ordering.status = ListingSortContextStatus.MISSING  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        handoff.status = ScanOrderingHandoffStatus.BLOCKED_PAGE_NOT_USABLE  # type: ignore[misc]
 
 
 def test_listing_field_candidate_rejects_invalid_semantics() -> None:
@@ -952,6 +1129,16 @@ def test_source_boundary_contracts_keep_bounded_references_explicit() -> None:
         "SOURCE_URL_POLICY_MISSING",
         "SOURCE_URL_MALFORMED",
         "SOURCE_URL_UNSUPPORTED",
+        "OBSERVED_LISTING_ORDER_PRESERVED",
+        "NEWEST_FIRST_SORT_PROVEN",
+        "SORT_CONTEXT_MISSING",
+        "SORT_CONTEXT_AMBIGUOUS",
+        "SORT_CONTEXT_UNSUPPORTED",
+        "SORT_CONTEXT_UNPROVEN",
+        "SORT_CONTEXT_CONTRADICTORY",
+        "PUBLICATION_ORDER_SIGNAL_UNAVAILABLE",
+        "SCAN_NEWNESS_DECISION_NOT_PERFORMED",
+        "SCAN_ANCHOR_STATE_NOT_MUTATED",
     }
 
 
@@ -970,6 +1157,7 @@ def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
                 "FX-APA06-",
                 "FX-APA07-",
                 "FX-APA08-",
+                "FX-APA09-",
             )
         )
         assert avito_live_url_marker not in fixture.summary.lower()

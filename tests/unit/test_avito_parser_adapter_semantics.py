@@ -12,16 +12,27 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
     ListingCandidateStatus,
+    ListingCardCandidate,
     ListingFieldAvailability,
     ListingFieldFamily,
+    ListingOrderingEvidence,
+    ListingPageParseOutcome,
+    ListingSortContextStatus,
     MultivalueLossReason,
     MultivalueNormalizationStatus,
+    NormalizedListingCandidate,
+    ObservedListingPosition,
+    ParserCompatibilityProfile,
+    ParserEvidenceReference,
     ParserOutcomeStatus,
+    ParserRequestEnvelope,
+    ParserScanOrderingHandoff,
     ParserWarningCode,
     ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
+    ScanOrderingHandoffStatus,
     SearchConfigurationExtractionField,
     SearchConfigurationFieldStatus,
     SearchConfigurationValueKind,
@@ -30,6 +41,7 @@ from mayak.modules.avito_parser_adapter import (
     SourceBoundaryRiskCode,
     SourceBoundaryStatus,
     SourceReferenceKind,
+    TransportOutcomeReference,
     TransportOutcomeStatus,
 )
 
@@ -89,6 +101,25 @@ def test_parser_adapter_status_enums_are_stable() -> None:
         "REFERENCE_DISPUTED",
         "CURRENT",
     ]
+    assert [member.value for member in ListingSortContextStatus] == [
+        "PROVEN_NEWEST_FIRST",
+        "MISSING",
+        "AMBIGUOUS",
+        "UNSUPPORTED",
+        "UNPROVEN",
+        "CONTRADICTORY",
+    ]
+    assert [member.value for member in ScanOrderingHandoffStatus] == [
+        "COMPARISON_ELIGIBLE",
+        "BLOCKED_PAGE_NOT_USABLE",
+        "BLOCKED_SORT_MISSING",
+        "BLOCKED_SORT_AMBIGUOUS",
+        "BLOCKED_SORT_UNSUPPORTED",
+        "BLOCKED_SORT_UNPROVEN",
+        "BLOCKED_SORT_CONTRADICTORY",
+        "BLOCKED_PROFILE_NOT_CURRENT",
+        "BLOCKED_ORDER_MISMATCH",
+    ]
 
 
 def test_apa03_compatibility_enums_are_stable() -> None:
@@ -123,6 +154,21 @@ def test_apa03_compatibility_enums_are_stable() -> None:
         "PROVIDER_STRUCTURE_UNPROVEN_OR_STALE",
         "OWNER_DECISION_CHANGED",
     ]
+
+
+def test_apa09_warning_codes_are_explicit_and_stable() -> None:
+    assert {member.value for member in ParserWarningCode} >= {
+        "OBSERVED_LISTING_ORDER_PRESERVED",
+        "NEWEST_FIRST_SORT_PROVEN",
+        "SORT_CONTEXT_MISSING",
+        "SORT_CONTEXT_AMBIGUOUS",
+        "SORT_CONTEXT_UNSUPPORTED",
+        "SORT_CONTEXT_UNPROVEN",
+        "SORT_CONTEXT_CONTRADICTORY",
+        "PUBLICATION_ORDER_SIGNAL_UNAVAILABLE",
+        "SCAN_NEWNESS_DECISION_NOT_PERFORMED",
+        "SCAN_ANCHOR_STATE_NOT_MUTATED",
+    }
 
 
 def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
@@ -216,6 +262,17 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA08-FIELD-PROVENANCE-REQUIRED-001",
         "FX-APA08-NO-SCAN-NEWNESS-MUTATION-001",
         "FX-APA08-NO-RAW-PROVIDER-PAYLOAD-001",
+        "FX-APA09-NEWEST-FIRST-PROVEN-001",
+        "FX-APA09-OBSERVED-ORDER-PRESERVED-001",
+        "FX-APA09-SORT-CONTEXT-MISSING-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-AMBIGUOUS-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-UNSUPPORTED-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-UNPROVEN-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-CONTRADICTORY-BLOCKS-001",
+        "FX-APA09-PUBLICATION-SIGNAL-OPTIONAL-001",
+        "FX-APA09-PARTIAL-PAGE-NOT-COMPARISON-ELIGIBLE-001",
+        "FX-APA09-NO-SCAN-NEWNESS-DECISION-001",
+        "FX-APA09-NO-ANCHOR-STATE-MUTATION-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
 
@@ -379,6 +436,504 @@ def test_repeated_filters_and_sort_context_are_preserved_as_evidence() -> None:
     )
     assert sort_case.listing_page_parse_outcome is not None
     assert sort_case.listing_page_parse_outcome.warnings[0].code.value == "SORT_CONTEXT_AMBIGUOUS"
+
+
+def test_apa09_listing_ordering_fixtures_preserve_order_and_gate_comparison() -> None:
+    apa09_ids = {fixture_id for fixture_id in FIXTURE_IDS if fixture_id.startswith("FX-APA09-")}
+    assert apa09_ids == {
+        "FX-APA09-NEWEST-FIRST-PROVEN-001",
+        "FX-APA09-OBSERVED-ORDER-PRESERVED-001",
+        "FX-APA09-SORT-CONTEXT-MISSING-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-AMBIGUOUS-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-UNSUPPORTED-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-UNPROVEN-BLOCKS-001",
+        "FX-APA09-SORT-CONTEXT-CONTRADICTORY-BLOCKS-001",
+        "FX-APA09-PUBLICATION-SIGNAL-OPTIONAL-001",
+        "FX-APA09-PARTIAL-PAGE-NOT-COMPARISON-ELIGIBLE-001",
+        "FX-APA09-NO-SCAN-NEWNESS-DECISION-001",
+        "FX-APA09-NO-ANCHOR-STATE-MUTATION-001",
+    }
+    assert len(apa09_ids) == 11
+
+    cases = (
+        (
+            "FX-APA09-NEWEST-FIRST-PROVEN-001",
+            ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+            ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+        ),
+        (
+            "FX-APA09-OBSERVED-ORDER-PRESERVED-001",
+            ListingSortContextStatus.UNPROVEN,
+            ScanOrderingHandoffStatus.BLOCKED_SORT_UNPROVEN,
+        ),
+        (
+            "FX-APA09-SORT-CONTEXT-MISSING-BLOCKS-001",
+            ListingSortContextStatus.MISSING,
+            ScanOrderingHandoffStatus.BLOCKED_SORT_MISSING,
+        ),
+        (
+            "FX-APA09-SORT-CONTEXT-AMBIGUOUS-BLOCKS-001",
+            ListingSortContextStatus.AMBIGUOUS,
+            ScanOrderingHandoffStatus.BLOCKED_SORT_AMBIGUOUS,
+        ),
+        (
+            "FX-APA09-SORT-CONTEXT-UNSUPPORTED-BLOCKS-001",
+            ListingSortContextStatus.UNSUPPORTED,
+            ScanOrderingHandoffStatus.BLOCKED_SORT_UNSUPPORTED,
+        ),
+        (
+            "FX-APA09-SORT-CONTEXT-UNPROVEN-BLOCKS-001",
+            ListingSortContextStatus.UNPROVEN,
+            ScanOrderingHandoffStatus.BLOCKED_SORT_UNPROVEN,
+        ),
+        (
+            "FX-APA09-SORT-CONTEXT-CONTRADICTORY-BLOCKS-001",
+            ListingSortContextStatus.CONTRADICTORY,
+            ScanOrderingHandoffStatus.BLOCKED_SORT_CONTRADICTORY,
+        ),
+        (
+            "FX-APA09-PUBLICATION-SIGNAL-OPTIONAL-001",
+            ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+            ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+        ),
+        (
+            "FX-APA09-PARTIAL-PAGE-NOT-COMPARISON-ELIGIBLE-001",
+            ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+            ScanOrderingHandoffStatus.BLOCKED_PAGE_NOT_USABLE,
+        ),
+        (
+            "FX-APA09-NO-SCAN-NEWNESS-DECISION-001",
+            ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+            ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+        ),
+        (
+            "FX-APA09-NO-ANCHOR-STATE-MUTATION-001",
+            ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+            ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+        ),
+    )
+
+    for fixture_id, expected_ordering_status, expected_handoff_status in cases:
+        page_fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id].listing_page_parse_outcome
+        assert page_fixture is not None
+        assert page_fixture.ordering_evidence is not None
+        assert page_fixture.scan_ordering_handoff is not None
+        assert page_fixture.ordering_evidence.status is expected_ordering_status
+        assert page_fixture.scan_ordering_handoff.status is expected_handoff_status
+        assert page_fixture.scan_ordering_handoff.listing_candidate_ids == tuple(
+            candidate.listing_candidate_id
+            for candidate in page_fixture.normalized_listing_candidates
+        )
+        assert [
+            position.observed_rank for position in page_fixture.ordering_evidence.positions
+        ] == [
+            1,
+            2,
+            3,
+        ]
+        assert tuple(
+            position.listing_candidate_id for position in page_fixture.ordering_evidence.positions
+        ) == tuple(
+            candidate.listing_candidate_id
+            for candidate in page_fixture.normalized_listing_candidates
+        )
+
+    proven = SYNTHETIC_FIXTURE_BY_ID["FX-APA09-NEWEST-FIRST-PROVEN-001"].listing_page_parse_outcome
+    assert proven is not None
+    assert proven.ordering_evidence is not None
+    assert proven.ordering_evidence.compatibility_profile is not None
+    assert (
+        proven.ordering_evidence.compatibility_profile.lifecycle_status
+        is CompatibilityProfileLifecycleStatus.CURRENT
+    )
+    assert proven.ordering_evidence.sort_context_reference == "sort-context::apa09-newest-first"
+    assert (
+        proven.ordering_evidence.warnings[0].code
+        is ParserWarningCode.OBSERVED_LISTING_ORDER_PRESERVED
+    )
+    assert proven.ordering_evidence.warnings[1].code is ParserWarningCode.NEWEST_FIRST_SORT_PROVEN
+
+    observed = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA09-OBSERVED-ORDER-PRESERVED-001"
+    ].listing_page_parse_outcome
+    assert observed is not None
+    assert observed.ordering_evidence is not None
+    assert (
+        observed.ordering_evidence.warnings[0].code
+        is ParserWarningCode.OBSERVED_LISTING_ORDER_PRESERVED
+    )
+    assert observed.ordering_evidence.warnings[1].code is ParserWarningCode.SORT_CONTEXT_UNPROVEN
+
+    publication = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA09-PUBLICATION-SIGNAL-OPTIONAL-001"
+    ].listing_page_parse_outcome
+    assert publication is not None
+    assert publication.ordering_evidence is not None
+    assert any(
+        position.publication_order_signal_reference is not None
+        for position in publication.ordering_evidence.positions
+    )
+    assert any(
+        position.publication_order_signal_reference is None
+        for position in publication.ordering_evidence.positions
+    )
+    assert (
+        publication.ordering_evidence.warnings[0].code
+        is ParserWarningCode.PUBLICATION_ORDER_SIGNAL_UNAVAILABLE
+    )
+    assert publication.scan_ordering_handoff is not None
+    assert publication.scan_ordering_handoff.status is ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE
+
+    no_newness = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA09-NO-SCAN-NEWNESS-DECISION-001"
+    ].listing_page_parse_outcome
+    assert no_newness is not None
+    assert no_newness.scan_ordering_handoff is not None
+    assert no_newness.scan_ordering_handoff.warnings[0].code is (
+        ParserWarningCode.SCAN_NEWNESS_DECISION_NOT_PERFORMED
+    )
+
+    no_anchor = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA09-NO-ANCHOR-STATE-MUTATION-001"
+    ].listing_page_parse_outcome
+    assert no_anchor is not None
+    assert no_anchor.scan_ordering_handoff is not None
+    assert no_anchor.scan_ordering_handoff.warnings[0].code is (
+        ParserWarningCode.SCAN_ANCHOR_STATE_NOT_MUTATED
+    )
+
+
+def test_apa09_ordering_contracts_reject_invalid_sequences_and_profiles() -> None:
+    evidence = (
+        ParserEvidenceReference(
+            reference_id="fx::apa09::invalid::evidence", evidence_kind="ordering"
+        ),
+    )[0]
+    current_profile = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA09-NEWEST-FIRST-PROVEN-001"
+    ].compatibility_profile
+    assert current_profile is not None
+
+    valid_position = ObservedListingPosition(
+        position_id="fx::apa09::position::1",
+        listing_candidate_id="fx::apa09::candidate::1",
+        observed_rank=1,
+        evidence_references=(evidence,),
+    )
+    valid_position_2 = ObservedListingPosition(
+        position_id="fx::apa09::position::2",
+        listing_candidate_id="fx::apa09::candidate::2",
+        observed_rank=2,
+        evidence_references=(evidence,),
+    )
+
+    with pytest.raises(ValueError):
+        ObservedListingPosition(
+            position_id="fx::apa09::position::blank",
+            listing_candidate_id="fx::apa09::candidate::blank",
+            observed_rank=1,
+            publication_order_signal_reference=" ",
+            evidence_references=(evidence,),
+        )
+
+    invalid_sequences = (
+        (
+            (
+                ObservedListingPosition(
+                    position_id="fx::apa09::dup::1",
+                    listing_candidate_id="fx::apa09::candidate::1",
+                    observed_rank=1,
+                    evidence_references=(evidence,),
+                ),
+                ObservedListingPosition(
+                    position_id="fx::apa09::dup::1",
+                    listing_candidate_id="fx::apa09::candidate::2",
+                    observed_rank=2,
+                    evidence_references=(evidence,),
+                ),
+            ),
+        ),
+        (
+            (
+                ObservedListingPosition(
+                    position_id="fx::apa09::dup-candidate::1",
+                    listing_candidate_id="fx::apa09::candidate::1",
+                    observed_rank=1,
+                    evidence_references=(evidence,),
+                ),
+                ObservedListingPosition(
+                    position_id="fx::apa09::dup-candidate::2",
+                    listing_candidate_id="fx::apa09::candidate::1",
+                    observed_rank=2,
+                    evidence_references=(evidence,),
+                ),
+            ),
+        ),
+        (
+            (
+                ObservedListingPosition(
+                    position_id="fx::apa09::dup-rank::1",
+                    listing_candidate_id="fx::apa09::candidate::1",
+                    observed_rank=1,
+                    evidence_references=(evidence,),
+                ),
+                ObservedListingPosition(
+                    position_id="fx::apa09::dup-rank::2",
+                    listing_candidate_id="fx::apa09::candidate::2",
+                    observed_rank=1,
+                    evidence_references=(evidence,),
+                ),
+            ),
+        ),
+        (
+            (
+                ObservedListingPosition(
+                    position_id="fx::apa09::gap::1",
+                    listing_candidate_id="fx::apa09::candidate::1",
+                    observed_rank=1,
+                    evidence_references=(evidence,),
+                ),
+                ObservedListingPosition(
+                    position_id="fx::apa09::gap::2",
+                    listing_candidate_id="fx::apa09::candidate::2",
+                    observed_rank=3,
+                    evidence_references=(evidence,),
+                ),
+            ),
+        ),
+        (
+            (
+                valid_position_2,
+                valid_position,
+            ),
+        ),
+    )
+    for (positions,) in invalid_sequences:
+        with pytest.raises(ValueError):
+            ListingOrderingEvidence(
+                ordering_evidence_id="fx::apa09::invalid-ordering",
+                status=ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+                positions=positions,
+                sort_context_reference="sort-context::invalid",
+                compatibility_profile=current_profile,
+                evidence_references=(evidence,),
+            )
+
+    for profile in (
+        None,
+        ParserCompatibilityProfile(
+            profile_id="fx::apa09::stale-profile",
+            semantic_version="2026.07.09",
+            profile_version="2026.07.09",
+            lifecycle_status=CompatibilityProfileLifecycleStatus.STALE,
+            authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+            authority_scope=("observation-only",),
+            reference_ids=("AVITO-PRIMARY-PARSER-001",),
+            primary_reference_repository="Duff89/parser_avito",
+            primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+            reference_status=ReferenceOutcomeStatus.REFERENCE_STALE,
+            evidence_reference=evidence,
+        ),
+        ParserCompatibilityProfile(
+            profile_id="fx::apa09::disputed-profile",
+            semantic_version="2026.07.09",
+            profile_version="2026.07.09",
+            lifecycle_status=CompatibilityProfileLifecycleStatus.DISPUTED,
+            authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+            authority_scope=("observation-only",),
+            reference_ids=("AVITO-PRIMARY-PARSER-001",),
+            primary_reference_repository="Duff89/parser_avito",
+            primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+            reference_status=ReferenceOutcomeStatus.REFERENCE_DISPUTED,
+            evidence_reference=evidence,
+        ),
+        ParserCompatibilityProfile(
+            profile_id="fx::apa09::unavailable-profile",
+            semantic_version="2026.07.09",
+            profile_version="2026.07.09",
+            lifecycle_status=CompatibilityProfileLifecycleStatus.UNAVAILABLE,
+            authority_class=CompatibilityProfileAuthorityClass.OBSERVATION_ONLY,
+            authority_scope=("observation-only",),
+            reference_ids=("AVITO-PRIMARY-PARSER-001",),
+            primary_reference_repository="Duff89/parser_avito",
+            primary_reference_commit="48441c352e36919abef13c436f41a3a62636da17",
+            reference_status=ReferenceOutcomeStatus.REFERENCE_MISSING,
+            evidence_reference=evidence,
+        ),
+    ):
+        with pytest.raises(ValueError):
+            ListingOrderingEvidence(
+                ordering_evidence_id="fx::apa09::profile-gated",
+                status=ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+                positions=(valid_position, valid_position_2),
+                sort_context_reference="sort-context::profile-gated",
+                compatibility_profile=profile,
+                evidence_references=(evidence,),
+            )
+    with pytest.raises(ValueError):
+        ListingOrderingEvidence(
+            ordering_evidence_id="fx::apa09::blank-sort-ref",
+            status=ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+            positions=(valid_position, valid_position_2),
+            sort_context_reference=" ",
+            compatibility_profile=current_profile,
+            evidence_references=(evidence,),
+        )
+    with pytest.raises(ValueError):
+        ListingOrderingEvidence(
+            ordering_evidence_id="fx::apa09::missing-evidence",
+            status=ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+            positions=(valid_position, valid_position_2),
+            sort_context_reference="sort-context::missing-evidence",
+            compatibility_profile=current_profile,
+        )
+
+
+def test_apa09_page_and_handoff_reject_order_mismatch() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::apa09::mismatch::evidence",
+        evidence_kind="ordering",
+    )
+    profile = SYNTHETIC_FIXTURE_BY_ID["FX-APA09-NEWEST-FIRST-PROVEN-001"].compatibility_profile
+    assert profile is not None
+    positions = (
+        ObservedListingPosition(
+            position_id="fx::apa09::mismatch::position::1",
+            listing_candidate_id="fx::apa09::mismatch::candidate::1",
+            observed_rank=1,
+            evidence_references=(evidence,),
+        ),
+        ObservedListingPosition(
+            position_id="fx::apa09::mismatch::position::2",
+            listing_candidate_id="fx::apa09::mismatch::candidate::2",
+            observed_rank=2,
+            evidence_references=(evidence,),
+        ),
+    )
+    ordering = ListingOrderingEvidence(
+        ordering_evidence_id="fx::apa09::mismatch::ordering",
+        status=ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+        positions=positions,
+        sort_context_reference="sort-context::mismatch",
+        compatibility_profile=profile,
+        evidence_references=(evidence,),
+    )
+    card_1 = ListingCardCandidate(
+        listing_card_id="fx::apa09::mismatch::card::1",
+        evidence_references=(evidence,),
+    )
+    card_2 = ListingCardCandidate(
+        listing_card_id="fx::apa09::mismatch::card::2",
+        evidence_references=(evidence,),
+    )
+    candidate_1 = NormalizedListingCandidate(
+        listing_candidate_id="fx::apa09::mismatch::candidate::1",
+        status=ListingCandidateStatus.USABLE,
+        card_candidate=card_1,
+        evidence_references=(evidence,),
+    )
+    candidate_2 = NormalizedListingCandidate(
+        listing_candidate_id="fx::apa09::mismatch::candidate::2",
+        status=ListingCandidateStatus.USABLE,
+        card_candidate=card_2,
+        evidence_references=(evidence,),
+    )
+    with pytest.raises(ValueError):
+        ParserScanOrderingHandoff(
+            handoff_id="fx::apa09::mismatch::handoff",
+            page_id="fx::apa09::mismatch::page",
+            page_status=ParserOutcomeStatus.USABLE_RESPONSE,
+            status=ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+            ordering_evidence=ordering,
+            listing_candidate_ids=(
+                "fx::apa09::mismatch::candidate::2",
+                "fx::apa09::mismatch::candidate::1",
+            ),
+            evidence_references=(evidence,),
+        )
+    handoff = ParserScanOrderingHandoff(
+        handoff_id="fx::apa09::mismatch::handoff::ok",
+        page_id="fx::apa09::mismatch::page",
+        page_status=ParserOutcomeStatus.USABLE_RESPONSE,
+        status=ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE,
+        ordering_evidence=ordering,
+        listing_candidate_ids=(
+            "fx::apa09::mismatch::candidate::1",
+            "fx::apa09::mismatch::candidate::2",
+        ),
+        evidence_references=(evidence,),
+    )
+    with pytest.raises(ValueError):
+        ListingPageParseOutcome(
+            page_id="fx::apa09::mismatch::page",
+            request_envelope=ParserRequestEnvelope(
+                request_id="fx::apa09::mismatch::request",
+                contract_name="mayak.avito.parser.request",
+                contract_version="1.0",
+                producer="mayak.tests.synthetic",
+                purpose="listing-ordering",
+                compatibility_profile=profile,
+                safe_source_reference="bounded-source-value",
+                configuration_revision_id="cfg::apa09::mismatch::001",
+                safe_transport_reference="transport::apa09::mismatch",
+            ),
+            transport_outcome=TransportOutcomeReference(
+                transport_reference_id="fx::apa09::mismatch::transport",
+                transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                request_reference="fx::apa09::mismatch::request",
+                response_reference="response::apa09::mismatch",
+                route_reference="route::apa09::mismatch",
+            ),
+            status=ParserOutcomeStatus.USABLE_RESPONSE,
+            compatibility_profile=profile,
+            normalized_listing_candidates=(candidate_2, candidate_1),
+            card_candidates=(card_2, card_1),
+            ordering_evidence=ordering,
+            scan_ordering_handoff=handoff,
+            evidence_references=(evidence,),
+        )
+
+
+def test_apa09_non_usable_pages_are_never_comparison_eligible() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::apa09::page-gate::evidence",
+        evidence_kind="listing-ordering",
+    )
+    profile = SYNTHETIC_FIXTURE_BY_ID["FX-APA09-NEWEST-FIRST-PROVEN-001"].compatibility_profile
+    assert profile is not None
+    positions = (
+        ObservedListingPosition(
+            position_id="fx::apa09::page-gate::position::1",
+            listing_candidate_id="fx::apa09::page-gate::candidate::1",
+            observed_rank=1,
+            evidence_references=(evidence,),
+        ),
+    )
+    ordering = ListingOrderingEvidence(
+        ordering_evidence_id="fx::apa09::page-gate::ordering",
+        status=ListingSortContextStatus.PROVEN_NEWEST_FIRST,
+        positions=positions,
+        sort_context_reference="sort-context::page-gate",
+        compatibility_profile=profile,
+        evidence_references=(evidence,),
+    )
+    for page_status in (
+        ParserOutcomeStatus.PARTIAL,
+        ParserOutcomeStatus.MALFORMED_RESPONSE,
+        ParserOutcomeStatus.INCOMPLETE_RESPONSE,
+        ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
+        ParserOutcomeStatus.RESULT_AMBIGUOUS,
+    ):
+        handoff = ParserScanOrderingHandoff(
+            handoff_id=f"fx::apa09::page-gate::{page_status.value.lower()}",
+            page_id="fx::apa09::page-gate",
+            page_status=page_status,
+            status=ScanOrderingHandoffStatus.BLOCKED_PAGE_NOT_USABLE,
+            ordering_evidence=ordering,
+            listing_candidate_ids=("fx::apa09::page-gate::candidate::1",),
+            evidence_references=(evidence,),
+        )
+        assert handoff.status is ScanOrderingHandoffStatus.BLOCKED_PAGE_NOT_USABLE
 
 
 def test_partial_and_stale_outcomes_remain_explicit() -> None:

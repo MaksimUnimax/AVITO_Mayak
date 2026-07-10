@@ -147,6 +147,15 @@ class ParserWarningCode(str, Enum):
     WITHDRAWN_PROFILE_BLOCKED = "WITHDRAWN_PROFILE_BLOCKED"
     DISPUTED_PROFILE_WARNING = "DISPUTED_PROFILE_WARNING"
     UNAVAILABLE_PROFILE_WARNING = "UNAVAILABLE_PROFILE_WARNING"
+    OBSERVED_LISTING_ORDER_PRESERVED = "OBSERVED_LISTING_ORDER_PRESERVED"
+    NEWEST_FIRST_SORT_PROVEN = "NEWEST_FIRST_SORT_PROVEN"
+    SORT_CONTEXT_MISSING = "SORT_CONTEXT_MISSING"
+    SORT_CONTEXT_UNSUPPORTED = "SORT_CONTEXT_UNSUPPORTED"
+    SORT_CONTEXT_UNPROVEN = "SORT_CONTEXT_UNPROVEN"
+    SORT_CONTEXT_CONTRADICTORY = "SORT_CONTEXT_CONTRADICTORY"
+    PUBLICATION_ORDER_SIGNAL_UNAVAILABLE = "PUBLICATION_ORDER_SIGNAL_UNAVAILABLE"
+    SCAN_NEWNESS_DECISION_NOT_PERFORMED = "SCAN_NEWNESS_DECISION_NOT_PERFORMED"
+    SCAN_ANCHOR_STATE_NOT_MUTATED = "SCAN_ANCHOR_STATE_NOT_MUTATED"
     SOURCE_URL_UNTRUSTED = "SOURCE_URL_UNTRUSTED"
     SOURCE_URL_POLICY_MISSING = "SOURCE_URL_POLICY_MISSING"
     SOURCE_URL_MALFORMED = "SOURCE_URL_MALFORMED"
@@ -308,6 +317,31 @@ class ListingCandidateStatus(str, Enum):
     PARTIAL = "PARTIAL"
     AMBIGUOUS = "AMBIGUOUS"
     BLOCKED = "BLOCKED"
+
+
+class ListingSortContextStatus(str, Enum):
+    """Semantic classifications for observed listing ordering evidence."""
+
+    PROVEN_NEWEST_FIRST = "PROVEN_NEWEST_FIRST"
+    MISSING = "MISSING"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNSUPPORTED = "UNSUPPORTED"
+    UNPROVEN = "UNPROVEN"
+    CONTRADICTORY = "CONTRADICTORY"
+
+
+class ScanOrderingHandoffStatus(str, Enum):
+    """Parser-to-Scan handoff classifications for ordering comparison eligibility."""
+
+    COMPARISON_ELIGIBLE = "COMPARISON_ELIGIBLE"
+    BLOCKED_PAGE_NOT_USABLE = "BLOCKED_PAGE_NOT_USABLE"
+    BLOCKED_SORT_MISSING = "BLOCKED_SORT_MISSING"
+    BLOCKED_SORT_AMBIGUOUS = "BLOCKED_SORT_AMBIGUOUS"
+    BLOCKED_SORT_UNSUPPORTED = "BLOCKED_SORT_UNSUPPORTED"
+    BLOCKED_SORT_UNPROVEN = "BLOCKED_SORT_UNPROVEN"
+    BLOCKED_SORT_CONTRADICTORY = "BLOCKED_SORT_CONTRADICTORY"
+    BLOCKED_PROFILE_NOT_CURRENT = "BLOCKED_PROFILE_NOT_CURRENT"
+    BLOCKED_ORDER_MISMATCH = "BLOCKED_ORDER_MISMATCH"
 
 
 _LISTING_FIELD_TIER_BY_FAMILY: Final[dict[ListingFieldFamily, ListingFieldTier]] = {
@@ -1032,6 +1066,183 @@ class NormalizedListingCandidate:
 
 
 @dataclass(frozen=True, slots=True)
+class ObservedListingPosition:
+    """Observed listing position with no newness, baseline or anchor semantics."""
+
+    position_id: str
+    listing_candidate_id: str
+    observed_rank: int
+    publication_order_signal_reference: str | None = None
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field_name in ("position_id", "listing_candidate_id"):
+            if not getattr(self, field_name).strip():
+                raise ValueError(f"{field_name} must not be blank")
+        if not isinstance(self.observed_rank, int) or self.observed_rank < 1:
+            raise ValueError("observed_rank must be a positive integer starting at 1")
+        if (
+            self.publication_order_signal_reference is not None
+            and not self.publication_order_signal_reference.strip()
+        ):
+            raise ValueError("publication_order_signal_reference must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+
+def _validate_ordering_evidence_positions(
+    positions: tuple[ObservedListingPosition, ...],
+) -> None:
+    position_ids = [position.position_id for position in positions]
+    candidate_ids = [position.listing_candidate_id for position in positions]
+    ranks = [position.observed_rank for position in positions]
+
+    if len(set(position_ids)) != len(position_ids):
+        raise ValueError("position_ids must be unique")
+    if len(set(candidate_ids)) != len(candidate_ids):
+        raise ValueError("listing_candidate_ids must be unique")
+    if len(set(ranks)) != len(ranks):
+        raise ValueError("observed_ranks must be unique")
+    expected_ranks = tuple(range(1, len(positions) + 1))
+    if tuple(ranks) != expected_ranks:
+        raise ValueError("observed_ranks must be strictly 1..N without gaps")
+    for index, position in enumerate(positions, start=1):
+        if position.observed_rank != index:
+            raise ValueError("positions must be ordered by observed_rank")
+
+
+@dataclass(frozen=True, slots=True)
+class ListingOrderingEvidence:
+    """Observed listing-order evidence that does not claim provider authority."""
+
+    ordering_evidence_id: str
+    status: ListingSortContextStatus
+    positions: tuple[ObservedListingPosition, ...]
+    sort_context_reference: str | None = None
+    compatibility_profile: ParserCompatibilityProfile | None = None
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.ordering_evidence_id.strip():
+            raise ValueError("ordering_evidence_id must not be blank")
+        if self.sort_context_reference is not None and not self.sort_context_reference.strip():
+            raise ValueError("sort_context_reference must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+        _validate_ordering_evidence_positions(self.positions)
+
+        if self.status is ListingSortContextStatus.PROVEN_NEWEST_FIRST:
+            if not self.positions:
+                raise ValueError("PROVEN_NEWEST_FIRST requires positions")
+            if self.sort_context_reference is None:
+                raise ValueError("PROVEN_NEWEST_FIRST requires sort_context_reference")
+            if self.compatibility_profile is None:
+                raise ValueError("PROVEN_NEWEST_FIRST requires compatibility_profile")
+            if (
+                self.compatibility_profile.lifecycle_status
+                is not CompatibilityProfileLifecycleStatus.CURRENT
+            ):
+                raise ValueError("PROVEN_NEWEST_FIRST requires CURRENT compatibility_profile")
+            if not self.evidence_references:
+                raise ValueError("PROVEN_NEWEST_FIRST requires evidence_references")
+
+
+def _ordering_handoff_block_reason(
+    page_status: ParserOutcomeStatus,
+    ordering_status: ListingSortContextStatus,
+    compatibility_profile: ParserCompatibilityProfile | None,
+) -> ScanOrderingHandoffStatus:
+    if page_status is not ParserOutcomeStatus.USABLE_RESPONSE:
+        return ScanOrderingHandoffStatus.BLOCKED_PAGE_NOT_USABLE
+    if ordering_status is ListingSortContextStatus.MISSING:
+        return ScanOrderingHandoffStatus.BLOCKED_SORT_MISSING
+    if ordering_status is ListingSortContextStatus.AMBIGUOUS:
+        return ScanOrderingHandoffStatus.BLOCKED_SORT_AMBIGUOUS
+    if ordering_status is ListingSortContextStatus.UNSUPPORTED:
+        return ScanOrderingHandoffStatus.BLOCKED_SORT_UNSUPPORTED
+    if ordering_status is ListingSortContextStatus.UNPROVEN:
+        return ScanOrderingHandoffStatus.BLOCKED_SORT_UNPROVEN
+    if ordering_status is ListingSortContextStatus.CONTRADICTORY:
+        return ScanOrderingHandoffStatus.BLOCKED_SORT_CONTRADICTORY
+    if ordering_status is ListingSortContextStatus.PROVEN_NEWEST_FIRST and (
+        compatibility_profile is None
+        or compatibility_profile.lifecycle_status is not CompatibilityProfileLifecycleStatus.CURRENT
+    ):
+        return ScanOrderingHandoffStatus.BLOCKED_PROFILE_NOT_CURRENT
+    return ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE
+
+
+@dataclass(frozen=True, slots=True)
+class ParserScanOrderingHandoff:
+    """Safe Parser-to-Scan ordering handoff boundary without newness authority."""
+
+    handoff_id: str
+    page_id: str
+    page_status: ParserOutcomeStatus
+    status: ScanOrderingHandoffStatus
+    ordering_evidence: ListingOrderingEvidence
+    listing_candidate_ids: tuple[str, ...]
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.handoff_id.strip():
+            raise ValueError("handoff_id must not be blank")
+        if not self.page_id.strip():
+            raise ValueError("page_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+        if len(set(self.listing_candidate_ids)) != len(self.listing_candidate_ids):
+            raise ValueError("listing_candidate_ids must be unique")
+        for listing_candidate_id in self.listing_candidate_ids:
+            if not listing_candidate_id.strip():
+                raise ValueError("listing_candidate_ids must not contain blank values")
+
+        candidate_ids = tuple(
+            position.listing_candidate_id for position in self.ordering_evidence.positions
+        )
+        if candidate_ids != self.listing_candidate_ids:
+            raise ValueError("listing_candidate_ids must match ordering_evidence positions")
+
+        expected_status = _ordering_handoff_block_reason(
+            self.page_status,
+            self.ordering_evidence.status,
+            self.ordering_evidence.compatibility_profile,
+        )
+        if self.status is not expected_status:
+            raise ValueError("scan ordering handoff status must match factual reason")
+
+        if self.status is ScanOrderingHandoffStatus.COMPARISON_ELIGIBLE:
+            if self.page_status is not ParserOutcomeStatus.USABLE_RESPONSE:
+                raise ValueError("comparison eligible handoff requires usable page status")
+            if self.ordering_evidence.status is not ListingSortContextStatus.PROVEN_NEWEST_FIRST:
+                raise ValueError(
+                    "comparison eligible handoff requires proven newest-first ordering"
+                )
+            if (
+                self.ordering_evidence.compatibility_profile is None
+                or self.ordering_evidence.compatibility_profile.lifecycle_status
+                is not CompatibilityProfileLifecycleStatus.CURRENT
+            ):
+                raise ValueError(
+                    "comparison eligible handoff requires CURRENT compatibility profile"
+                )
+            if self.ordering_evidence.sort_context_reference is None:
+                raise ValueError("comparison eligible handoff requires sort_context_reference")
+        elif self.status is ScanOrderingHandoffStatus.BLOCKED_PROFILE_NOT_CURRENT:
+            if self.page_status is not ParserOutcomeStatus.USABLE_RESPONSE:
+                raise ValueError("profile-not-current block requires usable page status")
+            if self.ordering_evidence.status is not ListingSortContextStatus.PROVEN_NEWEST_FIRST:
+                raise ValueError("profile-not-current block requires proven ordering")
+        elif self.status is ScanOrderingHandoffStatus.BLOCKED_PAGE_NOT_USABLE:
+            if self.page_status is ParserOutcomeStatus.USABLE_RESPONSE:
+                raise ValueError("page-not-usable block requires non-usable page status")
+
+
+@dataclass(frozen=True, slots=True)
 class SearchConfigurationExtractionOutcome:
     """Normalized search-configuration evidence for Scan handoff."""
 
@@ -1094,6 +1305,8 @@ class ListingPageParseOutcome:
     compatibility_profile: ParserCompatibilityProfile
     normalized_listing_candidates: tuple[NormalizedListingCandidate, ...] = ()
     card_candidates: tuple[ListingCardCandidate, ...] = ()
+    ordering_evidence: ListingOrderingEvidence | None = None
+    scan_ordering_handoff: ParserScanOrderingHandoff | None = None
     warnings: tuple[ParserWarning, ...] = ()
     evidence_references: tuple[ParserEvidenceReference, ...] = ()
     explanation: ParserOutcomeExplanation | None = None
@@ -1101,6 +1314,36 @@ class ListingPageParseOutcome:
     def __post_init__(self) -> None:
         if not self.page_id.strip():
             raise ValueError("page_id must not be blank")
+        normalized_candidate_ids = tuple(
+            candidate.listing_candidate_id for candidate in self.normalized_listing_candidates
+        )
+        if self.ordering_evidence is not None:
+            ordering_candidate_ids = tuple(
+                position.listing_candidate_id for position in self.ordering_evidence.positions
+            )
+            if ordering_candidate_ids != normalized_candidate_ids:
+                raise ValueError(
+                    "ordering_evidence positions must match normalized_listing_candidates"
+                )
+        if self.scan_ordering_handoff is not None:
+            if self.scan_ordering_handoff.page_id != self.page_id:
+                raise ValueError("scan_ordering_handoff.page_id must match page_id")
+            if (
+                isinstance(self.status, ParserOutcomeStatus)
+                and self.scan_ordering_handoff.page_status is not self.status
+            ):
+                raise ValueError("scan_ordering_handoff.page_status must match page status")
+            if (
+                self.ordering_evidence is not None
+                and self.scan_ordering_handoff.ordering_evidence != self.ordering_evidence
+            ):
+                raise ValueError(
+                    "scan_ordering_handoff.ordering_evidence must match ordering_evidence"
+                )
+            if self.scan_ordering_handoff.listing_candidate_ids != normalized_candidate_ids:
+                raise ValueError(
+                    "scan_ordering_handoff.listing_candidate_ids must match normalized candidates"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1180,6 +1423,8 @@ __all__: Final[tuple[str, ...]] = (
     "ListingFieldAvailability",
     "ListingFieldQuality",
     "ListingCandidateStatus",
+    "ListingSortContextStatus",
+    "ScanOrderingHandoffStatus",
     "SourceReferenceKind",
     "SourceBoundaryStatus",
     "SourceBoundaryRiskCode",
@@ -1206,6 +1451,9 @@ __all__: Final[tuple[str, ...]] = (
     "ListingFieldCandidate",
     "ListingCardCandidate",
     "NormalizedListingCandidate",
+    "ObservedListingPosition",
+    "ListingOrderingEvidence",
+    "ParserScanOrderingHandoff",
     "ListingPageParseOutcome",
     "ListingBatchParseOutcome",
 )
