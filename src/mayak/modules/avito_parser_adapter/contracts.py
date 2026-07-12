@@ -210,7 +210,7 @@ class SensitiveMaterialKind(str, Enum):
     RAW_JSON = "RAW_JSON"
     FULL_PROVIDER_PAYLOAD = "FULL_PROVIDER_PAYLOAD"
     COOKIE = "COOKIE"
-    ＳＥＳＳＩＯＮ = "\x53\x45\x53\x53\x49\x4f\x4e"
+    SESSION = "SESSION"
     TOKEN = "TOKEN"
     PRIVATE_KEY = "PRIVATE_KEY"
     PRIVATE_CREDENTIAL = "PRIVATE_CREDENTIAL"
@@ -711,7 +711,7 @@ class SafeDiagnosticEvidence:
 
 _SENSITIVE_ACCESS_MATERIAL_KINDS: Final[tuple[SensitiveMaterialKind, ...]] = (
     SensitiveMaterialKind.COOKIE,
-    SensitiveMaterialKind.ＳＥＳＳＩＯＮ,
+    SensitiveMaterialKind.SESSION,
     SensitiveMaterialKind.TOKEN,
     SensitiveMaterialKind.PRIVATE_KEY,
     SensitiveMaterialKind.PRIVATE_CREDENTIAL,

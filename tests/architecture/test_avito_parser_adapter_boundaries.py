@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import ast
+import unicodedata
 from pathlib import Path
-
 
 MODULE_FILES = (
     Path("src/mayak/modules/avito_parser_adapter/__init__.py"),
@@ -63,7 +63,6 @@ FORBIDDEN_TEXT_FRAGMENTS = {
     _fragment("p", "s", "y", "c", "o", "p", "g"),
     _fragment("a", "l", "e", "m", "b", "i", "c"),
     _fragment("c", "o", "o", "k", "i", "e", "s"),
-    _fragment("s", "e", "s", "s", "i", "o", "n"),
     _fragment("p", "r", "o", "x", "y"),
 }
 
@@ -121,6 +120,119 @@ def _enum_member_names(source: str, class_name: str) -> set[str]:
     raise AssertionError(f"{class_name} not found")
 
 
+def _build_parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+    parents: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+    return parents
+
+
+def _is_session_enum_assignment(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    if not isinstance(node, ast.Name):
+        return False
+    if node.id != "SESSION" or not isinstance(node.ctx, ast.Store):
+        return False
+
+    parent = parents.get(node)
+    if not isinstance(parent, ast.Assign) or len(parent.targets) != 1:
+        return False
+
+    class_node = parents.get(parent)
+    return isinstance(class_node, ast.ClassDef) and class_node.name == "SensitiveMaterialKind"
+
+
+def _is_sensitive_material_kind_session_attribute(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "SESSION"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "SensitiveMaterialKind"
+    )
+
+
+def _assert_no_session_runtime_identifiers(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    parents = _build_parent_map(tree)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            if "session" in node.id.casefold():
+                assert _is_session_enum_assignment(node, parents), (
+                    f"{module_path}: runtime identifier contains session: {node.id}"
+                )
+        elif isinstance(node, ast.arg):
+            if "session" in node.arg.casefold():
+                raise AssertionError(f"{module_path}: runtime arg contains session: {node.arg}")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if "session" in node.name.casefold():
+                raise AssertionError(
+                    f"{module_path}: runtime definition contains session: {node.name}"
+                )
+        elif isinstance(node, ast.Attribute):
+            if "session" in node.attr.casefold():
+                assert _is_sensitive_material_kind_session_attribute(node), (
+                    f"{module_path}: runtime attribute contains session: {node.attr}"
+                )
+
+
+def _assert_sensitive_material_kind_is_canonical_and_static(source: str, module_path: Path) -> None:
+    expected_pairs = [
+        ("RAW_HTML", "RAW_HTML"),
+        ("RAW_JSON", "RAW_JSON"),
+        ("FULL_PROVIDER_PAYLOAD", "FULL_PROVIDER_PAYLOAD"),
+        ("COOKIE", "COOKIE"),
+        ("SESSION", "SESSION"),
+        ("TOKEN", "TOKEN"),
+        ("PRIVATE_KEY", "PRIVATE_KEY"),
+        ("PRIVATE_CREDENTIAL", "PRIVATE_CREDENTIAL"),
+        ("FOREIGN_ACCOUNT_DATA", "FOREIGN_ACCOUNT_DATA"),
+        ("UNAPPROVED_PERSONAL_DATA", "UNAPPROVED_PERSONAL_DATA"),
+        ("HIDDEN_PROVIDER_FIELDS", "HIDDEN_PROVIDER_FIELDS"),
+    ]
+
+    tree = ast.parse(source)
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != "SensitiveMaterialKind":
+            continue
+
+        observed_pairs: list[tuple[str, str]] = []
+        for item in node.body:
+            if isinstance(item, ast.Expr) and isinstance(item.value, ast.Constant) and isinstance(
+                item.value.value, str
+            ):
+                continue
+
+            assert isinstance(item, ast.Assign), (
+                f"{module_path}: non-assign member in SensitiveMaterialKind"
+            )
+            assert len(item.targets) == 1, (
+                f"{module_path}: alias or multi-target assignment in SensitiveMaterialKind"
+            )
+
+            target = item.targets[0]
+            assert isinstance(target, ast.Name), (
+                f"{module_path}: computed target in SensitiveMaterialKind"
+            )
+            assert target.id.isascii(), f"{module_path}: non-ASCII enum identifier {target.id!r}"
+            assert unicodedata.normalize("NFKC", target.id) == target.id, (
+                f"{module_path}: unstable enum identifier {target.id!r}"
+            )
+
+            value = item.value
+            assert isinstance(value, ast.Constant) and isinstance(value.value, str), (
+                f"{module_path}: computed enum value for {target.id!r}"
+            )
+            assert value.value == target.id, f"{module_path}: alias enum value for {target.id!r}"
+
+            observed_pairs.append((target.id, value.value))
+
+        assert observed_pairs == expected_pairs, f"{module_path}: {observed_pairs}"
+        return
+
+    raise AssertionError(f"{module_path}: SensitiveMaterialKind not found")
+
+
 def test_avito_parser_adapter_module_has_only_allowed_imports_and_static_text() -> None:
     repo_root = Path(__file__).resolve().parents[2]
 
@@ -135,6 +247,33 @@ def test_avito_parser_adapter_module_has_only_allowed_imports_and_static_text() 
             assert fragment not in lowered_source, f"{relative_path}: {fragment}"
         for fragment in FORBIDDEN_CAPTCHA_RUNTIME_FRAGMENTS:
             assert fragment not in lowered_source, f"{relative_path}: {fragment}"
+
+        _assert_no_session_runtime_identifiers(source, relative_path)
+
+        if relative_path == Path("src/mayak/modules/avito_parser_adapter/contracts.py"):
+            assert 'SESSION = "SESSION"' in source
+            assert "ＳＥＳＳＩＯＮ" not in source
+            assert "\\x53\\x45\\x53\\x53\\x49\\x4f\\x4e" not in source
+            assert "\\x73\\x65\\x73\\x73\\x69\\x6f\\x6e" not in source
+            assert "ACCESS_KIND_" not in source
+            assert "_SM_KIND_" not in source
+            assert "_member_map_" not in source
+            assert "type.__setattr__" not in source
+            _assert_sensitive_material_kind_is_canonical_and_static(source, relative_path)
+        elif relative_path == Path("src/mayak/modules/avito_parser_adapter/fixtures.py"):
+            for literal in (
+                "FX-APA11-COOKIE-SESSION-TOKEN-BLOCKED-001",
+                "fx::apa11::decision::session",
+                "FX::APA11::SESSION::BLOCKED",
+            ):
+                assert literal in source
+            assert "ＳＥＳＳＩＯＮ" not in source
+            assert "\\x53\\x45\\x53\\x53\\x49\\x4f\\x4e" not in source
+            assert "\\x73\\x65\\x73\\x73\\x69\\x6f\\x6e" not in source
+            assert "ACCESS_KIND_" not in source
+            assert "_SM_KIND_" not in source
+            assert "_member_map_" not in source
+            assert "type.__setattr__" not in source
 
         if relative_path == Path("src/mayak/modules/avito_parser_adapter/contracts.py"):
             parser_outcome_members = _enum_member_names(source, "ParserOutcomeStatus")

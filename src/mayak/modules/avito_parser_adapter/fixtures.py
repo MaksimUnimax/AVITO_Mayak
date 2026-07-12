@@ -84,7 +84,7 @@ from .contracts import (
     _reference_status_from_lifecycle_status,
 )
 
-_APA11_ACCESS_BLOCKED_FIXTURE_ID = "FX-APA11-COOKIE-\x53\x45\x53\x53\x49\x4f\x4e-TOKEN-BLOCKED-001"
+_APA11_ACCESS_BLOCKED_FIXTURE_ID = "FX-APA11-COOKIE-SESSION-TOKEN-BLOCKED-001"
 
 
 @dataclass(frozen=True, slots=True)
@@ -5241,10 +5241,10 @@ _APA11_SENSITIVE_ACCESS_EVENT = _diagnostic_event(
             personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
         ),
         _sensitive_disposition(
-            "fx::apa11::decision::\x73\x65\x73\x73\x69\x6f\x6e",
-            SensitiveMaterialKind.ＳＥＳＳＩＯＮ,
+            "fx::apa11::decision::session",
+            SensitiveMaterialKind.SESSION,
             disposition=RetentionDisposition.NOT_RETAINED,
-            reason_code="FX::APA11::\x53\x45\x53\x53\x49\x4f\x4e::BLOCKED",
+            reason_code="FX::APA11::SESSION::BLOCKED",
             policy_reference="policy::apa11::od013-open",
             personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
         ),
