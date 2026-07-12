@@ -484,6 +484,12 @@ class AgentRouteRegistrationBoundary:
 
         if self.route.route_id != self.route_registration.route_id:
             raise ValueError("route.route_id must match route_registration.route_id")
+        if self.route.agent_id != self.agent.agent_id:
+            raise ValueError("route.agent_id must match agent.agent_id")
+        if self.route_registration.agent_id != self.agent_registration.agent_id:
+            raise ValueError(
+                "route_registration.agent_id must match agent_registration.agent_id"
+            )
         if self.route.agent_id != self.route_registration.agent_id:
             raise ValueError("route.agent_id must match route_registration.agent_id")
         if self.route.environment_id != self.route_registration.environment_id:

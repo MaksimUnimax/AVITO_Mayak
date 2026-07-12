@@ -719,6 +719,34 @@ def test_boundary_rejects_route_registration_mismatches(field_name: str, value: 
         AgentRouteRegistrationBoundary(**kwargs)
 
 
+def test_boundary_rejects_coordinated_foreign_route_agent_ownership() -> None:
+    kwargs = _boundary_kwargs()
+    kwargs["route"] = replace(kwargs["route"], agent_id="foreign-agent")
+    kwargs["route_registration"] = replace(kwargs["route_registration"], agent_id="foreign-agent")
+
+    with pytest.raises(ValueError, match="route.agent_id must match agent.agent_id"):
+        AgentRouteRegistrationBoundary(**kwargs)
+
+
+def test_boundary_rejects_foreign_route_agent_id() -> None:
+    kwargs = _boundary_kwargs()
+    kwargs["route"] = replace(kwargs["route"], agent_id="foreign-agent")
+
+    with pytest.raises(ValueError, match="route.agent_id must match agent.agent_id"):
+        AgentRouteRegistrationBoundary(**kwargs)
+
+
+def test_boundary_rejects_foreign_route_registration_agent_id() -> None:
+    kwargs = _boundary_kwargs()
+    kwargs["route_registration"] = replace(kwargs["route_registration"], agent_id="foreign-agent")
+
+    with pytest.raises(
+        ValueError,
+        match="route_registration.agent_id must match agent_registration.agent_id",
+    ):
+        AgentRouteRegistrationBoundary(**kwargs)
+
+
 @pytest.mark.parametrize(
     ("field_name", "value"),
     (

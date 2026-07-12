@@ -317,6 +317,24 @@ def test_cross_environment_association_and_foreign_agent_rejection() -> None:
         AgentRouteRegistrationBoundary(**boundary)
 
 
+def test_route_cannot_be_registered_or_associated_to_a_foreign_agent() -> None:
+    same_agent_boundary = AgentRouteRegistrationBoundary(**_boundary_kwargs())
+
+    assert same_agent_boundary.agent.agent_id == same_agent_boundary.agent_registration.agent_id
+    assert same_agent_boundary.agent.agent_id == same_agent_boundary.association.agent_id
+    assert same_agent_boundary.agent.agent_id == same_agent_boundary.route.agent_id
+    assert same_agent_boundary.agent.agent_id == same_agent_boundary.route_registration.agent_id
+
+    boundary = _boundary_kwargs()
+    boundary["route"] = replace(boundary["route"], agent_id="foreign-agent")
+    boundary["route_registration"] = replace(
+        boundary["route_registration"], agent_id="foreign-agent"
+    )
+
+    with pytest.raises(ValueError):
+        AgentRouteRegistrationBoundary(**boundary)
+
+
 def test_active_association_rejects_blocked_registrations() -> None:
     boundary = _boundary_kwargs()
     boundary["agent_registration"] = replace(
