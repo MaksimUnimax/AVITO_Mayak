@@ -57,7 +57,7 @@ Future Avito browser-extension route может рассматриваться �
 - fallback route family;
 - proof route;
 - development/testing route;
-- future bounded browser-worker route after separate gates.
+- future bounded browser-worker route после отдельных gates.
 
 Future production-scope extension должна сохранять только необходимый Avito route scope:
 
@@ -132,7 +132,7 @@ Development bridge:
 
 Отдельный постоянно работающий browser для каждого Beacon не является целевой архитектурой.
 
-Предпочтительный fallback model after separate implementation gate:
+Предпочтительный fallback model после отдельного implementation gate:
 
 - bounded browser worker pool;
 - limited concurrency;
@@ -183,8 +183,8 @@ Cookies/session могут использоваться только после 
 - использовать unrelated or foreign cookies;
 - использовать private owner session по умолчанию;
 - передавать cookie/session values в CLI prompts или reports;
-- хранить cookie/session values in Git;
-- логировать cookies, tokens or session secrets.
+- хранить cookie/session values в Git;
+- логировать cookies, tokens или session secrets.
 
 В текущем scope cookies/session implementation отсутствует.
 
@@ -192,18 +192,18 @@ Cookies/session могут использоваться только после 
 
 CAPTCHA solving и CAPTCHA bypass запрещены.
 
-CAPTCHA, challenge, restriction or provider rejection are not a clean empty result and do not mean that Beacon should be forgotten.
+CAPTCHA, challenge, restriction или provider rejection не являются clean empty result и не означают, что Beacon должен быть забыт.
 
 Egress Routing должен в будущей semantic/runtime модели:
 
-- return explicit technical outcome;
-- preserve safe reason/evidence reference;
-- change route health/restriction state according to approved policy;
-- if needed place affected route in degraded/restricted/quarantined state;
-- not issue affected new assignments according to policy;
-- not erase route history.
+- вернуть explicit technical outcome;
+- сохранить safe reason/evidence reference;
+- изменить route health/restriction state согласно approved policy;
+- при необходимости поместить affected route in degraded/restricted/quarantined state;
+- не выдавать affected new assignments согласно policy;
+- не стирать route history.
 
-Scan Orchestration владеет pending recovery scan and business handling scan status.
+Scan Orchestration владеет pending recovery scan и business handling scan status.
 
 Notification Delivery владеет доставкой сообщения пользователю.
 
@@ -227,28 +227,28 @@ Egress Routing не решает Scan success и не отправляет со�
 
 - random route switching;
 - blind fallback;
-- fallback without policy;
-- fallback without audit/evidence;
+- fallback без policy;
+- fallback без audit/evidence;
 - infinite fallback loop;
-- use fallback as CAPTCHA bypass;
-- hiding исходной route failure;
-- самостоятельный выбор route Parser, Scan or Notification module.
+- использование fallback как CAPTCHA bypass;
+- скрытие исходной route failure;
+- самостоятельный выбор route Parser, Scan или Notification module.
 
-Если все approved routes недоступны, Egress returns explicit unavailable, restricted, ambiguous or fallback-exhausted outcome.
+Если все approved routes недоступны, Egress возвращает explicit unavailable, restricted, ambiguous или fallback-exhausted outcome.
 
 ## 11. Route selection authority
 
-Runtime route selection принадлежит only Egress Routing.
+Runtime route selection принадлежит только Egress Routing.
 
-Parser Adapter, Scan Orchestration, Beacon Management and Notification Delivery do not choose route.
+Parser Adapter, Scan Orchestration, Beacon Management и Notification Delivery не выбирают route.
 
-Admin may in future request protected route policy changes through a separate capability, but does not perform runtime selection and does not write Egress state directly.
+Admin может в будущем запрашивать изменение protected route policy через отдельную capability, но не выполняет runtime selection и не пишет Egress state напрямую.
 
 ## 12. Minimal bounded assignment
 
-Agent or browser worker receives only the minimum bounded assignment.
+Agent или browser worker получает только минимальный bounded assignment.
 
-Допустимые semantic fields after exact task may include:
+Допустимые semantic fields после exact task могут включать:
 
 - assignment ID;
 - correlation and causation IDs;
