@@ -730,3 +730,77 @@ In short: Scan scope stays new-listings-only; price can remain candidate data; p
 - Transport success remains distinct from Parser success, Scan success and Notification delivery.
 - Browser-extension evidence remains proof of route-family feasibility only, not production readiness.
 - No open decision is closed by assumption.
+
+---
+
+## ADR-0020 — 2026-07-12 — Notification Delivery owner decisions for ND-01
+
+**Статус:** APPROVED owner decision capture for Notification Delivery semantic planning.
+
+**Модуль:** `08-notification-delivery`
+
+**Roadmap step:** `ND-01`
+
+**Technical task:** `ND-01-GOVERNANCE-CAPTURE-20260712-001`
+
+**Открывает gate:** последующие точные semantic-only задачи модуля 08 после отдельной проверки prerequisites и exact task.
+
+**Не открывает:** source code этим решением, physical database schema, migrations, queue, worker, broker, scheduler, provider adapter, Telegram/MAX bot or API, webhook, Mini App, live delivery, provider calls, message-template catalog, provider credentials, runtime configuration, Docker, CI/CD, deploy, retention/deletion tooling, read/click tracking, quiet hours or digest implementation.
+
+**Контекст:**
+
+Playbook Module 08 v1.0 определил generic Notification Delivery boundary, но оставил открытыми или требующими уточнения текущие product rules для активных notification families, price-change events, no-new status, recovery, multi-channel planning, listing grouping and delivery history. Владелец зафиксировал эти решения до semantic contracts/tests и отдельно сохранил provider/runtime/schema gates закрытыми.
+
+**Решение:**
+
+1. Главный текущий пользовательский notification effect — уведомление о новых объявлениях после committed Scan fact и успешного прохождения eligibility gates.
+2. Initial baseline не создаёт user-visible listing notification и не должен отправлять существующие объявления как новые.
+3. Price-change notification для старого объявления отключён и отложен. Цена может использоваться как безопасное display field, но изменение цены само по себе не создаёт outbox item.
+4. Notification Delivery принимает только committed upstream source facts. Parser-only, Egress-only, raw provider and unapproved callback outcomes не создают notification work.
+5. Статус «новых объявлений нет» не отправляется после каждого scan и не отправляется каждые пять минут по умолчанию.
+6. Пользователь в будущем может включить status notification «Маяк работает. Новых объявлений нет».
+7. Минимальная частота push-уведомления «новых нет» — не чаще одного раза в час.
+8. Текущий no-new status должен оставаться доступным в safe read model/status UI независимо от push preference.
+9. При начале проблемы Avito, route or parser пользователь получает один понятный status notification; одинаковый статус не повторяется на каждом интервале.
+10. Материальное изменение проблемы может создать новый status effect при отдельной approved classification.
+11. После восстановления выполняется и сообщается один результат одного recovery scan, а не набор уведомлений за каждый пропущенный интервал.
+12. Recovery result с новыми объявлениями сообщает новые объявления.
+13. Recovery result без новых объявлений может сообщить восстановление и отсутствие новых объявлений согласно approved recovery-result policy.
+14. Если recovery scan завершился lost anchors, результат классифицируется как «последние свежие / состояние восстановлено», а не как confirmed-new.
+15. Если внешняя проблема началась при активном доступе, допускается один owed recovery-result после истечения доступа. После этого одного результата снова применяются текущие entitlement rules.
+16. Один scan result с несколькими новыми объявлениями является одним generic user-visible notification effect с полным count и всеми безопасными listing-card references.
+17. Notification Delivery не обрезает listing references из-за preview limit и не превращает каждое объявление в отдельное generic notification по умолчанию.
+18. Pagination, buttons, preview count, carousel-like presentation и final rendering принадлежат Telegram/MAX adapters or Web Cabinet, а не Notification Delivery.
+19. Безопасный listing-card boundary может включать title, price, geography, safe listing URL/reference, approved photo/preview reference, Beacon reference and reason label, если эти facts уже предоставлены approved upstream contract.
+20. Phone, seller, seller rating and description допустимы только после отдельного Parser/detail/privacy gate. Notification Delivery их не добывает и не требует для доставки.
+21. Notification Delivery не хранит raw Avito payload, full HTML/JSON, cookies, tokens, credentials or unapproved private seller data.
+22. По умолчанию generic delivery work планируется для всех включённых и подтверждённых каналов пользователя.
+23. Пользователь может отключить ненужный канал; disabled or unverified channel не получает delivery work.
+24. Telegram Adapter владеет Telegram-specific mapping/rendering/delivery, MAX Adapter владеет MAX-specific mapping/rendering/delivery, Web Cabinet владеет UI/read presentation.
+25. Notification Delivery не создаёт Telegram/MAX provider payloads, templates, bots, webhooks, Mini Apps or provider calls.
+26. Multi-channel success/failure фиксируется отдельно для каждого channel/attempt. Успех одного канала не стирает failure history другого.
+27. Cross-channel priority/fallback values сейчас не выбираются, поскольку текущая default-модель — delivery во все enabled channels.
+28. Unknown, ambiguous or interrupted provider send является reconciliation-first state и никогда не повторяется вслепую.
+29. Attempt identity and evidence сохраняются; ambiguous send не создаёт автоматически второй attempt с возможным duplicate user-visible effect.
+30. Provider HTTP success, Egress transport success, queue success or adapter callback сами по себе не доказывают accepted user-visible delivery.
+31. Minimal delivery history требуется для deduplication, support and reconciliation.
+32. Minimal history может содержать source event reference, outbox identity, authorized account/Beacon scope, channel class, target reference class, attempt identity, safe outcome/reason class, deduplication key, approved timestamps, safe listing-card references, correlation/causation and reconciliation state.
+33. Delivery history не является full listing archive, full chat history or raw provider archive.
+34. Retention, deletion, archive and compaction остаются заблокированными `OD-013`.
+35. Read, click and open tracking отложены и этим решением не разрешаются.
+36. Quiet hours, digest, time batching and grouping over time отложены и этим решением не разрешаются.
+37. Exact preference storage, UI, unsubscribe semantics, future-channel defaults, retry/backoff values, provider limits, message templates, physical schema, queue/worker technology and runtime remain gated.
+38. Semantic contracts, deterministic synthetic fakes, architecture/static checks and evidence documentation могут создаваться только отдельными exact roadmap tasks.
+39. Это решение supersedes playbook v1.0 только в текущем owner product scope, где `ListingPricePairFirstSeen` не является активным user-visible trigger, no-new push configurable and rate-limited, all enabled channels planned by default, and recovery/lost-anchor notification classes explicitly defined.
+40. `OD-013` не закрывается. Другие open decisions нельзя закрывать предположениями.
+
+**Последствия:**
+
+- Следующий допустимый шаг после отдельной проверки GitHub и prerequisites — `ND-02` semantic source event intake contracts.
+- Каждый дальнейший ND step требует отдельного exact task.
+- Runtime delivery, provider adapters, Telegram/MAX implementation, persistence, schema, migrations, queue, worker и deployment остаются blocked.
+- Scan остаётся владельцем source facts, baseline, listing state, no-new и recovery facts.
+- Parser остаётся владельцем extraction/provider classification.
+- Egress Routing остаётся владельцем route/transport state.
+- Identity, Entitlements и Beacon Management сохраняют собственную authority.
+- Notification Delivery владеет только generic eligibility, outbox, channel plan, attempts, deduplication, reconciliation и safe delivery history semantics.
