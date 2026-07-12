@@ -683,3 +683,50 @@ An Admin capability may change limits and tariffs in the future. Admin UI/runtim
 This governance capture records the owner decisions now frozen in `docs/04-modules/06-scan-orchestration-and-listing-state/OWNER_SCAN_DECISIONS_CAPTURE_v1.0.md` for `06-scan-orchestration-and-listing-state`.
 
 In short: Scan scope stays new-listings-only; price can remain candidate data; price-change tracking and price-pair notification are deferred; newest-first monitoring is required; Parser Adapter owns observed order and sort/publication signals; missing or unproven sort context is blocked/ambiguous rather than false no-new; rolling anchors are compact memory; Scan does not build a full user-visible archive; anchors update after each successful comparison-eligible scan; anchor size is future Admin-configurable; lost anchors differ from window overflow; lost anchors may restore the latest 3 as latest-fresh rather than confirmed-new; window overflow remains future design; external failure, Avito unavailability, CAPTCHA, route failure, parser failure or ambiguity is not no-new and must not erase or advance anchors; one pending recovery scan is kept; one recovery result may be reported after entitlement expiry if failure began while access was active; no-new must not spam every interval by default; one Beacon cannot have parallel active comparison commits; lifecycle and entitlement are re-checked before user-visible commit; paused/archived/deleted/frozen/denied/ambiguous/expired normal state blocks the normal result except one recovery grace case; Scan emits safe facts/status only while Notification Delivery and UI/channel own delivery/rendering; scheduler, worker, DB, parser/provider, Egress, Notification, UI, deploy, secrets and raw payload retention stay gated; older playbook v1.0 price-pair direction is superseded for current owner scope but remains in history; OD-011 and OD-013 remain open and no open decision is closed by assumption.
+
+---
+
+## ADR-0019 — 2026-07-12 — Egress Routing owner decisions for ER-01
+
+**Статус:** APPROVED owner decision capture for Egress Routing governance.
+
+**Модуль:** `07-egress-routing`
+
+**Roadmap step:** `ER-01`
+
+**Technical task:** `ER-01-GOVERNANCE-CAPTURE-20260712-003`
+
+**Открывает gate:** использование зафиксированных owner decisions как input для последующих exact semantic Egress tasks.
+
+**Не открывает:** live Avito access, route runtime, proxy/VPN/tunnel implementation, concrete provider selection, browser automation, browser-extension modification, Windows Agent, native host, installer, cookies/session storage, CAPTCHA solving, persistence, migrations, worker/scheduler runtime, Docker, CI/CD, deployment, ports, firewall, DNS, TLS, secrets or credentials.
+
+**Контекст:** Module 07 playbook intentionally leaves route technology, topology, provider access, fallback order, cookies/session policy, Windows/browser implementation, runtime and live proof gated. The owner supplied explicit direction for the primary Linux/server route candidate, browser-extension evidence boundary, Windows fallback, development owner bridge, browser worker model, Russian residential route, isolated sessions, CAPTCHA handling, policy-based automatic fallback, route authority, minimal assignment, agent database isolation and live proof limits. These decisions must be captured before semantic contracts or fixtures use them.
+
+**Решение:**
+
+1. The primary target route family is Linux/server reference-style egress, but it is not production-proven and requires a separate bounded `proof_only` task before implementation.
+2. Owner-provided browser-extension experience is accepted only as evidence that a browser-extension route family can work with Avito; it is not production-scale SaaS proof and does not authorize implementation.
+3. A future production-scope Avito extension must keep only necessary Avito interaction/extraction, bounded assignment, safe result return and explicit outcome handling, while excluding self-editing, developer-control and unrelated automation capabilities unless separately proven necessary.
+4. Full SaaS on Windows is not selected. Linux remains the preferred SaaS core environment.
+5. Windows VM, Windows Egress Agent and Windows Browser Worker are allowed only as future replaceable fallback execution dependencies after exact proof, security and operations gates.
+6. A temporary owner-assisted development bridge is allowed only for explicit bounded development/proof use, is not production, is not scalable proof and must remain replaceable.
+7. One permanently open browser per Beacon is not the target architecture. A bounded browser worker pool is the preferred future browser fallback model.
+8. Russian residential proxy / Russian residential route is allowed as a future route type, but no provider, credential format, protocol, payment contract, priority or production configuration is selected.
+9. Cookies/session may be used only through a future project-owned isolated-session policy. Personal browser profiles, passwords, unrelated cookies, private owner sessions by default and secret values in Git/logs/reports are forbidden.
+10. CAPTCHA solving and CAPTCHA bypass are forbidden. CAPTCHA, challenge and restriction must become explicit outcomes and may degrade, restrict or quarantine a route; they must not become clean empty results.
+11. Automatic fallback is allowed only when policy-based, bounded, explainable and auditable. Blind, random, infinite or CAPTCHA-bypass fallback is forbidden.
+12. Runtime route selection belongs only to Egress Routing. Parser, Scan, Beacon and Notification do not choose routes.
+13. Agent or browser worker receives only a minimum bounded assignment and no full Account, Beacon, tariff, Scan history, Notification history, global secrets or unrelated personal data.
+14. Agent has no direct primary database access and remains a replaceable execution dependency.
+15. Live Avito proof is allowed only through a separate owner-approved `proof_only` task with exact route, URL scope, limits, no-secrets/no-raw-retention rules, success/failure criteria and STOP conditions.
+16. `OD-009`, `OD-010`, `OD-011` and `OD-013` remain open.
+17. Tunnel/proxy/VPN/browser/Windows runtime, database, migrations, services, CI/CD and deployment remain blocked.
+
+**Последствие:**
+
+- ER-02 and later exact semantic steps may use these decisions only within their own approved scope.
+- This ADR does not select a concrete route provider or technology implementation.
+- This ADR does not authorize live traffic or runtime.
+- Transport success remains distinct from Parser success, Scan success and Notification delivery.
+- Browser-extension evidence remains proof of route-family feasibility only, not production readiness.
+- No open decision is closed by assumption.

@@ -251,3 +251,34 @@ This update records the owner decisions captured in `docs/04-modules/06-scan-orc
 The captured scope is new-listings-only Scan behavior with newest-first monitoring, Parser Adapter-owned observed order and sort/publication signals, compact rolling anchors, future Admin-configurable anchor size, explicit lost-anchor versus window-overflow separation, blocked/ambiguous handling for missing sort context and external failure, one pending recovery scan, one recovery grace result after entitlement expiry when failure started while access was active, no-no-new spam by default, single active comparison commit per Beacon, lifecycle and entitlement re-check before user-visible commit, safe facts/status only from Scan, and continued gating for scheduler, worker, DB, parser/provider, Egress, Notification, UI, deploy, secrets and raw provider payload retention.
 
 OD-011 and OD-013 remain open, and no open decision is closed by assumption. Older playbook v1.0 price-pair direction is superseded for the current owner scope, but not deleted from history.
+
+---
+
+## Governance capture update — 2026-07-12 — ER-01 Egress Routing owner decisions
+
+`ADR-0019` captures the owner decisions required for Module 07 ER-01.
+
+**Technical task:** `ER-01-GOVERNANCE-CAPTURE-20260712-003`
+
+This update permits later exact semantic Egress tasks to use the captured route-strategy boundaries. It does not authorize runtime, live Avito access, provider selection, proxy/VPN/tunnel configuration, browser automation, browser-extension modification, Windows Agent implementation, cookies/session storage, persistence, migrations, services, CI/CD, deployment or secrets.
+
+| Item | Status after ADR-0019 | Notes |
+|---|---|---|
+| Primary Linux/server reference-style route | APPROVED_FOR_PROOF_PLANNING | Candidate route family only; production readiness and implementation remain blocked pending exact `proof_only` evidence. |
+| Browser-extension Avito evidence | ACKNOWLEDGED_NOT_PRODUCTION_PROOF | Owner evidence supports route-family feasibility only; scale, security, topology and production implementation remain unproven. |
+| Full SaaS on Windows | NOT_SELECTED | Linux remains preferred for SaaS core. |
+| Windows VM/Agent/browser worker | ALLOWED_FUTURE_FALLBACK_FAMILY | Replaceable bounded execution dependency only; proof, security, operations and implementation gates remain required. |
+| Owner development bridge | DEVELOPMENT_ONLY | Requires explicit owner consent for each bounded proof/use and is not production or scalability proof. |
+| Browser worker pool | PREFERRED_FUTURE_BROWSER_MODEL | One persistent browser per Beacon is not the target architecture. |
+| Russian residential route | ALLOWED_FUTURE_ROUTE_TYPE | No provider, credentials, protocol, commercial agreement or production configuration selected. |
+| Cookies/session | BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE | Personal profiles, passwords, unrelated cookies and secret disclosure remain forbidden. |
+| CAPTCHA solving | FORBIDDEN | CAPTCHA/challenge/restriction must produce explicit outcome; no solve or bypass. |
+| Automatic fallback | APPROVED_FOR_POLICY_BASED_SEMANTICS_ONLY | Must be bounded, explainable and auditable; blind/random/infinite fallback remains forbidden. |
+| Runtime route selection | EGRESS_ROUTING_AUTHORITY | Parser, Scan, Beacon and Notification do not choose route. |
+| Agent primary database access | FORBIDDEN | Agent receives only minimum bounded assignment through a server contract. |
+| Live Avito proof | BLOCKED_UNTIL_EXACT_OWNER_APPROVED_PROOF_ONLY_TASK | Exact route, scope, limits, redaction/non-retention and STOP criteria are mandatory. |
+| Egress persistence/runtime/deploy | BLOCKED | Physical schema, migrations, services, proxy/tunnel/browser runtime, CI/CD and deploy require separate gates. |
+| OD-009 | OPEN | Exact supported first-stage editable Avito filters remain unresolved. |
+| OD-010 | OPEN | Country-wide/provider-market support evidence remains unresolved outside already scoped module decisions. |
+| OD-011 | OPEN | Safe monitoring frequency and routing load boundary remain unresolved. |
+| OD-013 | OPEN | Retention/deletion of route, lease, outcome, audit and diagnostic evidence remains unresolved. |
