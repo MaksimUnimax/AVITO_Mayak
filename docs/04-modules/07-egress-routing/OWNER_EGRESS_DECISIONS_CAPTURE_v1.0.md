@@ -199,7 +199,7 @@ Egress Routing должен в будущей semantic/runtime модели:
 - вернуть explicit technical outcome;
 - сохранить safe reason/evidence reference;
 - изменить route health/restriction state согласно approved policy;
-- при необходимости поместить affected route in degraded/restricted/quarantined state;
+- при необходимости поместить affected route в degraded/restricted/quarantined state;
 - не выдавать affected new assignments согласно policy;
 - не стирать route history.
 
