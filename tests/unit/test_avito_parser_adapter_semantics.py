@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
@@ -11,6 +11,8 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    DiagnosticEvidenceKind,
+    EvidencePolicyStatus,
     ListingBatchParseOutcome,
     ListingCandidateStatus,
     ListingCardCandidate,
@@ -30,20 +32,29 @@ from mayak.modules.avito_parser_adapter import (
     PaginationPageObservation,
     PaginationStopReason,
     ParserCompatibilityProfile,
+    ParserDiagnosticEvent,
     ParserEvidenceReference,
     ParserOutcomeStatus,
+    ParserPrivacyBoundaryOutcome,
     ParserRequestEnvelope,
     ParserScanOrderingHandoff,
+    ParserWarning,
     ParserWarningCode,
+    PersonalDataMinimizationStatus,
+    PrivacyBoundaryStatus,
     ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
+    RetentionDisposition,
+    SafeDiagnosticEvidence,
     ScanOrderingHandoffStatus,
     SearchConfigurationExtractionField,
     SearchConfigurationFieldStatus,
     SearchConfigurationValueKind,
     SearchConfigurationWarningCode,
+    SensitiveMaterialDisposition,
+    SensitiveMaterialKind,
     SourceBoundaryPolicyRequirement,
     SourceBoundaryRiskCode,
     SourceBoundaryStatus,
@@ -186,6 +197,17 @@ def test_apa09_warning_codes_are_explicit_and_stable() -> None:
         "LIVE_PAGINATION_NOT_PERFORMED",
         "SCAN_NEWNESS_DECISION_NOT_PERFORMED",
         "SCAN_ANCHOR_STATE_NOT_MUTATED",
+        "SAFE_DIAGNOSTIC_EVIDENCE_ONLY",
+        "RAW_PROVIDER_PAYLOAD_NOT_RETAINED",
+        "SENSITIVE_ACCESS_MATERIAL_BLOCKED",
+        "PERSONAL_DATA_MINIMIZED",
+        "UNAPPROVED_PERSONAL_DATA_BLOCKED",
+        "REDACTED_REASON_CODE_ONLY",
+        "OD_013_REMAINS_OPEN",
+        "RETENTION_DURATION_NOT_DEFINED",
+        "DATABASE_RETENTION_NOT_IMPLEMENTED",
+        "ADMIN_RAW_PAYLOAD_VIEWER_NOT_IMPLEMENTED",
+        "LIVE_PROVIDER_EVIDENCE_NOT_CAPTURED",
     }
 
 
@@ -227,6 +249,596 @@ def test_apa10_pagination_enums_are_explicit_and_stable() -> None:
         "BYTES",
         "DURATION_MILLISECONDS",
     ]
+
+
+def test_apa11_safe_privacy_contracts_enforce_explicit_variants() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::apa11::contract::evidence",
+        evidence_kind="privacy-boundary",
+    )
+    safe_id = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::id",
+        kind=DiagnosticEvidenceKind.SAFE_ID,
+        safe_reference="safe::apa11::id",
+    )
+    safe_fingerprint = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::fingerprint",
+        kind=DiagnosticEvidenceKind.SAFE_FINGERPRINT,
+        safe_reference="fingerprint::apa11::synthetic",
+    )
+    safe_profile = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::profile",
+        kind=DiagnosticEvidenceKind.PROFILE_REFERENCE,
+        safe_reference="profile::apa11::synthetic",
+    )
+    count_zero = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::count-zero",
+        kind=DiagnosticEvidenceKind.COUNT,
+        count=0,
+    )
+    count_positive = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::count-positive",
+        kind=DiagnosticEvidenceKind.COUNT,
+        count=7,
+    )
+    field_availability = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::field",
+        kind=DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.TITLE,
+        field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+    )
+    redacted_reason = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::redacted",
+        kind=DiagnosticEvidenceKind.REDACTED_REASON_CODE,
+        redacted_reason_code="FX::APA11::REDACTED::001",
+    )
+
+    assert safe_id.safe_reference == "safe::apa11::id"
+    assert safe_fingerprint.safe_reference == "fingerprint::apa11::synthetic"
+    assert safe_profile.safe_reference == "profile::apa11::synthetic"
+    assert count_zero.count == 0
+    assert count_positive.count == 7
+    assert field_availability.field_family is ListingFieldFamily.TITLE
+    assert field_availability.field_availability is ListingFieldAvailability.PROVEN_AVAILABLE
+    assert redacted_reason.redacted_reason_code == "FX::APA11::REDACTED::001"
+    assert "value" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+
+    with pytest.raises(ValueError):
+        SafeDiagnosticEvidence(
+            evidence_item_id="fx::apa11::safe::negative",
+            kind=DiagnosticEvidenceKind.COUNT,
+            count=-1,
+        )
+    with pytest.raises(ValueError):
+        SafeDiagnosticEvidence(
+            evidence_item_id="fx::apa11::safe::bool",
+            kind=DiagnosticEvidenceKind.COUNT,
+            count=True,  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError):
+        SafeDiagnosticEvidence(
+            evidence_item_id="fx::apa11::safe::multi",
+            kind=DiagnosticEvidenceKind.SAFE_ID,
+            safe_reference="safe::apa11::id",
+            count=1,
+        )
+    with pytest.raises(ValueError):
+        SafeDiagnosticEvidence(
+            evidence_item_id="fx::apa11::safe::missing-field",
+            kind=DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+            field_family=ListingFieldFamily.TITLE,
+        )
+    with pytest.raises(ValueError):
+        SafeDiagnosticEvidence(
+            evidence_item_id="fx::apa11::safe::blank-redacted",
+            kind=DiagnosticEvidenceKind.REDACTED_REASON_CODE,
+            redacted_reason_code=" ",
+        )
+
+    raw_html = SensitiveMaterialDisposition(
+        decision_id="fx::apa11::decision::raw-html",
+        material_kind=SensitiveMaterialKind.RAW_HTML,
+        disposition=RetentionDisposition.NOT_RETAINED,
+        reason_code="FX::APA11::RAW_HTML::NOT_RETAINED",
+        policy_reference="policy::apa11::od013-open",
+        personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        evidence_references=(evidence,),
+    )
+    raw_json = SensitiveMaterialDisposition(
+        decision_id="fx::apa11::decision::raw-json",
+        material_kind=SensitiveMaterialKind.RAW_JSON,
+        disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+        reason_code="FX::APA11::RAW_JSON::BLOCKED",
+        policy_reference="policy::apa11::od013-open",
+        personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        evidence_references=(evidence,),
+    )
+    blocked_cookie = SensitiveMaterialDisposition(
+        decision_id="fx::apa11::decision::cookie",
+        material_kind=SensitiveMaterialKind.COOKIE,
+        disposition=RetentionDisposition.NOT_RETAINED,
+        reason_code="FX::APA11::COOKIE::BLOCKED",
+        policy_reference="policy::apa11::od013-open",
+        personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        evidence_references=(evidence,),
+    )
+    blocked_token = SensitiveMaterialDisposition(
+        decision_id="fx::apa11::decision::token",
+        material_kind=SensitiveMaterialKind.TOKEN,
+        disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+        reason_code="FX::APA11::TOKEN::BLOCKED",
+        policy_reference="policy::apa11::od013-open",
+        personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        evidence_references=(evidence,),
+    )
+    blocked_unapproved = SensitiveMaterialDisposition(
+        decision_id="fx::apa11::decision::unapproved",
+        material_kind=SensitiveMaterialKind.UNAPPROVED_PERSONAL_DATA,
+        disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+        reason_code="FX::APA11::UNAPPROVED::BLOCKED",
+        policy_reference="policy::apa11::od013-open",
+        personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        evidence_references=(evidence,),
+    )
+
+    assert raw_html.disposition is RetentionDisposition.NOT_RETAINED
+    assert raw_json.disposition is RetentionDisposition.BLOCKED_PENDING_POLICY
+    assert blocked_cookie.personal_data_status is PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED
+    assert blocked_token.personal_data_status is PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED
+    assert (
+        blocked_unapproved.personal_data_status is PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED
+    )
+
+    with pytest.raises(ValueError):
+        SensitiveMaterialDisposition(
+            decision_id="fx::apa11::decision::raw-html-retained",
+            material_kind=SensitiveMaterialKind.RAW_HTML,
+            disposition=RetentionDisposition.SAFE_REFERENCE_ONLY,
+            reason_code="FX::APA11::RAW_HTML::RETAINED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        )
+    with pytest.raises(ValueError):
+        SensitiveMaterialDisposition(
+            decision_id="fx::apa11::decision::raw-json-redacted",
+            material_kind=SensitiveMaterialKind.RAW_JSON,
+            disposition=RetentionDisposition.REDACTED_REFERENCE_ONLY,
+            reason_code="FX::APA11::RAW_JSON::REDACTED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        )
+    with pytest.raises(ValueError):
+        SensitiveMaterialDisposition(
+            decision_id="fx::apa11::decision::full-payload-retained",
+            material_kind=SensitiveMaterialKind.FULL_PROVIDER_PAYLOAD,
+            disposition=RetentionDisposition.SAFE_REFERENCE_ONLY,
+            reason_code="FX::APA11::FULL::RETAINED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        )
+    with pytest.raises(ValueError):
+        SensitiveMaterialDisposition(
+            decision_id="fx::apa11::decision::private-credential",
+            material_kind=SensitiveMaterialKind.PRIVATE_CREDENTIAL,
+            disposition=RetentionDisposition.NOT_RETAINED,
+            reason_code="FX::APA11::PRIVATE_CREDENTIAL::APPROVED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.APPROVED_MINIMIZED,
+        )
+    with pytest.raises(ValueError):
+        SensitiveMaterialDisposition(
+            decision_id="fx::apa11::decision::unapproved-personal-data",
+            material_kind=SensitiveMaterialKind.UNAPPROVED_PERSONAL_DATA,
+            disposition=RetentionDisposition.NOT_RETAINED,
+            reason_code="FX::APA11::UNAPPROVED::NOT_PRESENT",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        )
+
+    assert raw_html.disposition in {
+        RetentionDisposition.NOT_RETAINED,
+        RetentionDisposition.BLOCKED_PENDING_POLICY,
+    }
+
+
+def test_apa11_privacy_events_and_outcomes_enforce_governance_warnings() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::apa11::event::evidence",
+        evidence_kind="privacy-boundary",
+    )
+    compliant_event = ParserDiagnosticEvent(
+        diagnostic_event_id="fx::apa11::event::compliant",
+        attempt_reference="fx::apa11::attempt",
+        correlation_reference="corr::fx::apa11::privacy",
+        status=PrivacyBoundaryStatus.COMPLIANT,
+        profile_reference="fx::apa11::privacy-profile",
+        safe_evidence=(
+            SafeDiagnosticEvidence(
+                evidence_item_id="fx::apa11::event::safe-fingerprint",
+                kind=DiagnosticEvidenceKind.SAFE_FINGERPRINT,
+                safe_reference="fingerprint::apa11::synthetic",
+            ),
+        ),
+        sensitive_material_decisions=(
+            SensitiveMaterialDisposition(
+                decision_id="fx::apa11::event::decision::not-retained",
+                material_kind=SensitiveMaterialKind.RAW_HTML,
+                disposition=RetentionDisposition.NOT_RETAINED,
+                reason_code="FX::APA11::RAW_HTML::NOT_RETAINED",
+                policy_reference="policy::apa11::od013-open",
+                personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.SAFE_DIAGNOSTIC_EVIDENCE_ONLY,
+                message="safe diagnostics only",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+    redacted_event = ParserDiagnosticEvent(
+        diagnostic_event_id="fx::apa11::event::redacted",
+        attempt_reference="fx::apa11::attempt",
+        correlation_reference="corr::fx::apa11::privacy",
+        status=PrivacyBoundaryStatus.REDACTED,
+        profile_reference="fx::apa11::privacy-profile",
+        safe_evidence=(
+            SafeDiagnosticEvidence(
+                evidence_item_id="fx::apa11::event::redacted-reason",
+                kind=DiagnosticEvidenceKind.REDACTED_REASON_CODE,
+                redacted_reason_code="FX::APA11::REDACTED::001",
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.REDACTED_REASON_CODE_ONLY,
+                message="redacted reason code only",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+    blocked_event = ParserDiagnosticEvent(
+        diagnostic_event_id="fx::apa11::event::blocked",
+        attempt_reference="fx::apa11::attempt",
+        correlation_reference="corr::fx::apa11::privacy",
+        status=PrivacyBoundaryStatus.BLOCKED,
+        profile_reference="fx::apa11::privacy-profile",
+        sensitive_material_decisions=(
+            SensitiveMaterialDisposition(
+                decision_id="fx::apa11::event::decision::blocked",
+                material_kind=SensitiveMaterialKind.UNAPPROVED_PERSONAL_DATA,
+                disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+                reason_code="FX::APA11::UNAPPROVED_PERSONAL_DATA::BLOCKED",
+                policy_reference="policy::apa11::od013-open",
+                personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.OD_013_REMAINS_OPEN,
+                message="OD-013 remains open",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+    ambiguous_event = ParserDiagnosticEvent(
+        diagnostic_event_id="fx::apa11::event::ambiguous",
+        attempt_reference="fx::apa11::attempt",
+        correlation_reference="corr::fx::apa11::privacy",
+        status=PrivacyBoundaryStatus.AMBIGUOUS,
+        profile_reference="fx::apa11::privacy-profile",
+        safe_evidence=(
+            SafeDiagnosticEvidence(
+                evidence_item_id="fx::apa11::event::safe-count",
+                kind=DiagnosticEvidenceKind.COUNT,
+                count=0,
+            ),
+        ),
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.LIVE_PROVIDER_EVIDENCE_NOT_CAPTURED,
+                message="live provider evidence is not captured",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+        notes=("synthetic ambiguous event",),
+    )
+
+    assert compliant_event.status is PrivacyBoundaryStatus.COMPLIANT
+    assert redacted_event.status is PrivacyBoundaryStatus.REDACTED
+    assert blocked_event.status is PrivacyBoundaryStatus.BLOCKED
+    assert ambiguous_event.status is PrivacyBoundaryStatus.AMBIGUOUS
+
+    with pytest.raises(ValueError):
+        ParserDiagnosticEvent(
+            diagnostic_event_id="fx::apa11::event::dup-safe",
+            attempt_reference="fx::apa11::attempt",
+            correlation_reference="corr::fx::apa11::privacy",
+            status=PrivacyBoundaryStatus.COMPLIANT,
+            safe_evidence=(
+                SafeDiagnosticEvidence(
+                    evidence_item_id="fx::apa11::event::duplicate",
+                    kind=DiagnosticEvidenceKind.SAFE_ID,
+                    safe_reference="safe::apa11::one",
+                ),
+                SafeDiagnosticEvidence(
+                    evidence_item_id="fx::apa11::event::duplicate",
+                    kind=DiagnosticEvidenceKind.SAFE_ID,
+                    safe_reference="safe::apa11::two",
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserDiagnosticEvent(
+            diagnostic_event_id="fx::apa11::event::dup-decision",
+            attempt_reference="fx::apa11::attempt",
+            correlation_reference="corr::fx::apa11::privacy",
+            status=PrivacyBoundaryStatus.BLOCKED,
+            sensitive_material_decisions=(
+                SensitiveMaterialDisposition(
+                    decision_id="fx::apa11::event::duplicate-decision",
+                    material_kind=SensitiveMaterialKind.RAW_JSON,
+                    disposition=RetentionDisposition.NOT_RETAINED,
+                    reason_code="FX::APA11::RAW_JSON::NOT_RETAINED",
+                    policy_reference="policy::apa11::od013-open",
+                    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+                ),
+                SensitiveMaterialDisposition(
+                    decision_id="fx::apa11::event::duplicate-decision",
+                    material_kind=SensitiveMaterialKind.FULL_PROVIDER_PAYLOAD,
+                    disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+                    reason_code="FX::APA11::FULL::BLOCKED",
+                    policy_reference="policy::apa11::od013-open",
+                    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserDiagnosticEvent(
+            diagnostic_event_id="fx::apa11::event::bad-compliant",
+            attempt_reference="fx::apa11::attempt",
+            correlation_reference="corr::fx::apa11::privacy",
+            status=PrivacyBoundaryStatus.COMPLIANT,
+            sensitive_material_decisions=(
+                SensitiveMaterialDisposition(
+                    decision_id="fx::apa11::event::decision::bad-compliant",
+                    material_kind=SensitiveMaterialKind.RAW_HTML,
+                    disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+                    reason_code="FX::APA11::RAW_HTML::BLOCKED",
+                    policy_reference="policy::apa11::od013-open",
+                    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserDiagnosticEvent(
+            diagnostic_event_id="fx::apa11::event::bad-redacted",
+            attempt_reference="fx::apa11::attempt",
+            correlation_reference="corr::fx::apa11::privacy",
+            status=PrivacyBoundaryStatus.REDACTED,
+            safe_evidence=(
+                SafeDiagnosticEvidence(
+                    evidence_item_id="fx::apa11::event::safe-only",
+                    kind=DiagnosticEvidenceKind.COUNT,
+                    count=1,
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserDiagnosticEvent(
+            diagnostic_event_id="fx::apa11::event::bad-blocked",
+            attempt_reference="fx::apa11::attempt",
+            correlation_reference="corr::fx::apa11::privacy",
+            status=PrivacyBoundaryStatus.BLOCKED,
+            safe_evidence=(
+                SafeDiagnosticEvidence(
+                    evidence_item_id="fx::apa11::event::safe-only",
+                    kind=DiagnosticEvidenceKind.COUNT,
+                    count=1,
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserDiagnosticEvent(
+            diagnostic_event_id="fx::apa11::event::bad-ambiguous",
+            attempt_reference="fx::apa11::attempt",
+            correlation_reference="corr::fx::apa11::privacy",
+            status=PrivacyBoundaryStatus.AMBIGUOUS,
+        )
+
+    compliant_outcome = ParserPrivacyBoundaryOutcome(
+        privacy_outcome_id="fx::apa11::outcome::compliant",
+        status=PrivacyBoundaryStatus.COMPLIANT,
+        evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+        diagnostic_event=compliant_event,
+        normalized_field_families=(
+            ListingFieldFamily.TITLE,
+            ListingFieldFamily.GEOGRAPHY,
+        ),
+        personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.OD_013_REMAINS_OPEN,
+                message="OD-013 remains open",
+                evidence_reference=evidence,
+            ),
+            ParserWarning(
+                code=ParserWarningCode.RETENTION_DURATION_NOT_DEFINED,
+                message="retention duration not defined",
+                evidence_reference=evidence,
+            ),
+            ParserWarning(
+                code=ParserWarningCode.DATABASE_RETENTION_NOT_IMPLEMENTED,
+                message="database retention not implemented",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+    redacted_outcome = ParserPrivacyBoundaryOutcome(
+        privacy_outcome_id="fx::apa11::outcome::redacted",
+        status=PrivacyBoundaryStatus.REDACTED,
+        evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+        diagnostic_event=redacted_event,
+        personal_data_status=PersonalDataMinimizationStatus.REDACTED,
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.OD_013_REMAINS_OPEN,
+                message="OD-013 remains open",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+    blocked_outcome = ParserPrivacyBoundaryOutcome(
+        privacy_outcome_id="fx::apa11::outcome::blocked",
+        status=PrivacyBoundaryStatus.BLOCKED,
+        evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+        diagnostic_event=blocked_event,
+        personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.OD_013_REMAINS_OPEN,
+                message="OD-013 remains open",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+    ambiguous_outcome = ParserPrivacyBoundaryOutcome(
+        privacy_outcome_id="fx::apa11::outcome::ambiguous",
+        status=PrivacyBoundaryStatus.AMBIGUOUS,
+        evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+        diagnostic_event=ambiguous_event,
+        normalized_field_families=(
+            ListingFieldFamily.SELLER,
+            ListingFieldFamily.PHONE_VALUE,
+        ),
+        personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.OD_013_REMAINS_OPEN,
+                message="OD-013 remains open",
+                evidence_reference=evidence,
+            ),
+            ParserWarning(
+                code=ParserWarningCode.RETENTION_DURATION_NOT_DEFINED,
+                message="retention duration not defined",
+                evidence_reference=evidence,
+            ),
+            ParserWarning(
+                code=ParserWarningCode.DATABASE_RETENTION_NOT_IMPLEMENTED,
+                message="database retention not implemented",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+    )
+
+    assert compliant_outcome.status is PrivacyBoundaryStatus.COMPLIANT
+    assert redacted_outcome.status is PrivacyBoundaryStatus.REDACTED
+    assert blocked_outcome.status is PrivacyBoundaryStatus.BLOCKED
+    assert ambiguous_outcome.status is PrivacyBoundaryStatus.AMBIGUOUS
+    assert len(compliant_outcome.normalized_field_families) == len(
+        set(compliant_outcome.normalized_field_families)
+    )
+    assert len(ambiguous_outcome.normalized_field_families) == len(
+        set(ambiguous_outcome.normalized_field_families)
+    )
+
+    with pytest.raises(ValueError):
+        ParserPrivacyBoundaryOutcome(
+            privacy_outcome_id="fx::apa11::outcome::missing-policy",
+            status=PrivacyBoundaryStatus.COMPLIANT,
+            evidence_policy_status=EvidencePolicyStatus.APPROVED_POLICY_REFERENCED,
+            diagnostic_event=compliant_event,
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        )
+    with pytest.raises(ValueError):
+        ParserPrivacyBoundaryOutcome(
+            privacy_outcome_id="fx::apa11::outcome::duplicate-families",
+            status=PrivacyBoundaryStatus.COMPLIANT,
+            evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+            diagnostic_event=compliant_event,
+            normalized_field_families=(
+                ListingFieldFamily.TITLE,
+                ListingFieldFamily.TITLE,
+            ),
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.OD_013_REMAINS_OPEN, message="OD-013 remains open"
+                ),
+                ParserWarning(
+                    code=ParserWarningCode.RETENTION_DURATION_NOT_DEFINED,
+                    message="retention duration not defined",
+                ),
+                ParserWarning(
+                    code=ParserWarningCode.DATABASE_RETENTION_NOT_IMPLEMENTED,
+                    message="database retention not implemented",
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserPrivacyBoundaryOutcome(
+            privacy_outcome_id="fx::apa11::outcome::missing-od013",
+            status=PrivacyBoundaryStatus.BLOCKED,
+            evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+            diagnostic_event=blocked_event,
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        )
+    with pytest.raises(ValueError):
+        ParserPrivacyBoundaryOutcome(
+            privacy_outcome_id="fx::apa11::outcome::blocked-without-evidence",
+            status=PrivacyBoundaryStatus.BLOCKED,
+            evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+            diagnostic_event=compliant_event,
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.OD_013_REMAINS_OPEN, message="OD-013 remains open"
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserPrivacyBoundaryOutcome(
+            privacy_outcome_id="fx::apa11::outcome::missing-retention-warning",
+            status=PrivacyBoundaryStatus.COMPLIANT,
+            evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+            diagnostic_event=compliant_event,
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.OD_013_REMAINS_OPEN, message="OD-013 remains open"
+                ),
+            ),
+        )
+    with pytest.raises(ValueError):
+        ParserPrivacyBoundaryOutcome(
+            privacy_outcome_id="fx::apa11::outcome::bad-compliant",
+            status=PrivacyBoundaryStatus.COMPLIANT,
+            evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+            diagnostic_event=blocked_event,
+            personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+            warnings=(
+                ParserWarning(
+                    code=ParserWarningCode.OD_013_REMAINS_OPEN, message="OD-013 remains open"
+                ),
+                ParserWarning(
+                    code=ParserWarningCode.RETENTION_DURATION_NOT_DEFINED,
+                    message="retention duration not defined",
+                ),
+                ParserWarning(
+                    code=ParserWarningCode.DATABASE_RETENTION_NOT_IMPLEMENTED,
+                    message="database retention not implemented",
+                ),
+            ),
+        )
 
 
 def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
@@ -343,8 +955,110 @@ def test_fixture_ids_are_unique_and_cover_required_semantics() -> None:
         "FX-APA10-NO-UNBOUNDED-PAGINATION-001",
         "FX-APA10-NO-LIVE-ENDPOINT-AUTHORITY-001",
         "FX-APA10-NO-SCAN-NEWNESS-MUTATION-001",
+        "FX-APA11-SAFE-DIAGNOSTIC-FINGERPRINT-001",
+        "FX-APA11-SAFE-COUNT-PROFILE-001",
+        "FX-APA11-FIELD-AVAILABILITY-ONLY-001",
+        "FX-APA11-REDACTED-REASON-CODE-001",
+        "FX-APA11-RAW-HTML-NOT-RETAINED-001",
+        "FX-APA11-RAW-JSON-NOT-RETAINED-001",
+        "FX-APA11-FULL-PAYLOAD-NOT-RETAINED-001",
+        "FX-APA11-COOKIE-SESSION-TOKEN-BLOCKED-001",
+        "FX-APA11-UNAPPROVED-PERSONAL-DATA-BLOCKED-001",
+        "FX-APA11-OPTIONAL-LISTING-FIELD-MINIMIZED-001",
+        "FX-APA11-OD013-REMAINS-OPEN-001",
+        "FX-APA11-NO-RETENTION-DURATION-GUESSED-001",
+        "FX-APA11-NO-DATABASE-RETENTION-001",
+        "FX-APA11-NO-RAW-PAYLOAD-LOG-001",
+        "FX-APA11-NO-ADMIN-RAW-VIEWER-001",
+        "FX-APA11-NO-LIVE-PROVIDER-EVIDENCE-001",
     }
     assert expected_ids.issubset(SYNTHETIC_FIXTURE_BY_ID)
+
+
+def test_apa11_privacy_fixtures_are_registered_once_and_remain_synthetic() -> None:
+    expected_apa11_ids = (
+        "FX-APA11-SAFE-DIAGNOSTIC-FINGERPRINT-001",
+        "FX-APA11-SAFE-COUNT-PROFILE-001",
+        "FX-APA11-FIELD-AVAILABILITY-ONLY-001",
+        "FX-APA11-REDACTED-REASON-CODE-001",
+        "FX-APA11-RAW-HTML-NOT-RETAINED-001",
+        "FX-APA11-RAW-JSON-NOT-RETAINED-001",
+        "FX-APA11-FULL-PAYLOAD-NOT-RETAINED-001",
+        "FX-APA11-COOKIE-SESSION-TOKEN-BLOCKED-001",
+        "FX-APA11-UNAPPROVED-PERSONAL-DATA-BLOCKED-001",
+        "FX-APA11-OPTIONAL-LISTING-FIELD-MINIMIZED-001",
+        "FX-APA11-OD013-REMAINS-OPEN-001",
+        "FX-APA11-NO-RETENTION-DURATION-GUESSED-001",
+        "FX-APA11-NO-DATABASE-RETENTION-001",
+        "FX-APA11-NO-RAW-PAYLOAD-LOG-001",
+        "FX-APA11-NO-ADMIN-RAW-VIEWER-001",
+        "FX-APA11-NO-LIVE-PROVIDER-EVIDENCE-001",
+    )
+
+    assert FIXTURE_IDS[-len(expected_apa11_ids) :] == expected_apa11_ids
+    assert {fixture_id for fixture_id in FIXTURE_IDS if fixture_id.startswith("FX-APA11-")} == set(
+        expected_apa11_ids
+    )
+    for fixture_id in expected_apa11_ids:
+        assert FIXTURE_IDS.count(fixture_id) == 1
+        fixture = SYNTHETIC_FIXTURE_BY_ID[fixture_id]
+        assert fixture.fixture_id == fixture_id
+        assert fixture.privacy_boundary_outcome is not None
+        assert fixture.listing_page_parse_outcome is None
+        assert fixture.listing_batch_parse_outcome is None
+        assert fixture.search_configuration_extraction_outcome is None
+        assert fixture.search_source_analysis_outcome is None
+        assert "avito.ru" not in fixture.summary.lower()
+        assert "http://" not in fixture.summary.lower()
+        assert "https://" not in fixture.summary.lower()
+        assert fixture.privacy_boundary_outcome.diagnostic_event is not None
+        assert fixture.privacy_boundary_outcome.diagnostic_event.profile_reference is not None
+        assert fixture.privacy_boundary_outcome.diagnostic_event.status in {
+            PrivacyBoundaryStatus.COMPLIANT,
+            PrivacyBoundaryStatus.REDACTED,
+            PrivacyBoundaryStatus.BLOCKED,
+            PrivacyBoundaryStatus.AMBIGUOUS,
+        }
+        assert fixture.privacy_boundary_outcome.evidence_policy_status in {
+            EvidencePolicyStatus.OD_013_OPEN,
+            EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+        }
+    assert (
+        SYNTHETIC_FIXTURE_BY_ID[
+            "FX-APA11-OPTIONAL-LISTING-FIELD-MINIMIZED-001"
+        ].privacy_boundary_outcome
+        is not None
+    )
+    optional_listing = SYNTHETIC_FIXTURE_BY_ID[
+        "FX-APA11-OPTIONAL-LISTING-FIELD-MINIMIZED-001"
+    ].privacy_boundary_outcome
+    assert optional_listing is not None
+    assert (
+        optional_listing.personal_data_status is PersonalDataMinimizationStatus.APPROVED_MINIMIZED
+    )
+    assert len(optional_listing.normalized_field_families) == len(
+        set(optional_listing.normalized_field_families)
+    )
+    assert ListingFieldFamily.PHONE_VALUE in optional_listing.normalized_field_families
+    assert ListingFieldFamily.SELLER_RATING in optional_listing.normalized_field_families
+    assert ListingFieldFamily.DESCRIPTION in optional_listing.normalized_field_families
+
+    safe_count = SYNTHETIC_FIXTURE_BY_ID["FX-APA11-SAFE-COUNT-PROFILE-001"].privacy_boundary_outcome
+    assert safe_count is not None
+    assert safe_count.diagnostic_event is not None
+    assert any(
+        evidence.kind is DiagnosticEvidenceKind.COUNT
+        for evidence in safe_count.diagnostic_event.safe_evidence
+    )
+
+    redacted = SYNTHETIC_FIXTURE_BY_ID["FX-APA11-REDACTED-REASON-CODE-001"].privacy_boundary_outcome
+    assert redacted is not None
+    assert redacted.status is PrivacyBoundaryStatus.REDACTED
+    assert redacted.diagnostic_event is not None
+    assert any(
+        evidence.kind is DiagnosticEvidenceKind.REDACTED_REASON_CODE
+        for evidence in redacted.diagnostic_event.safe_evidence
+    )
 
 
 def test_optional_listing_fields_do_not_fail_parser_semantics() -> None:

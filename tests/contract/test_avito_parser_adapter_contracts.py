@@ -12,7 +12,9 @@ from mayak.modules.avito_parser_adapter import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    DiagnosticEvidenceKind,
     DuplicateListingObservation,
+    EvidencePolicyStatus,
     ListingBatchParseOutcome,
     ListingCandidateStatus,
     ListingCardCandidate,
@@ -41,19 +43,25 @@ from mayak.modules.avito_parser_adapter import (
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
+    ParserDiagnosticEvent,
     ParserEvidenceReference,
     ParserOutcomeExplanation,
     ParserOutcomeStatus,
+    ParserPrivacyBoundaryOutcome,
     ParserRequestEnvelope,
     ParserResponseClassificationRule,
     ParserScanOrderingHandoff,
     ParserSourceReference,
     ParserWarning,
     ParserWarningCode,
+    PersonalDataMinimizationStatus,
+    PrivacyBoundaryStatus,
     ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
+    RetentionDisposition,
+    SafeDiagnosticEvidence,
     ScanOrderingHandoffStatus,
     SearchConfigurationCandidate,
     SearchConfigurationEvidence,
@@ -63,6 +71,8 @@ from mayak.modules.avito_parser_adapter import (
     SearchConfigurationParameterCandidate,
     SearchConfigurationValueKind,
     SearchConfigurationWarningCode,
+    SensitiveMaterialDisposition,
+    SensitiveMaterialKind,
     SourceBoundaryOutcome,
     SourceBoundaryPolicyRequirement,
     SourceBoundaryRiskCode,
@@ -84,18 +94,28 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "CompatibilityProfileAuthorityClass",
         "CompatibilityChangeClass",
         "CompatibilityRevalidationTrigger",
+        "DiagnosticEvidenceKind",
+        "SensitiveMaterialKind",
+        "RetentionDisposition",
+        "PersonalDataMinimizationStatus",
+        "PrivacyBoundaryStatus",
+        "EvidencePolicyStatus",
         "ParserCompatibilityProfile",
         "ParserCompatibilityOutcome",
         "ParserRequestEnvelope",
         "TransportOutcomeReference",
         "TransportResponseClassificationOutcome",
         "ParserAttemptOutcome",
+        "ParserDiagnosticEvent",
+        "ParserPrivacyBoundaryOutcome",
         "SearchSourceAnalysisOutcome",
         "SearchConfigurationExtractionOutcome",
         "ListingPageParseOutcome",
         "ListingBatchParseOutcome",
         "ParserWarning",
         "ParserEvidenceReference",
+        "SafeDiagnosticEvidence",
+        "SensitiveMaterialDisposition",
         "ParserOutcomeExplanation",
         "ParserResponseClassificationRule",
         "ParserSourceReference",
@@ -146,6 +166,19 @@ def test_package_exports_expected_module_id_and_contract_symbols() -> None:
         "PaginationBatchEvidence",
     }
     assert expected_symbols.issubset(set(avito_parser_adapter.__all__))
+    for symbol in {
+        "DiagnosticEvidenceKind",
+        "SensitiveMaterialKind",
+        "RetentionDisposition",
+        "PersonalDataMinimizationStatus",
+        "PrivacyBoundaryStatus",
+        "EvidencePolicyStatus",
+        "SafeDiagnosticEvidence",
+        "SensitiveMaterialDisposition",
+        "ParserDiagnosticEvent",
+        "ParserPrivacyBoundaryOutcome",
+    }:
+        assert avito_parser_adapter.__all__.count(symbol) == 1
 
 
 def test_contract_objects_are_frozen_and_safe() -> None:
@@ -431,6 +464,173 @@ def test_listing_contracts_are_frozen_and_authoritative_field_based() -> None:
         card.field_candidates = ()  # type: ignore[misc]
     with pytest.raises(FrozenInstanceError):
         candidate.status = ListingCandidateStatus.BLOCKED  # type: ignore[misc]
+
+
+def test_apa11_privacy_contracts_are_frozen_slots_and_field_limited() -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::apa11::privacy::evidence",
+        evidence_kind="privacy-boundary",
+        fingerprint="fingerprint::apa11::privacy",
+        sample_count=1,
+    )
+    safe_fingerprint = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::fingerprint",
+        kind=DiagnosticEvidenceKind.SAFE_FINGERPRINT,
+        safe_reference="fingerprint::apa11::safe",
+    )
+    safe_count = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::count",
+        kind=DiagnosticEvidenceKind.COUNT,
+        count=0,
+    )
+    safe_field = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::field",
+        kind=DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.TITLE,
+        field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+    )
+    safe_redacted = SafeDiagnosticEvidence(
+        evidence_item_id="fx::apa11::safe::redacted",
+        kind=DiagnosticEvidenceKind.REDACTED_REASON_CODE,
+        redacted_reason_code="FX::APA11::REDACTED::001",
+    )
+    sensitive = SensitiveMaterialDisposition(
+        decision_id="fx::apa11::decision::raw-html",
+        material_kind=SensitiveMaterialKind.RAW_HTML,
+        disposition=RetentionDisposition.NOT_RETAINED,
+        reason_code="FX::APA11::RAW_HTML::NOT_RETAINED",
+        policy_reference="policy::apa11::od013-open",
+        personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        evidence_references=(evidence,),
+    )
+    diagnostic = ParserDiagnosticEvent(
+        diagnostic_event_id="fx::apa11::diagnostic::event",
+        attempt_reference="fx::apa11::privacy-attempt",
+        correlation_reference="corr::fx::apa11::privacy",
+        status=PrivacyBoundaryStatus.COMPLIANT,
+        profile_reference="fx::apa11::privacy-profile",
+        safe_evidence=(safe_fingerprint, safe_count, safe_field, safe_redacted),
+        sensitive_material_decisions=(sensitive,),
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.SAFE_DIAGNOSTIC_EVIDENCE_ONLY,
+                message="safe diagnostics only",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+        notes=("synthetic diagnostic",),
+    )
+    outcome = ParserPrivacyBoundaryOutcome(
+        privacy_outcome_id="fx::apa11::privacy::outcome",
+        status=PrivacyBoundaryStatus.COMPLIANT,
+        evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+        diagnostic_event=diagnostic,
+        normalized_field_families=(ListingFieldFamily.TITLE,),
+        personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+        warnings=(
+            ParserWarning(
+                code=ParserWarningCode.OD_013_REMAINS_OPEN,
+                message="OD-013 remains open",
+                evidence_reference=evidence,
+            ),
+            ParserWarning(
+                code=ParserWarningCode.RETENTION_DURATION_NOT_DEFINED,
+                message="retention duration not defined",
+                evidence_reference=evidence,
+            ),
+            ParserWarning(
+                code=ParserWarningCode.DATABASE_RETENTION_NOT_IMPLEMENTED,
+                message="database retention not implemented",
+                evidence_reference=evidence,
+            ),
+        ),
+        evidence_references=(evidence,),
+        notes=("synthetic privacy boundary outcome",),
+    )
+
+    assert {field.name for field in fields(SafeDiagnosticEvidence)} == {
+        "evidence_item_id",
+        "kind",
+        "safe_reference",
+        "count",
+        "field_family",
+        "field_availability",
+        "redacted_reason_code",
+        "notes",
+    }
+    assert "payload" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "body" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "raw_value" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "html" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "json" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "headers" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "cookies" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "session" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "token" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "credential" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert "source_url" not in {field.name for field in fields(SafeDiagnosticEvidence)}
+    assert {field.name for field in fields(SensitiveMaterialDisposition)} == {
+        "decision_id",
+        "material_kind",
+        "disposition",
+        "reason_code",
+        "policy_reference",
+        "personal_data_status",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(ParserDiagnosticEvent)} == {
+        "diagnostic_event_id",
+        "attempt_reference",
+        "correlation_reference",
+        "status",
+        "profile_reference",
+        "safe_evidence",
+        "sensitive_material_decisions",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    assert {field.name for field in fields(ParserPrivacyBoundaryOutcome)} == {
+        "privacy_outcome_id",
+        "status",
+        "evidence_policy_status",
+        "policy_reference",
+        "diagnostic_event",
+        "normalized_field_families",
+        "personal_data_status",
+        "warnings",
+        "evidence_references",
+        "notes",
+    }
+    for cls in (
+        SafeDiagnosticEvidence,
+        SensitiveMaterialDisposition,
+        ParserDiagnosticEvent,
+        ParserPrivacyBoundaryOutcome,
+    ):
+        assert cls.__dataclass_params__.frozen
+        assert getattr(cls, "__slots__", None) is not None
+
+    assert safe_fingerprint.kind is DiagnosticEvidenceKind.SAFE_FINGERPRINT
+    assert safe_count.count == 0
+    assert safe_field.field_availability is ListingFieldAvailability.PROVEN_AVAILABLE
+    assert safe_redacted.redacted_reason_code == "FX::APA11::REDACTED::001"
+    assert sensitive.disposition is RetentionDisposition.NOT_RETAINED
+    assert diagnostic.status is PrivacyBoundaryStatus.COMPLIANT
+    assert outcome.status is PrivacyBoundaryStatus.COMPLIANT
+    assert outcome.evidence_policy_status is EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY
+    assert outcome.personal_data_status is PersonalDataMinimizationStatus.NOT_PRESENT
+
+    with pytest.raises(FrozenInstanceError):
+        safe_count.count = 1  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        sensitive.reason_code = "changed"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        diagnostic.status = PrivacyBoundaryStatus.BLOCKED  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError):
+        outcome.status = PrivacyBoundaryStatus.BLOCKED  # type: ignore[misc]
 
 
 def test_listing_ordering_contracts_are_frozen_and_boundary_only() -> None:
@@ -1167,6 +1367,17 @@ def test_source_boundary_contracts_keep_bounded_references_explicit() -> None:
         "LIVE_PAGINATION_NOT_PERFORMED",
         "SCAN_NEWNESS_DECISION_NOT_PERFORMED",
         "SCAN_ANCHOR_STATE_NOT_MUTATED",
+        "SAFE_DIAGNOSTIC_EVIDENCE_ONLY",
+        "RAW_PROVIDER_PAYLOAD_NOT_RETAINED",
+        "SENSITIVE_ACCESS_MATERIAL_BLOCKED",
+        "PERSONAL_DATA_MINIMIZED",
+        "UNAPPROVED_PERSONAL_DATA_BLOCKED",
+        "REDACTED_REASON_CODE_ONLY",
+        "OD_013_REMAINS_OPEN",
+        "RETENTION_DURATION_NOT_DEFINED",
+        "DATABASE_RETENTION_NOT_IMPLEMENTED",
+        "ADMIN_RAW_PAYLOAD_VIEWER_NOT_IMPLEMENTED",
+        "LIVE_PROVIDER_EVIDENCE_NOT_CAPTURED",
     }
 
 
@@ -1187,6 +1398,7 @@ def test_synthetic_fixture_cases_are_safe_and_non_empty() -> None:
                 "FX-APA08-",
                 "FX-APA09-",
                 "FX-APA10-",
+                "FX-APA11-",
             )
         )
         assert avito_live_url_marker not in fixture.summary.lower()

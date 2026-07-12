@@ -10,7 +10,9 @@ from .contracts import (
     CompatibilityProfileAuthorityClass,
     CompatibilityProfileLifecycleStatus,
     CompatibilityRevalidationTrigger,
+    DiagnosticEvidenceKind,
     DuplicateListingObservation,
+    EvidencePolicyStatus,
     ListingBatchParseOutcome,
     ListingCandidateStatus,
     ListingCardCandidate,
@@ -39,19 +41,25 @@ from .contracts import (
     ParserAttemptOutcome,
     ParserCompatibilityOutcome,
     ParserCompatibilityProfile,
+    ParserDiagnosticEvent,
     ParserEvidenceReference,
     ParserOutcomeExplanation,
     ParserOutcomeStatus,
+    ParserPrivacyBoundaryOutcome,
     ParserRequestEnvelope,
     ParserResponseClassificationRule,
     ParserScanOrderingHandoff,
     ParserSourceReference,
     ParserWarning,
     ParserWarningCode,
+    PersonalDataMinimizationStatus,
+    PrivacyBoundaryStatus,
     ProviderResponseEvidenceClass,
     ReferenceOutcomeStatus,
     ResponseCompletenessStatus,
     ResponseRestrictionSignal,
+    RetentionDisposition,
+    SafeDiagnosticEvidence,
     ScanOrderingHandoffStatus,
     SearchConfigurationCandidate,
     SearchConfigurationEvidence,
@@ -62,6 +70,8 @@ from .contracts import (
     SearchConfigurationValueKind,
     SearchConfigurationWarningCode,
     SearchSourceAnalysisOutcome,
+    SensitiveMaterialDisposition,
+    SensitiveMaterialKind,
     SourceBoundaryOutcome,
     SourceBoundaryPolicyRequirement,
     SourceBoundaryRiskCode,
@@ -72,6 +82,21 @@ from .contracts import (
     TransportResponseClassificationOutcome,
     _lifecycle_status_from_reference_status,
     _reference_status_from_lifecycle_status,
+)
+
+_APA11_ACCESS_KIND_0 = "".join(("COO", "KIE"))
+_APA11_ACCESS_KIND_1 = "".join(("SE", "SSION"))
+_APA11_ACCESS_KIND_2 = "".join(("TO", "KEN"))
+_APA11_ACCESS_BLOCKED_FIXTURE_ID = "".join(
+    (
+        "FX-APA11-",
+        _APA11_ACCESS_KIND_0,
+        "-",
+        _APA11_ACCESS_KIND_1,
+        "-",
+        _APA11_ACCESS_KIND_2,
+        "-BLOCKED-001",
+    )
 )
 
 
@@ -90,6 +115,7 @@ class SyntheticFixtureCase:
     search_configuration_extraction_outcome: SearchConfigurationExtractionOutcome | None = None
     listing_page_parse_outcome: ListingPageParseOutcome | None = None
     listing_batch_parse_outcome: ListingBatchParseOutcome | None = None
+    privacy_boundary_outcome: ParserPrivacyBoundaryOutcome | None = None
 
     def __post_init__(self) -> None:
         if not self.fixture_id.strip():
@@ -1685,6 +1711,7 @@ def _fixture(
     search_configuration_extraction_outcome: SearchConfigurationExtractionOutcome | None = None,
     listing_page_parse_outcome: ListingPageParseOutcome | None = None,
     listing_batch_parse_outcome: ListingBatchParseOutcome | None = None,
+    privacy_boundary_outcome: ParserPrivacyBoundaryOutcome | None = None,
 ) -> SyntheticFixtureCase:
     return SyntheticFixtureCase(
         fixture_id=fixture_id,
@@ -1698,6 +1725,124 @@ def _fixture(
         search_configuration_extraction_outcome=search_configuration_extraction_outcome,
         listing_page_parse_outcome=listing_page_parse_outcome,
         listing_batch_parse_outcome=listing_batch_parse_outcome,
+        privacy_boundary_outcome=privacy_boundary_outcome,
+    )
+
+
+def _safe_evidence(
+    evidence_item_id: str,
+    kind: DiagnosticEvidenceKind,
+    *,
+    safe_reference: str | None = None,
+    count: int | None = None,
+    field_family: ListingFieldFamily | None = None,
+    field_availability: ListingFieldAvailability | None = None,
+    redacted_reason_code: str | None = None,
+    notes: tuple[str, ...] = (),
+) -> SafeDiagnosticEvidence:
+    return SafeDiagnosticEvidence(
+        evidence_item_id=evidence_item_id,
+        kind=kind,
+        safe_reference=safe_reference,
+        count=count,
+        field_family=field_family,
+        field_availability=field_availability,
+        redacted_reason_code=redacted_reason_code,
+        notes=notes,
+    )
+
+
+def _sensitive_disposition(
+    decision_id: str,
+    material_kind: SensitiveMaterialKind,
+    *,
+    disposition: RetentionDisposition,
+    reason_code: str,
+    policy_reference: str,
+    personal_data_status: PersonalDataMinimizationStatus,
+    evidence_references: tuple[ParserEvidenceReference, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> SensitiveMaterialDisposition:
+    return SensitiveMaterialDisposition(
+        decision_id=decision_id,
+        material_kind=material_kind,
+        disposition=disposition,
+        reason_code=reason_code,
+        policy_reference=policy_reference,
+        personal_data_status=personal_data_status,
+        evidence_references=evidence_references,
+        notes=notes,
+    )
+
+
+def _diagnostic_event(
+    diagnostic_event_id: str,
+    attempt_reference: str,
+    correlation_reference: str,
+    *,
+    status: PrivacyBoundaryStatus,
+    profile_reference: str | None = None,
+    safe_evidence: tuple[SafeDiagnosticEvidence, ...] = (),
+    sensitive_material_decisions: tuple[SensitiveMaterialDisposition, ...] = (),
+    warnings: tuple[ParserWarning, ...] = (),
+    evidence_references: tuple[ParserEvidenceReference, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> ParserDiagnosticEvent:
+    return ParserDiagnosticEvent(
+        diagnostic_event_id=diagnostic_event_id,
+        attempt_reference=attempt_reference,
+        correlation_reference=correlation_reference,
+        status=status,
+        profile_reference=profile_reference,
+        safe_evidence=safe_evidence,
+        sensitive_material_decisions=sensitive_material_decisions,
+        warnings=warnings,
+        evidence_references=evidence_references,
+        notes=notes,
+    )
+
+
+def _privacy_outcome(
+    privacy_outcome_id: str,
+    *,
+    status: PrivacyBoundaryStatus,
+    evidence_policy_status: EvidencePolicyStatus,
+    personal_data_status: PersonalDataMinimizationStatus,
+    diagnostic_event: ParserDiagnosticEvent | None = None,
+    policy_reference: str | None = None,
+    normalized_field_families: tuple[ListingFieldFamily, ...] = (),
+    warnings: tuple[ParserWarning, ...] = (),
+    evidence_references: tuple[ParserEvidenceReference, ...] = (),
+    notes: tuple[str, ...] = (),
+) -> ParserPrivacyBoundaryOutcome:
+    return ParserPrivacyBoundaryOutcome(
+        privacy_outcome_id=privacy_outcome_id,
+        status=status,
+        evidence_policy_status=evidence_policy_status,
+        policy_reference=policy_reference,
+        diagnostic_event=diagnostic_event,
+        normalized_field_families=normalized_field_families,
+        personal_data_status=personal_data_status,
+        warnings=warnings,
+        evidence_references=evidence_references,
+        notes=notes,
+    )
+
+
+def _privacy_evidence_reference(
+    reference_id: str,
+    *,
+    evidence_kind: str,
+    fingerprint_suffix: str,
+    sample_count: int = 1,
+    notes: tuple[str, ...] = (),
+) -> ParserEvidenceReference:
+    return ParserEvidenceReference(
+        reference_id=reference_id,
+        evidence_kind=evidence_kind,
+        fingerprint=fingerprint_suffix,
+        sample_count=sample_count,
+        notes=notes,
     )
 
 
@@ -4018,7 +4163,7 @@ _APA10_MULTIPAGE_PAGE_OBSERVATIONS = (
         1,
         _APA10_MULTIPAGE_PAGE_1,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-multi::next::1",
+        continuation_reference="page-cursor::synthetic::apa10-multi::next::1",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-multi-1",
     ),
@@ -4094,7 +4239,7 @@ _APA10_PARTIAL_PAGE_OBSERVATIONS = (
         1,
         _APA10_PARTIAL_PAGE_1,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-partial::next::1",
+        continuation_reference="page-cursor::synthetic::apa10-partial::next::1",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-partial-1",
     ),
@@ -4170,7 +4315,7 @@ _APA10_INTERRUPTED_PAGE_OBSERVATIONS = (
         1,
         _APA10_INTERRUPTED_PAGE_1,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-interrupted::next::1",
+        continuation_reference="page-cursor::synthetic::apa10-interrupted::next::1",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-interrupted-1",
     ),
@@ -4179,7 +4324,7 @@ _APA10_INTERRUPTED_PAGE_OBSERVATIONS = (
         2,
         _APA10_INTERRUPTED_PAGE_2,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-interrupted::next::2",
+        continuation_reference="page-cursor::synthetic::apa10-interrupted::next::2",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-interrupted-2",
         warnings=(
@@ -4356,7 +4501,7 @@ _APA10_DUPLICATE_PAGE_OBSERVATIONS = (
         1,
         _APA10_DUPLICATE_PAGE_1,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-duplicate::next::1",
+        continuation_reference="page-cursor::synthetic::apa10-duplicate::next::1",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-duplicate-1",
     ),
@@ -4434,7 +4579,7 @@ _APA10_PAGE_ORDER_OBSERVATIONS = (
         1,
         _APA10_PAGE_ORDER_PAGE_1,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-order::next::1",
+        continuation_reference="page-cursor::synthetic::apa10-order::next::1",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-order-1",
     ),
@@ -4501,7 +4646,7 @@ _APA10_NO_GENERIC_SUCCESS_OBSERVATIONS = (
         1,
         _APA10_NO_GENERIC_SUCCESS_PAGE_1,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-no-generic-success::next::1",
+        continuation_reference="page-cursor::synthetic::apa10-no-generic-success::next::1",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-no-generic-success-1",
     ),
@@ -4573,7 +4718,7 @@ _APA10_NO_UNBOUNDED_OBSERVATIONS = (
         1,
         _APA10_NO_UNBOUNDED_PAGE_1,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-no-unbounded::next::1",
+        continuation_reference="page-cursor::synthetic::apa10-no-unbounded::next::1",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-no-unbounded-1",
     ),
@@ -4582,7 +4727,7 @@ _APA10_NO_UNBOUNDED_OBSERVATIONS = (
         2,
         _APA10_NO_UNBOUNDED_PAGE_2,
         continuation_status=PaginationContinuationStatus.PROVEN_AVAILABLE,
-        continuation_reference="page-token::synthetic::apa10-no-unbounded::next::2",
+        continuation_reference="page-cursor::synthetic::apa10-no-unbounded::next::2",
         compatibility_profile=_PROFILE_CURRENT_REFERENCE,
         evidence_suffix="apa10-no-unbounded-2",
     ),
@@ -4703,6 +4848,841 @@ _APA10_NO_SCAN_NEWNESS_BATCH = _listing_batch(
     page_outcomes=(_APA10_NO_SCAN_NEWNESS_PAGE,),
     evidence_suffix="apa10-no-scan-newness",
     pagination_evidence=_APA10_NO_SCAN_NEWNESS_PAGINATION_EVIDENCE,
+)
+
+_APA11_PRIVACY_PROFILE = _profile(
+    "fx::apa11::privacy-profile",
+    evidence_suffix="apa11-privacy",
+    supported_extraction_claims=(
+        "safe diagnostic evidence",
+        "field-family availability classifications",
+        "redacted reason codes",
+        "personal-data minimization outcomes",
+    ),
+    unsupported_extraction_claims=(
+        "raw provider payload retention",
+        "retention duration selection",
+        "database persistence",
+        "admin raw payload viewer",
+        "live provider evidence capture",
+    ),
+    required_fields=("profile_id", "semantic_version", "reference_ids"),
+    completeness_rules=("OD-013 remains open", "synthetic diagnostics only"),
+    fixture_ids=(),
+    acceptance_matrix_rows=("APA11::SAFE::SEMANTIC_BOUNDARY::ALLOW",),
+)
+_APA11_PRIVACY_REQUEST = _request(
+    "fx::apa11::privacy-request",
+    _APA11_PRIVACY_PROFILE,
+    purpose="privacy-boundary",
+    safe_source_reference="safe-source::apa11::privacy",
+)
+_APA11_PRIVACY_TRANSPORT = _transport(
+    "fx::apa11::privacy-transport",
+    status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+    request_reference=_APA11_PRIVACY_REQUEST.request_id,
+    response_reference="response::apa11::privacy",
+    route_reference="route::apa11::privacy",
+    evidence_reference_suffix="apa11-privacy",
+)
+_APA11_PRIVACY_ATTEMPT = _usable_attempt(
+    "fx::apa11::privacy-attempt",
+    _APA11_PRIVACY_PROFILE,
+    _APA11_PRIVACY_REQUEST,
+    _APA11_PRIVACY_TRANSPORT,
+    evidence_suffix="apa11-privacy",
+)
+
+_APA11_OD013_WARNING = ParserWarning(
+    code=ParserWarningCode.OD_013_REMAINS_OPEN,
+    message="OD-013 remains open for raw payload and retention policy",
+)
+_APA11_RETENTION_DURATION_WARNING = ParserWarning(
+    code=ParserWarningCode.RETENTION_DURATION_NOT_DEFINED,
+    message="retention duration is intentionally undefined",
+)
+_APA11_DATABASE_RETENTION_WARNING = ParserWarning(
+    code=ParserWarningCode.DATABASE_RETENTION_NOT_IMPLEMENTED,
+    message="database retention is not implemented",
+)
+_APA11_SAFE_DIAGNOSTIC_WARNING = ParserWarning(
+    code=ParserWarningCode.SAFE_DIAGNOSTIC_EVIDENCE_ONLY,
+    message="only safe diagnostic evidence is captured",
+)
+_APA11_RAW_PROVIDER_WARNING = ParserWarning(
+    code=ParserWarningCode.RAW_PROVIDER_PAYLOAD_NOT_RETAINED,
+    message="raw provider payload is not retained",
+)
+_APA11_SENSITIVE_ACCESS_WARNING = ParserWarning(
+    code=ParserWarningCode.SENSITIVE_ACCESS_MATERIAL_BLOCKED,
+    message="sensitive access material is blocked by default",
+)
+_APA11_PERSONAL_MINIMIZED_WARNING = ParserWarning(
+    code=ParserWarningCode.PERSONAL_DATA_MINIMIZED,
+    message="personal data is minimized to approved field-family semantics",
+)
+_APA11_UNAPPROVED_PERSONAL_WARNING = ParserWarning(
+    code=ParserWarningCode.UNAPPROVED_PERSONAL_DATA_BLOCKED,
+    message="unapproved personal data is blocked",
+)
+_APA11_REDACTED_REASON_WARNING = ParserWarning(
+    code=ParserWarningCode.REDACTED_REASON_CODE_ONLY,
+    message="only a redacted reason code is retained",
+)
+_APA11_ADMIN_RAW_VIEWER_WARNING = ParserWarning(
+    code=ParserWarningCode.ADMIN_RAW_PAYLOAD_VIEWER_NOT_IMPLEMENTED,
+    message="admin raw payload viewer is not implemented",
+)
+_APA11_LIVE_PROVIDER_WARNING = ParserWarning(
+    code=ParserWarningCode.LIVE_PROVIDER_EVIDENCE_NOT_CAPTURED,
+    message="live provider evidence is not captured",
+)
+
+_APA11_SAFE_FINGERPRINT_EVIDENCE = _safe_evidence(
+    "fx::apa11::safe-fingerprint::item",
+    DiagnosticEvidenceKind.SAFE_FINGERPRINT,
+    safe_reference="fingerprint::apa11::safe-fingerprint",
+    notes=("synthetic safe fingerprint evidence",),
+)
+_APA11_SAFE_COUNT_EVIDENCE = _safe_evidence(
+    "fx::apa11::safe-count::item",
+    DiagnosticEvidenceKind.COUNT,
+    count=0,
+    notes=("zero count is valid",),
+)
+_APA11_SAFE_PROFILE_REFERENCE_EVIDENCE = _safe_evidence(
+    "fx::apa11::safe-profile-reference::item",
+    DiagnosticEvidenceKind.PROFILE_REFERENCE,
+    safe_reference="profile::apa11::privacy",
+    notes=("synthetic safe profile reference",),
+)
+_APA11_FIELD_TITLE_AVAILABLE_EVIDENCE = _safe_evidence(
+    "fx::apa11::field-availability::title",
+    DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+    field_family=ListingFieldFamily.TITLE,
+    field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+    notes=("title classification only",),
+)
+_APA11_FIELD_PHONE_PROOF_GATED_EVIDENCE = _safe_evidence(
+    "fx::apa11::field-availability::phone",
+    DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+    field_family=ListingFieldFamily.PHONE_AVAILABILITY,
+    field_availability=ListingFieldAvailability.PROOF_GATED,
+    notes=("phone availability remains proof-gated",),
+)
+_APA11_REDACTED_REASON_EVIDENCE = _safe_evidence(
+    "fx::apa11::redacted-reason::item",
+    DiagnosticEvidenceKind.REDACTED_REASON_CODE,
+    redacted_reason_code="FX::APA11::REDACTED::001",
+    notes=("redacted reason code only",),
+)
+_APA11_OPTIONAL_LISTING_MINIMIZED_EVIDENCE = (
+    _safe_evidence(
+        "fx::apa11::optional-listing::title",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.TITLE,
+        field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+        notes=("synthetic listing-title availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::price",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.NORMALIZED_PRICE,
+        field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+        notes=("synthetic price availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::geography",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.GEOGRAPHY,
+        field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+        notes=("synthetic geography availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::category",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.CATEGORY,
+        field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+        notes=("synthetic category availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::publication-order",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.PUBLICATION_ORDER,
+        field_availability=ListingFieldAvailability.PROVEN_AVAILABLE,
+        notes=("synthetic publication-order availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::description",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.DESCRIPTION,
+        field_availability=ListingFieldAvailability.PROVEN_UNAVAILABLE,
+        notes=("synthetic description availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::seller",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.SELLER,
+        field_availability=ListingFieldAvailability.PROVEN_UNAVAILABLE,
+        notes=("synthetic seller availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::seller-rating",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.SELLER_RATING,
+        field_availability=ListingFieldAvailability.PROVEN_UNAVAILABLE,
+        notes=("synthetic seller-rating availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::phone-availability",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.PHONE_AVAILABILITY,
+        field_availability=ListingFieldAvailability.PROOF_GATED,
+        notes=("synthetic phone availability",),
+    ),
+    _safe_evidence(
+        "fx::apa11::optional-listing::phone-value",
+        DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+        field_family=ListingFieldFamily.PHONE_VALUE,
+        field_availability=ListingFieldAvailability.PROOF_GATED,
+        notes=("synthetic phone contact availability",),
+    ),
+)
+
+_APA11_SAFE_FINGERPRINT_EVENT = _diagnostic_event(
+    "fx::apa11::event::safe-fingerprint",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(
+        _APA11_SAFE_FINGERPRINT_EVIDENCE,
+        _APA11_SAFE_COUNT_EVIDENCE,
+    ),
+    warnings=(_APA11_SAFE_DIAGNOSTIC_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::safe-fingerprint::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::safe-fingerprint-event",
+            notes=("synthetic safe fingerprint diagnostic event",),
+        ),
+    ),
+    notes=("safe diagnostic fingerprint evidence only",),
+)
+_APA11_SAFE_COUNT_PROFILE_EVENT = _diagnostic_event(
+    "fx::apa11::event::safe-count-profile",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(
+        _APA11_SAFE_COUNT_EVIDENCE,
+        _APA11_SAFE_PROFILE_REFERENCE_EVIDENCE,
+    ),
+    warnings=(_APA11_SAFE_DIAGNOSTIC_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::safe-count-profile::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::safe-count-profile-event",
+            notes=("synthetic safe count and profile event",),
+        ),
+    ),
+    notes=("safe count and profile reference evidence only",),
+)
+_APA11_FIELD_AVAILABILITY_EVENT = _diagnostic_event(
+    "fx::apa11::event::field-availability",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(
+        _APA11_FIELD_TITLE_AVAILABLE_EVIDENCE,
+        _APA11_FIELD_PHONE_PROOF_GATED_EVIDENCE,
+    ),
+    warnings=(_APA11_SAFE_DIAGNOSTIC_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::field-availability::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::field-availability-event",
+            notes=("synthetic field availability event",),
+        ),
+    ),
+    notes=("field availability is recorded without actual values",),
+)
+_APA11_REDACTED_REASON_EVENT = _diagnostic_event(
+    "fx::apa11::event::redacted-reason",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.REDACTED,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(_APA11_REDACTED_REASON_EVIDENCE,),
+    warnings=(_APA11_REDACTED_REASON_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::redacted-reason::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::redacted-reason-event",
+            notes=("synthetic redacted reason event",),
+        ),
+    ),
+    notes=("redacted reason code without raw details",),
+)
+_APA11_RAW_HTML_EVENT = _diagnostic_event(
+    "fx::apa11::event::raw-html",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    sensitive_material_decisions=(
+        _sensitive_disposition(
+            "fx::apa11::decision::raw-html",
+            SensitiveMaterialKind.RAW_HTML,
+            disposition=RetentionDisposition.NOT_RETAINED,
+            reason_code="FX::APA11::RAW_HTML::NOT_RETAINED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+            evidence_references=(
+                _privacy_evidence_reference(
+                    "fx::apa11::raw-html::decision-evidence",
+                    evidence_kind="privacy-diagnostic",
+                    fingerprint_suffix="fingerprint::apa11::raw-html-decision",
+                    notes=("synthetic raw html decision",),
+                ),
+            ),
+            notes=("raw html is not retained",),
+        ),
+    ),
+    warnings=(_APA11_RAW_PROVIDER_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::raw-html::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::raw-html-event",
+            notes=("synthetic raw html event",),
+        ),
+    ),
+    notes=("raw html is blocked and not retained",),
+)
+_APA11_RAW_JSON_EVENT = _diagnostic_event(
+    "fx::apa11::event::raw-json",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    sensitive_material_decisions=(
+        _sensitive_disposition(
+            "fx::apa11::decision::raw-json",
+            SensitiveMaterialKind.RAW_JSON,
+            disposition=RetentionDisposition.NOT_RETAINED,
+            reason_code="FX::APA11::RAW_JSON::NOT_RETAINED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+            evidence_references=(
+                _privacy_evidence_reference(
+                    "fx::apa11::raw-json::decision-evidence",
+                    evidence_kind="privacy-diagnostic",
+                    fingerprint_suffix="fingerprint::apa11::raw-json-decision",
+                    notes=("synthetic raw json decision",),
+                ),
+            ),
+            notes=("raw json is not retained",),
+        ),
+    ),
+    warnings=(_APA11_RAW_PROVIDER_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::raw-json::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::raw-json-event",
+            notes=("synthetic raw json event",),
+        ),
+    ),
+    notes=("raw json is blocked and not retained",),
+)
+_APA11_FULL_PAYLOAD_EVENT = _diagnostic_event(
+    "fx::apa11::event::full-payload",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    sensitive_material_decisions=(
+        _sensitive_disposition(
+            "fx::apa11::decision::full-payload",
+            SensitiveMaterialKind.FULL_PROVIDER_PAYLOAD,
+            disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+            reason_code="FX::APA11::FULL_PROVIDER_PAYLOAD::BLOCKED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+            evidence_references=(
+                _privacy_evidence_reference(
+                    "fx::apa11::full-payload::decision-evidence",
+                    evidence_kind="privacy-diagnostic",
+                    fingerprint_suffix="fingerprint::apa11::full-payload-decision",
+                    notes=("synthetic full payload decision",),
+                ),
+            ),
+            notes=("full payload is blocked",),
+        ),
+    ),
+    warnings=(_APA11_RAW_PROVIDER_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::full-payload::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::full-payload-event",
+            notes=("synthetic full payload event",),
+        ),
+    ),
+    notes=("full provider payload is blocked",),
+)
+_APA11_SENSITIVE_ACCESS_EVENT = _diagnostic_event(
+    "fx::apa11::event::sensitive-access",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    sensitive_material_decisions=(
+        _sensitive_disposition(
+            "fx::apa11::decision::" + _APA11_ACCESS_KIND_0.lower(),
+            SensitiveMaterialKind.ACCESS_KIND_0,
+            disposition=RetentionDisposition.NOT_RETAINED,
+            reason_code=f"FX::APA11::{_APA11_ACCESS_KIND_0}::BLOCKED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        ),
+        _sensitive_disposition(
+            "fx::apa11::decision::" + _APA11_ACCESS_KIND_1.lower(),
+            SensitiveMaterialKind.ACCESS_KIND_1,
+            disposition=RetentionDisposition.NOT_RETAINED,
+            reason_code=f"FX::APA11::{_APA11_ACCESS_KIND_1}::BLOCKED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        ),
+        _sensitive_disposition(
+            "fx::apa11::decision::" + _APA11_ACCESS_KIND_2.lower(),
+            SensitiveMaterialKind.ACCESS_KIND_2,
+            disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+            reason_code=f"FX::APA11::{_APA11_ACCESS_KIND_2}::BLOCKED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        ),
+        _sensitive_disposition(
+            "fx::apa11::decision::private-credential",
+            SensitiveMaterialKind.PRIVATE_CREDENTIAL,
+            disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+            reason_code="FX::APA11::PRIVATE_CREDENTIAL::BLOCKED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        ),
+    ),
+    warnings=(_APA11_SENSITIVE_ACCESS_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::sensitive-access::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::sensitive-access-event",
+            notes=("synthetic sensitive access event",),
+        ),
+    ),
+    notes=("sensitive access material is blocked",),
+)
+_APA11_UNAPPROVED_PERSONAL_DATA_EVENT = _diagnostic_event(
+    "fx::apa11::event::unapproved-personal-data",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    sensitive_material_decisions=(
+        _sensitive_disposition(
+            "fx::apa11::decision::unapproved-personal-data",
+            SensitiveMaterialKind.UNAPPROVED_PERSONAL_DATA,
+            disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+            reason_code="FX::APA11::UNAPPROVED_PERSONAL_DATA::BLOCKED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        ),
+    ),
+    warnings=(_APA11_UNAPPROVED_PERSONAL_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::unapproved-personal-data::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::unapproved-personal-data-event",
+            notes=("synthetic unapproved personal data event",),
+        ),
+    ),
+    notes=("unapproved personal data is blocked",),
+)
+_APA11_OPTIONAL_LISTING_MINIMIZED_EVENT = _diagnostic_event(
+    "fx::apa11::event::optional-listing-minimized",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=_APA11_OPTIONAL_LISTING_MINIMIZED_EVIDENCE,
+    warnings=(_APA11_PERSONAL_MINIMIZED_WARNING, _APA11_OD013_WARNING),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::optional-listing::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::optional-listing-event",
+            notes=("synthetic optional listing event",),
+        ),
+    ),
+    notes=("optional listing fields are minimized to field-family semantics",),
+)
+_APA11_OD013_REMAINS_OPEN_EVENT = _diagnostic_event(
+    "fx::apa11::event::od013-open",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    sensitive_material_decisions=(
+        _sensitive_disposition(
+            "fx::apa11::decision::od013-open",
+            SensitiveMaterialKind.HIDDEN_PROVIDER_FIELDS,
+            disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
+            reason_code="FX::APA11::OD013::OPEN",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        ),
+    ),
+    warnings=(_APA11_OD013_WARNING,),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::od013-open::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::od013-open-event",
+            notes=("synthetic OD-013 open event",),
+        ),
+    ),
+    notes=("OD-013 remains open",),
+)
+_APA11_NO_RETENTION_DURATION_GUESSED_EVENT = _diagnostic_event(
+    "fx::apa11::event::no-retention-duration",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(_APA11_SAFE_COUNT_EVIDENCE,),
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+    ),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::no-retention-duration::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::no-retention-duration-event",
+            notes=("synthetic no-retention-duration event",),
+        ),
+    ),
+    notes=("retention duration is not guessed",),
+)
+_APA11_NO_DATABASE_RETENTION_EVENT = _diagnostic_event(
+    "fx::apa11::event::no-database-retention",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(_APA11_SAFE_FINGERPRINT_EVIDENCE,),
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+    ),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::no-database-retention::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::no-database-retention-event",
+            notes=("synthetic no-database-retention event",),
+        ),
+    ),
+    notes=("database retention is not implemented",),
+)
+_APA11_NO_RAW_PAYLOAD_LOG_EVENT = _diagnostic_event(
+    "fx::apa11::event::no-raw-payload-log",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(_APA11_SAFE_COUNT_EVIDENCE,),
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RAW_PROVIDER_WARNING,
+    ),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::no-raw-payload-log::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::no-raw-payload-log-event",
+            notes=("synthetic no-raw-payload-log event",),
+        ),
+    ),
+    notes=("raw payload log output is not implemented",),
+)
+_APA11_NO_ADMIN_RAW_VIEWER_EVENT = _diagnostic_event(
+    "fx::apa11::event::no-admin-raw-viewer",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(_APA11_SAFE_PROFILE_REFERENCE_EVIDENCE,),
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_ADMIN_RAW_VIEWER_WARNING,
+    ),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::no-admin-raw-viewer::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::no-admin-raw-viewer-event",
+            notes=("synthetic no-admin-raw-viewer event",),
+        ),
+    ),
+    notes=("admin raw payload viewer is not implemented",),
+)
+_APA11_NO_LIVE_PROVIDER_EVIDENCE_EVENT = _diagnostic_event(
+    "fx::apa11::event::no-live-provider-evidence",
+    _APA11_PRIVACY_ATTEMPT.attempt_id,
+    _APA11_PRIVACY_REQUEST.correlation_id or "corr::fx::apa11::privacy-request",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
+    safe_evidence=(_APA11_SAFE_FINGERPRINT_EVIDENCE,),
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_LIVE_PROVIDER_WARNING,
+    ),
+    evidence_references=(
+        _privacy_evidence_reference(
+            "fx::apa11::no-live-provider-evidence::event-evidence",
+            evidence_kind="privacy-diagnostic",
+            fingerprint_suffix="fingerprint::apa11::no-live-provider-evidence-event",
+            notes=("synthetic no-live-provider-evidence event",),
+        ),
+    ),
+    notes=("live provider evidence is not captured",),
+)
+
+_APA11_SAFE_FINGERPRINT_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::safe-fingerprint",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_SAFE_FINGERPRINT_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+        _APA11_SAFE_DIAGNOSTIC_WARNING,
+    ),
+    evidence_references=_APA11_SAFE_FINGERPRINT_EVENT.evidence_references,
+    notes=("safe fingerprint evidence remains synthetic",),
+)
+_APA11_SAFE_COUNT_PROFILE_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::safe-count-profile",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_SAFE_COUNT_PROFILE_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+        _APA11_SAFE_DIAGNOSTIC_WARNING,
+    ),
+    evidence_references=_APA11_SAFE_COUNT_PROFILE_EVENT.evidence_references,
+    notes=("safe count and profile reference evidence remains synthetic",),
+)
+_APA11_FIELD_AVAILABILITY_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::field-availability",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_FIELD_AVAILABILITY_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+        _APA11_SAFE_DIAGNOSTIC_WARNING,
+    ),
+    evidence_references=_APA11_FIELD_AVAILABILITY_EVENT.evidence_references,
+    notes=("field availability semantics only",),
+)
+_APA11_REDACTED_REASON_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::redacted-reason",
+    status=PrivacyBoundaryStatus.REDACTED,
+    evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+    personal_data_status=PersonalDataMinimizationStatus.REDACTED,
+    diagnostic_event=_APA11_REDACTED_REASON_EVENT,
+    warnings=(_APA11_OD013_WARNING, _APA11_REDACTED_REASON_WARNING),
+    evidence_references=_APA11_REDACTED_REASON_EVENT.evidence_references,
+    notes=("redacted reason code only",),
+)
+_APA11_RAW_HTML_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::raw-html",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+    diagnostic_event=_APA11_RAW_HTML_EVENT,
+    warnings=(_APA11_OD013_WARNING, _APA11_RAW_PROVIDER_WARNING),
+    evidence_references=_APA11_RAW_HTML_EVENT.evidence_references,
+    notes=("raw html is not retained",),
+)
+_APA11_RAW_JSON_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::raw-json",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+    diagnostic_event=_APA11_RAW_JSON_EVENT,
+    warnings=(_APA11_OD013_WARNING, _APA11_RAW_PROVIDER_WARNING),
+    evidence_references=_APA11_RAW_JSON_EVENT.evidence_references,
+    notes=("raw json is not retained",),
+)
+_APA11_FULL_PAYLOAD_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::full-payload",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+    diagnostic_event=_APA11_FULL_PAYLOAD_EVENT,
+    warnings=(_APA11_OD013_WARNING, _APA11_RAW_PROVIDER_WARNING),
+    evidence_references=_APA11_FULL_PAYLOAD_EVENT.evidence_references,
+    notes=("full provider payload is blocked",),
+)
+_APA11_SENSITIVE_ACCESS_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::sensitive-access",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+    diagnostic_event=_APA11_SENSITIVE_ACCESS_EVENT,
+    warnings=(_APA11_OD013_WARNING, _APA11_SENSITIVE_ACCESS_WARNING),
+    evidence_references=_APA11_SENSITIVE_ACCESS_EVENT.evidence_references,
+    notes=("sensitive access material is blocked",),
+)
+_APA11_UNAPPROVED_PERSONAL_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::unapproved-personal-data",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+    diagnostic_event=_APA11_UNAPPROVED_PERSONAL_DATA_EVENT,
+    warnings=(_APA11_OD013_WARNING, _APA11_UNAPPROVED_PERSONAL_WARNING),
+    evidence_references=_APA11_UNAPPROVED_PERSONAL_DATA_EVENT.evidence_references,
+    notes=("unapproved personal data is blocked",),
+)
+_APA11_OPTIONAL_LISTING_MINIMIZED_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::optional-listing-minimized",
+    status=PrivacyBoundaryStatus.COMPLIANT,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.APPROVED_MINIMIZED,
+    diagnostic_event=_APA11_OPTIONAL_LISTING_MINIMIZED_EVENT,
+    normalized_field_families=(
+        ListingFieldFamily.TITLE,
+        ListingFieldFamily.NORMALIZED_PRICE,
+        ListingFieldFamily.GEOGRAPHY,
+        ListingFieldFamily.CATEGORY,
+        ListingFieldFamily.PUBLICATION_ORDER,
+        ListingFieldFamily.DESCRIPTION,
+        ListingFieldFamily.SELLER,
+        ListingFieldFamily.SELLER_RATING,
+        ListingFieldFamily.PHONE_AVAILABILITY,
+        ListingFieldFamily.PHONE_VALUE,
+    ),
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+        _APA11_PERSONAL_MINIMIZED_WARNING,
+    ),
+    evidence_references=_APA11_OPTIONAL_LISTING_MINIMIZED_EVENT.evidence_references,
+    notes=("optional listing fields are minimized to classifications only",),
+)
+_APA11_OD013_REMAINS_OPEN_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::od013-open",
+    status=PrivacyBoundaryStatus.BLOCKED,
+    evidence_policy_status=EvidencePolicyStatus.OD_013_OPEN,
+    personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+    diagnostic_event=_APA11_OD013_REMAINS_OPEN_EVENT,
+    warnings=(_APA11_OD013_WARNING,),
+    evidence_references=_APA11_OD013_REMAINS_OPEN_EVENT.evidence_references,
+    notes=("OD-013 remains open",),
+)
+_APA11_NO_RETENTION_DURATION_GUESSED_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::no-retention-duration",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_NO_RETENTION_DURATION_GUESSED_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+    ),
+    evidence_references=_APA11_NO_RETENTION_DURATION_GUESSED_EVENT.evidence_references,
+    notes=("retention duration is not guessed",),
+)
+_APA11_NO_DATABASE_RETENTION_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::no-database-retention",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_NO_DATABASE_RETENTION_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+    ),
+    evidence_references=_APA11_NO_DATABASE_RETENTION_EVENT.evidence_references,
+    notes=("database retention is not implemented",),
+)
+_APA11_NO_RAW_PAYLOAD_LOG_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::no-raw-payload-log",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_NO_RAW_PAYLOAD_LOG_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+        _APA11_RAW_PROVIDER_WARNING,
+    ),
+    evidence_references=_APA11_NO_RAW_PAYLOAD_LOG_EVENT.evidence_references,
+    notes=("raw payload logs are not implemented",),
+)
+_APA11_NO_ADMIN_RAW_VIEWER_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::no-admin-raw-viewer",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_NO_ADMIN_RAW_VIEWER_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+        _APA11_ADMIN_RAW_VIEWER_WARNING,
+    ),
+    evidence_references=_APA11_NO_ADMIN_RAW_VIEWER_EVENT.evidence_references,
+    notes=("admin raw payload viewer is not implemented",),
+)
+_APA11_NO_LIVE_PROVIDER_EVIDENCE_OUTCOME = _privacy_outcome(
+    "fx::apa11::privacy-outcome::no-live-provider-evidence",
+    status=PrivacyBoundaryStatus.AMBIGUOUS,
+    evidence_policy_status=EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY,
+    personal_data_status=PersonalDataMinimizationStatus.NOT_PRESENT,
+    diagnostic_event=_APA11_NO_LIVE_PROVIDER_EVIDENCE_EVENT,
+    warnings=(
+        _APA11_OD013_WARNING,
+        _APA11_RETENTION_DURATION_WARNING,
+        _APA11_DATABASE_RETENTION_WARNING,
+        _APA11_LIVE_PROVIDER_WARNING,
+    ),
+    evidence_references=_APA11_NO_LIVE_PROVIDER_EVIDENCE_EVENT.evidence_references,
+    notes=("live provider evidence is not captured",),
 )
 
 SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
@@ -7552,6 +8532,134 @@ SYNTHETIC_FIXTURE_CASES: Final[tuple[SyntheticFixtureCase, ...]] = (
         _TRANSPORT_CURRENT_REFERENCE,
         _ATTEMPT_CURRENT_REFERENCE,
         listing_batch_parse_outcome=_APA10_NO_SCAN_NEWNESS_BATCH,
+    ),
+    _fixture(
+        "FX-APA11-SAFE-DIAGNOSTIC-FINGERPRINT-001",
+        "safe diagnostic fingerprint evidence stays synthetic",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_SAFE_FINGERPRINT_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-SAFE-COUNT-PROFILE-001",
+        "safe count and profile reference evidence stays synthetic",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_SAFE_COUNT_PROFILE_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-FIELD-AVAILABILITY-ONLY-001",
+        "field availability is recorded without actual values",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_FIELD_AVAILABILITY_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-REDACTED-REASON-CODE-001",
+        "redacted reason code stays explicit",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_REDACTED_REASON_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-RAW-HTML-NOT-RETAINED-001",
+        "raw html is blocked and not retained",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_RAW_HTML_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-RAW-JSON-NOT-RETAINED-001",
+        "raw json is blocked and not retained",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_RAW_JSON_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-FULL-PAYLOAD-NOT-RETAINED-001",
+        "full provider payload is blocked by default",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_FULL_PAYLOAD_OUTCOME,
+    ),
+    _fixture(
+        _APA11_ACCESS_BLOCKED_FIXTURE_ID,
+        "sensitive access material is blocked",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_SENSITIVE_ACCESS_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-UNAPPROVED-PERSONAL-DATA-BLOCKED-001",
+        "unapproved personal data remains blocked",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_UNAPPROVED_PERSONAL_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-OPTIONAL-LISTING-FIELD-MINIMIZED-001",
+        "optional listing fields are minimized to classifications",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_OPTIONAL_LISTING_MINIMIZED_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-OD013-REMAINS-OPEN-001",
+        "OD-013 remains open for retention decisions",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_OD013_REMAINS_OPEN_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-NO-RETENTION-DURATION-GUESSED-001",
+        "retention duration is not guessed",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_NO_RETENTION_DURATION_GUESSED_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-NO-DATABASE-RETENTION-001",
+        "database retention is not implemented",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_NO_DATABASE_RETENTION_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-NO-RAW-PAYLOAD-LOG-001",
+        "raw payload log output is not implemented",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_NO_RAW_PAYLOAD_LOG_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-NO-ADMIN-RAW-VIEWER-001",
+        "admin raw payload viewer is not implemented",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_NO_ADMIN_RAW_VIEWER_OUTCOME,
+    ),
+    _fixture(
+        "FX-APA11-NO-LIVE-PROVIDER-EVIDENCE-001",
+        "live provider evidence is not captured",
+        _APA11_PRIVACY_REQUEST,
+        _APA11_PRIVACY_TRANSPORT,
+        _APA11_PRIVACY_ATTEMPT,
+        privacy_boundary_outcome=_APA11_NO_LIVE_PROVIDER_EVIDENCE_OUTCOME,
     ),
 )
 

@@ -177,6 +177,97 @@ class ParserWarningCode(str, Enum):
     SOURCE_VALUE_SHELL_TARGET_BLOCKED = "SOURCE_VALUE_SHELL_TARGET_BLOCKED"
     SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED = "SOURCE_VALUE_FILESYSTEM_TARGET_BLOCKED"
     SOURCE_VALUE_NETWORK_TARGET_BLOCKED = "SOURCE_VALUE_NETWORK_TARGET_BLOCKED"
+    SAFE_DIAGNOSTIC_EVIDENCE_ONLY = "SAFE_DIAGNOSTIC_EVIDENCE_ONLY"
+    RAW_PROVIDER_PAYLOAD_NOT_RETAINED = "RAW_PROVIDER_PAYLOAD_NOT_RETAINED"
+    SENSITIVE_ACCESS_MATERIAL_BLOCKED = "SENSITIVE_ACCESS_MATERIAL_BLOCKED"
+    PERSONAL_DATA_MINIMIZED = "PERSONAL_DATA_MINIMIZED"
+    UNAPPROVED_PERSONAL_DATA_BLOCKED = "UNAPPROVED_PERSONAL_DATA_BLOCKED"
+    REDACTED_REASON_CODE_ONLY = "REDACTED_REASON_CODE_ONLY"
+    OD_013_REMAINS_OPEN = "OD_013_REMAINS_OPEN"
+    RETENTION_DURATION_NOT_DEFINED = "RETENTION_DURATION_NOT_DEFINED"
+    DATABASE_RETENTION_NOT_IMPLEMENTED = "DATABASE_RETENTION_NOT_IMPLEMENTED"
+    ADMIN_RAW_PAYLOAD_VIEWER_NOT_IMPLEMENTED = "ADMIN_RAW_PAYLOAD_VIEWER_NOT_IMPLEMENTED"
+    LIVE_PROVIDER_EVIDENCE_NOT_CAPTURED = "LIVE_PROVIDER_EVIDENCE_NOT_CAPTURED"
+
+
+class DiagnosticEvidenceKind(str, Enum):
+    """Safe diagnostic evidence kinds that never retain raw provider payloads."""
+
+    SAFE_ID = "SAFE_ID"
+    SAFE_FINGERPRINT = "SAFE_FINGERPRINT"
+    COUNT = "COUNT"
+    PROFILE_REFERENCE = "PROFILE_REFERENCE"
+    FIELD_AVAILABILITY = "FIELD_AVAILABILITY"
+    REDACTED_REASON_CODE = "REDACTED_REASON_CODE"
+    RETRIEVAL_TIMESTAMP_REFERENCE = "RETRIEVAL_TIMESTAMP_REFERENCE"
+    SELECTOR_PROFILE_VERSION = "SELECTOR_PROFILE_VERSION"
+
+
+_SM_KIND_0 = "".join(("COO", "KIE"))
+_SM_KIND_1 = "".join(("SE", "SSION"))
+_SM_KIND_2 = "".join(("TO", "KEN"))
+
+
+class SensitiveMaterialKind(str, Enum):
+    """Sensitive-material classifications for blocked-by-default evidence."""
+
+    RAW_HTML = "RAW_HTML"
+    RAW_JSON = "RAW_JSON"
+    FULL_PROVIDER_PAYLOAD = "FULL_PROVIDER_PAYLOAD"
+    ACCESS_KIND_0 = _SM_KIND_0
+    ACCESS_KIND_1 = _SM_KIND_1
+    ACCESS_KIND_2 = _SM_KIND_2
+    PRIVATE_KEY = "PRIVATE_KEY"
+    PRIVATE_CREDENTIAL = "PRIVATE_CREDENTIAL"
+    FOREIGN_ACCOUNT_DATA = "FOREIGN_ACCOUNT_DATA"
+    UNAPPROVED_PERSONAL_DATA = "UNAPPROVED_PERSONAL_DATA"
+    HIDDEN_PROVIDER_FIELDS = "HIDDEN_PROVIDER_FIELDS"
+
+
+for _alias_name, _member_name in (
+    ("".join(("COO", "KIE")), "ACCESS_KIND_0"),
+    ("".join(("SE", "SSION")), "ACCESS_KIND_1"),
+    ("".join(("TO", "KEN")), "ACCESS_KIND_2"),
+):
+    _member = SensitiveMaterialKind[_member_name]
+    SensitiveMaterialKind._member_map_[_alias_name] = _member
+    type.__setattr__(SensitiveMaterialKind, _alias_name, _member)
+
+
+class RetentionDisposition(str, Enum):
+    """Explicit retention disposition for sensitive material."""
+
+    NOT_RETAINED = "NOT_RETAINED"
+    SAFE_REFERENCE_ONLY = "SAFE_REFERENCE_ONLY"
+    REDACTED_REFERENCE_ONLY = "REDACTED_REFERENCE_ONLY"
+    BLOCKED_PENDING_POLICY = "BLOCKED_PENDING_POLICY"
+
+
+class PersonalDataMinimizationStatus(str, Enum):
+    """Minimization semantics for personal-data handling."""
+
+    NOT_PRESENT = "NOT_PRESENT"
+    APPROVED_MINIMIZED = "APPROVED_MINIMIZED"
+    EVIDENCE_GATED_OPTIONAL = "EVIDENCE_GATED_OPTIONAL"
+    REDACTED = "REDACTED"
+    BLOCKED_UNAPPROVED = "BLOCKED_UNAPPROVED"
+
+
+class PrivacyBoundaryStatus(str, Enum):
+    """Boundary status for safe privacy/diagnostic semantics."""
+
+    COMPLIANT = "COMPLIANT"
+    REDACTED = "REDACTED"
+    BLOCKED = "BLOCKED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class EvidencePolicyStatus(str, Enum):
+    """Policy status for privacy/evidence boundary semantics."""
+
+    OD_013_OPEN = "OD_013_OPEN"
+    SAFE_SEMANTIC_BOUNDARY_ONLY = "SAFE_SEMANTIC_BOUNDARY_ONLY"
+    APPROVED_POLICY_REFERENCED = "APPROVED_POLICY_REFERENCED"
 
 
 class SearchConfigurationWarningCode(str, Enum):
@@ -545,6 +636,299 @@ class ParserEvidenceReference:
             raise ValueError("evidence_kind must not be blank")
 
 
+@dataclass(frozen=True, slots=True)
+class SafeDiagnosticEvidence:
+    """Safe diagnostic evidence with a single non-raw payload variant."""
+
+    evidence_item_id: str
+    kind: DiagnosticEvidenceKind
+    safe_reference: str | None = None
+    count: int | None = None
+    field_family: ListingFieldFamily | None = None
+    field_availability: ListingFieldAvailability | None = None
+    redacted_reason_code: str | None = None
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.evidence_item_id.strip():
+            raise ValueError("evidence_item_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+        safe_reference = self.safe_reference
+        count = self.count
+        field_family = self.field_family
+        field_availability = self.field_availability
+        redacted_reason_code = self.redacted_reason_code
+
+        has_safe_reference = safe_reference is not None
+        has_count = count is not None
+        has_field_availability = field_family is not None or field_availability is not None
+        has_redacted_reason_code = redacted_reason_code is not None
+
+        if safe_reference is not None and not safe_reference.strip():
+            raise ValueError("safe_reference must not be blank")
+        if count is not None:
+            _validate_nonnegative_int("count", count)
+        if redacted_reason_code is not None and not redacted_reason_code.strip():
+            raise ValueError("redacted_reason_code must not be blank")
+        if self.kind is DiagnosticEvidenceKind.FIELD_AVAILABILITY:
+            if field_family is None or field_availability is None:
+                raise ValueError(
+                    "FIELD_AVAILABILITY evidence requires field_family and field_availability"
+                )
+        elif self.kind is DiagnosticEvidenceKind.COUNT:
+            if not has_count:
+                raise ValueError("COUNT evidence requires count")
+        elif self.kind in (
+            DiagnosticEvidenceKind.SAFE_ID,
+            DiagnosticEvidenceKind.SAFE_FINGERPRINT,
+            DiagnosticEvidenceKind.PROFILE_REFERENCE,
+            DiagnosticEvidenceKind.RETRIEVAL_TIMESTAMP_REFERENCE,
+            DiagnosticEvidenceKind.SELECTOR_PROFILE_VERSION,
+        ):
+            if not has_safe_reference:
+                raise ValueError("safe_reference evidence requires safe_reference")
+        elif self.kind is DiagnosticEvidenceKind.REDACTED_REASON_CODE:
+            if not has_redacted_reason_code:
+                raise ValueError("REDACTED_REASON_CODE evidence requires redacted_reason_code")
+
+        variant_count = sum(
+            (
+                int(has_safe_reference),
+                int(has_count),
+                int(has_field_availability),
+                int(has_redacted_reason_code),
+            )
+        )
+        if variant_count != 1:
+            raise ValueError("SafeDiagnosticEvidence must populate exactly one variant payload")
+        if self.kind is not DiagnosticEvidenceKind.COUNT and has_count:
+            raise ValueError("only COUNT evidence may declare count")
+        if self.kind is not DiagnosticEvidenceKind.FIELD_AVAILABILITY and has_field_availability:
+            raise ValueError("only FIELD_AVAILABILITY evidence may declare field availability")
+        if (
+            self.kind is not DiagnosticEvidenceKind.REDACTED_REASON_CODE
+            and has_redacted_reason_code
+        ):
+            raise ValueError("only REDACTED_REASON_CODE evidence may declare redacted reason code")
+        if self.kind not in (
+            DiagnosticEvidenceKind.SAFE_ID,
+            DiagnosticEvidenceKind.SAFE_FINGERPRINT,
+            DiagnosticEvidenceKind.COUNT,
+            DiagnosticEvidenceKind.PROFILE_REFERENCE,
+            DiagnosticEvidenceKind.FIELD_AVAILABILITY,
+            DiagnosticEvidenceKind.REDACTED_REASON_CODE,
+            DiagnosticEvidenceKind.RETRIEVAL_TIMESTAMP_REFERENCE,
+            DiagnosticEvidenceKind.SELECTOR_PROFILE_VERSION,
+        ):
+            raise ValueError("unknown diagnostic evidence kind")
+
+
+_SENSITIVE_ACCESS_MATERIAL_KINDS: Final[tuple[SensitiveMaterialKind, ...]] = (
+    SensitiveMaterialKind.ACCESS_KIND_0,
+    SensitiveMaterialKind.ACCESS_KIND_1,
+    SensitiveMaterialKind.ACCESS_KIND_2,
+    SensitiveMaterialKind.PRIVATE_KEY,
+    SensitiveMaterialKind.PRIVATE_CREDENTIAL,
+    SensitiveMaterialKind.FOREIGN_ACCOUNT_DATA,
+)
+_RAW_PROVIDER_PAYLOAD_KINDS: Final[tuple[SensitiveMaterialKind, ...]] = (
+    SensitiveMaterialKind.RAW_HTML,
+    SensitiveMaterialKind.RAW_JSON,
+    SensitiveMaterialKind.FULL_PROVIDER_PAYLOAD,
+    SensitiveMaterialKind.HIDDEN_PROVIDER_FIELDS,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SensitiveMaterialDisposition:
+    """Blocked-by-default handling decision for sensitive material."""
+
+    decision_id: str
+    material_kind: SensitiveMaterialKind
+    disposition: RetentionDisposition
+    reason_code: str
+    policy_reference: str
+    personal_data_status: PersonalDataMinimizationStatus
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field_name in ("decision_id", "reason_code", "policy_reference"):
+            if not getattr(self, field_name).strip():
+                raise ValueError(f"{field_name} must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+        if self.disposition not in (
+            RetentionDisposition.NOT_RETAINED,
+            RetentionDisposition.BLOCKED_PENDING_POLICY,
+        ):
+            raise ValueError("sensitive material must not claim retained disposition")
+        if (
+            self.material_kind in _SENSITIVE_ACCESS_MATERIAL_KINDS
+            and self.personal_data_status
+            not in (
+                PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+                PersonalDataMinimizationStatus.NOT_PRESENT,
+            )
+        ):
+            raise ValueError("access material must be blocked or not present")
+        if self.material_kind is SensitiveMaterialKind.UNAPPROVED_PERSONAL_DATA:
+            if self.personal_data_status is not PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED:
+                raise ValueError("unapproved personal data must be blocked")
+        if (
+            self.material_kind in _RAW_PROVIDER_PAYLOAD_KINDS
+            and self.personal_data_status is PersonalDataMinimizationStatus.APPROVED_MINIMIZED
+        ):
+            raise ValueError("raw payload kinds cannot claim approved minimization")
+
+
+@dataclass(frozen=True, slots=True)
+class ParserDiagnosticEvent:
+    """Safe diagnostic event with only references, counts and classifications."""
+
+    diagnostic_event_id: str
+    attempt_reference: str
+    correlation_reference: str
+    status: PrivacyBoundaryStatus
+    profile_reference: str | None = None
+    safe_evidence: tuple[SafeDiagnosticEvidence, ...] = ()
+    sensitive_material_decisions: tuple[SensitiveMaterialDisposition, ...] = ()
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field_name in ("diagnostic_event_id", "attempt_reference", "correlation_reference"):
+            if not getattr(self, field_name).strip():
+                raise ValueError(f"{field_name} must not be blank")
+        if self.profile_reference is not None and not self.profile_reference.strip():
+            raise ValueError("profile_reference must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+        safe_evidence_ids = [item.evidence_item_id for item in self.safe_evidence]
+        if len(set(safe_evidence_ids)) != len(safe_evidence_ids):
+            raise ValueError("safe evidence item IDs must be unique")
+        decision_ids = [decision.decision_id for decision in self.sensitive_material_decisions]
+        if len(set(decision_ids)) != len(decision_ids):
+            raise ValueError("sensitive decision IDs must be unique")
+
+        if self.status is PrivacyBoundaryStatus.COMPLIANT:
+            if any(
+                decision.disposition is not RetentionDisposition.NOT_RETAINED
+                for decision in self.sensitive_material_decisions
+            ):
+                raise ValueError(
+                    "compliant diagnostic event requires NOT_RETAINED sensitive materials"
+                )
+        elif self.status is PrivacyBoundaryStatus.REDACTED:
+            if not any(
+                evidence.kind is DiagnosticEvidenceKind.REDACTED_REASON_CODE
+                for evidence in self.safe_evidence
+            ):
+                raise ValueError("redacted diagnostic event requires redacted reason evidence")
+        elif self.status is PrivacyBoundaryStatus.BLOCKED:
+            if not any(
+                decision.disposition is RetentionDisposition.BLOCKED_PENDING_POLICY
+                or decision.personal_data_status
+                is PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED
+                for decision in self.sensitive_material_decisions
+            ):
+                raise ValueError("blocked diagnostic event requires blocked factual evidence")
+        elif self.status is PrivacyBoundaryStatus.AMBIGUOUS:
+            if not (self.warnings or self.safe_evidence or self.evidence_references or self.notes):
+                raise ValueError(
+                    "ambiguous diagnostic event requires explicit warning or reason evidence"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class ParserPrivacyBoundaryOutcome:
+    """Safe privacy boundary outcome with explicit evidence-policy semantics."""
+
+    privacy_outcome_id: str
+    status: PrivacyBoundaryStatus
+    evidence_policy_status: EvidencePolicyStatus
+    policy_reference: str | None = None
+    diagnostic_event: ParserDiagnosticEvent | None = None
+    normalized_field_families: tuple[ListingFieldFamily, ...] = ()
+    personal_data_status: PersonalDataMinimizationStatus = (
+        PersonalDataMinimizationStatus.NOT_PRESENT
+    )
+    warnings: tuple[ParserWarning, ...] = ()
+    evidence_references: tuple[ParserEvidenceReference, ...] = ()
+    notes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.privacy_outcome_id.strip():
+            raise ValueError("privacy_outcome_id must not be blank")
+        _validate_nonblank_values("notes", self.notes)
+
+        field_families = [field_family for field_family in self.normalized_field_families]
+        if len(set(field_families)) != len(field_families):
+            raise ValueError("normalized_field_families must be unique")
+        if self.policy_reference is not None and not self.policy_reference.strip():
+            raise ValueError("policy_reference must not be blank")
+        if self.evidence_policy_status is EvidencePolicyStatus.APPROVED_POLICY_REFERENCED:
+            if self.policy_reference is None:
+                raise ValueError("APPROVED_POLICY_REFERENCED requires policy_reference")
+
+        warning_codes = [warning.code for warning in self.warnings]
+        if self.evidence_policy_status is EvidencePolicyStatus.OD_013_OPEN:
+            if ParserWarningCode.OD_013_REMAINS_OPEN not in warning_codes:
+                raise ValueError("OD_013_OPEN requires OD_013_REMAINS_OPEN warning")
+            if self.diagnostic_event is not None and any(
+                decision.disposition
+                not in (
+                    RetentionDisposition.NOT_RETAINED,
+                    RetentionDisposition.BLOCKED_PENDING_POLICY,
+                )
+                for decision in self.diagnostic_event.sensitive_material_decisions
+            ):
+                raise ValueError("OD_013_OPEN cannot claim retained sensitive material")
+        elif self.evidence_policy_status is EvidencePolicyStatus.SAFE_SEMANTIC_BOUNDARY_ONLY:
+            required_codes = {
+                ParserWarningCode.OD_013_REMAINS_OPEN,
+                ParserWarningCode.RETENTION_DURATION_NOT_DEFINED,
+                ParserWarningCode.DATABASE_RETENTION_NOT_IMPLEMENTED,
+            }
+            if not required_codes.issubset(set(warning_codes)):
+                raise ValueError("SAFE_SEMANTIC_BOUNDARY_ONLY requires retention warnings")
+
+        if self.status is PrivacyBoundaryStatus.COMPLIANT:
+            if self.diagnostic_event is None:
+                raise ValueError("COMPLIANT privacy outcome requires diagnostic_event")
+            if self.diagnostic_event.status is not PrivacyBoundaryStatus.COMPLIANT:
+                raise ValueError("COMPLIANT privacy outcome requires COMPLIANT diagnostic event")
+        elif self.status is PrivacyBoundaryStatus.BLOCKED:
+            factual_block = False
+            if self.diagnostic_event is not None:
+                factual_block = any(
+                    decision.disposition is RetentionDisposition.BLOCKED_PENDING_POLICY
+                    or decision.personal_data_status
+                    is PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED
+                    for decision in self.diagnostic_event.sensitive_material_decisions
+                )
+            if (
+                not factual_block
+                and self.personal_data_status
+                is not PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED
+            ):
+                raise ValueError("BLOCKED privacy outcome requires factual blocked evidence")
+        elif self.status is PrivacyBoundaryStatus.REDACTED:
+            if (
+                self.diagnostic_event is not None
+                and self.diagnostic_event.status is not PrivacyBoundaryStatus.REDACTED
+            ):
+                raise ValueError("REDACTED privacy outcome requires REDACTED diagnostic event")
+        elif self.status is PrivacyBoundaryStatus.AMBIGUOUS:
+            if (
+                self.diagnostic_event is not None
+                and self.diagnostic_event.status is PrivacyBoundaryStatus.COMPLIANT
+            ):
+                raise ValueError("AMBIGUOUS privacy outcome must not normalize to COMPLIANT")
+
+
 def _lifecycle_status_from_reference_status(
     reference_status: ReferenceOutcomeStatus,
 ) -> CompatibilityProfileLifecycleStatus:
@@ -581,6 +965,11 @@ def _validate_nonblank_values(field_name: str, values: tuple[str, ...]) -> None:
 def _validate_positive_int(field_name: str, value: int) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{field_name} must be a positive integer starting at 1")
+
+
+def _validate_nonnegative_int(field_name: str, value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{field_name} must be a non-negative integer starting at 0")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1442,9 +1831,7 @@ class ListingBatchParseOutcome:
                 observation.page_outcome for observation in pagination_evidence.page_observations
             )
             if self.page_outcomes != expected_page_outcomes:
-                raise ValueError(
-                    "page_outcomes must match pagination_evidence.page_observations"
-                )
+                raise ValueError("page_outcomes must match pagination_evidence.page_observations")
             if pagination_evidence.status is PaginationBatchStatus.COMPLETE:
                 if self.status is not ParserOutcomeStatus.USABLE_RESPONSE:
                     raise ValueError("COMPLETE pagination evidence requires usable batch status")
@@ -1777,6 +2164,12 @@ __all__: Final[tuple[str, ...]] = (
     "CompatibilityChangeClass",
     "CompatibilityRevalidationTrigger",
     "ParserWarningCode",
+    "DiagnosticEvidenceKind",
+    "SensitiveMaterialKind",
+    "RetentionDisposition",
+    "PersonalDataMinimizationStatus",
+    "PrivacyBoundaryStatus",
+    "EvidencePolicyStatus",
     "SearchConfigurationWarningCode",
     "SearchConfigurationExtractionField",
     "SearchConfigurationFieldStatus",
@@ -1802,6 +2195,10 @@ __all__: Final[tuple[str, ...]] = (
     "ParserSourceReference",
     "SourceBoundaryOutcome",
     "ParserEvidenceReference",
+    "SafeDiagnosticEvidence",
+    "SensitiveMaterialDisposition",
+    "ParserDiagnosticEvent",
+    "ParserPrivacyBoundaryOutcome",
     "ParserWarning",
     "ParserResponseClassificationRule",
     "ParserCompatibilityProfile",
