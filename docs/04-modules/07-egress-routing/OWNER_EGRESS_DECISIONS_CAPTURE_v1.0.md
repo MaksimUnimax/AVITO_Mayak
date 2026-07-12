@@ -1,11 +1,11 @@
 # Маяк Авито — Owner Egress Decisions Capture v1.0
 
-**Статус:** APPROVED owner decision capture for Module 07 semantic planning  
-**Дата:** 2026-07-12  
-**Модуль:** `07-egress-routing`  
-**Roadmap step:** `ER-01`  
-**Technical task:** `ER-01-GOVERNANCE-CAPTURE-20260712-003`  
-**Source-of-truth playbook:** `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`  
+**Статус:** APPROVED owner decision capture for Module 07 semantic planning
+**Дата:** 2026-07-12
+**Модуль:** `07-egress-routing`
+**Roadmap step:** `ER-01`
+**Technical task:** `ER-01-GOVERNANCE-CAPTURE-20260712-003`
+**Source-of-truth playbook:** `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`
 **Governance decision:** `ADR-0019`
 
 ## 1. Назначение
