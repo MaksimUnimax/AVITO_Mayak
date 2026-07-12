@@ -328,8 +328,36 @@ def _boundary_kwargs() -> dict[str, Any]:
 def test_registration_task_id_and_package_exports_are_exact() -> None:
     assert ER03_TASK_ID == EXPECTED_TASK_ID
     assert registration_module.ER03_TASK_ID == EXPECTED_TASK_ID
+    assert type(egress_routing.__all__) is tuple
     assert egress_routing.__all__ == EXPECTED_PACKAGE_EXPORTS
+    assert tuple(egress_routing.__all__) == EXPECTED_PACKAGE_EXPORTS
+    assert len(egress_routing.__all__) == len(EXPECTED_PACKAGE_EXPORTS)
+    assert len(set(egress_routing.__all__)) == len(EXPECTED_PACKAGE_EXPORTS)
+    assert all(hasattr(egress_routing, name) for name in EXPECTED_PACKAGE_EXPORTS)
     assert registration_module.__all__ == EXPECTED_REGISTRATION_EXPORTS
+
+
+def test_package_all_is_one_canonical_builtin_tuple() -> None:
+    observed_exports = tuple(egress_routing.__all__)
+    assert type(egress_routing.__all__) is tuple
+    assert observed_exports == EXPECTED_PACKAGE_EXPORTS
+    assert tuple(egress_routing.__all__) == EXPECTED_PACKAGE_EXPORTS
+    assert len(observed_exports) == len(EXPECTED_PACKAGE_EXPORTS)
+    assert len(set(observed_exports)) == len(EXPECTED_PACKAGE_EXPORTS)
+    assert all(hasattr(egress_routing, name) for name in EXPECTED_PACKAGE_EXPORTS)
+    assert all(
+        name in observed_exports
+        for name in (
+            "ER03_TASK_ID",
+            "AgentRegistrationStatus",
+            "RouteRegistrationStatus",
+            "AgentRouteAssociationStatus",
+            "AgentRegistration",
+            "RouteRegistration",
+            "AgentRouteAssociation",
+            "AgentRouteRegistrationBoundary",
+        )
+    )
 
 
 def test_registration_task_id_occurs_exactly_once_in_changed_scope() -> None:

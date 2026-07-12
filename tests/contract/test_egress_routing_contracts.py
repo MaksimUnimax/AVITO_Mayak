@@ -78,6 +78,14 @@ EXPECTED_EXPORTS = (
     "TransportAssignment",
     "TransportAssignmentOutcome",
     "TransportOutcomeStatus",
+    "ER03_TASK_ID",
+    "AgentRegistrationStatus",
+    "RouteRegistrationStatus",
+    "AgentRouteAssociationStatus",
+    "AgentRegistration",
+    "RouteRegistration",
+    "AgentRouteAssociation",
+    "AgentRouteRegistrationBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
@@ -893,7 +901,12 @@ def test_task_id_appears_in_changed_scope_exactly_once() -> None:
 
 def test_package_module_id_and_public_exports() -> None:
     assert egress_routing.MODULE_ID == "07-egress-routing"
+    assert type(egress_routing.__all__) is tuple
+    assert egress_routing.__all__ == EXPECTED_EXPORTS
     assert tuple(egress_routing.__all__) == EXPECTED_EXPORTS
+    assert len(egress_routing.__all__) == len(EXPECTED_EXPORTS)
+    assert len(set(egress_routing.__all__)) == len(EXPECTED_EXPORTS)
+    assert all(hasattr(egress_routing, name) for name in EXPECTED_EXPORTS)
     assert egress_routing.MODULE_ID == egress_routing.EGRESS_ROUTING_MODULE_ID
 
 
