@@ -7,6 +7,7 @@ from pathlib import Path
 
 MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/__init__.py"),
+    Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/contracts.py"),
     Path("src/mayak/modules/egress_routing/fixtures.py"),
 )
@@ -251,15 +252,21 @@ def test_egress_routing_modules_use_only_allowed_imports_and_static_ast() -> Non
 def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_configuration() -> (
     None
 ):
-    source = _read_source(Path("src/mayak/modules/egress_routing/contracts.py"))
-    tree = ast.parse(source)
-    dataclass_fields = _dataclass_field_names(tree)
-
     forbidden_field_hits: dict[str, tuple[str, ...]] = {}
-    for class_name, field_names in dataclass_fields.items():
-        hits = tuple(name for name in field_names if name.lower() in FORBIDDEN_EXACT_FIELD_NAMES)
-        if hits:
-            forbidden_field_hits[class_name] = hits
+    for relative_path in (
+        Path("src/mayak/modules/egress_routing/contracts.py"),
+        Path("src/mayak/modules/egress_routing/registration.py"),
+    ):
+        source = _read_source(relative_path)
+        tree = ast.parse(source)
+        dataclass_fields = _dataclass_field_names(tree)
+
+        for class_name, field_names in dataclass_fields.items():
+            hits = tuple(
+                name for name in field_names if name.lower() in FORBIDDEN_EXACT_FIELD_NAMES
+            )
+            if hits:
+                forbidden_field_hits[f"{relative_path}:{class_name}"] = hits
 
     assert forbidden_field_hits == {}
 
