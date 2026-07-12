@@ -424,6 +424,26 @@ def _valid_outcome_kwargs() -> dict[str, Any]:
     }
 
 
+AMBIGUOUS_OUTCOME_STATUSES = (
+    TransportOutcomeStatus.DISPATCH_UNKNOWN,
+    TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
+)
+
+AMBIGUOUS_OUTCOME_ALLOWED_RECONCILIATION_STATUSES = (
+    RouteReconciliationStatus.REQUIRED,
+    RouteReconciliationStatus.PENDING,
+    RouteReconciliationStatus.REMAINS_AMBIGUOUS,
+    RouteReconciliationStatus.MANUAL_REVIEW_REQUIRED,
+)
+
+AMBIGUOUS_OUTCOME_REJECTED_RECONCILIATION_STATUSES = (
+    RouteReconciliationStatus.NOT_REQUIRED,
+    RouteReconciliationStatus.RESOLVED_NOT_SENT,
+    RouteReconciliationStatus.RESOLVED_SENT,
+    RouteReconciliationStatus.RESOLVED_TERMINAL,
+)
+
+
 def _valid_restriction_state_kwargs() -> dict[str, Any]:
     return {
         "restriction_id": "restriction-01",
@@ -726,6 +746,41 @@ def test_quarantine_and_dispatch_invariants() -> None:
                 "reconciliation_status": RouteReconciliationStatus.NOT_REQUIRED,
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("status", "reconciliation_status", "should_accept"),
+    [
+        *(
+            (status, reconciliation_status, True)
+            for status in AMBIGUOUS_OUTCOME_STATUSES
+            for reconciliation_status in AMBIGUOUS_OUTCOME_ALLOWED_RECONCILIATION_STATUSES
+        ),
+        *(
+            (status, reconciliation_status, False)
+            for status in AMBIGUOUS_OUTCOME_STATUSES
+            for reconciliation_status in AMBIGUOUS_OUTCOME_REJECTED_RECONCILIATION_STATUSES
+        ),
+    ],
+)
+def test_ambiguous_transport_outcomes_require_exact_unresolved_reconciliation_status(
+    status: TransportOutcomeStatus,
+    reconciliation_status: RouteReconciliationStatus,
+    should_accept: bool,
+) -> None:
+    outcome_kwargs = {
+        **_valid_outcome_kwargs(),
+        "status": status,
+        "reconciliation_status": reconciliation_status,
+    }
+
+    if should_accept:
+        outcome = TransportAssignmentOutcome(**outcome_kwargs)
+        assert outcome.status is status
+        assert outcome.reconciliation_status is reconciliation_status
+    else:
+        with pytest.raises(ValueError):
+            TransportAssignmentOutcome(**outcome_kwargs)
 
 
 def test_fallback_and_reconciliation_invariants() -> None:

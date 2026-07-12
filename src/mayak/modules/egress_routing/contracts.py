@@ -249,6 +249,16 @@ class RouteReconciliationStatus(str, Enum):
     MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
 
 
+_AMBIGUOUS_OUTCOME_RECONCILIATION_STATUSES: frozenset[RouteReconciliationStatus] = frozenset(
+    {
+        RouteReconciliationStatus.REQUIRED,
+        RouteReconciliationStatus.PENDING,
+        RouteReconciliationStatus.REMAINS_AMBIGUOUS,
+        RouteReconciliationStatus.MANUAL_REVIEW_REQUIRED,
+    }
+)
+
+
 class SessionPolicyStatus(str, Enum):
     PROHIBITED = "PROHIBITED"
     BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE = "BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE"
@@ -767,10 +777,11 @@ class TransportAssignmentOutcome:
                 TransportOutcomeStatus.DISPATCH_UNKNOWN,
                 TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
             }
-            and self.reconciliation_status is RouteReconciliationStatus.NOT_REQUIRED
+            and self.reconciliation_status not in _AMBIGUOUS_OUTCOME_RECONCILIATION_STATUSES
         ):
             raise ValueError(
-                "dispatch_unknown and transport_ambiguous outcomes require reconciliation"
+                "dispatch_unknown and transport_ambiguous outcomes require "
+                "an unresolved reconciliation status"
             )
         if (
             self.status is TransportOutcomeStatus.RECONCILIATION_REQUIRED

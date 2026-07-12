@@ -244,6 +244,67 @@ def test_transport_outcomes_requiring_reconciliation_reject_not_required_state()
         )
 
 
+def test_resolved_transport_state_cannot_masquerade_as_unresolved_ambiguous_dispatch() -> None:
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            outcome_id="outcome-06",
+            assignment_id="assignment-06",
+            attempt_id="attempt-06",
+            status=TransportOutcomeStatus.DISPATCH_UNKNOWN,
+            safe_response_reference=None,
+            reason_codes=("dispatch-resolved",),
+            evidence_reference_ids=("evidence-06",),
+            reconciliation_status=RouteReconciliationStatus.RESOLVED_SENT,
+            correlation_id="corr-06",
+            causation_id="cause-06",
+        )
+
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            outcome_id="outcome-07",
+            assignment_id="assignment-07",
+            attempt_id="attempt-07",
+            status=TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
+            safe_response_reference=None,
+            reason_codes=("transport-resolved",),
+            evidence_reference_ids=("evidence-07",),
+            reconciliation_status=RouteReconciliationStatus.RESOLVED_NOT_SENT,
+            correlation_id="corr-07",
+            causation_id="cause-07",
+        )
+
+    accepted_dispatch_unknown = TransportAssignmentOutcome(
+        outcome_id="outcome-08",
+        assignment_id="assignment-08",
+        attempt_id="attempt-08",
+        status=TransportOutcomeStatus.DISPATCH_UNKNOWN,
+        safe_response_reference=None,
+        reason_codes=("dispatch-unresolved",),
+        evidence_reference_ids=("evidence-08",),
+        reconciliation_status=RouteReconciliationStatus.REQUIRED,
+        correlation_id="corr-08",
+        causation_id="cause-08",
+    )
+    accepted_transport_ambiguous = TransportAssignmentOutcome(
+        outcome_id="outcome-09",
+        assignment_id="assignment-09",
+        attempt_id="attempt-09",
+        status=TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
+        safe_response_reference=None,
+        reason_codes=("transport-unresolved",),
+        evidence_reference_ids=("evidence-09",),
+        reconciliation_status=RouteReconciliationStatus.REMAINS_AMBIGUOUS,
+        correlation_id="corr-09",
+        causation_id="cause-09",
+    )
+
+    assert accepted_dispatch_unknown.reconciliation_status is RouteReconciliationStatus.REQUIRED
+    assert (
+        accepted_transport_ambiguous.reconciliation_status
+        is RouteReconciliationStatus.REMAINS_AMBIGUOUS
+    )
+
+
 def test_ambiguous_dispatch_requires_reconciliation_and_does_not_enable_fallback() -> None:
     attempt = DispatchAttempt(
         attempt_id="attempt-01",
