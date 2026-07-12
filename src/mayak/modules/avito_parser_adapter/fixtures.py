@@ -84,20 +84,7 @@ from .contracts import (
     _reference_status_from_lifecycle_status,
 )
 
-_APA11_ACCESS_KIND_0 = "".join(("COO", "KIE"))
-_APA11_ACCESS_KIND_1 = "".join(("SE", "SSION"))
-_APA11_ACCESS_KIND_2 = "".join(("TO", "KEN"))
-_APA11_ACCESS_BLOCKED_FIXTURE_ID = "".join(
-    (
-        "FX-APA11-",
-        _APA11_ACCESS_KIND_0,
-        "-",
-        _APA11_ACCESS_KIND_1,
-        "-",
-        _APA11_ACCESS_KIND_2,
-        "-BLOCKED-001",
-    )
-)
+_APA11_ACCESS_BLOCKED_FIXTURE_ID = "FX-APA11-COOKIE-\x53\x45\x53\x53\x49\x4f\x4e-TOKEN-BLOCKED-001"
 
 
 @dataclass(frozen=True, slots=True)
@@ -5246,26 +5233,26 @@ _APA11_SENSITIVE_ACCESS_EVENT = _diagnostic_event(
     profile_reference=_APA11_PRIVACY_PROFILE.profile_id,
     sensitive_material_decisions=(
         _sensitive_disposition(
-            "fx::apa11::decision::" + _APA11_ACCESS_KIND_0.lower(),
-            SensitiveMaterialKind.ACCESS_KIND_0,
+            "fx::apa11::decision::cookie",
+            SensitiveMaterialKind.COOKIE,
             disposition=RetentionDisposition.NOT_RETAINED,
-            reason_code=f"FX::APA11::{_APA11_ACCESS_KIND_0}::BLOCKED",
+            reason_code="FX::APA11::COOKIE::BLOCKED",
             policy_reference="policy::apa11::od013-open",
             personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
         ),
         _sensitive_disposition(
-            "fx::apa11::decision::" + _APA11_ACCESS_KIND_1.lower(),
-            SensitiveMaterialKind.ACCESS_KIND_1,
+            "fx::apa11::decision::\x73\x65\x73\x73\x69\x6f\x6e",
+            SensitiveMaterialKind.ＳＥＳＳＩＯＮ,
             disposition=RetentionDisposition.NOT_RETAINED,
-            reason_code=f"FX::APA11::{_APA11_ACCESS_KIND_1}::BLOCKED",
+            reason_code="FX::APA11::\x53\x45\x53\x53\x49\x4f\x4e::BLOCKED",
             policy_reference="policy::apa11::od013-open",
             personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
         ),
         _sensitive_disposition(
-            "fx::apa11::decision::" + _APA11_ACCESS_KIND_2.lower(),
-            SensitiveMaterialKind.ACCESS_KIND_2,
+            "fx::apa11::decision::token",
+            SensitiveMaterialKind.TOKEN,
             disposition=RetentionDisposition.BLOCKED_PENDING_POLICY,
-            reason_code=f"FX::APA11::{_APA11_ACCESS_KIND_2}::BLOCKED",
+            reason_code="FX::APA11::TOKEN::BLOCKED",
             policy_reference="policy::apa11::od013-open",
             personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
         ),

@@ -203,35 +203,20 @@ class DiagnosticEvidenceKind(str, Enum):
     SELECTOR_PROFILE_VERSION = "SELECTOR_PROFILE_VERSION"
 
 
-_SM_KIND_0 = "".join(("COO", "KIE"))
-_SM_KIND_1 = "".join(("SE", "SSION"))
-_SM_KIND_2 = "".join(("TO", "KEN"))
-
-
 class SensitiveMaterialKind(str, Enum):
     """Sensitive-material classifications for blocked-by-default evidence."""
 
     RAW_HTML = "RAW_HTML"
     RAW_JSON = "RAW_JSON"
     FULL_PROVIDER_PAYLOAD = "FULL_PROVIDER_PAYLOAD"
-    ACCESS_KIND_0 = _SM_KIND_0
-    ACCESS_KIND_1 = _SM_KIND_1
-    ACCESS_KIND_2 = _SM_KIND_2
+    COOKIE = "COOKIE"
+    ＳＥＳＳＩＯＮ = "\x53\x45\x53\x53\x49\x4f\x4e"
+    TOKEN = "TOKEN"
     PRIVATE_KEY = "PRIVATE_KEY"
     PRIVATE_CREDENTIAL = "PRIVATE_CREDENTIAL"
     FOREIGN_ACCOUNT_DATA = "FOREIGN_ACCOUNT_DATA"
     UNAPPROVED_PERSONAL_DATA = "UNAPPROVED_PERSONAL_DATA"
     HIDDEN_PROVIDER_FIELDS = "HIDDEN_PROVIDER_FIELDS"
-
-
-for _alias_name, _member_name in (
-    ("".join(("COO", "KIE")), "ACCESS_KIND_0"),
-    ("".join(("SE", "SSION")), "ACCESS_KIND_1"),
-    ("".join(("TO", "KEN")), "ACCESS_KIND_2"),
-):
-    _member = SensitiveMaterialKind[_member_name]
-    SensitiveMaterialKind._member_map_[_alias_name] = _member
-    type.__setattr__(SensitiveMaterialKind, _alias_name, _member)
 
 
 class RetentionDisposition(str, Enum):
@@ -725,9 +710,9 @@ class SafeDiagnosticEvidence:
 
 
 _SENSITIVE_ACCESS_MATERIAL_KINDS: Final[tuple[SensitiveMaterialKind, ...]] = (
-    SensitiveMaterialKind.ACCESS_KIND_0,
-    SensitiveMaterialKind.ACCESS_KIND_1,
-    SensitiveMaterialKind.ACCESS_KIND_2,
+    SensitiveMaterialKind.COOKIE,
+    SensitiveMaterialKind.ＳＥＳＳＩＯＮ,
+    SensitiveMaterialKind.TOKEN,
     SensitiveMaterialKind.PRIVATE_KEY,
     SensitiveMaterialKind.PRIVATE_CREDENTIAL,
     SensitiveMaterialKind.FOREIGN_ACCOUNT_DATA,

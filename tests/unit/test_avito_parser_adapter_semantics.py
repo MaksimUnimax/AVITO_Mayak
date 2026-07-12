@@ -441,6 +441,52 @@ def test_apa11_safe_privacy_contracts_enforce_explicit_variants() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("material_kind", "decision_id"),
+    [
+        (SensitiveMaterialKind.COOKIE, "fx::apa11::decision::cookie"),
+        (SensitiveMaterialKind.SESSION, "fx::apa11::decision::session"),
+        (SensitiveMaterialKind.TOKEN, "fx::apa11::decision::token"),
+        (SensitiveMaterialKind.PRIVATE_KEY, "fx::apa11::decision::private-key"),
+        (SensitiveMaterialKind.PRIVATE_CREDENTIAL, "fx::apa11::decision::private-credential"),
+        (
+            SensitiveMaterialKind.FOREIGN_ACCOUNT_DATA,
+            "fx::apa11::decision::foreign-account-data",
+        ),
+    ],
+)
+def test_apa11_sensitive_access_material_kinds_block_approved_minimization(
+    material_kind: SensitiveMaterialKind,
+    decision_id: str,
+) -> None:
+    evidence = ParserEvidenceReference(
+        reference_id="fx::apa11::access::evidence",
+        evidence_kind="privacy-boundary",
+    )
+
+    blocked_disposition = SensitiveMaterialDisposition(
+        decision_id=decision_id,
+        material_kind=material_kind,
+        disposition=RetentionDisposition.NOT_RETAINED,
+        reason_code=f"FX::APA11::{material_kind.value}::BLOCKED",
+        policy_reference="policy::apa11::od013-open",
+        personal_data_status=PersonalDataMinimizationStatus.BLOCKED_UNAPPROVED,
+        evidence_references=(evidence,),
+    )
+    assert blocked_disposition.material_kind is material_kind
+
+    with pytest.raises(ValueError):
+        SensitiveMaterialDisposition(
+            decision_id=f"{decision_id}::approved",
+            material_kind=material_kind,
+            disposition=RetentionDisposition.NOT_RETAINED,
+            reason_code=f"FX::APA11::{material_kind.value}::APPROVED",
+            policy_reference="policy::apa11::od013-open",
+            personal_data_status=PersonalDataMinimizationStatus.APPROVED_MINIMIZED,
+            evidence_references=(evidence,),
+        )
+
+
 def test_apa11_privacy_events_and_outcomes_enforce_governance_warnings() -> None:
     evidence = ParserEvidenceReference(
         reference_id="fx::apa11::event::evidence",

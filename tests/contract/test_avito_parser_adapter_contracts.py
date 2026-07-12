@@ -466,6 +466,35 @@ def test_listing_contracts_are_frozen_and_authoritative_field_based() -> None:
         candidate.status = ListingCandidateStatus.BLOCKED  # type: ignore[misc]
 
 
+def test_apa11_sensitive_material_kind_is_canonical_and_static() -> None:
+    expected_names = [
+        "RAW_HTML",
+        "RAW_JSON",
+        "FULL_PROVIDER_PAYLOAD",
+        "COOKIE",
+        "SESSION",
+        "TOKEN",
+        "PRIVATE_KEY",
+        "PRIVATE_CREDENTIAL",
+        "FOREIGN_ACCOUNT_DATA",
+        "UNAPPROVED_PERSONAL_DATA",
+        "HIDDEN_PROVIDER_FIELDS",
+    ]
+
+    assert [member.name for member in SensitiveMaterialKind] == expected_names
+    assert list(SensitiveMaterialKind.__members__) == expected_names
+    assert set(SensitiveMaterialKind.__members__) == set(expected_names)
+    assert "ACCESS_KIND_0" not in SensitiveMaterialKind.__members__
+    assert "ACCESS_KIND_1" not in SensitiveMaterialKind.__members__
+    assert "ACCESS_KIND_2" not in SensitiveMaterialKind.__members__
+    assert SensitiveMaterialKind.COOKIE.value == "COOKIE"
+    assert SensitiveMaterialKind.SESSION.value == "SESSION"
+    assert SensitiveMaterialKind.TOKEN.value == "TOKEN"
+    assert SensitiveMaterialKind("COOKIE") is SensitiveMaterialKind.COOKIE
+    assert SensitiveMaterialKind("SESSION") is SensitiveMaterialKind.SESSION
+    assert SensitiveMaterialKind("TOKEN") is SensitiveMaterialKind.TOKEN
+
+
 def test_apa11_privacy_contracts_are_frozen_slots_and_field_limited() -> None:
     evidence = ParserEvidenceReference(
         reference_id="fx::apa11::privacy::evidence",
