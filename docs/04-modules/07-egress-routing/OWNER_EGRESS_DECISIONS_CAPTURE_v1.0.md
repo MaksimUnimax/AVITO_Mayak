@@ -182,7 +182,7 @@ Cookies/session могут использоваться только после 
 - читать browser passwords;
 - использовать unrelated or foreign cookies;
 - использовать private owner session по умолчанию;
-- передавать cookie/session values in CLI prompts or reports;
+- передавать cookie/session values в CLI prompts или reports;
 - хранить cookie/session values in Git;
 - логировать cookies, tokens or session secrets.
 
@@ -261,7 +261,7 @@ Agent or browser worker receives only the minimum bounded assignment.
 - profile/evidence reference;
 - redacted configuration reference.
 
-Agent must not receive:
+Agent не должен получать:
 
 - full Account record;
 - full Beacon record;
@@ -275,17 +275,17 @@ Agent must not receive:
 
 ## 13. Agent database boundary
 
-Agent does not have direct access to primary project database.
+Agent не имеет прямого доступа к primary project database.
 
-Agent is a replaceable execution dependency and interacts only through bounded server contract / assignment protocol.
+Agent является заменяемой execution dependency и взаимодействует только через bounded server contract / assignment protocol.
 
-Compromise or failure of agent must not automatically reveal full SaaS state.
+Компрометация или отказ agent не должны автоматически раскрывать полный SaaS state.
 
 ## 14. Live Avito proof boundary
 
-Live Avito proof разрешён only as separate owner-approved `proof_only` task.
+Live Avito proof разрешён только отдельным owner-approved `proof_only` task.
 
-Each proof task must predefine:
+Каждый proof task должен заранее определить:
 
 - exact route family;
 - exact purpose;
@@ -313,7 +313,7 @@ Each proof task must predefine:
 
 ## 15. Current gates
 
-После этого governance capture разрешено only use captured decisions as input for future exact semantic tasks.
+После этого governance capture разрешено только использовать зафиксированные решения как input для будущих exact semantic tasks.
 
 Этот документ не разрешает:
 
@@ -333,11 +333,11 @@ Each proof task must predefine:
 - Docker;
 - CI/CD;
 - deployment;
-- ports, firewall, DNS, TLS or certificates;
-- secrets or credentials;
-- direct Parser, Scan, Notification or Beacon business-state mutation.
+- ports, firewall, DNS, TLS или certificates;
+- secrets или credentials;
+- direct Parser, Scan, Notification или Beacon business-state mutation.
 
-`OD-009`, `OD-010`, `OD-011` and `OD-013` remain open.
+`OD-009`, `OD-010`, `OD-011` и `OD-013` остаются open.
 
 ## 16. Consequence for the Module 07 roadmap
 
