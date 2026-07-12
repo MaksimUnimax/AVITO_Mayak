@@ -128,18 +128,6 @@ EXPECTED_ENUM_PAIRS = {
         ("RETIRED", "RETIRED"),
     ),
     RouteHealthStatus: (
-        ("PROPOSED", "PROPOSED"),
-        ("REGISTRATION_BLOCKED", "REGISTRATION_BLOCKED"),
-        ("REGISTERED", "REGISTERED"),
-        ("READY", "READY"),
-        ("DEGRADED", "DEGRADED"),
-        ("RESTRICTED", "RESTRICTED"),
-        ("QUARANTINED", "QUARANTINED"),
-        ("SUSPENDED", "SUSPENDED"),
-        ("RECONCILIATION_REQUIRED", "RECONCILIATION_REQUIRED"),
-        ("RETIRED", "RETIRED"),
-    ),
-    RouteReadinessStatus: (
         ("UNKNOWN", "UNKNOWN"),
         ("READY", "READY"),
         ("DEGRADED", "DEGRADED"),
@@ -148,7 +136,7 @@ EXPECTED_ENUM_PAIRS = {
         ("UNAVAILABLE", "UNAVAILABLE"),
         ("AMBIGUOUS", "AMBIGUOUS"),
     ),
-    RouteSelectionStatus: (
+    RouteReadinessStatus: (
         ("READY", "READY"),
         ("ONLINE_UNREADY", "ONLINE_UNREADY"),
         ("DEGRADED", "DEGRADED"),
@@ -158,7 +146,7 @@ EXPECTED_ENUM_PAIRS = {
         ("BLOCKED", "BLOCKED"),
         ("AMBIGUOUS", "AMBIGUOUS"),
     ),
-    RouteLeaseStatus: (
+    RouteSelectionStatus: (
         ("SELECTED", "SELECTED"),
         ("NO_ELIGIBLE_ROUTE", "NO_ELIGIBLE_ROUTE"),
         ("BLOCKED", "BLOCKED"),
@@ -166,7 +154,7 @@ EXPECTED_ENUM_PAIRS = {
         ("CONFLICT", "CONFLICT"),
         ("AMBIGUOUS", "AMBIGUOUS"),
     ),
-    DispatchStatus: (
+    RouteLeaseStatus: (
         ("REQUESTED", "REQUESTED"),
         ("REJECTED", "REJECTED"),
         ("GRANTED", "GRANTED"),
@@ -178,9 +166,8 @@ EXPECTED_ENUM_PAIRS = {
         ("AMBIGUOUS", "AMBIGUOUS"),
         ("RECONCILIATION_REQUIRED", "RECONCILIATION_REQUIRED"),
         ("FAILED", "FAILED"),
-        ("UNKNOWN", "UNKNOWN"),
     ),
-    TransportOutcomeStatus: (
+    DispatchStatus: (
         ("PENDING", "PENDING"),
         ("ATTEMPTED", "ATTEMPTED"),
         ("ACKNOWLEDGED", "ACKNOWLEDGED"),
@@ -189,7 +176,7 @@ EXPECTED_ENUM_PAIRS = {
         ("NOT_SENT", "NOT_SENT"),
         ("SENT", "SENT"),
     ),
-    RouteRestrictionStatus: (
+    TransportOutcomeStatus: (
         ("NOT_SENT", "NOT_SENT"),
         ("DISPATCH_REJECTED", "DISPATCH_REJECTED"),
         ("DISPATCH_UNKNOWN", "DISPATCH_UNKNOWN"),
@@ -210,7 +197,7 @@ EXPECTED_ENUM_PAIRS = {
         ("POLICY_FALLBACK_EXHAUSTED", "POLICY_FALLBACK_EXHAUSTED"),
         ("RECONCILIATION_REQUIRED", "RECONCILIATION_REQUIRED"),
     ),
-    RouteQuarantineStatus: (
+    RouteRestrictionStatus: (
         ("NONE", "NONE"),
         ("DEGRADED", "DEGRADED"),
         ("RESTRICTED", "RESTRICTED"),
@@ -218,13 +205,13 @@ EXPECTED_ENUM_PAIRS = {
         ("SUSPENDED", "SUSPENDED"),
         ("RETIRED", "RETIRED"),
     ),
-    PolicyBasedFallbackStatus: (
+    RouteQuarantineStatus: (
         ("NOT_QUARANTINED", "NOT_QUARANTINED"),
         ("QUARANTINED", "QUARANTINED"),
         ("REVIEW_REQUIRED", "REVIEW_REQUIRED"),
         ("RELEASED_BY_PROTECTED_REVIEW", "RELEASED_BY_PROTECTED_REVIEW"),
     ),
-    RouteReconciliationStatus: (
+    PolicyBasedFallbackStatus: (
         ("NOT_EVALUATED", "NOT_EVALUATED"),
         ("NOT_ALLOWED", "NOT_ALLOWED"),
         ("ALLOWED", "ALLOWED"),
@@ -232,6 +219,9 @@ EXPECTED_ENUM_PAIRS = {
         ("EXHAUSTED", "EXHAUSTED"),
         ("BLOCKED_RECONCILIATION_REQUIRED", "BLOCKED_RECONCILIATION_REQUIRED"),
         ("NO_APPROVED_ROUTE", "NO_APPROVED_ROUTE"),
+    ),
+    RouteReconciliationStatus: (
+        ("NOT_REQUIRED", "NOT_REQUIRED"),
         ("REQUIRED", "REQUIRED"),
         ("PENDING", "PENDING"),
         ("RESOLVED_NOT_SENT", "RESOLVED_NOT_SENT"),
@@ -241,14 +231,12 @@ EXPECTED_ENUM_PAIRS = {
         ("MANUAL_REVIEW_REQUIRED", "MANUAL_REVIEW_REQUIRED"),
     ),
     SessionPolicyStatus: (
-        ("NOT_REQUIRED", "NOT_REQUIRED"),
-        ("REQUIRED", "REQUIRED"),
-        ("PENDING", "PENDING"),
-        ("RESOLVED_NOT_SENT", "RESOLVED_NOT_SENT"),
-        ("RESOLVED_SENT", "RESOLVED_SENT"),
-        ("RESOLVED_TERMINAL", "RESOLVED_TERMINAL"),
-        ("REMAINS_AMBIGUOUS", "REMAINS_AMBIGUOUS"),
-        ("MANUAL_REVIEW_REQUIRED", "MANUAL_REVIEW_REQUIRED"),
+        ("PROHIBITED", "PROHIBITED"),
+        (
+            "BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE",
+            "BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE",
+        ),
+        ("APPROVED_REFERENCE_ONLY", "APPROVED_REFERENCE_ONLY"),
     ),
     DiagnosticEvidenceKind: (
         ("SAFE_ID", "SAFE_ID"),
@@ -319,7 +307,7 @@ def _valid_capability_kwargs() -> dict[str, Any]:
         "unsupported_classes": ("billing",),
         "evidence_reference_ids": ("evidence-01",),
         "evidence_status": RouteEvidenceStatus.CURRENT,
-        "session_policy_status": SessionPolicyStatus.NOT_REQUIRED,
+        "session_policy_status": SessionPolicyStatus.APPROVED_REFERENCE_ONLY,
     }
 
 
@@ -359,7 +347,7 @@ def _valid_selection_decision_kwargs() -> dict[str, Any]:
     return {
         "decision_id": "decision-01",
         "request_reference": "request-01",
-        "status": RouteSelectionStatus.READY,
+        "status": RouteSelectionStatus.SELECTED,
         "selected_route_id": "route-01",
         "candidate_route_ids": ("route-01", "route-02"),
         "rejected_route_ids": ("route-03",),
@@ -377,11 +365,11 @@ def _valid_lease_kwargs() -> dict[str, Any]:
         "requester_module": "05-avito-parser-adapter",
         "purpose": "bounded-routing",
         "capability_scope": ("search",),
-        "status": RouteLeaseStatus.SELECTED,
+        "status": RouteLeaseStatus.GRANTED,
         "idempotency_key": "idem-01",
         "semantic_fingerprint": "fingerprint-01",
         "validity_reference": "validity-01",
-        "restriction_snapshot": RouteRestrictionStatus.NOT_SENT,
+        "restriction_snapshot": RouteRestrictionStatus.NONE,
         "correlation_id": "corr-01",
         "causation_id": "cause-01",
     }
@@ -412,7 +400,7 @@ def _valid_attempt_kwargs() -> dict[str, Any]:
         "lease_id": "lease-01",
         "route_id": "route-01",
         "agent_id": "agent-01",
-        "dispatch_status": DispatchStatus.DISPATCHED,
+        "dispatch_status": DispatchStatus.PENDING,
         "attempt_ordinal": 1,
         "outcome_reference": "outcome-01",
         "reconciliation_required": False,
@@ -426,11 +414,11 @@ def _valid_outcome_kwargs() -> dict[str, Any]:
         "outcome_id": "outcome-01",
         "assignment_id": "assignment-01",
         "attempt_id": "attempt-01",
-        "status": TransportOutcomeStatus.SENT,
+        "status": TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
         "safe_response_reference": "response-01",
-        "reason_codes": ("sent",),
+        "reason_codes": ("response-received",),
         "evidence_reference_ids": ("evidence-01",),
-        "reconciliation_status": RouteReconciliationStatus.NOT_EVALUATED,
+        "reconciliation_status": RouteReconciliationStatus.NOT_REQUIRED,
         "correlation_id": "corr-01",
         "causation_id": "cause-01",
     }
@@ -440,7 +428,7 @@ def _valid_restriction_state_kwargs() -> dict[str, Any]:
     return {
         "restriction_id": "restriction-01",
         "route_id": "route-01",
-        "status": RouteRestrictionStatus.NOT_SENT,
+        "status": RouteRestrictionStatus.NONE,
         "reason_codes": ("none",),
         "evidence_reference_ids": ("evidence-01",),
         "blocks_new_assignments": False,
@@ -452,7 +440,7 @@ def _valid_quarantine_decision_kwargs() -> dict[str, Any]:
     return {
         "decision_id": "decision-01",
         "route_id": "route-01",
-        "status": RouteQuarantineStatus.NONE,
+        "status": RouteQuarantineStatus.NOT_QUARANTINED,
         "reason_codes": ("none",),
         "evidence_reference_ids": ("evidence-01",),
         "blocks_new_assignments": False,
@@ -465,7 +453,7 @@ def _valid_fallback_decision_kwargs() -> dict[str, Any]:
     return {
         "decision_id": "decision-01",
         "request_reference": "request-01",
-        "status": PolicyBasedFallbackStatus.NOT_QUARANTINED,
+        "status": PolicyBasedFallbackStatus.NOT_EVALUATED,
         "policy_reference": None,
         "from_route_id": None,
         "to_route_id": None,
@@ -473,7 +461,7 @@ def _valid_fallback_decision_kwargs() -> dict[str, Any]:
         "evidence_reference_ids": ("evidence-01",),
         "bounded_attempt_reference": None,
         "original_failure_reference": "failure-01",
-        "reconciliation_status": RouteReconciliationStatus.NOT_EVALUATED,
+        "reconciliation_status": RouteReconciliationStatus.NOT_REQUIRED,
     }
 
 
@@ -497,7 +485,7 @@ def _valid_diagnostic_kwargs() -> dict[str, Any]:
         "lease_id": "lease-01",
         "assignment_id": "assignment-01",
         "attempt_id": "attempt-01",
-        "outcome_status": TransportOutcomeStatus.SENT,
+        "outcome_status": TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
         "reason_code": "safe-diagnostic",
         "timestamp_reference": "ts-01",
         "duration_reference": "duration-01",
@@ -520,6 +508,41 @@ def test_public_enum_member_value_pairs(
 ) -> None:
     observed_pairs = tuple((member.name, member.value) for member in enum_cls)
     assert observed_pairs == expected_pairs
+
+
+def test_egress_enum_families_are_not_shifted_between_classes() -> None:
+    assert "UNKNOWN" in RouteHealthStatus.__members__
+    assert "PROPOSED" not in RouteHealthStatus.__members__
+
+    assert "ONLINE_UNREADY" in RouteReadinessStatus.__members__
+    assert "UNKNOWN" not in RouteReadinessStatus.__members__
+
+    assert "SELECTED" in RouteSelectionStatus.__members__
+    assert "READY" not in RouteSelectionStatus.__members__
+
+    assert "REQUESTED" in RouteLeaseStatus.__members__
+    assert "SELECTED" not in RouteLeaseStatus.__members__
+
+    assert "PENDING" in DispatchStatus.__members__
+    assert "REQUESTED" not in DispatchStatus.__members__
+
+    assert "CAPTCHA_OR_CHALLENGE" in TransportOutcomeStatus.__members__
+    assert "PENDING" not in TransportOutcomeStatus.__members__
+
+    assert "NONE" in RouteRestrictionStatus.__members__
+    assert "NOT_SENT" not in RouteRestrictionStatus.__members__
+
+    assert "NOT_QUARANTINED" in RouteQuarantineStatus.__members__
+    assert "NONE" not in RouteQuarantineStatus.__members__
+
+    assert "NOT_EVALUATED" in PolicyBasedFallbackStatus.__members__
+    assert "NOT_QUARANTINED" not in PolicyBasedFallbackStatus.__members__
+
+    assert "NOT_REQUIRED" in RouteReconciliationStatus.__members__
+    assert "NOT_EVALUATED" not in RouteReconciliationStatus.__members__
+
+    assert "PROHIBITED" in SessionPolicyStatus.__members__
+    assert "NOT_REQUIRED" not in SessionPolicyStatus.__members__
 
 
 @pytest.mark.parametrize(
@@ -600,7 +623,7 @@ def test_route_selection_decision_selected_and_non_selected_invariants() -> None
 
     with pytest.raises(ValueError):
         RouteSelectionDecision(
-            **{**valid, "status": RouteSelectionStatus.READY, "selected_route_id": None}
+            **{**valid, "status": RouteSelectionStatus.SELECTED, "selected_route_id": None}
         )
 
     with pytest.raises(ValueError):
@@ -620,6 +643,20 @@ def test_route_selection_decision_selected_and_non_selected_invariants() -> None
 
 def test_quarantine_and_dispatch_invariants() -> None:
     with pytest.raises(ValueError):
+        RouteRestrictionState(
+            **{**_valid_restriction_state_kwargs(), "blocks_new_assignments": True}
+        )
+
+    with pytest.raises(ValueError):
+        RouteRestrictionState(
+            **{
+                **_valid_restriction_state_kwargs(),
+                "status": RouteRestrictionStatus.RESTRICTED,
+                "blocks_new_assignments": False,
+            }
+        )
+
+    with pytest.raises(ValueError):
         RouteQuarantineDecision(
             **{**_valid_quarantine_decision_kwargs(), "automatic_release_allowed": True}
         )
@@ -630,6 +667,24 @@ def test_quarantine_and_dispatch_invariants() -> None:
                 **_valid_quarantine_decision_kwargs(),
                 "status": RouteQuarantineStatus.QUARANTINED,
                 "blocks_new_assignments": False,
+            }
+        )
+
+    with pytest.raises(ValueError):
+        RouteQuarantineDecision(
+            **{
+                **_valid_quarantine_decision_kwargs(),
+                "status": RouteQuarantineStatus.REVIEW_REQUIRED,
+                "blocks_new_assignments": False,
+            }
+        )
+
+    with pytest.raises(ValueError):
+        RouteQuarantineDecision(
+            **{
+                **_valid_quarantine_decision_kwargs(),
+                "status": RouteQuarantineStatus.RELEASED_BY_PROTECTED_REVIEW,
+                "review_reference": None,
             }
         )
 
@@ -645,13 +700,40 @@ def test_quarantine_and_dispatch_invariants() -> None:
             }
         )
 
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            **{
+                **_valid_outcome_kwargs(),
+                "status": TransportOutcomeStatus.DISPATCH_UNKNOWN,
+                "reconciliation_status": RouteReconciliationStatus.NOT_REQUIRED,
+            }
+        )
+
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            **{
+                **_valid_outcome_kwargs(),
+                "status": TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
+                "reconciliation_status": RouteReconciliationStatus.NOT_REQUIRED,
+            }
+        )
+
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            **{
+                **_valid_outcome_kwargs(),
+                "status": TransportOutcomeStatus.RECONCILIATION_REQUIRED,
+                "reconciliation_status": RouteReconciliationStatus.NOT_REQUIRED,
+            }
+        )
+
 
 def test_fallback_and_reconciliation_invariants() -> None:
     with pytest.raises(ValueError):
         PolicyBasedFallbackDecision(
             **{
                 **_valid_fallback_decision_kwargs(),
-                "status": PolicyBasedFallbackStatus.NOT_QUARANTINED,
+                "status": PolicyBasedFallbackStatus.ALLOWED,
                 "policy_reference": None,
             }
         )
@@ -660,7 +742,7 @@ def test_fallback_and_reconciliation_invariants() -> None:
         PolicyBasedFallbackDecision(
             **{
                 **_valid_fallback_decision_kwargs(),
-                "status": PolicyBasedFallbackStatus.NOT_QUARANTINED,
+                "status": PolicyBasedFallbackStatus.ALLOWED,
                 "policy_reference": "policy-01",
                 "from_route_id": "route-a",
                 "to_route_id": "route-b",
@@ -673,12 +755,21 @@ def test_fallback_and_reconciliation_invariants() -> None:
         PolicyBasedFallbackDecision(
             **{
                 **_valid_fallback_decision_kwargs(),
-                "status": PolicyBasedFallbackStatus.NOT_QUARANTINED,
+                "status": PolicyBasedFallbackStatus.ATTEMPTED,
                 "policy_reference": "policy-01",
                 "from_route_id": "route-a",
                 "to_route_id": "route-b",
                 "bounded_attempt_reference": "attempt-01",
                 "reconciliation_status": RouteReconciliationStatus.MANUAL_REVIEW_REQUIRED,
+            }
+        )
+
+    with pytest.raises(ValueError):
+        PolicyBasedFallbackDecision(
+            **{
+                **_valid_fallback_decision_kwargs(),
+                "status": PolicyBasedFallbackStatus.BLOCKED_RECONCILIATION_REQUIRED,
+                "reconciliation_status": RouteReconciliationStatus.NOT_REQUIRED,
             }
         )
 

@@ -52,7 +52,7 @@ def test_heartbeat_and_stale_evidence_do_not_imply_readiness() -> None:
     readiness = RouteReadinessDecision(
         decision_id="decision-readiness",
         route_id="route-01",
-        readiness_status=RouteReadinessStatus.UNKNOWN,
+        readiness_status=RouteReadinessStatus.STALE_EVIDENCE,
         reason_codes=("evidence-not-ready",),
         evidence_reference_ids=(
             stale_evidence.evidence_reference_id,
@@ -61,7 +61,7 @@ def test_heartbeat_and_stale_evidence_do_not_imply_readiness() -> None:
         policy_reference=None,
     )
 
-    assert readiness.readiness_status is RouteReadinessStatus.UNKNOWN
+    assert readiness.readiness_status is RouteReadinessStatus.STALE_EVIDENCE
     assert stale_evidence.evidence_status is RouteEvidenceStatus.STALE
     assert missing_evidence.evidence_status is RouteEvidenceStatus.MISSING
 
@@ -70,7 +70,7 @@ def test_absence_of_policy_does_not_create_arbitrary_selected_route() -> None:
     decision = RouteSelectionDecision(
         decision_id="decision-selection",
         request_reference="request-selection",
-        status=RouteSelectionStatus.BLOCKED,
+        status=RouteSelectionStatus.NO_ELIGIBLE_ROUTE,
         selected_route_id=None,
         candidate_route_ids=("route-01", "route-02"),
         rejected_route_ids=("route-03",),
@@ -80,7 +80,7 @@ def test_absence_of_policy_does_not_create_arbitrary_selected_route() -> None:
     )
 
     assert decision.selected_route_id is None
-    assert decision.status is RouteSelectionStatus.BLOCKED
+    assert decision.status is RouteSelectionStatus.NO_ELIGIBLE_ROUTE
 
 
 def test_lease_is_bounded_semantic_authorization() -> None:
@@ -91,11 +91,11 @@ def test_lease_is_bounded_semantic_authorization() -> None:
         requester_module="07-egress-routing",
         purpose="bounded-routing",
         capability_scope=("search",),
-        status=RouteLeaseStatus.SELECTED,
+        status=RouteLeaseStatus.GRANTED,
         idempotency_key="idem-01",
         semantic_fingerprint="fingerprint-01",
         validity_reference="validity-01",
-        restriction_snapshot=RouteRestrictionStatus.NOT_SENT,
+        restriction_snapshot=RouteRestrictionStatus.NONE,
         correlation_id="corr-01",
         causation_id="cause-01",
     )
@@ -154,7 +154,7 @@ def test_explicit_restriction_and_captcha_are_not_empty_success_markers() -> Non
     restriction = RouteRestrictionState(
         restriction_id="restriction-01",
         route_id="route-01",
-        status=RouteRestrictionStatus.CAPTCHA_OR_CHALLENGE,
+        status=RouteRestrictionStatus.RESTRICTED,
         reason_codes=("captcha", "explicit"),
         evidence_reference_ids=("evidence-01",),
         blocks_new_assignments=True,
@@ -164,18 +164,18 @@ def test_explicit_restriction_and_captcha_are_not_empty_success_markers() -> Non
         outcome_id="outcome-01",
         assignment_id="assignment-01",
         attempt_id="attempt-01",
-        status=TransportOutcomeStatus.REJECTED,
+        status=TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE,
         safe_response_reference=None,
         reason_codes=("captcha", "explicit"),
         evidence_reference_ids=("evidence-01",),
-        reconciliation_status=RouteReconciliationStatus.NOT_EVALUATED,
+        reconciliation_status=RouteReconciliationStatus.NOT_REQUIRED,
         correlation_id="corr-01",
         causation_id="cause-01",
     )
 
-    assert restriction.status is RouteRestrictionStatus.CAPTCHA_OR_CHALLENGE
+    assert restriction.status is RouteRestrictionStatus.RESTRICTED
     assert restriction.blocks_new_assignments is True
-    assert outcome.status is TransportOutcomeStatus.REJECTED
+    assert outcome.status is TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE
     assert outcome.safe_response_reference is None
 
 
@@ -184,11 +184,11 @@ def test_transport_response_is_not_parser_success() -> None:
         outcome_id="outcome-02",
         assignment_id="assignment-02",
         attempt_id="attempt-02",
-        status=TransportOutcomeStatus.SENT,
+        status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
         safe_response_reference="response-02",
         reason_codes=("transport-only",),
         evidence_reference_ids=("evidence-02",),
-        reconciliation_status=RouteReconciliationStatus.NOT_EVALUATED,
+        reconciliation_status=RouteReconciliationStatus.NOT_REQUIRED,
         correlation_id="corr-02",
         causation_id="cause-02",
     )
@@ -196,8 +196,52 @@ def test_transport_response_is_not_parser_success() -> None:
     outcome_field_names = {field.name for field in fields(TransportAssignmentOutcome)}
     assert "parser_success" not in outcome_field_names
     assert "scan_success" not in outcome_field_names
-    assert outcome.status is TransportOutcomeStatus.SENT
+    assert outcome.status is TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
     assert outcome.safe_response_reference == "response-02"
+
+
+def test_transport_outcomes_requiring_reconciliation_reject_not_required_state() -> None:
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            outcome_id="outcome-03",
+            assignment_id="assignment-03",
+            attempt_id="attempt-03",
+            status=TransportOutcomeStatus.DISPATCH_UNKNOWN,
+            safe_response_reference=None,
+            reason_codes=("dispatch-unknown",),
+            evidence_reference_ids=("evidence-03",),
+            reconciliation_status=RouteReconciliationStatus.NOT_REQUIRED,
+            correlation_id="corr-03",
+            causation_id="cause-03",
+        )
+
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            outcome_id="outcome-04",
+            assignment_id="assignment-04",
+            attempt_id="attempt-04",
+            status=TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
+            safe_response_reference=None,
+            reason_codes=("transport-ambiguous",),
+            evidence_reference_ids=("evidence-04",),
+            reconciliation_status=RouteReconciliationStatus.NOT_REQUIRED,
+            correlation_id="corr-04",
+            causation_id="cause-04",
+        )
+
+    with pytest.raises(ValueError):
+        TransportAssignmentOutcome(
+            outcome_id="outcome-05",
+            assignment_id="assignment-05",
+            attempt_id="attempt-05",
+            status=TransportOutcomeStatus.RECONCILIATION_REQUIRED,
+            safe_response_reference=None,
+            reason_codes=("reconciliation-required",),
+            evidence_reference_ids=("evidence-05",),
+            reconciliation_status=RouteReconciliationStatus.NOT_REQUIRED,
+            correlation_id="corr-05",
+            causation_id="cause-05",
+        )
 
 
 def test_ambiguous_dispatch_requires_reconciliation_and_does_not_enable_fallback() -> None:
@@ -234,7 +278,7 @@ def test_ambiguous_dispatch_requires_reconciliation_and_does_not_enable_fallback
         PolicyBasedFallbackDecision(
             decision_id="decision-fallback",
             request_reference="request-01",
-            status=PolicyBasedFallbackStatus.NOT_QUARANTINED,
+            status=PolicyBasedFallbackStatus.ALLOWED,
             policy_reference="policy-01",
             from_route_id="route-a",
             to_route_id="route-b",
@@ -252,7 +296,7 @@ def test_quarantine_blocks_new_assignments_and_auto_unquarantine_is_impossible()
     restriction = RouteRestrictionState(
         restriction_id="restriction-02",
         route_id="route-02",
-        status=RouteRestrictionStatus.ROUTE_QUARANTINED,
+        status=RouteRestrictionStatus.QUARANTINED,
         reason_codes=("quarantined",),
         evidence_reference_ids=("evidence-02",),
         blocks_new_assignments=True,
@@ -295,7 +339,7 @@ def test_route_selection_authority_remains_egress_only() -> None:
     selected = RouteSelectionDecision(
         decision_id="decision-egress",
         request_reference="request-egress",
-        status=RouteSelectionStatus.READY,
+        status=RouteSelectionStatus.SELECTED,
         selected_route_id="route-01",
         candidate_route_ids=("route-01",),
         rejected_route_ids=(),

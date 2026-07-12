@@ -137,19 +137,6 @@ class RouteLifecycleStatus(str, Enum):
 
 
 class RouteHealthStatus(str, Enum):
-    PROPOSED = "PROPOSED"
-    REGISTRATION_BLOCKED = "REGISTRATION_BLOCKED"
-    REGISTERED = "REGISTERED"
-    READY = "READY"
-    DEGRADED = "DEGRADED"
-    RESTRICTED = "RESTRICTED"
-    QUARANTINED = "QUARANTINED"
-    SUSPENDED = "SUSPENDED"
-    RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
-    RETIRED = "RETIRED"
-
-
-class RouteReadinessStatus(str, Enum):
     UNKNOWN = "UNKNOWN"
     READY = "READY"
     DEGRADED = "DEGRADED"
@@ -159,7 +146,7 @@ class RouteReadinessStatus(str, Enum):
     AMBIGUOUS = "AMBIGUOUS"
 
 
-class RouteSelectionStatus(str, Enum):
+class RouteReadinessStatus(str, Enum):
     READY = "READY"
     ONLINE_UNREADY = "ONLINE_UNREADY"
     DEGRADED = "DEGRADED"
@@ -170,7 +157,7 @@ class RouteSelectionStatus(str, Enum):
     AMBIGUOUS = "AMBIGUOUS"
 
 
-class RouteLeaseStatus(str, Enum):
+class RouteSelectionStatus(str, Enum):
     SELECTED = "SELECTED"
     NO_ELIGIBLE_ROUTE = "NO_ELIGIBLE_ROUTE"
     BLOCKED = "BLOCKED"
@@ -179,7 +166,7 @@ class RouteLeaseStatus(str, Enum):
     AMBIGUOUS = "AMBIGUOUS"
 
 
-class DispatchStatus(str, Enum):
+class RouteLeaseStatus(str, Enum):
     REQUESTED = "REQUESTED"
     REJECTED = "REJECTED"
     GRANTED = "GRANTED"
@@ -191,10 +178,9 @@ class DispatchStatus(str, Enum):
     AMBIGUOUS = "AMBIGUOUS"
     RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
     FAILED = "FAILED"
-    UNKNOWN = "UNKNOWN"
 
 
-class TransportOutcomeStatus(str, Enum):
+class DispatchStatus(str, Enum):
     PENDING = "PENDING"
     ATTEMPTED = "ATTEMPTED"
     ACKNOWLEDGED = "ACKNOWLEDGED"
@@ -204,7 +190,7 @@ class TransportOutcomeStatus(str, Enum):
     SENT = "SENT"
 
 
-class RouteRestrictionStatus(str, Enum):
+class TransportOutcomeStatus(str, Enum):
     NOT_SENT = "NOT_SENT"
     DISPATCH_REJECTED = "DISPATCH_REJECTED"
     DISPATCH_UNKNOWN = "DISPATCH_UNKNOWN"
@@ -226,7 +212,7 @@ class RouteRestrictionStatus(str, Enum):
     RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
 
 
-class RouteQuarantineStatus(str, Enum):
+class RouteRestrictionStatus(str, Enum):
     NONE = "NONE"
     DEGRADED = "DEGRADED"
     RESTRICTED = "RESTRICTED"
@@ -235,14 +221,14 @@ class RouteQuarantineStatus(str, Enum):
     RETIRED = "RETIRED"
 
 
-class PolicyBasedFallbackStatus(str, Enum):
+class RouteQuarantineStatus(str, Enum):
     NOT_QUARANTINED = "NOT_QUARANTINED"
     QUARANTINED = "QUARANTINED"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
     RELEASED_BY_PROTECTED_REVIEW = "RELEASED_BY_PROTECTED_REVIEW"
 
 
-class RouteReconciliationStatus(str, Enum):
+class PolicyBasedFallbackStatus(str, Enum):
     NOT_EVALUATED = "NOT_EVALUATED"
     NOT_ALLOWED = "NOT_ALLOWED"
     ALLOWED = "ALLOWED"
@@ -250,6 +236,10 @@ class RouteReconciliationStatus(str, Enum):
     EXHAUSTED = "EXHAUSTED"
     BLOCKED_RECONCILIATION_REQUIRED = "BLOCKED_RECONCILIATION_REQUIRED"
     NO_APPROVED_ROUTE = "NO_APPROVED_ROUTE"
+
+
+class RouteReconciliationStatus(str, Enum):
+    NOT_REQUIRED = "NOT_REQUIRED"
     REQUIRED = "REQUIRED"
     PENDING = "PENDING"
     RESOLVED_NOT_SENT = "RESOLVED_NOT_SENT"
@@ -260,14 +250,9 @@ class RouteReconciliationStatus(str, Enum):
 
 
 class SessionPolicyStatus(str, Enum):
-    NOT_REQUIRED = "NOT_REQUIRED"
-    REQUIRED = "REQUIRED"
-    PENDING = "PENDING"
-    RESOLVED_NOT_SENT = "RESOLVED_NOT_SENT"
-    RESOLVED_SENT = "RESOLVED_SENT"
-    RESOLVED_TERMINAL = "RESOLVED_TERMINAL"
-    REMAINS_AMBIGUOUS = "REMAINS_AMBIGUOUS"
-    MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
+    PROHIBITED = "PROHIBITED"
+    BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE = "BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE"
+    APPROVED_REFERENCE_ONLY = "APPROVED_REFERENCE_ONLY"
 
 
 class DiagnosticEvidenceKind(str, Enum):
@@ -550,13 +535,13 @@ class RouteSelectionDecision:
         )
         policy_reference = _require_optional_text(self.policy_reference, "policy_reference")
 
-        if self.status is RouteSelectionStatus.READY:
+        if self.status is RouteSelectionStatus.SELECTED:
             if selected_route_id is None:
-                raise ValueError("selected_route_id is required when status is READY")
+                raise ValueError("selected_route_id is required when status is SELECTED")
             if policy_reference is None:
-                raise ValueError("policy_reference is required when status is READY")
+                raise ValueError("policy_reference is required when status is SELECTED")
         elif selected_route_id is not None:
-            raise ValueError("selected_route_id must be None unless status is READY")
+            raise ValueError("selected_route_id must be None unless status is SELECTED")
 
         if selected_route_id is not None:
             if selected_route_id not in candidate_route_ids:
@@ -776,13 +761,22 @@ class TransportAssignmentOutcome:
                 self.reconciliation_status, RouteReconciliationStatus, "reconciliation_status"
             ),
         )
-        if self.status is TransportOutcomeStatus.UNKNOWN and self.reconciliation_status not in {
-            RouteReconciliationStatus.REQUIRED,
-            RouteReconciliationStatus.PENDING,
-            RouteReconciliationStatus.REMAINS_AMBIGUOUS,
-            RouteReconciliationStatus.MANUAL_REVIEW_REQUIRED,
-        }:
-            raise ValueError("ambiguous transport outcomes require reconciliation")
+        if (
+            self.status
+            in {
+                TransportOutcomeStatus.DISPATCH_UNKNOWN,
+                TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
+            }
+            and self.reconciliation_status is RouteReconciliationStatus.NOT_REQUIRED
+        ):
+            raise ValueError(
+                "dispatch_unknown and transport_ambiguous outcomes require reconciliation"
+            )
+        if (
+            self.status is TransportOutcomeStatus.RECONCILIATION_REQUIRED
+            and self.reconciliation_status is RouteReconciliationStatus.NOT_REQUIRED
+        ):
+            raise ValueError("RECONCILIATION_REQUIRED is incompatible with NOT_REQUIRED")
         object.__setattr__(
             self, "correlation_id", _require_text(self.correlation_id, "correlation_id")
         )
@@ -817,19 +811,14 @@ class RouteRestrictionState:
             "evidence_reference_ids",
             _require_text_tuple(self.evidence_reference_ids, "evidence_reference_ids"),
         )
-        if (
-            self.status
-            in {
-                RouteRestrictionStatus.ROUTE_QUARANTINED,
-                RouteRestrictionStatus.RATE_OR_ACCESS_RESTRICTED,
-                RouteRestrictionStatus.CAPTCHA_OR_CHALLENGE,
-                RouteRestrictionStatus.NO_APPROVED_ROUTE_AVAILABLE,
-                RouteRestrictionStatus.POLICY_FALLBACK_ATTEMPTED,
-                RouteRestrictionStatus.POLICY_FALLBACK_EXHAUSTED,
-                RouteRestrictionStatus.RECONCILIATION_REQUIRED,
-            }
-            and not self.blocks_new_assignments
-        ):
+        if self.status is RouteRestrictionStatus.NONE and self.blocks_new_assignments:
+            raise ValueError("NONE must not block new assignments")
+        if self.status in {
+            RouteRestrictionStatus.RESTRICTED,
+            RouteRestrictionStatus.QUARANTINED,
+            RouteRestrictionStatus.SUSPENDED,
+            RouteRestrictionStatus.RETIRED,
+        } and not self.blocks_new_assignments:
             raise ValueError("restricted states must block new assignments")
         object.__setattr__(self, "blocks_new_assignments", bool(self.blocks_new_assignments))
         object.__setattr__(
@@ -866,8 +855,16 @@ class RouteQuarantineDecision:
         )
         if self.automatic_release_allowed:
             raise ValueError("automatic_release_allowed must be False")
-        if self.status is RouteQuarantineStatus.QUARANTINED and not self.blocks_new_assignments:
-            raise ValueError("quarantined states must block new assignments")
+        if self.status in {
+            RouteQuarantineStatus.QUARANTINED,
+            RouteQuarantineStatus.REVIEW_REQUIRED,
+        } and not self.blocks_new_assignments:
+            raise ValueError("quarantine review states must block new assignments")
+        if (
+            self.status is RouteQuarantineStatus.RELEASED_BY_PROTECTED_REVIEW
+            and self.review_reference is None
+        ):
+            raise ValueError("review_reference is required for protected review release")
         object.__setattr__(self, "blocks_new_assignments", bool(self.blocks_new_assignments))
         object.__setattr__(self, "automatic_release_allowed", bool(self.automatic_release_allowed))
         object.__setattr__(
@@ -935,33 +932,37 @@ class PolicyBasedFallbackDecision:
                 self.reconciliation_status, RouteReconciliationStatus, "reconciliation_status"
             ),
         )
-        if self.status is PolicyBasedFallbackStatus.NOT_QUARANTINED:
+        allowed_statuses = {
+            PolicyBasedFallbackStatus.ALLOWED,
+            PolicyBasedFallbackStatus.ATTEMPTED,
+        }
+        unresolved_reconciliation_statuses = {
+            RouteReconciliationStatus.REQUIRED,
+            RouteReconciliationStatus.PENDING,
+            RouteReconciliationStatus.REMAINS_AMBIGUOUS,
+            RouteReconciliationStatus.MANUAL_REVIEW_REQUIRED,
+        }
+        if self.status in allowed_statuses:
             if self.policy_reference is None:
-                raise ValueError("policy_reference is required for fallback")
+                raise ValueError("policy_reference is required for allowed fallback")
             if self.from_route_id is None:
-                raise ValueError("from_route_id is required for fallback")
+                raise ValueError("from_route_id is required for allowed fallback")
             if self.to_route_id is None:
-                raise ValueError("to_route_id is required for fallback")
+                raise ValueError("to_route_id is required for allowed fallback")
             if self.bounded_attempt_reference is None:
-                raise ValueError("bounded_attempt_reference is required for fallback")
+                raise ValueError("bounded_attempt_reference is required for allowed fallback")
             if self.from_route_id == self.to_route_id:
                 raise ValueError("from_route_id must not equal to_route_id")
-        if self.status in {
-            PolicyBasedFallbackStatus.QUARANTINED,
-            PolicyBasedFallbackStatus.REVIEW_REQUIRED,
-        } and (self.reconciliation_status is RouteReconciliationStatus.NOT_EVALUATED):
-            raise ValueError("fallback requires reconciliation when quarantined or review-required")
         if (
-            self.reconciliation_status
-            in {
-                RouteReconciliationStatus.REQUIRED,
-                RouteReconciliationStatus.PENDING,
-                RouteReconciliationStatus.REMAINS_AMBIGUOUS,
-                RouteReconciliationStatus.MANUAL_REVIEW_REQUIRED,
-            }
-            and self.status is PolicyBasedFallbackStatus.NOT_QUARANTINED
+            self.status in allowed_statuses
+            and self.reconciliation_status in unresolved_reconciliation_statuses
         ):
-            raise ValueError("reconciliation gate blocks allowed fallback")
+            raise ValueError("reconciliation gate blocks allowed or attempted fallback")
+        if (
+            self.status is PolicyBasedFallbackStatus.BLOCKED_RECONCILIATION_REQUIRED
+            and self.reconciliation_status is RouteReconciliationStatus.NOT_REQUIRED
+        ):
+            raise ValueError("blocked reconciliation fallback requires reconciliation state")
 
 
 @dataclass(frozen=True, slots=True)
