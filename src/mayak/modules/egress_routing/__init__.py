@@ -52,6 +52,13 @@ from .registration import (  # noqa: F401
     RouteRegistration,
     RouteRegistrationStatus,
 )
+from .selection import (  # noqa: F401
+    ER05A_TASK_ID,
+    RouteCandidateEligibilityStatus,
+    RouteCandidateEvaluation,
+    RouteSelectionAuthority,
+    ServerRouteSelectionBoundary,
+)
 
 MODULE_ID = EGRESS_ROUTING_MODULE_ID
 
@@ -97,6 +104,11 @@ __all__ = (
     "RouteRegistration",
     "AgentRouteAssociation",
     "AgentRouteRegistrationBoundary",
+    "ER05A_TASK_ID",
+    "RouteSelectionAuthority",
+    "RouteCandidateEligibilityStatus",
+    "RouteCandidateEvaluation",
+    "ServerRouteSelectionBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
