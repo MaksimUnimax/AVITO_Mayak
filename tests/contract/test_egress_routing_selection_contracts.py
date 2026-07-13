@@ -97,6 +97,8 @@ EXPECTED_PACKAGE_EXPORTS = (
     "RouteCandidateEligibilityStatus",
     "RouteCandidateEvaluation",
     "ServerRouteSelectionBoundary",
+    "ER05B_TASK_ID",
+    "PolicyBasedFallbackBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",

@@ -36,6 +36,10 @@ from .contracts import (  # noqa: F401
     TransportAssignmentOutcome,
     TransportOutcomeStatus,
 )
+from .fallback import (  # noqa: F401
+    ER05B_TASK_ID,
+    PolicyBasedFallbackBoundary,
+)
 from .fixtures import (  # noqa: F401
     EGRESS_SYNTHETIC_FIXTURE_IDS,
     EGRESS_SYNTHETIC_FIXTURES,
@@ -109,6 +113,8 @@ __all__ = (
     "RouteCandidateEligibilityStatus",
     "RouteCandidateEvaluation",
     "ServerRouteSelectionBoundary",
+    "ER05B_TASK_ID",
+    "PolicyBasedFallbackBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",

@@ -9,6 +9,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/__init__.py"),
     Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/selection.py"),
+    Path("src/mayak/modules/egress_routing/fallback.py"),
     Path("src/mayak/modules/egress_routing/contracts.py"),
     Path("src/mayak/modules/egress_routing/fixtures.py"),
 )
@@ -258,6 +259,7 @@ def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_co
         Path("src/mayak/modules/egress_routing/contracts.py"),
         Path("src/mayak/modules/egress_routing/registration.py"),
         Path("src/mayak/modules/egress_routing/selection.py"),
+        Path("src/mayak/modules/egress_routing/fallback.py"),
     ):
         source = _read_source(relative_path)
         tree = ast.parse(source)
