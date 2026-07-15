@@ -59,10 +59,7 @@ from mayak.platform.idempotency import (
     IdempotencyScope,
 )
 
-EXPECTED_TASK_ID = (
-    "ER-06D-"
-    "DISPATCH-REPLAY-DECISION-BOUNDARY-20260715-013"
-)
+EXPECTED_TASK_ID = "ER-06D-DISPATCH-REPLAY-DECISION-BOUNDARY-20260715-013"
 
 EXPECTED_REPLAY_EXPORTS = (
     "ER06D_TASK_ID",
@@ -134,6 +131,9 @@ EXPECTED_PACKAGE_EXPORTS = (
     "ER06E_TASK_ID",
     "TransportDispatchReconciliationAuthority",
     "TransportDispatchReconciliationBoundary",
+    "ER06F_TASK_ID",
+    "TransportDispatchReconciliationResolutionAuthority",
+    "TransportDispatchReconciliationResolutionBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
@@ -158,9 +158,7 @@ EXPECTED_REPLAY_FIELD_NAMES = (
     "evidence_reference_ids",
 )
 
-EXPECTED_REPLAY_AUTHORITY_MATRIX = (
-    ("EGRESS_ROUTING_SERVER", "EGRESS_ROUTING_SERVER"),
-)
+EXPECTED_REPLAY_AUTHORITY_MATRIX = (("EGRESS_ROUTING_SERVER", "EGRESS_ROUTING_SERVER"),)
 
 EXPECTED_DECISION_VALUES = (
     "NEW",
@@ -525,9 +523,11 @@ def _build_replay_boundary(
         replay_scope=replay_scope or scope,
         replay_key=replay_key or key,
         replay_fingerprint=replay_fingerprint or fingerprint,
-        decision=decision or (
+        decision=decision
+        or (
             IdempotencyDecision.PENDING
-            if dispatch_status in (
+            if dispatch_status
+            in (
                 DispatchStatus.PENDING,
                 DispatchStatus.ATTEMPTED,
                 DispatchStatus.ACKNOWLEDGED,

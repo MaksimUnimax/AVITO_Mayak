@@ -66,6 +66,11 @@ from .reconciliation import (  # noqa: F401
     TransportDispatchReconciliationAuthority,
     TransportDispatchReconciliationBoundary,
 )
+from .reconciliation_resolution import (  # noqa: F401
+    ER06F_TASK_ID,
+    TransportDispatchReconciliationResolutionAuthority,
+    TransportDispatchReconciliationResolutionBoundary,
+)
 from .registration import (  # noqa: F401
     ER03_TASK_ID,
     AgentRegistration,
@@ -155,6 +160,9 @@ __all__ = (
     "ER06E_TASK_ID",
     "TransportDispatchReconciliationAuthority",
     "TransportDispatchReconciliationBoundary",
+    "ER06F_TASK_ID",
+    "TransportDispatchReconciliationResolutionAuthority",
+    "TransportDispatchReconciliationResolutionBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",

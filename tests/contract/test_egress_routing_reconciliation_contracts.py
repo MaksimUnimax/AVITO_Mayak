@@ -93,6 +93,9 @@ EXPECTED_PACKAGE_EXPORTS = (
     "ER06E_TASK_ID",
     "TransportDispatchReconciliationAuthority",
     "TransportDispatchReconciliationBoundary",
+    "ER06F_TASK_ID",
+    "TransportDispatchReconciliationResolutionAuthority",
+    "TransportDispatchReconciliationResolutionBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
@@ -121,9 +124,7 @@ EXPECTED_RECONCILIATION_STATE_FIELD_NAMES = (
     "resolved_outcome_reference",
 )
 
-EXPECTED_RECONCILIATION_AUTHORITY_MATRIX = (
-    ("EGRESS_ROUTING_SERVER", "EGRESS_ROUTING_SERVER"),
-)
+EXPECTED_RECONCILIATION_AUTHORITY_MATRIX = (("EGRESS_ROUTING_SERVER", "EGRESS_ROUTING_SERVER"),)
 
 EXPECTED_RECONCILIATION_STATUS_MATRIX = (
     ("NOT_REQUIRED", "NOT_REQUIRED"),
@@ -271,10 +272,9 @@ def test_reconciliation_status_matrix_is_exact() -> None:
     assert [member.value for member in RouteReconciliationStatus] == [
         item[0] for item in EXPECTED_RECONCILIATION_STATUS_MATRIX
     ]
-    assert (
-        set(RouteReconciliationStatus.__members__.keys())
-        == {item[0] for item in EXPECTED_RECONCILIATION_STATUS_MATRIX}
-    )
+    assert set(RouteReconciliationStatus.__members__.keys()) == {
+        item[0] for item in EXPECTED_RECONCILIATION_STATUS_MATRIX
+    }
 
 
 def test_only_egress_server_authority_commits_reconciliation_state() -> None:

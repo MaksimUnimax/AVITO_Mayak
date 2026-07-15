@@ -133,20 +133,24 @@ def _registration_boundary_kwargs(
     route_registration_status: RouteRegistrationStatus = RouteRegistrationStatus.REGISTERED,
     association_status: AgentRouteAssociationStatus = AgentRouteAssociationStatus.ACTIVE,
 ) -> dict[str, Any]:
-    agent = EgressAgent(**_agent_kwargs(
-        agent_id=agent_id,
-        environment_id=environment_id,
-        lifecycle_status=agent_lifecycle_status,
-    ))
-    route = EgressRoute(**_route_kwargs(
-        route_id=route_id,
-        agent_id=agent_id,
-        environment_id=environment_id,
-        route_family=route_family,
-        route_purpose_scope=route_purpose_scope,
-        route_capability_ids=route_capability_ids,
-        lifecycle_status=route_lifecycle_status,
-    ))
+    agent = EgressAgent(
+        **_agent_kwargs(
+            agent_id=agent_id,
+            environment_id=environment_id,
+            lifecycle_status=agent_lifecycle_status,
+        )
+    )
+    route = EgressRoute(
+        **_route_kwargs(
+            route_id=route_id,
+            agent_id=agent_id,
+            environment_id=environment_id,
+            route_family=route_family,
+            route_purpose_scope=route_purpose_scope,
+            route_capability_ids=route_capability_ids,
+            lifecycle_status=route_lifecycle_status,
+        )
+    )
     agent_registration = AgentRegistration(
         registration_id=f"{agent_id}-registration",
         agent_id=agent_id,
@@ -447,53 +451,63 @@ def _build_valid_boundary(
     purpose: str = "search",
     capability_scope: tuple[str, ...] = ("search",),
 ) -> RouteLeaseAuthorizationBoundary:
-    candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-        request_reference=request_reference,
-        requester_module=requester_module,
-        environment_id=environment_id,
-        purpose=purpose,
-        capability_scope=capability_scope,
-        route_id=route_id,
-        agent_id=agent_id,
-        status=RouteCandidateEligibilityStatus.ELIGIBLE,
-    ))
-    decision = RouteSelectionDecision(**_decision_kwargs(
-        status=RouteSelectionStatus.SELECTED,
-        selected_route_id=route_id,
-        candidate_route_ids=(route_id,),
-        rejected_route_ids=(),
-        request_reference=request_reference,
-    ))
-    selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-        candidate_evaluations=(candidate,),
-        decision=decision,
-        request_reference=request_reference,
-        requester_module=requester_module,
-        environment_id=environment_id,
-        purpose=purpose,
-        capability_scope=capability_scope,
-    ))
-    lease = RouteLease(**_lease_kwargs(
-        route_id=route_id,
-        agent_id=agent_id,
-        requester_module=requester_module,
-        purpose=purpose,
-        capability_scope=capability_scope,
-        status=lease_status,
-        restriction_snapshot=restriction_snapshot,
-    ))
-    return RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-        selection=selection,
-        selected_candidate=candidate,
-        lease=lease,
-        reconciliation_status=reconciliation_status,
-        new_dispatch_authorized=new_dispatch_authorized,
-        request_reference=request_reference,
-        requester_module=requester_module,
-        environment_id=environment_id,
-        purpose=purpose,
-        capability_scope=capability_scope,
-    ))
+    candidate = RouteCandidateEvaluation(
+        **_candidate_kwargs(
+            request_reference=request_reference,
+            requester_module=requester_module,
+            environment_id=environment_id,
+            purpose=purpose,
+            capability_scope=capability_scope,
+            route_id=route_id,
+            agent_id=agent_id,
+            status=RouteCandidateEligibilityStatus.ELIGIBLE,
+        )
+    )
+    decision = RouteSelectionDecision(
+        **_decision_kwargs(
+            status=RouteSelectionStatus.SELECTED,
+            selected_route_id=route_id,
+            candidate_route_ids=(route_id,),
+            rejected_route_ids=(),
+            request_reference=request_reference,
+        )
+    )
+    selection = ServerRouteSelectionBoundary(
+        **_selection_boundary_kwargs(
+            candidate_evaluations=(candidate,),
+            decision=decision,
+            request_reference=request_reference,
+            requester_module=requester_module,
+            environment_id=environment_id,
+            purpose=purpose,
+            capability_scope=capability_scope,
+        )
+    )
+    lease = RouteLease(
+        **_lease_kwargs(
+            route_id=route_id,
+            agent_id=agent_id,
+            requester_module=requester_module,
+            purpose=purpose,
+            capability_scope=capability_scope,
+            status=lease_status,
+            restriction_snapshot=restriction_snapshot,
+        )
+    )
+    return RouteLeaseAuthorizationBoundary(
+        **_boundary_kwargs(
+            selection=selection,
+            selected_candidate=candidate,
+            lease=lease,
+            reconciliation_status=reconciliation_status,
+            new_dispatch_authorized=new_dispatch_authorized,
+            request_reference=request_reference,
+            requester_module=requester_module,
+            environment_id=environment_id,
+            purpose=purpose,
+            capability_scope=capability_scope,
+        )
+    )
 
 
 class TestTaskId:
@@ -575,21 +589,24 @@ class TestPackageExports:
             "ServerRouteSelectionBoundary",
             "ER05B_TASK_ID",
             "PolicyBasedFallbackBoundary",
-    "ER06A_TASK_ID",
-    "RouteLeaseAuthority",
-    "RouteLeaseAuthorizationBoundary",
-    "ER06B_TASK_ID",
-    "TransportAssignmentAuthority",
-    "TransportAssignmentCommitmentBoundary",
-    "ER06C_TASK_ID",
-    "TransportDispatchAuthority",
-    "TransportDispatchAttemptBoundary",
+            "ER06A_TASK_ID",
+            "RouteLeaseAuthority",
+            "RouteLeaseAuthorizationBoundary",
+            "ER06B_TASK_ID",
+            "TransportAssignmentAuthority",
+            "TransportAssignmentCommitmentBoundary",
+            "ER06C_TASK_ID",
+            "TransportDispatchAuthority",
+            "TransportDispatchAttemptBoundary",
             "ER06D_TASK_ID",
             "TransportDispatchReplayAuthority",
             "TransportDispatchReplayBoundary",
             "ER06E_TASK_ID",
             "TransportDispatchReconciliationAuthority",
             "TransportDispatchReconciliationBoundary",
+            "ER06F_TASK_ID",
+            "TransportDispatchReconciliationResolutionAuthority",
+            "TransportDispatchReconciliationResolutionBoundary",
             "ER02_TASK_ID",
             "EGRESS_SYNTHETIC_FIXTURE_IDS",
             "EGRESS_SYNTHETIC_FIXTURES",
@@ -630,352 +647,428 @@ class TestBoundaryRecord:
 class TestMandatoryValidation:
     def test_boundary_id_must_be_non_blank(self) -> None:
         with pytest.raises(ValueError, match="boundary_id"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                boundary_id="",
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    boundary_id="",
+                )
+            )
 
     def test_request_reference_must_be_non_blank(self) -> None:
         with pytest.raises(ValueError, match="request_reference"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                request_reference="",
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    request_reference="",
+                )
+            )
 
     def test_requester_module_must_be_non_blank(self) -> None:
         with pytest.raises(ValueError, match="requester_module"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                requester_module="",
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    requester_module="",
+                )
+            )
 
     def test_environment_id_must_be_non_blank(self) -> None:
         with pytest.raises(ValueError, match="environment_id"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                environment_id="",
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    environment_id="",
+                )
+            )
 
     def test_purpose_must_be_non_blank(self) -> None:
         with pytest.raises(ValueError, match="purpose"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                purpose="",
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    purpose="",
+                )
+            )
 
     def test_reason_codes_must_be_non_empty_tuple(self) -> None:
         with pytest.raises(ValueError, match="reason_codes"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                reason_codes=(),
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    reason_codes=(),
+                )
+            )
 
     def test_evidence_reference_ids_must_be_non_empty_tuple(self) -> None:
         with pytest.raises(ValueError, match="evidence_reference_ids"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                evidence_reference_ids=(),
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    evidence_reference_ids=(),
+                )
+            )
 
 
 class TestTupleValidation:
     def test_non_tuple_capability_scope_rejected(self) -> None:
         with pytest.raises(ValueError, match="capability_scope"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                capability_scope=["search"],  # type: ignore[arg-type]
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    capability_scope=["search"],  # type: ignore[arg-type]
+                )
+            )
 
     def test_non_tuple_reason_codes_rejected(self) -> None:
         with pytest.raises(ValueError, match="reason_codes"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                reason_codes=["reason"],  # type: ignore[arg-type]
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    reason_codes=["reason"],  # type: ignore[arg-type]
+                )
+            )
 
     def test_non_tuple_evidence_references_rejected(self) -> None:
         with pytest.raises(ValueError, match="evidence_reference_ids"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                evidence_reference_ids=["ev"],  # type: ignore[arg-type]
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    evidence_reference_ids=["ev"],  # type: ignore[arg-type]
+                )
+            )
 
 
 class TestBoolValidation:
     def test_non_bool_dispatch_authorization_rejected(self) -> None:
         with pytest.raises(ValueError, match="new_dispatch_authorized"):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=_build_valid_boundary().selection,
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-                new_dispatch_authorized="yes",  # type: ignore[arg-type]
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=_build_valid_boundary().selection,
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                    new_dispatch_authorized="yes",  # type: ignore[arg-type]
+                )
+            )
 
 
 class TestSelectionLinkage:
     def test_selection_must_be_server_route_selection_boundary(self) -> None:
         with pytest.raises(ValueError):
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection="invalid",  # type: ignore[arg-type]
-                selected_candidate=_build_valid_boundary().selected_candidate,
-                lease=_build_valid_boundary().lease,
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection="invalid",  # type: ignore[arg-type]
+                    selected_candidate=_build_valid_boundary().selected_candidate,
+                    lease=_build_valid_boundary().lease,
+                )
+            )
 
     def test_selection_status_must_be_selected(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
-            candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-                status=RouteCandidateEligibilityStatus.ELIGIBLE,
-            ))
-            decision = RouteSelectionDecision(**_decision_kwargs(
-                status=RouteSelectionStatus.NO_ELIGIBLE_ROUTE,
-                selected_route_id=None,
-                candidate_route_ids=(valid.lease.route_id,),
-                rejected_route_ids=(valid.lease.route_id,),
-                request_reference=valid.request_reference,
-            ))
-            selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-                candidate_evaluations=(candidate,),
-                decision=decision,
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-            ))
+            candidate = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                    status=RouteCandidateEligibilityStatus.ELIGIBLE,
+                )
+            )
+            decision = RouteSelectionDecision(
+                **_decision_kwargs(
+                    status=RouteSelectionStatus.NO_ELIGIBLE_ROUTE,
+                    selected_route_id=None,
+                    candidate_route_ids=(valid.lease.route_id,),
+                    rejected_route_ids=(valid.lease.route_id,),
+                    request_reference=valid.request_reference,
+                )
+            )
+            selection = ServerRouteSelectionBoundary(
+                **_selection_boundary_kwargs(
+                    candidate_evaluations=(candidate,),
+                    decision=decision,
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                )
+            )
 
     def test_selection_request_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
             other_request = "wrong-request"
-            candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-                request_reference=other_request,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-            ))
-            decision = RouteSelectionDecision(**_decision_kwargs(
-                status=RouteSelectionStatus.SELECTED,
-                selected_route_id=valid.lease.route_id,
-                candidate_route_ids=(valid.lease.route_id,),
-                rejected_route_ids=(),
-                request_reference=other_request,
-            ))
-            selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-                candidate_evaluations=(candidate,),
-                decision=decision,
-                request_reference=other_request,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-                request_reference=valid.request_reference,
-            ))
+            candidate = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    request_reference=other_request,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                )
+            )
+            decision = RouteSelectionDecision(
+                **_decision_kwargs(
+                    status=RouteSelectionStatus.SELECTED,
+                    selected_route_id=valid.lease.route_id,
+                    candidate_route_ids=(valid.lease.route_id,),
+                    rejected_route_ids=(),
+                    request_reference=other_request,
+                )
+            )
+            selection = ServerRouteSelectionBoundary(
+                **_selection_boundary_kwargs(
+                    candidate_evaluations=(candidate,),
+                    decision=decision,
+                    request_reference=other_request,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                    request_reference=valid.request_reference,
+                )
+            )
 
     def test_selection_requester_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
             other_requester = "wrong-module"
-            candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-                request_reference=valid.request_reference,
-                requester_module=other_requester,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-            ))
-            decision = RouteSelectionDecision(**_decision_kwargs(
-                status=RouteSelectionStatus.SELECTED,
-                selected_route_id=valid.lease.route_id,
-                candidate_route_ids=(valid.lease.route_id,),
-                rejected_route_ids=(),
-                request_reference=valid.request_reference,
-            ))
-            selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-                candidate_evaluations=(candidate,),
-                decision=decision,
-                request_reference=valid.request_reference,
-                requester_module=other_requester,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-                requester_module=valid.requester_module,
-            ))
+            candidate = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    request_reference=valid.request_reference,
+                    requester_module=other_requester,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                )
+            )
+            decision = RouteSelectionDecision(
+                **_decision_kwargs(
+                    status=RouteSelectionStatus.SELECTED,
+                    selected_route_id=valid.lease.route_id,
+                    candidate_route_ids=(valid.lease.route_id,),
+                    rejected_route_ids=(),
+                    request_reference=valid.request_reference,
+                )
+            )
+            selection = ServerRouteSelectionBoundary(
+                **_selection_boundary_kwargs(
+                    candidate_evaluations=(candidate,),
+                    decision=decision,
+                    request_reference=valid.request_reference,
+                    requester_module=other_requester,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                    requester_module=valid.requester_module,
+                )
+            )
 
     def test_selection_environment_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
             other_env = "wrong-env"
-            candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=other_env,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-            ))
-            decision = RouteSelectionDecision(**_decision_kwargs(
-                status=RouteSelectionStatus.SELECTED,
-                selected_route_id=valid.lease.route_id,
-                candidate_route_ids=(valid.lease.route_id,),
-                rejected_route_ids=(),
-                request_reference=valid.request_reference,
-            ))
-            selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-                candidate_evaluations=(candidate,),
-                decision=decision,
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=other_env,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-                environment_id=valid.environment_id,
-            ))
+            candidate = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=other_env,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                )
+            )
+            decision = RouteSelectionDecision(
+                **_decision_kwargs(
+                    status=RouteSelectionStatus.SELECTED,
+                    selected_route_id=valid.lease.route_id,
+                    candidate_route_ids=(valid.lease.route_id,),
+                    rejected_route_ids=(),
+                    request_reference=valid.request_reference,
+                )
+            )
+            selection = ServerRouteSelectionBoundary(
+                **_selection_boundary_kwargs(
+                    candidate_evaluations=(candidate,),
+                    decision=decision,
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=other_env,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                    environment_id=valid.environment_id,
+                )
+            )
 
     def test_selection_purpose_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
             other_purpose = "wrong-purpose"
-            candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=other_purpose,
-                capability_scope=valid.capability_scope,
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-            ))
-            decision = RouteSelectionDecision(**_decision_kwargs(
-                status=RouteSelectionStatus.SELECTED,
-                selected_route_id=valid.lease.route_id,
-                candidate_route_ids=(valid.lease.route_id,),
-                rejected_route_ids=(),
-                request_reference=valid.request_reference,
-            ))
-            selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-                candidate_evaluations=(candidate,),
-                decision=decision,
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=other_purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-                purpose=valid.purpose,
-            ))
+            candidate = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=other_purpose,
+                    capability_scope=valid.capability_scope,
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                )
+            )
+            decision = RouteSelectionDecision(
+                **_decision_kwargs(
+                    status=RouteSelectionStatus.SELECTED,
+                    selected_route_id=valid.lease.route_id,
+                    candidate_route_ids=(valid.lease.route_id,),
+                    rejected_route_ids=(),
+                    request_reference=valid.request_reference,
+                )
+            )
+            selection = ServerRouteSelectionBoundary(
+                **_selection_boundary_kwargs(
+                    candidate_evaluations=(candidate,),
+                    decision=decision,
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=other_purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                    purpose=valid.purpose,
+                )
+            )
 
     def test_selection_capability_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
             other_cap = ("wrong-cap",)
-            candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=other_cap,
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-            ))
-            decision = RouteSelectionDecision(**_decision_kwargs(
-                status=RouteSelectionStatus.SELECTED,
-                selected_route_id=valid.lease.route_id,
-                candidate_route_ids=(valid.lease.route_id,),
-                rejected_route_ids=(),
-                request_reference=valid.request_reference,
-            ))
-            selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-                candidate_evaluations=(candidate,),
-                decision=decision,
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=other_cap,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-                capability_scope=valid.capability_scope,
-            ))
+            candidate = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=other_cap,
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                )
+            )
+            decision = RouteSelectionDecision(
+                **_decision_kwargs(
+                    status=RouteSelectionStatus.SELECTED,
+                    selected_route_id=valid.lease.route_id,
+                    candidate_route_ids=(valid.lease.route_id,),
+                    rejected_route_ids=(),
+                    request_reference=valid.request_reference,
+                )
+            )
+            selection = ServerRouteSelectionBoundary(
+                **_selection_boundary_kwargs(
+                    candidate_evaluations=(candidate,),
+                    decision=decision,
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=other_cap,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                    capability_scope=valid.capability_scope,
+                )
+            )
 
 
 class TestSelectedCandidateLinkage:
     def test_selected_candidate_must_be_in_selection(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
-            other_candidate = RouteCandidateEvaluation(**_candidate_kwargs(
-                evaluation_id="other-evaluation",
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=other_candidate,
-                lease=valid.lease,
-            ))
+            other_candidate = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    evaluation_id="other-evaluation",
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=other_candidate,
+                    lease=valid.lease,
+                )
+            )
 
     def test_selected_candidate_must_be_eligible(self) -> None:
         with pytest.raises(ValueError):
@@ -983,140 +1076,172 @@ class TestSelectedCandidateLinkage:
             candidate = valid.selection.candidate_evaluations[0]
             _mutate(candidate, status=RouteCandidateEligibilityStatus.POLICY_REJECTED)
             _mutate(candidate, reason_codes=("policy-rejected",))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                )
+            )
 
     def test_selected_candidate_route_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
             candidate = valid.selection.candidate_evaluations[0]
             _mutate(candidate, route_id="other-route")
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=candidate,
-                lease=valid.lease,
-            ))
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=candidate,
+                    lease=valid.lease,
+                )
+            )
 
     def test_two_eligible_candidates_rejected(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
             candidate1 = valid.selection.candidate_evaluations[0]
-            candidate2 = RouteCandidateEvaluation(**_candidate_kwargs(
-                evaluation_id="eval-02",
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-                route_id="route-02",
-                agent_id="agent-02",
-            ))
-            decision = RouteSelectionDecision(**_decision_kwargs(
-                status=RouteSelectionStatus.SELECTED,
-                selected_route_id=valid.lease.route_id,
-                candidate_route_ids=(valid.lease.route_id, "route-02"),
-                rejected_route_ids=(),
-                request_reference=valid.request_reference,
-            ))
-            selection = ServerRouteSelectionBoundary(**_selection_boundary_kwargs(
-                candidate_evaluations=(candidate1, candidate2),
-                decision=decision,
-                request_reference=valid.request_reference,
-                requester_module=valid.requester_module,
-                environment_id=valid.environment_id,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=selection,
-                selected_candidate=candidate1,
-                lease=valid.lease,
-            ))
+            candidate2 = RouteCandidateEvaluation(
+                **_candidate_kwargs(
+                    evaluation_id="eval-02",
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                    route_id="route-02",
+                    agent_id="agent-02",
+                )
+            )
+            decision = RouteSelectionDecision(
+                **_decision_kwargs(
+                    status=RouteSelectionStatus.SELECTED,
+                    selected_route_id=valid.lease.route_id,
+                    candidate_route_ids=(valid.lease.route_id, "route-02"),
+                    rejected_route_ids=(),
+                    request_reference=valid.request_reference,
+                )
+            )
+            selection = ServerRouteSelectionBoundary(
+                **_selection_boundary_kwargs(
+                    candidate_evaluations=(candidate1, candidate2),
+                    decision=decision,
+                    request_reference=valid.request_reference,
+                    requester_module=valid.requester_module,
+                    environment_id=valid.environment_id,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=selection,
+                    selected_candidate=candidate1,
+                    lease=valid.lease,
+                )
+            )
 
 
 class TestLeaseLinkage:
     def test_lease_route_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
-            lease = RouteLease(**_lease_kwargs(
-                route_id="wrong-route",
-                agent_id=valid.lease.agent_id,
-                requester_module=valid.requester_module,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=valid.selected_candidate,
-                lease=lease,
-            ))
+            lease = RouteLease(
+                **_lease_kwargs(
+                    route_id="wrong-route",
+                    agent_id=valid.lease.agent_id,
+                    requester_module=valid.requester_module,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=valid.selected_candidate,
+                    lease=lease,
+                )
+            )
 
     def test_lease_agent_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
-            lease = RouteLease(**_lease_kwargs(
-                route_id=valid.lease.route_id,
-                agent_id="wrong-agent",
-                requester_module=valid.requester_module,
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=valid.selected_candidate,
-                lease=lease,
-            ))
+            lease = RouteLease(
+                **_lease_kwargs(
+                    route_id=valid.lease.route_id,
+                    agent_id="wrong-agent",
+                    requester_module=valid.requester_module,
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=valid.selected_candidate,
+                    lease=lease,
+                )
+            )
 
     def test_lease_requester_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
-            lease = RouteLease(**_lease_kwargs(
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-                requester_module="wrong-module",
-                purpose=valid.purpose,
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=valid.selected_candidate,
-                lease=lease,
-            ))
+            lease = RouteLease(
+                **_lease_kwargs(
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                    requester_module="wrong-module",
+                    purpose=valid.purpose,
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=valid.selected_candidate,
+                    lease=lease,
+                )
+            )
 
     def test_lease_purpose_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
-            lease = RouteLease(**_lease_kwargs(
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-                requester_module=valid.requester_module,
-                purpose="wrong-purpose",
-                capability_scope=valid.capability_scope,
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=valid.selected_candidate,
-                lease=lease,
-            ))
+            lease = RouteLease(
+                **_lease_kwargs(
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                    requester_module=valid.requester_module,
+                    purpose="wrong-purpose",
+                    capability_scope=valid.capability_scope,
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=valid.selected_candidate,
+                    lease=lease,
+                )
+            )
 
     def test_lease_capability_mismatch(self) -> None:
         with pytest.raises(ValueError):
             valid = _build_valid_boundary()
-            lease = RouteLease(**_lease_kwargs(
-                route_id=valid.lease.route_id,
-                agent_id=valid.lease.agent_id,
-                requester_module=valid.requester_module,
-                purpose=valid.purpose,
-                capability_scope=("wrong-cap",),
-            ))
-            RouteLeaseAuthorizationBoundary(**_boundary_kwargs(
-                selection=valid.selection,
-                selected_candidate=valid.selected_candidate,
-                lease=lease,
-            ))
+            lease = RouteLease(
+                **_lease_kwargs(
+                    route_id=valid.lease.route_id,
+                    agent_id=valid.lease.agent_id,
+                    requester_module=valid.requester_module,
+                    purpose=valid.purpose,
+                    capability_scope=("wrong-cap",),
+                )
+            )
+            RouteLeaseAuthorizationBoundary(
+                **_boundary_kwargs(
+                    selection=valid.selection,
+                    selected_candidate=valid.selected_candidate,
+                    lease=lease,
+                )
+            )
 
 
 class TestLifecycleSemantics:
@@ -1335,4 +1460,5 @@ class TestRegressionPreservation:
 
     def test_fixture_count(self) -> None:
         from mayak.modules.egress_routing import EGRESS_SYNTHETIC_FIXTURES
+
         assert len(EGRESS_SYNTHETIC_FIXTURES) == 34

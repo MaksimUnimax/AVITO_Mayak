@@ -122,6 +122,9 @@ EXPECTED_PACKAGE_EXPORTS = (
     "ER06E_TASK_ID",
     "TransportDispatchReconciliationAuthority",
     "TransportDispatchReconciliationBoundary",
+    "ER06F_TASK_ID",
+    "TransportDispatchReconciliationResolutionAuthority",
+    "TransportDispatchReconciliationResolutionBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
@@ -854,9 +857,7 @@ class TestNestedValidation:
             DispatchStatus.SENT,
         ),
     )
-    def test_non_pending_authorization_true_rejected(
-        self, dispatch_status: DispatchStatus
-    ) -> None:
+    def test_non_pending_authorization_true_rejected(self, dispatch_status: DispatchStatus) -> None:
         with pytest.raises(ValueError):
             _build_valid_state(
                 dispatch_status=dispatch_status,
@@ -989,9 +990,7 @@ class TestLinkageSemantics:
         commitment_snapshot = tuple(
             getattr(commitment_before, field.name) for field in fields(commitment_before)
         )
-        lease_snapshot = tuple(
-            getattr(lease_before, field.name) for field in fields(lease_before)
-        )
+        lease_snapshot = tuple(getattr(lease_before, field.name) for field in fields(lease_before))
         attempt_snapshot = tuple(
             getattr(attempt_before, field.name) for field in fields(attempt_before)
         )
