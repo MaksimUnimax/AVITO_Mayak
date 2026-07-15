@@ -804,3 +804,41 @@ Playbook Module 08 v1.0 определил generic Notification Delivery boundar
 - Egress Routing остаётся владельцем route/transport state.
 - Identity, Entitlements и Beacon Management сохраняют собственную authority.
 - Notification Delivery владеет только generic eligibility, outbox, channel plan, attempts, deduplication, reconciliation и safe delivery history semantics.
+
+---
+
+## ADR-0021 — 2026-07-12 — Correct malformed Notification Delivery owner capture
+
+**Статус:** APPROVED append-only correction for ND-01 governance capture.
+
+**Модуль:** `08-notification-delivery`
+
+**Roadmap step:** `ND-01`
+
+**Technical task:** `ND-01-LITERAL-CORRECTION-20260712-002`
+
+**Исправляет:** механические literal, conjunction, Markdown and numbering defects в публикации `ADR-0020` и связанном `docs/04-modules/08-notification-delivery/OWNER_NOTIFICATION_DECISIONS_CAPTURE_v1.0.md`, опубликованные commit `9d1560057680f8d5f53921bb1b5632793e135e6f`.
+
+**Не переписывает:** исторический текст `ADR-0020`; append-only history сохраняется byte-for-byte.
+
+**Не изменяет product decisions:** owner scope, module boundaries, blocked gates and roadmap остаются теми же.
+
+**Решение:**
+
+1. `ADR-0020` остаётся исторической append-only записью и не редактируется.
+2. Канонический полный owner capture для последующих Module 08 tasks — исправленный `docs/04-modules/08-notification-delivery/OWNER_NOTIFICATION_DECISIONS_CAPTURE_v1.0.md` из commit этой corrective task.
+3. При механическом literal or conjunction расхождении между историческим `ADR-0020` и исправленным module document authoritative является исправленный module document.
+4. Исправленный module document восстанавливает закрывающие Markdown fences, numbered lists, backticks around `OD-013` and GitHub `main`, all-enabled-and-verified channel wording, all safe listing references, no-blind-retry semantics and exact ND-02 gate wording.
+5. Price-change notification остаётся disabled/deferred.
+6. Initial baseline не создаёт user-visible listing notification.
+7. No-new push остаётся suppressed/off by default и не может отправляться чаще одного раза в час при включённой preference.
+8. Unknown provider send остаётся reconciliation-first and never blindly retried.
+9. Provider adapters, Telegram/MAX/Web implementation, database, migrations, queue, worker, runtime, templates, credentials, retention tooling, read/click tracking, quiet hours and digest остаются blocked.
+10. `OD-013` и другие open decisions не закрываются.
+11. `ND-02` разрешается только после независимого принятия этой correction и новой проверки current GitHub `main`, Module 08 playbook and upstream Scan prerequisites.
+
+**Последствия:**
+
+- Исправленный module document является каноническим owner decision capture для Module 08.
+- Эта задача не создаёт product code, contracts, tests, fixtures or runtime.
+- Roadmap остаётся на `ND-01` до независимого принятия corrective commit.
