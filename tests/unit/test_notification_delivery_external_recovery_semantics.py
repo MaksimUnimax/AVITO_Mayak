@@ -537,11 +537,11 @@ def test_material_change_and_problem_began_allow_push_once_with_distinct_semanti
     (
         (
             NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL,
-            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_TERMINAL,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_SAME_PROBLEM,
         ),
         (
             NotificationDeduplicationDecisionStatus.REPLAY_PENDING,
-            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_PENDING,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_SAME_PROBLEM,
         ),
         (
             NotificationDeduplicationDecisionStatus.RECONCILIATION_REQUIRED,
@@ -589,6 +589,10 @@ def test_same_problem_unchanged_allows_replay_or_reconciliation_but_rejects_new_
             existing_record_state=NotificationDeduplicationRecordState.PENDING,
         )
 
+    eligibility_before = deepcopy(eligibility_decision)
+    context_before = deepcopy(context)
+    dedup_before = deepcopy(dedup_decision)
+
     decision = _policy_decision(
         eligibility_decision=eligibility_decision,
         context=context,
@@ -597,25 +601,31 @@ def test_same_problem_unchanged_allows_replay_or_reconciliation_but_rejects_new_
     )
 
     assert decision.status is expected_status
+    assert dedup_decision.resulting_record is dedup_decision.existing_record
+    assert eligibility_decision == eligibility_before
+    assert context == context_before
+    assert dedup_decision == dedup_before
     if dedup_status is NotificationDeduplicationDecisionStatus.RECONCILIATION_REQUIRED:
         assert (
             decision.effect_class
             is NotificationExternalRecoveryEffectClass.RECOVERY_BLOCKED_OR_AMBIGUOUS
         )
+        assert decision.reason_codes == ("external-recovery-reconciliation-required",)
     else:
         assert (
             decision.effect_class
             is NotificationExternalRecoveryEffectClass.AVITO_UNAVAILABLE_CONTINUING_SCAN
         )
+        assert decision.status is NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_SAME_PROBLEM
+        assert decision.reason_codes == ("external-status-same-problem-read-model-only",)
+    assert decision.status_read_model_eligible is True
     assert decision.push_work_eligible is False
     assert decision.delivery_plan_decision is None
+    assert decision.replayed is True
     if dedup_status is NotificationDeduplicationDecisionStatus.RECONCILIATION_REQUIRED:
-        assert decision.replayed is True
         assert decision.reconciliation_required is True
     else:
-        assert decision.replayed is True
         assert decision.reconciliation_required is False
-        assert decision.status is expected_status
 
     with raises(ValueError):
         _policy_decision(
@@ -629,6 +639,243 @@ def test_same_problem_unchanged_allows_replay_or_reconciliation_but_rejects_new_
                 record_id="dedup-record-nd09-3-new",
             ),
             decision_id="policy-same-problem-new",
+        )
+
+
+@pytest.mark.parametrize(
+    ("problem_gate_status", "dedup_status", "expected_status"),
+    (
+        (
+            NotificationExternalProblemGateStatus.PROBLEM_BEGAN,
+            NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_TERMINAL,
+        ),
+        (
+            NotificationExternalProblemGateStatus.MATERIAL_CHANGE,
+            NotificationDeduplicationDecisionStatus.REPLAY_PENDING,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_PENDING,
+        ),
+    ),
+)
+def test_problem_gate_replay_mappings_remain_generic_for_external_unavailable_status(
+    problem_gate_status: NotificationExternalProblemGateStatus,
+    dedup_status: NotificationDeduplicationDecisionStatus,
+    expected_status: NotificationExternalRecoveryDecisionStatus,
+) -> None:
+    eligibility_decision = _eligibility_decision_for_source(
+        family=NotificationSourceFamily.EXTERNAL_UNAVAILABLE_STATUS
+    )
+    source_event = eligibility_decision.source_intake_decision.source_event
+    context = _policy_context(
+        source_event=source_event,
+        problem_gate_status=problem_gate_status,
+        material_change_reference_id=(
+            MATERIAL_CHANGE_REFERENCE_ID
+            if problem_gate_status is NotificationExternalProblemGateStatus.MATERIAL_CHANGE
+            else None
+        ),
+    )
+    semantic_effect_reference_id = (
+        MATERIAL_CHANGE_REFERENCE_ID
+        if problem_gate_status is NotificationExternalProblemGateStatus.MATERIAL_CHANGE
+        else EXTERNAL_PROBLEM_REFERENCE_ID
+    )
+    dedup_decision = _dedup_decision(
+        source_event=source_event,
+        semantic_effect_reference_id=semantic_effect_reference_id,
+        proposed_result_reference_id="outbox-item-nd09-3-regression",
+        decision_id="dedup-nd09-3-regression",
+        record_id="dedup-record-nd09-3-regression",
+        existing_record_state=(
+            NotificationDeduplicationRecordState.TERMINAL
+            if dedup_status is NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL
+            else NotificationDeduplicationRecordState.PENDING
+        ),
+    )
+
+    decision = _policy_decision(
+        eligibility_decision=eligibility_decision,
+        context=context,
+        deduplication_decision=dedup_decision,
+        decision_id="policy-problem-gate-replay",
+    )
+
+    assert decision.status is expected_status
+    assert (
+        decision.effect_class
+        is NotificationExternalRecoveryEffectClass.AVITO_UNAVAILABLE_CONTINUING_SCAN
+    )
+    expected_reason_codes = (
+        ("external-recovery-replay-terminal",)
+        if dedup_status is NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL
+        else ("external-recovery-replay-pending",)
+    )
+    assert decision.reason_codes == expected_reason_codes
+    assert decision.status_read_model_eligible is True
+    assert decision.push_work_eligible is False
+    assert decision.replayed is True
+    assert decision.reconciliation_required is False
+    assert decision.delivery_plan_decision is None
+    assert dedup_decision.resulting_record is dedup_decision.existing_record
+
+
+@pytest.mark.parametrize(
+    ("family", "dedup_status", "expected_status", "expected_effect_class"),
+    (
+        (
+            NotificationSourceFamily.RECOVERY_SCAN_COMPLETED,
+            NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_TERMINAL,
+            NotificationExternalRecoveryEffectClass.RECOVERY_RESULT_WITH_NEW_LISTINGS,
+        ),
+        (
+            NotificationSourceFamily.RECOVERY_SCAN_COMPLETED,
+            NotificationDeduplicationDecisionStatus.REPLAY_PENDING,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_PENDING,
+            NotificationExternalRecoveryEffectClass.RECOVERY_RESULT_WITH_NEW_LISTINGS,
+        ),
+        (
+            NotificationSourceFamily.LOST_ANCHORS_RECOVERED,
+            NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_TERMINAL,
+            NotificationExternalRecoveryEffectClass.RECOVERY_RESULT_LOST_ANCHORS_RESTORED,
+        ),
+        (
+            NotificationSourceFamily.LOST_ANCHORS_RECOVERED,
+            NotificationDeduplicationDecisionStatus.REPLAY_PENDING,
+            NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_REPLAY_PENDING,
+            NotificationExternalRecoveryEffectClass.RECOVERY_RESULT_LOST_ANCHORS_RESTORED,
+        ),
+    ),
+)
+def test_recovery_and_lost_anchor_replay_mappings_remain_generic(
+    family: NotificationSourceFamily,
+    dedup_status: NotificationDeduplicationDecisionStatus,
+    expected_status: NotificationExternalRecoveryDecisionStatus,
+    expected_effect_class: NotificationExternalRecoveryEffectClass,
+) -> None:
+    recovery_grace_evidence = (
+        _recovery_grace_evidence(
+            problem_began_while_access_active=True,
+            recovery_obligation_reference_id=RECOVERY_OBLIGATION_REFERENCE_ID,
+            recovery_result_already_consumed=False,
+            beacon_frozen_due_to_access_expiry=True,
+        )
+        if family is NotificationSourceFamily.RECOVERY_SCAN_COMPLETED
+        else None
+    )
+    eligibility_decision = _eligibility_decision_for_source(
+        family=family,
+        listing_count=2,
+        safe_listing_reference_ids=NEW_LISTING_REFERENCES,
+        lifecycle_status=(
+            NotificationBeaconLifecycleStatus.FROZEN
+            if family is NotificationSourceFamily.RECOVERY_SCAN_COMPLETED
+            else NotificationBeaconLifecycleStatus.ACTIVE
+        ),
+        entitlement_status=(
+            NotificationEntitlementStatus.EXPIRED
+            if family is NotificationSourceFamily.RECOVERY_SCAN_COMPLETED
+            else NotificationEntitlementStatus.ALLOWED
+        ),
+        recovery_grace_evidence=(
+            recovery_grace_evidence
+            if family is NotificationSourceFamily.RECOVERY_SCAN_COMPLETED
+            else None
+        ),
+    )
+    source_event = eligibility_decision.source_intake_decision.source_event
+    context = _policy_context(
+        source_event=source_event,
+        problem_gate_status=NotificationExternalProblemGateStatus.NOT_APPLICABLE,
+        recovery_obligation_reference_id=RECOVERY_OBLIGATION_REFERENCE_ID,
+        recovery_result_already_consumed=False,
+    )
+    dedup_decision = _dedup_decision(
+        source_event=source_event,
+        semantic_effect_reference_id=RECOVERY_OBLIGATION_REFERENCE_ID,
+        proposed_result_reference_id="outbox-item-nd09-generic-replay",
+        decision_id="dedup-nd09-generic-replay",
+        record_id="dedup-record-nd09-generic-replay",
+        existing_record_state=(
+            NotificationDeduplicationRecordState.TERMINAL
+            if dedup_status is NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL
+            else NotificationDeduplicationRecordState.PENDING
+        ),
+    )
+
+    decision = _policy_decision(
+        eligibility_decision=eligibility_decision,
+        context=context,
+        deduplication_decision=dedup_decision,
+        decision_id="policy-generic-replay",
+    )
+
+    assert decision.status is expected_status
+    assert decision.effect_class is expected_effect_class
+    expected_reason_codes = (
+        ("external-recovery-replay-terminal",)
+        if dedup_status is NotificationDeduplicationDecisionStatus.REPLAY_TERMINAL
+        else ("external-recovery-replay-pending",)
+    )
+    assert decision.reason_codes == expected_reason_codes
+    assert decision.status_read_model_eligible is True
+    assert decision.push_work_eligible is False
+    assert decision.replayed is True
+    assert decision.reconciliation_required is False
+    assert decision.delivery_plan_decision is None
+    assert dedup_decision.resulting_record is dedup_decision.existing_record
+
+
+def test_forged_same_problem_push_work_decision_is_rejected() -> None:
+    eligibility_decision = _eligibility_decision_for_source(
+        family=NotificationSourceFamily.EXTERNAL_UNAVAILABLE_STATUS
+    )
+    source_event = eligibility_decision.source_intake_decision.source_event
+    context = _policy_context(
+        source_event=source_event,
+        problem_gate_status=NotificationExternalProblemGateStatus.SAME_PROBLEM_UNCHANGED,
+    )
+    dedup_decision = _dedup_decision(
+        source_event=source_event,
+        semantic_effect_reference_id=EXTERNAL_PROBLEM_REFERENCE_ID,
+        proposed_result_reference_id="outbox-item-nd09-forged",
+        decision_id="dedup-nd09-forged",
+        record_id="dedup-record-nd09-forged",
+        existing_record_state=NotificationDeduplicationRecordState.TERMINAL,
+    )
+    decision = _policy_decision(
+        eligibility_decision=eligibility_decision,
+        context=context,
+        deduplication_decision=dedup_decision,
+        decision_id="policy-same-problem-forged",
+    )
+    plan_decision = _planned_delivery_plan_decision(
+        _outbox_creation_decision(
+            eligibility_decision,
+            outbox_item_id="outbox-item-nd09-forged",
+        ),
+        decision_id="plan-nd09-forged",
+        delivery_plan_id="delivery-plan-nd09-forged",
+    )
+
+    with raises(ValueError):
+        replace(
+            decision,
+            status=NotificationExternalRecoveryDecisionStatus.PUSH_WORK_ELIGIBLE,
+            push_work_eligible=True,
+            replayed=False,
+            reconciliation_required=False,
+        )
+
+    with raises(ValueError):
+        replace(
+            decision,
+            status=NotificationExternalRecoveryDecisionStatus.PUSH_WORK_ELIGIBLE,
+            push_work_eligible=True,
+            replayed=False,
+            reconciliation_required=False,
+            delivery_plan_decision=plan_decision,
         )
 
 

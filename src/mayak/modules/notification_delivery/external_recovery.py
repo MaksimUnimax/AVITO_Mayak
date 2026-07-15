@@ -1337,6 +1337,30 @@ def evaluate_external_recovery_policy(
         if dedup_status in _REPLAY_DECISION_TO_STATUS:
             if delivery_plan_decision is not None:
                 raise ValueError("replay decisions must not carry a delivery plan decision")
+            if (
+                context.problem_gate_status
+                is NotificationExternalProblemGateStatus.SAME_PROBLEM_UNCHANGED
+            ):
+                return _build_decision(
+                    decision_id=decision_id,
+                    eligibility_decision=eligibility_decision,
+                    deduplication_decision=deduplication_decision,
+                    delivery_plan_decision=None,
+                    context=context,
+                    effect_class=_derived_effect_class(source_event=source_event),
+                    status=NotificationExternalRecoveryDecisionStatus.READ_MODEL_ONLY_SAME_PROBLEM,
+                    status_read_model_eligible=eligibility_decision.status_read_model_eligible,
+                    push_work_eligible=False,
+                    replayed=True,
+                    reconciliation_required=False,
+                    recovery_grace_applied=eligibility_decision.recovery_grace_applied,
+                    evidence_reference_ids=_first_occurrence_union(
+                        eligibility_decision.evidence_reference_ids,
+                        deduplication_decision.evidence_reference_ids,
+                        context.evidence_reference_ids,
+                        evidence_reference_ids,
+                    ),
+                )
             replay_status_name = _REPLAY_DECISION_TO_STATUS[dedup_status][0]
             return _build_decision(
                 decision_id=decision_id,
@@ -1535,20 +1559,6 @@ def evaluate_external_recovery_policy(
     if dedup_status in _REPLAY_DECISION_TO_STATUS:
         if delivery_plan_decision is not None:
             raise ValueError("replay decisions must not carry a delivery plan decision")
-        if (
-            context.problem_gate_status.value
-            == NotificationExternalProblemGateStatus.SAME_PROBLEM_UNCHANGED.value
-        ):
-            replay_status = NotificationExternalRecoveryDecisionStatus.PUSH_WORK_ELIGIBLE
-        elif (
-            source_event.source_family.value
-            == NotificationSourceFamily.EXTERNAL_UNAVAILABLE_STATUS.value
-        ):
-            raise ValueError("same-problem replay evidence is inconsistent with problem gate")
-        else:
-            replay_status = NotificationExternalRecoveryDecisionStatus[
-                _REPLAY_DECISION_TO_STATUS[dedup_status][0]
-            ]
         return _build_decision(
             decision_id=decision_id,
             eligibility_decision=eligibility_decision,
@@ -1556,7 +1566,9 @@ def evaluate_external_recovery_policy(
             delivery_plan_decision=None,
             context=context,
             effect_class=_derived_effect_class(source_event=source_event),
-            status=replay_status,
+            status=NotificationExternalRecoveryDecisionStatus[
+                _REPLAY_DECISION_TO_STATUS[dedup_status][0]
+            ],
             status_read_model_eligible=eligibility_decision.status_read_model_eligible,
             push_work_eligible=False,
             replayed=True,
