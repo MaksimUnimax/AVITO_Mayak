@@ -178,6 +178,18 @@ class TupleLike(tuple):
     pass
 
 
+INVALID_SAFE_RESPONSE_REFERENCE_VARIANTS = (
+    " ",
+    TextLike("opaque-safe-response"),
+    b"opaque-safe-response",
+    ["opaque-safe-response"],
+    {"safe_response_reference": "opaque-safe-response"},
+    SimpleNamespace(safe_response_reference="opaque-safe-response"),
+)
+
+EXPECTED_SAFE_RESPONSE_REFERENCE_NEGATIVE_COMBINATIONS = 24
+
+
 def _mutate(record: object, **changes: object) -> None:
     for field_name, value in changes.items():
         object.__setattr__(record, field_name, value)
@@ -581,26 +593,19 @@ def test_tuple_fields_require_exact_nonblank_tuples(
         TransportResponseFailureOutcomeBoundary(**_boundary_kwargs(state))  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize(
-    ("field_name", "bad_value"),
-    (
-        ("outcome.safe_response_reference", " "),
-        ("outcome.safe_response_reference", TextLike("opaque-safe-response")),
-        ("outcome.safe_response_reference", b"opaque-safe-response"),
-        ("outcome.safe_response_reference", ["opaque-safe-response"]),
-        ("outcome.safe_response_reference", {"safe_response_reference": "opaque-safe-response"}),
-        (
-            "outcome.safe_response_reference",
-            SimpleNamespace(safe_response_reference="opaque-safe-response"),
-        ),
-    ),
-)
+@pytest.mark.parametrize("outcome_status", EXPECTED_OUTCOME_STATUSES)
+@pytest.mark.parametrize("bad_value", INVALID_SAFE_RESPONSE_REFERENCE_VARIANTS)
 def test_safe_response_reference_requires_optional_builtin_text(
-    field_name: str,
+    outcome_status: TransportOutcomeStatus,
     bad_value: object,
 ) -> None:
+    assert (
+        len(EXPECTED_OUTCOME_STATUSES)
+        * len(INVALID_SAFE_RESPONSE_REFERENCE_VARIANTS)
+        == EXPECTED_SAFE_RESPONSE_REFERENCE_NEGATIVE_COMBINATIONS
+    )
     state = _build_state(
-        outcome_status=TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
+        outcome_status=outcome_status,
         safe_response_reference="opaque-safe-response-01",
         reconciliation_status=RouteReconciliationStatus.NOT_REQUIRED,
     )
