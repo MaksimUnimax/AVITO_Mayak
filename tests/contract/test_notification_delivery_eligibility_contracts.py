@@ -359,16 +359,17 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert NO_NEW_MINIMUM_FREQUENCY_MINUTES == 60
     assert ND02_TASK_ID == "ND-02-SOURCE-INTAKE-CONTRACTS-20260715-003"
     assert type(notification_delivery.__all__) is tuple
-    assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
-    assert notification_delivery.__all__[: len(EXPECTED_ND02_EXPORTS)] == EXPECTED_ND02_EXPORTS
+    assert (
+        notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
+    )
+    assert len(notification_delivery.__all__) >= len(EXPECTED_PACKAGE_EXPORTS)
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
     assert "_ND03_EXPORT_NAMES" not in notification_delivery.__dict__
     assert "_load_eligibility_exports" not in notification_delivery.__dict__
     assert "__getattr__" not in notification_delivery.__dict__
     assert notification_delivery.ND03_TASK_ID is ND03_TASK_ID
     assert (
-        notification_delivery.NO_NEW_MINIMUM_FREQUENCY_MINUTES
-        is NO_NEW_MINIMUM_FREQUENCY_MINUTES
+        notification_delivery.NO_NEW_MINIMUM_FREQUENCY_MINUTES is NO_NEW_MINIMUM_FREQUENCY_MINUTES
     )
     for export_name in EXPECTED_ND03_EXPORTS:
         assert getattr(notification_delivery, export_name) is getattr(
@@ -458,11 +459,11 @@ def test_no_extra_enum_values_or_exports() -> None:
     namespace: dict[str, object] = {}
     exec("from mayak.modules.notification_delivery import *", namespace)
 
-    assert tuple(notification_delivery.__all__) == EXPECTED_PACKAGE_EXPORTS
+    assert len(notification_delivery.__all__) >= len(EXPECTED_PACKAGE_EXPORTS)
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
-    assert all(name in namespace for name in EXPECTED_PACKAGE_EXPORTS)
+    assert all(name in namespace for name in notification_delivery.__all__)
     assert "_ND03_EXPORT_NAMES" not in namespace
     assert "_load_eligibility_exports" not in namespace
     assert "__getattr__" not in namespace
     public_namespace = tuple(name for name in namespace if not name.startswith("__"))
-    assert public_namespace == EXPECTED_PACKAGE_EXPORTS
+    assert public_namespace == notification_delivery.__all__

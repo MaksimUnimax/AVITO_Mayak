@@ -121,6 +121,93 @@ ELIGIBILITY_FORBIDDEN_FIELD_NAMES = {
     "payload",
 }
 
+OUTBOX_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "mayak",
+    "eligibility",
+    "source_intake",
+}
+
+OUTBOX_FORBIDDEN_IMPORT_ROOTS = {
+    "aiohttp",
+    "alembic",
+    "aiogram",
+    "fastapi",
+    "httpx",
+    "psycopg",
+    "psycopg2",
+    "queue",
+    "requests",
+    "socket",
+    "sqlalchemy",
+    "subprocess",
+    "telethon",
+}
+
+OUTBOX_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "datetime",
+    "time",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "network",
+    "raw_payload",
+    "provider_payload",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "created_at",
+    "updated_at",
+    "deadline",
+    "expiry",
+    "clock",
+    "retry_backoff",
+    "reconciliation_record",
+    "attempt_record",
+    "dispatch",
+    "scheduler",
+    "runtime",
+    "provider_call",
+    "delivery_plan",
+}
+
+OUTBOX_FORBIDDEN_FIELD_NAMES = {
+    "created_at",
+    "updated_at",
+    "deadline",
+    "expiry",
+    "clock",
+    "retry_backoff",
+    "reconciliation_record",
+    "attempt_record",
+    "provider_payload",
+    "raw_payload",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+}
+
 
 def _import_roots(source: str) -> set[str]:
     tree = ast.parse(source)
@@ -181,3 +268,21 @@ def test_eligibility_runtime_tokens_and_payload_fields() -> None:
 
     field_names = _field_names(source_path.read_text())
     assert field_names.isdisjoint(ELIGIBILITY_FORBIDDEN_FIELD_NAMES)
+
+
+def test_notification_delivery_outbox_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/outbox.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= OUTBOX_ALLOWED_IMPORT_ROOTS
+    assert roots.isdisjoint(OUTBOX_FORBIDDEN_IMPORT_ROOTS)
+
+
+def test_outbox_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/outbox.py")
+    source = source_path.read_text().lower()
+    for token in OUTBOX_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(OUTBOX_FORBIDDEN_FIELD_NAMES)

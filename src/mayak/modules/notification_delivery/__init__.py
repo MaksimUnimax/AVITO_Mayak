@@ -3,6 +3,7 @@
 from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 
 from . import eligibility as _eligibility
+from . import outbox as _outbox
 from . import source_intake as _source_intake
 
 MODULE_ID = NOTIFICATION_DELIVERY_MODULE_ID
@@ -31,6 +32,15 @@ NotificationChannelGateDecision = _eligibility.NotificationChannelGateDecision
 NotificationEligibilityDecision = _eligibility.NotificationEligibilityDecision
 evaluate_notification_eligibility = _eligibility.evaluate_notification_eligibility
 
+ND04_TASK_ID = _outbox.ND04_TASK_ID
+NotificationOutboxAuthority = _outbox.NotificationOutboxAuthority
+NotificationOutboxLifecycleStatus = _outbox.NotificationOutboxLifecycleStatus
+NotificationOutboxCreationStatus = _outbox.NotificationOutboxCreationStatus
+NotificationOutboxChannelIntent = _outbox.NotificationOutboxChannelIntent
+NotificationOutboxItem = _outbox.NotificationOutboxItem
+NotificationOutboxCreationDecision = _outbox.NotificationOutboxCreationDecision
+create_notification_outbox_item = _outbox.create_notification_outbox_item
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -55,4 +65,12 @@ __all__ = (
     "NotificationChannelGateDecision",
     "NotificationEligibilityDecision",
     "evaluate_notification_eligibility",
+    "ND04_TASK_ID",
+    "NotificationOutboxAuthority",
+    "NotificationOutboxLifecycleStatus",
+    "NotificationOutboxCreationStatus",
+    "NotificationOutboxChannelIntent",
+    "NotificationOutboxItem",
+    "NotificationOutboxCreationDecision",
+    "create_notification_outbox_item",
 )
