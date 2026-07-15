@@ -14,6 +14,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/reconciliation.py"),
     Path("src/mayak/modules/egress_routing/reconciliation_resolution.py"),
     Path("src/mayak/modules/egress_routing/outcome_availability.py"),
+    Path("src/mayak/modules/egress_routing/outcome_response.py"),
     Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/selection.py"),
     Path("src/mayak/modules/egress_routing/fallback.py"),
@@ -357,6 +358,52 @@ OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORTS = OUTCOME_ALLOWED_RELATIVE_IMPORTS
 OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORT_NAMES = OUTCOME_ALLOWED_RELATIVE_IMPORT_NAMES
 OUTCOME_AVAILABILITY_FORBIDDEN_IDENTIFIERS = OUTCOME_FORBIDDEN_IDENTIFIERS | {
     "TransportOutcomeCommitmentBoundary",
+}
+
+OUTCOME_RESPONSE_MODULE_PATH = Path("src/mayak/modules/egress_routing/outcome_response.py")
+OUTCOME_RESPONSE_ALLOWED_RELATIVE_IMPORTS = {
+    "contracts",
+    "dispatch",
+}
+OUTCOME_RESPONSE_ALLOWED_RELATIVE_IMPORT_NAMES = {
+    "contracts": {
+        "DispatchStatus",
+        "RouteReconciliationStatus",
+        "TransportAssignmentOutcome",
+        "TransportOutcomeStatus",
+    },
+    "dispatch": {
+        "TransportDispatchAttemptBoundary",
+        "TransportDispatchAuthority",
+    },
+}
+OUTCOME_RESPONSE_FORBIDDEN_IDENTIFIERS = OUTCOME_FORBIDDEN_IDENTIFIERS | {
+    "TransportAssignment",
+    "DispatchAttempt",
+    "TransportAssignmentCommitmentBoundary",
+    "RouteLeaseAuthorizationBoundary",
+    "TransportDispatchReplayBoundary",
+    "TransportDispatchReconciliationBoundary",
+    "TransportDispatchReconciliationResolutionBoundary",
+    "PolicyBasedFallbackBoundary",
+    "TransportOutcomeCommitmentBoundary",
+    "TransportAvailabilityOutcomeBoundary",
+    "ParserAttemptOutcome",
+    "TransportOutcomeReference",
+    "TransportResponseClassificationOutcome",
+    "ParserOutcomeStatus",
+    "ProviderResponseEvidenceClass",
+    "ResponseCompletenessStatus",
+    "ResponseRestrictionSignal",
+    "content",
+    "listing",
+    "anchor",
+    "baseline",
+    "health",
+    "quarantine",
+    "fallback",
+    "second_attempt",
+    "retry_attempt",
 }
 
 REPLAY_MODULE_PATH = Path("src/mayak/modules/egress_routing/replay.py")
@@ -830,6 +877,31 @@ def test_outcome_availability_module_imports_and_identifiers_are_minimal() -> No
     assert OUTCOME_AVAILABILITY_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
 
 
+def test_outcome_response_module_imports_and_identifiers_are_minimal() -> None:
+    source = _read_source(OUTCOME_RESPONSE_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level > 0
+                continue
+            if node.level == 0:
+                root = node.module.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+                continue
+            assert node.module in OUTCOME_RESPONSE_ALLOWED_RELATIVE_IMPORTS
+            imported_names = {alias.name for alias in node.names}
+            assert imported_names == OUTCOME_RESPONSE_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
+
+    identifiers = _iter_identifier_names(tree)
+    assert OUTCOME_RESPONSE_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
+
+
 def test_replay_module_imports_and_identifiers_are_minimal() -> None:
     source = _read_source(REPLAY_MODULE_PATH)
     tree = ast.parse(source)
@@ -955,6 +1027,7 @@ def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_co
         Path("src/mayak/modules/egress_routing/reconciliation_resolution.py"),
         Path("src/mayak/modules/egress_routing/outcome.py"),
         Path("src/mayak/modules/egress_routing/outcome_availability.py"),
+        Path("src/mayak/modules/egress_routing/outcome_response.py"),
     ):
         source = _read_source(relative_path)
         tree = ast.parse(source)

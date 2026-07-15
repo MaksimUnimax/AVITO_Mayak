@@ -71,6 +71,11 @@ from .outcome_availability import (  # noqa: F401
     TransportAvailabilityOutcomeAuthority,
     TransportAvailabilityOutcomeBoundary,
 )
+from .outcome_response import (  # noqa: F401
+    ER07C_TASK_ID,
+    TransportResponsePresenceOutcomeAuthority,
+    TransportResponsePresenceOutcomeBoundary,
+)
 from .reconciliation import (  # noqa: F401
     ER06E_TASK_ID,
     TransportDispatchReconciliationAuthority,
@@ -179,6 +184,9 @@ __all__ = (
     "ER07B_TASK_ID",
     "TransportAvailabilityOutcomeAuthority",
     "TransportAvailabilityOutcomeBoundary",
+    "ER07C_TASK_ID",
+    "TransportResponsePresenceOutcomeAuthority",
+    "TransportResponsePresenceOutcomeBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
