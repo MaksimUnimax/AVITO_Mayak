@@ -24,6 +24,9 @@ from .source_intake import (
 from .source_intake import (
     NotificationSourceIntakeStatus as _NotificationSourceIntakeStatus,
 )
+from .source_intake import (
+    NotificationSourceProducer as _NotificationSourceProducer,
+)
 
 ND08_TASK_ID = "ND-08-NO-NEW-STATUS-POLICY-SEMANTICS-20260716-012"
 
@@ -37,6 +40,18 @@ _ALLOWED_REASON_CODES = {
     "no-new-status-minimum-frequency-ambiguous",
     "no-new-status-channel-plan-blocked",
 }
+
+_SOURCE_ACCEPTED_STATUS_ONLY_REASON_CODES = ("source-accepted-status-only-no-new",)
+_ELIGIBILITY_NO_NEW_PREFERENCE_DISABLED_REASON_CODES = (
+    "eligibility-no-new-preference-disabled",
+)
+_ELIGIBILITY_NO_NEW_FREQUENCY_BELOW_MINIMUM_REASON_CODES = (
+    "eligibility-no-new-frequency-below-minimum",
+)
+_ELIGIBILITY_ELIGIBLE_REASON_CODES = ("eligibility-eligible",)
+_ELIGIBILITY_NO_ELIGIBLE_PUSH_CHANNEL_REASON_CODES = (
+    "eligibility-no-eligible-push-channel",
+)
 
 
 class NotificationNoNewStatusAuthority(str, _Enum):
@@ -371,19 +386,74 @@ def _validate_no_new_source(
     source_event = source_intake_decision.source_event
     if source_event.source_family is not _NotificationSourceFamily.NO_NEW_LISTINGS_STATUS:
         raise ValueError("no-new status policy requires NO_NEW_LISTINGS_STATUS source family")
+    if source_event.source_producer is not _NotificationSourceProducer.SCAN_ORCHESTRATION:
+        raise ValueError("no-new status policy requires SCAN_ORCHESTRATION source producer")
+    if source_event.source_committed is not True:
+        raise ValueError("no-new status policy requires a committed source event")
+    if (
+        type(source_event.source_commit_reference) is not str
+        or not source_event.source_commit_reference.strip()
+    ):
+        raise ValueError("no-new status policy requires a committed source reference")
+    if source_event.source_identity_ambiguous is not False:
+        raise ValueError("no-new status policy requires an unambiguous source event")
+    if getattr(source_event, "contains_raw_" "provider_" "p" "ay" "load") is not False:
+        raise ValueError("no-new status policy requires a sanitized source event")
     if source_intake_decision.status is not _NotificationSourceIntakeStatus.ACCEPTED_STATUS_ONLY:
         raise ValueError("no-new status policy requires an accepted status-only intake decision")
-    if (
-        not source_intake_decision.source_accepted
-        or not source_intake_decision.status_read_model_candidate
-    ):
-        raise ValueError("no-new status policy requires committed accepted source evidence")
-    if source_intake_decision.notification_candidate:
+    if source_intake_decision.source_accepted is not True:
+        raise ValueError("no-new status policy requires accepted source evidence")
+    if source_intake_decision.notification_candidate is not False:
         raise ValueError(
             "no-new status policy must not treat the source as a notification candidate"
         )
+    if source_intake_decision.status_read_model_candidate is not True:
+        raise ValueError("no-new status policy requires read-model candidate source evidence")
+    if source_intake_decision.outbox_effect_authorized is not False:
+        raise ValueError("no-new status policy must not authorize outbox effects")
+    if source_intake_decision.delivery_attempt_authorized is not False:
+        raise ValueError("no-new status policy must not authorize delivery attempts")
+    if source_intake_decision.reason_codes != _SOURCE_ACCEPTED_STATUS_ONLY_REASON_CODES:
+        raise ValueError("no-new status policy requires canonical accepted-status reason codes")
 
     return eligibility_decision
+
+
+def _validate_no_new_eligibility_reason_codes(
+    *,
+    eligibility_decision: _NotificationEligibilityDecision,
+    context: NotificationNoNewStatusPolicyContext,
+) -> None:
+    if eligibility_decision.status is _NotificationEligibilityStatus.SUPPRESSED_BY_PREFERENCE:
+        if not context.status_preference_enabled:
+            expected_reason_codes = _ELIGIBILITY_NO_NEW_PREFERENCE_DISABLED_REASON_CODES
+        elif (
+            context.configured_status_frequency_minutes is not None
+            and context.configured_status_frequency_minutes < _NO_NEW_MINIMUM_FREQUENCY_MINUTES
+        ):
+            expected_reason_codes = _ELIGIBILITY_NO_NEW_FREQUENCY_BELOW_MINIMUM_REASON_CODES
+        else:
+            raise ValueError(
+                "suppressed no-new decisions require disabled preference or below-minimum frequency"
+            )
+        if eligibility_decision.reason_codes != expected_reason_codes:
+            raise ValueError("suppressed no-new eligibility reason codes must match context")
+        return
+
+    if eligibility_decision.status is _NotificationEligibilityStatus.ELIGIBLE:
+        if eligibility_decision.reason_codes != _ELIGIBILITY_ELIGIBLE_REASON_CODES:
+            raise ValueError("eligible no-new decisions require canonical eligibility reason codes")
+        return
+
+    if (
+        eligibility_decision.status
+        is _NotificationEligibilityStatus.BLOCKED_NO_ELIGIBLE_PUSH_CHANNEL
+    ):
+        if eligibility_decision.reason_codes != _ELIGIBILITY_NO_ELIGIBLE_PUSH_CHANNEL_REASON_CODES:
+            raise ValueError(
+                "blocked push-channel decisions require canonical no-channel reason codes"
+            )
+
 
 
 def _validate_mirrored_context(
@@ -495,6 +565,10 @@ def evaluate_no_new_status_policy(
 
     validated_eligibility_decision = _validate_no_new_source(eligibility_decision)
     _validate_mirrored_context(
+        eligibility_decision=validated_eligibility_decision,
+        context=context,
+    )
+    _validate_no_new_eligibility_reason_codes(
         eligibility_decision=validated_eligibility_decision,
         context=context,
     )

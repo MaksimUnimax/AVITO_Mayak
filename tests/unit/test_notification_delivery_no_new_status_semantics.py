@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from typing import cast
 
 import pytest
@@ -387,6 +388,32 @@ def _assert_no_execution(decision: NotificationNoNewStatusPolicyDecision) -> Non
     assert decision.provider_mapping_authorized is False
 
 
+def _assert_policy_rejection_preserves_inputs(
+    *,
+    decision_id: str,
+    eligibility_decision: NotificationEligibilityDecision,
+    delivery_plan_decision: NotificationDeliveryPlanDecision | None,
+    context: NotificationNoNewStatusPolicyContext,
+    evidence_reference_ids: tuple[str, ...] = ("policy-evidence-1",),
+) -> None:
+    eligibility_before = deepcopy(eligibility_decision)
+    delivery_plan_before = deepcopy(delivery_plan_decision)
+    context_before = deepcopy(context)
+
+    with raises(ValueError):
+        evaluate_no_new_status_policy(
+            decision_id=decision_id,
+            eligibility_decision=eligibility_decision,
+            delivery_plan_decision=delivery_plan_decision,
+            context=context,
+            evidence_reference_ids=evidence_reference_ids,
+        )
+
+    assert eligibility_decision == eligibility_before
+    assert delivery_plan_decision == delivery_plan_before
+    assert context == context_before
+
+
 def _dedupe_first_occurrence(*tuples: tuple[str, ...]) -> tuple[str, ...]:
     seen: set[str] = set()
     ordered: list[str] = []
@@ -607,6 +634,228 @@ def test_no_eligible_telegram_or_max_channels_is_read_model_only() -> None:
     assert decision.push_status_work_eligible is False
     assert decision.delivery_plan_decision is None
     _assert_no_execution(decision)
+
+
+@pytest.mark.parametrize("commit_reference", (None, "stale-commit-1"))
+def test_uncommitted_no_new_source_is_rejected_before_effect(
+    commit_reference: str | None,
+) -> None:
+    eligibility_decision = _eligibility_decision(
+        no_new_status_preference_enabled=True,
+        no_new_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES,
+    )
+    source_intake_decision = eligibility_decision.source_intake_decision
+    forged_source_event = replace(
+        source_intake_decision.source_event,
+        source_committed=False,
+        source_commit_reference=commit_reference,
+    )
+    forged_source_intake_decision = replace(
+        source_intake_decision,
+        source_event=forged_source_event,
+    )
+    forged_eligibility_decision = replace(
+        eligibility_decision,
+        source_intake_decision=forged_source_intake_decision,
+    )
+    context = _policy_context(
+        minimum_frequency_gate_status=NotificationNoNewMinimumFrequencyGateStatus.NO_PRIOR_NOTIFICATION,
+        last_no_new_status_notification_reference_id=None,
+    )
+
+    _assert_policy_rejection_preserves_inputs(
+        decision_id="policy-fault-source-uncommitted",
+        eligibility_decision=forged_eligibility_decision,
+        delivery_plan_decision=None,
+        context=context,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "mutated_value"),
+    (
+        ("source_producer", NotificationSourceProducer.EGRESS_ROUTING),
+        ("source_identity_ambiguous", True),
+        ("contains_raw_provider_payload", True),
+    ),
+)
+def test_forged_accepted_status_source_provenance_is_rejected_before_effect(
+    field_name: str,
+    mutated_value: object,
+) -> None:
+    eligibility_decision = _eligibility_decision(
+        no_new_status_preference_enabled=True,
+        no_new_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES,
+    )
+    source_intake_decision = eligibility_decision.source_intake_decision
+    source_event = source_intake_decision.source_event
+    if field_name == "source_producer":
+        forged_source_event = replace(
+            source_event,
+            source_producer=cast(NotificationSourceProducer, mutated_value),
+        )
+    elif field_name == "source_identity_ambiguous":
+        forged_source_event = replace(
+            source_event,
+            source_identity_ambiguous=cast(bool, mutated_value),
+        )
+    else:
+        forged_source_event = replace(
+            source_event,
+            contains_raw_provider_payload=cast(bool, mutated_value),
+        )
+    forged_source_intake_decision = replace(
+        source_intake_decision,
+        source_event=forged_source_event,
+    )
+    forged_eligibility_decision = replace(
+        eligibility_decision,
+        source_intake_decision=forged_source_intake_decision,
+    )
+    context = _policy_context(
+        minimum_frequency_gate_status=NotificationNoNewMinimumFrequencyGateStatus.NO_PRIOR_NOTIFICATION,
+        last_no_new_status_notification_reference_id=None,
+    )
+
+    _assert_policy_rejection_preserves_inputs(
+        decision_id="policy-forged-source-provenance",
+        eligibility_decision=forged_eligibility_decision,
+        delivery_plan_decision=None,
+        context=context,
+    )
+
+
+def test_forged_accepted_status_only_reason_is_rejected_before_effect() -> None:
+    eligibility_decision = _eligibility_decision(
+        no_new_status_preference_enabled=True,
+        no_new_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES,
+    )
+    source_intake_decision = eligibility_decision.source_intake_decision
+    forged_source_intake_decision = replace(
+        source_intake_decision,
+        reason_codes=("source-accepted-status-only-no-new-forged",),
+    )
+    forged_eligibility_decision = replace(
+        eligibility_decision,
+        source_intake_decision=forged_source_intake_decision,
+    )
+    context = _policy_context(
+        minimum_frequency_gate_status=NotificationNoNewMinimumFrequencyGateStatus.NO_PRIOR_NOTIFICATION,
+        last_no_new_status_notification_reference_id=None,
+    )
+
+    _assert_policy_rejection_preserves_inputs(
+        decision_id="policy-forged-source-reason",
+        eligibility_decision=forged_eligibility_decision,
+        delivery_plan_decision=None,
+        context=context,
+    )
+
+
+def test_preference_disabled_swapped_reason_is_rejected_before_effect() -> None:
+    eligibility_decision = _eligibility_decision(
+        no_new_status_preference_enabled=False,
+        no_new_status_frequency_minutes=None,
+    )
+    assert eligibility_decision.status is NotificationEligibilityStatus.SUPPRESSED_BY_PREFERENCE
+    assert eligibility_decision.reason_codes == ("eligibility-no-new-preference-disabled",)
+    forged_eligibility_decision = replace(
+        eligibility_decision,
+        reason_codes=("eligibility-no-new-frequency-below-minimum",),
+    )
+    context = _policy_context(
+        status_preference_enabled=False,
+        configured_status_frequency_minutes=None,
+        minimum_frequency_gate_status=NotificationNoNewMinimumFrequencyGateStatus.NOT_APPLICABLE,
+    )
+
+    _assert_policy_rejection_preserves_inputs(
+        decision_id="policy-swapped-preference-disabled-reason",
+        eligibility_decision=forged_eligibility_decision,
+        delivery_plan_decision=None,
+        context=context,
+    )
+
+
+def test_frequency_59_swapped_reason_is_rejected_before_effect() -> None:
+    eligibility_decision = _eligibility_decision(
+        no_new_status_preference_enabled=True,
+        no_new_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES - 1,
+    )
+    assert eligibility_decision.status is NotificationEligibilityStatus.SUPPRESSED_BY_PREFERENCE
+    assert eligibility_decision.reason_codes == ("eligibility-no-new-frequency-below-minimum",)
+    forged_eligibility_decision = replace(
+        eligibility_decision,
+        reason_codes=("eligibility-no-new-preference-disabled",),
+    )
+    context = _policy_context(
+        configured_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES - 1,
+        minimum_frequency_gate_status=NotificationNoNewMinimumFrequencyGateStatus.NOT_APPLICABLE,
+    )
+
+    _assert_policy_rejection_preserves_inputs(
+        decision_id="policy-swapped-frequency-reason",
+        eligibility_decision=forged_eligibility_decision,
+        delivery_plan_decision=None,
+        context=context,
+    )
+
+
+def test_eligible_swapped_reason_is_rejected_before_effect() -> None:
+    eligibility_decision = _eligibility_decision(
+        no_new_status_preference_enabled=True,
+        no_new_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES,
+    )
+    assert eligibility_decision.status is NotificationEligibilityStatus.ELIGIBLE
+    assert eligibility_decision.reason_codes == ("eligibility-eligible",)
+    forged_eligibility_decision = replace(
+        eligibility_decision,
+        reason_codes=("eligibility-no-eligible-push-channel",),
+    )
+    context = _policy_context(
+        minimum_frequency_gate_status=NotificationNoNewMinimumFrequencyGateStatus.NO_PRIOR_NOTIFICATION,
+        last_no_new_status_notification_reference_id=None,
+    )
+
+    _assert_policy_rejection_preserves_inputs(
+        decision_id="policy-swapped-eligible-reason",
+        eligibility_decision=forged_eligibility_decision,
+        delivery_plan_decision=None,
+        context=context,
+    )
+
+
+def test_no_eligible_push_channel_swapped_reason_is_rejected_before_effect() -> None:
+    eligibility_decision = _eligibility_decision(
+        no_new_status_preference_enabled=True,
+        no_new_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES,
+        telegram_enabled_by_user=False,
+        telegram_target_verified=False,
+        telegram_target_available=False,
+        max_enabled_by_user=False,
+        max_target_verified=False,
+        max_target_available=False,
+    )
+    assert (
+        eligibility_decision.status
+        is NotificationEligibilityStatus.BLOCKED_NO_ELIGIBLE_PUSH_CHANNEL
+    )
+    assert eligibility_decision.reason_codes == ("eligibility-no-eligible-push-channel",)
+    forged_eligibility_decision = replace(
+        eligibility_decision,
+        reason_codes=("eligibility-eligible",),
+    )
+    context = _policy_context(
+        minimum_frequency_gate_status=NotificationNoNewMinimumFrequencyGateStatus.NO_PRIOR_NOTIFICATION,
+        last_no_new_status_notification_reference_id=None,
+    )
+
+    _assert_policy_rejection_preserves_inputs(
+        decision_id="policy-swapped-no-channel-reason",
+        eligibility_decision=forged_eligibility_decision,
+        delivery_plan_decision=None,
+        context=context,
+    )
 
 
 @pytest.mark.parametrize(
