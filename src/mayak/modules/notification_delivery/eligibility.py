@@ -573,11 +573,6 @@ def evaluate_notification_eligibility(
     _require_tuple_text(evidence_reference_ids, "evidence_reference_ids", unique=False)
 
     source_family = source_intake_decision.source_event.source_family
-    if source_family is not NotificationSourceFamily.NO_NEW_LISTINGS_STATUS and (
-        context.no_new_status_preference_enabled
-        or context.no_new_status_frequency_minutes is not None
-    ):
-        raise ValueError("non-no-new sources must not carry no-new preference values")
 
     channel_gate_decisions = _build_channel_gate_decisions(context.channel_evidence)
     eligible_push_channels = tuple(
@@ -646,6 +641,54 @@ def evaluate_notification_eligibility(
                 reason_codes=("eligibility-beacon-scope-mismatch",),
                 evidence_reference_ids=combined_evidence_reference_ids,
             )
+    else:
+        if source_event.beacon_id != context.beacon_id:
+            return _build_decision(
+                decision_id=decision_id,
+                source_intake_decision=source_intake_decision,
+                context=context,
+                status=NotificationEligibilityStatus.BLOCKED_SCOPE_MISMATCH,
+                source_eligible=False,
+                outbox_candidate_eligible=False,
+                status_read_model_eligible=False,
+                recovery_grace_applied=False,
+                eligible_push_channels=eligible_push_channels,
+                channel_gate_decisions=channel_gate_decisions,
+                reason_codes=("eligibility-beacon-scope-mismatch",),
+                evidence_reference_ids=combined_evidence_reference_ids,
+            )
+
+    if (
+        context.beacon_lifecycle_status is NotificationBeaconLifecycleStatus.AMBIGUOUS
+        or context.entitlement_status is NotificationEntitlementStatus.AMBIGUOUS
+        or context.entitlement_status is NotificationEntitlementStatus.CONFLICT
+    ):
+        return _build_decision(
+            decision_id=decision_id,
+            source_intake_decision=source_intake_decision,
+            context=context,
+            status=NotificationEligibilityStatus.BLOCKED_AMBIGUOUS,
+            source_eligible=False,
+            outbox_candidate_eligible=False,
+            status_read_model_eligible=False,
+            recovery_grace_applied=False,
+            eligible_push_channels=eligible_push_channels,
+            channel_gate_decisions=channel_gate_decisions,
+            reason_codes=(
+                "eligibility-beacon-lifecycle-ambiguous"
+                if context.beacon_lifecycle_status is NotificationBeaconLifecycleStatus.AMBIGUOUS
+                else "eligibility-entitlement-ambiguous",
+            ),
+            evidence_reference_ids=combined_evidence_reference_ids,
+        )
+
+    if source_family is not NotificationSourceFamily.NO_NEW_LISTINGS_STATUS and (
+        context.no_new_status_preference_enabled
+        or context.no_new_status_frequency_minutes is not None
+    ):
+        raise ValueError("non-no-new sources must not carry no-new preference values")
+
+    if source_family is NotificationSourceFamily.APPROVED_SERVICE_ACCESS_FACT:
         if (
             context.beacon_lifecycle_status is not NotificationBeaconLifecycleStatus.NOT_APPLICABLE
             or context.beacon_lifecycle_reference_id is not None
@@ -682,46 +725,6 @@ def evaluate_notification_eligibility(
             eligible_push_channels=eligible_push_channels,
             channel_gate_decisions=channel_gate_decisions,
             reason_codes=("eligibility-no-eligible-push-channel",),
-            evidence_reference_ids=combined_evidence_reference_ids,
-        )
-
-    if source_event.beacon_id != context.beacon_id:
-        return _build_decision(
-            decision_id=decision_id,
-            source_intake_decision=source_intake_decision,
-            context=context,
-            status=NotificationEligibilityStatus.BLOCKED_SCOPE_MISMATCH,
-            source_eligible=False,
-            outbox_candidate_eligible=False,
-            status_read_model_eligible=False,
-            recovery_grace_applied=False,
-            eligible_push_channels=eligible_push_channels,
-            channel_gate_decisions=channel_gate_decisions,
-            reason_codes=("eligibility-beacon-scope-mismatch",),
-            evidence_reference_ids=combined_evidence_reference_ids,
-        )
-
-    if (
-        context.beacon_lifecycle_status is NotificationBeaconLifecycleStatus.AMBIGUOUS
-        or context.entitlement_status is NotificationEntitlementStatus.AMBIGUOUS
-        or context.entitlement_status is NotificationEntitlementStatus.CONFLICT
-    ):
-        return _build_decision(
-            decision_id=decision_id,
-            source_intake_decision=source_intake_decision,
-            context=context,
-            status=NotificationEligibilityStatus.BLOCKED_AMBIGUOUS,
-            source_eligible=False,
-            outbox_candidate_eligible=False,
-            status_read_model_eligible=False,
-            recovery_grace_applied=False,
-            eligible_push_channels=eligible_push_channels,
-            channel_gate_decisions=channel_gate_decisions,
-            reason_codes=(
-                "eligibility-beacon-lifecycle-ambiguous"
-                if context.beacon_lifecycle_status is NotificationBeaconLifecycleStatus.AMBIGUOUS
-                else "eligibility-entitlement-ambiguous",
-            ),
             evidence_reference_ids=combined_evidence_reference_ids,
         )
 

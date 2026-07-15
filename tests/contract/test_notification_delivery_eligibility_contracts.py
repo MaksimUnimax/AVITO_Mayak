@@ -9,6 +9,7 @@ from typing import get_type_hints
 
 from mayak.contracts.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
 from mayak.modules import notification_delivery
+from mayak.modules.notification_delivery import eligibility as notification_delivery_eligibility
 from mayak.modules.notification_delivery.eligibility import (
     ND03_TASK_ID,
     NO_NEW_MINIMUM_FREQUENCY_MINUTES,
@@ -357,16 +358,23 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert ND03_TASK_ID == "ND-03-ELIGIBILITY-PREFERENCES-20260715-004"
     assert NO_NEW_MINIMUM_FREQUENCY_MINUTES == 60
     assert ND02_TASK_ID == "ND-02-SOURCE-INTAKE-CONTRACTS-20260715-003"
-    original_all = notification_delivery.__all__
-    try:
-        assert getattr(notification_delivery, "ND03_TASK_ID") == ND03_TASK_ID
-        assert type(notification_delivery.__all__) is tuple
-        assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
-        assert notification_delivery.__all__[: len(EXPECTED_ND02_EXPORTS)] == EXPECTED_ND02_EXPORTS
-    finally:
-        notification_delivery.__all__ = original_all
-        for export_name in EXPECTED_ND03_EXPORTS:
-            notification_delivery.__dict__.pop(export_name, None)
+    assert type(notification_delivery.__all__) is tuple
+    assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
+    assert notification_delivery.__all__[: len(EXPECTED_ND02_EXPORTS)] == EXPECTED_ND02_EXPORTS
+    assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
+    assert "_ND03_EXPORT_NAMES" not in notification_delivery.__dict__
+    assert "_load_eligibility_exports" not in notification_delivery.__dict__
+    assert "__getattr__" not in notification_delivery.__dict__
+    assert notification_delivery.ND03_TASK_ID is ND03_TASK_ID
+    assert (
+        notification_delivery.NO_NEW_MINIMUM_FREQUENCY_MINUTES
+        is NO_NEW_MINIMUM_FREQUENCY_MINUTES
+    )
+    for export_name in EXPECTED_ND03_EXPORTS:
+        assert getattr(notification_delivery, export_name) is getattr(
+            notification_delivery_eligibility,
+            export_name,
+        )
 
 
 def test_enum_values_are_exact_and_have_no_extras() -> None:
@@ -447,12 +455,14 @@ def test_nd03_task_id_appears_exactly_once_in_production_source_scope() -> None:
 
 
 def test_no_extra_enum_values_or_exports() -> None:
-    original_all = notification_delivery.__all__
-    try:
-        assert getattr(notification_delivery, "ND03_TASK_ID") == ND03_TASK_ID
-        assert tuple(notification_delivery.__all__) == EXPECTED_PACKAGE_EXPORTS
-        assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
-    finally:
-        notification_delivery.__all__ = original_all
-        for export_name in EXPECTED_ND03_EXPORTS:
-            notification_delivery.__dict__.pop(export_name, None)
+    namespace: dict[str, object] = {}
+    exec("from mayak.modules.notification_delivery import *", namespace)
+
+    assert tuple(notification_delivery.__all__) == EXPECTED_PACKAGE_EXPORTS
+    assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
+    assert all(name in namespace for name in EXPECTED_PACKAGE_EXPORTS)
+    assert "_ND03_EXPORT_NAMES" not in namespace
+    assert "_load_eligibility_exports" not in namespace
+    assert "__getattr__" not in namespace
+    public_namespace = tuple(name for name in namespace if not name.startswith("__"))
+    assert public_namespace == EXPECTED_PACKAGE_EXPORTS

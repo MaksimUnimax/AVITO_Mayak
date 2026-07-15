@@ -203,6 +203,167 @@ def _assert_no_effects(decision: NotificationEligibilityDecision) -> None:
     assert decision.delivery_attempt_authorized is False
 
 
+def test_rejected_source_intake_ignores_irrelevant_no_new_preference_values() -> None:
+    source_event = _source_event(committed=False)
+    intake_decision = _accepted_intake_decision(source_event)
+    context = _context(
+        no_new_status_preference_enabled=True,
+        no_new_status_frequency_minutes=NO_NEW_MINIMUM_FREQUENCY_MINUTES,
+    )
+
+    decision = evaluate_notification_eligibility(
+        decision_id="eligibility-0",
+        source_intake_decision=intake_decision,
+        context=context,
+        evidence_reference_ids=("eligibility-evidence-0",),
+    )
+
+    assert decision.status is NotificationEligibilityStatus.BLOCKED_SOURCE_INTAKE
+    assert decision.reason_codes == ("eligibility-source-intake-blocked",)
+    _assert_no_effects(decision)
+
+
+def test_account_mismatch_beats_ambiguous_entitlement() -> None:
+    source_event = _source_event()
+    intake_decision = _accepted_intake_decision(source_event)
+    context = _context(
+        account_id="account-2",
+        entitlement_status=NotificationEntitlementStatus.AMBIGUOUS,
+    )
+
+    decision = evaluate_notification_eligibility(
+        decision_id="eligibility-0a",
+        source_intake_decision=intake_decision,
+        context=context,
+        evidence_reference_ids=("eligibility-evidence-0a",),
+    )
+
+    assert decision.status is NotificationEligibilityStatus.BLOCKED_SCOPE_MISMATCH
+    assert decision.reason_codes == ("eligibility-account-scope-mismatch",)
+    _assert_no_effects(decision)
+
+
+def test_beacon_mismatch_beats_ambiguous_entitlement() -> None:
+    source_event = _source_event()
+    intake_decision = _accepted_intake_decision(source_event)
+    context = _context(
+        beacon_id="beacon-2",
+        entitlement_status=NotificationEntitlementStatus.AMBIGUOUS,
+    )
+
+    decision = evaluate_notification_eligibility(
+        decision_id="eligibility-0b",
+        source_intake_decision=intake_decision,
+        context=context,
+        evidence_reference_ids=("eligibility-evidence-0b",),
+    )
+
+    assert decision.status is NotificationEligibilityStatus.BLOCKED_SCOPE_MISMATCH
+    assert decision.reason_codes == ("eligibility-beacon-scope-mismatch",)
+    _assert_no_effects(decision)
+
+
+def test_service_access_ambiguous_entitlement_blocks_instead_of_raising() -> None:
+    source_event = _source_event(
+        family=NotificationSourceFamily.APPROVED_SERVICE_ACCESS_FACT,
+        producer=NotificationSourceProducer.ENTITLEMENTS_OR_BEACON,
+        beacon_id=None,
+        scan_run_id=None,
+        listing_count=0,
+        safe_listing_reference_ids=(),
+        service_access_gate_approved=True,
+    )
+    intake_decision = _accepted_intake_decision(source_event)
+    context = _context(
+        beacon_id=None,
+        lifecycle_status=NotificationBeaconLifecycleStatus.NOT_APPLICABLE,
+        lifecycle_reference_id=None,
+        entitlement_status=NotificationEntitlementStatus.AMBIGUOUS,
+        entitlement_reference_id="entitlement-ref-1",
+    )
+
+    decision = evaluate_notification_eligibility(
+        decision_id="eligibility-0c",
+        source_intake_decision=intake_decision,
+        context=context,
+        evidence_reference_ids=("eligibility-evidence-0c",),
+    )
+
+    assert decision.status is NotificationEligibilityStatus.BLOCKED_AMBIGUOUS
+    assert decision.reason_codes == ("eligibility-entitlement-ambiguous",)
+    _assert_no_effects(decision)
+
+
+def test_service_access_conflicting_entitlement_blocks_instead_of_raising() -> None:
+    source_event = _source_event(
+        family=NotificationSourceFamily.APPROVED_SERVICE_ACCESS_FACT,
+        producer=NotificationSourceProducer.ENTITLEMENTS_OR_BEACON,
+        beacon_id=None,
+        scan_run_id=None,
+        listing_count=0,
+        safe_listing_reference_ids=(),
+        service_access_gate_approved=True,
+    )
+    intake_decision = _accepted_intake_decision(source_event)
+    context = _context(
+        beacon_id=None,
+        lifecycle_status=NotificationBeaconLifecycleStatus.NOT_APPLICABLE,
+        lifecycle_reference_id=None,
+        entitlement_status=NotificationEntitlementStatus.CONFLICT,
+        entitlement_reference_id="entitlement-ref-2",
+    )
+
+    decision = evaluate_notification_eligibility(
+        decision_id="eligibility-0d",
+        source_intake_decision=intake_decision,
+        context=context,
+        evidence_reference_ids=("eligibility-evidence-0d",),
+    )
+
+    assert decision.status is NotificationEligibilityStatus.BLOCKED_AMBIGUOUS
+    assert decision.reason_codes == ("eligibility-entitlement-ambiguous",)
+    _assert_no_effects(decision)
+
+
+def test_service_access_eligible_decisions_are_deterministic() -> None:
+    source_event = _source_event(
+        family=NotificationSourceFamily.APPROVED_SERVICE_ACCESS_FACT,
+        producer=NotificationSourceProducer.ENTITLEMENTS_OR_BEACON,
+        beacon_id=None,
+        scan_run_id=None,
+        listing_count=0,
+        safe_listing_reference_ids=(),
+        service_access_gate_approved=True,
+    )
+    intake_decision = _accepted_intake_decision(source_event)
+    context = _context(
+        beacon_id=None,
+        lifecycle_status=NotificationBeaconLifecycleStatus.NOT_APPLICABLE,
+        lifecycle_reference_id=None,
+        entitlement_status=NotificationEntitlementStatus.NOT_APPLICABLE,
+        entitlement_reference_id=None,
+    )
+
+    decision_a = evaluate_notification_eligibility(
+        decision_id="eligibility-0e",
+        source_intake_decision=intake_decision,
+        context=context,
+        evidence_reference_ids=("eligibility-evidence-0e",),
+    )
+    decision_b = evaluate_notification_eligibility(
+        decision_id="eligibility-0e",
+        source_intake_decision=intake_decision,
+        context=context,
+        evidence_reference_ids=("eligibility-evidence-0e",),
+    )
+
+    assert decision_a == decision_b
+    assert decision_a.status is NotificationEligibilityStatus.ELIGIBLE
+    assert decision_a.reason_codes == ("eligibility-service-access-eligible",)
+    _assert_no_effects(decision_a)
+    _assert_no_effects(decision_b)
+
+
 def test_accepted_new_listing_with_telegram_only_is_eligible() -> None:
     assert ND03_TASK_ID == "ND-03-ELIGIBILITY-PREFERENCES-20260715-004"
     source_event = _source_event()

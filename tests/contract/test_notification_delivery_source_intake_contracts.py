@@ -16,7 +16,9 @@ from mayak.modules.notification_delivery.source_intake import (
     NotificationSourceIntakeDecision,
     NotificationSourceIntakeStatus,
     NotificationSourceProducer,
+    evaluate_notification_source_intake,
 )
+from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 
 EXPECTED_ENUM_VALUES = {
     NotificationSourceProducer: (
@@ -121,7 +123,29 @@ EXPECTED_SOURCE_EXPORTS = (
 def test_task_id_and_package_exports_are_exact() -> None:
     assert ND02_TASK_ID == "ND-02-SOURCE-INTAKE-CONTRACTS-20260715-003"
     assert type(notification_delivery.__all__) is tuple
-    assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
+    assert (
+        notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)]
+        == EXPECTED_PACKAGE_EXPORTS
+    )
+    assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
+    assert notification_delivery.MODULE_ID == NOTIFICATION_DELIVERY_MODULE_ID
+    assert notification_delivery.ND02_TASK_ID is ND02_TASK_ID
+    assert notification_delivery.NotificationSourceProducer is NotificationSourceProducer
+    assert notification_delivery.NotificationSourceFamily is NotificationSourceFamily
+    assert (
+        notification_delivery.NotificationSourceIntakeAuthority
+        is NotificationSourceIntakeAuthority
+    )
+    assert notification_delivery.NotificationSourceIntakeStatus is NotificationSourceIntakeStatus
+    assert notification_delivery.NotificationSourceEvent is NotificationSourceEvent
+    assert (
+        notification_delivery.NotificationSourceIntakeDecision
+        is NotificationSourceIntakeDecision
+    )
+    assert (
+        notification_delivery.evaluate_notification_source_intake
+        is evaluate_notification_source_intake
+    )
     assert source_intake.__all__ == EXPECTED_SOURCE_EXPORTS
 
 
