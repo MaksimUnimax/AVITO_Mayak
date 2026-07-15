@@ -103,9 +103,7 @@ class PolicyFallbackTransportOutcomeBoundary:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "boundary_id", _require_text(self.boundary_id, "boundary_id"))
-        _require_exact_enum(
-            self.authority, PolicyFallbackTransportOutcomeAuthority, "authority"
-        )
+        _require_exact_enum(self.authority, PolicyFallbackTransportOutcomeAuthority, "authority")
         if self.authority is not PolicyFallbackTransportOutcomeAuthority.EGRESS_ROUTING_SERVER:
             raise ValueError("authority must be EGRESS_ROUTING_SERVER")
         _require_exact_record(self.fallback, PolicyBasedFallbackBoundary, "fallback")
@@ -138,9 +136,7 @@ class PolicyFallbackTransportOutcomeBoundary:
         _require_exact_record(fallback.decision, PolicyBasedFallbackDecision, "fallback.decision")
 
         fallback_status = fallback.decision.status
-        _require_exact_enum(
-            fallback_status, PolicyBasedFallbackStatus, "fallback.decision.status"
-        )
+        _require_exact_enum(fallback_status, PolicyBasedFallbackStatus, "fallback.decision.status")
         _require_exact_enum(
             fallback.decision.reconciliation_status,
             RouteReconciliationStatus,
@@ -151,7 +147,10 @@ class PolicyFallbackTransportOutcomeBoundary:
             RouteSelectionAuthority,
             "fallback.original_selection.authority",
         )
-        if fallback.original_selection.authority is not RouteSelectionAuthority.EGRESS_ROUTING_SERVER:
+        if (
+            fallback.original_selection.authority
+            is not RouteSelectionAuthority.EGRESS_ROUTING_SERVER
+        ):
             raise ValueError("fallback.original_selection.authority must be EGRESS_ROUTING_SERVER")
         _require_exact_enum(
             fallback.original_selection.decision.status,
@@ -281,7 +280,9 @@ class PolicyFallbackTransportOutcomeBoundary:
             _require_text(candidate.agent_id, "candidate.agent_id")
 
             if candidate_request_reference != fallback_request_reference:
-                raise ValueError("candidate request_reference must match fallback request_reference")
+                raise ValueError(
+                    "candidate request_reference must match fallback request_reference"
+                )
             if candidate_requester_module != fallback_requester_module:
                 raise ValueError("candidate requester_module must match fallback requester_module")
             if candidate_environment_id != fallback_environment_id:
@@ -293,7 +294,9 @@ class PolicyFallbackTransportOutcomeBoundary:
             if candidate_policy_reference != fallback_policy_reference:
                 raise ValueError("candidate policy_reference must match fallback policy_reference")
             if candidate_route_id == fallback_original_selection_selected_route_id:
-                raise ValueError("candidate route_id must differ from the originally selected route")
+                raise ValueError(
+                    "candidate route_id must differ from the originally selected route"
+                )
 
             candidate_evaluation_ids.append(candidate_evaluation_id)
             candidate_route_ids.append(candidate_route_id)

@@ -1,5 +1,3 @@
-# ruff: noqa: I001
-
 """Egress Routing module package."""
 
 from mayak.platform.boundaries import EGRESS_ROUTING_MODULE_ID
@@ -73,6 +71,11 @@ from .outcome_availability import (  # noqa: F401
     TransportAvailabilityOutcomeAuthority,
     TransportAvailabilityOutcomeBoundary,
 )
+from .outcome_fallback import (  # noqa: F401
+    ER07E_TASK_ID,
+    PolicyFallbackTransportOutcomeAuthority,
+    PolicyFallbackTransportOutcomeBoundary,
+)
 from .outcome_response import (  # noqa: F401
     ER07C_TASK_ID,
     TransportResponsePresenceOutcomeAuthority,
@@ -82,11 +85,6 @@ from .outcome_response_failure import (  # noqa: F401
     ER07D_TASK_ID,
     TransportResponseFailureOutcomeAuthority,
     TransportResponseFailureOutcomeBoundary,
-)
-from .outcome_fallback import (  # noqa: F401
-    ER07E_TASK_ID,
-    PolicyFallbackTransportOutcomeAuthority,
-    PolicyFallbackTransportOutcomeBoundary,
 )
 from .reconciliation import (  # noqa: F401
     ER06E_TASK_ID,

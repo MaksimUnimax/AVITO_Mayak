@@ -3,13 +3,14 @@ from __future__ import annotations
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 import mayak.modules.egress_routing as egress_routing
 import mayak.modules.egress_routing.outcome_fallback as outcome_fallback_module
 from mayak.modules.egress_routing import (
+    ER07E_TASK_ID,
     AgentLifecycleStatus,
     AgentRegistration,
     AgentRegistrationStatus,
@@ -18,7 +19,6 @@ from mayak.modules.egress_routing import (
     AgentRouteRegistrationBoundary,
     EgressAgent,
     EgressRoute,
-    ER07E_TASK_ID,
     PolicyBasedFallbackBoundary,
     PolicyBasedFallbackDecision,
     PolicyBasedFallbackStatus,
@@ -206,16 +206,19 @@ def _enum_lookalike(name: str) -> SimpleNamespace:
     return SimpleNamespace(name=name, value=name)
 
 
-def _set_path(root: object, path: tuple[object, ...], value: object) -> None:
-    target = root
+def _set_path(root: object, path: tuple[str | int, ...], value: object) -> None:
+    target: Any = root
     for field_name in path[:-1]:
         target = target[field_name] if isinstance(field_name, int) else getattr(target, field_name)
-    leaf = path[-1]
+    leaf = cast(str, path[-1])
     object.__setattr__(target, leaf, value)
 
 
 def _namespace_copy(record: object, **changes: object) -> SimpleNamespace:
-    payload = {field.name: getattr(record, field.name) for field in fields(record)}
+    record_instance = cast(Any, record)
+    payload = {
+        field.name: getattr(record_instance, field.name) for field in fields(record_instance)
+    }
     payload.update(changes)
     return SimpleNamespace(**payload)
 
@@ -521,7 +524,9 @@ def _fallback_boundary(
         fallback_policy_reference="fallback-policy-01",
         original_selection=_original_selection(),
         original_failure_reference="failure-01",
-        fallback_candidate_evaluations=_fallback_candidates(status) if candidates is None else candidates,
+        fallback_candidate_evaluations=_fallback_candidates(status)
+        if candidates is None
+        else candidates,
         decision=_fallback_decision(status, reconciliation_status),
     )
 
@@ -538,7 +543,9 @@ def _construct(
     parser_success_inferred: bool = False,
     scan_success_inferred: bool = False,
     notification_delivery_inferred: bool = False,
-    authority: PolicyFallbackTransportOutcomeAuthority = PolicyFallbackTransportOutcomeAuthority.EGRESS_ROUTING_SERVER,
+    authority: PolicyFallbackTransportOutcomeAuthority = (
+        PolicyFallbackTransportOutcomeAuthority.EGRESS_ROUTING_SERVER
+    ),
 ) -> PolicyFallbackTransportOutcomeBoundary:
     fallback = _fallback_boundary(fallback_status, reconciliation_status, candidates=candidates)
     return PolicyFallbackTransportOutcomeBoundary(
@@ -548,8 +555,7 @@ def _construct(
         outcome_status=outcome_status or EXPECTED_STATUS_TO_OUTCOME[fallback_status],
         outcome_committed=outcome_committed,
         new_fallback_effect_authorized=new_fallback_effect_authorized,
-        transport_terminal=
-        EXPECTED_TERMINAL_BY_FALLBACK_STATUS[fallback_status]
+        transport_terminal=EXPECTED_TERMINAL_BY_FALLBACK_STATUS[fallback_status]
         if transport_terminal is None
         else transport_terminal,
         parser_success_inferred=parser_success_inferred,
@@ -560,7 +566,9 @@ def _construct(
     )
 
 
-def _rebuild_boundary(boundary: PolicyFallbackTransportOutcomeBoundary) -> PolicyFallbackTransportOutcomeBoundary:
+def _rebuild_boundary(
+    boundary: PolicyFallbackTransportOutcomeBoundary,
+) -> PolicyFallbackTransportOutcomeBoundary:
     return PolicyFallbackTransportOutcomeBoundary(
         boundary_id=boundary.boundary_id,
         authority=boundary.authority,
@@ -588,7 +596,9 @@ def _base_boundary(
 
 
 def test_public_surface_and_exports_are_exact() -> None:
-    source = Path("src/mayak/modules/egress_routing/outcome_fallback.py").read_text(encoding="utf-8")
+    source = Path("src/mayak/modules/egress_routing/outcome_fallback.py").read_text(
+        encoding="utf-8"
+    )
 
     assert source.count(EXPECTED_TASK_ID) == 1
     assert ER07E_TASK_ID == EXPECTED_TASK_ID
@@ -599,9 +609,12 @@ def test_public_surface_and_exports_are_exact() -> None:
     assert tuple(member.name for member in PolicyFallbackTransportOutcomeAuthority) == (
         "EGRESS_ROUTING_SERVER",
     )
-    assert PolicyFallbackTransportOutcomeAuthority.EGRESS_ROUTING_SERVER.value == "EGRESS_ROUTING_SERVER"
+    assert (
+        PolicyFallbackTransportOutcomeAuthority.EGRESS_ROUTING_SERVER.value
+        == "EGRESS_ROUTING_SERVER"
+    )
     assert is_dataclass(PolicyFallbackTransportOutcomeBoundary)
-    assert PolicyFallbackTransportOutcomeBoundary.__dataclass_params__.frozen is True
+    assert cast(Any, PolicyFallbackTransportOutcomeBoundary).__dataclass_params__.frozen is True
     assert hasattr(PolicyFallbackTransportOutcomeBoundary, "__slots__")
     assert _field_names(PolicyFallbackTransportOutcomeBoundary) == EXPECTED_FIELD_NAMES
     assert len(egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS) == 34
@@ -626,7 +639,10 @@ def test_all_positive_combinations_are_accepted(
     assert type(boundary.fallback.fallback_candidate_evaluations) is tuple
     assert boundary.authority is PolicyFallbackTransportOutcomeAuthority.EGRESS_ROUTING_SERVER
     assert boundary.fallback.authority is RouteSelectionAuthority.EGRESS_ROUTING_SERVER
-    assert boundary.fallback.original_selection.authority is RouteSelectionAuthority.EGRESS_ROUTING_SERVER
+    assert (
+        boundary.fallback.original_selection.authority
+        is RouteSelectionAuthority.EGRESS_ROUTING_SERVER
+    )
     assert boundary.fallback.original_selection.decision.status is RouteSelectionStatus.SELECTED
     assert boundary.outcome_status is EXPECTED_STATUS_TO_OUTCOME[fallback_status]
     assert boundary.transport_terminal is EXPECTED_TERMINAL_BY_FALLBACK_STATUS[fallback_status]
@@ -639,33 +655,70 @@ def test_all_positive_combinations_are_accepted(
     assert boundary.evidence_reference_ids == ("evidence-outcome-fallback-01",)
     assert boundary.fallback.decision.reason_codes == ("fallback-policy",)
     assert boundary.fallback.decision.evidence_reference_ids == ("evidence-fallback-01",)
-    assert boundary.fallback.original_selection.request_reference == boundary.fallback.request_reference
-    assert boundary.fallback.original_selection.requester_module == boundary.fallback.requester_module
+    assert (
+        boundary.fallback.original_selection.request_reference
+        == boundary.fallback.request_reference
+    )
+    assert (
+        boundary.fallback.original_selection.requester_module == boundary.fallback.requester_module
+    )
     assert boundary.fallback.original_selection.environment_id == boundary.fallback.environment_id
     assert boundary.fallback.original_selection.purpose == boundary.fallback.purpose
-    assert boundary.fallback.original_selection.capability_scope == boundary.fallback.capability_scope
+    assert (
+        boundary.fallback.original_selection.capability_scope == boundary.fallback.capability_scope
+    )
     assert boundary.fallback.decision.request_reference == boundary.fallback.request_reference
-    assert boundary.fallback.decision.original_failure_reference == boundary.fallback.original_failure_reference
-    assert boundary.fallback.decision.from_route_id == boundary.fallback.original_selection.decision.selected_route_id
-    assert boundary.fallback.decision.policy_reference == boundary.fallback.fallback_policy_reference
-    assert boundary.fallback.original_selection.decision.request_reference == boundary.fallback.request_reference
-    assert boundary.fallback.original_selection.decision.policy_reference == boundary.fallback.original_selection.policy_reference
+    assert (
+        boundary.fallback.decision.original_failure_reference
+        == boundary.fallback.original_failure_reference
+    )
+    assert (
+        boundary.fallback.decision.from_route_id
+        == boundary.fallback.original_selection.decision.selected_route_id
+    )
+    assert (
+        boundary.fallback.decision.policy_reference == boundary.fallback.fallback_policy_reference
+    )
+    assert (
+        boundary.fallback.original_selection.decision.request_reference
+        == boundary.fallback.request_reference
+    )
+    assert (
+        boundary.fallback.original_selection.decision.policy_reference
+        == boundary.fallback.original_selection.policy_reference
+    )
 
     candidates = boundary.fallback.fallback_candidate_evaluations
     assert all(type(candidate) is RouteCandidateEvaluation for candidate in candidates)
-    assert all(type(candidate.status) is RouteCandidateEligibilityStatus for candidate in candidates)
+    assert all(
+        type(candidate.status) is RouteCandidateEligibilityStatus for candidate in candidates
+    )
     assert len({candidate.evaluation_id for candidate in candidates}) == len(candidates)
     assert len({candidate.route_id for candidate in candidates}) == len(candidates)
-    assert all(candidate.request_reference == boundary.fallback.request_reference for candidate in candidates)
-    assert all(candidate.requester_module == boundary.fallback.requester_module for candidate in candidates)
-    assert all(candidate.environment_id == boundary.fallback.environment_id for candidate in candidates)
+    assert all(
+        candidate.request_reference == boundary.fallback.request_reference
+        for candidate in candidates
+    )
+    assert all(
+        candidate.requester_module == boundary.fallback.requester_module for candidate in candidates
+    )
+    assert all(
+        candidate.environment_id == boundary.fallback.environment_id for candidate in candidates
+    )
     assert all(candidate.purpose == boundary.fallback.purpose for candidate in candidates)
-    assert all(candidate.capability_scope == boundary.fallback.capability_scope for candidate in candidates)
-    assert all(candidate.policy_reference == boundary.fallback.fallback_policy_reference for candidate in candidates)
+    assert all(
+        candidate.capability_scope == boundary.fallback.capability_scope for candidate in candidates
+    )
+    assert all(
+        candidate.policy_reference == boundary.fallback.fallback_policy_reference
+        for candidate in candidates
+    )
 
     if fallback_status is PolicyBasedFallbackStatus.ATTEMPTED:
         eligible_candidates = tuple(
-            candidate for candidate in candidates if candidate.status is RouteCandidateEligibilityStatus.ELIGIBLE
+            candidate
+            for candidate in candidates
+            if candidate.status is RouteCandidateEligibilityStatus.ELIGIBLE
         )
         assert len(candidates) == 2
         assert len(eligible_candidates) == 1
@@ -674,12 +727,16 @@ def test_all_positive_combinations_are_accepted(
         assert boundary.fallback.decision.bounded_attempt_reference == "bounded-attempt-01"
     elif fallback_status is PolicyBasedFallbackStatus.EXHAUSTED:
         assert len(candidates) == 2
-        assert not any(candidate.status is RouteCandidateEligibilityStatus.ELIGIBLE for candidate in candidates)
+        assert not any(
+            candidate.status is RouteCandidateEligibilityStatus.ELIGIBLE for candidate in candidates
+        )
         assert boundary.fallback.decision.to_route_id is None
         assert boundary.fallback.decision.bounded_attempt_reference == "bounded-attempt-01"
     else:
         assert len(candidates) == 1
-        assert not any(candidate.status is RouteCandidateEligibilityStatus.ELIGIBLE for candidate in candidates)
+        assert not any(
+            candidate.status is RouteCandidateEligibilityStatus.ELIGIBLE for candidate in candidates
+        )
         assert boundary.fallback.decision.to_route_id is None
         assert boundary.fallback.decision.bounded_attempt_reference is None
 
@@ -787,7 +844,7 @@ def test_unresolved_reconciliation_statuses_are_rejected(
     ],
 )
 def test_exact_enum_validation_rejects_non_exact_members(
-    path: tuple[object, ...],
+    path: tuple[str | int, ...],
     invalid_value: object,
 ) -> None:
     boundary = _base_boundary()
@@ -833,21 +890,39 @@ def test_exact_enum_validation_rejects_non_exact_members(
         (("fallback", "original_selection", "purpose"), " "),
         (("fallback", "original_selection", "policy_reference"), TextLike("selection-policy-01")),
         (("fallback", "original_selection", "decision", "decision_id"), " "),
-        (("fallback", "original_selection", "decision", "request_reference"), TextLike("request-01")),
-        (("fallback", "original_selection", "decision", "policy_reference"), b"selection-policy-01"),
+        (
+            ("fallback", "original_selection", "decision", "request_reference"),
+            TextLike("request-01"),
+        ),
+        (
+            ("fallback", "original_selection", "decision", "policy_reference"),
+            b"selection-policy-01",
+        ),
         (("fallback", "original_selection", "decision", "selected_route_id"), " "),
         (("fallback", "fallback_candidate_evaluations", 0, "evaluation_id"), " "),
         (("fallback", "fallback_candidate_evaluations", 0, "request_reference"), b"request-01"),
-        (("fallback", "fallback_candidate_evaluations", 0, "requester_module"), TextLike("07-egress-routing")),
-        (("fallback", "fallback_candidate_evaluations", 0, "environment_id"), SimpleNamespace(value="env-01")),
+        (
+            ("fallback", "fallback_candidate_evaluations", 0, "requester_module"),
+            TextLike("07-egress-routing"),
+        ),
+        (
+            ("fallback", "fallback_candidate_evaluations", 0, "environment_id"),
+            SimpleNamespace(value="env-01"),
+        ),
         (("fallback", "fallback_candidate_evaluations", 0, "purpose"), " "),
-        (("fallback", "fallback_candidate_evaluations", 0, "policy_reference"), b"fallback-policy-01"),
-        (("fallback", "fallback_candidate_evaluations", 0, "route_id"), TextLike("route-target-01")),
+        (
+            ("fallback", "fallback_candidate_evaluations", 0, "policy_reference"),
+            b"fallback-policy-01",
+        ),
+        (
+            ("fallback", "fallback_candidate_evaluations", 0, "route_id"),
+            TextLike("route-target-01"),
+        ),
         (("fallback", "fallback_candidate_evaluations", 0, "agent_id"), b"agent-target-01"),
     ],
 )
 def test_exact_text_validation_rejects_non_exact_strings(
-    path: tuple[object, ...],
+    path: tuple[str | int, ...],
     invalid_value: object,
 ) -> None:
     boundary = _base_boundary()
@@ -870,7 +945,7 @@ def test_exact_text_validation_rejects_non_exact_strings(
     ],
 )
 def test_exact_bool_validation_rejects_ints(
-    path: tuple[object, ...],
+    path: tuple[str | int, ...],
     invalid_value: object,
 ) -> None:
     boundary = _base_boundary()
@@ -907,7 +982,7 @@ def test_exact_bool_validation_rejects_ints(
     ],
 )
 def test_exact_tuple_validation_rejects_non_exact_tuples(
-    path: tuple[object, ...],
+    path: tuple[str | int, ...],
     invalid_value: object,
 ) -> None:
     boundary = _base_boundary()
@@ -922,11 +997,14 @@ def test_exact_tuple_validation_rejects_non_exact_tuples(
     [
         (("fallback", "decision", "to_route_id"), None),
         (("fallback", "decision", "bounded_attempt_reference"), None),
-        (("fallback", "fallback_candidate_evaluations", 0, "status"), RouteCandidateEligibilityStatus.RESTRICTED),
+        (
+            ("fallback", "fallback_candidate_evaluations", 0, "status"),
+            RouteCandidateEligibilityStatus.RESTRICTED,
+        ),
     ],
 )
 def test_status_specific_source_mutations_are_rejected(
-    path: tuple[object, ...],
+    path: tuple[str | int, ...],
     value: object,
 ) -> None:
     boundary = _base_boundary()
@@ -939,8 +1017,14 @@ def test_status_specific_source_mutations_are_rejected(
 def test_attempted_requires_exact_candidate_and_route_linkage() -> None:
     boundary = _base_boundary()
     assert boundary.fallback.decision.status is PolicyBasedFallbackStatus.ATTEMPTED
-    assert boundary.fallback.decision.to_route_id == boundary.fallback.fallback_candidate_evaluations[0].route_id
-    assert boundary.fallback.fallback_candidate_evaluations[0].status is RouteCandidateEligibilityStatus.ELIGIBLE
+    assert (
+        boundary.fallback.decision.to_route_id
+        == boundary.fallback.fallback_candidate_evaluations[0].route_id
+    )
+    assert (
+        boundary.fallback.fallback_candidate_evaluations[0].status
+        is RouteCandidateEligibilityStatus.ELIGIBLE
+    )
 
 
 @pytest.mark.parametrize(
@@ -948,13 +1032,19 @@ def test_attempted_requires_exact_candidate_and_route_linkage() -> None:
     [
         (("fallback", "decision", "to_route_id"), None),
         (("fallback", "decision", "bounded_attempt_reference"), None),
-        (("fallback", "fallback_candidate_evaluations", 0, "status"), RouteCandidateEligibilityStatus.RESTRICTED),
-        (("fallback", "fallback_candidate_evaluations", 1, "status"), RouteCandidateEligibilityStatus.ELIGIBLE),
+        (
+            ("fallback", "fallback_candidate_evaluations", 0, "status"),
+            RouteCandidateEligibilityStatus.RESTRICTED,
+        ),
+        (
+            ("fallback", "fallback_candidate_evaluations", 1, "status"),
+            RouteCandidateEligibilityStatus.ELIGIBLE,
+        ),
         (("fallback", "decision", "to_route_id"), "route-target-02"),
     ],
 )
 def test_attempted_specific_source_mutations_are_rejected(
-    path: tuple[object, ...],
+    path: tuple[str | int, ...],
     value: object,
 ) -> None:
     boundary = _base_boundary()
@@ -977,7 +1067,11 @@ def test_exhausted_specific_source_mutations_are_rejected() -> None:
         _rebuild_boundary(boundary)
 
     boundary = _base_boundary(PolicyBasedFallbackStatus.EXHAUSTED)
-    _set_path(boundary, ("fallback", "fallback_candidate_evaluations", 0, "status"), RouteCandidateEligibilityStatus.ELIGIBLE)
+    _set_path(
+        boundary,
+        ("fallback", "fallback_candidate_evaluations", 0, "status"),
+        RouteCandidateEligibilityStatus.ELIGIBLE,
+    )
     with pytest.raises(ValueError):
         _rebuild_boundary(boundary)
 
@@ -999,7 +1093,11 @@ def test_no_approved_route_specific_source_mutations_are_rejected() -> None:
         _rebuild_boundary(boundary)
 
     boundary = _base_boundary(PolicyBasedFallbackStatus.NO_APPROVED_ROUTE)
-    _set_path(boundary, ("fallback", "fallback_candidate_evaluations", 0, "status"), RouteCandidateEligibilityStatus.ELIGIBLE)
+    _set_path(
+        boundary,
+        ("fallback", "fallback_candidate_evaluations", 0, "status"),
+        RouteCandidateEligibilityStatus.ELIGIBLE,
+    )
     with pytest.raises(ValueError):
         _rebuild_boundary(boundary)
 
@@ -1042,14 +1140,20 @@ def test_linkage_mutations_are_rejected(mutator: tuple[str, ...], expected_value
 def test_duplicate_candidate_identifiers_are_rejected() -> None:
     boundary = _base_boundary()
     second_candidate = boundary.fallback.fallback_candidate_evaluations[1]
-    object.__setattr__(second_candidate, "evaluation_id", boundary.fallback.fallback_candidate_evaluations[0].evaluation_id)
+    object.__setattr__(
+        second_candidate,
+        "evaluation_id",
+        boundary.fallback.fallback_candidate_evaluations[0].evaluation_id,
+    )
 
     with pytest.raises(ValueError):
         _rebuild_boundary(boundary)
 
     boundary = _base_boundary()
     second_candidate = boundary.fallback.fallback_candidate_evaluations[1]
-    object.__setattr__(second_candidate, "route_id", boundary.fallback.fallback_candidate_evaluations[0].route_id)
+    object.__setattr__(
+        second_candidate, "route_id", boundary.fallback.fallback_candidate_evaluations[0].route_id
+    )
 
     with pytest.raises(ValueError):
         _rebuild_boundary(boundary)
@@ -1099,18 +1203,44 @@ def test_no_forbidden_semantics_are_exposed() -> None:
 
 
 def test_prior_state_regression_remains_unchanged() -> None:
-    import tests.contract.test_egress_routing_fallback_contracts as fallback_contracts
-    import tests.contract.test_egress_routing_outcome_contracts as outcome_contracts
-    import tests.contract.test_egress_routing_outcome_availability_contracts as outcome_availability_contracts
-    import tests.contract.test_egress_routing_outcome_response_contracts as outcome_response_contracts
-    import tests.contract.test_egress_routing_outcome_response_failure_contracts as outcome_response_failure_contracts
-    import tests.contract.test_egress_routing_selection_contracts as selection_contracts
+    from tests.contract import test_egress_routing_fallback_contracts as fallback_contracts
+    from tests.contract import (
+        test_egress_routing_outcome_availability_contracts as outcome_availability_contracts,
+    )
+    from tests.contract import test_egress_routing_outcome_contracts as outcome_contracts
+    from tests.contract import (
+        test_egress_routing_outcome_response_contracts as outcome_response_contracts,
+    )
+    from tests.contract import (
+        test_egress_routing_outcome_response_failure_contracts as response_failure_contracts,
+    )
+    from tests.contract import test_egress_routing_selection_contracts as selection_contracts
 
-    assert selection_contracts.EXPECTED_TASK_ID == "ER-05A-SERVER-ROUTE-SELECTION-BOUNDARY-20260712-007"
-    assert fallback_contracts.EXPECTED_TASK_ID == "ER-05B-POLICY-BASED-FALLBACK-BOUNDARY-20260713-008"
-    assert outcome_contracts.EXPECTED_TASK_ID == "ER-07A-TRANSPORT-OUTCOME-COMMITMENT-BOUNDARY-20260715-016"
-    assert outcome_availability_contracts.EXPECTED_TASK_ID == "ER-07B-TRANSPORT-AVAILABILITY-OUTCOME-BOUNDARY-20260715-017"
-    assert outcome_response_contracts.EXPECTED_TASK_ID == "ER-07C-TRANSPORT-RESPONSE-PRESENCE-OUTCOME-BOUNDARY-20260715-019"
-    assert outcome_response_failure_contracts.EXPECTED_TASK_ID == "ER-07D-TRANSPORT-RESPONSE-FAILURE-OUTCOME-BOUNDARY-20260715-021"
+    assert (
+        selection_contracts.EXPECTED_TASK_ID
+        == "ER-05A-SERVER-ROUTE-SELECTION-BOUNDARY-20260712-007"
+    )
+    assert (
+        fallback_contracts.EXPECTED_TASK_ID == "ER-05B-POLICY-BASED-FALLBACK-BOUNDARY-20260713-008"
+    )
+    assert (
+        outcome_contracts.EXPECTED_TASK_ID
+        == "ER-07A-TRANSPORT-OUTCOME-COMMITMENT-BOUNDARY-20260715-016"
+    )
+    assert (
+        outcome_availability_contracts.EXPECTED_TASK_ID
+        == "ER-07B-TRANSPORT-AVAILABILITY-OUTCOME-BOUNDARY-20260715-017"
+    )
+    assert (
+        outcome_response_contracts.EXPECTED_TASK_ID
+        == "ER-07C-TRANSPORT-RESPONSE-PRESENCE-OUTCOME-BOUNDARY-20260715-019"
+    )
+    assert (
+        response_failure_contracts.EXPECTED_TASK_ID
+        == "ER-07D-TRANSPORT-RESPONSE-FAILURE-OUTCOME-BOUNDARY-20260715-021"
+    )
     assert len(egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS) == 34
-    assert tuple(egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS) == egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS
+    assert (
+        tuple(egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS)
+        == egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS
+    )

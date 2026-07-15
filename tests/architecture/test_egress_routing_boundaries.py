@@ -354,9 +354,7 @@ OUTCOME_FORBIDDEN_IDENTIFIERS = {
     "Admin",
 }
 
-OUTCOME_AVAILABILITY_MODULE_PATH = Path(
-    "src/mayak/modules/egress_routing/outcome_availability.py"
-)
+OUTCOME_AVAILABILITY_MODULE_PATH = Path("src/mayak/modules/egress_routing/outcome_availability.py")
 OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORTS = OUTCOME_ALLOWED_RELATIVE_IMPORTS
 OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORT_NAMES = OUTCOME_ALLOWED_RELATIVE_IMPORT_NAMES
 OUTCOME_AVAILABILITY_FORBIDDEN_IDENTIFIERS = OUTCOME_FORBIDDEN_IDENTIFIERS | {
@@ -1012,10 +1010,7 @@ def test_outcome_availability_module_imports_and_identifiers_are_minimal() -> No
                 continue
             assert node.module in OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORTS
             imported_names = {alias.name for alias in node.names}
-            assert (
-                imported_names
-                == OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
-            )
+            assert imported_names == OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
 
     identifiers = _iter_identifier_names(tree)
     assert OUTCOME_AVAILABILITY_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)

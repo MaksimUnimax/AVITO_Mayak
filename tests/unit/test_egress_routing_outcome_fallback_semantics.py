@@ -4,12 +4,13 @@ from dataclasses import fields
 
 import pytest
 
+import tests.contract.test_egress_routing_outcome_fallback_contracts as outcome_fallback_contracts
 from mayak.modules.egress_routing import (
     PolicyBasedFallbackStatus,
+    PolicyFallbackTransportOutcomeBoundary,
     RouteReconciliationStatus,
     TransportOutcomeStatus,
 )
-import tests.contract.test_egress_routing_outcome_fallback_contracts as outcome_fallback_contracts
 
 
 def _boundary(
@@ -17,7 +18,7 @@ def _boundary(
     reconciliation_status: RouteReconciliationStatus,
     *,
     outcome_status: TransportOutcomeStatus | None = None,
-) -> object:
+) -> PolicyFallbackTransportOutcomeBoundary:
     return outcome_fallback_contracts._construct(
         fallback_status=fallback_status,
         reconciliation_status=reconciliation_status,
@@ -77,8 +78,12 @@ def test_supported_statuses_do_not_imply_parser_scan_or_notification(
     nested_fields = {field.name for field in fields(boundary.fallback)}
     nested_fields.update(field.name for field in fields(boundary.fallback.decision))
     nested_fields.update(field.name for field in fields(boundary.fallback.original_selection))
-    nested_fields.update(field.name for field in fields(boundary.fallback.original_selection.decision))
-    nested_fields.update(field.name for field in fields(boundary.fallback.fallback_candidate_evaluations[0]))
+    nested_fields.update(
+        field.name for field in fields(boundary.fallback.original_selection.decision)
+    )
+    nested_fields.update(
+        field.name for field in fields(boundary.fallback.fallback_candidate_evaluations[0])
+    )
 
     banned = {
         "listing",

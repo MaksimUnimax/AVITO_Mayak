@@ -603,8 +603,7 @@ def test_safe_response_reference_requires_optional_builtin_text(
     bad_value: object,
 ) -> None:
     assert (
-        len(EXPECTED_OUTCOME_STATUSES)
-        * len(INVALID_SAFE_RESPONSE_REFERENCE_VARIANTS)
+        len(EXPECTED_OUTCOME_STATUSES) * len(INVALID_SAFE_RESPONSE_REFERENCE_VARIANTS)
         == EXPECTED_SAFE_RESPONSE_REFERENCE_NEGATIVE_COMBINATIONS
     )
     state = _build_state(
@@ -704,18 +703,24 @@ def test_no_forbidden_semantics_are_present() -> None:
 
 
 def test_prior_state_regression_remains_unchanged() -> None:
-    assert Path(outcome_contracts.outcome_module.__file__).read_text().count(
-        outcome_contracts.EXPECTED_TASK_ID
-    ) == 1
+    assert (
+        Path(outcome_contracts.outcome_module.__file__)
+        .read_text()
+        .count(outcome_contracts.EXPECTED_TASK_ID)
+        == 1
+    )
     assert (
         Path(oavail_contracts.outcome_availability_module.__file__)
         .read_text()
         .count(oavail_contracts.EXPECTED_TASK_ID)
         == 1
     )
-    assert Path(response_contracts.outcome_response_module.__file__).read_text().count(
-        response_contracts.EXPECTED_TASK_ID
-    ) == 1
+    assert (
+        Path(response_contracts.outcome_response_module.__file__)
+        .read_text()
+        .count(response_contracts.EXPECTED_TASK_ID)
+        == 1
+    )
     assert outcome_contracts.EXPECTED_DISPATCH_TO_OUTCOME_MATRIX == {
         DispatchStatus.NOT_SENT: (TransportOutcomeStatus.NOT_SENT,),
         DispatchStatus.REJECTED: (TransportOutcomeStatus.DISPATCH_REJECTED,),
@@ -837,6 +842,7 @@ def test_prior_state_regression_remains_unchanged() -> None:
     assert tuple(fixtures_module.EGRESS_SYNTHETIC_FIXTURE_IDS) == tuple(
         egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS
     )
-    assert tuple(egress_routing.__all__[: egress_routing.__all__.index("ER07D_TASK_ID")]) == (
-        response_contracts.EXPECTED_PACKAGE_EXPORTS[:-10]
+    assert (
+        tuple(egress_routing.__all__[: egress_routing.__all__.index("ER07D_TASK_ID")])
+        == (response_contracts.EXPECTED_PACKAGE_EXPORTS[:-10])
     )
