@@ -584,11 +584,14 @@ class TestPackageExports:
     "ER06C_TASK_ID",
     "TransportDispatchAuthority",
     "TransportDispatchAttemptBoundary",
+    "ER06D_TASK_ID",
+    "TransportDispatchReplayAuthority",
+    "TransportDispatchReplayBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
-            "EgressSyntheticFixture",
-        )
+    "EgressSyntheticFixture",
+)
         assert egress_routing.__all__ == expected
 
 
