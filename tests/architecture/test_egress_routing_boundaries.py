@@ -13,6 +13,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/replay.py"),
     Path("src/mayak/modules/egress_routing/reconciliation.py"),
     Path("src/mayak/modules/egress_routing/reconciliation_resolution.py"),
+    Path("src/mayak/modules/egress_routing/outcome_availability.py"),
     Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/selection.py"),
     Path("src/mayak/modules/egress_routing/fallback.py"),
@@ -347,6 +348,15 @@ OUTCOME_FORBIDDEN_IDENTIFIERS = {
     "Notification",
     "Beacon",
     "Admin",
+}
+
+OUTCOME_AVAILABILITY_MODULE_PATH = Path(
+    "src/mayak/modules/egress_routing/outcome_availability.py"
+)
+OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORTS = OUTCOME_ALLOWED_RELATIVE_IMPORTS
+OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORT_NAMES = OUTCOME_ALLOWED_RELATIVE_IMPORT_NAMES
+OUTCOME_AVAILABILITY_FORBIDDEN_IDENTIFIERS = OUTCOME_FORBIDDEN_IDENTIFIERS | {
+    "TransportOutcomeCommitmentBoundary",
 }
 
 REPLAY_MODULE_PATH = Path("src/mayak/modules/egress_routing/replay.py")
@@ -792,6 +802,34 @@ def test_outcome_module_imports_and_identifiers_are_minimal() -> None:
     assert OUTCOME_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
 
 
+def test_outcome_availability_module_imports_and_identifiers_are_minimal() -> None:
+    source = _read_source(OUTCOME_AVAILABILITY_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level > 0
+                continue
+            if node.level == 0:
+                root = node.module.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+                continue
+            assert node.module in OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORTS
+            imported_names = {alias.name for alias in node.names}
+            assert (
+                imported_names
+                == OUTCOME_AVAILABILITY_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
+            )
+
+    identifiers = _iter_identifier_names(tree)
+    assert OUTCOME_AVAILABILITY_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
+
+
 def test_replay_module_imports_and_identifiers_are_minimal() -> None:
     source = _read_source(REPLAY_MODULE_PATH)
     tree = ast.parse(source)
@@ -916,6 +954,7 @@ def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_co
         Path("src/mayak/modules/egress_routing/reconciliation.py"),
         Path("src/mayak/modules/egress_routing/reconciliation_resolution.py"),
         Path("src/mayak/modules/egress_routing/outcome.py"),
+        Path("src/mayak/modules/egress_routing/outcome_availability.py"),
     ):
         source = _read_source(relative_path)
         tree = ast.parse(source)
