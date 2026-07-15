@@ -61,6 +61,11 @@ from .lease import (  # noqa: F401
     RouteLeaseAuthority,
     RouteLeaseAuthorizationBoundary,
 )
+from .reconciliation import (  # noqa: F401
+    ER06E_TASK_ID,
+    TransportDispatchReconciliationAuthority,
+    TransportDispatchReconciliationBoundary,
+)
 from .registration import (  # noqa: F401
     ER03_TASK_ID,
     AgentRegistration,
@@ -147,6 +152,9 @@ __all__ = (
     "ER06D_TASK_ID",
     "TransportDispatchReplayAuthority",
     "TransportDispatchReplayBoundary",
+    "ER06E_TASK_ID",
+    "TransportDispatchReconciliationAuthority",
+    "TransportDispatchReconciliationBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
