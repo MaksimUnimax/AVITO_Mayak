@@ -1,11 +1,14 @@
 """Notification Delivery module package."""
 
+# ruff: noqa: E501
+
 from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 
 from . import attempt as _attempt
 from . import deduplication as _deduplication
 from . import delivery_plan as _delivery_plan
 from . import eligibility as _eligibility
+from . import external_recovery as _external_recovery
 from . import no_new_status as _no_new_status
 from . import outbox as _outbox
 from . import source_intake as _source_intake
@@ -89,6 +92,21 @@ NotificationNoNewStatusPolicyContext = _no_new_status.NotificationNoNewStatusPol
 NotificationNoNewStatusPolicyDecision = _no_new_status.NotificationNoNewStatusPolicyDecision
 evaluate_no_new_status_policy = _no_new_status.evaluate_no_new_status_policy
 
+ND09_TASK_ID = _external_recovery.ND09_TASK_ID
+NotificationExternalRecoveryAuthority = _external_recovery.NotificationExternalRecoveryAuthority
+NotificationExternalRecoveryEffectClass = _external_recovery.NotificationExternalRecoveryEffectClass
+NotificationExternalProblemGateStatus = _external_recovery.NotificationExternalProblemGateStatus
+NotificationExternalRecoveryDecisionStatus = (
+    _external_recovery.NotificationExternalRecoveryDecisionStatus
+)
+NotificationExternalRecoveryPolicyContext = (
+    _external_recovery.NotificationExternalRecoveryPolicyContext
+)
+NotificationExternalRecoveryPolicyDecision = (
+    _external_recovery.NotificationExternalRecoveryPolicyDecision
+)
+evaluate_external_recovery_policy = _external_recovery.evaluate_external_recovery_policy
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -157,4 +175,12 @@ __all__ = (
     "NotificationNoNewStatusPolicyContext",
     "NotificationNoNewStatusPolicyDecision",
     "evaluate_no_new_status_policy",
+    "ND09_TASK_ID",
+    "NotificationExternalRecoveryAuthority",
+    "NotificationExternalRecoveryEffectClass",
+    "NotificationExternalProblemGateStatus",
+    "NotificationExternalRecoveryDecisionStatus",
+    "NotificationExternalRecoveryPolicyContext",
+    "NotificationExternalRecoveryPolicyDecision",
+    "evaluate_external_recovery_policy",
 )

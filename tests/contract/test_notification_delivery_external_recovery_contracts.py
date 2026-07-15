@@ -6,31 +6,27 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, cast, get_type_hints
 
-import mayak.modules.notification_delivery.no_new_status as notification_delivery_no_new_status
 from mayak.modules import notification_delivery
-from mayak.modules.notification_delivery.delivery_plan import NotificationDeliveryPlanDecision
-from mayak.modules.notification_delivery.eligibility import NotificationEligibilityDecision
-from mayak.modules.notification_delivery.no_new_status import (
-    ND08_TASK_ID,
-    NotificationNoNewMinimumFrequencyGateStatus,
-    NotificationNoNewStatusAuthority,
-    NotificationNoNewStatusDecisionStatus,
-    NotificationNoNewStatusPolicyContext,
-    NotificationNoNewStatusPolicyDecision,
-    evaluate_no_new_status_policy,
+from mayak.modules.notification_delivery import (
+    external_recovery as notification_delivery_external_recovery,
 )
+from mayak.modules.notification_delivery.deduplication import NotificationDeduplicationDecision
+from mayak.modules.notification_delivery.delivery_plan import NotificationDeliveryPlanDecision
+
+EXPECTED_TASK_ID = "ND-09-EXTERNAL-RECOVERY-POLICY-SEMANTICS-20260716-015"
 
 EXPECTED_MODULE_EXPORTS = (
-    "ND08_TASK_ID",
-    "NotificationNoNewStatusAuthority",
-    "NotificationNoNewMinimumFrequencyGateStatus",
-    "NotificationNoNewStatusDecisionStatus",
-    "NotificationNoNewStatusPolicyContext",
-    "NotificationNoNewStatusPolicyDecision",
-    "evaluate_no_new_status_policy",
+    "ND09_TASK_ID",
+    "NotificationExternalRecoveryAuthority",
+    "NotificationExternalRecoveryEffectClass",
+    "NotificationExternalProblemGateStatus",
+    "NotificationExternalRecoveryDecisionStatus",
+    "NotificationExternalRecoveryPolicyContext",
+    "NotificationExternalRecoveryPolicyDecision",
+    "evaluate_external_recovery_policy",
 )
 
-EXPECTED_PACKAGE_EXPORTS = (
+EXPECTED_PACKAGE_PREFIX = (
     "MODULE_ID",
     "ND02_TASK_ID",
     "NotificationSourceProducer",
@@ -101,48 +97,64 @@ EXPECTED_PACKAGE_EXPORTS = (
 )
 
 EXPECTED_ENUM_VALUES: dict[type[Enum], tuple[str, ...]] = {
-    NotificationNoNewStatusAuthority: ("NOTIFICATION_DELIVERY_SERVER",),
-    NotificationNoNewMinimumFrequencyGateStatus: (
+    notification_delivery_external_recovery.NotificationExternalRecoveryAuthority: (
+        "NOTIFICATION_DELIVERY_SERVER",
+    ),
+    notification_delivery_external_recovery.NotificationExternalRecoveryEffectClass: (
+        "AVITO_UNAVAILABLE_CONTINUING_SCAN",
+        "RECOVERY_RESULT_WITH_NEW_LISTINGS",
+        "RECOVERY_RESULT_NO_NEW_LISTINGS",
+        "RECOVERY_RESULT_LOST_ANCHORS_RESTORED",
+        "RECOVERY_BLOCKED_OR_AMBIGUOUS",
+    ),
+    notification_delivery_external_recovery.NotificationExternalProblemGateStatus: (
         "NOT_APPLICABLE",
-        "NO_PRIOR_NOTIFICATION",
-        "MINIMUM_FREQUENCY_ELAPSED",
-        "MINIMUM_FREQUENCY_NOT_ELAPSED",
+        "PROBLEM_BEGAN",
+        "MATERIAL_CHANGE",
+        "SAME_PROBLEM_UNCHANGED",
         "AMBIGUOUS",
     ),
-    NotificationNoNewStatusDecisionStatus: (
-        "PUSH_STATUS_ELIGIBLE",
-        "READ_MODEL_ONLY_PREFERENCE_DISABLED",
-        "READ_MODEL_ONLY_FREQUENCY_BELOW_MINIMUM",
-        "READ_MODEL_ONLY_MINIMUM_FREQUENCY_NOT_ELAPSED",
+    notification_delivery_external_recovery.NotificationExternalRecoveryDecisionStatus: (
+        "PUSH_WORK_ELIGIBLE",
+        "READ_MODEL_ONLY_SAME_PROBLEM",
+        "READ_MODEL_ONLY_REPLAY_TERMINAL",
+        "READ_MODEL_ONLY_REPLAY_PENDING",
         "READ_MODEL_ONLY_NO_ELIGIBLE_PUSH_CHANNEL",
+        "RECONCILIATION_REQUIRED",
         "BLOCKED_ELIGIBILITY",
-        "BLOCKED_MINIMUM_FREQUENCY_AMBIGUOUS",
+        "BLOCKED_PROBLEM_GATE_AMBIGUOUS",
+        "BLOCKED_IDEMPOTENCY",
         "BLOCKED_CHANNEL_PLAN",
+        "BLOCKED_RECOVERY_ALREADY_CONSUMED",
     ),
 }
 
 EXPECTED_DATACLASS_FIELDS: dict[type[object], tuple[str, ...]] = {
-    NotificationNoNewStatusPolicyContext: (
+    notification_delivery_external_recovery.NotificationExternalRecoveryPolicyContext: (
         "account_id",
         "beacon_id",
-        "last_successful_scan_reference_id",
-        "no_new_status_fact_reference_id",
-        "configured_scan_interval_reference_id",
-        "status_preference_enabled",
-        "configured_status_frequency_minutes",
-        "last_no_new_status_notification_reference_id",
-        "minimum_frequency_gate_status",
+        "source_fact_reference_id",
+        "external_problem_reference_id",
+        "material_change_reference_id",
+        "problem_gate_status",
+        "recovery_obligation_reference_id",
+        "recovery_result_already_consumed",
         "evidence_reference_ids",
     ),
-    NotificationNoNewStatusPolicyDecision: (
+    notification_delivery_external_recovery.NotificationExternalRecoveryPolicyDecision: (
         "decision_id",
         "authority",
         "eligibility_decision",
+        "deduplication_decision",
         "delivery_plan_decision",
         "context",
+        "effect_class",
         "status",
         "status_read_model_eligible",
-        "push_status_work_eligible",
+        "push_work_eligible",
+        "replayed",
+        "reconciliation_required",
+        "recovery_grace_applied",
         "delivery_attempt_authorized",
         "provider_mapping_authorized",
         "reason_codes",
@@ -151,27 +163,39 @@ EXPECTED_DATACLASS_FIELDS: dict[type[object], tuple[str, ...]] = {
 }
 
 EXPECTED_FIELD_TYPES: dict[type[object], dict[str, object]] = {
-    NotificationNoNewStatusPolicyContext: {
+    notification_delivery_external_recovery.NotificationExternalRecoveryPolicyContext: {
         "account_id": str,
         "beacon_id": str,
-        "last_successful_scan_reference_id": str,
-        "no_new_status_fact_reference_id": str,
-        "configured_scan_interval_reference_id": str,
-        "status_preference_enabled": bool,
-        "configured_status_frequency_minutes": int | None,
-        "last_no_new_status_notification_reference_id": str | None,
-        "minimum_frequency_gate_status": NotificationNoNewMinimumFrequencyGateStatus,
+        "source_fact_reference_id": str,
+        "external_problem_reference_id": str,
+        "material_change_reference_id": str | None,
+        "problem_gate_status": (
+            notification_delivery_external_recovery.NotificationExternalProblemGateStatus
+        ),
+        "recovery_obligation_reference_id": str | None,
+        "recovery_result_already_consumed": bool,
         "evidence_reference_ids": tuple[str, ...],
     },
-    NotificationNoNewStatusPolicyDecision: {
+    notification_delivery_external_recovery.NotificationExternalRecoveryPolicyDecision: {
         "decision_id": str,
-        "authority": NotificationNoNewStatusAuthority,
-        "eligibility_decision": NotificationEligibilityDecision,
+        "authority": notification_delivery_external_recovery.NotificationExternalRecoveryAuthority,
+        "eligibility_decision": notification_delivery.NotificationEligibilityDecision,
+        "deduplication_decision": NotificationDeduplicationDecision | None,
         "delivery_plan_decision": NotificationDeliveryPlanDecision | None,
-        "context": NotificationNoNewStatusPolicyContext,
-        "status": NotificationNoNewStatusDecisionStatus,
+        "context": (
+            notification_delivery_external_recovery.NotificationExternalRecoveryPolicyContext
+        ),
+        "effect_class": (
+            notification_delivery_external_recovery.NotificationExternalRecoveryEffectClass
+        ),
+        "status": (
+            notification_delivery_external_recovery.NotificationExternalRecoveryDecisionStatus
+        ),
         "status_read_model_eligible": bool,
-        "push_status_work_eligible": bool,
+        "push_work_eligible": bool,
+        "replayed": bool,
+        "reconciliation_required": bool,
+        "recovery_grace_applied": bool,
         "delivery_attempt_authorized": bool,
         "provider_mapping_authorized": bool,
         "reason_codes": tuple[str, ...],
@@ -191,45 +215,28 @@ def _enum_names(enum_type: type[Enum]) -> tuple[str, ...]:
 
 
 def test_task_id_constant_and_package_exports_are_exact() -> None:
-    assert ND08_TASK_ID == "ND-08-NO-NEW-STATUS-POLICY-SEMANTICS-20260716-012"
-    assert type(notification_delivery_no_new_status.__all__) is tuple
-    assert notification_delivery_no_new_status.__all__ == EXPECTED_MODULE_EXPORTS
+    assert notification_delivery_external_recovery.ND09_TASK_ID == EXPECTED_TASK_ID
+    assert type(notification_delivery_external_recovery.__all__) is tuple
+    assert notification_delivery_external_recovery.__all__ == EXPECTED_MODULE_EXPORTS
     assert type(notification_delivery.__all__) is tuple
+    assert notification_delivery.__all__[: len(EXPECTED_PACKAGE_PREFIX)] == EXPECTED_PACKAGE_PREFIX
     assert (
-        notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
+        notification_delivery.__all__[
+            len(EXPECTED_PACKAGE_PREFIX) : len(EXPECTED_PACKAGE_PREFIX)
+            + len(EXPECTED_MODULE_EXPORTS)
+        ]
+        == EXPECTED_MODULE_EXPORTS
     )
-    assert len(notification_delivery_no_new_status.__all__) == len(
-        set(notification_delivery_no_new_status.__all__)
+    assert len(notification_delivery_external_recovery.__all__) == len(
+        set(notification_delivery_external_recovery.__all__)
     )
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
-    assert notification_delivery_no_new_status.ND08_TASK_ID is ND08_TASK_ID
-    assert notification_delivery.ND08_TASK_ID is ND08_TASK_ID
     assert (
-        notification_delivery_no_new_status.NotificationNoNewStatusAuthority
-        is NotificationNoNewStatusAuthority
+        notification_delivery_external_recovery.ND09_TASK_ID is notification_delivery.ND09_TASK_ID
     )
-    assert (
-        notification_delivery_no_new_status.NotificationNoNewMinimumFrequencyGateStatus
-        is NotificationNoNewMinimumFrequencyGateStatus
-    )
-    assert (
-        notification_delivery_no_new_status.NotificationNoNewStatusDecisionStatus
-        is NotificationNoNewStatusDecisionStatus
-    )
-    assert (
-        notification_delivery_no_new_status.NotificationNoNewStatusPolicyContext
-        is NotificationNoNewStatusPolicyContext
-    )
-    assert (
-        notification_delivery_no_new_status.NotificationNoNewStatusPolicyDecision
-        is NotificationNoNewStatusPolicyDecision
-    )
-    assert (
-        notification_delivery_no_new_status.evaluate_no_new_status_policy
-        is evaluate_no_new_status_policy
-    )
-    assert notification_delivery._no_new_status is notification_delivery_no_new_status
-    assert "__getattr__" not in notification_delivery_no_new_status.__dict__
+    assert notification_delivery_external_recovery is notification_delivery._external_recovery
+    assert notification_delivery._external_recovery is notification_delivery_external_recovery
+    assert "__getattr__" not in notification_delivery_external_recovery.__dict__
     assert "__getattr__" not in notification_delivery.__dict__
 
 
@@ -255,10 +262,13 @@ def test_dataclass_field_types_are_exact() -> None:
 
 
 def test_public_function_signature_is_exact() -> None:
-    signature = inspect.signature(evaluate_no_new_status_policy)
+    signature = inspect.signature(
+        notification_delivery_external_recovery.evaluate_external_recovery_policy
+    )
     assert tuple(signature.parameters) == (
         "decision_id",
         "eligibility_decision",
+        "deduplication_decision",
         "delivery_plan_decision",
         "context",
         "evidence_reference_ids",
@@ -271,16 +281,28 @@ def test_public_function_signature_is_exact() -> None:
 
 def test_import_star_and_package_identity_bindings_are_exact() -> None:
     namespace: dict[str, object] = {}
-    exec("from mayak.modules.notification_delivery.no_new_status import *", namespace)
+    exec("from mayak.modules.notification_delivery.external_recovery import *", namespace)
     for name in EXPECTED_MODULE_EXPORTS:
-        assert namespace[name] is getattr(notification_delivery_no_new_status, name)
+        assert namespace[name] is getattr(notification_delivery_external_recovery, name)
 
     package_namespace: dict[str, object] = {}
     exec("from mayak.modules.notification_delivery import *", package_namespace)
-    for name in EXPECTED_PACKAGE_EXPORTS:
+    for name in EXPECTED_PACKAGE_PREFIX + EXPECTED_MODULE_EXPORTS:
         assert package_namespace[name] is getattr(notification_delivery, name)
 
 
 def test_production_source_contains_task_id_exactly_once() -> None:
-    source = Path("src/mayak/modules/notification_delivery/no_new_status.py").read_text()
-    assert source.count(ND08_TASK_ID) == 1
+    source = Path("src/mayak/modules/notification_delivery/external_recovery.py").read_text()
+    assert source.count(EXPECTED_TASK_ID) == 1
+
+
+def test_package_exports_remain_append_friendly_after_nd09() -> None:
+    assert notification_delivery.__all__[: len(EXPECTED_PACKAGE_PREFIX)] == EXPECTED_PACKAGE_PREFIX
+    assert (
+        notification_delivery.__all__[
+            len(EXPECTED_PACKAGE_PREFIX) : len(EXPECTED_PACKAGE_PREFIX)
+            + len(EXPECTED_MODULE_EXPORTS)
+        ]
+        == EXPECTED_MODULE_EXPORTS
+    )
+    assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))

@@ -254,6 +254,95 @@ NO_NEW_STATUS_FORBIDDEN_FIELD_NAMES = {
     "archive",
 }
 
+EXTERNAL_RECOVERY_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "delivery_plan",
+    "deduplication",
+    "eligibility",
+    "enum",
+    "source_intake",
+}
+
+EXTERNAL_RECOVERY_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "network",
+    "runtime",
+    "database",
+    "repository",
+    "scheduler",
+    "clock",
+    "timestamp",
+    "webhook",
+    "mini_app",
+    "provider_sdk",
+    "telegram",
+    "max",
+    "token",
+    "secret",
+    "credential",
+    "cookie",
+    "retention",
+    "deletion",
+    "archive",
+    "read_tracking",
+    "click_tracking",
+}
+
+EXTERNAL_RECOVERY_FORBIDDEN_FIELD_NAMES = {
+    "created_at",
+    "updated_at",
+    "deadline",
+    "expiry",
+    "clock",
+    "timestamp",
+    "scheduler",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "repository",
+    "store",
+    "database",
+    "orm",
+    "migration",
+    "schema",
+    "provider_payload",
+    "raw_payload",
+    "body",
+    "html",
+    "json",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "message_template",
+    "template",
+    "quiet_hours",
+    "digest",
+    "read_tracking",
+    "click_tracking",
+    "retention",
+    "deletion",
+    "archive",
+}
+
 ELIGIBILITY_ALLOWED_IMPORT_ROOTS = {
     "__future__",
     "dataclasses",
@@ -718,6 +807,116 @@ def _assert_no_new_status_ast_boundary(source: str, module_path: Path) -> None:
 def test_no_new_status_ast_payload_boundary() -> None:
     source_path = Path("src/mayak/modules/notification_delivery/no_new_status.py")
     _assert_no_new_status_ast_boundary(source_path.read_text(), source_path)
+
+
+def _assert_external_recovery_ast_boundary(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    parents = _build_parent_map(tree)
+    payload_attributes: list[ast.Attribute] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in {"getattr", "setattr", "hasattr"}:
+                raise AssertionError(f"{module_path}: reflection call not allowed: {node.func.id}")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            lowered = node.value.lower()
+            for token in {"payload", "raw_payload", "provider_payload"}:
+                if token in lowered:
+                    raise AssertionError(
+                        f"{module_path}: string literal contains forbidden "
+                        f"payload token: {node.value!r}"
+                    )
+        elif isinstance(node, ast.Name):
+            if "payload" in node.id.lower():
+                raise AssertionError(
+                    f"{module_path}: runtime name contains forbidden payload token: {node.id}"
+                )
+        elif isinstance(node, ast.Attribute):
+            if "payload" in node.attr.lower():
+                payload_attributes.append(node)
+
+    assert len(payload_attributes) == 1, (
+        f"{module_path}: expected exactly one payload attribute access, "
+        f"got {len(payload_attributes)}"
+    )
+
+    payload_attribute = payload_attributes[0]
+    assert payload_attribute.attr == "contains_raw_provider_payload", (
+        f"{module_path}: unexpected payload attribute {payload_attribute.attr}"
+    )
+    assert isinstance(payload_attribute.value, ast.Name), (
+        f"{module_path}: payload attribute must read from source_event"
+    )
+    assert payload_attribute.value.id == "source_event", (
+        f"{module_path}: payload attribute must read from source_event"
+    )
+    assert isinstance(payload_attribute.ctx, ast.Load), (
+        f"{module_path}: payload attribute must be loaded, not stored"
+    )
+
+    compare = parents.get(payload_attribute)
+    assert isinstance(compare, ast.Compare), (
+        f"{module_path}: payload attribute must be used in an is-not-False comparison"
+    )
+    assert compare.left is payload_attribute, (
+        f"{module_path}: payload attribute must be the left side of the comparison"
+    )
+    assert len(compare.ops) == 1 and isinstance(compare.ops[0], ast.IsNot), (
+        f"{module_path}: payload attribute must be compared using is not False"
+    )
+    assert len(compare.comparators) == 1, (
+        f"{module_path}: payload attribute comparison must have one comparator"
+    )
+    comparator = compare.comparators[0]
+    assert isinstance(comparator, ast.Constant) and comparator.value is False, (
+        f"{module_path}: payload attribute must be compared against False"
+    )
+
+    if_node = parents.get(compare)
+    assert isinstance(if_node, ast.If) and if_node.test is compare, (
+        f"{module_path}: payload attribute comparison must be used as an if gate"
+    )
+
+    function_node = _enclosing_function(payload_attribute, parents)
+    assert function_node is not None and function_node.name == "_validate_source_provenance", (
+        f"{module_path}: payload attribute must live inside _validate_source_provenance"
+    )
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            node_name = node.id.lower()
+        elif isinstance(node, ast.Attribute):
+            node_name = node.attr.lower()
+        else:
+            continue
+
+        if "payload" in node_name:
+            if node is payload_attribute:
+                continue
+            raise AssertionError(f"{module_path}: unexpected payload-bearing AST node")
+
+
+def test_external_recovery_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/external_recovery.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= EXTERNAL_RECOVERY_ALLOWED_IMPORT_ROOTS
+    assert roots.isdisjoint(FORBIDDEN_IMPORT_ROOTS)
+
+
+def test_external_recovery_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/external_recovery.py")
+    source = source_path.read_text().lower()
+    for token in EXTERNAL_RECOVERY_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(EXTERNAL_RECOVERY_FORBIDDEN_FIELD_NAMES)
+
+
+def test_external_recovery_ast_payload_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/external_recovery.py")
+    _assert_external_recovery_ast_boundary(source_path.read_text(), source_path)
 
 
 def test_notification_delivery_source_intake_stays_within_allowed_import_boundary() -> None:
