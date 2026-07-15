@@ -187,9 +187,6 @@ NO_NEW_STATUS_FORBIDDEN_SOURCE_TOKENS = {
     "provider_sdk",
     "webhook",
     "mini_app",
-    "payload",
-    "raw_payload",
-    "provider_payload",
     "body",
     "html",
     "json",
@@ -611,6 +608,116 @@ def _field_names(source: str) -> set[str]:
                 if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
                     names.add(statement.target.id)
     return names
+
+
+def _build_parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+    parents: dict[ast.AST, ast.AST] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parents[child] = parent
+    return parents
+
+
+def _enclosing_function(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> ast.FunctionDef | None:
+    current = parents.get(node)
+    while current is not None:
+        if isinstance(current, ast.FunctionDef):
+            return current
+        current = parents.get(current)
+    return None
+
+
+def _assert_no_new_status_ast_boundary(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    parents = _build_parent_map(tree)
+    payload_attributes: list[ast.Attribute] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in {"getattr", "setattr", "hasattr"}:
+                raise AssertionError(f"{module_path}: reflection call not allowed: {node.func.id}")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            lowered = node.value.lower()
+            for token in {"payload", "raw_payload", "provider_payload"}:
+                if token in lowered:
+                    message = (
+                        f"{module_path}: string literal contains forbidden payload token: "
+                        f"{node.value!r}"
+                    )
+                    raise AssertionError(message)
+        elif isinstance(node, ast.Name):
+            if "payload" in node.id.lower():
+                raise AssertionError(
+                    f"{module_path}: runtime name contains forbidden payload token: {node.id}"
+                )
+        elif isinstance(node, ast.Attribute):
+            if "payload" in node.attr.lower():
+                payload_attributes.append(node)
+
+    assert len(payload_attributes) == 1, (
+        f"{module_path}: expected exactly one payload attribute access, "
+        f"got {len(payload_attributes)}"
+    )
+
+    payload_attribute = payload_attributes[0]
+    assert payload_attribute.attr == "contains_raw_provider_payload", (
+        f"{module_path}: unexpected payload attribute {payload_attribute.attr}"
+    )
+    assert isinstance(payload_attribute.value, ast.Name), (
+        f"{module_path}: payload attribute must read from source_event"
+    )
+    assert payload_attribute.value.id == "source_event", (
+        f"{module_path}: payload attribute must read from source_event"
+    )
+    assert isinstance(payload_attribute.ctx, ast.Load), (
+        f"{module_path}: payload attribute must be loaded, not stored"
+    )
+
+    compare = parents.get(payload_attribute)
+    assert isinstance(compare, ast.Compare), (
+        f"{module_path}: payload attribute must be used in an is-not-False comparison"
+    )
+    assert compare.left is payload_attribute, (
+        f"{module_path}: payload attribute must be the left side of the comparison"
+    )
+    assert len(compare.ops) == 1 and isinstance(compare.ops[0], ast.IsNot), (
+        f"{module_path}: payload attribute must be compared using is not False"
+    )
+    assert len(compare.comparators) == 1, (
+        f"{module_path}: payload attribute comparison must have one comparator"
+    )
+    comparator = compare.comparators[0]
+    assert isinstance(comparator, ast.Constant) and comparator.value is False, (
+        f"{module_path}: payload attribute must be compared against False"
+    )
+
+    if_node = parents.get(compare)
+    assert isinstance(if_node, ast.If) and if_node.test is compare, (
+        f"{module_path}: payload attribute comparison must be used as an if gate"
+    )
+
+    function_node = _enclosing_function(payload_attribute, parents)
+    assert function_node is not None and function_node.name == "_validate_no_new_source", (
+        f"{module_path}: payload attribute must live inside _validate_no_new_source"
+    )
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            node_name = node.id.lower()
+        elif isinstance(node, ast.Attribute):
+            node_name = node.attr.lower()
+        else:
+            continue
+
+        if "payload" in node_name:
+            if node is payload_attribute:
+                continue
+            raise AssertionError(f"{module_path}: unexpected payload-bearing AST node")
+
+
+def test_no_new_status_ast_payload_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/no_new_status.py")
+    _assert_no_new_status_ast_boundary(source_path.read_text(), source_path)
 
 
 def test_notification_delivery_source_intake_stays_within_allowed_import_boundary() -> None:

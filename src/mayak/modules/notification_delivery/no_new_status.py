@@ -397,7 +397,7 @@ def _validate_no_new_source(
         raise ValueError("no-new status policy requires a committed source reference")
     if source_event.source_identity_ambiguous is not False:
         raise ValueError("no-new status policy requires an unambiguous source event")
-    if getattr(source_event, "contains_raw_" "provider_" "p" "ay" "load") is not False:
+    if source_event.contains_raw_provider_payload is not False:
         raise ValueError("no-new status policy requires a sanitized source event")
     if source_intake_decision.status is not _NotificationSourceIntakeStatus.ACCEPTED_STATUS_ONLY:
         raise ValueError("no-new status policy requires an accepted status-only intake decision")
