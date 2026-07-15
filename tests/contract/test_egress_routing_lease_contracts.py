@@ -601,17 +601,20 @@ class TestPackageExports:
             "ER06D_TASK_ID",
             "TransportDispatchReplayAuthority",
             "TransportDispatchReplayBoundary",
-            "ER06E_TASK_ID",
-            "TransportDispatchReconciliationAuthority",
-            "TransportDispatchReconciliationBoundary",
-            "ER06F_TASK_ID",
-            "TransportDispatchReconciliationResolutionAuthority",
-            "TransportDispatchReconciliationResolutionBoundary",
-            "ER02_TASK_ID",
-            "EGRESS_SYNTHETIC_FIXTURE_IDS",
-            "EGRESS_SYNTHETIC_FIXTURES",
-            "EgressSyntheticFixture",
-        )
+    "ER06E_TASK_ID",
+    "TransportDispatchReconciliationAuthority",
+    "TransportDispatchReconciliationBoundary",
+    "ER06F_TASK_ID",
+    "TransportDispatchReconciliationResolutionAuthority",
+    "TransportDispatchReconciliationResolutionBoundary",
+    "ER07A_TASK_ID",
+    "TransportOutcomeCommitmentAuthority",
+    "TransportOutcomeCommitmentBoundary",
+    "ER02_TASK_ID",
+    "EGRESS_SYNTHETIC_FIXTURE_IDS",
+    "EGRESS_SYNTHETIC_FIXTURES",
+    "EgressSyntheticFixture",
+)
         assert egress_routing.__all__ == expected
 
 

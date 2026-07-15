@@ -9,6 +9,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/__init__.py"),
     Path("src/mayak/modules/egress_routing/assignment.py"),
     Path("src/mayak/modules/egress_routing/dispatch.py"),
+    Path("src/mayak/modules/egress_routing/outcome.py"),
     Path("src/mayak/modules/egress_routing/replay.py"),
     Path("src/mayak/modules/egress_routing/reconciliation.py"),
     Path("src/mayak/modules/egress_routing/reconciliation_resolution.py"),
@@ -243,6 +244,91 @@ DISPATCH_FORBIDDEN_IDENTIFIERS = {
     "send_payload",
     "transport_outcome",
     "safe_response_reference",
+    "response_status",
+    "reconciliation_result",
+    "retry_count",
+    "retry_delay",
+    "backoff",
+    "duration",
+    "timeout_seconds",
+    "capacity",
+    "expires_at",
+    "protocol",
+    "cookie_value",
+    "session_value",
+    "credential_value",
+    "Parser",
+    "Scan",
+    "Notification",
+    "Beacon",
+    "Admin",
+}
+
+OUTCOME_MODULE_PATH = Path("src/mayak/modules/egress_routing/outcome.py")
+OUTCOME_ALLOWED_RELATIVE_IMPORTS = {
+    "contracts",
+    "dispatch",
+}
+OUTCOME_ALLOWED_RELATIVE_IMPORT_NAMES = {
+    "contracts": {
+        "DispatchStatus",
+        "RouteReconciliationStatus",
+        "TransportAssignmentOutcome",
+        "TransportOutcomeStatus",
+    },
+    "dispatch": {
+        "TransportDispatchAuthority",
+        "TransportDispatchAttemptBoundary",
+    },
+}
+OUTCOME_FORBIDDEN_IDENTIFIERS = {
+    "TransportAssignment",
+    "DispatchAttempt",
+    "TransportAssignmentCommitmentBoundary",
+    "RouteLeaseAuthorizationBoundary",
+    "TransportDispatchReplayBoundary",
+    "TransportDispatchReconciliationBoundary",
+    "TransportDispatchReconciliationResolutionBoundary",
+    "PolicyBasedFallbackBoundary",
+    "RouteRestrictionState",
+    "RouteQuarantineDecision",
+    "subprocess",
+    "socket",
+    "sqlalchemy",
+    "alembic",
+    "playwright",
+    "selenium",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "eval",
+    "exec",
+    "__import__",
+    "import_module",
+    "browser",
+    "windows",
+    "provider",
+    "proxy",
+    "vpn",
+    "tunnel",
+    "host",
+    "hostname",
+    "ip",
+    "port",
+    "account",
+    "beacon",
+    "tariff",
+    "payment",
+    "listing",
+    "notification",
+    "parser",
+    "scan",
+    "admin",
+    "response_payload",
+    "response_body",
+    "receipt_payload",
+    "send_payload",
+    "transport_outcome",
     "response_status",
     "reconciliation_result",
     "retry_count",
@@ -681,6 +767,31 @@ def test_dispatch_module_imports_and_identifiers_are_minimal() -> None:
     assert DISPATCH_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
 
 
+def test_outcome_module_imports_and_identifiers_are_minimal() -> None:
+    source = _read_source(OUTCOME_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level > 0
+                continue
+            if node.level == 0:
+                root = node.module.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+                continue
+            assert node.module in OUTCOME_ALLOWED_RELATIVE_IMPORTS
+            imported_names = {alias.name for alias in node.names}
+            assert imported_names == OUTCOME_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
+
+    identifiers = _iter_identifier_names(tree)
+    assert OUTCOME_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
+
+
 def test_replay_module_imports_and_identifiers_are_minimal() -> None:
     source = _read_source(REPLAY_MODULE_PATH)
     tree = ast.parse(source)
@@ -804,6 +915,7 @@ def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_co
         Path("src/mayak/modules/egress_routing/replay.py"),
         Path("src/mayak/modules/egress_routing/reconciliation.py"),
         Path("src/mayak/modules/egress_routing/reconciliation_resolution.py"),
+        Path("src/mayak/modules/egress_routing/outcome.py"),
     ):
         source = _read_source(relative_path)
         tree = ast.parse(source)

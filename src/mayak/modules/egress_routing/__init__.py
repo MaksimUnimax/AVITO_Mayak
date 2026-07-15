@@ -61,6 +61,11 @@ from .lease import (  # noqa: F401
     RouteLeaseAuthority,
     RouteLeaseAuthorizationBoundary,
 )
+from .outcome import (  # noqa: F401
+    ER07A_TASK_ID,
+    TransportOutcomeCommitmentAuthority,
+    TransportOutcomeCommitmentBoundary,
+)
 from .reconciliation import (  # noqa: F401
     ER06E_TASK_ID,
     TransportDispatchReconciliationAuthority,
@@ -163,6 +168,9 @@ __all__ = (
     "ER06F_TASK_ID",
     "TransportDispatchReconciliationResolutionAuthority",
     "TransportDispatchReconciliationResolutionBoundary",
+    "ER07A_TASK_ID",
+    "TransportOutcomeCommitmentAuthority",
+    "TransportOutcomeCommitmentBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
