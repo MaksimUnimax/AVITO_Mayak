@@ -41,6 +41,11 @@ from .contracts import (  # noqa: F401
     TransportAssignmentOutcome,
     TransportOutcomeStatus,
 )
+from .dispatch import (  # noqa: F401
+    ER06C_TASK_ID,
+    TransportDispatchAttemptBoundary,
+    TransportDispatchAuthority,
+)
 from .fallback import (  # noqa: F401
     ER05B_TASK_ID,
     PolicyBasedFallbackBoundary,
@@ -131,6 +136,9 @@ __all__ = (
     "ER06B_TASK_ID",
     "TransportAssignmentAuthority",
     "TransportAssignmentCommitmentBoundary",
+    "ER06C_TASK_ID",
+    "TransportDispatchAuthority",
+    "TransportDispatchAttemptBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
