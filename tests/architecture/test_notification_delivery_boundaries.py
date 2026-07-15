@@ -63,6 +63,96 @@ FORBIDDEN_FIELD_NAMES = {
     "delivery_result",
 }
 
+DEDUPLICATION_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "eligibility",
+    "mayak",
+    "source_intake",
+}
+
+DEDUPLICATION_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "datetime",
+    "time",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "network",
+    "runtime",
+    "database",
+    "repository",
+    "store",
+    "redis",
+    "ttl",
+    "clock",
+    "timestamp",
+    "window",
+    "episode",
+    "obligation",
+    "payload",
+    "raw_payload",
+    "provider_payload",
+    "adapter",
+    "webhook",
+    "mini_app",
+    "provider_sdk",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "claim",
+    "lock",
+    "migration",
+    "schema",
+    "dispatch",
+    "send(",
+    "deliver(",
+}
+
+DEDUPLICATION_FORBIDDEN_FIELD_NAMES = {
+    "created_at",
+    "updated_at",
+    "deadline",
+    "expiry",
+    "clock",
+    "timestamp",
+    "window_start",
+    "window_end",
+    "episode_id",
+    "obligation_id",
+    "retry_backoff",
+    "reconciliation_record",
+    "provider_payload",
+    "raw_payload",
+    "delivery_result",
+    "provider_result",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "database",
+    "repository",
+    "store",
+    "redis",
+    "ttl",
+}
+
 ELIGIBILITY_ALLOWED_IMPORT_ROOTS = {
     "__future__",
     "dataclasses",
@@ -506,3 +596,20 @@ def test_attempt_runtime_tokens_and_payload_fields() -> None:
 
     field_names = _field_names(source_path.read_text())
     assert field_names.isdisjoint(ATTEMPT_FORBIDDEN_FIELD_NAMES)
+
+
+def test_notification_delivery_deduplication_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/deduplication.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= DEDUPLICATION_ALLOWED_IMPORT_ROOTS
+
+
+def test_deduplication_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/deduplication.py")
+    source = source_path.read_text().lower()
+    for token in DEDUPLICATION_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(DEDUPLICATION_FORBIDDEN_FIELD_NAMES)

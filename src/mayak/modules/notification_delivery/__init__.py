@@ -3,6 +3,7 @@
 from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 
 from . import attempt as _attempt
+from . import deduplication as _deduplication
 from . import delivery_plan as _delivery_plan
 from . import eligibility as _eligibility
 from . import outbox as _outbox
@@ -67,6 +68,18 @@ NotificationProviderOutcomeAcceptanceDecision = (
 plan_notification_attempt = _attempt.plan_notification_attempt
 accept_notification_provider_outcome = _attempt.accept_notification_provider_outcome
 
+ND07_TASK_ID = _deduplication.ND07_TASK_ID
+NotificationDeduplicationAuthority = _deduplication.NotificationDeduplicationAuthority
+NotificationDeduplicationStage = _deduplication.NotificationDeduplicationStage
+NotificationDeduplicationRecordState = _deduplication.NotificationDeduplicationRecordState
+NotificationDeduplicationDecisionStatus = (
+    _deduplication.NotificationDeduplicationDecisionStatus
+)
+NotificationDeduplicationRequest = _deduplication.NotificationDeduplicationRequest
+NotificationDeduplicationRecord = _deduplication.NotificationDeduplicationRecord
+NotificationDeduplicationDecision = _deduplication.NotificationDeduplicationDecision
+evaluate_notification_deduplication = _deduplication.evaluate_notification_deduplication
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -119,4 +132,13 @@ __all__ = (
     "NotificationProviderOutcomeAcceptanceDecision",
     "plan_notification_attempt",
     "accept_notification_provider_outcome",
+    "ND07_TASK_ID",
+    "NotificationDeduplicationAuthority",
+    "NotificationDeduplicationStage",
+    "NotificationDeduplicationRecordState",
+    "NotificationDeduplicationDecisionStatus",
+    "NotificationDeduplicationRequest",
+    "NotificationDeduplicationRecord",
+    "NotificationDeduplicationDecision",
+    "evaluate_notification_deduplication",
 )

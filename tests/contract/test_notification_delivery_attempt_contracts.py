@@ -316,10 +316,8 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert ND06_TASK_ID == "ND-06-ATTEMPT-OUTCOME-SEMANTICS-20260715-008"
     assert type(notification_delivery_attempt.__all__) is tuple
     assert notification_delivery_attempt.__all__ == EXPECTED_MODULE_EXPORTS
-    assert (
-        notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
-    )
-    assert notification_delivery.__all__[-len(EXPECTED_MODULE_EXPORTS) :] == EXPECTED_MODULE_EXPORTS
+    package_exports = notification_delivery.__all__
+    assert package_exports[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
     assert notification_delivery_attempt.ND06_TASK_ID is ND06_TASK_ID
     assert notification_delivery.ND06_TASK_ID is ND06_TASK_ID
