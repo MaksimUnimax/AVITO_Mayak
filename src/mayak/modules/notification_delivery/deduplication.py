@@ -115,6 +115,8 @@ def _require_channel_scope(
     stage: "NotificationDeduplicationStage",
     channel_class: NotificationChannelClass | None,
 ) -> NotificationChannelClass | None:
+    if channel_class is not None and type(channel_class) is not NotificationChannelClass:
+        raise ValueError("channel_class must be NotificationChannelClass")
     if stage in (
         NotificationDeduplicationStage.SOURCE_INTAKE,
         NotificationDeduplicationStage.OUTBOX_CREATION,

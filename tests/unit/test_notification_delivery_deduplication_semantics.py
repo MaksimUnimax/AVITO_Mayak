@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import pytest
+from dataclasses import replace
 from typing import Any, cast
+
+import pytest
 
 from mayak.contracts.idempotency import IdempotencyDecision
 from mayak.modules.notification_delivery.deduplication import (
@@ -27,6 +29,10 @@ class _KeySubclass(PlatformIdempotencyKey):
 class _Lookalike:
     def __init__(self, value: str) -> None:
         self.value = value
+
+
+class _StringSubclass(str):
+    pass
 
 
 def _key(value: str = "key-1") -> PlatformIdempotencyKey:
@@ -632,6 +638,112 @@ def test_stage_scope_invariants_are_enforced() -> None:
     for stage, channel_class in invalid_cases:
         with pytest.raises(ValueError):
             _request(stage=stage, channel_class=channel_class)
+
+
+@pytest.mark.parametrize(
+    ("stage", "channel_class"),
+    [
+        (
+            NotificationDeduplicationStage.SOURCE_INTAKE,
+            None,
+        ),
+        (
+            NotificationDeduplicationStage.OUTBOX_CREATION,
+            None,
+        ),
+        (
+            NotificationDeduplicationStage.ATTEMPT_CREATION,
+            NotificationChannelClass.TELEGRAM,
+        ),
+        (
+            NotificationDeduplicationStage.PROVIDER_OUTCOME_RECORDING,
+            NotificationChannelClass.MAX,
+        ),
+    ],
+)
+def test_exact_channel_class_members_and_generic_none_are_accepted(
+    *,
+    stage: NotificationDeduplicationStage,
+    channel_class: NotificationChannelClass | None,
+) -> None:
+    request = _request(stage=stage, channel_class=channel_class)
+
+    assert request.stage is stage
+    assert request.channel_class is channel_class
+
+
+@pytest.mark.parametrize(
+    ("stage", "channel_class"),
+    [
+        (
+            NotificationDeduplicationStage.ATTEMPT_CREATION,
+            cast(Any, "TELEGRAM"),
+        ),
+        (
+            NotificationDeduplicationStage.PROVIDER_OUTCOME_RECORDING,
+            cast(Any, "MAX"),
+        ),
+        (
+            NotificationDeduplicationStage.ATTEMPT_CREATION,
+            cast(Any, _StringSubclass("TELEGRAM")),
+        ),
+        (
+            NotificationDeduplicationStage.PROVIDER_OUTCOME_RECORDING,
+            cast(Any, _Lookalike("MAX")),
+        ),
+    ],
+)
+def test_request_rejects_non_exact_channel_class_values(
+    *,
+    stage: NotificationDeduplicationStage,
+    channel_class: Any,
+) -> None:
+    with pytest.raises(ValueError):
+        _request(stage=stage, channel_class=channel_class)
+
+
+@pytest.mark.parametrize(
+    ("channel_class", "record_state"),
+    [
+        (
+            cast(Any, "TELEGRAM"),
+            NotificationDeduplicationRecordState.TERMINAL,
+        ),
+        (
+            cast(Any, "MAX"),
+            NotificationDeduplicationRecordState.PENDING,
+        ),
+        (
+            cast(Any, _StringSubclass("TELEGRAM")),
+            NotificationDeduplicationRecordState.TERMINAL,
+        ),
+        (
+            cast(Any, _Lookalike("MAX")),
+            NotificationDeduplicationRecordState.AMBIGUOUS,
+        ),
+    ],
+)
+def test_record_rejects_non_exact_channel_class_values(
+    *,
+    channel_class: Any,
+    record_state: NotificationDeduplicationRecordState,
+) -> None:
+    request = _request(
+        stage=NotificationDeduplicationStage.ATTEMPT_CREATION,
+        source_family=NotificationSourceFamily.NO_NEW_LISTINGS_STATUS,
+        channel_class=NotificationChannelClass.TELEGRAM,
+        semantic_effect_reference_id="semantic-effect-record-gate",
+        proposed_record_state=record_state,
+        proposed_result_reference_id="result-record-gate",
+    )
+    record = _record(
+        request,
+        record_state=record_state,
+        protected_result_reference_id="protected-record-gate",
+    )
+
+    with pytest.raises(ValueError):
+        replace(record, channel_class=channel_class)
 
 
 def test_exact_platform_idempotency_types_are_required() -> None:
