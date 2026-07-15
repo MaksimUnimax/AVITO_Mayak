@@ -15,6 +15,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/reconciliation_resolution.py"),
     Path("src/mayak/modules/egress_routing/outcome_availability.py"),
     Path("src/mayak/modules/egress_routing/outcome_response.py"),
+    Path("src/mayak/modules/egress_routing/outcome_response_failure.py"),
     Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/selection.py"),
     Path("src/mayak/modules/egress_routing/fallback.py"),
@@ -67,6 +68,7 @@ FORBIDDEN_RUNTIME_IDENTIFIERS = {
     "captcha_service",
     "captcha_token",
     "bypass_captcha",
+    "captcha_bypass",
     "anti_captcha",
     "browser_launch",
     "webdriver",
@@ -414,6 +416,69 @@ OUTCOME_RESPONSE_FORBIDDEN_IDENTIFIERS = (
     "fallback",
     "second_attempt",
     "retry_attempt",
+}
+
+OUTCOME_RESPONSE_FAILURE_MODULE_PATH = Path(
+    "src/mayak/modules/egress_routing/outcome_response_failure.py"
+)
+OUTCOME_RESPONSE_FAILURE_ALLOWED_RELATIVE_IMPORTS = {
+    "assignment",
+    "contracts",
+    "dispatch",
+}
+OUTCOME_RESPONSE_FAILURE_ALLOWED_RELATIVE_IMPORT_NAMES = {
+    "assignment": {
+        "TransportAssignmentCommitmentBoundary",
+    },
+    "contracts": {
+        "DispatchAttempt",
+        "DispatchStatus",
+        "RouteReconciliationStatus",
+        "TransportAssignment",
+        "TransportAssignmentOutcome",
+        "TransportOutcomeStatus",
+    },
+    "dispatch": {
+        "TransportDispatchAttemptBoundary",
+        "TransportDispatchAuthority",
+    },
+}
+OUTCOME_RESPONSE_FAILURE_FORBIDDEN_IDENTIFIERS = (
+    OUTCOME_FORBIDDEN_IDENTIFIERS
+    - {
+        "DispatchAttempt",
+        "TransportAssignment",
+        "TransportAssignmentCommitmentBoundary",
+    }
+) | {
+    "RouteLeaseAuthorizationBoundary",
+    "TransportDispatchReplayBoundary",
+    "TransportDispatchReconciliationBoundary",
+    "TransportDispatchReconciliationResolutionBoundary",
+    "PolicyBasedFallbackBoundary",
+    "TransportOutcomeCommitmentBoundary",
+    "TransportAvailabilityOutcomeBoundary",
+    "TransportResponsePresenceOutcomeBoundary",
+    "ParserAttemptOutcome",
+    "ParserOutcomeStatus",
+    "ResponseCompletenessStatus",
+    "ResponseRestrictionSignal",
+    "ProviderResponseEvidenceClass",
+    "RouteRestrictionState",
+    "RouteQuarantineDecision",
+    "content",
+    "listing",
+    "anchor",
+    "baseline",
+    "health",
+    "quarantine",
+    "fallback",
+    "second_attempt",
+    "retry_attempt",
+    "retry",
+    "backoff",
+    "captcha_solver",
+    "captcha_bypass",
 }
 
 REPLAY_MODULE_PATH = Path("src/mayak/modules/egress_routing/replay.py")
@@ -910,6 +975,34 @@ def test_outcome_response_module_imports_and_identifiers_are_minimal() -> None:
 
     identifiers = _iter_identifier_names(tree)
     assert OUTCOME_RESPONSE_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
+
+
+def test_outcome_response_failure_module_imports_and_identifiers_are_minimal() -> None:
+    source = _read_source(OUTCOME_RESPONSE_FAILURE_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level > 0
+                continue
+            if node.level == 0:
+                root = node.module.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+                continue
+            assert node.module in OUTCOME_RESPONSE_FAILURE_ALLOWED_RELATIVE_IMPORTS
+            imported_names = {alias.name for alias in node.names}
+            assert (
+                imported_names
+                == OUTCOME_RESPONSE_FAILURE_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
+            )
+
+    identifiers = _iter_identifier_names(tree)
+    assert OUTCOME_RESPONSE_FAILURE_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
 
 
 def test_replay_module_imports_and_identifiers_are_minimal() -> None:

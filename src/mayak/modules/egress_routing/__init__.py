@@ -76,6 +76,11 @@ from .outcome_response import (  # noqa: F401
     TransportResponsePresenceOutcomeAuthority,
     TransportResponsePresenceOutcomeBoundary,
 )
+from .outcome_response_failure import (  # noqa: F401
+    ER07D_TASK_ID,
+    TransportResponseFailureOutcomeAuthority,
+    TransportResponseFailureOutcomeBoundary,
+)
 from .reconciliation import (  # noqa: F401
     ER06E_TASK_ID,
     TransportDispatchReconciliationAuthority,
@@ -187,6 +192,9 @@ __all__ = (
     "ER07C_TASK_ID",
     "TransportResponsePresenceOutcomeAuthority",
     "TransportResponsePresenceOutcomeBoundary",
+    "ER07D_TASK_ID",
+    "TransportResponseFailureOutcomeAuthority",
+    "TransportResponseFailureOutcomeBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
