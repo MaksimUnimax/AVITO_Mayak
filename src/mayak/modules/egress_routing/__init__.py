@@ -46,6 +46,11 @@ from .fixtures import (  # noqa: F401
     ER02_TASK_ID,
     EgressSyntheticFixture,
 )
+from .lease import (  # noqa: F401
+    ER06A_TASK_ID,
+    RouteLeaseAuthority,
+    RouteLeaseAuthorizationBoundary,
+)
 from .registration import (  # noqa: F401
     ER03_TASK_ID,
     AgentRegistration,
@@ -115,6 +120,9 @@ __all__ = (
     "ServerRouteSelectionBoundary",
     "ER05B_TASK_ID",
     "PolicyBasedFallbackBoundary",
+    "ER06A_TASK_ID",
+    "RouteLeaseAuthority",
+    "RouteLeaseAuthorizationBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
