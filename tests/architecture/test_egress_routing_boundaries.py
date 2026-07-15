@@ -951,14 +951,14 @@ def test_assignment_module_imports_and_identifiers_are_minimal() -> None:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root = alias.name.split(".", 1)[0]
-                assert root in {"__future__", "dataclasses", "enum", "typing"}
+                assert root in {"__future__", "dataclasses", "enum"}
         elif isinstance(node, ast.ImportFrom):
             if node.module is None:
                 assert node.level > 0
                 continue
             if node.level == 0:
                 root = node.module.split(".", 1)[0]
-                assert root in {"__future__", "dataclasses", "enum", "typing"}
+                assert root in {"__future__", "dataclasses", "enum"}
                 continue
             assert node.module in ASSIGNMENT_ALLOWED_RELATIVE_IMPORTS
             imported_names = {alias.name for alias in node.names}
@@ -976,14 +976,14 @@ def test_dispatch_module_imports_and_identifiers_are_minimal() -> None:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root = alias.name.split(".", 1)[0]
-                assert root in {"__future__", "dataclasses", "enum", "typing"}
+                assert root in {"__future__", "dataclasses", "enum"}
         elif isinstance(node, ast.ImportFrom):
             if node.module is None:
                 assert node.level > 0
                 continue
             if node.level == 0:
                 root = node.module.split(".", 1)[0]
-                assert root in {"__future__", "dataclasses", "enum", "typing"}
+                assert root in {"__future__", "dataclasses", "enum"}
                 continue
             assert node.module in DISPATCH_ALLOWED_RELATIVE_IMPORTS
             imported_names = {alias.name for alias in node.names}
