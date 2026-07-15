@@ -2,6 +2,11 @@
 
 from mayak.platform.boundaries import EGRESS_ROUTING_MODULE_ID
 
+from .assignment import (  # noqa: F401
+    ER06B_TASK_ID,
+    TransportAssignmentAuthority,
+    TransportAssignmentCommitmentBoundary,
+)
 from .contracts import (  # noqa: F401
     AgentLifecycleStatus,
     DiagnosticEvidenceKind,
@@ -123,6 +128,9 @@ __all__ = (
     "ER06A_TASK_ID",
     "RouteLeaseAuthority",
     "RouteLeaseAuthorizationBoundary",
+    "ER06B_TASK_ID",
+    "TransportAssignmentAuthority",
+    "TransportAssignmentCommitmentBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",

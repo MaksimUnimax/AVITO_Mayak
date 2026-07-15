@@ -7,6 +7,7 @@ from pathlib import Path
 
 MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/__init__.py"),
+    Path("src/mayak/modules/egress_routing/assignment.py"),
     Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/selection.py"),
     Path("src/mayak/modules/egress_routing/fallback.py"),
@@ -119,6 +120,63 @@ FORBIDDEN_STRING_VALUES = {
     "localhost",
     "127.0.0.1",
     "0.0.0.0",
+}
+
+ASSIGNMENT_MODULE_PATH = Path("src/mayak/modules/egress_routing/assignment.py")
+ASSIGNMENT_ALLOWED_RELATIVE_IMPORTS = {
+    "contracts",
+    "lease",
+}
+ASSIGNMENT_ALLOWED_RELATIVE_IMPORT_NAMES = {
+    "contracts": {
+        "RouteLeaseStatus",
+        "RouteReconciliationStatus",
+        "RouteRestrictionStatus",
+        "TransportAssignment",
+    },
+    "lease": {
+        "RouteLeaseAuthority",
+        "RouteLeaseAuthorizationBoundary",
+    },
+}
+ASSIGNMENT_FORBIDDEN_IDENTIFIERS = {
+    "DispatchAttempt",
+    "DispatchStatus",
+    "TransportAssignmentOutcome",
+    "TransportOutcomeStatus",
+    "PolicyBasedFallbackBoundary",
+    "subprocess",
+    "socket",
+    "sqlalchemy",
+    "alembic",
+    "playwright",
+    "selenium",
+    "requests",
+    "httpx",
+    "aiohttp",
+    "eval",
+    "exec",
+    "__import__",
+    "import_module",
+    "browser",
+    "windows",
+    "provider",
+    "proxy",
+    "vpn",
+    "tunnel",
+    "host",
+    "hostname",
+    "ip",
+    "port",
+    "account",
+    "beacon",
+    "tariff",
+    "payment",
+    "listing",
+    "notification",
+    "parser",
+    "scan",
+    "admin",
 }
 
 
@@ -250,6 +308,31 @@ def test_egress_routing_modules_use_only_allowed_imports_and_static_ast() -> Non
         assert obfuscation_issues == set(), f"{relative_path}: {sorted(obfuscation_issues)}"
 
         _identifiers_are_ascii_and_stable(tree)
+
+
+def test_assignment_module_imports_and_identifiers_are_minimal() -> None:
+    source = _read_source(ASSIGNMENT_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level > 0
+                continue
+            if node.level == 0:
+                root = node.module.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+                continue
+            assert node.module in ASSIGNMENT_ALLOWED_RELATIVE_IMPORTS
+            imported_names = {alias.name for alias in node.names}
+            assert imported_names == ASSIGNMENT_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
+
+    identifiers = _iter_identifier_names(tree)
+    assert ASSIGNMENT_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
 
 
 def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_configuration() -> (
