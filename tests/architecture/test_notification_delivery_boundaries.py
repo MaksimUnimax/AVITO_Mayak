@@ -63,6 +63,64 @@ FORBIDDEN_FIELD_NAMES = {
     "delivery_result",
 }
 
+ELIGIBILITY_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "source_intake",
+}
+
+ELIGIBILITY_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "datetime",
+    "time",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "network",
+    "provider_payload",
+    "raw_payload",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "chat_title",
+    "username",
+    "phone",
+    "body",
+    "html",
+    "json",
+    "payload",
+}
+
+ELIGIBILITY_FORBIDDEN_FIELD_NAMES = {
+    "raw_payload",
+    "provider_payload",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "chat_title",
+    "username",
+    "phone",
+    "body",
+    "html",
+    "json",
+    "payload",
+}
+
 
 def _import_roots(source: str) -> set[str]:
     tree = ast.parse(source)
@@ -98,8 +156,7 @@ def test_notification_delivery_source_intake_stays_within_allowed_import_boundar
     assert roots.isdisjoint(FORBIDDEN_IMPORT_ROOTS)
 
 
-def test_notification_delivery_source_intake_avoids_forbidden_runtime_tokens_and_payload_fields(
-    ) -> None:
+def test_source_intake_runtime_tokens_and_payload_fields() -> None:
     source_path = Path("src/mayak/modules/notification_delivery/source_intake.py")
     source = source_path.read_text().lower()
     for token in FORBIDDEN_SOURCE_TOKENS:
@@ -107,3 +164,20 @@ def test_notification_delivery_source_intake_avoids_forbidden_runtime_tokens_and
 
     field_names = _field_names(source_path.read_text())
     assert field_names.isdisjoint(FORBIDDEN_FIELD_NAMES)
+
+
+def test_notification_delivery_eligibility_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/eligibility.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= ELIGIBILITY_ALLOWED_IMPORT_ROOTS
+
+
+def test_eligibility_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/eligibility.py")
+    source = source_path.read_text().lower()
+    for token in ELIGIBILITY_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(ELIGIBILITY_FORBIDDEN_FIELD_NAMES)
