@@ -177,6 +177,7 @@ def _mutate(record: object, **changes: object) -> None:
 def _build_valid_state(
     *,
     request_reference: str = "request-01",
+    safe_request_reference: str = "safe-request-envelope-01",
     requester_module: str = "07-egress-routing",
     environment_id: str = "env-01",
     purpose: str = "search",
@@ -387,7 +388,7 @@ def _build_valid_state(
         route_id=route_id,
         agent_id=agent_id,
         purpose=purpose,
-        safe_request_reference=request_reference,
+        safe_request_reference=safe_request_reference,
         expected_response_class="safe-response-class",
         deadline_reference="deadline-reference-01",
         route_policy_reference=policy_reference,
@@ -412,6 +413,7 @@ def _build_valid_state(
     )
     return {
         "request_reference": request_reference,
+        "safe_request_reference": safe_request_reference,
         "requester_module": requester_module,
         "environment_id": environment_id,
         "purpose": purpose,
@@ -804,7 +806,8 @@ class TestAssignmentLinkage:
         assert boundary.assignment.route_id == boundary.lease_authorization.lease.route_id
         assert boundary.assignment.agent_id == boundary.lease_authorization.lease.agent_id
         assert boundary.assignment.purpose == boundary.purpose
-        assert boundary.assignment.safe_request_reference == boundary.request_reference
+        assert boundary.assignment.safe_request_reference == "safe-request-envelope-01"
+        assert boundary.assignment.safe_request_reference != boundary.request_reference
         assert boundary.assignment.expected_response_class == "safe-response-class"
         assert boundary.assignment.deadline_reference == "deadline-reference-01"
         assert (
@@ -813,6 +816,20 @@ class TestAssignmentLinkage:
         )
         assert boundary.assignment.profile_reference == "profile-reference-01"
         assert boundary.assignment.redacted_config_reference == "redacted-config-01"
+
+    def test_distinct_non_blank_request_and_safe_request_references_are_accepted(self) -> None:
+        state = _build_valid_state()
+        boundary = state["boundary"]
+        assignment = state["assignment"]
+        assert isinstance(boundary, TransportAssignmentCommitmentBoundary)
+        assert isinstance(assignment, TransportAssignment)
+        assert state["request_reference"] == "request-01"
+        assert state["safe_request_reference"] == "safe-request-envelope-01"
+        assert boundary.request_reference == state["request_reference"]
+        assert assignment.safe_request_reference == state["safe_request_reference"]
+        assert boundary.request_reference != assignment.safe_request_reference
+        assert boundary.request_reference.strip()
+        assert assignment.safe_request_reference.strip()
 
     @pytest.mark.parametrize(
         ("field_name", "value"),

@@ -159,10 +159,6 @@ class TransportAssignmentCommitmentBoundary:
             raise ValueError("assignment.agent_id must match lease_authorization.lease.agent_id")
         if assignment_context.purpose != purpose:
             raise ValueError("assignment.purpose must match purpose")
-        if assignment_context.safe_request_reference != request_reference:
-            raise ValueError(
-                "assignment.safe_request_reference must match request_reference"
-            )
         if assignment_context.correlation_id != lease_authorization.lease.correlation_id:
             raise ValueError(
                 "assignment.correlation_id must match lease_authorization.lease.correlation_id"
