@@ -153,6 +153,110 @@ DEDUPLICATION_FORBIDDEN_FIELD_NAMES = {
     "ttl",
 }
 
+NO_NEW_STATUS_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "source_intake",
+    "eligibility",
+    "delivery_plan",
+}
+
+NO_NEW_STATUS_FORBIDDEN_SOURCE_TOKENS = {
+    "datetime",
+    "time",
+    "timezone",
+    "timestamp",
+    "clock",
+    "scheduler",
+    "cron",
+    "polling",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "repository",
+    "store",
+    "database",
+    "orm",
+    "migration",
+    "schema",
+    "http",
+    "network",
+    "provider_sdk",
+    "webhook",
+    "mini_app",
+    "payload",
+    "raw_payload",
+    "provider_payload",
+    "body",
+    "html",
+    "json",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "message_template",
+    "template",
+    "quiet_hours",
+    "digest",
+    "read_tracking",
+    "click_tracking",
+    "retention",
+    "deletion",
+    "archive",
+    "retry_backoff",
+    "reconciliation",
+    "dispatch(",
+    "send(",
+    "deliver(",
+}
+
+NO_NEW_STATUS_FORBIDDEN_FIELD_NAMES = {
+    "created_at",
+    "updated_at",
+    "deadline",
+    "expiry",
+    "clock",
+    "timestamp",
+    "timezone",
+    "scheduler",
+    "cron",
+    "polling",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "repository",
+    "store",
+    "database",
+    "orm",
+    "migration",
+    "schema",
+    "http",
+    "network",
+    "provider_payload",
+    "raw_payload",
+    "body",
+    "html",
+    "json",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "message_template",
+    "template",
+    "quiet_hours",
+    "digest",
+    "read_tracking",
+    "click_tracking",
+    "retention",
+    "deletion",
+    "archive",
+}
+
 ELIGIBILITY_ALLOWED_IMPORT_ROOTS = {
     "__future__",
     "dataclasses",
@@ -613,3 +717,20 @@ def test_deduplication_runtime_tokens_and_payload_fields() -> None:
 
     field_names = _field_names(source_path.read_text())
     assert field_names.isdisjoint(DEDUPLICATION_FORBIDDEN_FIELD_NAMES)
+
+
+def test_notification_delivery_no_new_status_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/no_new_status.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= NO_NEW_STATUS_ALLOWED_IMPORT_ROOTS
+
+
+def test_no_new_status_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/no_new_status.py")
+    source = source_path.read_text().lower()
+    for token in NO_NEW_STATUS_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(NO_NEW_STATUS_FORBIDDEN_FIELD_NAMES)

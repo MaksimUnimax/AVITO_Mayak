@@ -6,6 +6,7 @@ from . import attempt as _attempt
 from . import deduplication as _deduplication
 from . import delivery_plan as _delivery_plan
 from . import eligibility as _eligibility
+from . import no_new_status as _no_new_status
 from . import outbox as _outbox
 from . import source_intake as _source_intake
 
@@ -72,13 +73,21 @@ ND07_TASK_ID = _deduplication.ND07_TASK_ID
 NotificationDeduplicationAuthority = _deduplication.NotificationDeduplicationAuthority
 NotificationDeduplicationStage = _deduplication.NotificationDeduplicationStage
 NotificationDeduplicationRecordState = _deduplication.NotificationDeduplicationRecordState
-NotificationDeduplicationDecisionStatus = (
-    _deduplication.NotificationDeduplicationDecisionStatus
-)
+NotificationDeduplicationDecisionStatus = _deduplication.NotificationDeduplicationDecisionStatus
 NotificationDeduplicationRequest = _deduplication.NotificationDeduplicationRequest
 NotificationDeduplicationRecord = _deduplication.NotificationDeduplicationRecord
 NotificationDeduplicationDecision = _deduplication.NotificationDeduplicationDecision
 evaluate_notification_deduplication = _deduplication.evaluate_notification_deduplication
+
+ND08_TASK_ID = _no_new_status.ND08_TASK_ID
+NotificationNoNewStatusAuthority = _no_new_status.NotificationNoNewStatusAuthority
+NotificationNoNewMinimumFrequencyGateStatus = (
+    _no_new_status.NotificationNoNewMinimumFrequencyGateStatus
+)
+NotificationNoNewStatusDecisionStatus = _no_new_status.NotificationNoNewStatusDecisionStatus
+NotificationNoNewStatusPolicyContext = _no_new_status.NotificationNoNewStatusPolicyContext
+NotificationNoNewStatusPolicyDecision = _no_new_status.NotificationNoNewStatusPolicyDecision
+evaluate_no_new_status_policy = _no_new_status.evaluate_no_new_status_policy
 
 __all__ = (
     "MODULE_ID",
@@ -141,4 +150,11 @@ __all__ = (
     "NotificationDeduplicationRecord",
     "NotificationDeduplicationDecision",
     "evaluate_notification_deduplication",
+    "ND08_TASK_ID",
+    "NotificationNoNewStatusAuthority",
+    "NotificationNoNewMinimumFrequencyGateStatus",
+    "NotificationNoNewStatusDecisionStatus",
+    "NotificationNoNewStatusPolicyContext",
+    "NotificationNoNewStatusPolicyDecision",
+    "evaluate_no_new_status_policy",
 )

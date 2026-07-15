@@ -236,8 +236,12 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
         notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORT_PREFIX)]
         == EXPECTED_PACKAGE_EXPORT_PREFIX
     )
-    assert notification_delivery.__all__[len(EXPECTED_PACKAGE_EXPORT_PREFIX) :] == (
-        EXPECTED_MODULE_EXPORTS
+    assert (
+        notification_delivery.__all__[
+            len(EXPECTED_PACKAGE_EXPORT_PREFIX) : len(EXPECTED_PACKAGE_EXPORT_PREFIX)
+            + len(EXPECTED_MODULE_EXPORTS)
+        ]
+        == EXPECTED_MODULE_EXPORTS
     )
     assert len(notification_delivery_deduplication.__all__) == len(
         set(notification_delivery_deduplication.__all__)
@@ -259,13 +263,11 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
         is NotificationDeduplicationDecisionStatus
     )
     assert (
-        notification_delivery.NotificationDeduplicationRequest
-        is NotificationDeduplicationRequest
+        notification_delivery.NotificationDeduplicationRequest is NotificationDeduplicationRequest
     )
     assert notification_delivery.NotificationDeduplicationRecord is NotificationDeduplicationRecord
     assert (
-        notification_delivery.NotificationDeduplicationDecision
-        is NotificationDeduplicationDecision
+        notification_delivery.NotificationDeduplicationDecision is NotificationDeduplicationDecision
     )
     assert (
         notification_delivery.evaluate_notification_deduplication
