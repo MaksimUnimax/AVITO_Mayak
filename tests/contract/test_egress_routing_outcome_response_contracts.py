@@ -15,9 +15,12 @@ import mayak.modules.egress_routing.outcome_response as outcome_response_module
 import tests.contract.test_egress_routing_outcome_availability_contracts as oavail_contracts
 import tests.contract.test_egress_routing_outcome_contracts as outcome_contracts
 from mayak.modules.egress_routing import (
+    DispatchAttempt,
     DispatchStatus,
     ER07C_TASK_ID,
     RouteReconciliationStatus,
+    TransportAssignment,
+    TransportAssignmentCommitmentBoundary,
     TransportAssignmentOutcome,
     TransportDispatchAttemptBoundary,
     TransportDispatchAuthority,
@@ -328,6 +331,14 @@ def test_nine_positive_outcome_and_reconciliation_combinations_are_accepted(
     )
 
     assert type(boundary) is TransportResponsePresenceOutcomeBoundary
+    assert type(boundary.dispatch_attempt) is TransportDispatchAttemptBoundary
+    assert (
+        type(boundary.dispatch_attempt.assignment_commitment)
+        is TransportAssignmentCommitmentBoundary
+    )
+    assert type(boundary.dispatch_attempt.attempt) is DispatchAttempt
+    assert type(boundary.dispatch_attempt.assignment_commitment.assignment) is TransportAssignment
+    assert type(boundary.outcome) is TransportAssignmentOutcome
     assert boundary.authority is TransportResponsePresenceOutcomeAuthority.EGRESS_ROUTING_SERVER
     assert boundary.outcome_committed is True
     assert boundary.new_dispatch_effect_authorized is False
@@ -342,6 +353,7 @@ def test_nine_positive_outcome_and_reconciliation_combinations_are_accepted(
     assert boundary.dispatch_attempt.attempt.dispatch_status is DispatchStatus.SENT
     assert boundary.dispatch_attempt.attempt.attempt_ordinal == 1
     assert boundary.dispatch_attempt.attempt.outcome_reference is None
+    assert type(boundary.dispatch_attempt.attempt.attempt_id) is str
     assert boundary.outcome.status is outcome_status
     assert boundary.outcome.reconciliation_status is reconciliation_status
     if outcome_status is TransportOutcomeStatus.SENT_NO_RESPONSE:
@@ -489,23 +501,61 @@ def test_tuple_fields_require_exact_nonblank_tuples(
 
 
 @pytest.mark.parametrize(
-    ("field_name", "value"),
-    (
-        ("dispatch_attempt", SimpleNamespace()),
-        ("outcome", SimpleNamespace()),
-    ),
+    "field_name",
+    ("dispatch_attempt", "outcome", "assignment_commitment", "attempt", "assignment"),
 )
-def test_nested_records_require_exact_dataclass_types(
-    field_name: str,
-    value: object,
-) -> None:
+def test_nested_records_require_exact_dataclass_types(field_name: str) -> None:
     state = _build_state(outcome_status=TransportOutcomeStatus.SENT_NO_RESPONSE)
+    dispatch_boundary = _dispatch_boundary(state)
     if field_name == "dispatch_attempt":
-        state["dispatch_boundary"] = value
+        state["dispatch_boundary"] = _as_lookalike(dispatch_boundary)
+    elif field_name == "outcome":
+        state["outcome"] = _as_lookalike(_outcome(state))
+    elif field_name == "assignment_commitment":
+        _mutate(
+            dispatch_boundary,
+            assignment_commitment=_as_lookalike(dispatch_boundary.assignment_commitment),
+        )
+    elif field_name == "attempt":
+        _mutate(dispatch_boundary, attempt=_as_lookalike(dispatch_boundary.attempt))
     else:
-        state[field_name] = value
+        _mutate(
+            dispatch_boundary.assignment_commitment,
+            assignment=_as_lookalike(dispatch_boundary.assignment_commitment.assignment),
+        )
     with pytest.raises(ValueError):
         TransportResponsePresenceOutcomeBoundary(**_boundary_kwargs(state))  # type: ignore[arg-type]
+
+
+def test_exact_builtin_attempt_id_is_accepted() -> None:
+    boundary = _build_boundary(
+        dispatch_status=DispatchStatus.SENT,
+        outcome_status=TransportOutcomeStatus.SENT_NO_RESPONSE,
+    )
+    assert type(boundary.outcome.attempt_id) is str
+    assert boundary.outcome.attempt_id == boundary.dispatch_attempt.attempt.attempt_id
+
+
+@pytest.mark.parametrize(
+    "bad_kind",
+    ("text_subclass", "blank", "bytes", "lookalike"),
+)
+def test_attempt_id_requires_exact_builtin_nonblank_string(bad_kind: str) -> None:
+    state = _build_state(outcome_status=TransportOutcomeStatus.SENT_NO_RESPONSE)
+    valid_attempt_id = _dispatch_boundary(state).attempt.attempt_id
+    if bad_kind == "text_subclass":
+        bad_value: object = TextLike(valid_attempt_id)
+    elif bad_kind == "blank":
+        bad_value = " "
+    elif bad_kind == "bytes":
+        bad_value = valid_attempt_id.encode("utf-8")
+    else:
+        bad_value = SimpleNamespace(attempt_id=valid_attempt_id)
+    _mutate(_dispatch_boundary(state).attempt, attempt_id=bad_value)
+    with pytest.raises(ValueError):
+        TransportResponsePresenceOutcomeBoundary(**_boundary_kwargs(state))  # type: ignore[arg-type]
+    assert type(valid_attempt_id) is str
+    assert valid_attempt_id == "attempt-01"
 
 
 def test_assignment_terminal_false_is_rejected() -> None:

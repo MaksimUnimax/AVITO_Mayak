@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from .assignment import TransportAssignmentCommitmentBoundary
 from .contracts import (
+    DispatchAttempt,
     DispatchStatus,
     RouteReconciliationStatus,
+    TransportAssignment,
     TransportAssignmentOutcome,
     TransportOutcomeStatus,
 )
@@ -172,7 +175,11 @@ class TransportResponsePresenceOutcomeBoundary:
         if dispatch_attempt.new_dispatch_effect_authorized is not False:
             raise ValueError("dispatch_attempt.new_dispatch_effect_authorized must be False")
 
-        assignment_commitment = dispatch_attempt.assignment_commitment
+        assignment_commitment: TransportAssignmentCommitmentBoundary = _require_exact_record(
+            dispatch_attempt.assignment_commitment,
+            TransportAssignmentCommitmentBoundary,
+            "dispatch_attempt.assignment_commitment",
+        )  # type: ignore[assignment]
         assignment_committed = _require_bool(
             assignment_commitment.assignment_committed,
             "dispatch_attempt.assignment_commitment.assignment_committed",
@@ -182,7 +189,11 @@ class TransportResponsePresenceOutcomeBoundary:
                 "dispatch_attempt.assignment_commitment.assignment_committed must be True"
             )
 
-        attempt = dispatch_attempt.attempt
+        attempt: DispatchAttempt = _require_exact_record(
+            dispatch_attempt.attempt,
+            DispatchAttempt,
+            "dispatch_attempt.attempt",
+        )  # type: ignore[assignment]
         dispatch_status = _require_exact_enum(
             attempt.dispatch_status,
             DispatchStatus,
@@ -202,7 +213,11 @@ class TransportResponsePresenceOutcomeBoundary:
         if reconciliation_required is not False:
             raise ValueError("dispatch_attempt.attempt.reconciliation_required must be False")
 
-        assignment = assignment_commitment.assignment
+        assignment: TransportAssignment = _require_exact_record(
+            assignment_commitment.assignment,
+            TransportAssignment,
+            "dispatch_attempt.assignment_commitment.assignment",
+        )  # type: ignore[assignment]
         attempt_assignment_id = _require_text(
             attempt.assignment_id,
             "dispatch_attempt.attempt.assignment_id",
@@ -275,6 +290,10 @@ class TransportResponsePresenceOutcomeBoundary:
         _require_text(outcome.outcome_id, "outcome.outcome_id")
         outcome_assignment_id = _require_text(outcome.assignment_id, "outcome.assignment_id")
         outcome_attempt_id = _require_text(outcome.attempt_id, "outcome.attempt_id")
+        attempt_id = _require_text(
+            attempt.attempt_id,
+            "dispatch_attempt.attempt.attempt_id",
+        )
         outcome_status = _require_exact_enum(
             outcome.status,
             TransportOutcomeStatus,
@@ -308,7 +327,7 @@ class TransportResponsePresenceOutcomeBoundary:
 
         if outcome_assignment_id != assignment_id:
             raise ValueError("outcome.assignment_id must match assignment identity")
-        if outcome_attempt_id != attempt.attempt_id:
+        if outcome_attempt_id != attempt_id:
             raise ValueError("outcome.attempt_id must match dispatch attempt identity")
         if outcome_correlation_id != assignment_correlation_id:
             raise ValueError("outcome.correlation_id must match assignment identity")

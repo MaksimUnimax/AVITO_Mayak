@@ -362,13 +362,19 @@ OUTCOME_AVAILABILITY_FORBIDDEN_IDENTIFIERS = OUTCOME_FORBIDDEN_IDENTIFIERS | {
 
 OUTCOME_RESPONSE_MODULE_PATH = Path("src/mayak/modules/egress_routing/outcome_response.py")
 OUTCOME_RESPONSE_ALLOWED_RELATIVE_IMPORTS = {
+    "assignment",
     "contracts",
     "dispatch",
 }
 OUTCOME_RESPONSE_ALLOWED_RELATIVE_IMPORT_NAMES = {
+    "assignment": {
+        "TransportAssignmentCommitmentBoundary",
+    },
     "contracts": {
         "DispatchStatus",
+        "DispatchAttempt",
         "RouteReconciliationStatus",
+        "TransportAssignment",
         "TransportAssignmentOutcome",
         "TransportOutcomeStatus",
     },
@@ -377,10 +383,14 @@ OUTCOME_RESPONSE_ALLOWED_RELATIVE_IMPORT_NAMES = {
         "TransportDispatchAuthority",
     },
 }
-OUTCOME_RESPONSE_FORBIDDEN_IDENTIFIERS = OUTCOME_FORBIDDEN_IDENTIFIERS | {
-    "TransportAssignment",
-    "DispatchAttempt",
-    "TransportAssignmentCommitmentBoundary",
+OUTCOME_RESPONSE_FORBIDDEN_IDENTIFIERS = (
+    OUTCOME_FORBIDDEN_IDENTIFIERS
+    - {
+        "DispatchAttempt",
+        "TransportAssignment",
+        "TransportAssignmentCommitmentBoundary",
+    }
+) | {
     "RouteLeaseAuthorizationBoundary",
     "TransportDispatchReplayBoundary",
     "TransportDispatchReconciliationBoundary",
