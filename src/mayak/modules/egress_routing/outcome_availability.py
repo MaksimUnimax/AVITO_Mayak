@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import cast
 
+from .assignment import TransportAssignmentCommitmentBoundary
 from .contracts import (
+    DispatchAttempt,
     DispatchStatus,
     RouteReconciliationStatus,
+    TransportAssignment,
     TransportAssignmentOutcome,
     TransportOutcomeStatus,
 )
@@ -179,9 +183,30 @@ class TransportAvailabilityOutcomeBoundary:
         if dispatch_attempt.new_dispatch_effect_authorized is not False:
             raise ValueError("dispatch_attempt.new_dispatch_effect_authorized must be False")
 
-        assignment_commitment = dispatch_attempt.assignment_commitment
-        attempt = dispatch_attempt.attempt
-        assignment = assignment_commitment.assignment
+        assignment_commitment = cast(
+            TransportAssignmentCommitmentBoundary,
+            _require_exact_record(
+                dispatch_attempt.assignment_commitment,
+                TransportAssignmentCommitmentBoundary,
+                "dispatch_attempt.assignment_commitment",
+            ),
+        )
+        attempt = cast(
+            DispatchAttempt,
+            _require_exact_record(
+                dispatch_attempt.attempt,
+                DispatchAttempt,
+                "dispatch_attempt.attempt",
+            ),
+        )
+        assignment = cast(
+            TransportAssignment,
+            _require_exact_record(
+                assignment_commitment.assignment,
+                TransportAssignment,
+                "dispatch_attempt.assignment_commitment.assignment",
+            ),
+        )
 
         if assignment_commitment.assignment_committed is not True:
             raise ValueError(

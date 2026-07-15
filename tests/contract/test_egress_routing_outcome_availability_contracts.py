@@ -18,7 +18,10 @@ from mayak.modules.egress_routing import (
     ER07B_TASK_ID,
     EGRESS_SYNTHETIC_FIXTURES,
     EGRESS_SYNTHETIC_FIXTURE_IDS,
+    DispatchAttempt,
     RouteReconciliationStatus,
+    TransportAssignment,
+    TransportAssignmentCommitmentBoundary,
     TransportAssignmentOutcome,
     TransportAvailabilityOutcomeAuthority,
     TransportAvailabilityOutcomeBoundary,
@@ -372,6 +375,11 @@ def _snapshot(record: object) -> tuple[object, ...]:
     return tuple(getattr(dataclass_record, field.name) for field in fields(dataclass_record))
 
 
+def _as_lookalike(record: object) -> SimpleNamespace:
+    payload = {field.name: getattr(record, field.name) for field in fields(cast(Any, record))}
+    return SimpleNamespace(**payload)
+
+
 def test_task_id_is_bound_to_the_module_exactly_once() -> None:
     source = Path(outcome_availability_module.__file__).read_text()
     assert ER07B_TASK_ID == EXPECTED_TASK_ID
@@ -413,6 +421,23 @@ def test_boundary_shape_is_exact() -> None:
     assert tuple(field.name for field in fields(TransportAvailabilityOutcomeBoundary)) == (
         EXPECTED_FIELD_NAMES
     )
+
+
+def test_nested_records_are_exact_types() -> None:
+    boundary = _build_boundary(
+        dispatch_status=DispatchStatus.NOT_SENT,
+        outcome_status=TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
+    )
+
+    assert type(boundary) is TransportAvailabilityOutcomeBoundary
+    assert type(boundary.dispatch_attempt) is TransportDispatchAttemptBoundary
+    assert type(boundary.outcome) is TransportAssignmentOutcome
+    assert (
+        type(boundary.dispatch_attempt.assignment_commitment)
+        is TransportAssignmentCommitmentBoundary
+    )
+    assert type(boundary.dispatch_attempt.attempt) is DispatchAttempt
+    assert type(boundary.dispatch_attempt.assignment_commitment.assignment) is TransportAssignment
 
 
 @pytest.mark.parametrize(
@@ -584,6 +609,64 @@ def test_nested_dispatch_bool_fields_reject_wrong_values(
     else:
         _mutate(dispatch_boundary, **{field_name: value})
     kwargs = _boundary_kwargs(state)
+    with pytest.raises(ValueError):
+        TransportAvailabilityOutcomeBoundary(**kwargs)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("field_name",),
+    (
+        ("dispatch_attempt",),
+        ("outcome",),
+        ("assignment_commitment",),
+        ("attempt",),
+        ("assignment",),
+    ),
+)
+def test_exact_nested_records_reject_attribute_complete_lookalikes(
+    field_name: str,
+) -> None:
+    state = _build_state(
+        dispatch_status=DispatchStatus.NOT_SENT,
+        outcome_status=TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
+    )
+    dispatch_boundary = cast(TransportDispatchAttemptBoundary, state["dispatch_boundary"])
+    outcome = cast(TransportAssignmentOutcome, state["outcome"])
+    original: object
+    lookalike: SimpleNamespace
+    kwargs: dict[str, object]
+
+    if field_name == "dispatch_attempt":
+        original = dispatch_boundary
+        lookalike = _as_lookalike(original)
+        kwargs = _boundary_kwargs(state)
+        kwargs["dispatch_attempt"] = lookalike
+    elif field_name == "outcome":
+        original = outcome
+        lookalike = _as_lookalike(original)
+        kwargs = _boundary_kwargs(state)
+        kwargs["outcome"] = lookalike
+    elif field_name == "assignment_commitment":
+        original = dispatch_boundary.assignment_commitment
+        lookalike = _as_lookalike(original)
+        _mutate(dispatch_boundary, assignment_commitment=lookalike)
+        kwargs = _boundary_kwargs(state)
+    elif field_name == "attempt":
+        original = dispatch_boundary.attempt
+        lookalike = _as_lookalike(original)
+        _mutate(dispatch_boundary, attempt=lookalike)
+        kwargs = _boundary_kwargs(state)
+    else:
+        original = dispatch_boundary.assignment_commitment.assignment
+        lookalike = _as_lookalike(original)
+        _mutate(dispatch_boundary.assignment_commitment, assignment=lookalike)
+        kwargs = _boundary_kwargs(state)
+
+    expected_field_names = {field.name for field in fields(cast(Any, original))}
+    assert type(lookalike) is SimpleNamespace
+    assert set(lookalike.__dict__) == expected_field_names
+    assert len(lookalike.__dict__) == len(expected_field_names)
+
     with pytest.raises(ValueError):
         TransportAvailabilityOutcomeBoundary(**kwargs)  # type: ignore[arg-type]
 
