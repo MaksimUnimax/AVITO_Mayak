@@ -115,6 +115,9 @@ EXPECTED_PACKAGE_EXPORTS = (
     "ER07D_TASK_ID",
     "TransportResponseFailureOutcomeAuthority",
     "TransportResponseFailureOutcomeBoundary",
+    "ER07E_TASK_ID",
+    "PolicyFallbackTransportOutcomeAuthority",
+    "PolicyFallbackTransportOutcomeBoundary",
     "ER02_TASK_ID",
     "EGRESS_SYNTHETIC_FIXTURE_IDS",
     "EGRESS_SYNTHETIC_FIXTURES",
@@ -835,5 +838,5 @@ def test_prior_state_regression_remains_unchanged() -> None:
         egress_routing.EGRESS_SYNTHETIC_FIXTURE_IDS
     )
     assert tuple(egress_routing.__all__[: egress_routing.__all__.index("ER07D_TASK_ID")]) == (
-        response_contracts.EXPECTED_PACKAGE_EXPORTS[:-7]
+        response_contracts.EXPECTED_PACKAGE_EXPORTS[:-10]
     )

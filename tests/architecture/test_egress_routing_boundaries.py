@@ -16,6 +16,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/outcome_availability.py"),
     Path("src/mayak/modules/egress_routing/outcome_response.py"),
     Path("src/mayak/modules/egress_routing/outcome_response_failure.py"),
+    Path("src/mayak/modules/egress_routing/outcome_fallback.py"),
     Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/selection.py"),
     Path("src/mayak/modules/egress_routing/fallback.py"),
@@ -479,6 +480,74 @@ OUTCOME_RESPONSE_FAILURE_FORBIDDEN_IDENTIFIERS = (
     "backoff",
     "captcha_solver",
     "captcha_bypass",
+}
+
+OUTCOME_FALLBACK_MODULE_PATH = Path("src/mayak/modules/egress_routing/outcome_fallback.py")
+OUTCOME_FALLBACK_ALLOWED_RELATIVE_IMPORTS = {
+    "contracts",
+    "fallback",
+    "selection",
+}
+OUTCOME_FALLBACK_ALLOWED_RELATIVE_IMPORT_NAMES = {
+    "contracts": {
+        "PolicyBasedFallbackDecision",
+        "PolicyBasedFallbackStatus",
+        "RouteReconciliationStatus",
+        "RouteSelectionDecision",
+        "RouteSelectionStatus",
+        "TransportOutcomeStatus",
+    },
+    "fallback": {
+        "PolicyBasedFallbackBoundary",
+    },
+    "selection": {
+        "RouteCandidateEligibilityStatus",
+        "RouteCandidateEvaluation",
+        "RouteSelectionAuthority",
+        "ServerRouteSelectionBoundary",
+    },
+}
+OUTCOME_FALLBACK_FORBIDDEN_IDENTIFIERS = (
+    OUTCOME_RESPONSE_FAILURE_FORBIDDEN_IDENTIFIERS
+    - {
+        "PolicyBasedFallbackBoundary",
+        "fallback",
+    }
+) | {
+    "RouteHealthState",
+    "RouteReadinessDecision",
+    "RouteRestrictionState",
+    "RouteQuarantineDecision",
+    "TransportAssignment",
+    "TransportAssignmentOutcome",
+    "DispatchAttempt",
+    "TransportDispatchAttemptBoundary",
+    "RouteLeaseAuthorizationBoundary",
+    "TransportOutcomeCommitmentBoundary",
+    "TransportAvailabilityOutcomeBoundary",
+    "TransportResponsePresenceOutcomeBoundary",
+    "TransportResponseFailureOutcomeBoundary",
+    "ParserAttemptOutcome",
+    "ParserOutcomeStatus",
+    "content",
+    "listing",
+    "baseline",
+    "anchor",
+    "pending_recovery",
+    "captcha_solver",
+    "captcha_bypass",
+    "retry",
+    "replay",
+    "backoff",
+    "network",
+    "runtime",
+    "storage",
+    "provider",
+    "proxy",
+    "vpn",
+    "tunnel",
+    "browser",
+    "windows",
 }
 
 REPLAY_MODULE_PATH = Path("src/mayak/modules/egress_routing/replay.py")
@@ -1005,6 +1074,42 @@ def test_outcome_response_failure_module_imports_and_identifiers_are_minimal() -
     assert OUTCOME_RESPONSE_FAILURE_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
 
 
+def test_outcome_fallback_module_imports_and_identifiers_are_minimal() -> None:
+    source = _read_source(OUTCOME_FALLBACK_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level > 0
+                continue
+            if node.level == 0:
+                root = node.module.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum"}
+                continue
+            assert node.module in OUTCOME_FALLBACK_ALLOWED_RELATIVE_IMPORTS
+            imported_names = {alias.name for alias in node.names}
+            assert imported_names == OUTCOME_FALLBACK_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
+
+    identifiers = _iter_identifier_names(tree)
+    assert OUTCOME_FALLBACK_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
+    assert {
+        "ER07E_TASK_ID",
+        "PolicyFallbackTransportOutcomeAuthority",
+        "PolicyFallbackTransportOutcomeBoundary",
+        "outcome_status",
+        "transport_terminal",
+        "new_fallback_effect_authorized",
+        "parser_success_inferred",
+        "scan_success_inferred",
+        "notification_delivery_inferred",
+    }.issubset(identifiers)
+
+
 def test_replay_module_imports_and_identifiers_are_minimal() -> None:
     source = _read_source(REPLAY_MODULE_PATH)
     tree = ast.parse(source)
@@ -1131,6 +1236,7 @@ def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_co
         Path("src/mayak/modules/egress_routing/outcome.py"),
         Path("src/mayak/modules/egress_routing/outcome_availability.py"),
         Path("src/mayak/modules/egress_routing/outcome_response.py"),
+        Path("src/mayak/modules/egress_routing/outcome_fallback.py"),
     ):
         source = _read_source(relative_path)
         tree = ast.parse(source)
