@@ -2,6 +2,7 @@
 
 from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 
+from . import delivery_plan as _delivery_plan
 from . import eligibility as _eligibility
 from . import outbox as _outbox
 from . import source_intake as _source_intake
@@ -41,6 +42,15 @@ NotificationOutboxItem = _outbox.NotificationOutboxItem
 NotificationOutboxCreationDecision = _outbox.NotificationOutboxCreationDecision
 create_notification_outbox_item = _outbox.create_notification_outbox_item
 
+ND05_TASK_ID = _delivery_plan.ND05_TASK_ID
+NotificationDeliveryPlanAuthority = _delivery_plan.NotificationDeliveryPlanAuthority
+NotificationDeliveryChannelPlanStatus = _delivery_plan.NotificationDeliveryChannelPlanStatus
+NotificationDeliveryPlanDecisionStatus = _delivery_plan.NotificationDeliveryPlanDecisionStatus
+NotificationDeliveryChannelPlanEntry = _delivery_plan.NotificationDeliveryChannelPlanEntry
+NotificationDeliveryPlan = _delivery_plan.NotificationDeliveryPlan
+NotificationDeliveryPlanDecision = _delivery_plan.NotificationDeliveryPlanDecision
+plan_notification_delivery = _delivery_plan.plan_notification_delivery
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -73,4 +83,12 @@ __all__ = (
     "NotificationOutboxItem",
     "NotificationOutboxCreationDecision",
     "create_notification_outbox_item",
+    "ND05_TASK_ID",
+    "NotificationDeliveryPlanAuthority",
+    "NotificationDeliveryChannelPlanStatus",
+    "NotificationDeliveryPlanDecisionStatus",
+    "NotificationDeliveryChannelPlanEntry",
+    "NotificationDeliveryPlan",
+    "NotificationDeliveryPlanDecision",
+    "plan_notification_delivery",
 )

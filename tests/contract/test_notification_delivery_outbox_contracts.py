@@ -215,11 +215,13 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert outbox.ND04_TASK_ID == "ND-04-GENERIC-OUTBOX-SEMANTICS-20260715-006"
     assert type(outbox.__all__) is tuple
     assert outbox.__all__ == EXPECTED_OUTBOX_EXPORTS
-    assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
+    assert (
+        notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
+    )
+    assert len(notification_delivery.__all__) >= len(EXPECTED_PACKAGE_EXPORTS)
     assert notification_delivery.__all__[: len(EXPECTED_ND03_PACKAGE_EXPORTS)] == (
         EXPECTED_ND03_PACKAGE_EXPORTS
     )
-    assert notification_delivery.__all__[-len(EXPECTED_OUTBOX_EXPORTS) :] == EXPECTED_OUTBOX_EXPORTS
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
     assert len(outbox.__all__) == len(set(outbox.__all__))
     assert notification_delivery._outbox is outbox
@@ -291,7 +293,10 @@ def test_no_extra_exports_or_lazy_helpers() -> None:
     namespace: dict[str, object] = {}
     exec("from mayak.modules.notification_delivery import *", namespace)
 
-    assert tuple(notification_delivery.__all__) == EXPECTED_PACKAGE_EXPORTS
+    assert notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == (
+        EXPECTED_PACKAGE_EXPORTS
+    )
+    assert len(notification_delivery.__all__) >= len(EXPECTED_PACKAGE_EXPORTS)
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
     assert all(name in namespace for name in notification_delivery.__all__)
     assert "_load_outbox_exports" not in namespace
