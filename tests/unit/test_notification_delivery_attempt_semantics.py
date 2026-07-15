@@ -388,6 +388,19 @@ def _accept(
     )
 
 
+def _attempt_with_lifecycle(
+    *,
+    lifecycle_status: NotificationAttemptLifecycleStatus,
+    channel_class: NotificationChannelClass = NotificationChannelClass.TELEGRAM,
+    evidence_reference_ids: tuple[str, ...] = ("command-evidence-1",),
+) -> NotificationAttempt:
+    return replace(
+        _planned_attempt(channel_class=channel_class),
+        lifecycle_status=lifecycle_status,
+        evidence_reference_ids=evidence_reference_ids,
+    )
+
+
 def test_planning_creates_exact_attempt_for_telegram_and_max() -> None:
     plan_decision = _plan_decision()
 
@@ -642,6 +655,64 @@ def test_egress_correlation_alone_cannot_deliver() -> None:
 
 
 @pytest.mark.parametrize(
+    "outcome_class, provider_safe_delivery_reference",
+    [
+        (
+            NotificationProviderOutcomeClass.PROVIDER_ACCEPTED,
+            "provider-safe-delivery-not-attempted-1",
+        ),
+        (
+            NotificationProviderOutcomeClass.DISPATCH_AMBIGUOUS,
+            "provider-safe-delivery-not-attempted-2",
+        ),
+        (
+            NotificationProviderOutcomeClass.PROVIDER_REJECTED,
+            None,
+        ),
+    ],
+)
+def test_not_attempted_rejects_committed_provider_outcomes(
+    outcome_class: NotificationProviderOutcomeClass,
+    provider_safe_delivery_reference: str | None,
+) -> None:
+    attempt = _attempt_with_lifecycle(
+        lifecycle_status=NotificationAttemptLifecycleStatus.NOT_ATTEMPTED,
+        evidence_reference_ids=("attempt-evidence-1", "shared-evidence"),
+    )
+    provider_outcome = _provider_outcome(
+        attempt,
+        outcome_class=outcome_class,
+        provider_safe_delivery_reference=provider_safe_delivery_reference,
+        evidence_reference_ids=("shared-evidence", "provider-evidence-1"),
+    )
+    decision = _accept(
+        attempt,
+        provider_outcome,
+        evidence_reference_ids=("provider-evidence-1", "command-evidence-1"),
+    )
+    assert decision.status is NotificationProviderOutcomeAcceptanceStatus.REJECTED_STATE_MISMATCH
+    assert decision.resulting_attempt is None
+    assert decision.outcome_accepted is False
+    assert decision.replayed is False
+    assert decision.delivery_accepted is False
+    assert decision.reconciliation_required is False
+    assert decision.retry_authorized is False
+    assert decision.dispatch_effect_authorized is False
+    assert decision.provider_mapping_authorized is False
+    assert decision.reason_codes == ("provider-outcome-state-mismatch",)
+    assert decision.evidence_reference_ids == (
+        "attempt-evidence-1",
+        "shared-evidence",
+        "provider-evidence-1",
+        "command-evidence-1",
+    )
+    assert attempt.lifecycle_status is NotificationAttemptLifecycleStatus.NOT_ATTEMPTED
+    assert attempt.provider_outcome_reference_id is None
+    assert attempt.delivery_accepted is False
+    assert attempt.reconciliation_required is False
+
+
+@pytest.mark.parametrize(
     "_field_name, update_kwargs, expected_status, expected_reason",
     [
         (
@@ -768,6 +839,74 @@ def test_provider_failure_mappings_are_exact(
     assert decision.resulting_attempt is not None
     assert decision.resulting_attempt.lifecycle_status is expected_lifecycle
     assert decision.resulting_attempt.reason_codes == ("provider-outcome-accepted-failure",)
+
+
+@pytest.mark.parametrize(
+    (
+        "outcome_class, provider_safe_delivery_reference, expected_status, "
+        "expected_lifecycle, expected_delivery_accepted, "
+        "expected_reconciliation_required, expected_reason"
+    ),
+    [
+        (
+            NotificationProviderOutcomeClass.PROVIDER_ACCEPTED,
+            "provider-safe-delivery-in-progress-1",
+            NotificationProviderOutcomeAcceptanceStatus.ACCEPTED_DELIVERED,
+            NotificationAttemptLifecycleStatus.DELIVERED_ACCEPTED,
+            True,
+            False,
+            "provider-outcome-accepted-delivered",
+        ),
+        (
+            NotificationProviderOutcomeClass.DISPATCH_AMBIGUOUS,
+            "provider-safe-delivery-in-progress-ambiguous-1",
+            NotificationProviderOutcomeAcceptanceStatus.ACCEPTED_AMBIGUOUS,
+            NotificationAttemptLifecycleStatus.RECONCILIATION_REQUIRED,
+            False,
+            True,
+            "provider-outcome-accepted-ambiguous",
+        ),
+        (
+            NotificationProviderOutcomeClass.PROVIDER_REJECTED,
+            None,
+            NotificationProviderOutcomeAcceptanceStatus.ACCEPTED_FAILURE,
+            NotificationAttemptLifecycleStatus.PROVIDER_REJECTED,
+            False,
+            False,
+            "provider-outcome-accepted-failure",
+        ),
+    ],
+)
+def test_attempt_in_progress_accepts_valid_provider_outcomes(
+    outcome_class: NotificationProviderOutcomeClass,
+    provider_safe_delivery_reference: str | None,
+    expected_status: NotificationProviderOutcomeAcceptanceStatus,
+    expected_lifecycle: NotificationAttemptLifecycleStatus,
+    expected_delivery_accepted: bool,
+    expected_reconciliation_required: bool,
+    expected_reason: str,
+) -> None:
+    attempt = _attempt_with_lifecycle(
+        lifecycle_status=NotificationAttemptLifecycleStatus.ATTEMPT_IN_PROGRESS,
+    )
+    provider_outcome = _provider_outcome(
+        attempt,
+        outcome_class=outcome_class,
+        provider_safe_delivery_reference=provider_safe_delivery_reference,
+    )
+    decision = _accept(attempt, provider_outcome)
+    assert decision.status is expected_status
+    assert decision.outcome_accepted is True
+    assert decision.replayed is False
+    assert decision.delivery_accepted is expected_delivery_accepted
+    assert decision.reconciliation_required is expected_reconciliation_required
+    assert decision.retry_authorized is False
+    assert decision.dispatch_effect_authorized is False
+    assert decision.provider_mapping_authorized is False
+    assert decision.reason_codes == (expected_reason,)
+    assert decision.resulting_attempt is not None
+    assert decision.resulting_attempt is not attempt
+    assert decision.resulting_attempt.lifecycle_status is expected_lifecycle
 
 
 @pytest.mark.parametrize(

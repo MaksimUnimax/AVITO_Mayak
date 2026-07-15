@@ -1483,6 +1483,32 @@ def accept_notification_provider_outcome(
             dispatch_effect_authorized=False,
             provider_mapping_authorized=False,
             reason_codes=_rejected_state_mismatch_reason_codes(),
+                evidence_reference_ids=_tuple_union(
+                    attempt.evidence_reference_ids,
+                    provider_outcome.evidence_reference_ids,
+                    evidence_reference_ids,
+                ),
+            )
+
+    if attempt.lifecycle_status not in {
+        NotificationAttemptLifecycleStatus.ATTEMPT_PLANNED,
+        NotificationAttemptLifecycleStatus.ATTEMPT_IN_PROGRESS,
+    }:
+        return NotificationProviderOutcomeAcceptanceDecision(
+            decision_id=decision_id,
+            authority=NotificationAttemptAuthority.NOTIFICATION_DELIVERY_SERVER,
+            previous_attempt=attempt,
+            provider_outcome=provider_outcome,
+            status=NotificationProviderOutcomeAcceptanceStatus.REJECTED_STATE_MISMATCH,
+            resulting_attempt=None,
+            outcome_accepted=False,
+            replayed=False,
+            delivery_accepted=False,
+            reconciliation_required=False,
+            retry_authorized=False,
+            dispatch_effect_authorized=False,
+            provider_mapping_authorized=False,
+            reason_codes=_rejected_state_mismatch_reason_codes(),
             evidence_reference_ids=_tuple_union(
                 attempt.evidence_reference_ids,
                 provider_outcome.evidence_reference_ids,
