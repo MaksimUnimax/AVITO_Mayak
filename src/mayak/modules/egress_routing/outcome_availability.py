@@ -260,9 +260,14 @@ class TransportAvailabilityOutcomeBoundary:
         if _DISPATCH_OUTCOME_MATRIX[dispatch_status] is not outcome_status:
             raise ValueError("dispatch_attempt.attempt.dispatch_status and outcome.status mismatch")
 
+        reconciliation_status = _require_exact_enum(
+            outcome.reconciliation_status,
+            RouteReconciliationStatus,
+            "outcome.reconciliation_status",
+        )
         if outcome_status not in _OUTCOME_RECONCILIATION_MATRIX:
             raise ValueError("outcome.status is not allowed")
-        if outcome.reconciliation_status not in _OUTCOME_RECONCILIATION_MATRIX[outcome_status]:
+        if reconciliation_status not in _OUTCOME_RECONCILIATION_MATRIX[outcome_status]:
             raise ValueError("outcome.reconciliation_status is incompatible with outcome.status")
         if not outcome_reason_codes:
             raise ValueError("outcome.reason_codes must not be empty")

@@ -744,6 +744,27 @@ def test_reconciliation_matrix_is_exact(
                 TransportAvailabilityOutcomeBoundary(**kwargs)  # type: ignore[arg-type]
 
 
+def test_reconciliation_status_requires_exact_enum_member() -> None:
+    state = _build_state(
+        dispatch_status=DispatchStatus.NOT_SENT,
+        outcome_status=TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
+        reconciliation_status=RouteReconciliationStatus.NOT_REQUIRED,
+        assignment_terminal=True,
+    )
+    kwargs = _boundary_kwargs(state)
+    boundary = TransportAvailabilityOutcomeBoundary(**kwargs)  # type: ignore[arg-type]
+    assert boundary.outcome.reconciliation_status is RouteReconciliationStatus.NOT_REQUIRED
+
+    for mutated_reconciliation_status in (
+        RouteReconciliationStatus.NOT_REQUIRED.value,
+        TextLike(RouteReconciliationStatus.NOT_REQUIRED.value),
+        SimpleNamespace(),
+    ):
+        _mutate(cast(object, state["outcome"]), reconciliation_status=mutated_reconciliation_status)
+        with pytest.raises(ValueError):
+            TransportAvailabilityOutcomeBoundary(**kwargs)  # type: ignore[arg-type]
+
+
 def test_safe_response_reference_is_always_none() -> None:
     state = _build_state(
         dispatch_status=DispatchStatus.NOT_SENT,
