@@ -304,6 +304,94 @@ DELIVERY_PLAN_FORBIDDEN_FIELD_NAMES = {
     "click_tracking",
 }
 
+ATTEMPT_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "delivery_plan",
+    "eligibility",
+    "mayak",
+}
+
+ATTEMPT_FORBIDDEN_IMPORT_ROOTS = {
+    "aiohttp",
+    "alembic",
+    "aiogram",
+    "fastapi",
+    "httpx",
+    "psycopg",
+    "psycopg2",
+    "queue",
+    "requests",
+    "socket",
+    "sqlalchemy",
+    "subprocess",
+    "telethon",
+    "requests",
+}
+
+ATTEMPT_FORBIDDEN_SOURCE_TOKENS = {
+    "aiohttp",
+    "alembic",
+    "aiogram",
+    "fastapi",
+    "httpx",
+    "psycopg",
+    "psycopg2",
+    "queue",
+    "requests",
+    "socket",
+    "sqlalchemy",
+    "subprocess",
+    "telethon",
+    "datetime",
+    "time",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "network",
+    "webhook",
+    "mini_app",
+    "playwright",
+    "selenium",
+    "provider_sdk",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "read_tracking",
+    "click_tracking",
+}
+
+ATTEMPT_FORBIDDEN_FIELD_NAMES = {
+    "created_at",
+    "updated_at",
+    "deadline",
+    "expiry",
+    "clock",
+    "raw_payload",
+    "provider_payload",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "url",
+    "host",
+    "hostname",
+    "ip_address",
+    "port",
+    "request_payload",
+    "response_payload",
+    "http_status",
+    "status_code",
+    "read_tracking",
+    "click_tracking",
+    "history",
+}
+
 
 def _import_roots(source: str) -> set[str]:
     tree = ast.parse(source)
@@ -400,3 +488,21 @@ def test_delivery_plan_runtime_tokens_and_payload_fields() -> None:
 
     field_names = _field_names(source_path.read_text())
     assert field_names.isdisjoint(DELIVERY_PLAN_FORBIDDEN_FIELD_NAMES)
+
+
+def test_notification_delivery_attempt_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/attempt.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= ATTEMPT_ALLOWED_IMPORT_ROOTS
+    assert roots.isdisjoint(ATTEMPT_FORBIDDEN_IMPORT_ROOTS)
+
+
+def test_attempt_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/attempt.py")
+    source = source_path.read_text().lower()
+    for token in ATTEMPT_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(ATTEMPT_FORBIDDEN_FIELD_NAMES)

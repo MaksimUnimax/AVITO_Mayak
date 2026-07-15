@@ -2,6 +2,7 @@
 
 from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 
+from . import attempt as _attempt
 from . import delivery_plan as _delivery_plan
 from . import eligibility as _eligibility
 from . import outbox as _outbox
@@ -51,6 +52,21 @@ NotificationDeliveryPlan = _delivery_plan.NotificationDeliveryPlan
 NotificationDeliveryPlanDecision = _delivery_plan.NotificationDeliveryPlanDecision
 plan_notification_delivery = _delivery_plan.plan_notification_delivery
 
+ND06_TASK_ID = _attempt.ND06_TASK_ID
+NotificationAttemptAuthority = _attempt.NotificationAttemptAuthority
+NotificationAttemptLifecycleStatus = _attempt.NotificationAttemptLifecycleStatus
+NotificationAttemptPlanningStatus = _attempt.NotificationAttemptPlanningStatus
+NotificationProviderOutcomeClass = _attempt.NotificationProviderOutcomeClass
+NotificationProviderOutcomeAcceptanceStatus = _attempt.NotificationProviderOutcomeAcceptanceStatus
+NotificationAttempt = _attempt.NotificationAttempt
+NotificationAttemptPlanningDecision = _attempt.NotificationAttemptPlanningDecision
+NotificationProviderOutcomeReference = _attempt.NotificationProviderOutcomeReference
+NotificationProviderOutcomeAcceptanceDecision = (
+    _attempt.NotificationProviderOutcomeAcceptanceDecision
+)
+plan_notification_attempt = _attempt.plan_notification_attempt
+accept_notification_provider_outcome = _attempt.accept_notification_provider_outcome
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -91,4 +107,16 @@ __all__ = (
     "NotificationDeliveryPlan",
     "NotificationDeliveryPlanDecision",
     "plan_notification_delivery",
+    "ND06_TASK_ID",
+    "NotificationAttemptAuthority",
+    "NotificationAttemptLifecycleStatus",
+    "NotificationAttemptPlanningStatus",
+    "NotificationProviderOutcomeClass",
+    "NotificationProviderOutcomeAcceptanceStatus",
+    "NotificationAttempt",
+    "NotificationAttemptPlanningDecision",
+    "NotificationProviderOutcomeReference",
+    "NotificationProviderOutcomeAcceptanceDecision",
+    "plan_notification_attempt",
+    "accept_notification_provider_outcome",
 )

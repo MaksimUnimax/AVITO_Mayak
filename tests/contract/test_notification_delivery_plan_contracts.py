@@ -212,8 +212,10 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert (
         notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
     )
-    assert notification_delivery.__all__[-len(EXPECTED_ND05_PACKAGE_EXPORTS) :] == (
-        EXPECTED_ND05_PACKAGE_EXPORTS
+    nd05_start = len(EXPECTED_PACKAGE_EXPORTS) - len(EXPECTED_ND05_PACKAGE_EXPORTS)
+    assert (
+        notification_delivery.__all__[nd05_start : nd05_start + len(EXPECTED_ND05_PACKAGE_EXPORTS)]
+        == EXPECTED_ND05_PACKAGE_EXPORTS
     )
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
     assert notification_delivery_plan.__all__ == EXPECTED_ND05_PACKAGE_EXPORTS
