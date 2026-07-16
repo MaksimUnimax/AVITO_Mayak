@@ -87,8 +87,12 @@ class TransportRestrictionSignalKind(str, Enum):
 
 
 _SIGNAL_KIND_BY_OUTCOME_STATUS = {
-    TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED: TransportRestrictionSignalKind.EXPLICIT_RESTRICTION,
-    TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE: TransportRestrictionSignalKind.EXPLICIT_CHALLENGE,
+    TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED: (
+        TransportRestrictionSignalKind.EXPLICIT_RESTRICTION
+    ),
+    TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE: (
+        TransportRestrictionSignalKind.EXPLICIT_CHALLENGE
+    ),
 }
 
 
@@ -216,7 +220,10 @@ class TransportRestrictionSignalBoundary:
             TransportResponseFailureOutcomeAuthority,
             "source_failure_boundary.authority",
         )
-        if source_authority is not TransportResponseFailureOutcomeAuthority.EGRESS_ROUTING_SERVER:
+        if (
+            source_authority
+            is not TransportResponseFailureOutcomeAuthority.EGRESS_ROUTING_SERVER
+        ):
             raise ValueError("source_failure_boundary.authority must be EGRESS_ROUTING_SERVER")
         _require_text(source_failure_boundary.boundary_id, "source_failure_boundary.boundary_id")
         _require_non_empty_text_tuple(
@@ -270,15 +277,28 @@ class TransportRestrictionSignalBoundary:
             "source_failure_boundary.dispatch_attempt.assignment_commitment.assignment",
         )  # type: ignore[assignment]
 
-        if dispatch_attempt.authority is not TransportDispatchAuthority.EGRESS_ROUTING_SERVER:
-            raise ValueError("source_failure_boundary.dispatch_attempt.authority must be EGRESS_ROUTING_SERVER")
+        if (
+            dispatch_attempt.authority
+            is not TransportDispatchAuthority.EGRESS_ROUTING_SERVER
+        ):
+            raise ValueError(
+                "source_failure_boundary.dispatch_attempt.authority must be "
+                "EGRESS_ROUTING_SERVER"
+            )
         if dispatch_attempt.dispatch_state_committed is not True:
-            raise ValueError("source_failure_boundary.dispatch_attempt.dispatch_state_committed must be True")
+            raise ValueError(
+                "source_failure_boundary.dispatch_attempt.dispatch_state_committed "
+                "must be True"
+            )
         if dispatch_attempt.new_dispatch_effect_authorized is not False:
             raise ValueError(
-                "source_failure_boundary.dispatch_attempt.new_dispatch_effect_authorized must be False"
+                "source_failure_boundary.dispatch_attempt.new_dispatch_effect_authorized "
+                "must be False"
             )
-        _require_text(dispatch_attempt.boundary_id, "source_failure_boundary.dispatch_attempt.boundary_id")
+        _require_text(
+            dispatch_attempt.boundary_id,
+            "source_failure_boundary.dispatch_attempt.boundary_id",
+        )
         _require_non_empty_text_tuple(
             dispatch_attempt.reason_codes,
             "source_failure_boundary.dispatch_attempt.reason_codes",
@@ -287,13 +307,18 @@ class TransportRestrictionSignalBoundary:
             dispatch_attempt.evidence_reference_ids,
             "source_failure_boundary.dispatch_attempt.evidence_reference_ids",
         )
-        if assignment_commitment.authority is not TransportAssignmentAuthority.EGRESS_ROUTING_SERVER:
+        if (
+            assignment_commitment.authority
+            is not TransportAssignmentAuthority.EGRESS_ROUTING_SERVER
+        ):
             raise ValueError(
-                "source_failure_boundary.dispatch_attempt.assignment_commitment.authority must be EGRESS_ROUTING_SERVER"
+                "source_failure_boundary.dispatch_attempt.assignment_commitment.authority "
+                "must be EGRESS_ROUTING_SERVER"
             )
         if assignment_commitment.assignment_committed is not True:
             raise ValueError(
-                "source_failure_boundary.dispatch_attempt.assignment_commitment.assignment_committed must be True"
+                "source_failure_boundary.dispatch_attempt.assignment_commitment."
+                "assignment_committed must be True"
             )
         _require_text(
             assignment_commitment.boundary_id,
@@ -308,7 +333,10 @@ class TransportRestrictionSignalBoundary:
             "source_failure_boundary.dispatch_attempt.assignment_commitment.evidence_reference_ids",
         )
 
-        _require_text(attempt.attempt_id, "source_failure_boundary.dispatch_attempt.attempt.attempt_id")
+        _require_text(
+            attempt.attempt_id,
+            "source_failure_boundary.dispatch_attempt.attempt.attempt_id",
+        )
         if _require_exact_enum(
             attempt.dispatch_status,
             DispatchStatus,
@@ -318,15 +346,22 @@ class TransportRestrictionSignalBoundary:
                 "source_failure_boundary.dispatch_attempt.attempt.dispatch_status must be SENT"
             )
         if type(attempt.attempt_ordinal) is not int or attempt.attempt_ordinal != 1:
-            raise ValueError("source_failure_boundary.dispatch_attempt.attempt.attempt_ordinal must be 1")
+            raise ValueError(
+                "source_failure_boundary.dispatch_attempt.attempt.attempt_ordinal "
+                "must be 1"
+            )
         if attempt.outcome_reference is not None:
-            raise ValueError("source_failure_boundary.dispatch_attempt.attempt.outcome_reference must be None")
+            raise ValueError(
+                "source_failure_boundary.dispatch_attempt.attempt.outcome_reference "
+                "must be None"
+            )
         if _require_bool(
             attempt.reconciliation_required,
             "source_failure_boundary.dispatch_attempt.attempt.reconciliation_required",
         ) is not False:
             raise ValueError(
-                "source_failure_boundary.dispatch_attempt.attempt.reconciliation_required must be False"
+                "source_failure_boundary.dispatch_attempt.attempt."
+                "reconciliation_required must be False"
             )
 
         assignment_id = _require_text(
@@ -414,7 +449,8 @@ class TransportRestrictionSignalBoundary:
         expected_signal_kind = _SIGNAL_KIND_BY_OUTCOME_STATUS.get(outcome_status)
         if expected_signal_kind is None:
             raise ValueError(
-                "source_failure_boundary.outcome.status must be RATE_OR_ACCESS_RESTRICTED or CAPTCHA_OR_CHALLENGE"
+                "source_failure_boundary.outcome.status must be "
+                "RATE_OR_ACCESS_RESTRICTED or CAPTCHA_OR_CHALLENGE"
             )
         if signal_kind is not expected_signal_kind:
             raise ValueError("signal_kind must match source_failure_boundary.outcome.status")
@@ -450,7 +486,10 @@ class TransportRestrictionSignalBoundary:
                 "source_failure_boundary.dispatch_attempt.assignment_commitment.assignment.causation_id"
             )
         if outcome_id == "":
-            raise ValueError("source_failure_boundary.outcome.outcome_id must be a non-blank string")
+            raise ValueError(
+                "source_failure_boundary.outcome.outcome_id must be a non-blank "
+                "string"
+            )
         if outcome_assignment_id != assignment_id:
             raise ValueError(
                 "source_failure_boundary.outcome.assignment_id must match "

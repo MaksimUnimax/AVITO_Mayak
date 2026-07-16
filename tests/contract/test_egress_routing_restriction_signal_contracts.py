@@ -11,8 +11,8 @@ import mayak.modules.egress_routing as egress_routing
 import mayak.modules.egress_routing.restriction_signal as restriction_signal_module
 import tests.contract.test_egress_routing_outcome_response_failure_contracts as failure_contracts
 from mayak.modules.egress_routing import (
-    DispatchAttempt,
     ER08A_TASK_ID,
+    DispatchAttempt,
     RouteReconciliationStatus,
     TransportAssignment,
     TransportAssignmentCommitmentBoundary,
@@ -226,8 +226,12 @@ def _build_boundary(
 ) -> TransportRestrictionSignalBoundary:
     source_boundary = _build_source_boundary(outcome_status=outcome_status)
     signal_kind = {
-        TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED: TransportRestrictionSignalKind.EXPLICIT_RESTRICTION,
-        TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE: TransportRestrictionSignalKind.EXPLICIT_CHALLENGE,
+        TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED: (
+            TransportRestrictionSignalKind.EXPLICIT_RESTRICTION
+        ),
+        TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE: (
+            TransportRestrictionSignalKind.EXPLICIT_CHALLENGE
+        ),
     }.get(outcome_status, TransportRestrictionSignalKind.EXPLICIT_RESTRICTION)
     boundary = TransportRestrictionSignalBoundary(
         **_boundary_kwargs(source_boundary, signal_kind)  # type: ignore[arg-type]
@@ -236,13 +240,17 @@ def _build_boundary(
     return boundary
 
 
-def _source_failure_boundary(boundary: TransportRestrictionSignalBoundary) -> TransportResponseFailureOutcomeBoundary:
+def _source_failure_boundary(
+    boundary: TransportRestrictionSignalBoundary,
+) -> TransportResponseFailureOutcomeBoundary:
     source_boundary = boundary.source_failure_boundary
     assert type(source_boundary) is TransportResponseFailureOutcomeBoundary
     return source_boundary
 
 
-def _dispatch_boundary(boundary: TransportRestrictionSignalBoundary) -> TransportDispatchAttemptBoundary:
+def _dispatch_boundary(
+    boundary: TransportRestrictionSignalBoundary,
+) -> TransportDispatchAttemptBoundary:
     dispatch_boundary = _source_failure_boundary(boundary).dispatch_attempt
     assert type(dispatch_boundary) is TransportDispatchAttemptBoundary
     return dispatch_boundary
@@ -489,15 +497,21 @@ def test_exact_enum_and_bool_and_tuple_values_reject_lookalikes(
         ),
         (
             "source_failure_boundary.dispatch_attempt.attempt",
-            lambda boundary: SimpleNamespace(**{
-                field.name: getattr(_attempt(boundary), field.name) for field in fields(_attempt(boundary))
-            }),
+            lambda boundary: SimpleNamespace(
+                **{
+                    field.name: getattr(_attempt(boundary), field.name)
+                    for field in fields(_attempt(boundary))
+                }
+            ),
         ),
         (
             "source_failure_boundary.dispatch_attempt.assignment_commitment.assignment",
-            lambda boundary: SimpleNamespace(**{
-                field.name: getattr(_assignment(boundary), field.name) for field in fields(_assignment(boundary))
-            }),
+            lambda boundary: SimpleNamespace(
+                **{
+                    field.name: getattr(_assignment(boundary), field.name)
+                    for field in fields(_assignment(boundary))
+                }
+            ),
         ),
     ),
 )
