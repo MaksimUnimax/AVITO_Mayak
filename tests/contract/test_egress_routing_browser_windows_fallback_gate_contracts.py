@@ -10,6 +10,7 @@ import mayak.modules.egress_routing as egress_routing
 import tests.contract.test_egress_routing_session_secret_gate_contracts as session_contracts
 from mayak.modules.egress_routing import (
     ER10A_TASK_ID,
+    EgressSessionSecretAuthority,
     EgressSessionSecretGateBoundary,
     FutureBrowserFallbackAuthority,
     FutureBrowserFallbackGateBoundary,
@@ -114,6 +115,34 @@ EXPECTED_FALSE_BOOLEAN_FIELDS = (
     "parser_success_inferred",
     "scan_success_inferred",
     "notification_delivery_inferred",
+)
+
+EXPECTED_ER09A_FALSE_BOOLEAN_FIELDS = (
+    "isolated_project_session_gate_satisfied",
+    "project_owned_session_authorized",
+    "project_owned_cookie_profile_authorized",
+    "personal_browser_profile_access_authorized",
+    "browser_password_access_authorized",
+    "owner_private_session_default_authorized",
+    "foreign_or_unrelated_cookie_reuse_authorized",
+    "raw_cookie_material_authorized",
+    "raw_session_token_material_authorized",
+    "raw_credential_material_authorized",
+    "secret_logging_authorized",
+    "secret_report_authorized",
+    "secret_git_storage_authorized",
+    "runtime_session_creation_authorized",
+    "provider_access_permission_inferred",
+    "parser_success_inferred",
+    "scan_success_inferred",
+    "notification_delivery_inferred",
+)
+
+EXPECTED_ER09A_TRUE_BOOLEAN_FIELDS = (
+    "safe_reference_only",
+    "rotation_required",
+    "revocation_required",
+    "redacted_diagnostics_required",
 )
 
 EXPECTED_REASON_CODES = (
@@ -402,22 +431,175 @@ def test_browser_extension_family_requires_owner_evidence_flag_true() -> None:
         )
 
 
-def test_source_identity_and_linkage_are_preserved() -> None:
+def test_valid_er09a_source_is_accepted_and_inputs_remain_exact() -> None:
     capability = _build_capability()
     session_secret_gate = _build_session_secret_gate(capability)
+    capability_before = _snapshot(capability)
+    session_secret_gate_before = _snapshot(session_secret_gate)
     boundary = _build_boundary(
         capability=capability,
         session_secret_gate=session_secret_gate,
         route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
     )
 
+    assert type(boundary.session_secret_gate.authority) is EgressSessionSecretAuthority
+    assert (
+        boundary.session_secret_gate.authority
+        is EgressSessionSecretAuthority.EGRESS_ROUTING_SERVER
+    )
     assert boundary.route_capability is capability
     assert boundary.session_secret_gate is session_secret_gate
     assert boundary.session_secret_gate.route_capability is capability
+    assert boundary.session_secret_gate.route_id == EXPECTED_ROUTE_ID
     assert boundary.route_id == capability.route_id
     assert boundary.route_id == session_secret_gate.route_id
+    assert boundary.session_secret_gate.session_policy_status is SessionPolicyStatus.PROHIBITED
+    assert boundary.session_secret_gate.session_policy_status is capability.session_policy_status
     assert boundary.evidence_reference_ids is capability.evidence_reference_ids
     assert boundary.evidence_reference_ids == session_secret_gate.evidence_reference_ids
+    assert boundary.session_secret_gate.evidence_reference_ids == EXPECTED_EVIDENCE_REFERENCE_IDS
+    assert boundary.session_secret_gate.reason_codes == session_contracts.EXPECTED_REASON_CODES
+    assert _snapshot(capability) == capability_before
+    assert _snapshot(session_secret_gate) == session_secret_gate_before
+
+    for field_name in EXPECTED_ER09A_TRUE_BOOLEAN_FIELDS:
+        value = getattr(boundary.session_secret_gate, field_name)
+        assert type(value) is bool
+        assert value is True
+
+    for field_name in EXPECTED_ER09A_FALSE_BOOLEAN_FIELDS:
+        value = getattr(boundary.session_secret_gate, field_name)
+        assert type(value) is bool
+        assert value is False
+
+
+@pytest.mark.parametrize("field_name", EXPECTED_ER09A_FALSE_BOOLEAN_FIELDS)
+def test_er09a_false_boolean_fields_reject_true_tampering(field_name: str) -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(session_secret_gate, **{field_name: True})
+
+    with pytest.raises(ValueError, match=field_name):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+@pytest.mark.parametrize("field_name", EXPECTED_ER09A_TRUE_BOOLEAN_FIELDS)
+def test_er09a_true_boolean_fields_reject_false_tampering(field_name: str) -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(session_secret_gate, **{field_name: False})
+
+    with pytest.raises(ValueError, match=field_name):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+def test_er09a_authority_lookalike_is_rejected() -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(
+        session_secret_gate,
+        authority=SimpleNamespace(name="EGRESS_ROUTING_SERVER", value="EGRESS_ROUTING_SERVER"),
+    )
+
+    with pytest.raises(ValueError, match="authority"):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+def test_er09a_route_id_tampering_is_rejected() -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(session_secret_gate, route_id="route-browser-windows-fallback-02")
+
+    with pytest.raises(ValueError, match="route_id"):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+def test_er09a_approved_reference_only_session_policy_is_rejected() -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(
+        session_secret_gate,
+        session_policy_status=SessionPolicyStatus.APPROVED_REFERENCE_ONLY,
+    )
+
+    with pytest.raises(ValueError, match="session_policy_status"):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+def test_er09a_session_policy_mismatch_is_rejected() -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(
+        session_secret_gate,
+        session_policy_status=SessionPolicyStatus.BLOCKED_PENDING_ISOLATED_PROJECT_SESSION_GATE,
+    )
+
+    with pytest.raises(ValueError, match="session_policy_status"):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+def test_er09a_evidence_reference_ids_tampering_is_rejected() -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(session_secret_gate, evidence_reference_ids=("tampered-evidence-reference",))
+
+    with pytest.raises(ValueError, match="evidence_reference_ids"):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+def test_er09a_route_capability_identity_tampering_is_rejected() -> None:
+    capability = _build_capability()
+    other_capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(session_secret_gate, route_capability=other_capability)
+
+    with pytest.raises(ValueError, match="route_capability"):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
+
+
+def test_er09a_bool_like_value_inside_tampered_gate_is_rejected() -> None:
+    capability = _build_capability()
+    session_secret_gate = _build_session_secret_gate(capability)
+    _mutate(session_secret_gate, runtime_session_creation_authorized=BoolLike(1))
+
+    with pytest.raises(ValueError, match="runtime_session_creation_authorized"):
+        _build_boundary(
+            capability=capability,
+            session_secret_gate=session_secret_gate,
+            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
+        )
 
 
 @pytest.mark.parametrize(
@@ -601,19 +783,6 @@ def test_inputs_are_not_mutated_during_construction() -> None:
 
     assert _snapshot(capability) == capability_before
     assert _snapshot(session_secret_gate) == gate_before
-
-
-def test_tampered_er09a_source_is_rejected() -> None:
-    capability = _build_capability()
-    session_secret_gate = _build_session_secret_gate(capability)
-    _mutate(capability, session_policy_status=SessionPolicyStatus.APPROVED_REFERENCE_ONLY)
-
-    with pytest.raises(ValueError):
-        _build_boundary(
-            capability=capability,
-            session_secret_gate=session_secret_gate,
-            route_family=RouteFamily.BROWSER_EXTENSION_ROUTE,
-        )
 
 
 def test_boundary_schema_excludes_runtime_and_secret_fields() -> None:

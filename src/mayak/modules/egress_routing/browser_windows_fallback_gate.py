@@ -193,6 +193,56 @@ def _require_session_secret_gate(value: object) -> EgressSessionSecretGateBounda
         "session_secret_gate.evidence_reference_ids",
     )
 
+    false_bool_fields = (
+        (
+            "isolated_project_session_gate_satisfied",
+            gate.isolated_project_session_gate_satisfied,
+        ),
+        ("project_owned_session_authorized", gate.project_owned_session_authorized),
+        (
+            "project_owned_cookie_profile_authorized",
+            gate.project_owned_cookie_profile_authorized,
+        ),
+        (
+            "personal_browser_profile_access_authorized",
+            gate.personal_browser_profile_access_authorized,
+        ),
+        ("browser_password_access_authorized", gate.browser_password_access_authorized),
+        ("owner_private_session_default_authorized", gate.owner_private_session_default_authorized),
+        (
+            "foreign_or_unrelated_cookie_reuse_authorized",
+            gate.foreign_or_unrelated_cookie_reuse_authorized,
+        ),
+        ("raw_cookie_material_authorized", gate.raw_cookie_material_authorized),
+        ("raw_session_token_material_authorized", gate.raw_session_token_material_authorized),
+        ("raw_credential_material_authorized", gate.raw_credential_material_authorized),
+        ("secret_logging_authorized", gate.secret_logging_authorized),
+        ("secret_report_authorized", gate.secret_report_authorized),
+        ("secret_git_storage_authorized", gate.secret_git_storage_authorized),
+        ("runtime_session_creation_authorized", gate.runtime_session_creation_authorized),
+        ("provider_access_permission_inferred", gate.provider_access_permission_inferred),
+        ("parser_success_inferred", gate.parser_success_inferred),
+        ("scan_success_inferred", gate.scan_success_inferred),
+        ("notification_delivery_inferred", gate.notification_delivery_inferred),
+    )
+    true_bool_fields = (
+        ("safe_reference_only", gate.safe_reference_only),
+        ("rotation_required", gate.rotation_required),
+        ("revocation_required", gate.revocation_required),
+        ("redacted_diagnostics_required", gate.redacted_diagnostics_required),
+    )
+
+    for field_name, field_value in false_bool_fields + true_bool_fields:
+        _require_bool(field_value, f"session_secret_gate.{field_name}")
+
+    for field_name, field_value in false_bool_fields:
+        if field_value is not False:
+            raise ValueError(f"session_secret_gate.{field_name} must be False")
+
+    for field_name, field_value in true_bool_fields:
+        if field_value is not True:
+            raise ValueError(f"session_secret_gate.{field_name} must be True")
+
     return gate
 
 
