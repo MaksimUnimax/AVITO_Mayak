@@ -1040,3 +1040,194 @@ def test_no_new_status_runtime_tokens_and_payload_fields() -> None:
 
     field_names = _field_names(source_path.read_text())
     assert field_names.isdisjoint(NO_NEW_STATUS_FORBIDDEN_FIELD_NAMES)
+
+
+LISTING_CARD_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "source_intake",
+}
+
+LISTING_CARD_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "datetime",
+    "time",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "network",
+    "runtime",
+    "database",
+    "repository",
+    "schema",
+    "migration",
+    "scheduler",
+    "clock",
+    "timestamp",
+    "webhook",
+    "mini_app",
+    "provider_sdk",
+    "telegram",
+    "max",
+    "read_tracking",
+    "click_tracking",
+    "retention",
+    "deletion",
+    "archive",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "body",
+    "html",
+    "json",
+}
+
+LISTING_CARD_FORBIDDEN_FIELD_NAMES = {
+    "raw_payload",
+    "provider_payload",
+    "delivery_result",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "body",
+    "html",
+    "json",
+}
+
+
+def _assert_listing_card_ast_boundary(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    parents = _build_parent_map(tree)
+    payload_attributes: list[ast.Attribute] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in {"getattr", "setattr", "hasattr"}:
+                raise AssertionError(f"{module_path}: reflection call not allowed: {node.func.id}")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            lowered = node.value.lower()
+            for token in LISTING_CARD_FORBIDDEN_SOURCE_TOKENS:
+                if token in lowered:
+                    raise AssertionError(
+                        f"{module_path}: string literal contains forbidden token: {node.value!r}"
+                    )
+        elif isinstance(node, ast.Name):
+            node_name = node.id.lower()
+            if node.id == "contains_raw_provider_payload":
+                continue
+            if "payload" in node_name:
+                raise AssertionError(
+                    f"{module_path}: runtime name contains forbidden payload token: {node.id}"
+                )
+        elif isinstance(node, ast.Attribute):
+            if "payload" in node.attr.lower():
+                payload_attributes.append(node)
+
+    assert len(payload_attributes) == 2, (
+        f"{module_path}: expected exactly two payload attribute accesses, "
+        f"got {len(payload_attributes)}"
+    )
+
+    payload_names = {"source_event", "field_fact"}
+    for payload_attribute in payload_attributes:
+        assert payload_attribute.attr == "contains_raw_provider_payload", (
+            f"{module_path}: unexpected payload attribute {payload_attribute.attr}"
+        )
+        assert isinstance(payload_attribute.value, ast.Name), (
+            f"{module_path}: payload attribute must read from a named value"
+        )
+        assert payload_attribute.value.id in payload_names, (
+            f"{module_path}: payload attribute must read from source_event or field_fact"
+        )
+        assert isinstance(payload_attribute.ctx, ast.Load), (
+            f"{module_path}: payload attribute must be loaded, not stored"
+        )
+
+        compare = parents.get(payload_attribute)
+        assert isinstance(compare, ast.Compare), (
+            f"{module_path}: payload attribute must be used in an is-not-False comparison"
+        )
+        assert compare.left is payload_attribute, (
+            f"{module_path}: payload attribute must be the left side of the comparison"
+        )
+        assert len(compare.ops) == 1 and isinstance(compare.ops[0], ast.IsNot), (
+            f"{module_path}: payload attribute must be compared using is not False"
+        )
+        assert len(compare.comparators) == 1, (
+            f"{module_path}: payload attribute comparison must have one comparator"
+        )
+        comparator = compare.comparators[0]
+        assert isinstance(comparator, ast.Constant) and comparator.value is False, (
+            f"{module_path}: payload attribute must be compared against False"
+        )
+
+        if_node = parents.get(compare)
+        assert isinstance(if_node, ast.If) and if_node.test is compare, (
+            f"{module_path}: payload attribute comparison must be used as an if gate"
+        )
+
+        function_node = _enclosing_function(payload_attribute, parents)
+        assert function_node is not None, (
+            f"{module_path}: payload attribute must live inside a helper function"
+        )
+        assert function_node.name in {
+            "_validate_source_intake_decision",
+            "_validate_field_fact_safety",
+        }, (
+            f"{module_path}: payload attribute must live in a validation helper"
+        )
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            node_name = node.id.lower()
+        elif isinstance(node, ast.Attribute):
+            node_name = node.attr.lower()
+        else:
+            continue
+
+        if "payload" in node_name:
+            if node_name == "contains_raw_provider_payload":
+                continue
+            if node in payload_attributes:
+                continue
+            raise AssertionError(f"{module_path}: unexpected payload-bearing AST node")
+
+
+def test_notification_delivery_listing_card_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/listing_card.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= LISTING_CARD_ALLOWED_IMPORT_ROOTS
+    assert roots.isdisjoint(FORBIDDEN_IMPORT_ROOTS)
+
+
+def test_listing_card_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/listing_card.py")
+    source = source_path.read_text().lower()
+    for token in LISTING_CARD_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(LISTING_CARD_FORBIDDEN_FIELD_NAMES)
+
+
+def test_listing_card_ast_payload_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/listing_card.py")
+    _assert_listing_card_ast_boundary(source_path.read_text(), source_path)
