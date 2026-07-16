@@ -43,6 +43,9 @@ EXPECTED_PACKAGE_EXPORT_SLICE = (
     "ER11A_TASK_ID",
     "DevelopmentBridgeAuthority",
     "DevelopmentBridgeGateBoundary",
+    "ER12A_TASK_ID",
+    "SafeEgressDiagnosticAuthority",
+    "SafeEgressDiagnosticGateBoundary",
     "ER07E_TASK_ID",
 )
 
