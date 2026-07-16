@@ -96,6 +96,11 @@ from .outcome_response_failure import (  # noqa: F401
     TransportResponseFailureOutcomeAuthority,
     TransportResponseFailureOutcomeBoundary,
 )
+from .proof_only_gate import (  # noqa: F401
+    ER13A_TASK_ID,
+    EgressProofOnlyAuthority,
+    EgressProofOnlyGateBoundary,
+)
 from .reconciliation import (  # noqa: F401
     ER06E_TASK_ID,
     TransportDispatchReconciliationAuthority,
@@ -250,6 +255,9 @@ __all__ = (
     "ER12A_TASK_ID",
     "SafeEgressDiagnosticAuthority",
     "SafeEgressDiagnosticGateBoundary",
+    "ER13A_TASK_ID",
+    "EgressProofOnlyAuthority",
+    "EgressProofOnlyGateBoundary",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",
