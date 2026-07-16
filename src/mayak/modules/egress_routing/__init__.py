@@ -1,6 +1,6 @@
 """Egress Routing module package."""
 
-from mayak.platform.boundaries import EGRESS_ROUTING_MODULE_ID  # noqa: I001
+from mayak.platform.boundaries import EGRESS_ROUTING_MODULE_ID
 
 from .assignment import (  # noqa: F401
     ER06B_TASK_ID,
@@ -50,11 +50,6 @@ from .development_bridge_gate import (  # noqa: F401
     ER11A_TASK_ID,
     DevelopmentBridgeAuthority,
     DevelopmentBridgeGateBoundary,
-)
-from .safe_diagnostic_gate import (  # noqa: F401
-    ER12A_TASK_ID,
-    SafeEgressDiagnosticAuthority,
-    SafeEgressDiagnosticGateBoundary,
 )
 from .dispatch import (  # noqa: F401
     ER06C_TASK_ID,
@@ -136,6 +131,11 @@ from .restriction_signal import (  # noqa: F401
     TransportRestrictionSignalAuthority,
     TransportRestrictionSignalBoundary,
     TransportRestrictionSignalKind,
+)
+from .safe_diagnostic_gate import (  # noqa: F401
+    ER12A_TASK_ID,
+    SafeEgressDiagnosticAuthority,
+    SafeEgressDiagnosticGateBoundary,
 )
 from .selection import (  # noqa: F401
     ER05A_TASK_ID,
