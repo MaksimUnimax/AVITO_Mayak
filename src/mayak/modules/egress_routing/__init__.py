@@ -46,6 +46,11 @@ from .contracts import (  # noqa: F401
     TransportAssignmentOutcome,
     TransportOutcomeStatus,
 )
+from .development_bridge_gate import (  # noqa: F401
+    ER11A_TASK_ID,
+    DevelopmentBridgeAuthority,
+    DevelopmentBridgeGateBoundary,
+)
 from .dispatch import (  # noqa: F401
     ER06C_TASK_ID,
     TransportDispatchAttemptBoundary,
@@ -234,6 +239,9 @@ __all__ = (
     "ER10A_TASK_ID",
     "FutureBrowserFallbackAuthority",
     "FutureBrowserFallbackGateBoundary",
+    "ER11A_TASK_ID",
+    "DevelopmentBridgeAuthority",
+    "DevelopmentBridgeGateBoundary",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",

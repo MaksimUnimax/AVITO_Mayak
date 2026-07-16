@@ -36,6 +36,9 @@ EXPECTED_PACKAGE_EXPORT_SLICE = (
     "ER10A_TASK_ID",
     "FutureBrowserFallbackAuthority",
     "FutureBrowserFallbackGateBoundary",
+    "ER11A_TASK_ID",
+    "DevelopmentBridgeAuthority",
+    "DevelopmentBridgeGateBoundary",
     "ER07E_TASK_ID",
 )
 
