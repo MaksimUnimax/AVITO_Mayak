@@ -16,6 +16,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/outcome_availability.py"),
     Path("src/mayak/modules/egress_routing/outcome_response.py"),
     Path("src/mayak/modules/egress_routing/outcome_response_failure.py"),
+    Path("src/mayak/modules/egress_routing/restriction_signal.py"),
     Path("src/mayak/modules/egress_routing/outcome_fallback.py"),
     Path("src/mayak/modules/egress_routing/registration.py"),
     Path("src/mayak/modules/egress_routing/selection.py"),
@@ -507,6 +508,56 @@ OUTCOME_RESPONSE_FAILURE_FORBIDDEN_IDENTIFIERS = (
     "captcha_bypass",
 }
 
+RESTRICTION_SIGNAL_MODULE_PATH = Path("src/mayak/modules/egress_routing/restriction_signal.py")
+RESTRICTION_SIGNAL_ALLOWED_RELATIVE_IMPORTS = {
+    "assignment",
+    "contracts",
+    "dispatch",
+    "outcome_response_failure",
+}
+RESTRICTION_SIGNAL_ALLOWED_RELATIVE_IMPORT_NAMES = {
+    "assignment": {
+        "TransportAssignmentAuthority",
+        "TransportAssignmentCommitmentBoundary",
+    },
+    "contracts": {
+        "DispatchAttempt",
+        "DispatchStatus",
+        "TransportAssignment",
+        "TransportAssignmentOutcome",
+        "TransportOutcomeStatus",
+    },
+    "dispatch": {
+        "TransportDispatchAttemptBoundary",
+        "TransportDispatchAuthority",
+    },
+    "outcome_response_failure": {
+        "TransportResponseFailureOutcomeAuthority",
+        "TransportResponseFailureOutcomeBoundary",
+    },
+}
+RESTRICTION_SIGNAL_FORBIDDEN_IDENTIFIERS = {
+    "RouteHealthState",
+    "RouteRestrictionState",
+    "RouteQuarantineDecision",
+    "PolicyBasedFallbackBoundary",
+    "TransportAvailabilityOutcomeBoundary",
+    "TransportOutcomeCommitmentBoundary",
+    "TransportResponsePresenceOutcomeBoundary",
+    "RouteReadinessDecision",
+    "RouteSelectionDecision",
+    "Parser",
+    "Scan",
+    "Notification",
+    "Beacon",
+    "Admin",
+    "raw_response",
+    "response_body",
+    "response_payload",
+    "captcha_solver",
+    "captcha_bypass",
+}
+
 OUTCOME_FALLBACK_MODULE_PATH = Path("src/mayak/modules/egress_routing/outcome_fallback.py")
 OUTCOME_FALLBACK_ALLOWED_RELATIVE_IMPORTS = {
     "contracts",
@@ -943,6 +994,31 @@ def test_egress_routing_modules_use_only_allowed_imports_and_static_ast() -> Non
         _identifiers_are_ascii_and_stable(tree)
 
 
+def test_restriction_signal_module_imports_and_identifiers_are_minimal() -> None:
+    source = _read_source(RESTRICTION_SIGNAL_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum", "typing"}
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level > 0
+                continue
+            if node.level == 0:
+                root = node.module.split(".", 1)[0]
+                assert root in {"__future__", "dataclasses", "enum", "typing"}
+                continue
+            assert node.module in RESTRICTION_SIGNAL_ALLOWED_RELATIVE_IMPORTS
+            imported_names = {alias.name for alias in node.names}
+            assert imported_names == RESTRICTION_SIGNAL_ALLOWED_RELATIVE_IMPORT_NAMES[node.module]
+
+    identifiers = _iter_identifier_names(tree)
+    assert RESTRICTION_SIGNAL_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
+
+
 def test_assignment_module_imports_and_identifiers_are_minimal() -> None:
     source = _read_source(ASSIGNMENT_MODULE_PATH)
     tree = ast.parse(source)
@@ -1259,6 +1335,7 @@ def test_egress_routing_dataclass_field_names_do_not_expose_forbidden_runtime_co
         Path("src/mayak/modules/egress_routing/outcome_availability.py"),
         Path("src/mayak/modules/egress_routing/outcome_response.py"),
         Path("src/mayak/modules/egress_routing/outcome_fallback.py"),
+        Path("src/mayak/modules/egress_routing/restriction_signal.py"),
     ):
         source = _read_source(relative_path)
         tree = ast.parse(source)

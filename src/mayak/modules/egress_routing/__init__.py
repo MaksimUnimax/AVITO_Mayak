@@ -111,6 +111,12 @@ from .replay import (  # noqa: F401
     TransportDispatchReplayAuthority,
     TransportDispatchReplayBoundary,
 )
+from .restriction_signal import (  # noqa: F401
+    ER08A_TASK_ID,
+    TransportRestrictionSignalAuthority,
+    TransportRestrictionSignalBoundary,
+    TransportRestrictionSignalKind,
+)
 from .selection import (  # noqa: F401
     ER05A_TASK_ID,
     RouteCandidateEligibilityStatus,
@@ -200,6 +206,10 @@ __all__ = (
     "ER07D_TASK_ID",
     "TransportResponseFailureOutcomeAuthority",
     "TransportResponseFailureOutcomeBoundary",
+    "ER08A_TASK_ID",
+    "TransportRestrictionSignalAuthority",
+    "TransportRestrictionSignalKind",
+    "TransportRestrictionSignalBoundary",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",
