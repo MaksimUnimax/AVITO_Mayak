@@ -1351,3 +1351,112 @@ def test_listing_card_runtime_tokens_and_payload_fields() -> None:
 def test_listing_card_ast_payload_boundary() -> None:
     source_path = Path("src/mayak/modules/notification_delivery/listing_card.py")
     _assert_listing_card_ast_boundary(source_path.read_text(), source_path)
+
+
+READ_MODEL_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "batch",
+    "dataclasses",
+    "eligibility",
+    "enum",
+}
+
+READ_MODEL_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "queue",
+    "worker",
+    "broker",
+    "filesystem",
+    "database",
+    "repository",
+    "runtime",
+    "webhook",
+    "mini_app",
+    "provider_sdk",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "raw_payload",
+    "provider_payload",
+    "body",
+    "html",
+    "json",
+    "target_reference_id",
+    "provider_target_id",
+    "dispatch(",
+    "send(",
+    "deliver(",
+    "http://",
+    "https://",
+    "network",
+    "schema",
+    "migration",
+}
+
+READ_MODEL_FORBIDDEN_FIELD_NAMES = {
+    "raw_payload",
+    "provider_payload",
+    "delivery_result",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "body",
+    "html",
+    "json",
+    "provider_target_id",
+    "target_reference_id",
+}
+
+
+def _assert_read_model_ast_boundary(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in {"getattr", "setattr", "hasattr"}:
+                raise AssertionError(f"{module_path}: reflection call not allowed: {node.func.id}")
+        if isinstance(node, ast.Slice):
+            raise AssertionError(f"{module_path}: slicing is not allowed")
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            lowered = node.value.lower()
+            for token in READ_MODEL_FORBIDDEN_SOURCE_TOKENS:
+                if token in lowered:
+                    raise AssertionError(
+                        f"{module_path}: string literal contains forbidden token: {node.value!r}"
+                    )
+
+
+def test_notification_delivery_read_model_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/read_model.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= READ_MODEL_ALLOWED_IMPORT_ROOTS
+    assert roots.isdisjoint(FORBIDDEN_IMPORT_ROOTS)
+
+
+def test_read_model_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/read_model.py")
+    source = source_path.read_text().lower()
+    for token in READ_MODEL_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(READ_MODEL_FORBIDDEN_FIELD_NAMES)
+
+
+def test_read_model_ast_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/read_model.py")
+    _assert_read_model_ast_boundary(source_path.read_text(), source_path)
