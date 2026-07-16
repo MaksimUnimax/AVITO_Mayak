@@ -91,6 +91,65 @@ _PROVIDER_FAILURE_LIFECYCLE_STATUSES = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class _SourceEventDetails:
+    safe_listing_reference_ids: tuple[str, ...]
+    account_id: str
+    beacon_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _BatchItemResultProjection:
+    batch_item_id: str
+    authority: "NotificationBatchAuthority"
+    item_input: "NotificationBatchItemInput"
+    stage: "NotificationBatchStage"
+    source_decision_id: str
+    account_id: str
+    beacon_id: str | None
+    channel_class: NotificationChannelClass | None
+    outbox_item_id: str | None
+    attempt_id: str | None
+    safe_result_reference_id: str
+    safe_listing_reference_ids: tuple[str, ...]
+    disposition: "NotificationBatchDisposition"
+    safe_error_category: "NotificationBatchSafeErrorCategory"
+    replayed: bool
+    delivery_accepted: bool
+    reconciliation_required: bool
+    retry_policy_required: bool
+    execution_authorized: bool
+    provider_mapping_authorized: bool
+    reason_codes: tuple[str, ...]
+    evidence_reference_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _BatchDecisionProjection:
+    batch_id: str
+    authority: "NotificationBatchAuthority"
+    account_id: str
+    item_inputs: tuple["NotificationBatchItemInput", ...]
+    item_results: tuple["NotificationBatchItemResult", ...]
+    status: "NotificationBatchDecisionStatus"
+    item_count: int
+    accepted_count: int
+    created_count: int
+    replayed_count: int
+    suppressed_count: int
+    blocked_count: int
+    delivered_count: int
+    failed_count: int
+    reconciliation_count: int
+    retry_policy_required_count: int
+    listing_references_preserved: bool
+    per_item_outcomes_exposed: bool
+    execution_authorized: bool
+    provider_mapping_authorized: bool
+    reason_codes: tuple[str, ...]
+    evidence_reference_ids: tuple[str, ...]
+
+
 def _require_text(value: object, field_name: str) -> str:
     if type(value) is not str or not value.strip():
         raise ValueError(f"{field_name} must be a non-blank string")
@@ -137,8 +196,8 @@ def _first_occurrence_union(*tuples: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(ordered)
 
 
-def _batch_item_result_values(result: "NotificationBatchItemResult") -> tuple[object, ...]:
-    return (
+def _batch_item_result_values(result: "NotificationBatchItemResult") -> _BatchItemResultProjection:
+    return _BatchItemResultProjection(
         result.batch_item_id,
         result.authority,
         result.item_input,
@@ -164,8 +223,8 @@ def _batch_item_result_values(result: "NotificationBatchItemResult") -> tuple[ob
     )
 
 
-def _batch_decision_values(decision: "NotificationBatchDecision") -> tuple[object, ...]:
-    return (
+def _batch_decision_values(decision: "NotificationBatchDecision") -> _BatchDecisionProjection:
+    return _BatchDecisionProjection(
         decision.batch_id,
         decision.authority,
         decision.account_id,
@@ -193,26 +252,41 @@ def _batch_decision_values(decision: "NotificationBatchDecision") -> tuple[objec
 
 def _source_event_from_outbox_creation(
     outbox_creation_decision: NotificationOutboxCreationDecision,
-) -> object:
+) -> _SourceEventDetails:
     eligibility_decision = outbox_creation_decision.eligibility_decision
-    return eligibility_decision.source_intake_decision.source_event
+    source_event = eligibility_decision.source_intake_decision.source_event
+    return _SourceEventDetails(
+        safe_listing_reference_ids=source_event.safe_listing_reference_ids,
+        account_id=source_event.account_id,
+        beacon_id=source_event.beacon_id,
+    )
 
 
 def _source_event_from_delivery_plan(
     delivery_plan_decision: NotificationDeliveryPlanDecision,
-) -> object:
+) -> _SourceEventDetails:
     outbox_creation_decision = delivery_plan_decision.outbox_creation_decision
     eligibility_decision = outbox_creation_decision.eligibility_decision
-    return eligibility_decision.source_intake_decision.source_event
+    source_event = eligibility_decision.source_intake_decision.source_event
+    return _SourceEventDetails(
+        safe_listing_reference_ids=source_event.safe_listing_reference_ids,
+        account_id=source_event.account_id,
+        beacon_id=source_event.beacon_id,
+    )
 
 
 def _source_event_from_attempt(
     attempt_planning_decision: NotificationAttemptPlanningDecision,
-) -> object:
+) -> _SourceEventDetails:
     delivery_plan_decision = attempt_planning_decision.delivery_plan_decision
     outbox_creation_decision = delivery_plan_decision.outbox_creation_decision
     eligibility_decision = outbox_creation_decision.eligibility_decision
-    return eligibility_decision.source_intake_decision.source_event
+    source_event = eligibility_decision.source_intake_decision.source_event
+    return _SourceEventDetails(
+        safe_listing_reference_ids=source_event.safe_listing_reference_ids,
+        account_id=source_event.account_id,
+        beacon_id=source_event.beacon_id,
+    )
 
 
 def _listing_references_from_outbox_creation(
@@ -239,6 +313,7 @@ def _listing_references_from_attempt(
 ) -> tuple[str, ...]:
     if attempt_planning_decision.attempt is not None:
         delivery_plan = attempt_planning_decision.delivery_plan_decision.delivery_plan
+        assert delivery_plan is not None
         return delivery_plan.outbox_item.safe_listing_reference_ids
     source_event = _source_event_from_attempt(attempt_planning_decision)
     return source_event.safe_listing_reference_ids
@@ -395,8 +470,10 @@ class NotificationBatchItemInput:
 def _dedup_item_result_fields(
     item_input: NotificationBatchItemInput,
     decision: NotificationDeduplicationDecision,
-) -> tuple[object, ...]:
+) -> _BatchItemResultProjection:
     request = decision.request
+    resulting_record = decision.resulting_record
+    assert resulting_record is not None
     if request.stage.value == "OUTBOX_CREATION":
         outbox_item_id = request.proposed_result_reference_id
         attempt_id = None
@@ -409,7 +486,7 @@ def _dedup_item_result_fields(
 
     if decision.status is NotificationDeduplicationDecisionStatus.NEW_EFFECT:
         disposition = NotificationBatchDisposition.CREATED
-        safe_result_reference_id = decision.resulting_record.protected_result_reference_id
+        safe_result_reference_id = resulting_record.protected_result_reference_id
         replayed = False
         reconciliation_required = decision.reconciliation_required
     elif decision.status in (
@@ -417,12 +494,12 @@ def _dedup_item_result_fields(
         NotificationDeduplicationDecisionStatus.REPLAY_PENDING,
     ):
         disposition = NotificationBatchDisposition.REPLAYED
-        safe_result_reference_id = decision.resulting_record.protected_result_reference_id
+        safe_result_reference_id = resulting_record.protected_result_reference_id
         replayed = True
         reconciliation_required = False
     elif decision.status is NotificationDeduplicationDecisionStatus.RECONCILIATION_REQUIRED:
         disposition = NotificationBatchDisposition.RECONCILIATION_REQUIRED
-        safe_result_reference_id = decision.resulting_record.protected_result_reference_id
+        safe_result_reference_id = resulting_record.protected_result_reference_id
         replayed = True
         reconciliation_required = True
     elif decision.status is NotificationDeduplicationDecisionStatus.IDEMPOTENCY_MISMATCH:
@@ -440,7 +517,7 @@ def _dedup_item_result_fields(
         replayed = False
         reconciliation_required = False
 
-    return (
+    return _BatchItemResultProjection(
         item_input.batch_item_id,
         NotificationBatchAuthority.NOTIFICATION_DELIVERY_SERVER,
         item_input,
@@ -469,7 +546,7 @@ def _dedup_item_result_fields(
 def _outbox_item_result_fields(
     item_input: NotificationBatchItemInput,
     decision: NotificationOutboxCreationDecision,
-) -> tuple[object, ...]:
+) -> _BatchItemResultProjection:
     source_event = _source_event_from_outbox_creation(decision)
     if decision.status is NotificationOutboxCreationStatus.REPLAYED:
         if decision.outbox_item is None:
@@ -510,7 +587,7 @@ def _outbox_item_result_fields(
         replayed = False
         safe_error_category = NotificationBatchSafeErrorCategory.IDEMPOTENCY_BLOCKED
 
-    return (
+    return _BatchItemResultProjection(
         item_input.batch_item_id,
         NotificationBatchAuthority.NOTIFICATION_DELIVERY_SERVER,
         item_input,
@@ -539,8 +616,9 @@ def _outbox_item_result_fields(
 def _delivery_plan_item_result_fields(
     item_input: NotificationBatchItemInput,
     decision: NotificationDeliveryPlanDecision,
-) -> tuple[object, ...]:
+) -> _BatchItemResultProjection:
     source_event = _source_event_from_delivery_plan(decision)
+    outbox_item_id: str | None
     if decision.delivery_plan is not None:
         outbox_item_id = decision.delivery_plan.outbox_item.outbox_item_id
         safe_result_reference_id = decision.delivery_plan.delivery_plan_id
@@ -574,7 +652,7 @@ def _delivery_plan_item_result_fields(
         disposition = NotificationBatchDisposition.BLOCKED
         safe_error_category = NotificationBatchSafeErrorCategory.CHANNEL_PLAN_BLOCKED
 
-    return (
+    return _BatchItemResultProjection(
         item_input.batch_item_id,
         NotificationBatchAuthority.NOTIFICATION_DELIVERY_SERVER,
         item_input,
@@ -603,8 +681,9 @@ def _delivery_plan_item_result_fields(
 def _attempt_item_result_fields(
     item_input: NotificationBatchItemInput,
     decision: NotificationAttemptPlanningDecision,
-) -> tuple[object, ...]:
+) -> _BatchItemResultProjection:
     source_event = _source_event_from_attempt(decision)
+    outbox_item_id: str | None
     if decision.attempt is not None:
         attempt = decision.attempt
         outbox_item_id = attempt.outbox_item_id
@@ -645,7 +724,7 @@ def _attempt_item_result_fields(
         disposition = NotificationBatchDisposition.BLOCKED
         safe_error_category = NotificationBatchSafeErrorCategory.CHANNEL_PLAN_BLOCKED
 
-    return (
+    return _BatchItemResultProjection(
         item_input.batch_item_id,
         NotificationBatchAuthority.NOTIFICATION_DELIVERY_SERVER,
         item_input,
@@ -674,7 +753,7 @@ def _attempt_item_result_fields(
 def _provider_outcome_item_result_fields(
     item_input: NotificationBatchItemInput,
     decision: NotificationProviderOutcomeAcceptanceDecision,
-) -> tuple[object, ...]:
+) -> _BatchItemResultProjection:
     outbox_item_context = item_input.outbox_item_context
     if outbox_item_context is None:
         raise ValueError("provider outcome inputs require outbox_item_context")
@@ -716,16 +795,10 @@ def _provider_outcome_item_result_fields(
     elif disposition is NotificationBatchDisposition.RECONCILIATION_REQUIRED:
         safe_error_category = NotificationBatchSafeErrorCategory.AMBIGUOUS_RECONCILIATION
     elif disposition is NotificationBatchDisposition.REPLAYED:
-        replayed_failure = (
-            decision.provider_outcome.outcome_class.value
-            in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
-        )
         if delivery_accepted:
             safe_error_category = NotificationBatchSafeErrorCategory.NONE
         elif reconciliation_required:
             safe_error_category = NotificationBatchSafeErrorCategory.AMBIGUOUS_RECONCILIATION
-        elif replayed_failure:
-            safe_error_category = NotificationBatchSafeErrorCategory.PROVIDER_FAILURE
         elif effective_attempt.lifecycle_status.value in _PROVIDER_FAILURE_LIFECYCLE_STATUSES:
             safe_error_category = NotificationBatchSafeErrorCategory.PROVIDER_FAILURE
         elif effective_attempt.lifecycle_status.value in {
@@ -747,18 +820,10 @@ def _provider_outcome_item_result_fields(
         }
         and delivery_accepted is False
         and reconciliation_required is False
-        and (
-            effective_attempt.lifecycle_status.value
-            in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
-            or (
-                disposition is NotificationBatchDisposition.REPLAYED
-                and decision.provider_outcome.outcome_class.value
-                in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
-            )
-        )
+        and effective_attempt.lifecycle_status.value in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
     )
 
-    return (
+    return _BatchItemResultProjection(
         item_input.batch_item_id,
         NotificationBatchAuthority.NOTIFICATION_DELIVERY_SERVER,
         item_input,
@@ -790,7 +855,7 @@ def _provider_outcome_item_result_fields(
 
 def _project_notification_batch_item_result_fields(
     item_input: NotificationBatchItemInput,
-) -> tuple[object, ...]:
+) -> _BatchItemResultProjection:
     source_decision = item_input.source_decision
     if type(source_decision) is NotificationDeduplicationDecision:
         return _dedup_item_result_fields(item_input, source_decision)
@@ -800,7 +865,9 @@ def _project_notification_batch_item_result_fields(
         return _delivery_plan_item_result_fields(item_input, source_decision)
     if type(source_decision) is NotificationAttemptPlanningDecision:
         return _attempt_item_result_fields(item_input, source_decision)
-    return _provider_outcome_item_result_fields(item_input, source_decision)
+    if type(source_decision) is NotificationProviderOutcomeAcceptanceDecision:
+        return _provider_outcome_item_result_fields(item_input, source_decision)
+    raise ValueError("source_decision must be one of the approved Notification Delivery decisions")
 
 
 @dataclass(frozen=True, slots=True)
@@ -845,7 +912,7 @@ def _project_notification_batch_decision_fields(
     item_inputs: tuple[NotificationBatchItemInput, ...],
     item_results: tuple[NotificationBatchItemResult, ...],
     evidence_reference_ids: tuple[str, ...],
-) -> tuple[object, ...]:
+) -> _BatchDecisionProjection:
     if not item_inputs:
         raise ValueError("batch must not be empty")
     if len(item_inputs) != len(item_results):
@@ -919,7 +986,7 @@ def _project_notification_batch_decision_fields(
     else:
         status = NotificationBatchDecisionStatus.ALL_BLOCKED_OR_FAILED
 
-    return (
+    return _BatchDecisionProjection(
         batch_id,
         NotificationBatchAuthority.NOTIFICATION_DELIVERY_SERVER,
         item_results[0].account_id,
@@ -1046,7 +1113,32 @@ def project_notification_batch_outcomes(
             raise ValueError("item_inputs must contain NotificationBatchItemInput")
 
     item_results = tuple(
-        NotificationBatchItemResult(**_item_result_kwargs(item_input)) for item_input in item_inputs
+        NotificationBatchItemResult(
+            batch_item_id=projection.batch_item_id,
+            authority=projection.authority,
+            item_input=projection.item_input,
+            stage=projection.stage,
+            source_decision_id=projection.source_decision_id,
+            account_id=projection.account_id,
+            beacon_id=projection.beacon_id,
+            channel_class=projection.channel_class,
+            outbox_item_id=projection.outbox_item_id,
+            attempt_id=projection.attempt_id,
+            safe_result_reference_id=projection.safe_result_reference_id,
+            safe_listing_reference_ids=projection.safe_listing_reference_ids,
+            disposition=projection.disposition,
+            safe_error_category=projection.safe_error_category,
+            replayed=projection.replayed,
+            delivery_accepted=projection.delivery_accepted,
+            reconciliation_required=projection.reconciliation_required,
+            retry_policy_required=projection.retry_policy_required,
+            execution_authorized=projection.execution_authorized,
+            provider_mapping_authorized=projection.provider_mapping_authorized,
+            reason_codes=projection.reason_codes,
+            evidence_reference_ids=projection.evidence_reference_ids,
+        )
+        for item_input in item_inputs
+        for projection in (_project_notification_batch_item_result_fields(item_input),)
     )
     decision_fields = _project_notification_batch_decision_fields(
         batch_id=batch_id,
@@ -1055,57 +1147,29 @@ def project_notification_batch_outcomes(
         evidence_reference_ids=evidence_reference_ids,
     )
     return NotificationBatchDecision(
-        batch_id=decision_fields[0],
-        authority=decision_fields[1],
-        account_id=decision_fields[2],
-        item_inputs=decision_fields[3],
-        item_results=decision_fields[4],
-        status=decision_fields[5],
-        item_count=decision_fields[6],
-        accepted_count=decision_fields[7],
-        created_count=decision_fields[8],
-        replayed_count=decision_fields[9],
-        suppressed_count=decision_fields[10],
-        blocked_count=decision_fields[11],
-        delivered_count=decision_fields[12],
-        failed_count=decision_fields[13],
-        reconciliation_count=decision_fields[14],
-        retry_policy_required_count=decision_fields[15],
-        listing_references_preserved=decision_fields[16],
-        per_item_outcomes_exposed=decision_fields[17],
-        execution_authorized=decision_fields[18],
-        provider_mapping_authorized=decision_fields[19],
-        reason_codes=decision_fields[20],
-        evidence_reference_ids=decision_fields[21],
+        batch_id=decision_fields.batch_id,
+        authority=decision_fields.authority,
+        account_id=decision_fields.account_id,
+        item_inputs=decision_fields.item_inputs,
+        item_results=decision_fields.item_results,
+        status=decision_fields.status,
+        item_count=decision_fields.item_count,
+        accepted_count=decision_fields.accepted_count,
+        created_count=decision_fields.created_count,
+        replayed_count=decision_fields.replayed_count,
+        suppressed_count=decision_fields.suppressed_count,
+        blocked_count=decision_fields.blocked_count,
+        delivered_count=decision_fields.delivered_count,
+        failed_count=decision_fields.failed_count,
+        reconciliation_count=decision_fields.reconciliation_count,
+        retry_policy_required_count=decision_fields.retry_policy_required_count,
+        listing_references_preserved=decision_fields.listing_references_preserved,
+        per_item_outcomes_exposed=decision_fields.per_item_outcomes_exposed,
+        execution_authorized=decision_fields.execution_authorized,
+        provider_mapping_authorized=decision_fields.provider_mapping_authorized,
+        reason_codes=decision_fields.reason_codes,
+        evidence_reference_ids=decision_fields.evidence_reference_ids,
     )
-
-
-def _item_result_kwargs(item_input: NotificationBatchItemInput) -> dict[str, object]:
-    values = _project_notification_batch_item_result_fields(item_input)
-    return {
-        "batch_item_id": values[0],
-        "authority": values[1],
-        "item_input": values[2],
-        "stage": values[3],
-        "source_decision_id": values[4],
-        "account_id": values[5],
-        "beacon_id": values[6],
-        "channel_class": values[7],
-        "outbox_item_id": values[8],
-        "attempt_id": values[9],
-        "safe_result_reference_id": values[10],
-        "safe_listing_reference_ids": values[11],
-        "disposition": values[12],
-        "safe_error_category": values[13],
-        "replayed": values[14],
-        "delivery_accepted": values[15],
-        "reconciliation_required": values[16],
-        "retry_policy_required": values[17],
-        "execution_authorized": values[18],
-        "provider_mapping_authorized": values[19],
-        "reason_codes": values[20],
-        "evidence_reference_ids": values[21],
-    }
 
 
 __all__ = (

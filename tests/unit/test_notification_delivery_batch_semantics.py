@@ -18,12 +18,14 @@ from mayak.modules.notification_delivery import (
     NotificationBeaconLifecycleStatus,
     NotificationChannelClass,
     NotificationChannelEligibilityEvidence,
+    NotificationDeduplicationDecision,
     NotificationDeduplicationRecordState,
     NotificationDeduplicationRequest,
     NotificationDeduplicationStage,
     NotificationDeliveryPlanDecision,
     NotificationDeliveryPlanDecisionStatus,
     NotificationEligibilityContext,
+    NotificationEligibilityDecision,
     NotificationEntitlementStatus,
     NotificationOutboxCreationDecision,
     NotificationOutboxItem,
@@ -43,9 +45,6 @@ from mayak.modules.notification_delivery import (
     plan_notification_attempt,
     plan_notification_delivery,
     project_notification_batch_outcomes,
-)
-from mayak.modules.notification_delivery.batch import (
-    NotificationBatchAuthority,
 )
 from mayak.modules.notification_delivery.batch import (
     NotificationBatchSafeErrorCategory as BatchSafeErrorCategory,
@@ -171,7 +170,7 @@ def _eligibility_decision(
     max_target_reference_id: str | None = "max-target-1",
     max_target_verified: bool = True,
     max_target_available: bool = True,
-):
+) -> NotificationEligibilityDecision:
     return evaluate_notification_eligibility(
         decision_id=decision_id,
         source_intake_decision=evaluate_notification_source_intake(
@@ -391,7 +390,7 @@ def _replayed_provider_outcome_decision(
     decision_id: str = "provider-replay-decision-1",
     outcome_reference_id: str,
 ) -> NotificationProviderOutcomeAcceptanceDecision:
-    previous_attempt = accepted_decision.previous_attempt
+    previous_attempt = accepted_decision.resulting_attempt
     assert previous_attempt is not None
     replayed_provider_outcome = _provider_outcome_reference(
         previous_attempt,
@@ -402,6 +401,7 @@ def _replayed_provider_outcome_decision(
     return replace(
         accepted_decision,
         decision_id=decision_id,
+        previous_attempt=previous_attempt,
         provider_outcome=replayed_provider_outcome,
         status=NotificationProviderOutcomeAcceptanceStatus.REPLAYED,
         resulting_attempt=previous_attempt,
@@ -414,7 +414,13 @@ def _replayed_provider_outcome_decision(
 
 def _batch_input(
     batch_item_id: str,
-    source_decision,
+    source_decision: (
+        NotificationDeduplicationDecision
+        | NotificationOutboxCreationDecision
+        | NotificationDeliveryPlanDecision
+        | NotificationAttemptPlanningDecision
+        | NotificationProviderOutcomeAcceptanceDecision
+    ),
     *,
     outbox_item_context: NotificationOutboxItem | None = None,
     evidence_reference_ids: tuple[str, ...] = ("batch-item-evidence-1",),
@@ -436,6 +442,14 @@ def _project(
         item_inputs=item_inputs,
         evidence_reference_ids=evidence_reference_ids,
     )
+
+
+def _attempt_delivery_outbox_item(
+    attempt_decision: NotificationAttemptPlanningDecision,
+) -> NotificationOutboxItem:
+    delivery_plan = attempt_decision.delivery_plan_decision.delivery_plan
+    assert delivery_plan is not None
+    return delivery_plan.outbox_item
 
 
 def test_each_source_decision_type_projects_to_the_expected_stage() -> None:
@@ -501,7 +515,7 @@ def test_each_source_decision_type_projects_to_the_expected_stage() -> None:
             _batch_input(
                 "provider",
                 provider_accepted,
-                outbox_item_context=attempt_decision.delivery_plan_decision.delivery_plan.outbox_item,
+                outbox_item_context=_attempt_delivery_outbox_item(attempt_decision),
             ),
             NotificationBatchStage.PROVIDER_OUTCOME,
             NotificationBatchDisposition.DELIVERED,
@@ -510,39 +524,30 @@ def test_each_source_decision_type_projects_to_the_expected_stage() -> None:
     ]
 
     for item_input, expected_stage, expected_disposition, expected_error in cases:
+        projected_result = _project(item_input).item_results[0]
         item_result = NotificationBatchItemResult(
-            **{
-                "batch_item_id": item_input.batch_item_id,
-                "authority": NotificationBatchAuthority.NOTIFICATION_DELIVERY_SERVER,
-                "item_input": item_input,
-                "stage": expected_stage,
-                "source_decision_id": item_input.source_decision.decision_id,
-                "account_id": _project(item_input).item_results[0].account_id,
-                "beacon_id": _project(item_input).item_results[0].beacon_id,
-                "channel_class": _project(item_input).item_results[0].channel_class,
-                "outbox_item_id": _project(item_input).item_results[0].outbox_item_id,
-                "attempt_id": _project(item_input).item_results[0].attempt_id,
-                "safe_result_reference_id": _project(item_input)
-                .item_results[0]
-                .safe_result_reference_id,
-                "safe_listing_reference_ids": _project(item_input)
-                .item_results[0]
-                .safe_listing_reference_ids,
-                "disposition": expected_disposition,
-                "safe_error_category": expected_error,
-                "replayed": _project(item_input).item_results[0].replayed,
-                "delivery_accepted": _project(item_input).item_results[0].delivery_accepted,
-                "reconciliation_required": _project(item_input)
-                .item_results[0]
-                .reconciliation_required,
-                "retry_policy_required": _project(item_input).item_results[0].retry_policy_required,
-                "execution_authorized": False,
-                "provider_mapping_authorized": False,
-                "reason_codes": _project(item_input).item_results[0].reason_codes,
-                "evidence_reference_ids": _project(item_input)
-                .item_results[0]
-                .evidence_reference_ids,
-            }
+            projected_result.batch_item_id,
+            projected_result.authority,
+            projected_result.item_input,
+            projected_result.stage,
+            projected_result.source_decision_id,
+            projected_result.account_id,
+            projected_result.beacon_id,
+            projected_result.channel_class,
+            projected_result.outbox_item_id,
+            projected_result.attempt_id,
+            projected_result.safe_result_reference_id,
+            projected_result.safe_listing_reference_ids,
+            expected_disposition,
+            expected_error,
+            projected_result.replayed,
+            projected_result.delivery_accepted,
+            projected_result.reconciliation_required,
+            projected_result.retry_policy_required,
+            False,
+            False,
+            projected_result.reason_codes,
+            projected_result.evidence_reference_ids,
         )
         assert item_result.stage is expected_stage
         assert item_result.disposition is expected_disposition
@@ -575,9 +580,11 @@ def test_outbox_creation_semantics_cover_created_replayed_suppressed_and_blocked
         telegram_enabled=False,
         max_enabled=False,
     )
+    created_outbox_item = created.outbox_item
+    assert created_outbox_item is not None
     mismatch = create_notification_outbox_item(
         decision_id="outbox-mismatch-1",
-        outbox_item_id=created.outbox_item.outbox_item_id,
+        outbox_item_id=created_outbox_item.outbox_item_id,
         outbox_contract="outbox.contract.v1",
         outbox_contract_version="1.0",
         eligibility_decision=_eligibility_decision(
@@ -590,7 +597,7 @@ def test_outbox_creation_semantics_cover_created_replayed_suppressed_and_blocked
             value="outbox-idempotency-fingerprint-mismatch-1"
         ),
         idempotency_scope=IdempotencyScope(value="outbox-idempotency-scope-1"),
-        existing_outbox_item=created.outbox_item,
+        existing_outbox_item=created_outbox_item,
         evidence_reference_ids=("outbox-command-evidence-mismatch-1",),
     )
 
@@ -601,10 +608,10 @@ def test_outbox_creation_semantics_cover_created_replayed_suppressed_and_blocked
 
     assert created_result.disposition is NotificationBatchDisposition.CREATED
     assert created_result.safe_error_category is BatchSafeErrorCategory.NONE
-    assert created_result.outbox_item_id == created.outbox_item.outbox_item_id
+    assert created_result.outbox_item_id == created_outbox_item.outbox_item_id
     assert replayed_result.disposition is NotificationBatchDisposition.REPLAYED
     assert replayed_result.replayed is True
-    assert replayed_result.outbox_item_id == created.outbox_item.outbox_item_id
+    assert replayed_result.outbox_item_id == created_outbox_item.outbox_item_id
     assert suppressed_result.disposition is NotificationBatchDisposition.SUPPRESSED
     assert suppressed_result.safe_error_category is BatchSafeErrorCategory.ELIGIBILITY_BLOCKED
     assert mismatch_result.disposition is NotificationBatchDisposition.BLOCKED
@@ -723,8 +730,7 @@ def test_provider_outcome_semantics_cover_delivered_failed_ambiguous_and_replay_
         ambiguous, outcome_reference_id="provider-ambiguous-replay-1"
     )
 
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
 
     delivered_result = _project(
         _batch_input("delivered", delivered, outbox_item_context=context)
@@ -800,21 +806,22 @@ def test_provider_failure_replay_requires_policy_decision_for_all_failure_classe
 ) -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
 
     accepted_failure = _accepted_provider_outcome_decision(
         attempt_decision,
         outcome_class=outcome_class,
         outcome_reference_id=f"accepted-{outcome_class.value.lower()}-1",
     )
+    accepted_failure_resulting_attempt = accepted_failure.resulting_attempt
+    assert accepted_failure_resulting_attempt is not None
     accepted_failure_snapshot = (
         accepted_failure.status,
         accepted_failure.replayed,
         accepted_failure.reason_codes,
         accepted_failure.provider_outcome.outcome_class,
         accepted_failure.previous_attempt.attempt_id,
-        accepted_failure.resulting_attempt.attempt_id,
+        accepted_failure_resulting_attempt.attempt_id,
     )
     replayed_failure = _replayed_provider_outcome_decision(
         accepted_failure,
@@ -887,8 +894,7 @@ def test_provider_failure_replay_requires_policy_decision_for_all_failure_classe
 def test_replayed_failure_items_count_toward_batch_retry_policy_required_count() -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
 
     replayed_items = [
         _batch_input(
@@ -939,8 +945,7 @@ def test_rejected_provider_outcome_acceptance_status_is_blocked(
 ) -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
 
     provider_outcome = _provider_outcome_reference(
         attempt_decision.attempt,
@@ -995,8 +1000,7 @@ def test_mixed_telegram_delivered_and_max_failed_is_partial_outcome() -> None:
     )
     assert telegram_attempt.attempt is not None
     assert max_attempt.attempt is not None
-    context = telegram_attempt.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(telegram_attempt)
 
     telegram_delivered = _accepted_provider_outcome_decision(
         telegram_attempt,
@@ -1029,8 +1033,7 @@ def test_mixed_telegram_delivered_and_max_failed_is_partial_outcome() -> None:
 def test_delivered_plus_blocked_is_partial_outcome() -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
 
     delivered = _accepted_provider_outcome_decision(
         attempt_decision,
@@ -1066,8 +1069,7 @@ def test_delivered_plus_blocked_is_partial_outcome() -> None:
 def test_any_reconciliation_requires_batch_reconciliation_status() -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
 
     ambiguous = _accepted_provider_outcome_decision(
         attempt_decision,
@@ -1105,8 +1107,7 @@ def test_all_created_replayed_or_delivered_items_are_all_accepted() -> None:
         attempt_id="attempt-delivered-all-accepted-1",
     )
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
     delivered = _accepted_provider_outcome_decision(
         attempt_decision,
         decision_id="provider-delivered-all-accepted-1",
@@ -1171,8 +1172,7 @@ def test_all_suppressed_blocked_or_failed_items_are_all_blocked_or_failed() -> N
         attempt_id="attempt-provider-failed-all-blocked-1",
     )
     assert provider_failed_attempt.attempt is not None
-    context = provider_failed_attempt.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(provider_failed_attempt)
     provider_failed = _accepted_provider_outcome_decision(
         provider_failed_attempt,
         outcome_class=NotificationProviderOutcomeClass.DELIVERY_FAILURE,
@@ -1252,8 +1252,7 @@ def test_provider_context_mismatches_are_rejected(
 ) -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
     provider_decision = _accepted_provider_outcome_decision(
         attempt_decision,
         outcome_class=NotificationProviderOutcomeClass.PROVIDER_ACCEPTED,
@@ -1261,7 +1260,16 @@ def test_provider_context_mismatches_are_rejected(
         provider_safe_delivery_reference="safe-delivery-1",
     )
 
-    context = replace(context, **replacement)
+    if mutation == "outbox":
+        context = replace(context, outbox_item_id="wrong-outbox")
+    elif mutation == "account":
+        context = replace(context, account_id="wrong-account")
+    elif mutation == "beacon":
+        context = replace(context, beacon_id="wrong-beacon")
+    elif mutation == "correlation":
+        context = replace(context, correlation_id="wrong-correlation")
+    else:
+        context = replace(context, causation_id="wrong-causation")
     with pytest.raises(ValueError):
         _project(_batch_input("provider", provider_decision, outbox_item_context=context))
 
@@ -1269,8 +1277,7 @@ def test_provider_context_mismatches_are_rejected(
 def test_provider_context_channel_or_target_mismatch_is_rejected() -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
     provider_decision = _accepted_provider_outcome_decision(
         attempt_decision,
         outcome_class=NotificationProviderOutcomeClass.PROVIDER_ACCEPTED,
@@ -1399,8 +1406,7 @@ def test_batch_evidence_order_is_deterministic() -> None:
         attempt_id="attempt-evidence-1",
     )
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
     delivered = _accepted_provider_outcome_decision(
         attempt_decision,
         outcome_class=NotificationProviderOutcomeClass.PROVIDER_ACCEPTED,
@@ -1443,8 +1449,7 @@ def test_batch_evidence_order_is_deterministic() -> None:
 def test_inputs_are_unchanged_by_projection() -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
     before_item_input = _batch_input(
         "immutability",
         _accepted_provider_outcome_decision(
@@ -1457,27 +1462,28 @@ def test_inputs_are_unchanged_by_projection() -> None:
         evidence_reference_ids=("immutability-item-1",),
     )
     before_source_decision = before_item_input.source_decision
+    before_outbox_item_context = before_item_input.outbox_item_context
+    assert before_outbox_item_context is not None
     before_context_refs = (
-        before_item_input.outbox_item_context.safe_listing_reference_ids
-        if before_item_input.outbox_item_context
+        before_outbox_item_context.safe_listing_reference_ids
+        if before_outbox_item_context
         else ()
     )
     decision = _project(before_item_input, evidence_reference_ids=("immutability-batch-1",))
 
     assert before_item_input.source_decision is before_source_decision
-    assert before_item_input.outbox_item_context.safe_listing_reference_ids == before_context_refs
+    assert before_outbox_item_context.safe_listing_reference_ids == before_context_refs
     assert decision.item_inputs[0] == before_item_input
     assert (
         decision.item_results[0].safe_listing_reference_ids
-        == before_item_input.outbox_item_context.safe_listing_reference_ids
+        == before_outbox_item_context.safe_listing_reference_ids
     )
 
 
 def test_direct_constructor_and_replace_invariants_are_rejected() -> None:
     attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
     assert attempt_decision.attempt is not None
-    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
-    assert context is not None
+    context = _attempt_delivery_outbox_item(attempt_decision)
     canonical = _project(
         _batch_input(
             "forged",
