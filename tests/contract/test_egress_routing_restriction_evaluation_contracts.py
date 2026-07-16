@@ -9,12 +9,12 @@ import pytest
 
 import mayak.modules.egress_routing as egress_routing
 import mayak.modules.egress_routing.restriction_evaluation as restriction_evaluation_module
-import tests.contract.test_egress_routing_restriction_signal_contracts as restriction_signal_contracts
+import tests.contract.test_egress_routing_restriction_signal_contracts as signal_contracts
 from mayak.modules.egress_routing import (
-    DispatchAttempt,
-    DispatchStatus,
     ER08A_TASK_ID,
     ER08B_TASK_ID,
+    DispatchAttempt,
+    DispatchStatus,
     TransportAssignment,
     TransportAssignmentAuthority,
     TransportAssignmentCommitmentBoundary,
@@ -22,13 +22,13 @@ from mayak.modules.egress_routing import (
     TransportDispatchAttemptBoundary,
     TransportDispatchAuthority,
     TransportOutcomeStatus,
+    TransportResponseFailureOutcomeAuthority,
+    TransportResponseFailureOutcomeBoundary,
     TransportRestrictionEvaluationAuthority,
     TransportRestrictionEvaluationGateBoundary,
     TransportRestrictionSignalAuthority,
     TransportRestrictionSignalBoundary,
     TransportRestrictionSignalKind,
-    TransportResponseFailureOutcomeAuthority,
-    TransportResponseFailureOutcomeBoundary,
 )
 
 EXPECTED_TASK_ID = "ER-08B-RESTRICTION-QUARANTINE-EVALUATION-GATE-20260716-041"
@@ -181,7 +181,6 @@ EXPECTED_EVIDENCE_REFERENCE_IDS = (
     "evidence-quarantine-evaluation-01",
 )
 
-
 class TextLike(str):
     pass
 
@@ -192,6 +191,49 @@ class TupleLike(tuple):
 
 class BoolLike(int):
     pass
+
+
+SOURCE_SIGNAL_PREFIX = "source_signal."
+SOURCE_FAILURE_PREFIX = f"{SOURCE_SIGNAL_PREFIX}source_failure_boundary."
+DISPATCH_PREFIX = f"{SOURCE_FAILURE_PREFIX}dispatch_attempt."
+ASSIGNMENT_COMMITMENT_PREFIX = f"{DISPATCH_PREFIX}assignment_commitment."
+ASSIGNMENT_PREFIX = f"{ASSIGNMENT_COMMITMENT_PREFIX}assignment."
+ATTEMPT_PREFIX = f"{DISPATCH_PREFIX}attempt."
+OUTCOME_PREFIX = f"{SOURCE_FAILURE_PREFIX}outcome."
+OUTCOME_STATUS_FIELD = f"{OUTCOME_PREFIX}status"
+DISPATCH_AUTHORITY_FIELD = f"{DISPATCH_PREFIX}authority"
+ATTEMPT_DISPATCH_STATUS_FIELD = f"{ATTEMPT_PREFIX}dispatch_status"
+ASSIGNMENT_COMMITMENT_AUTHORITY_FIELD = f"{ASSIGNMENT_COMMITMENT_PREFIX}authority"
+
+EGRESS_AUTHORITY_LOOKALIKE = SimpleNamespace(
+    name="EGRESS_ROUTING_SERVER",
+    value="EGRESS_ROUTING_SERVER",
+)
+EXPLICIT_RESTRICTION_LOOKALIKE = SimpleNamespace(
+    name="EXPLICIT_RESTRICTION",
+    value="EXPLICIT_RESTRICTION",
+)
+SENT_LOOKALIKE = SimpleNamespace(name="SENT", value="SENT")
+RATE_OR_ACCESS_RESTRICTED_LOOKALIKE = SimpleNamespace(
+    name="RATE_OR_ACCESS_RESTRICTED",
+    value="RATE_OR_ACCESS_RESTRICTED",
+)
+EGRESS_AUTHORITY_TEXT = TextLike("EGRESS_ROUTING_SERVER")
+EXPLICIT_RESTRICTION_TEXT = TextLike("EXPLICIT_RESTRICTION")
+RATE_OR_ACCESS_RESTRICTED_TEXT = TextLike("RATE_OR_ACCESS_RESTRICTED")
+SENT_TEXT = TextLike("SENT")
+OTHER_ROUTE_TEXT = TextLike("other-route")
+OTHER_ASSIGNMENT_TEXT = TextLike("other-assignment")
+OTHER_LEASE_TEXT = TextLike("other-lease")
+OTHER_AGENT_TEXT = TextLike("other-agent")
+OTHER_ATTEMPT_TEXT = TextLike("other-attempt")
+OTHER_CORRELATION_TEXT = TextLike("other-correlation")
+OTHER_CAUSATION_TEXT = TextLike("other-causation")
+
+ALLOWED_OUTCOME_STATUSES = {
+    TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
+    TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE,
+}
 
 
 def _mutate(record: object, **changes: object) -> None:
@@ -207,7 +249,7 @@ def _build_source_signal(
     *,
     outcome_status: TransportOutcomeStatus = TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
 ) -> TransportRestrictionSignalBoundary:
-    return restriction_signal_contracts._build_boundary(outcome_status=outcome_status)
+    return signal_contracts._build_boundary(outcome_status=outcome_status)
 
 
 def _source_failure_boundary(
@@ -304,13 +346,21 @@ def _field_names(*records: object) -> set[str]:
 
 
 def _clone_as_lookalike(record: object) -> SimpleNamespace:
-    return SimpleNamespace(**{field.name: getattr(record, field.name) for field in fields(cast(Any, record))})
+    payload = {
+        field.name: getattr(record, field.name)
+        for field in fields(cast(Any, record))
+    }
+    return SimpleNamespace(**payload)
 
 
 def _clone_as_subclass(record: object) -> object:
     record_type = type(record)
     subclass = type(f"{record_type.__name__}Subclass", (record_type,), {})
-    return subclass(**{field.name: getattr(record, field.name) for field in fields(cast(Any, record))})
+    payload = {
+        field.name: getattr(record, field.name)
+        for field in fields(cast(Any, record))
+    }
+    return subclass(**payload)
 
 
 def test_task_id_is_bound_to_the_module_exactly_once() -> None:
@@ -369,21 +419,30 @@ def test_positive_signal_mappings_are_accepted(
         **_boundary_kwargs(source_signal)  # type: ignore[arg-type]
     )
 
-    assignment = _assignment(source_signal)
-    attempt = _attempt(source_signal)
-    outcome = _outcome(source_signal)
+    failure = source_signal.source_failure_boundary
+    dispatch = failure.dispatch_attempt
+    commitment = dispatch.assignment_commitment
+    attempt = dispatch.attempt
+    assignment = commitment.assignment
+    outcome = failure.outcome
+    source_failure = _source_failure_boundary(source_signal)
+    dispatch_boundary = _dispatch_boundary(source_signal)
+    commitment_boundary = _assignment_commitment(source_signal)
 
     assert type(boundary) is TransportRestrictionEvaluationGateBoundary
     assert type(boundary.source_signal) is TransportRestrictionSignalBoundary
-    assert type(_source_failure_boundary(source_signal)) is TransportResponseFailureOutcomeBoundary
-    assert type(_dispatch_boundary(source_signal)) is TransportDispatchAttemptBoundary
-    assert type(_assignment_commitment(source_signal)) is TransportAssignmentCommitmentBoundary
+    assert type(source_failure) is TransportResponseFailureOutcomeBoundary
+    assert type(dispatch_boundary) is TransportDispatchAttemptBoundary
+    assert type(commitment_boundary) is TransportAssignmentCommitmentBoundary
     assert type(attempt) is DispatchAttempt
     assert type(assignment) is TransportAssignment
     assert type(outcome) is TransportAssignmentOutcome
     assert boundary.authority is TransportRestrictionEvaluationAuthority.EGRESS_ROUTING_SERVER
     assert boundary.source_signal is source_signal
-    assert boundary.source_signal.authority is TransportRestrictionSignalAuthority.EGRESS_ROUTING_SERVER
+    assert (
+        boundary.source_signal.authority
+        is TransportRestrictionSignalAuthority.EGRESS_ROUTING_SERVER
+    )
     assert boundary.source_signal.signal_kind is signal_kind
     assert boundary.source_signal.signal_recorded is True
     assert boundary.source_signal.restriction_evaluation_required is True
@@ -400,7 +459,9 @@ def test_positive_signal_mappings_are_accepted(
     )
     assert boundary.source_signal.source_failure_boundary.outcome.status is outcome_status
     assert boundary.source_signal.source_failure_boundary.outcome_committed is True
-    assert boundary.source_signal.source_failure_boundary.new_dispatch_effect_authorized is False
+    assert (
+        boundary.source_signal.source_failure_boundary.new_dispatch_effect_authorized is False
+    )
     assert boundary.source_signal.source_failure_boundary.assignment_terminal is True
     assert boundary.source_signal.source_failure_boundary.parser_success_inferred is False
     assert boundary.source_signal.source_failure_boundary.scan_success_inferred is False
@@ -408,31 +469,29 @@ def test_positive_signal_mappings_are_accepted(
     assert boundary.source_signal.source_failure_boundary.dispatch_attempt.authority is (
         TransportDispatchAuthority.EGRESS_ROUTING_SERVER
     )
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.dispatch_state_committed is True
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.new_dispatch_effect_authorized is False
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.dispatch_status is DispatchStatus.SENT
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.attempt_ordinal == 1
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.outcome_reference is None
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.reconciliation_required is False
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.authority is (
-        TransportAssignmentAuthority.EGRESS_ROUTING_SERVER
-    )
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment_committed is True
+    assert dispatch_boundary.dispatch_state_committed is True
+    assert dispatch_boundary.new_dispatch_effect_authorized is False
+    assert attempt.dispatch_status is DispatchStatus.SENT
+    assert attempt.attempt_ordinal == 1
+    assert attempt.outcome_reference is None
+    assert attempt.reconciliation_required is False
+    assert commitment.authority is TransportAssignmentAuthority.EGRESS_ROUTING_SERVER
+    assert commitment_boundary.assignment_committed is True
     assert boundary.route_id == assignment.route_id
     assert boundary.route_id == attempt.route_id
     assert assignment.route_id == attempt.route_id
     assert assignment.lease_id == attempt.lease_id
     assert assignment.agent_id == attempt.agent_id
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.assignment_id == assignment.assignment_id
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.lease_id == assignment.lease_id
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.route_id == assignment.route_id
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.agent_id == assignment.agent_id
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.correlation_id == assignment.correlation_id
-    assert boundary.source_signal.source_failure_boundary.dispatch_attempt.attempt.causation_id == assignment.causation_id
-    assert boundary.source_signal.source_failure_boundary.outcome.assignment_id == assignment.assignment_id
-    assert boundary.source_signal.source_failure_boundary.outcome.attempt_id == attempt.attempt_id
-    assert boundary.source_signal.source_failure_boundary.outcome.correlation_id == assignment.correlation_id
-    assert boundary.source_signal.source_failure_boundary.outcome.causation_id == assignment.causation_id
+    assert attempt.assignment_id == assignment.assignment_id
+    assert attempt.lease_id == assignment.lease_id
+    assert attempt.route_id == assignment.route_id
+    assert attempt.agent_id == assignment.agent_id
+    assert attempt.correlation_id == assignment.correlation_id
+    assert attempt.causation_id == assignment.causation_id
+    assert outcome.assignment_id == assignment.assignment_id
+    assert outcome.attempt_id == attempt.attempt_id
+    assert outcome.correlation_id == assignment.correlation_id
+    assert outcome.causation_id == assignment.causation_id
     assert boundary.evaluation_recorded is True
     assert boundary.restriction_policy_gate_satisfied is False
     assert boundary.quarantine_policy_gate_satisfied is False
@@ -459,7 +518,7 @@ def test_positive_signal_mappings_are_accepted(
     tuple(
         status
         for status in TransportOutcomeStatus
-        if status not in {TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED, TransportOutcomeStatus.CAPTCHA_OR_CHALLENGE}
+        if status not in ALLOWED_OUTCOME_STATUSES
     ),
 )
 def test_all_other_outcomes_are_rejected(outcome_status: TransportOutcomeStatus) -> None:
@@ -561,10 +620,10 @@ def test_invalid_authority_is_rejected(bad_value: object) -> None:
         ("source_signal.source_failure_boundary.parser_success_inferred", 1),
         ("source_signal.source_failure_boundary.scan_success_inferred", 1),
         ("source_signal.source_failure_boundary.notification_delivery_inferred", 1),
-        ("source_signal.source_failure_boundary.dispatch_attempt.dispatch_state_committed", 1),
-        ("source_signal.source_failure_boundary.dispatch_attempt.new_dispatch_effect_authorized", 1),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.reconciliation_required", 1),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment_committed", 0),
+        (DISPATCH_PREFIX + "dispatch_state_committed", 1),
+        (DISPATCH_PREFIX + "new_dispatch_effect_authorized", 1),
+        (ATTEMPT_PREFIX + "reconciliation_required", 1),
+        (ASSIGNMENT_COMMITMENT_PREFIX + "assignment_committed", 0),
     ),
 )
 def test_exact_bool_values_reject_bool_like_and_wrong_values(
@@ -573,37 +632,27 @@ def test_exact_bool_values_reject_bool_like_and_wrong_values(
 ) -> None:
     source_signal = _build_source_signal()
     kwargs = _boundary_kwargs(source_signal)
-    if field_name.startswith("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment."):
+    if field_name.startswith(ASSIGNMENT_PREFIX):
         target: Any = _assignment(source_signal)
-        subfield = field_name.removeprefix(
-            "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment."
-        )
-    elif field_name.startswith("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.attempt."):
+        subfield = field_name.removeprefix(ASSIGNMENT_PREFIX)
+    elif field_name.startswith(ASSIGNMENT_COMMITMENT_PREFIX + "attempt."):
         target = _attempt(source_signal)
-        subfield = field_name.removeprefix(
-            "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.attempt."
-        )
-    elif field_name.startswith("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment."):
+        subfield = field_name.removeprefix(ASSIGNMENT_COMMITMENT_PREFIX + "attempt.")
+    elif field_name.startswith(ASSIGNMENT_COMMITMENT_PREFIX):
         target = _assignment_commitment(source_signal)
-        subfield = field_name.removeprefix(
-            "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment."
-        )
-    elif field_name.startswith("source_signal.source_failure_boundary.dispatch_attempt.attempt."):
+        subfield = field_name.removeprefix(ASSIGNMENT_COMMITMENT_PREFIX)
+    elif field_name.startswith(ATTEMPT_PREFIX):
         target = _attempt(source_signal)
-        subfield = field_name.removeprefix(
-            "source_signal.source_failure_boundary.dispatch_attempt.attempt."
-        )
-    elif field_name.startswith("source_signal.source_failure_boundary.dispatch_attempt."):
+        subfield = field_name.removeprefix(ATTEMPT_PREFIX)
+    elif field_name.startswith(DISPATCH_PREFIX):
         target = _dispatch_boundary(source_signal)
-        subfield = field_name.removeprefix(
-            "source_signal.source_failure_boundary.dispatch_attempt."
-        )
-    elif field_name.startswith("source_signal.source_failure_boundary."):
+        subfield = field_name.removeprefix(DISPATCH_PREFIX)
+    elif field_name.startswith(SOURCE_FAILURE_PREFIX):
         target = _source_failure_boundary(source_signal)
-        subfield = field_name.removeprefix("source_signal.source_failure_boundary.")
-    elif field_name.startswith("source_signal."):
+        subfield = field_name.removeprefix(SOURCE_FAILURE_PREFIX)
+    elif field_name.startswith(SOURCE_SIGNAL_PREFIX):
         target = source_signal
-        subfield = field_name.removeprefix("source_signal.")
+        subfield = field_name.removeprefix(SOURCE_SIGNAL_PREFIX)
     else:
         kwargs[field_name] = bad_value
         target = None
@@ -654,28 +703,25 @@ def test_exact_record_levels_reject_subclasses_and_foreign_records(
     replacement = replacement_factory(
         {
             "source_signal": source_signal,
-            "source_signal.source_failure_boundary": _source_failure_boundary(source_signal),
-            "source_signal.source_failure_boundary.dispatch_attempt": _dispatch_boundary(source_signal),
-            "source_signal.source_failure_boundary.outcome": _outcome(source_signal),
-            "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment": _assignment_commitment(
-                source_signal
-            ),
-            "source_signal.source_failure_boundary.dispatch_attempt.attempt": _attempt(source_signal),
-            "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment": _assignment(
-                source_signal
-            ),
-        }[field_path])
+            SOURCE_FAILURE_PREFIX.rstrip("."): _source_failure_boundary(source_signal),
+            DISPATCH_PREFIX.rstrip("."): _dispatch_boundary(source_signal),
+            OUTCOME_PREFIX.rstrip("."): _outcome(source_signal),
+            ASSIGNMENT_COMMITMENT_PREFIX.rstrip("."): _assignment_commitment(source_signal),
+            ATTEMPT_PREFIX.rstrip("."): _attempt(source_signal),
+            ASSIGNMENT_PREFIX.rstrip("."): _assignment(source_signal),
+        }[field_path]
+    )
     if field_path == "source_signal":
         kwargs["source_signal"] = replacement
-    elif field_path == "source_signal.source_failure_boundary":
+    elif field_path == SOURCE_FAILURE_PREFIX.rstrip("."):
         _mutate(source_signal, source_failure_boundary=replacement)
-    elif field_path == "source_signal.source_failure_boundary.dispatch_attempt":
+    elif field_path == DISPATCH_PREFIX.rstrip("."):
         _mutate(_source_failure_boundary(source_signal), dispatch_attempt=replacement)
-    elif field_path == "source_signal.source_failure_boundary.outcome":
+    elif field_path == OUTCOME_PREFIX.rstrip("."):
         _mutate(_source_failure_boundary(source_signal), outcome=replacement)
-    elif field_path == "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment":
+    elif field_path == ASSIGNMENT_COMMITMENT_PREFIX.rstrip("."):
         _mutate(_dispatch_boundary(source_signal), assignment_commitment=replacement)
-    elif field_path == "source_signal.source_failure_boundary.dispatch_attempt.attempt":
+    elif field_path == ATTEMPT_PREFIX.rstrip("."):
         _mutate(_dispatch_boundary(source_signal), attempt=replacement)
     else:
         _mutate(_assignment_commitment(source_signal), assignment=replacement)
@@ -686,30 +732,30 @@ def test_exact_record_levels_reject_subclasses_and_foreign_records(
 @pytest.mark.parametrize(
     ("field_name", "bad_value"),
     (
-        ("authority", "EGRESS_ROUTING_SERVER"),
-        ("authority", TextLike("EGRESS_ROUTING_SERVER")),
-        ("authority", SimpleNamespace(name="EGRESS_ROUTING_SERVER", value="EGRESS_ROUTING_SERVER")),
-        ("source_signal.authority", "EGRESS_ROUTING_SERVER"),
-        ("source_signal.authority", TextLike("EGRESS_ROUTING_SERVER")),
-        ("source_signal.authority", SimpleNamespace(name="EGRESS_ROUTING_SERVER", value="EGRESS_ROUTING_SERVER")),
-        ("source_signal.signal_kind", "EXPLICIT_RESTRICTION"),
-        ("source_signal.signal_kind", TextLike("EXPLICIT_RESTRICTION")),
-        ("source_signal.signal_kind", SimpleNamespace(name="EXPLICIT_RESTRICTION", value="EXPLICIT_RESTRICTION")),
-        ("source_signal.source_failure_boundary.authority", "EGRESS_ROUTING_SERVER"),
-        ("source_signal.source_failure_boundary.authority", TextLike("EGRESS_ROUTING_SERVER")),
-        ("source_signal.source_failure_boundary.authority", SimpleNamespace(name="EGRESS_ROUTING_SERVER", value="EGRESS_ROUTING_SERVER")),
-        ("source_signal.source_failure_boundary.outcome.status", "RATE_OR_ACCESS_RESTRICTED"),
-        ("source_signal.source_failure_boundary.outcome.status", TextLike("RATE_OR_ACCESS_RESTRICTED")),
-        ("source_signal.source_failure_boundary.outcome.status", SimpleNamespace(name="RATE_OR_ACCESS_RESTRICTED", value="RATE_OR_ACCESS_RESTRICTED")),
-        ("source_signal.source_failure_boundary.dispatch_attempt.authority", "EGRESS_ROUTING_SERVER"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.authority", TextLike("EGRESS_ROUTING_SERVER")),
-        ("source_signal.source_failure_boundary.dispatch_attempt.authority", SimpleNamespace(name="EGRESS_ROUTING_SERVER", value="EGRESS_ROUTING_SERVER")),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.dispatch_status", "SENT"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.dispatch_status", TextLike("SENT")),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.dispatch_status", SimpleNamespace(name="SENT", value="SENT")),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.authority", "EGRESS_ROUTING_SERVER"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.authority", TextLike("EGRESS_ROUTING_SERVER")),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.authority", SimpleNamespace(name="EGRESS_ROUTING_SERVER", value="EGRESS_ROUTING_SERVER")),
+        ("authority", EGRESS_AUTHORITY_TEXT),
+        ("authority", EGRESS_AUTHORITY_TEXT),
+        ("authority", EGRESS_AUTHORITY_LOOKALIKE),
+        ("source_signal.authority", EGRESS_AUTHORITY_TEXT),
+        ("source_signal.authority", EGRESS_AUTHORITY_TEXT),
+        ("source_signal.authority", EGRESS_AUTHORITY_LOOKALIKE),
+        ("source_signal.signal_kind", EXPLICIT_RESTRICTION_TEXT),
+        ("source_signal.signal_kind", EXPLICIT_RESTRICTION_TEXT),
+        ("source_signal.signal_kind", EXPLICIT_RESTRICTION_LOOKALIKE),
+        ("source_signal.source_failure_boundary.authority", EGRESS_AUTHORITY_TEXT),
+        ("source_signal.source_failure_boundary.authority", EGRESS_AUTHORITY_TEXT),
+        ("source_signal.source_failure_boundary.authority", EGRESS_AUTHORITY_LOOKALIKE),
+        (OUTCOME_STATUS_FIELD, RATE_OR_ACCESS_RESTRICTED_TEXT),
+        (OUTCOME_STATUS_FIELD, RATE_OR_ACCESS_RESTRICTED_TEXT),
+        (OUTCOME_STATUS_FIELD, RATE_OR_ACCESS_RESTRICTED_LOOKALIKE),
+        (DISPATCH_AUTHORITY_FIELD, EGRESS_AUTHORITY_TEXT),
+        (DISPATCH_AUTHORITY_FIELD, EGRESS_AUTHORITY_TEXT),
+        (DISPATCH_AUTHORITY_FIELD, EGRESS_AUTHORITY_LOOKALIKE),
+        (ATTEMPT_DISPATCH_STATUS_FIELD, SENT_TEXT),
+        (ATTEMPT_DISPATCH_STATUS_FIELD, SENT_TEXT),
+        (ATTEMPT_DISPATCH_STATUS_FIELD, SENT_LOOKALIKE),
+        (ASSIGNMENT_COMMITMENT_AUTHORITY_FIELD, EGRESS_AUTHORITY_TEXT),
+        (ASSIGNMENT_COMMITMENT_AUTHORITY_FIELD, EGRESS_AUTHORITY_TEXT),
+        (ASSIGNMENT_COMMITMENT_AUTHORITY_FIELD, EGRESS_AUTHORITY_LOOKALIKE),
     ),
 )
 def test_exact_enum_values_reject_plain_strings_subclasses_and_lookalikes(
@@ -728,9 +774,9 @@ def test_exact_enum_values_reject_plain_strings_subclasses_and_lookalikes(
         _mutate(_source_failure_boundary(source_signal), authority=bad_value)
     elif field_name == "source_signal.source_failure_boundary.outcome.status":
         _mutate(_outcome(source_signal), status=bad_value)
-    elif field_name == "source_signal.source_failure_boundary.dispatch_attempt.authority":
+    elif field_name == DISPATCH_AUTHORITY_FIELD:
         _mutate(_dispatch_boundary(source_signal), authority=bad_value)
-    elif field_name == "source_signal.source_failure_boundary.dispatch_attempt.attempt.dispatch_status":
+    elif field_name == ATTEMPT_DISPATCH_STATUS_FIELD:
         _mutate(_attempt(source_signal), dispatch_status=bad_value)
     else:
         _mutate(_assignment_commitment(source_signal), authority=bad_value)
@@ -743,21 +789,21 @@ def test_exact_enum_values_reject_plain_strings_subclasses_and_lookalikes(
     (
         ("route_id", "other-route"),
         ("route_id", TextLike("other-route")),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment.route_id", "other-route"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.route_id", "other-route"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment.assignment_id", "other-assignment"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.assignment_id", "other-assignment"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment.lease_id", "other-lease"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.lease_id", "other-lease"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment.agent_id", "other-agent"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.agent_id", "other-agent"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.attempt_id", "other-attempt"),
-        ("source_signal.source_failure_boundary.outcome.assignment_id", "other-assignment"),
-        ("source_signal.source_failure_boundary.outcome.attempt_id", "other-attempt"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.correlation_id", "other-correlation"),
-        ("source_signal.source_failure_boundary.dispatch_attempt.attempt.causation_id", "other-causation"),
-        ("source_signal.source_failure_boundary.outcome.correlation_id", "other-correlation"),
-        ("source_signal.source_failure_boundary.outcome.causation_id", "other-causation"),
+        (ASSIGNMENT_PREFIX + "route_id", "other-route"),
+        (ATTEMPT_PREFIX + "route_id", "other-route"),
+        (ASSIGNMENT_PREFIX + "assignment_id", "other-assignment"),
+        (ATTEMPT_PREFIX + "assignment_id", "other-assignment"),
+        (ASSIGNMENT_PREFIX + "lease_id", "other-lease"),
+        (ATTEMPT_PREFIX + "lease_id", "other-lease"),
+        (ASSIGNMENT_PREFIX + "agent_id", "other-agent"),
+        (ATTEMPT_PREFIX + "agent_id", "other-agent"),
+        (ATTEMPT_PREFIX + "attempt_id", "other-attempt"),
+        (OUTCOME_PREFIX + "assignment_id", "other-assignment"),
+        (OUTCOME_PREFIX + "attempt_id", "other-attempt"),
+        (ATTEMPT_PREFIX + "correlation_id", "other-correlation"),
+        (ATTEMPT_PREFIX + "causation_id", "other-causation"),
+        (OUTCOME_PREFIX + "correlation_id", "other-correlation"),
+        (OUTCOME_PREFIX + "causation_id", "other-causation"),
     ),
 )
 def test_linkage_mutations_are_rejected(field_name: str, bad_value: object) -> None:
@@ -765,11 +811,11 @@ def test_linkage_mutations_are_rejected(field_name: str, bad_value: object) -> N
     kwargs = _boundary_kwargs(source_signal)
     if field_name == "route_id":
         kwargs["route_id"] = bad_value
-    elif field_name.startswith("source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment."):
+    elif field_name.startswith(ASSIGNMENT_PREFIX):
         _mutate(_assignment(source_signal), **{field_name.rsplit(".", 1)[-1]: bad_value})
-    elif field_name.startswith("source_signal.source_failure_boundary.dispatch_attempt.attempt."):
+    elif field_name.startswith(ATTEMPT_PREFIX):
         _mutate(_attempt(source_signal), **{field_name.rsplit(".", 1)[-1]: bad_value})
-    elif field_name.startswith("source_signal.source_failure_boundary.outcome."):
+    elif field_name.startswith(OUTCOME_PREFIX):
         _mutate(_outcome(source_signal), **{field_name.rsplit(".", 1)[-1]: bad_value})
     else:
         _mutate(_assignment_commitment(source_signal), **{field_name.rsplit(".", 1)[-1]: bad_value})
@@ -787,12 +833,30 @@ def test_boundary_is_frozen_and_slots() -> None:
 
 
 def test_inputs_are_not_mutated() -> None:
-    source_signal = _build_source_signal(outcome_status=TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED)
-    before = _snapshot(source_signal), _snapshot(_source_failure_boundary(source_signal)), _snapshot(_dispatch_boundary(source_signal)), _snapshot(_assignment_commitment(source_signal)), _snapshot(_attempt(source_signal)), _snapshot(_assignment(source_signal)), _snapshot(_outcome(source_signal))
+    source_signal = _build_source_signal(
+        outcome_status=TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED
+    )
+    before = (
+        _snapshot(source_signal),
+        _snapshot(_source_failure_boundary(source_signal)),
+        _snapshot(_dispatch_boundary(source_signal)),
+        _snapshot(_assignment_commitment(source_signal)),
+        _snapshot(_attempt(source_signal)),
+        _snapshot(_assignment(source_signal)),
+        _snapshot(_outcome(source_signal)),
+    )
     boundary = TransportRestrictionEvaluationGateBoundary(
         **_boundary_kwargs(source_signal)  # type: ignore[arg-type]
     )
-    after = _snapshot(source_signal), _snapshot(_source_failure_boundary(source_signal)), _snapshot(_dispatch_boundary(source_signal)), _snapshot(_assignment_commitment(source_signal)), _snapshot(_attempt(source_signal)), _snapshot(_assignment(source_signal)), _snapshot(_outcome(source_signal))
+    after = (
+        _snapshot(source_signal),
+        _snapshot(_source_failure_boundary(source_signal)),
+        _snapshot(_dispatch_boundary(source_signal)),
+        _snapshot(_assignment_commitment(source_signal)),
+        _snapshot(_attempt(source_signal)),
+        _snapshot(_assignment(source_signal)),
+        _snapshot(_outcome(source_signal)),
+    )
     assert before == after
     assert boundary.source_signal is source_signal
 
@@ -840,8 +904,8 @@ def test_no_forbidden_state_records_or_raw_payloads_are_present() -> None:
 
 
 def test_er08a_semantics_remain_unchanged() -> None:
-    assert ER08A_TASK_ID == restriction_signal_contracts.EXPECTED_TASK_ID
-    assert restriction_signal_contracts.EXPECTED_ALLOWED_OUTCOME_STATUS_MATRIX == (
+    assert ER08A_TASK_ID == signal_contracts.EXPECTED_TASK_ID
+    assert signal_contracts.EXPECTED_ALLOWED_OUTCOME_STATUS_MATRIX == (
         (
             TransportOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
             TransportRestrictionSignalKind.EXPLICIT_RESTRICTION,

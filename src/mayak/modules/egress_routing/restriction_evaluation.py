@@ -291,7 +291,13 @@ class TransportRestrictionEvaluationGateBoundary:
 
         if signal_authority is not TransportRestrictionSignalAuthority.EGRESS_ROUTING_SERVER:
             raise ValueError("source_signal.authority must be EGRESS_ROUTING_SERVER")
-        if _require_bool(source_signal.signal_recorded, "source_signal.signal_recorded") is not True:
+        if (
+            _require_bool(
+                source_signal.signal_recorded,
+                "source_signal.signal_recorded",
+            )
+            is not True
+        ):
             raise ValueError("source_signal.signal_recorded must be True")
         if (
             _require_bool(
@@ -350,7 +356,10 @@ class TransportRestrictionEvaluationGateBoundary:
         ):
             raise ValueError("source_signal.parser_success_inferred must be False")
         if (
-            _require_bool(source_signal.scan_success_inferred, "source_signal.scan_success_inferred")
+            _require_bool(
+                source_signal.scan_success_inferred,
+                "source_signal.scan_success_inferred",
+            )
             is not False
         ):
             raise ValueError("source_signal.scan_success_inferred must be False")
@@ -380,8 +389,16 @@ class TransportRestrictionEvaluationGateBoundary:
             raise ValueError(
                 "source_signal.source_failure_boundary.authority must be EGRESS_ROUTING_SERVER"
             )
-        if _require_bool(source_failure_boundary.outcome_committed, "source_signal.source_failure_boundary.outcome_committed") is not True:
-            raise ValueError("source_signal.source_failure_boundary.outcome_committed must be True")
+        if (
+            _require_bool(
+                source_failure_boundary.outcome_committed,
+                "source_signal.source_failure_boundary.outcome_committed",
+            )
+            is not True
+        ):
+            raise ValueError(
+                "source_signal.source_failure_boundary.outcome_committed must be True"
+            )
         if (
             _require_bool(
                 source_failure_boundary.new_dispatch_effect_authorized,
@@ -399,7 +416,9 @@ class TransportRestrictionEvaluationGateBoundary:
             )
             is not True
         ):
-            raise ValueError("source_signal.source_failure_boundary.assignment_terminal must be True")
+            raise ValueError(
+                "source_signal.source_failure_boundary.assignment_terminal must be True"
+            )
         if (
             _require_bool(
                 source_failure_boundary.parser_success_inferred,
@@ -479,8 +498,8 @@ class TransportRestrictionEvaluationGateBoundary:
             is not False
         ):
             raise ValueError(
-                "source_signal.source_failure_boundary.dispatch_attempt.new_dispatch_effect_authorized "
-                "must be False"
+                "source_signal.source_failure_boundary.dispatch_attempt."
+                "new_dispatch_effect_authorized must be False"
             )
         _require_non_empty_text_tuple(
             dispatch_boundary.reason_codes,
@@ -517,8 +536,8 @@ class TransportRestrictionEvaluationGateBoundary:
             is not TransportAssignmentAuthority.EGRESS_ROUTING_SERVER
         ):
             raise ValueError(
-                "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.authority "
-                "must be EGRESS_ROUTING_SERVER"
+                "source_signal.source_failure_boundary.dispatch_attempt."
+                "assignment_commitment.authority must be EGRESS_ROUTING_SERVER"
             )
         if (
             _require_bool(
@@ -528,8 +547,8 @@ class TransportRestrictionEvaluationGateBoundary:
             is not True
         ):
             raise ValueError(
-                "source_signal.source_failure_boundary.dispatch_attempt.assignment_commitment.assignment_committed "
-                "must be True"
+                "source_signal.source_failure_boundary.dispatch_attempt."
+                "assignment_commitment.assignment_committed must be True"
             )
         _require_non_empty_text_tuple(
             assignment_commitment.reason_codes,
@@ -568,8 +587,8 @@ class TransportRestrictionEvaluationGateBoundary:
             is not False
         ):
             raise ValueError(
-                "source_signal.source_failure_boundary.dispatch_attempt.attempt.reconciliation_required "
-                "must be False"
+                "source_signal.source_failure_boundary.dispatch_attempt.attempt."
+                "reconciliation_required must be False"
             )
 
         outcome_status = _require_exact_enum(
