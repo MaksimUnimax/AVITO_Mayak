@@ -79,6 +79,16 @@ _REASON_CLASS_BY_FAMILY = {
     ),
 }
 
+_PROJECTION_REASON_CODES_BY_STATUS = {
+    NotificationListingCardProjectionStatus.ACCEPTED_FIELDS: ("listing-card-fields-accepted",),
+    NotificationListingCardProjectionStatus.ACCEPTED_REFERENCE_ONLY: (
+        "listing-card-reference-only-accepted",
+    ),
+    NotificationListingCardProjectionStatus.NOT_APPLICABLE_NO_LISTINGS: (
+        "listing-card-no-listings-not-applicable",
+    ),
+}
+
 _FIELD_COMPATIBILITY = {
     NotificationListingCardFieldClass.TITLE: (
         NotificationListingCardValueClass.SAFE_TEXT,
@@ -162,6 +172,16 @@ def _require_bool(value: object, field_name: str) -> bool:
     if type(value) is not bool:
         raise ValueError(f"{field_name} must be a bool")
     return value
+
+
+def _require_exact_true(value: object, field_name: str) -> None:
+    if value is not True:
+        raise ValueError(f"{field_name} must be True")
+
+
+def _require_exact_false(value: object, field_name: str) -> None:
+    if value is not False:
+        raise ValueError(f"{field_name} must be False")
 
 
 def _require_exact_enum(value: object, enum_type: type[Enum], field_name: str) -> Enum:
@@ -279,9 +299,13 @@ class NotificationListingCard:
         _require_optional_text(self.beacon_name_reference_id, "beacon_name_reference_id")
         if type(self.field_facts) is not tuple:
             raise ValueError("field_facts must be a tuple")
+        seen_field_classes: set[NotificationListingCardFieldClass] = set()
         for field_fact in self.field_facts:
             if type(field_fact) is not NotificationListingCardFieldFact:
                 raise ValueError("field_facts must contain NotificationListingCardFieldFact")
+            if field_fact.field_class in seen_field_classes:
+                raise ValueError("field_facts must not repeat field classes")
+            seen_field_classes.add(field_fact.field_class)
         _require_text(self.correlation_id, "correlation_id")
         _require_text(self.causation_id, "causation_id")
         _require_text_tuple(self.evidence_reference_ids, "evidence_reference_ids")
@@ -313,13 +337,97 @@ class NotificationListingCardProjectionDecision:
             if type(card) is not NotificationListingCard:
                 raise ValueError("cards must contain NotificationListingCard")
         _require_exact_enum(self.status, NotificationListingCardProjectionStatus, "status")
-        _require_bool(self.listing_references_preserved, "listing_references_preserved")
-        _require_bool(self.optional_fields_missing_allowed, "optional_fields_missing_allowed")
-        _require_bool(self.display_rendering_authorized, "display_rendering_authorized")
-        _require_bool(self.delivery_attempt_authorized, "delivery_attempt_authorized")
-        _require_bool(self.provider_mapping_authorized, "provider_mapping_authorized")
+        _require_exact_true(self.listing_references_preserved, "listing_references_preserved")
+        _require_exact_true(self.optional_fields_missing_allowed, "optional_fields_missing_allowed")
+        _require_exact_false(self.display_rendering_authorized, "display_rendering_authorized")
+        _require_exact_false(self.delivery_attempt_authorized, "delivery_attempt_authorized")
+        _require_exact_false(self.provider_mapping_authorized, "provider_mapping_authorized")
         _require_text_tuple(self.reason_codes, "reason_codes")
         _require_text_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+
+        source_event = _validate_source_intake_decision(self.source_intake_decision)
+
+        expected_reason_codes = _PROJECTION_REASON_CODES_BY_STATUS[self.status]
+        if self.reason_codes != expected_reason_codes:
+            raise ValueError("reason_codes must match projection status")
+
+        if self.status is NotificationListingCardProjectionStatus.NOT_APPLICABLE_NO_LISTINGS:
+            if source_event.source_family is not NotificationSourceFamily.RECOVERY_SCAN_COMPLETED:
+                raise ValueError("no-listings projection requires recovery source family")
+            if source_event.listing_count != 0:
+                raise ValueError("no-listings projection requires zero listing_count")
+            if source_event.safe_listing_reference_ids:
+                raise ValueError("no-listings projection requires empty safe references")
+            if self.cards:
+                raise ValueError("no-listings projection must not contain cards")
+            return
+
+        if source_event.listing_count <= 0:
+            raise ValueError("listing-bearing projection requires listings")
+        if len(self.cards) != source_event.listing_count:
+            raise ValueError("cards must match source_event listing_count")
+        if len(self.cards) != len(source_event.safe_listing_reference_ids):
+            raise ValueError("cards must preserve safe listing references")
+        if tuple(card.listing_reference_id for card in self.cards) != source_event.safe_listing_reference_ids:
+            raise ValueError("cards must preserve listing reference order")
+
+        listing_card_ids = tuple(card.listing_card_id for card in self.cards)
+        if len(set(listing_card_ids)) != len(listing_card_ids):
+            raise ValueError("cards must not contain duplicate listing_card_id values")
+
+        listing_reference_ids = tuple(card.listing_reference_id for card in self.cards)
+        if len(set(listing_reference_ids)) != len(listing_reference_ids):
+            raise ValueError("cards must not contain duplicate listing_reference_id values")
+
+        expected_reason_class = _REASON_CLASS_BY_FAMILY[source_event.source_family]
+        has_any_fields = False
+
+        for card in self.cards:
+            if card.account_id != source_event.account_id:
+                raise ValueError("card account_id must match source_event")
+            if card.beacon_id != source_event.beacon_id:
+                raise ValueError("card beacon_id must match source_event")
+            if card.source_event_id != source_event.source_event_id:
+                raise ValueError("card source_event_id must match source_event")
+            if card.source_fact_id != source_event.source_fact_id:
+                raise ValueError("card source_fact_id must match source_event")
+            if card.source_family is not source_event.source_family:
+                raise ValueError("card source_family must match source_event")
+            if card.correlation_id != source_event.correlation_id:
+                raise ValueError("card correlation_id must match source_event")
+            if card.causation_id != source_event.causation_id:
+                raise ValueError("card causation_id must match source_event")
+            if card.reason_class is not expected_reason_class:
+                raise ValueError("card reason_class must match source family")
+            if type(card.field_facts) is not tuple:
+                raise ValueError("field_facts must be a tuple")
+
+            seen_field_classes: set[NotificationListingCardFieldClass] = set()
+            validated_field_facts: list[NotificationListingCardFieldFact] = []
+            for field_fact in card.field_facts:
+                validated_field_fact = _validate_field_fact_safety(
+                    field_fact=field_fact,
+                    source_event=source_event,
+                    listing_reference_id=card.listing_reference_id,
+                )
+                if validated_field_fact.field_class in seen_field_classes:
+                    raise ValueError("card field facts must not repeat field classes")
+                seen_field_classes.add(validated_field_fact.field_class)
+                validated_field_facts.append(validated_field_fact)
+
+            if validated_field_facts:
+                has_any_fields = True
+            elif self.status is NotificationListingCardProjectionStatus.ACCEPTED_REFERENCE_ONLY:
+                continue
+
+        if self.status is NotificationListingCardProjectionStatus.ACCEPTED_FIELDS:
+            if not has_any_fields:
+                raise ValueError("accepted fields projections require at least one field fact")
+        elif self.status is NotificationListingCardProjectionStatus.ACCEPTED_REFERENCE_ONLY:
+            if has_any_fields:
+                raise ValueError("reference-only projections must not contain field facts")
+        else:
+            raise ValueError("unsupported projection status")
 
 
 def _validate_source_intake_decision(

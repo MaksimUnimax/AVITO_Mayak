@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
+from typing import Any, Callable
 
 import pytest
 
@@ -210,6 +212,123 @@ def _project(
         card_inputs=card_inputs,
         evidence_reference_ids=evidence_reference_ids,
     )
+
+
+def _valid_fields_projection() -> NotificationListingCardProjectionDecision:
+    intake_decision = _evaluated_intake_decision(
+        listing_count=2,
+        safe_listing_reference_ids=("listing-1", "listing-2"),
+    )
+    field_fact = _field_fact(
+        field_fact_id="valid-fields-title",
+        listing_reference_id="listing-1",
+        field_class=NotificationListingCardFieldClass.TITLE,
+        value_class=NotificationListingCardValueClass.SAFE_TEXT,
+        safe_value="valid-title",
+        upstream_field_family="TITLE",
+        provenance_tier=NotificationListingCardProvenanceTier.TIER_1_SEARCH_RESULT,
+        upstream_field_reference_id="valid-title-upstream-ref",
+        compatibility_profile_reference_id="valid-title-compat-profile",
+    )
+    return _project(
+        source_intake_decision=intake_decision,
+        card_inputs=(
+            _card_input(
+                listing_card_id="valid-card-fields",
+                listing_reference_id="listing-1",
+                field_facts=(field_fact,),
+            ),
+            _card_input(
+                listing_card_id="valid-card-reference-only",
+                listing_reference_id="listing-2",
+                field_facts=(),
+            ),
+        ),
+    )
+
+
+def _valid_reference_only_projection() -> NotificationListingCardProjectionDecision:
+    intake_decision = _evaluated_intake_decision(listing_count=1, safe_listing_reference_ids=("listing-1",))
+    return _project(
+        source_intake_decision=intake_decision,
+        card_inputs=(
+            _card_input(
+                listing_card_id="valid-card-reference-only",
+                listing_reference_id="listing-1",
+                field_facts=(),
+            ),
+        ),
+    )
+
+
+def _valid_no_listings_projection() -> NotificationListingCardProjectionDecision:
+    intake_decision = _evaluated_intake_decision(
+        family=NotificationSourceFamily.RECOVERY_SCAN_COMPLETED,
+        listing_count=0,
+        safe_listing_reference_ids=(),
+        evidence_reference_ids=("recovery-intake-evidence-1",),
+    )
+    return _project(source_intake_decision=intake_decision, card_inputs=())
+
+
+def _valid_lost_anchors_projection() -> NotificationListingCardProjectionDecision:
+    intake_decision = _evaluated_intake_decision(
+        family=NotificationSourceFamily.LOST_ANCHORS_RECOVERED,
+        listing_count=1,
+        safe_listing_reference_ids=("listing-1",),
+        evidence_reference_ids=("lost-anchors-intake-evidence-1",),
+    )
+    return _project(
+        source_intake_decision=intake_decision,
+        card_inputs=(
+            _card_input(
+                listing_card_id="valid-lost-anchor-card",
+                listing_reference_id="listing-1",
+                field_facts=(),
+            ),
+        ),
+    )
+
+
+def _valid_recovery_projection() -> NotificationListingCardProjectionDecision:
+    intake_decision = _evaluated_intake_decision(
+        family=NotificationSourceFamily.RECOVERY_SCAN_COMPLETED,
+        listing_count=1,
+        safe_listing_reference_ids=("listing-1",),
+        evidence_reference_ids=("recovery-intake-evidence-1",),
+    )
+    return _project(
+        source_intake_decision=intake_decision,
+        card_inputs=(
+            _card_input(
+                listing_card_id="valid-recovery-card",
+                listing_reference_id="listing-1",
+                field_facts=(),
+            ),
+        ),
+    )
+
+
+def _projection_decision_kwargs(
+    decision: NotificationListingCardProjectionDecision,
+    **overrides: Any,
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "decision_id": decision.decision_id,
+        "authority": decision.authority,
+        "source_intake_decision": decision.source_intake_decision,
+        "cards": decision.cards,
+        "status": decision.status,
+        "listing_references_preserved": decision.listing_references_preserved,
+        "optional_fields_missing_allowed": decision.optional_fields_missing_allowed,
+        "display_rendering_authorized": decision.display_rendering_authorized,
+        "delivery_attempt_authorized": decision.delivery_attempt_authorized,
+        "provider_mapping_authorized": decision.provider_mapping_authorized,
+        "reason_codes": decision.reason_codes,
+        "evidence_reference_ids": decision.evidence_reference_ids,
+    }
+    kwargs.update(overrides)
+    return kwargs
 
 
 def test_tier1_compatibility_matches_current_parser_contract_values() -> None:
@@ -988,3 +1107,341 @@ def test_no_input_mutation_and_deterministic_evidence_union() -> None:
     assert decision.display_rendering_authorized is False
     assert decision.delivery_attempt_authorized is False
     assert decision.provider_mapping_authorized is False
+
+
+def test_valid_factory_outputs_survive_for_all_three_projection_statuses() -> None:
+    fields_decision = _valid_fields_projection()
+    reference_only_decision = _valid_reference_only_projection()
+    no_listings_decision = _valid_no_listings_projection()
+
+    assert fields_decision.status is NotificationListingCardProjectionStatus.ACCEPTED_FIELDS
+    assert fields_decision.reason_codes == ("listing-card-fields-accepted",)
+    assert fields_decision.cards[0].field_facts
+    assert fields_decision.cards[1].field_facts == ()
+
+    assert reference_only_decision.status is NotificationListingCardProjectionStatus.ACCEPTED_REFERENCE_ONLY
+    assert reference_only_decision.reason_codes == ("listing-card-reference-only-accepted",)
+    assert all(card.field_facts == () for card in reference_only_decision.cards)
+
+    assert no_listings_decision.status is NotificationListingCardProjectionStatus.NOT_APPLICABLE_NO_LISTINGS
+    assert no_listings_decision.reason_codes == ("listing-card-no-listings-not-applicable",)
+    assert no_listings_decision.cards == ()
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("listing_references_preserved", False),
+        ("optional_fields_missing_allowed", False),
+        ("display_rendering_authorized", True),
+        ("delivery_attempt_authorized", True),
+        ("provider_mapping_authorized", True),
+    ],
+)
+def test_projection_decision_mandatory_flags_reject_replace_mutations(
+    field_name: str,
+    field_value: bool,
+) -> None:
+    decision = _valid_fields_projection()
+    kwargs: dict[str, Any] = {field_name: field_value}
+
+    with pytest.raises(ValueError):
+        replace(decision, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("decision_factory", "status", "reason_codes"),
+    [
+        (
+            _valid_fields_projection,
+            NotificationListingCardProjectionStatus.ACCEPTED_FIELDS,
+            ("listing-card-reference-only-accepted",),
+        ),
+        (
+            _valid_reference_only_projection,
+            NotificationListingCardProjectionStatus.ACCEPTED_REFERENCE_ONLY,
+            ("listing-card-fields-accepted",),
+        ),
+        (
+            _valid_no_listings_projection,
+            NotificationListingCardProjectionStatus.NOT_APPLICABLE_NO_LISTINGS,
+            ("listing-card-fields-accepted",),
+        ),
+    ],
+)
+def test_projection_decision_reason_codes_are_status_exact_in_constructor(
+    decision_factory: Callable[[], NotificationListingCardProjectionDecision],
+    status: NotificationListingCardProjectionStatus,
+    reason_codes: tuple[str, ...],
+) -> None:
+    decision = decision_factory()
+
+    with pytest.raises(ValueError):
+        NotificationListingCardProjectionDecision(
+            **_projection_decision_kwargs(decision, status=status, reason_codes=reason_codes),
+        )
+
+
+def test_projection_decision_card_source_invariants_reject_replace_mutations() -> None:
+    valid_decision = _valid_fields_projection()
+
+    with pytest.raises(ValueError):
+        replace(valid_decision, cards=(valid_decision.cards[0],))
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                valid_decision.cards[0],
+                valid_decision.cards[1],
+                replace(
+                    valid_decision.cards[0],
+                    listing_card_id="forged-extra-card",
+                    listing_reference_id="listing-extra",
+                ),
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(valid_decision, cards=(valid_decision.cards[1], valid_decision.cards[0]))
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], listing_card_id="duplicate-card-id"),
+                replace(valid_decision.cards[1], listing_card_id="duplicate-card-id"),
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], listing_reference_id="listing-duplicate"),
+                replace(valid_decision.cards[1], listing_reference_id="listing-duplicate"),
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], account_id="forged-account-id"),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], beacon_id="forged-beacon-id"),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], source_event_id="forged-source-event-id"),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], source_fact_id="forged-source-fact-id"),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(
+                    valid_decision.cards[0],
+                    source_family=NotificationSourceFamily.LOST_ANCHORS_RECOVERED,
+                ),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], correlation_id="forged-correlation-id"),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(valid_decision.cards[0], causation_id="forged-causation-id"),
+                valid_decision.cards[1],
+            ),
+        )
+
+
+def test_reason_class_and_field_fact_forgery_is_rejected_on_replace() -> None:
+    lost_anchors_decision = _valid_lost_anchors_projection()
+    recovery_decision = _valid_recovery_projection()
+    valid_decision = _valid_fields_projection()
+
+    with pytest.raises(ValueError):
+        replace(
+            lost_anchors_decision,
+            cards=(
+                replace(
+                    lost_anchors_decision.cards[0],
+                    reason_class=NotificationListingCardReasonClass.NEW_LISTING,
+                ),
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            recovery_decision,
+            cards=(
+                replace(
+                    recovery_decision.cards[0],
+                    reason_class=NotificationListingCardReasonClass.NEW_LISTING,
+                ),
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(
+                    valid_decision.cards[0],
+                    field_facts=(
+                        replace(
+                            valid_decision.cards[0].field_facts[0],
+                            listing_reference_id=valid_decision.cards[1].listing_reference_id,
+                        ),
+                    ),
+                ),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision.cards[0],
+            field_facts=(
+                valid_decision.cards[0].field_facts[0],
+                replace(
+                    valid_decision.cards[0].field_facts[0],
+                    field_fact_id="duplicate-field-fact",
+                ),
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(
+                    valid_decision.cards[0],
+                    field_facts=(
+                        replace(
+                            valid_decision.cards[0].field_facts[0],
+                            contains_raw_provider_payload=True,
+                        ),
+                    ),
+                ),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(
+                    valid_decision.cards[0],
+                    field_facts=(
+                        replace(
+                            valid_decision.cards[0].field_facts[0],
+                            source_committed=False,
+                        ),
+                    ),
+                ),
+                valid_decision.cards[1],
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_decision,
+            cards=(
+                replace(
+                    valid_decision.cards[0],
+                    field_facts=(
+                        replace(
+                            valid_decision.cards[0].field_facts[0],
+                            source_commit_reference="forged-commit",
+                        ),
+                    ),
+                ),
+                valid_decision.cards[1],
+            ),
+        )
+
+
+def test_reference_only_and_no_listings_statuses_reject_forged_card_shapes() -> None:
+    reference_only_decision = _valid_reference_only_projection()
+    no_listings_decision = _valid_no_listings_projection()
+    valid_fields_decision = _valid_fields_projection()
+
+    with pytest.raises(ValueError):
+        replace(
+            reference_only_decision,
+            cards=(
+                replace(
+                    reference_only_decision.cards[0],
+                    field_facts=(
+                        _field_fact(
+                            field_fact_id="reference-only-forged-field",
+                            listing_reference_id="listing-1",
+                            field_class=NotificationListingCardFieldClass.TITLE,
+                            value_class=NotificationListingCardValueClass.SAFE_TEXT,
+                            safe_value="reference-only-forged-value",
+                            upstream_field_family="TITLE",
+                            provenance_tier=NotificationListingCardProvenanceTier.TIER_1_SEARCH_RESULT,
+                            upstream_field_reference_id="reference-only-forged-upstream-ref",
+                            compatibility_profile_reference_id="reference-only-forged-compat-profile",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            no_listings_decision,
+            cards=(valid_fields_decision.cards[0],),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            no_listings_decision,
+            cards=(valid_fields_decision.cards[0], valid_fields_decision.cards[1]),
+        )
+
+    with pytest.raises(ValueError):
+        replace(
+            valid_fields_decision,
+            status=NotificationListingCardProjectionStatus.NOT_APPLICABLE_NO_LISTINGS,
+            cards=(),
+            reason_codes=("listing-card-no-listings-not-applicable",),
+        )
