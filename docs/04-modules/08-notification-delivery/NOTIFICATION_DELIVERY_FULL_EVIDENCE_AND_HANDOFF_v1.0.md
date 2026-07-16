@@ -9,8 +9,6 @@
 - `source-of-truth playbook`: docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md
 - `owner decision capture`: docs/04-modules/08-notification-delivery/OWNER_NOTIFICATION_DECISIONS_CAPTURE_v1.0.md
 
-MAYAK-ND-15-FULL-EVIDENCE-HANDOFF-20260716-011
-
 ## 1. Executive summary
 
 Module 08 is complete only inside the current accepted semantic contracts/tests/evidence scope.
