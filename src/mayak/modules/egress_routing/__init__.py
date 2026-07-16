@@ -129,6 +129,11 @@ from .selection import (  # noqa: F401
     RouteSelectionAuthority,
     ServerRouteSelectionBoundary,
 )
+from .session_secret_gate import (  # noqa: F401
+    ER09A_TASK_ID,
+    EgressSessionSecretAuthority,
+    EgressSessionSecretGateBoundary,
+)
 
 MODULE_ID = EGRESS_ROUTING_MODULE_ID
 
@@ -218,6 +223,9 @@ __all__ = (
     "ER08B_TASK_ID",
     "TransportRestrictionEvaluationAuthority",
     "TransportRestrictionEvaluationGateBoundary",
+    "ER09A_TASK_ID",
+    "EgressSessionSecretAuthority",
+    "EgressSessionSecretGateBoundary",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",
