@@ -119,6 +119,9 @@ EXPECTED_PACKAGE_EXPORTS = (
     "TransportRestrictionSignalAuthority",
     "TransportRestrictionSignalKind",
     "TransportRestrictionSignalBoundary",
+    "ER08B_TASK_ID",
+    "TransportRestrictionEvaluationAuthority",
+    "TransportRestrictionEvaluationGateBoundary",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",
@@ -848,5 +851,5 @@ def test_prior_state_regression_remains_unchanged() -> None:
     )
     assert (
         tuple(egress_routing.__all__[: egress_routing.__all__.index("ER07D_TASK_ID")])
-        == (response_contracts.EXPECTED_PACKAGE_EXPORTS[:-14])
+        == (response_contracts.EXPECTED_PACKAGE_EXPORTS[:-17])
     )
