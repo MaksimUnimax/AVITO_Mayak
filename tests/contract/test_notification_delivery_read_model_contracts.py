@@ -147,7 +147,7 @@ EXPECTED_PACKAGE_EXPORTS = (
     "project_notification_read_model",
 )
 
-EXPECTED_PACKAGE_PREFIX = EXPECTED_PACKAGE_EXPORTS[:-len(EXPECTED_MODULE_EXPORTS)]
+EXPECTED_PACKAGE_PREFIX = EXPECTED_PACKAGE_EXPORTS[: -len(EXPECTED_MODULE_EXPORTS)]
 
 EXPECTED_ENUM_VALUES: dict[type[Enum], tuple[str, ...]] = {
     NotificationReadAudience: ("USER", "ADMIN", "SUPPORT"),
@@ -358,7 +358,9 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert type(notification_delivery_read_model.__all__) is tuple
     assert notification_delivery_read_model.__all__ == EXPECTED_MODULE_EXPORTS
     assert type(notification_delivery.__all__) is tuple
-    assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
+    assert (
+        notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
+    )
     assert len(notification_delivery_read_model.__all__) == len(
         set(notification_delivery_read_model.__all__)
     )
@@ -371,18 +373,22 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
         notification_delivery.NotificationDeliveryHistoryClassification
         is NotificationDeliveryHistoryClassification
     )
-    assert notification_delivery.NotificationReadProjectionStatus is NotificationReadProjectionStatus
-    assert notification_delivery.NotificationReadAuthorizationScope is NotificationReadAuthorizationScope
-    assert notification_delivery.NotificationDeliveryHistoryEntry is NotificationDeliveryHistoryEntry
+    assert (
+        notification_delivery.NotificationReadProjectionStatus is NotificationReadProjectionStatus
+    )
+    assert (
+        notification_delivery.NotificationReadAuthorizationScope
+        is NotificationReadAuthorizationScope
+    )
+    assert (
+        notification_delivery.NotificationDeliveryHistoryEntry is NotificationDeliveryHistoryEntry
+    )
     assert notification_delivery.NotificationReadModel is NotificationReadModel
     assert (
         notification_delivery.NotificationReadModelProjectionDecision
         is NotificationReadModelProjectionDecision
     )
-    assert (
-        notification_delivery.project_notification_read_model
-        is project_notification_read_model
-    )
+    assert notification_delivery.project_notification_read_model is project_notification_read_model
     assert notification_delivery.read_model is notification_delivery_read_model
     assert "__getattr__" not in notification_delivery_read_model.__dict__
     assert "__getattr__" not in notification_delivery.__dict__

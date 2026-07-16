@@ -14,6 +14,7 @@ from . import listing_card as _listing_card
 from . import no_new_status as _no_new_status
 from . import outbox as _outbox
 from . import read_model as _read_model
+from . import security_privacy as _security_privacy
 from . import source_intake as _source_intake
 
 MODULE_ID = NOTIFICATION_DELIVERY_MODULE_ID
@@ -137,17 +138,26 @@ project_notification_batch_outcomes = _batch.project_notification_batch_outcomes
 ND12_TASK_ID = _read_model.ND12_TASK_ID
 NotificationReadAudience = _read_model.NotificationReadAudience
 NotificationDeliveryReadStatus = _read_model.NotificationDeliveryReadStatus
-NotificationDeliveryHistoryClassification = (
-    _read_model.NotificationDeliveryHistoryClassification
-)
+NotificationDeliveryHistoryClassification = _read_model.NotificationDeliveryHistoryClassification
 NotificationReadProjectionStatus = _read_model.NotificationReadProjectionStatus
 NotificationReadAuthorizationScope = _read_model.NotificationReadAuthorizationScope
 NotificationDeliveryHistoryEntry = _read_model.NotificationDeliveryHistoryEntry
 NotificationReadModel = _read_model.NotificationReadModel
-NotificationReadModelProjectionDecision = (
-    _read_model.NotificationReadModelProjectionDecision
-)
+NotificationReadModelProjectionDecision = _read_model.NotificationReadModelProjectionDecision
 project_notification_read_model = _read_model.project_notification_read_model
+
+ND13_TASK_ID = _security_privacy.ND13_TASK_ID
+NotificationSecurityPrivacyAuthority = _security_privacy.NotificationSecurityPrivacyAuthority
+NotificationProtectedAction = _security_privacy.NotificationProtectedAction
+NotificationIdentityScopeStatus = _security_privacy.NotificationIdentityScopeStatus
+NotificationContentSafetyStatus = _security_privacy.NotificationContentSafetyStatus
+NotificationSecurityDecisionStatus = _security_privacy.NotificationSecurityDecisionStatus
+NotificationSecurityPublicErrorClass = _security_privacy.NotificationSecurityPublicErrorClass
+NotificationSecurityAuthorizationScope = _security_privacy.NotificationSecurityAuthorizationScope
+NotificationSafeContentScope = _security_privacy.NotificationSafeContentScope
+NotificationHistoricalEvidenceSnapshot = _security_privacy.NotificationHistoricalEvidenceSnapshot
+NotificationSecurityPrivacyDecision = _security_privacy.NotificationSecurityPrivacyDecision
+evaluate_notification_security_privacy = _security_privacy.evaluate_notification_security_privacy
 
 __all__ = (
     "MODULE_ID",
@@ -257,4 +267,16 @@ __all__ = (
     "NotificationReadModel",
     "NotificationReadModelProjectionDecision",
     "project_notification_read_model",
+    "ND13_TASK_ID",
+    "NotificationSecurityPrivacyAuthority",
+    "NotificationProtectedAction",
+    "NotificationIdentityScopeStatus",
+    "NotificationContentSafetyStatus",
+    "NotificationSecurityDecisionStatus",
+    "NotificationSecurityPublicErrorClass",
+    "NotificationSecurityAuthorizationScope",
+    "NotificationSafeContentScope",
+    "NotificationHistoricalEvidenceSnapshot",
+    "NotificationSecurityPrivacyDecision",
+    "evaluate_notification_security_privacy",
 )

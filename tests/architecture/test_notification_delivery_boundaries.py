@@ -1460,3 +1460,194 @@ def test_read_model_runtime_tokens_and_payload_fields() -> None:
 def test_read_model_ast_boundary() -> None:
     source_path = Path("src/mayak/modules/notification_delivery/read_model.py")
     _assert_read_model_ast_boundary(source_path.read_text(), source_path)
+
+
+SECURITY_PRIVACY_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "eligibility",
+    "read_model",
+}
+
+SECURITY_PRIVACY_FORBIDDEN_IMPORT_ROOTS = {
+    "aiohttp",
+    "alembic",
+    "aiogram",
+    "asyncio",
+    "fastapi",
+    "httpx",
+    "multiprocessing",
+    "os",
+    "pathlib",
+    "psycopg",
+    "psycopg2",
+    "queue",
+    "requests",
+    "shlex",
+    "shutil",
+    "socket",
+    "sqlalchemy",
+    "subprocess",
+    "tempfile",
+    "telethon",
+    "threading",
+    "typing",
+    "uuid",
+}
+
+SECURITY_PRIVACY_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "queue",
+    "worker",
+    "broker",
+    "filesystem",
+    "network",
+    "runtime",
+    "storage",
+    "webhook",
+    "mini_app",
+    "provider_sdk",
+    "private_key",
+    "one_time_code",
+    "raw_payload",
+    "provider_payload",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "body",
+    "html",
+    "json",
+    "phone",
+    "seller",
+    "description",
+    "os.system",
+    "subprocess.run",
+    "subprocess.call",
+    "subprocess.check_call",
+    "subprocess.check_output",
+    "popen",
+    "exec(",
+    "eval(",
+    "compile(",
+    "send(",
+    "deliver(",
+    "fetch(",
+    "enrich(",
+    "render(",
+}
+
+SECURITY_PRIVACY_FORBIDDEN_FIELD_NAMES = {
+    "raw_payload",
+    "provider_payload",
+    "body",
+    "html",
+    "json",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "message_template",
+    "template",
+    "phone",
+    "seller",
+    "description",
+    "private_key",
+    "one_time_code",
+    "created_at",
+    "updated_at",
+    "timestamp",
+    "clock",
+    "deadline",
+    "expiry",
+    "retry_backoff",
+    "queue",
+    "worker",
+    "broker",
+    "database",
+    "repository",
+    "store",
+    "runtime",
+    "storage",
+}
+
+
+def _assert_security_privacy_ast_boundary(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    roots = _import_roots(source)
+    field_names = _field_names(source)
+
+    assert roots <= SECURITY_PRIVACY_ALLOWED_IMPORT_ROOTS, (module_path, roots)
+    assert roots.isdisjoint(SECURITY_PRIVACY_FORBIDDEN_IMPORT_ROOTS), (module_path, roots)
+    assert field_names.isdisjoint(SECURITY_PRIVACY_FORBIDDEN_FIELD_NAMES), (
+        module_path,
+        field_names,
+    )
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                if func.id in {"exec", "eval", "compile", "getattr", "setattr", "hasattr", "popen"}:
+                    raise AssertionError(f"{module_path}: forbidden call {func.id}")
+            elif isinstance(func, ast.Attribute):
+                owner = func.value
+                if isinstance(owner, ast.Name) and owner.id == "os" and func.attr == "system":
+                    raise AssertionError(f"{module_path}: forbidden call os.system")
+                if (
+                    isinstance(owner, ast.Name)
+                    and owner.id == "subprocess"
+                    and func.attr in {"run", "call", "check_call", "check_output"}
+                ):
+                    raise AssertionError(f"{module_path}: forbidden subprocess call {func.attr}")
+                if func.attr in {"popen", "send", "deliver", "fetch", "enrich", "render"}:
+                    raise AssertionError(f"{module_path}: forbidden call {func.attr}")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            lowered = node.value.lower()
+            for token in SECURITY_PRIVACY_FORBIDDEN_SOURCE_TOKENS:
+                if token in lowered:
+                    raise AssertionError(
+                        f"{module_path}: string literal contains forbidden token: {node.value!r}"
+                    )
+        elif isinstance(node, ast.Name):
+            lowered = node.id.lower()
+            if lowered in {"exec", "eval", "compile", "popen"}:
+                raise AssertionError(f"{module_path}: forbidden runtime name {node.id}")
+        elif isinstance(node, ast.Attribute):
+            if node.attr in {"system", "popen"}:
+                raise AssertionError(f"{module_path}: forbidden attribute {node.attr}")
+
+
+def test_security_privacy_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/security_privacy.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= SECURITY_PRIVACY_ALLOWED_IMPORT_ROOTS
+
+
+def test_security_privacy_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/security_privacy.py")
+    source = source_path.read_text().lower()
+    for token in SECURITY_PRIVACY_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(SECURITY_PRIVACY_FORBIDDEN_FIELD_NAMES)
+
+
+def test_security_privacy_ast_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/security_privacy.py")
+    _assert_security_privacy_ast_boundary(source_path.read_text(), source_path)
