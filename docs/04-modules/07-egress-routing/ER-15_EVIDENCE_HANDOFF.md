@@ -1,12 +1,12 @@
-# ER-15 Evidence Handoff
+# Маяк Авито — Module 07 Egress Routing ER-15 Full Evidence/Handoff
 
 ## 1. Metadata
 
 - module: `07-egress-routing`
 - roadmap step: `ER-15`
 - status: docs-only evidence/handoff for accepted semantic scope
+- current handoff base: `833e39632446e00e1889975343443a0ea4d12f8d`
 - latest accepted Egress semantic/code SHA: `fa06c5e502910d5fbdd2efe9f168f870726a34b9`
-- current handoff base: `4cf497a8602ed934c8b00747d634e3b0df4d6e5f`
 - source-of-truth playbook: `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`
 - source-of-truth owner capture: `docs/04-modules/07-egress-routing/OWNER_EGRESS_DECISIONS_CAPTURE_v1.0.md`
 - source-of-truth readme: `docs/04-modules/07-egress-routing/README.md`
@@ -15,40 +15,178 @@
 ## 2. Purpose and scope
 
 - summarize the accepted Module 07 semantic and evidence state
-- preserve the exact accepted SHA chain for this handoff
+- preserve the accepted prerequisite ancestry that leads into ER-15
+- preserve the full accepted Egress chain from `0f90ef7081e6f810d38e5dea76254d4e10f8bed4` to `fa06c5e502910d5fbdd2efe9f168f870726a34b9`
 - preserve the exact route-proof statuses carried in synthetic evidence
 - preserve the exact safety declarations carried by the handoff
-- record the required validation, cleanup, commit, push, and reporting gates
-- keep OD-009, OD-010, OD-011, and OD-013 open or blocked
+- keep the module complete only in governance, semantic, contracts, synthetic-tests, fail-closed-gates, and evidence scope
+- keep the module not production-ready and not runtime-ready
 
-## 3. Preflight basis
+## 3. Accepted prerequisites
 
-- GitHub `main` is the source of truth for this handoff
-- the verified preflight base before editing was `6fa3dd2a314587ad354073ab5ae79ecec1b272d2`
-- the verified preflight branch was `main`
-- the verified preflight worktree was clean
-- the verified accepted Egress semantic/code SHA is `fa06c5e502910d5fbdd2efe9f168f870726a34b9`
-- no live Avito/provider calls were made
-- no runtime, persistence, Windows/browser, proxy/VPN/tunnel, or deploy change is authorized by this handoff
+These six prerequisite SHAs are the accepted ancestors that precede the Egress chain start at `0f90ef7081e6f810d38e5dea76254d4e10f8bed4`:
 
-## 4. Accepted SHA chain
+- `e8587107fd6cd3675b3e69f1ce75ffa0c846cc3c` - `docs: bootstrap project governance and source documents`
+- `fb55ec29708cb0f4de745504393fb02afb62ce3a` - `docs: accept Run 18 Egress Routing playbook`
+- `bbe0691465e1b951980b33e5ee0ba2b0d9ab8127` - `er-01: capture egress owner decisions`
+- `9e5a7b05bc211282b59462be4148568321f0482e` - `er-01: capture egress owner decisions`
+- `9f80cd6877b7a53860cee2a2ff034aa8edaf7d49` - `er-01: restore literal owner decision capture`
+- `4dfaec36be7997beaf06777befb9e997f80f3ef9` - `er-01: complete literal owner capture correction`
 
-Ordered chain preserved for this handoff:
+These prerequisites confirm ancestry only. They do not imply runtime readiness, provider approval, or production proof.
 
-1. `e858710` - `docs: bootstrap project governance and source documents`
-1. `fb55ec2` - `docs: accept Run 18 Egress Routing playbook`
-1. `bbe0691465e1b951980b33e5ee0ba2b0d9ab8127` - `er-01: capture egress owner decisions`
-1. `9e5a7b05bc211282b59462be4148568321f0482e` - `er-01: capture egress owner decisions`
-1. `cb30fffc20417b13153513043e973b2cbac93bce` - `er-02: correct canonical egress enum matrix`
-1. `fa06c5e502910d5fbdd2efe9f168f870726a34b9` - latest accepted Egress semantic/code SHA
-1. `16ec547eef68b800d17afd95e2a33274c5e68d5c` - `nd-13: add security privacy suppression semantics`
-1. `d02b2ac0bf3845394f4c1b0677cf438e41b9818f` - `nd-14: add deferred runtime gate semantics`
-1. `65afae19c25aa90bb2c9ceba68402f0a19e69f19` - `nd-15: add module 08 evidence handoff`
-1. `4cf497a8602ed934c8b00747d634e3b0df4d6e5f` - current handoff base and parallel-main ND-15 marker correction
+## 4. Accepted Egress chain
 
-Each SHA above is intended to remain an accepted ancestor in the documented chain.
+The full accepted Egress chain for ER-15 is:
 
-## 5. Exact route proof statuses
+- `0f90ef7081e6f810d38e5dea76254d4e10f8bed4` - `er-01: fix final literal owner capture mismatch`
+- `9d1560057680f8d5f53921bb1b5632793e135e6f` - `nd-01: capture notification owner decisions`
+- `97ceaec577231ec3cb1d45130f844a7c9f3f7716` - `er-02: add egress semantic contracts and fixtures`
+- `cb30fffc20417b13153513043e973b2cbac93bce` - `er-02: correct canonical egress enum matrix`
+- `d50f36640a81e1b081f08cfb101e6abcae63b394` - `er-02: enforce exact ambiguous outcome reconciliation`
+- `d1e15cac1067a22da6594a43654e312eee627308` - `er-03: add agent and route registration boundary`
+- `6153356ac24786cfc4233ae597103ec923e82984` - `er-03: restore canonical package exports`
+- `ac62a3fac3050b5d9bd3cc28d5cb07791c60830f` - `er-03: enforce same-agent route ownership`
+- `9a9a34dc0c5c88ac45d192355abb3ed215eb2adc` - `er-05a: add server route selection boundary`
+- `ac432b43599ca217129d1ebf7fbf273f4caef182` - `er-05b: add policy-based fallback boundary`
+- `8a696d231bf138ee3dc17ebba9f8338b6f83a0a5` - `er-06a: add route lease authorization boundary`
+- `38539f16833af9a3ec67c7fb99cc15f2bb92e00b` - `er-06b: add transport assignment commitment boundary`
+- `4096cc7fd6e0d9e5e04dbbb53fd344e400c15424` - `er-06b: separate request identity from safe request reference`
+- `2c6dbb40a85c5e39068d484e11d0d97371e34b67` - `er-06c: add first dispatch attempt boundary`
+- `1c166971083f9d419aa7e881061333ed7979af52` - `er-06d: add dispatch replay decision boundary`
+- `c70921cd3298f250864792e1c2456e4a00de1fca` - `er-06e: add unknown dispatch reconciliation boundary`
+- `31f7db5455f64915ddd76b0a5544900219e79472` - `nd-01: correct notification owner capture`
+- `38322db2b5facc31f54cb9183f4fb672b053bef5` - `nd-02: add notification source intake semantics`
+- `f76b03e99a5753f27991c86056ae0e0936d22afa` - `nd-03: add notification eligibility semantics`
+- `e6e1973cd3a20a96fffd24be1e6e72583a1925d0` - `nd-03: correct exports and eligibility precedence`
+- `fa349e23acd35e630f4e8ae594fca1c215d1ba61` - `er-06f: add resolved dispatch reconciliation boundary`
+- `5e5940e0b5916c7f936a01b0e4a5072353a7074c` - `nd-04: add generic notification outbox semantics`
+- `0b3c661f8f1f4bf9c984e28927bb8c6b2f807726` - `nd-05: add multi-channel delivery plan semantics`
+- `f5b18cbdafef834c7c11024dcdfb244f017bcfc7` - `er-07a: add transport outcome commitment boundary`
+- `ef3bb52d5c9b3bc4b275a454b7282e56933c440e` - `er-07b: add transport availability outcome boundary`
+- `ec0c019053fe8a28aa2804fff3ad3d8577d3eccb` - `er-07b: enforce exact reconciliation status type`
+- `30f2982fb0eecade9407d5bf0e4cd5dd6546a9dc` - `er-07c: add transport response presence outcome boundary`
+- `a805fa8ff34e1c790484f821d19e475342dce7b4` - `er-07c: enforce exact nested transport records`
+- `bd1e4a8ad73d196d34323c561a3cde43bcd636f4` - `er-07d: add transport response failure outcome boundary`
+- `e5c1bc81bc1cf4916fb755c584172dd5c37eb85f` - `er-07d: complete safe response negative matrix`
+- `c4c11bde77e80cf58b0da1ed1a10ab8a7ee8a990` - `er-07e: add policy fallback transport outcome boundary`
+- `d9f3a1504690363e8b3ba0e90570242913a0beba` - `er-07e: satisfy differential static gates`
+- `2034c2efeef2786fb1f8edc72b771b7946de3f55` - `er-07b: enforce exact nested transport records`
+- `ffedb3a14f13110ef5e3471168c1eb0d6f71693a` - `er-07b: restore assignment dispatch architecture gates`
+- `05f1427768dcd7e23bdbf47c8149908de0f72498` - `nd-06: add notification attempt outcome semantics`
+- `35b35245ea70929b401290f6876e1e1ca190a487` - `nd-06: enforce provider outcome start state gate`
+- `2024015c6bb6ee9ad3a3836b12e1a6ab79230e2e` - `nd-07: add notification deduplication semantics`
+- `d220c0c525c1a071652b81b5af47239daf05cf50` - `nd-07: enforce exact channel class type`
+- `05f5a4efefdcfca8a05c7504645033fbd9f5e68a` - `nd-08: add no-new status policy semantics`
+- `62ecf572f8897395f80e8b3d7d38484f4dac7d25` - `nd-08: enforce upstream provenance gates`
+- `4d8fdc2b6649115e50baf1729cc7933058df2820` - `nd-08: remove static boundary evasion`
+- `2a09a302f2a2f6ae0a91d9c3b4a7fc29213761e8` - `nd-09: add external recovery policy semantics`
+- `e49f3c850a35eb083af9361c0e2cc9dffbf2c575` - `nd-09: correct same-problem replay status`
+- `0e021a75bcbeedb935990cd5e6018c5696214a5a` - `nd-10: add listing card payload boundary`
+- `ab6050844cb850d781ae6993082d70c48c71085f` - `nd-10: enforce listing card output invariants`
+- `bedb27612429f04f8be5b3f27500e14bd1f4a85e` - `nd-11: add batch partial outcome semantics`
+- `38e7dd4d59f271bf579b2d8892106a48097bfbd3` - `nd-11: correct replayed failure retry policy`
+- `911287645121414d872d6774c8a176956d48864f` - `er-08a: add transport restriction signal boundary`
+- `c965b0480128ca259805cadeed98908666c394db` - `er-08a: fix restriction signal lint`
+- `15207864e0d304f43ac50602f77f57143b89aed6` - `nd-11: satisfy batch static type gate`
+- `32fa7929c97f0518625f3b5777920dfae4d5d453` - `er-08b: add restriction evaluation gate`
+- `61ea3bdf7bb3281445dee0651591adad1ecb54a8` - `er-08b: add restriction evaluation gate`
+- `ecd68c216292627bf357bd86e0777a54b0892238` - `er-09a: add session secret gate`
+- `668c52f4a91e146de99d2d504815170b3bc03552` - `er-09a: store source capability`
+- `0971796a7fc1d22dd57950541216100699f6ce83` - `er-10a: add browser windows fallback gate`
+- `3728540cf4801c50761d67f5ffad55b5c9217bea` - `er-10a: revalidate session secret gate`
+- `201747d74d8bd99b9c893e87ae570fad8b794b7c` - `er-11a: add development bridge gate`
+- `47b46447abcce62864473553d1a5ecdce9999bc9` - `er-12a: add safe diagnostic gate`
+- `6cd8af542c4c3e07ff08ac2b40f9848971b0ac6b` - `er-12a: remove import-order suppression`
+- `6c9c0aaa3bcb12195a68b6bd6262ef365c91ca17` - `er-13a: add proof-only gate`
+- `69fd43905550c9dd94f6be45965ba67e72418882` - `nd-12: add notification read model semantics`
+- `0178d5661b7bd1b81e65676491ae6fce46ab00a9` - `er-13a: establish canonical test package layout`
+- `a05b71818fde3a43066714098e1b9eed43fdf9dd` - `nd-12: export notification read model semantics`
+- `fa06c5e502910d5fbdd2efe9f168f870726a34b9` - `er-14a: add persistence runtime gate`
+
+This chain is the accepted ancestry record for ER-15. It is factual evidence only and does not authorize runtime behavior.
+
+## 5. Accepted artifact inventory
+
+- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`
+- `docs/04-modules/07-egress-routing/OWNER_EGRESS_DECISIONS_CAPTURE_v1.0.md`
+- `docs/04-modules/07-egress-routing/README.md`
+- `docs/04-modules/07-egress-routing/ER-15_EVIDENCE_HANDOFF.md`
+- `src/mayak/modules/egress_routing/*`
+- `tests/contract/test_egress_routing_*`
+- `tests/unit/test_egress_routing_*`
+- `tests/architecture/test_egress_routing_boundaries.py`
+
+These artifacts bound the current accepted semantic and synthetic-test scope for Module 07.
+
+## 6. ER-01 governance capture evidence
+
+- the owner decision capture establishes the primary route direction as a Linux/server reference-style outbound route
+- the browser-extension route is evidence-only and may serve only as a fallback or proof route
+- browser, provider, and Windows-specific behaviors are bounded by separate evidence and are not production claims
+- live Avito traffic, provider access, CAPTCHA solving, and production-scale proof are not authorized by the governance capture
+
+## 7. ER-02 canonical contracts evidence
+
+- the canonical egress enum matrix and synthetic fixture set define the accepted outcome vocabulary
+- ambiguous, restricted, fallback, unavailable, and reconcile-first states remain distinct
+- transport success is not collapsed into Parser success
+- failure and ambiguity do not become clean empty outcomes
+
+## 8. ER-03 route registration and ownership evidence
+
+- route and agent registration remain within Egress Routing ownership
+- same-agent route ownership is enforced as a semantic boundary
+- canonical package exports keep the module surface explicit
+- Egress Routing owns logical route, agent, lease, readiness, health, quarantine, selection, and transport state only
+
+## 9. ER-04 server-side selection and route-technology gate evidence
+
+- `ER-04` remains `BLOCKED`
+- the route-technology decision gate is closed to implementation
+- priority, fallback, rate, and cadence choices remain unresolved
+- connectivity topology, ports, tunnel/VPN/proxy, credentials, and capability mappings remain unresolved
+- there is no accepted `ER-04` implementation commit in the chain
+
+## 10. ER-05 and ER-06 lease/assignment/dispatch evidence
+
+- lease authorization is bounded by declared purpose and scope
+- transport assignment commitment is separate from request identity
+- dispatch attempts carry safe request references, not primary business state
+- policy-based fallback remains controlled and bounded
+- fallback does not authorize blind retry or route switching by other modules
+
+## 11. ER-07 transport and parser boundary evidence
+
+- transport availability, response presence, and failure states remain explicit
+- nested transport records are preserved as transport evidence
+- parser integration does not convert transport success into parser success
+- response failure evidence remains separate from parser extraction evidence
+
+## 12. ER-08 idempotency and reconciliation evidence
+
+- replay semantics remain exact and bounded
+- unknown dispatch is handled reconcile-first
+- reconciliation status types remain explicit and fail closed
+- dispatch resolution does not become blind retry
+
+## 13. ER-09 to ER-10 gate evidence
+
+- restriction evaluation remains a gate, not a runtime authorization
+- session secret handling remains gated
+- source capability storage remains gated
+- browser windows fallback remains gated
+- development bridge usage remains explicit-owner-consent only
+
+## 14. ER-11 to ER-14 gate evidence
+
+- safe diagnostic evidence remains bounded
+- proof-only gates remain proof-only
+- canonical test package layout is accepted as a packaging boundary
+- persistence runtime remains blocked
+- no runtime gate in this chain authorizes production execution
+
+## 15. Exact route proof statuses
 
 Route proof is not production-proven. The exact proof statuses preserved in Module 07 synthetic evidence are:
 
@@ -63,7 +201,7 @@ Route proof is not production-proven. The exact proof statuses preserved in Modu
 
 Evidence status values preserved by the module are `CURRENT`, `STALE`, `MISSING`, `DISPUTED`, `UNPROVEN`, and `WITHDRAWN`.
 
-## 6. Exact safety declarations
+## 16. Exact safety declarations
 
 - `NO_PUBLIC_INBOUND`
 - `NO_PRIMARY_DATABASE`
@@ -85,7 +223,7 @@ Evidence status values preserved by the module are `CURRENT`, `STALE`, `MISSING`
 
 These 17 declarations are carried as safety boundaries only and do not authorize any hidden runtime or provider behavior.
 
-## 7. Ownership boundaries
+## 17. Ownership boundaries
 
 - Parser owns extraction, normalization, and parser-side business semantics only
 - Scan owns scan intent, work claims, run state, and listing state only
@@ -95,18 +233,18 @@ These 17 declarations are carried as safety boundaries only and do not authorize
 - Provider behavior is external evidence only
 - Egress Routing does not own account, entitlement, pricing, transport-host, or provider-permission state
 
-## 8. Open decisions and blocked gates
+## 18. Open decisions and blocked gates
 
-| Decision | Status |
-|---|---|
-| `OD-009` | `OPEN` |
-| `OD-010` | `OPEN` |
-| `OD-011` | `OPEN` |
-| `OD-013` | `OPEN` |
+| Decision | Governance state | Implementation effect |
+|---|---|---|
+| `OD-009` | `OPEN` | blocked from route-default encoding |
+| `OD-010` | `OPEN` | blocked from geography assumption |
+| `OD-011` | `OPEN` | blocked from cadence and threshold selection |
+| `OD-013` | `OPEN` | blocked from retention and deletion policy |
 
-The module remains blocked for supported first-stage filters, country-wide support, safe monitoring cadence, and retention/deletion of route, lease, request, outcome, audit, and diagnostic evidence.
+These decisions remain unresolved and the module remains blocked for their associated route, lease, request, outcome, audit, and diagnostic evidence policies.
 
-## 9. Live traffic and environment boundaries
+## 19. Live traffic and environment boundaries
 
 - live Avito traffic is not claimed
 - live provider traffic is not claimed
@@ -116,7 +254,7 @@ The module remains blocked for supported first-stage filters, country-wide suppo
 - the agent remains a replaceable execution dependency with no primary database access
 - no runtime, persistence, deploy, or browser/proxy/VPN/tunnel topology change is authorized here
 
-## 10. Accepted semantic scope
+## 20. Accepted semantic scope
 
 - route selection is server-side and explainable
 - a lease is bounded authorization for one declared purpose and scope
@@ -127,151 +265,55 @@ The module remains blocked for supported first-stage filters, country-wide suppo
 - automatic unquarantine is prohibited unless a later explicit policy proves it
 - foreign resources do not become project resources by visibility or convenience
 
-## 11. Source-of-truth and ancestry validation
+## 21. Source-of-truth and ancestry evidence
 
-- `origin/main` must equal `6fa3dd2a314587ad354073ab5ae79ecec1b272d2` before any correction that claims to be exact
-- each SHA in the accepted chain must satisfy `git merge-base --is-ancestor <sha> HEAD`
-- the handoff must remain subordinate to GitHub source-of-truth and accepted governance
-- if the base does not match, the task must stop immediately with `STOP_BASE_MISMATCH`
-- rebase, merge, cherry-pick, reset, amend, squash, and force-push are forbidden
+- GitHub `main` is the source of truth for this handoff
+- the accepted ancestry for ER-15 is recorded in the chain above
+- the current published base for this handoff is `833e39632446e00e1889975343443a0ea4d12f8d`
+- the latest accepted Egress semantic/code SHA is `fa06c5e502910d5fbdd2efe9f168f870726a34b9`
+- the handoff remains subordinate to accepted governance and source-of-truth ancestry
 
-## 12. Content validation
+## 22. Content boundary evidence
 
-- the changed path must remain exactly one existing file: `docs/04-modules/07-egress-routing/ER-15_EVIDENCE_HANDOFF.md`
-- `docs/04-modules/07-egress-routing/MODULE_07_FULL_EVIDENCE_HANDOFF_v1.0.md` must remain untouched
-- `docs/04-modules/07-egress-routing/README.md` must remain untouched
-- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md` must remain untouched
-- `pyproject.toml`, `uv.lock`, `src/**`, and `tests/**` must remain untouched
-- the handoff must keep the exact route proof statuses, exact open decisions, and exact safety declarations
-- the handoff must continue to forbid live Avito/provider calls and any runtime or persistence mutation
+- this handoff remains evidence-only
+- this handoff does not introduce runtime, persistence, deploy, provider, or database authorization
+- this handoff does not change module playbook, README, source code, or tests as part of the handoff record
+- the accepted scope remains limited to the documented evidence boundary
 
-## 13. Literal validation
+## 23. Literal evidence
 
 - all SHA values in this document are literal 40-hex strings where expected
 - the accepted Egress semantic/code SHA literal is `fa06c5e502910d5fbdd2efe9f168f870726a34b9`
-- the current handoff base literal is `4cf497a8602ed934c8b00747d634e3b0df4d6e5f`
-- the preflight base literal is `6fa3dd2a314587ad354073ab5ae79ecec1b272d2`
+- the current handoff base literal is `833e39632446e00e1889975343443a0ea4d12f8d`
 - the route-proof labels remain literal and synthetic
 - the safety declarations remain literal and declarative
-- no Unicode, secret, token, cookie, or provider payload literal is required for this handoff
+- no secret, token, cookie, or provider payload literal is required for this handoff
 
-## 14. Generated-artifact cleanup
+## 24. Module completeness evidence
 
-- after checks, remove only untracked `__pycache__` directories, `.pyc` files, `*.egg-info` directories, and tool caches
-- do not delete tracked files or touch forbidden paths
-- if cleanup would affect any path outside those artifact classes, stop
-- the final worktree must be clean after cleanup and before push
+- the module is complete only inside governance, semantic, contracts, synthetic-tests, fail-closed-gates, and evidence scope
+- the module is not production-ready
+- the module is not runtime-ready
+- the module does not claim live provider behavior or operational readiness
 
-## 15. Required checks
+## 25. Non-authorization evidence
 
-- `ruff`
-- `mypy`
-- `lint-imports`
-- scoped pytest for the Egress Routing surface
-- full `pytest`
-- `git diff --check`
-- `git status --short`
+- this handoff does not authorize runtime changes
+- this handoff does not authorize persistence changes
+- this handoff does not authorize deploy changes
+- this handoff does not authorize Windows/browser topology changes
+- this handoff does not authorize proxy, VPN, or tunnel changes
+- this handoff does not authorize provider-access changes
+- this handoff does not authorize database changes
 
-All checks are required to pass before commit.
+## 26. Remaining gates and blockers
 
-## 16. Scoped pytest boundary
+- `ER-04` remains blocked
+- `OD-009`, `OD-010`, `OD-011`, and `OD-013` remain open
+- exact route technology, connectivity topology, ports, tunnel/VPN/proxy, credentials, capability mappings, priority/fallback, lease/heartbeat/readiness thresholds, retries, rate limits, cookies/sessions, and retention remain blocked
+- production readiness remains unproven
+- runtime readiness remains absent
 
-- the scoped pytest run must target the Egress Routing contract, unit, and architecture surfaces
-- the scoped run must not add new runtime behavior
-- the scoped run must not depend on live Avito/provider traffic
-- the scoped run must fail closed if any forbidden path or hidden runtime dependency is introduced
+## 27. Final handoff state
 
-## 17. Pre-push gate
-
-- `origin/main` must be re-verified against the expected base before commit and again before push
-- the worktree must remain clean except for the intended doc change
-- all checks from section 15 must pass
-- cleanup from section 14 must be complete
-- the accepted SHA chain and exact safety declarations must still be present in the handoff
-- if any gate fails, do not push
-
-## 18. Commit requirements
-
-- commit subject must be exactly `er-15: correct module 07 evidence handoff`
-- commit must include only the allowed doc change
-- no amend, squash, rebase, merge, cherry-pick, reset, or force-push is allowed
-- the commit must remain a fast-forward descendant of the expected base
-- the commit must not introduce generated artifacts or forbidden path changes
-
-## 19. Push requirements
-
-- push only fast-forward to `main`
-- do not force-push
-- do not create a merge commit
-- do not rewrite published history
-- stop immediately if the push is not fast-forward
-
-## 20. Post-push verification
-
-- fetch `origin/main` again after push
-- verify `origin/main` equals the new commit SHA
-- verify the commit is an ancestor of the pushed remote tip
-- verify the branch remains `main`
-- verify the repository is still on the intended source-of-truth chain
-
-## 21. Clean worktree requirement
-
-- the final worktree must be fully clean
-- no untracked artifact directories may remain
-- no untracked `.pyc`, `__pycache__`, `*.egg-info`, or tool cache entries may remain
-- the only acceptable final state is a clean repository with the intended commit applied
-
-## 22. Report requirements
-
-The final report for this task must contain:
-
-- the new workspace path
-- preflight SHAs
-- the single changed path
-- ancestry validation results
-- content validation results
-- literal validation results
-- all check results
-- cleanup actions
-- the commit SHA
-- the push result
-- post-push `origin/main`
-- the final clean-status result
-
-## 23. Failure conditions
-
-- if the base mismatches, stop with `STOP_BASE_MISMATCH`
-- if the worktree is dirty, stop with `STOP_DIRTY_WORKTREE`
-- if any required check fails, report `FAIL`
-- if any forbidden path changes, stop
-- if any live call or runtime mutation is introduced, stop
-- if the push is not fast-forward, stop
-
-## 24. Non-authorization reminder
-
-This handoff does not authorize runtime, persistence, Windows/browser, proxy/VPN/tunnel, deploy, provider-access, or database changes.
-
-## 25. Exact acceptance criteria
-
-- accepted Egress semantic/code SHA is `fa06c5e502910d5fbdd2efe9f168f870726a34b9`
-- `OD-009`, `OD-010`, `OD-011`, and `OD-013` remain open or blocked
-- no live Avito/provider calls were made
-- no runtime, persistence, Windows/browser, proxy/VPN/tunnel, or deploy changes were made
-- the exact route proof statuses are present
-- the exact 17 safety declarations are present
-- the single allowed path is the only changed path
-- required checks pass
-- generated artifacts are cleaned up
-- commit and fast-forward push complete
-- final worktree is clean
-
-## 26. Handoff completeness statement
-
-- this document is evidence-only
-- this document does not create code, tests, runtime, persistence, deploy, or provider permission
-- this document does not rewrite module 07 playbook or README history
-- this document remains a handoff record for the accepted semantic and evidence state only
-
-## 27. Final status
-
-This handoff is complete only when the preflight base matches, all checks pass, cleanup is complete, the commit is created with the exact subject, the push is fast-forward only, and the repository ends clean.
+This handoff captures the accepted Module 07 Egress Routing evidence state for ER-15. It is complete only in governance, semantic, contracts, synthetic-tests, fail-closed-gates, and evidence scope, and it remains not production-ready and not runtime-ready.
