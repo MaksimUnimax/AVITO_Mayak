@@ -20,6 +20,7 @@ MODULE_FILES = (
     Path("src/mayak/modules/egress_routing/restriction_evaluation.py"),
     Path("src/mayak/modules/egress_routing/session_secret_gate.py"),
     Path("src/mayak/modules/egress_routing/proof_only_gate.py"),
+    Path("src/mayak/modules/egress_routing/persistence_runtime_gate.py"),
     Path("src/mayak/modules/egress_routing/browser_windows_fallback_gate.py"),
     Path("src/mayak/modules/egress_routing/development_bridge_gate.py"),
     Path("src/mayak/modules/egress_routing/safe_diagnostic_gate.py"),
@@ -633,6 +634,9 @@ OUTCOME_FALLBACK_FORBIDDEN_IDENTIFIERS = (
 }
 
 REPLAY_MODULE_PATH = Path("src/mayak/modules/egress_routing/replay.py")
+PERSISTENCE_RUNTIME_MODULE_PATH = Path(
+    "src/mayak/modules/egress_routing/persistence_runtime_gate.py"
+)
 REPLAY_ALLOWED_RELATIVE_IMPORTS = {
     "contracts",
     "dispatch",
@@ -705,6 +709,43 @@ REPLAY_FORBIDDEN_IDENTIFIERS = {
     "Notification",
     "Beacon",
     "Admin",
+}
+
+PERSISTENCE_RUNTIME_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "typing",
+}
+
+PERSISTENCE_RUNTIME_FORBIDDEN_IDENTIFIERS = {
+    "connect",
+    "connection",
+    "create_all",
+    "create_engine",
+    "cursor",
+    "declarative_base",
+    "execute",
+    "engine",
+    "firewall",
+    "httpx",
+    "installer",
+    "listener",
+    "metadata",
+    "op",
+    "playwright",
+    "psycopg",
+    "requests",
+    "selenium",
+    "sessionmaker",
+    "socket",
+    "sqlalchemy",
+    "subprocess",
+    "systemd",
+    "tunnel",
+    "urlopen",
+    "webdriver",
+    "windows_service",
 }
 
 RECONCILIATION_MODULE_PATH = Path("src/mayak/modules/egress_routing/reconciliation.py")
@@ -998,6 +1039,46 @@ def test_egress_routing_modules_use_only_allowed_imports_and_static_ast() -> Non
         assert obfuscation_issues == set(), f"{relative_path}: {sorted(obfuscation_issues)}"
 
         _identifiers_are_ascii_and_stable(tree)
+
+
+def test_persistence_runtime_gate_module_uses_only_semantic_stdlib_and_no_runtime_apis() -> None:
+    source = _read_source(PERSISTENCE_RUNTIME_MODULE_PATH)
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                assert root in PERSISTENCE_RUNTIME_ALLOWED_IMPORT_ROOTS
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                assert node.level == 0
+                continue
+            assert node.level == 0
+            root = node.module.split(".", 1)[0]
+            assert root in PERSISTENCE_RUNTIME_ALLOWED_IMPORT_ROOTS
+
+    identifiers = _iter_identifier_names(tree)
+    assert PERSISTENCE_RUNTIME_FORBIDDEN_IDENTIFIERS.isdisjoint(identifiers)
+    assert {
+        "ER14A_TASK_ID",
+        "EgressPersistenceRuntimeAuthority",
+        "EgressPersistenceRuntimeGateBoundary",
+        "reason_codes",
+        "evidence_reference_ids",
+        "physical_schema_and_migration_decisions_required",
+        "runtime_execution_authorized",
+    }.issubset(identifiers)
+
+    string_issues = _string_issues(tree)
+    assert string_issues == set(), f"{PERSISTENCE_RUNTIME_MODULE_PATH}: {sorted(string_issues)}"
+
+    obfuscation_issues = _obfuscation_issues(source, tree)
+    assert obfuscation_issues == set(), (
+        f"{PERSISTENCE_RUNTIME_MODULE_PATH}: {sorted(obfuscation_issues)}"
+    )
+
+    _identifiers_are_ascii_and_stable(tree)
 
 
 def test_restriction_signal_module_imports_and_identifiers_are_minimal() -> None:

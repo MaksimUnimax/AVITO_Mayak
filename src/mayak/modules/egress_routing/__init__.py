@@ -96,6 +96,11 @@ from .outcome_response_failure import (  # noqa: F401
     TransportResponseFailureOutcomeAuthority,
     TransportResponseFailureOutcomeBoundary,
 )
+from .persistence_runtime_gate import (  # noqa: F401
+    ER14A_TASK_ID,
+    EgressPersistenceRuntimeAuthority,
+    EgressPersistenceRuntimeGateBoundary,
+)
 from .proof_only_gate import (  # noqa: F401
     ER13A_TASK_ID,
     EgressProofOnlyAuthority,
@@ -258,6 +263,9 @@ __all__ = (
     "ER13A_TASK_ID",
     "EgressProofOnlyAuthority",
     "EgressProofOnlyGateBoundary",
+    "ER14A_TASK_ID",
+    "EgressPersistenceRuntimeAuthority",
+    "EgressPersistenceRuntimeGateBoundary",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",
