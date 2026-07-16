@@ -1584,6 +1584,112 @@ SECURITY_PRIVACY_FORBIDDEN_FIELD_NAMES = {
     "storage",
 }
 
+DEFERRED_RUNTIME_MODULE_PATH = Path(
+    "src/mayak/modules/notification_delivery/deferred_runtime_gate.py"
+)
+DEFERRED_RUNTIME_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+}
+DEFERRED_RUNTIME_FORBIDDEN_IMPORT_ROOTS = {
+    "aiohttp",
+    "alembic",
+    "asyncio",
+    "fastapi",
+    "httpx",
+    "os",
+    "pathlib",
+    "psycopg",
+    "queue",
+    "requests",
+    "shlex",
+    "socket",
+    "sqlalchemy",
+    "subprocess",
+    "sys",
+    "threading",
+    "multiprocessing",
+}
+DEFERRED_RUNTIME_FORBIDDEN_CALLS = {
+    "exec",
+    "eval",
+    "compile",
+    "open",
+    "getenv",
+    "putenv",
+    "system",
+    "popen",
+    "connect",
+    "execute",
+    "dispatch",
+    "send",
+    "deliver",
+    "start",
+    "run",
+    "schedule",
+}
+
+
+def _assert_deferred_runtime_ast_boundary(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    parents = _build_parent_map(tree)
+    roots = _import_roots(source)
+
+    assert roots <= DEFERRED_RUNTIME_ALLOWED_IMPORT_ROOTS, (module_path, roots)
+    assert roots.isdisjoint(DEFERRED_RUNTIME_FORBIDDEN_IMPORT_ROOTS), (module_path, roots)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in DEFERRED_RUNTIME_FORBIDDEN_CALLS:
+                raise AssertionError(f"{module_path}: forbidden call {func.id}")
+            if isinstance(func, ast.Attribute) and func.attr in DEFERRED_RUNTIME_FORBIDDEN_CALLS:
+                raise AssertionError(f"{module_path}: forbidden call {func.attr}")
+        elif isinstance(node, ast.Attribute) and node.attr in DEFERRED_RUNTIME_FORBIDDEN_CALLS:
+            raise AssertionError(f"{module_path}: forbidden attribute {node.attr}")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            current = parents.get(node)
+            skip_literal = False
+            while current is not None:
+                if isinstance(current, ast.Assign):
+                    for target in current.targets:
+                        if (
+                            isinstance(target, ast.Name)
+                            and target.id == "_FORBIDDEN_EVIDENCE_REFERENCE_TOKENS"
+                        ):
+                            skip_literal = True
+                            break
+                    if skip_literal:
+                        break
+                current = parents.get(current)
+            if skip_literal:
+                continue
+            lowered = node.value.lower()
+            for token in (
+                "http://",
+                "https://",
+                "://",
+                "localhost",
+                "127.0.0.1",
+                "0.0.0.0",
+            ):
+                if token in lowered:
+                    raise AssertionError(
+                        f"{module_path}: string literal contains forbidden token: {node.value!r}"
+                    )
+
+
+def test_deferred_runtime_gate_stays_within_allowed_import_boundary() -> None:
+    source = DEFERRED_RUNTIME_MODULE_PATH.read_text()
+    roots = _import_roots(source)
+    assert roots <= DEFERRED_RUNTIME_ALLOWED_IMPORT_ROOTS
+
+
+def test_deferred_runtime_gate_runtime_tokens_and_ast_boundary() -> None:
+    source = DEFERRED_RUNTIME_MODULE_PATH.read_text()
+    _assert_deferred_runtime_ast_boundary(source, DEFERRED_RUNTIME_MODULE_PATH)
+
 
 def _assert_security_privacy_ast_boundary(source: str, module_path: Path) -> None:
     tree = ast.parse(source)

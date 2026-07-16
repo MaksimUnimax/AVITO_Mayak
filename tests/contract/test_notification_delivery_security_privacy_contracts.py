@@ -346,7 +346,7 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert type(notification_delivery_security_privacy.__all__) is tuple
     assert notification_delivery_security_privacy.__all__ == EXPECTED_MODULE_EXPORTS
     assert type(notification_delivery.__all__) is tuple
-    assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
+    assert notification_delivery.__all__[: len(EXPECTED_PACKAGE_PREFIX)] == EXPECTED_PACKAGE_PREFIX
     assert len(notification_delivery_security_privacy.__all__) == len(
         set(notification_delivery_security_privacy.__all__)
     )

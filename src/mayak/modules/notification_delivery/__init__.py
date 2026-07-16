@@ -7,6 +7,7 @@ from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 from . import attempt as _attempt
 from . import batch as _batch
 from . import deduplication as _deduplication
+from . import deferred_runtime_gate as _deferred_runtime_gate
 from . import delivery_plan as _delivery_plan
 from . import eligibility as _eligibility
 from . import external_recovery as _external_recovery
@@ -159,6 +160,21 @@ NotificationHistoricalEvidenceSnapshot = _security_privacy.NotificationHistorica
 NotificationSecurityPrivacyDecision = _security_privacy.NotificationSecurityPrivacyDecision
 evaluate_notification_security_privacy = _security_privacy.evaluate_notification_security_privacy
 
+ND14_TASK_ID = _deferred_runtime_gate.ND14_TASK_ID
+NotificationDeferredRuntimeAuthority = _deferred_runtime_gate.NotificationDeferredRuntimeAuthority
+NotificationDeferredRuntimeGateStatus = _deferred_runtime_gate.NotificationDeferredRuntimeGateStatus
+NotificationDeferredRuntimeRequirement = (
+    _deferred_runtime_gate.NotificationDeferredRuntimeRequirement
+)
+NotificationPreRuntimeAllowedWork = _deferred_runtime_gate.NotificationPreRuntimeAllowedWork
+NotificationDeferredRuntimeCapability = _deferred_runtime_gate.NotificationDeferredRuntimeCapability
+NotificationDeferredRuntimeGateBoundary = (
+    _deferred_runtime_gate.NotificationDeferredRuntimeGateBoundary
+)
+build_notification_deferred_runtime_gate = (
+    _deferred_runtime_gate.build_notification_deferred_runtime_gate
+)
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -279,4 +295,12 @@ __all__ = (
     "NotificationHistoricalEvidenceSnapshot",
     "NotificationSecurityPrivacyDecision",
     "evaluate_notification_security_privacy",
+    "ND14_TASK_ID",
+    "NotificationDeferredRuntimeAuthority",
+    "NotificationDeferredRuntimeGateStatus",
+    "NotificationDeferredRuntimeRequirement",
+    "NotificationPreRuntimeAllowedWork",
+    "NotificationDeferredRuntimeCapability",
+    "NotificationDeferredRuntimeGateBoundary",
+    "build_notification_deferred_runtime_gate",
 )
