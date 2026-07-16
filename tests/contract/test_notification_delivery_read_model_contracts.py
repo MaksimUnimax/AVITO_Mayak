@@ -135,7 +135,19 @@ EXPECTED_PACKAGE_EXPORTS = (
     "NotificationBatchItemResult",
     "NotificationBatchDecision",
     "project_notification_batch_outcomes",
+    "ND12_TASK_ID",
+    "NotificationReadAudience",
+    "NotificationDeliveryReadStatus",
+    "NotificationDeliveryHistoryClassification",
+    "NotificationReadProjectionStatus",
+    "NotificationReadAuthorizationScope",
+    "NotificationDeliveryHistoryEntry",
+    "NotificationReadModel",
+    "NotificationReadModelProjectionDecision",
+    "project_notification_read_model",
 )
+
+EXPECTED_PACKAGE_PREFIX = EXPECTED_PACKAGE_EXPORTS[:-len(EXPECTED_MODULE_EXPORTS)]
 
 EXPECTED_ENUM_VALUES: dict[type[Enum], tuple[str, ...]] = {
     NotificationReadAudience: ("USER", "ADMIN", "SUPPORT"),
@@ -352,6 +364,25 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     )
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
     assert notification_delivery_read_model.ND12_TASK_ID is ND12_TASK_ID
+    assert notification_delivery.ND12_TASK_ID is ND12_TASK_ID
+    assert notification_delivery.NotificationReadAudience is NotificationReadAudience
+    assert notification_delivery.NotificationDeliveryReadStatus is NotificationDeliveryReadStatus
+    assert (
+        notification_delivery.NotificationDeliveryHistoryClassification
+        is NotificationDeliveryHistoryClassification
+    )
+    assert notification_delivery.NotificationReadProjectionStatus is NotificationReadProjectionStatus
+    assert notification_delivery.NotificationReadAuthorizationScope is NotificationReadAuthorizationScope
+    assert notification_delivery.NotificationDeliveryHistoryEntry is NotificationDeliveryHistoryEntry
+    assert notification_delivery.NotificationReadModel is NotificationReadModel
+    assert (
+        notification_delivery.NotificationReadModelProjectionDecision
+        is NotificationReadModelProjectionDecision
+    )
+    assert (
+        notification_delivery.project_notification_read_model
+        is project_notification_read_model
+    )
     assert notification_delivery.read_model is notification_delivery_read_model
     assert "__getattr__" not in notification_delivery_read_model.__dict__
     assert "__getattr__" not in notification_delivery.__dict__
@@ -402,6 +433,10 @@ def test_import_star_and_package_identity_bindings_are_exact() -> None:
     exec("from mayak.modules.notification_delivery import *", package_namespace)
     for name in EXPECTED_PACKAGE_EXPORTS:
         assert package_namespace[name] is getattr(notification_delivery, name)
+
+
+def test_package_prefix_survives_append_only_exports() -> None:
+    assert notification_delivery.__all__[: len(EXPECTED_PACKAGE_PREFIX)] == EXPECTED_PACKAGE_PREFIX
 
 
 def test_production_source_contains_task_id_exactly_once() -> None:

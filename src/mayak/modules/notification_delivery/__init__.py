@@ -13,6 +13,7 @@ from . import external_recovery as _external_recovery
 from . import listing_card as _listing_card
 from . import no_new_status as _no_new_status
 from . import outbox as _outbox
+from . import read_model as _read_model
 from . import source_intake as _source_intake
 
 MODULE_ID = NOTIFICATION_DELIVERY_MODULE_ID
@@ -133,6 +134,21 @@ NotificationBatchItemResult = _batch.NotificationBatchItemResult
 NotificationBatchDecision = _batch.NotificationBatchDecision
 project_notification_batch_outcomes = _batch.project_notification_batch_outcomes
 
+ND12_TASK_ID = _read_model.ND12_TASK_ID
+NotificationReadAudience = _read_model.NotificationReadAudience
+NotificationDeliveryReadStatus = _read_model.NotificationDeliveryReadStatus
+NotificationDeliveryHistoryClassification = (
+    _read_model.NotificationDeliveryHistoryClassification
+)
+NotificationReadProjectionStatus = _read_model.NotificationReadProjectionStatus
+NotificationReadAuthorizationScope = _read_model.NotificationReadAuthorizationScope
+NotificationDeliveryHistoryEntry = _read_model.NotificationDeliveryHistoryEntry
+NotificationReadModel = _read_model.NotificationReadModel
+NotificationReadModelProjectionDecision = (
+    _read_model.NotificationReadModelProjectionDecision
+)
+project_notification_read_model = _read_model.project_notification_read_model
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -231,4 +247,14 @@ __all__ = (
     "NotificationBatchItemResult",
     "NotificationBatchDecision",
     "project_notification_batch_outcomes",
+    "ND12_TASK_ID",
+    "NotificationReadAudience",
+    "NotificationDeliveryReadStatus",
+    "NotificationDeliveryHistoryClassification",
+    "NotificationReadProjectionStatus",
+    "NotificationReadAuthorizationScope",
+    "NotificationDeliveryHistoryEntry",
+    "NotificationReadModel",
+    "NotificationReadModelProjectionDecision",
+    "project_notification_read_model",
 )
