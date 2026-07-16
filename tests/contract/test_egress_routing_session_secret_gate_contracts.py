@@ -39,6 +39,7 @@ EXPECTED_PACKAGE_EXPORT_SLICE = (
 EXPECTED_FIELD_NAMES = (
     "boundary_id",
     "authority",
+    "route_capability",
     "route_id",
     "session_policy_status",
     "isolated_project_session_gate_satisfied",
@@ -222,6 +223,8 @@ def test_two_allowed_session_policy_statuses_are_accepted(
     assert boundary.route_id == capability.route_id
     assert boundary.session_policy_status is session_policy_status
     assert boundary.evidence_reference_ids == capability.evidence_reference_ids
+    assert boundary.route_capability is capability
+    assert type(boundary.route_capability) is RouteCapability
     assert tuple(field.name for field in fields(boundary)) == EXPECTED_FIELD_NAMES
     assert type(boundary).__slots__ == EXPECTED_FIELD_NAMES
 
@@ -494,17 +497,28 @@ def test_boundary_is_frozen_slots_dataclass_with_exact_field_order() -> None:
         boundary.boundary_id = "mutation-blocked"  # type: ignore[misc]
 
 
-def test_boundary_source_capability_is_not_mutated_and_result_is_deterministic() -> None:
+def test_boundary_source_capability_is_public_frozen_exact_and_deterministic() -> None:
     capability = _build_capability()
     before = _snapshot(capability)
     first = _build_boundary(capability=capability)
+    alternate_capability = _build_capability(
+        capability_id="cap-session-secret-02",
+    )
+    alternate_boundary = _build_boundary(capability=alternate_capability)
     after = _snapshot(capability)
     second = _build_boundary(capability=capability)
 
     assert before == after
     assert first == second
+    assert first != alternate_boundary
     assert hash(first) == hash(second)
     assert first is not second
+    assert first.route_capability is capability
+    assert type(first.route_capability) is RouteCapability
+    assert "route_capability=" in repr(first)
+    assert first != alternate_boundary
+    with pytest.raises(FrozenInstanceError):
+        first.route_capability = alternate_capability  # type: ignore[misc]
     assert _snapshot(capability) == before
 
 
@@ -513,7 +527,7 @@ def test_boundary_schema_excludes_raw_secret_fields() -> None:
     field_names = tuple(field.name for field in fields(boundary))
 
     assert field_names == EXPECTED_FIELD_NAMES
-    assert "route_capability" not in field_names
+    assert "route_capability" in field_names
     assert {
         "cookie",
         "cookies",

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass
+from dataclasses import dataclass
 from enum import Enum
 from typing import TypeVar, cast
 
@@ -97,7 +97,7 @@ _ALLOWED_SESSION_POLICY_STATUSES = frozenset(
 class EgressSessionSecretGateBoundary:
     boundary_id: str
     authority: EgressSessionSecretAuthority
-    route_capability: InitVar[RouteCapability]
+    route_capability: RouteCapability
     route_id: str
     session_policy_status: SessionPolicyStatus
     isolated_project_session_gate_satisfied: bool
@@ -125,8 +125,9 @@ class EgressSessionSecretGateBoundary:
     reason_codes: tuple[str, ...]
     evidence_reference_ids: tuple[str, ...]
 
-    def __post_init__(self, route_capability: object) -> None:
-        capability = _require_route_capability(route_capability)
+    def __post_init__(self) -> None:
+        capability = _require_route_capability(self.route_capability)
+        object.__setattr__(self, "route_capability", capability)
         boundary_id = _require_text(self.boundary_id, "boundary_id")
         authority = _require_exact_enum(
             self.authority,
