@@ -755,14 +755,173 @@ def test_provider_outcome_semantics_cover_delivered_failed_ambiguous_and_replay_
     assert ambiguous_result.reconciliation_required is True
     assert replayed_delivered_result.disposition is NotificationBatchDisposition.REPLAYED
     assert replayed_delivered_result.delivery_accepted is True
+    assert replayed_delivered_result.safe_error_category is BatchSafeErrorCategory.NONE
+    assert replayed_delivered_result.retry_policy_required is False
     assert replayed_failed_result.disposition is NotificationBatchDisposition.REPLAYED
     assert replayed_failed_result.safe_error_category is BatchSafeErrorCategory.PROVIDER_FAILURE
     assert replayed_failed_result.retry_policy_required is True
+    assert replayed_failed_result.execution_authorized is False
+    assert replayed_failed_result.provider_mapping_authorized is False
+    assert replayed_failed_result.reason_codes == ("batch-item-replayed",)
+    assert replayed_failed_result.attempt_id == failed_result.attempt_id
+    assert replayed_failed_result.outbox_item_id == failed_result.outbox_item_id
     assert replayed_ambiguous_result.disposition is NotificationBatchDisposition.REPLAYED
     assert (
         replayed_ambiguous_result.safe_error_category
         is BatchSafeErrorCategory.AMBIGUOUS_RECONCILIATION
     )
+    assert replayed_ambiguous_result.retry_policy_required is False
+    assert replayed_ambiguous_result.reason_codes == ("batch-item-replayed",)
+
+
+@pytest.mark.parametrize(
+    "outcome_class",
+    [
+        NotificationProviderOutcomeClass.PROVIDER_REJECTED,
+        NotificationProviderOutcomeClass.PROVIDER_UNAVAILABLE,
+        NotificationProviderOutcomeClass.RATE_OR_ACCESS_RESTRICTED,
+        NotificationProviderOutcomeClass.MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE,
+        NotificationProviderOutcomeClass.DELIVERY_FAILURE,
+        NotificationProviderOutcomeClass.SUPPRESSED_OR_CANCELLED,
+        NotificationProviderOutcomeClass.TARGET_UNAVAILABLE_OR_UNVERIFIED,
+    ],
+    ids=[
+        "PROVIDER_REJECTED",
+        "PROVIDER_UNAVAILABLE",
+        "RATE_OR_ACCESS_RESTRICTED",
+        "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE",
+        "DELIVERY_FAILURE",
+        "SUPPRESSED_OR_CANCELLED",
+        "TARGET_UNAVAILABLE_OR_UNVERIFIED",
+    ],
+)
+def test_provider_failure_replay_requires_policy_decision_for_all_failure_classes(
+    outcome_class: NotificationProviderOutcomeClass,
+) -> None:
+    attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
+    assert attempt_decision.attempt is not None
+    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
+    assert context is not None
+
+    accepted_failure = _accepted_provider_outcome_decision(
+        attempt_decision,
+        outcome_class=outcome_class,
+        outcome_reference_id=f"accepted-{outcome_class.value.lower()}-1",
+    )
+    accepted_failure_snapshot = (
+        accepted_failure.status,
+        accepted_failure.replayed,
+        accepted_failure.reason_codes,
+        accepted_failure.provider_outcome.outcome_class,
+        accepted_failure.previous_attempt.attempt_id,
+        accepted_failure.resulting_attempt.attempt_id,
+    )
+    replayed_failure = _replayed_provider_outcome_decision(
+        accepted_failure,
+        outcome_reference_id=f"replayed-{outcome_class.value.lower()}-1",
+    )
+    replayed_failure_snapshot = (
+        replayed_failure.status,
+        replayed_failure.replayed,
+        replayed_failure.reason_codes,
+        replayed_failure.provider_outcome.outcome_class,
+        replayed_failure.previous_attempt.attempt_id,
+        replayed_failure.resulting_attempt is replayed_failure.previous_attempt,
+    )
+
+    accepted_result = _project(
+        _batch_input(
+            f"accepted-failure-{outcome_class.value.lower()}",
+            accepted_failure,
+            outbox_item_context=context,
+        )
+    ).item_results[0]
+    replayed_result = _project(
+        _batch_input(
+            f"replayed-failure-{outcome_class.value.lower()}",
+            replayed_failure,
+            outbox_item_context=context,
+        )
+    ).item_results[0]
+
+    assert accepted_result.disposition is NotificationBatchDisposition.FAILED
+    assert accepted_result.safe_error_category is BatchSafeErrorCategory.PROVIDER_FAILURE
+    assert accepted_result.replayed is False
+    assert accepted_result.delivery_accepted is False
+    assert accepted_result.reconciliation_required is False
+    assert accepted_result.retry_policy_required is True
+    assert accepted_result.execution_authorized is False
+    assert accepted_result.provider_mapping_authorized is False
+    assert accepted_result.attempt_id == attempt_decision.attempt.attempt_id
+    assert accepted_result.outbox_item_id == context.outbox_item_id
+    assert accepted_result.reason_codes == ("batch-item-failed",)
+
+    assert replayed_result.disposition is NotificationBatchDisposition.REPLAYED
+    assert replayed_result.safe_error_category is BatchSafeErrorCategory.PROVIDER_FAILURE
+    assert replayed_result.replayed is True
+    assert replayed_result.delivery_accepted is False
+    assert replayed_result.reconciliation_required is False
+    assert replayed_result.retry_policy_required is True
+    assert replayed_result.execution_authorized is False
+    assert replayed_result.provider_mapping_authorized is False
+    assert replayed_result.attempt_id == attempt_decision.attempt.attempt_id
+    assert replayed_result.outbox_item_id == context.outbox_item_id
+    assert replayed_result.reason_codes == ("batch-item-replayed",)
+
+    assert accepted_failure.status is accepted_failure_snapshot[0]
+    assert accepted_failure.replayed is accepted_failure_snapshot[1]
+    assert accepted_failure.reason_codes == accepted_failure_snapshot[2]
+    assert accepted_failure.provider_outcome.outcome_class is accepted_failure_snapshot[3]
+    assert accepted_failure.previous_attempt.attempt_id == accepted_failure_snapshot[4]
+    assert accepted_failure.resulting_attempt is not accepted_failure.previous_attempt
+    assert accepted_failure.resulting_attempt is not None
+    assert accepted_failure.resulting_attempt.attempt_id == accepted_failure_snapshot[5]
+    assert replayed_failure.status is replayed_failure_snapshot[0]
+    assert replayed_failure.replayed is replayed_failure_snapshot[1]
+    assert replayed_failure.reason_codes == replayed_failure_snapshot[2]
+    assert replayed_failure.provider_outcome.outcome_class is replayed_failure_snapshot[3]
+    assert replayed_failure.previous_attempt.attempt_id == replayed_failure_snapshot[4]
+    assert replayed_failure.resulting_attempt is replayed_failure.previous_attempt
+
+
+def test_replayed_failure_items_count_toward_batch_retry_policy_required_count() -> None:
+    attempt_decision = _attempt_decision(channel_class=NotificationChannelClass.TELEGRAM)
+    assert attempt_decision.attempt is not None
+    context = attempt_decision.delivery_plan_decision.delivery_plan.outbox_item
+    assert context is not None
+
+    replayed_items = [
+        _batch_input(
+            f"replayed-{outcome_class.value.lower()}",
+            _replayed_provider_outcome_decision(
+                _accepted_provider_outcome_decision(
+                    attempt_decision,
+                    decision_id=f"accepted-{outcome_class.value.lower()}",
+                    outcome_class=outcome_class,
+                    outcome_reference_id=f"accepted-{outcome_class.value.lower()}-1",
+                ),
+                decision_id=f"replayed-{outcome_class.value.lower()}",
+                outcome_reference_id=f"replayed-{outcome_class.value.lower()}-1",
+            ),
+            outbox_item_context=context,
+        )
+        for outcome_class in (
+            NotificationProviderOutcomeClass.PROVIDER_REJECTED,
+            NotificationProviderOutcomeClass.PROVIDER_UNAVAILABLE,
+            NotificationProviderOutcomeClass.RATE_OR_ACCESS_RESTRICTED,
+            NotificationProviderOutcomeClass.MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE,
+            NotificationProviderOutcomeClass.DELIVERY_FAILURE,
+            NotificationProviderOutcomeClass.SUPPRESSED_OR_CANCELLED,
+            NotificationProviderOutcomeClass.TARGET_UNAVAILABLE_OR_UNVERIFIED,
+        )
+    ]
+
+    decision = _project(*replayed_items)
+
+    assert decision.retry_policy_required_count == len(replayed_items)
+    assert decision.replayed_count == len(replayed_items)
+    assert decision.failed_count == 0
+    assert decision.reason_codes == ("batch-all-accepted",)
 
 
 @pytest.mark.parametrize(
@@ -811,6 +970,7 @@ def test_rejected_provider_outcome_acceptance_status_is_blocked(
     assert decision.status is expected_status
     assert result.disposition is NotificationBatchDisposition.BLOCKED
     assert result.safe_error_category is BatchSafeErrorCategory.PROVIDER_OUTCOME_REJECTED
+    assert result.retry_policy_required is False
 
 
 def test_mixed_telegram_delivered_and_max_failed_is_partial_outcome() -> None:

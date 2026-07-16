@@ -9,7 +9,6 @@ from .attempt import (
     NotificationAttemptPlanningStatus,
     NotificationProviderOutcomeAcceptanceDecision,
     NotificationProviderOutcomeAcceptanceStatus,
-    NotificationProviderOutcomeClass,
 )
 from .deduplication import (
     NotificationDeduplicationDecision,
@@ -717,14 +716,15 @@ def _provider_outcome_item_result_fields(
     elif disposition is NotificationBatchDisposition.RECONCILIATION_REQUIRED:
         safe_error_category = NotificationBatchSafeErrorCategory.AMBIGUOUS_RECONCILIATION
     elif disposition is NotificationBatchDisposition.REPLAYED:
+        replayed_failure = (
+            decision.provider_outcome.outcome_class.value
+            in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
+        )
         if delivery_accepted:
             safe_error_category = NotificationBatchSafeErrorCategory.NONE
         elif reconciliation_required:
             safe_error_category = NotificationBatchSafeErrorCategory.AMBIGUOUS_RECONCILIATION
-        elif (
-            decision.provider_outcome.outcome_class
-            is NotificationProviderOutcomeClass.DELIVERY_FAILURE
-        ):
+        elif replayed_failure:
             safe_error_category = NotificationBatchSafeErrorCategory.PROVIDER_FAILURE
         elif effective_attempt.lifecycle_status.value in _PROVIDER_FAILURE_LIFECYCLE_STATUSES:
             safe_error_category = NotificationBatchSafeErrorCategory.PROVIDER_FAILURE
@@ -739,17 +739,24 @@ def _provider_outcome_item_result_fields(
     else:
         safe_error_category = NotificationBatchSafeErrorCategory.PROVIDER_OUTCOME_REJECTED
 
-    if disposition is NotificationBatchDisposition.REPLAYED:
-        retry_policy_required = (
-            not delivery_accepted
-            and not reconciliation_required
-            and decision.provider_outcome.outcome_class
-            is NotificationProviderOutcomeClass.DELIVERY_FAILURE
+    retry_policy_required = (
+        disposition
+        in {
+            NotificationBatchDisposition.FAILED,
+            NotificationBatchDisposition.REPLAYED,
+        }
+        and delivery_accepted is False
+        and reconciliation_required is False
+        and (
+            effective_attempt.lifecycle_status.value
+            in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
+            or (
+                disposition is NotificationBatchDisposition.REPLAYED
+                and decision.provider_outcome.outcome_class.value
+                in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
+            )
         )
-    else:
-        retry_policy_required = (
-            effective_attempt.lifecycle_status.value in _PROVIDER_FAILURE_LIFECYCLE_STATUSES
-        )
+    )
 
     return (
         item_input.batch_item_id,
