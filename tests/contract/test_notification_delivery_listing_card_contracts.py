@@ -284,8 +284,13 @@ def test_task_id_constant_and_package_exports_are_exact() -> None:
     assert type(notification_delivery_listing_card.__all__) is tuple
     assert notification_delivery_listing_card.__all__ == EXPECTED_MODULE_EXPORTS
     assert type(notification_delivery.__all__) is tuple
-    assert notification_delivery.__all__ == EXPECTED_PACKAGE_EXPORTS
-    assert len(notification_delivery_listing_card.__all__) == len(set(notification_delivery_listing_card.__all__))
+    assert (
+        notification_delivery.__all__[: len(EXPECTED_PACKAGE_EXPORTS)] == EXPECTED_PACKAGE_EXPORTS
+    )
+    assert len(notification_delivery.__all__) >= len(EXPECTED_PACKAGE_EXPORTS)
+    assert len(notification_delivery_listing_card.__all__) == len(
+        set(notification_delivery_listing_card.__all__)
+    )
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))
     assert notification_delivery_listing_card.ND10_TASK_ID is ND10_TASK_ID
     assert notification_delivery.ND10_TASK_ID is ND10_TASK_ID
@@ -348,5 +353,11 @@ def test_production_source_contains_task_id_exactly_once() -> None:
 
 def test_package_exports_remain_append_friendly_after_nd10() -> None:
     assert notification_delivery.__all__[: len(EXPECTED_PACKAGE_PREFIX)] == EXPECTED_PACKAGE_PREFIX
-    assert notification_delivery.__all__[len(EXPECTED_PACKAGE_PREFIX) :] == EXPECTED_MODULE_EXPORTS
+    assert (
+        notification_delivery.__all__[
+            len(EXPECTED_PACKAGE_PREFIX) : len(EXPECTED_PACKAGE_PREFIX)
+            + len(EXPECTED_MODULE_EXPORTS)
+        ]
+        == EXPECTED_MODULE_EXPORTS
+    )
     assert len(notification_delivery.__all__) == len(set(notification_delivery.__all__))

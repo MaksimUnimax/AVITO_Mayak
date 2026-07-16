@@ -672,6 +672,88 @@ ATTEMPT_FORBIDDEN_FIELD_NAMES = {
     "history",
 }
 
+BATCH_ALLOWED_IMPORT_ROOTS = {
+    "__future__",
+    "dataclasses",
+    "enum",
+    "attempt",
+    "deduplication",
+    "delivery_plan",
+    "eligibility",
+    "outbox",
+}
+
+BATCH_FORBIDDEN_SOURCE_TOKENS = {
+    "requests",
+    "httpx",
+    "aiohttp",
+    "socket",
+    "subprocess",
+    "sqlalchemy",
+    "psycopg",
+    "alembic",
+    "fastapi",
+    "telethon",
+    "aiogram",
+    "datetime",
+    "time",
+    "queue",
+    "worker",
+    "broker",
+    "cache",
+    "filesystem",
+    "network",
+    "provider_sdk",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "private_key",
+    "raw_payload",
+    "provider_payload",
+    "delivery_result",
+    "retry_backoff",
+    "reconciliation_record",
+    "digest",
+    "preview_limit",
+    "truncate",
+    "history",
+    "read_tracking",
+    "click_tracking",
+    "scheduler",
+    "webhook",
+    "mini_app",
+    "dispatch(",
+    "send(",
+    "deliver(",
+}
+
+BATCH_FORBIDDEN_FIELD_NAMES = {
+    "created_at",
+    "updated_at",
+    "deadline",
+    "expiry",
+    "clock",
+    "timestamp",
+    "retry_backoff",
+    "reconciliation_record",
+    "provider_payload",
+    "raw_payload",
+    "delivery_result",
+    "message_template",
+    "template",
+    "cookie",
+    "token",
+    "secret",
+    "credential",
+    "private_key",
+    "preview_limit",
+    "digest",
+    "history",
+    "read_tracking",
+    "click_tracking",
+}
+
 
 def _import_roots(source: str) -> set[str]:
     tree = ast.parse(source)
@@ -917,6 +999,46 @@ def test_external_recovery_runtime_tokens_and_payload_fields() -> None:
 def test_external_recovery_ast_payload_boundary() -> None:
     source_path = Path("src/mayak/modules/notification_delivery/external_recovery.py")
     _assert_external_recovery_ast_boundary(source_path.read_text(), source_path)
+
+
+def _assert_batch_ast_boundary(source: str, module_path: Path) -> None:
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in {"getattr", "setattr", "hasattr"}:
+                raise AssertionError(f"{module_path}: reflection call not allowed: {node.func.id}")
+        if isinstance(node, ast.Slice):
+            raise AssertionError(f"{module_path}: slicing is not allowed")
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            lowered = node.value.lower()
+            for token in BATCH_FORBIDDEN_SOURCE_TOKENS:
+                if token in lowered:
+                    raise AssertionError(
+                        f"{module_path}: string literal contains forbidden token: {node.value!r}"
+                    )
+
+
+def test_batch_stays_within_allowed_import_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/batch.py")
+    source = source_path.read_text()
+    roots = _import_roots(source)
+    assert roots <= BATCH_ALLOWED_IMPORT_ROOTS
+    assert roots.isdisjoint(FORBIDDEN_IMPORT_ROOTS)
+
+
+def test_batch_runtime_tokens_and_payload_fields() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/batch.py")
+    source = source_path.read_text().lower()
+    for token in BATCH_FORBIDDEN_SOURCE_TOKENS:
+        assert token not in source, token
+
+    field_names = _field_names(source_path.read_text())
+    assert field_names.isdisjoint(BATCH_FORBIDDEN_FIELD_NAMES)
+
+
+def test_batch_ast_boundary() -> None:
+    source_path = Path("src/mayak/modules/notification_delivery/batch.py")
+    _assert_batch_ast_boundary(source_path.read_text(), source_path)
 
 
 def test_notification_delivery_source_intake_stays_within_allowed_import_boundary() -> None:
@@ -1190,9 +1312,7 @@ def _assert_listing_card_ast_boundary(source: str, module_path: Path) -> None:
         assert function_node.name in {
             "_validate_source_intake_decision",
             "_validate_field_fact_safety",
-        }, (
-            f"{module_path}: payload attribute must live in a validation helper"
-        )
+        }, f"{module_path}: payload attribute must live in a validation helper"
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Name):

@@ -5,6 +5,7 @@
 from mayak.platform.boundaries import NOTIFICATION_DELIVERY_MODULE_ID
 
 from . import attempt as _attempt
+from . import batch as _batch
 from . import deduplication as _deduplication
 from . import delivery_plan as _delivery_plan
 from . import eligibility as _eligibility
@@ -121,6 +122,17 @@ NotificationListingCard = _listing_card.NotificationListingCard
 NotificationListingCardProjectionDecision = _listing_card.NotificationListingCardProjectionDecision
 project_notification_listing_cards = _listing_card.project_notification_listing_cards
 
+ND11_TASK_ID = _batch.ND11_TASK_ID
+NotificationBatchAuthority = _batch.NotificationBatchAuthority
+NotificationBatchStage = _batch.NotificationBatchStage
+NotificationBatchDisposition = _batch.NotificationBatchDisposition
+NotificationBatchSafeErrorCategory = _batch.NotificationBatchSafeErrorCategory
+NotificationBatchDecisionStatus = _batch.NotificationBatchDecisionStatus
+NotificationBatchItemInput = _batch.NotificationBatchItemInput
+NotificationBatchItemResult = _batch.NotificationBatchItemResult
+NotificationBatchDecision = _batch.NotificationBatchDecision
+project_notification_batch_outcomes = _batch.project_notification_batch_outcomes
+
 __all__ = (
     "MODULE_ID",
     "ND02_TASK_ID",
@@ -209,4 +221,14 @@ __all__ = (
     "NotificationListingCard",
     "NotificationListingCardProjectionDecision",
     "project_notification_listing_cards",
+    "ND11_TASK_ID",
+    "NotificationBatchAuthority",
+    "NotificationBatchStage",
+    "NotificationBatchDisposition",
+    "NotificationBatchSafeErrorCategory",
+    "NotificationBatchDecisionStatus",
+    "NotificationBatchItemInput",
+    "NotificationBatchItemResult",
+    "NotificationBatchDecision",
+    "project_notification_batch_outcomes",
 )
