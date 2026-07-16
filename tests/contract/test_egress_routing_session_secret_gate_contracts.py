@@ -33,6 +33,9 @@ EXPECTED_PACKAGE_EXPORT_SLICE = (
     "ER09A_TASK_ID",
     "EgressSessionSecretAuthority",
     "EgressSessionSecretGateBoundary",
+    "ER10A_TASK_ID",
+    "FutureBrowserFallbackAuthority",
+    "FutureBrowserFallbackGateBoundary",
     "ER07E_TASK_ID",
 )
 

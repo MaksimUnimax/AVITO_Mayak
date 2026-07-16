@@ -7,6 +7,11 @@ from .assignment import (  # noqa: F401
     TransportAssignmentAuthority,
     TransportAssignmentCommitmentBoundary,
 )
+from .browser_windows_fallback_gate import (  # noqa: F401
+    ER10A_TASK_ID,
+    FutureBrowserFallbackAuthority,
+    FutureBrowserFallbackGateBoundary,
+)
 from .contracts import (  # noqa: F401
     AgentLifecycleStatus,
     DiagnosticEvidenceKind,
@@ -226,6 +231,9 @@ __all__ = (
     "ER09A_TASK_ID",
     "EgressSessionSecretAuthority",
     "EgressSessionSecretGateBoundary",
+    "ER10A_TASK_ID",
+    "FutureBrowserFallbackAuthority",
+    "FutureBrowserFallbackGateBoundary",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",
