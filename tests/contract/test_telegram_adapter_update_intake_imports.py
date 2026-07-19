@@ -104,6 +104,10 @@ def test_update_contracts_reuse_shared_primitives_and_have_no_runtime_types() ->
                 for alias in node.names:
                     if alias.name.split(".", 1)[0] in forbidden_import_roots:
                         found.add("forbidden import")
+                    if alias.name.startswith("mayak.modules.") and alias.name != (
+                        "mayak.modules.telegram_adapter.contracts"
+                    ):
+                        found.add("foreign module import")
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 if module.split(".", 1)[0] in forbidden_import_roots:
@@ -177,25 +181,44 @@ def test_update_contracts_reuse_shared_primitives_and_have_no_runtime_types() ->
     )
     assert not violations(safe)
 
-    unsafe = (
-        "import httpx\n"
-        "import os, httpx\n"
-        "from sqlalchemy import create_engine\n"
-        "from mayak.modules.identity_and_access import Identity\n"
-        "client.get_updates()\n"
-        "client.set_webhook('x')\n"
-        "provider_url = 'https://api.telegram.org/bot'\n"
-        "raw_payload = object()\n"
-        "bot_token = 'synthetic'\n"
-        "class TelegramWebhookEndpoint: pass\n"
-        "client = Client()\n"
-    )
-    assert violations(unsafe) >= {
-        "forbidden import",
-        "foreign module import",
-        "forbidden call",
-        "provider URL",
-        "unsafe field",
-        "forbidden declaration",
-        "top-level runtime instance",
+    unsafe_cases = {
+        "import httpx": "forbidden import",
+        "import os, httpx": "forbidden import",
+        "import httpx, os": "forbidden import",
+        "import os, httpx, pathlib": "forbidden import",
+        "from sqlalchemy import create_engine": "forbidden import",
+        "import mayak.modules.identity_and_access": "foreign module import",
+        "import os, mayak.modules.identity_and_access": "foreign module import",
+        "import mayak.modules.identity_and_access, os": "foreign module import",
+        "import os, mayak.modules.identity_and_access, pathlib": (
+            "foreign module import"
+        ),
+        "from mayak.modules.identity_and_access import Identity": (
+            "foreign module import"
+        ),
+        "client.get_updates()": "forbidden call",
+        "client.set_webhook('synthetic')": "forbidden call",
+        "provider_url = 'https://api.telegram.org/bot'": "provider URL",
+        "raw_payload: object": "unsafe field",
+        "bot_token: str": "unsafe field",
+        "class TelegramWebhookEndpoint: pass": "forbidden declaration",
+        "client = Client()": "top-level runtime instance",
     }
+    for snippet, expected_violation in unsafe_cases.items():
+        assert expected_violation in violations(snippet), snippet
+
+    safe_cases = (
+        "import os, pathlib",
+        "import mayak.modules.telegram_adapter.contracts",
+        "from mayak.modules.telegram_adapter.contracts import TelegramUpdateIntakeRecord",
+        "from mayak.contracts import ContractMetadata",
+        "http_acknowledgement_is_business_success: Literal[False] = False",
+        "provider_runtime_authorized: Literal[False] = False",
+        "runtime_policy_ref: str",
+        "http_acknowledgement_policy_ref: str",
+        "'WEBHOOK'",
+        "'GET_UPDATES'",
+        "'runtime/provider call is forbidden'",
+    )
+    for snippet in safe_cases:
+        assert not violations(snippet), snippet
