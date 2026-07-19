@@ -711,13 +711,125 @@ class MaxProviderOutcome(_MaxContract):
 class MaxReconciliationRecord(_MaxContract):
     max_reconciliation_record_id: str = Field(min_length=1)
     metadata: ContractMetadata
+    provider_outcome: MaxProviderOutcome
     max_provider_outcome_id: str = Field(min_length=1)
+    max_outbound_request_id: str = Field(min_length=1)
     notification_attempt_id: str = Field(min_length=1)
+    notification_outbox_item_id: str = Field(min_length=1)
+    target_reference_id: str = Field(min_length=1)
+    source_ambiguity_evidence_reference_id: str = Field(min_length=1)
+    idempotency_key: IdempotencyKey
+    idempotency_scope: IdempotencyScope
+    fingerprint: IdempotencyFingerprint
+    duplicate_effect_guard_reference_id: str = Field(min_length=1)
+    reconciliation_policy_reference_id: str = Field(min_length=1)
     state: MaxReconciliationState
+    reconciliation_still_required: bool
     reconciliation_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    resolved_provider_effect_reference_id: str | None = Field(default=None, min_length=1)
+    resolved_no_effect_reference_id: str | None = Field(default=None, min_length=1)
+    remaining_ambiguity_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    subscription_degradation_reference_id: str | None = Field(default=None, min_length=1)
+    manual_review_reference_id: str | None = Field(default=None, min_length=1)
+    retry_recommendation: MaxRetryRecommendation
+    notification_retry_policy_reference_id: str | None = Field(default=None, min_length=1)
+    correlation_id: str = Field(min_length=1)
+    causation_id: str = Field(min_length=1)
     reason_code: str = Field(min_length=1)
     blind_retry_authority: Literal[False] = False
     duplicate_user_visible_effect_authority: Literal[False] = False
+    reconciliation_record_committed: Literal[True] = True
+    unknown_effect_success_authority: Literal[False] = False
+    unknown_effect_failure_authority: Literal[False] = False
+    generic_delivery_success_authority: Literal[False] = False
+    generic_delivery_failure_authority: Literal[False] = False
+    notification_outbox_authority: Literal[False] = False
+    notification_attempt_mutation_authority: Literal[False] = False
+    notification_delivery_lifecycle_authority: Literal[False] = False
+    notification_retry_authority: Literal[False] = False
+    retry_execution_authority: Literal[False] = False
+    reconciliation_execution_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    provider_payload_retained: Literal[False] = False
+    secret_material_present: Literal[False] = False
+    human_read_proven: Literal[False] = False
+    business_success_proven: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_reconciliation(self) -> "MaxReconciliationRecord":
+        outcome = self.provider_outcome
+        if outcome.state is not MaxProviderOutcomeState.AMBIGUOUS:
+            raise ValueError("reconciliation requires AMBIGUOUS provider outcome")
+        if outcome.notification_outcome_class not in {"DISPATCH_AMBIGUOUS", "DELIVERY_AMBIGUOUS"}:
+            raise ValueError("reconciliation requires an ambiguous notification outcome class")
+        if not outcome.reconciliation_required:
+            raise ValueError("reconciliation requires reconciliation-required provider outcome")
+        if outcome.retry_recommendation is not MaxRetryRecommendation.RECONCILE_FIRST:
+            raise ValueError("reconciliation requires reconcile-first provider recommendation")
+        if outcome.ambiguity_evidence_reference_id is None:
+            raise ValueError("reconciliation requires source ambiguity evidence")
+        if not outcome.adapter_outcome_committed:
+            raise ValueError("reconciliation requires committed provider outcome")
+
+        references = {
+            "max_provider_outcome_id": (self.max_provider_outcome_id, outcome.max_provider_outcome_id),
+            "max_outbound_request_id": (self.max_outbound_request_id, outcome.max_outbound_request_id),
+            "notification_attempt_id": (self.notification_attempt_id, outcome.notification_attempt_id),
+            "notification_outbox_item_id": (self.notification_outbox_item_id, outcome.notification_outbox_item_id),
+            "target_reference_id": (self.target_reference_id, outcome.target_reference_id),
+            "source_ambiguity_evidence_reference_id": (self.source_ambiguity_evidence_reference_id, outcome.ambiguity_evidence_reference_id),
+            "idempotency_key": (self.idempotency_key, outcome.outbound_request.idempotency_key),
+            "idempotency_scope": (self.idempotency_scope, outcome.outbound_request.idempotency_scope),
+            "fingerprint": (self.fingerprint, outcome.outbound_request.fingerprint),
+            "correlation_id": (self.correlation_id, outcome.correlation_id),
+            "causation_id": (self.causation_id, outcome.causation_id),
+        }
+        for field, (value, expected) in references.items():
+            if value != expected:
+                raise ValueError(f"{field} must match provider outcome")
+
+        if self.reconciliation_evidence_reference_id is None:
+            raise ValueError("reconciliation requires evidence reference")
+        state_references = {
+            "resolved_provider_effect_reference_id": self.resolved_provider_effect_reference_id,
+            "resolved_no_effect_reference_id": self.resolved_no_effect_reference_id,
+            "remaining_ambiguity_evidence_reference_id": self.remaining_ambiguity_evidence_reference_id,
+            "subscription_degradation_reference_id": self.subscription_degradation_reference_id,
+            "manual_review_reference_id": self.manual_review_reference_id,
+        }
+        allowed = {
+            MaxReconciliationState.RESOLVED_NO_EFFECT: {"resolved_no_effect_reference_id"},
+            MaxReconciliationState.RESOLVED_EFFECT: {"resolved_provider_effect_reference_id"},
+            MaxReconciliationState.REMAINS_AMBIGUOUS: {"remaining_ambiguity_evidence_reference_id"},
+            MaxReconciliationState.SUBSCRIPTION_DEGRADED: {"remaining_ambiguity_evidence_reference_id", "subscription_degradation_reference_id"},
+            MaxReconciliationState.MANUAL_REVIEW_REQUIRED: {"remaining_ambiguity_evidence_reference_id", "manual_review_reference_id"},
+        }[self.state]
+        present = {name for name, value in state_references.items() if value is not None}
+        if present != allowed:
+            raise ValueError("state-specific reconciliation evidence is invalid")
+
+        if self.retry_recommendation is MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY:
+            if self.notification_retry_policy_reference_id is None:
+                raise ValueError("policy retry requires Notification retry policy reference")
+        elif self.notification_retry_policy_reference_id is not None:
+            raise ValueError("Notification retry policy reference requires policy retry")
+
+        if self.state is MaxReconciliationState.RESOLVED_NO_EFFECT:
+            if self.reconciliation_still_required or self.retry_recommendation is not MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY:
+                raise ValueError("invalid RESOLVED_NO_EFFECT reconciliation matrix")
+        elif self.state is MaxReconciliationState.RESOLVED_EFFECT:
+            if self.reconciliation_still_required or self.retry_recommendation is not MaxRetryRecommendation.DO_NOT_RETRY:
+                raise ValueError("invalid RESOLVED_EFFECT reconciliation matrix")
+        elif self.state is MaxReconciliationState.REMAINS_AMBIGUOUS:
+            if not self.reconciliation_still_required or self.retry_recommendation is not MaxRetryRecommendation.RECONCILE_FIRST:
+                raise ValueError("invalid REMAINS_AMBIGUOUS reconciliation matrix")
+        elif self.state is MaxReconciliationState.SUBSCRIPTION_DEGRADED:
+            if not self.reconciliation_still_required or self.retry_recommendation is not MaxRetryRecommendation.RECONCILE_FIRST:
+                raise ValueError("invalid SUBSCRIPTION_DEGRADED reconciliation matrix")
+        elif self.state is MaxReconciliationState.MANUAL_REVIEW_REQUIRED:
+            if not self.reconciliation_still_required or self.retry_recommendation is not MaxRetryRecommendation.DO_NOT_RETRY:
+                raise ValueError("invalid MANUAL_REVIEW_REQUIRED reconciliation matrix")
+        return self
 
 
 class MaxAdapterReadModel(_MaxContract):
