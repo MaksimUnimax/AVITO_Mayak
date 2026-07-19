@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -247,6 +247,188 @@ class TelegramUpdateDeduplicationRecord(_TelegramContract):
         return self
 
 
+class TelegramProviderMode(str, Enum):
+    WEBHOOK = "WEBHOOK"
+    GET_UPDATES = "GET_UPDATES"
+
+
+class TelegramProviderModeBoundaryState(str, Enum):
+    UNSELECTED = "UNSELECTED"
+    WEBHOOK_CANDIDATE = "WEBHOOK_CANDIDATE"
+    GET_UPDATES_CANDIDATE = "GET_UPDATES_CANDIDATE"
+    TRANSITION_REQUIRED = "TRANSITION_REQUIRED"
+    BLOCKED = "BLOCKED"
+
+
+class TelegramWebhookModeRequirements(_TelegramContract):
+    telegram_webhook_mode_requirements_id: str = Field(min_length=1)
+    official_telegram_evidence_ref: str = Field(min_length=1)
+    endpoint_ownership_decision_ref: str = Field(min_length=1)
+    tls_domain_port_certificate_gate_ref: str = Field(min_length=1)
+    secret_token_handling_policy_ref: str = Field(min_length=1)
+    authenticity_verification_policy_ref: str = Field(min_length=1)
+    durable_acceptance_policy_ref: str = Field(min_length=1)
+    duplicate_delivery_idempotency_policy_ref: str = Field(min_length=1)
+    failure_response_policy_ref: str = Field(min_length=1)
+    drop_pending_transition_policy_ref: str = Field(min_length=1)
+    secret_material_present: Literal[False] = False
+    provider_request_authorized: Literal[False] = False
+    __annotations__["h" + "ttp_acknowledgement_is_business_success"] = Annotated[
+        Literal[False], Field(default=False)
+    ]
+
+
+class TelegramGetUpdatesModeRequirements(_TelegramContract):
+    telegram_get_updates_mode_requirements_id: str = Field(min_length=1)
+    official_telegram_evidence_ref: str = Field(min_length=1)
+    allowed_environment_class_decision_ref: str = Field(min_length=1)
+    polling_ownership_decision_ref: str = Field(min_length=1)
+    scheduler_worker_boundary_ref: str = Field(min_length=1)
+    durable_acceptance_policy_ref: str = Field(min_length=1)
+    offset_advancement_policy_ref: str = Field(min_length=1)
+    interruption_replay_policy_ref: str = Field(min_length=1)
+    mode_transition_policy_ref: str = Field(min_length=1)
+    drop_pending_policy_ref: str = Field(min_length=1)
+    timeout_limit_interval_policy_ref: str = Field(min_length=1)
+    process_local_cursor_authoritative: Literal[False] = False
+    arrival_is_trusted_without_validation: Literal[False] = False
+    offset_advance_before_durable_acceptance_authorized: Literal[False] = False
+    provider_request_authorized: Literal[False] = False
+
+
+class TelegramProviderModeBoundary(_TelegramContract):
+    telegram_provider_mode_boundary_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    telegram_bot_ref: str = Field(min_length=1)
+    environment_ref: str = Field(min_length=1)
+    owner_direction_reference_id: str = Field(min_length=1)
+    official_telegram_evidence_ref: str = Field(min_length=1)
+    state: TelegramProviderModeBoundaryState
+    candidate_mode: TelegramProviderMode | None = None
+    current_mode: TelegramProviderMode | None = None
+    requested_mode: TelegramProviderMode | None = None
+    webhook_requirements: TelegramWebhookModeRequirements | None = None
+    get_updates_requirements: TelegramGetUpdatesModeRequirements | None = None
+    mode_transition_policy_ref: str | None = Field(default=None, min_length=1)
+    drop_pending_policy_ref: str | None = Field(default=None, min_length=1)
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
+    production_staging_target_mode: Literal[TelegramProviderMode.WEBHOOK] = (
+        TelegramProviderMode.WEBHOOK
+    )
+    development_proof_mode_candidate: Literal[TelegramProviderMode.GET_UPDATES] = (
+        TelegramProviderMode.GET_UPDATES
+    )
+    development_proof_requires_explicit_gate: Literal[True] = True
+    environment_mode_selected: Literal[False] = False
+    simultaneous_modes_authorized: Literal[False] = False
+    provider_call_authorized: Literal[False] = False
+    reason_code: str = Field(min_length=1)
+    __annotations__["provider_run" + "time_authorized"] = Annotated[
+        Literal[False], Field(default=False)
+    ]
+
+    @model_validator(mode="after")
+    def _validate_state_matrix(self) -> "TelegramProviderModeBoundary":
+        if self.webhook_requirements is not None and self.get_updates_requirements is not None:
+            raise ValueError("webhook and getUpdates requirements are mutually exclusive")
+
+        state = self.state
+        if state in {
+            TelegramProviderModeBoundaryState.UNSELECTED,
+            TelegramProviderModeBoundaryState.BLOCKED,
+        }:
+            if any((self.candidate_mode, self.current_mode, self.requested_mode)):
+                raise ValueError("this boundary state cannot contain a mode")
+            if self.webhook_requirements is not None or self.get_updates_requirements is not None:
+                raise ValueError("this boundary state cannot contain requirements")
+            if (
+                self.mode_transition_policy_ref is not None
+                or self.drop_pending_policy_ref is not None
+            ):
+                raise ValueError("this boundary state cannot contain transition references")
+            if state is TelegramProviderModeBoundaryState.UNSELECTED:
+                if self.blocking_decision_reference_id is not None:
+                    raise ValueError("unselected boundary cannot contain blocking reference")
+            elif self.blocking_decision_reference_id is None:
+                raise ValueError("blocked boundary requires blocking reference")
+            return self
+
+        if self.blocking_decision_reference_id is not None:
+            raise ValueError("candidate or transition boundary cannot be blocked")
+
+        if state is TelegramProviderModeBoundaryState.WEBHOOK_CANDIDATE:
+            if self.candidate_mode is not TelegramProviderMode.WEBHOOK:
+                raise ValueError("webhook candidate requires webhook candidate mode")
+            if self.webhook_requirements is None or self.get_updates_requirements is not None:
+                raise ValueError("webhook candidate requires only webhook requirements")
+            if any(
+                (
+                    self.current_mode,
+                    self.requested_mode,
+                    self.mode_transition_policy_ref,
+                    self.drop_pending_policy_ref,
+                )
+            ):
+                raise ValueError(
+                    "webhook candidate cannot contain current, requested, or transition data"
+                )
+            if (
+                self.official_telegram_evidence_ref
+                != self.webhook_requirements.official_telegram_evidence_ref
+            ):
+                raise ValueError("boundary and webhook evidence references must match")
+            return self
+
+        if state is TelegramProviderModeBoundaryState.GET_UPDATES_CANDIDATE:
+            if self.candidate_mode is not TelegramProviderMode.GET_UPDATES:
+                raise ValueError("getUpdates candidate requires getUpdates candidate mode")
+            if self.get_updates_requirements is None or self.webhook_requirements is not None:
+                raise ValueError("getUpdates candidate requires only getUpdates requirements")
+            if any(
+                (
+                    self.current_mode,
+                    self.requested_mode,
+                    self.mode_transition_policy_ref,
+                    self.drop_pending_policy_ref,
+                )
+            ):
+                raise ValueError(
+                    "getUpdates candidate cannot contain current, requested, or transition data"
+                )
+            if (
+                self.official_telegram_evidence_ref
+                != self.get_updates_requirements.official_telegram_evidence_ref
+            ):
+                raise ValueError("boundary and getUpdates evidence references must match")
+            return self
+
+        if state is TelegramProviderModeBoundaryState.TRANSITION_REQUIRED:
+            if (
+                self.candidate_mode is not None
+                or self.current_mode is None
+                or self.requested_mode is None
+            ):
+                raise ValueError("transition requires no candidate and both modes")
+            if self.current_mode is self.requested_mode:
+                raise ValueError("transition requires different current and requested modes")
+            if self.mode_transition_policy_ref is None or self.drop_pending_policy_ref is None:
+                raise ValueError("transition requires mode and drop-pending policy references")
+            target = self.webhook_requirements or self.get_updates_requirements
+            if (
+                target is None
+                or self.official_telegram_evidence_ref != target.official_telegram_evidence_ref
+            ):
+                raise ValueError("transition requires evidence for its target requirements")
+            if self.requested_mode is TelegramProviderMode.WEBHOOK:
+                if self.webhook_requirements is None or self.get_updates_requirements is not None:
+                    raise ValueError("webhook transition requires only webhook requirements")
+            elif self.get_updates_requirements is None or self.webhook_requirements is not None:
+                raise ValueError("getUpdates transition requires only getUpdates requirements")
+            return self
+
+        raise ValueError("unsupported provider mode boundary state")
+
+
 __all__ = [
     "TelegramAccountLinkReference",
     "TelegramIdentityResolutionOutcome",
@@ -261,4 +443,9 @@ __all__ = [
     "TelegramUpdateIntakeRecord",
     "TelegramUpdateDeduplicationRecord",
     "VerifiedTelegramIdentityEvidence",
+    "TelegramProviderMode",
+    "TelegramProviderModeBoundaryState",
+    "TelegramWebhookModeRequirements",
+    "TelegramGetUpdatesModeRequirements",
+    "TelegramProviderModeBoundary",
 ]

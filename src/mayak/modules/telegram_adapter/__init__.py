@@ -2,10 +2,14 @@
 
 from mayak.modules.telegram_adapter.contracts import (
     TelegramAccountLinkReference,
+    TelegramGetUpdatesModeRequirements,
     TelegramIdentityResolutionOutcome,
     TelegramIdentityResolutionRequest,
     TelegramIdentityResolutionState,
     TelegramProviderIdentity,
+    TelegramProviderMode,
+    TelegramProviderModeBoundary,
+    TelegramProviderModeBoundaryState,
     TelegramProviderUpdateIdentity,
     TelegramUpdateAdmissionState,
     TelegramUpdateDeduplicationRecord,
@@ -13,6 +17,7 @@ from mayak.modules.telegram_adapter.contracts import (
     TelegramUpdateIntakeRecord,
     TelegramUpdateIntakeState,
     TelegramUpdateStructuralClass,
+    TelegramWebhookModeRequirements,
     VerifiedTelegramIdentityEvidence,
 )
 from mayak.platform.boundaries import TELEGRAM_ADAPTER_MODULE_ID
@@ -34,4 +39,9 @@ __all__ = [
     "TelegramUpdateIntakeRecord",
     "TelegramUpdateDeduplicationRecord",
     "VerifiedTelegramIdentityEvidence",
+    "TelegramProviderMode",
+    "TelegramProviderModeBoundaryState",
+    "TelegramWebhookModeRequirements",
+    "TelegramGetUpdatesModeRequirements",
+    "TelegramProviderModeBoundary",
 ]
