@@ -101,11 +101,164 @@ class TelegramIdentityResolutionOutcome(_TelegramContract):
         return self
 
 
+class TelegramProviderUpdateIdentity(_TelegramContract):
+    """Opaque provider-scope identity for one Telegram update."""
+
+    telegram_provider_update_ref: str = Field(min_length=1)
+    telegram_bot_ref: str = Field(min_length=1)
+    telegram_update_id: str = Field(min_length=1)
+    provider_update_type_ref: str = Field(min_length=1)
+
+
+class TelegramUpdateAdmissionState(str, Enum):
+    VERIFIED = "VERIFIED"
+    NOT_VERIFIED = "NOT_VERIFIED"
+    REJECTED = "REJECTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramUpdateStructuralClass(str, Enum):
+    SUPPORTED_CANDIDATE = "SUPPORTED_CANDIDATE"
+    UNSUPPORTED = "UNSUPPORTED"
+    MALFORMED = "MALFORMED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramUpdateIntakeState(str, Enum):
+    ACCEPTED_FOR_NORMALIZATION = "ACCEPTED_FOR_NORMALIZATION"
+    IGNORED_UNSUPPORTED = "IGNORED_UNSUPPORTED"
+    REJECTED_UNTRUSTED = "REJECTED_UNTRUSTED"
+    REJECTED_MALFORMED = "REJECTED_MALFORMED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramUpdateDeduplicationState(str, Enum):
+    NEW_UPDATE = "NEW_UPDATE"
+    DUPLICATE_REPLAY = "DUPLICATE_REPLAY"
+    FINGERPRINT_CONFLICT = "FINGERPRINT_CONFLICT"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramUpdateIntakeRecord(_TelegramContract):
+    telegram_update_intake_record_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    provider_update_identity: TelegramProviderUpdateIdentity
+    provider_identity: TelegramProviderIdentity | None = None
+    idempotency_key: IdempotencyKey
+    idempotency_scope: IdempotencyScope
+    fingerprint: IdempotencyFingerprint
+    admission_state: TelegramUpdateAdmissionState
+    structural_classification: TelegramUpdateStructuralClass
+    intake_state: TelegramUpdateIntakeState
+    provider_admission_evidence_ref: str | None = Field(default=None, min_length=1)
+    normalization_reference_id: str | None = Field(default=None, min_length=1)
+    reason_code: str = Field(min_length=1)
+    business_dispatch_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_intake_matrix(self) -> "TelegramUpdateIntakeRecord":
+        if self.provider_identity is not None and (
+            self.provider_identity.telegram_bot_ref
+            != self.provider_update_identity.telegram_bot_ref
+        ):
+            raise ValueError("provider_identity telegram_bot_ref must match update identity")
+
+        if self.intake_state is TelegramUpdateIntakeState.ACCEPTED_FOR_NORMALIZATION:
+            if self.admission_state is not TelegramUpdateAdmissionState.VERIFIED:
+                raise ValueError("accepted intake requires verified admission")
+            if (
+                self.structural_classification
+                is not TelegramUpdateStructuralClass.SUPPORTED_CANDIDATE
+            ):
+                raise ValueError("accepted intake requires supported candidate structure")
+            if not self.provider_admission_evidence_ref or not self.normalization_reference_id:
+                raise ValueError("accepted intake requires admission and normalization references")
+        elif self.intake_state is TelegramUpdateIntakeState.IGNORED_UNSUPPORTED:
+            if self.structural_classification is not TelegramUpdateStructuralClass.UNSUPPORTED:
+                raise ValueError("ignored intake requires unsupported structure")
+        elif self.intake_state is TelegramUpdateIntakeState.REJECTED_UNTRUSTED:
+            if self.admission_state not in {
+                TelegramUpdateAdmissionState.NOT_VERIFIED,
+                TelegramUpdateAdmissionState.REJECTED,
+            }:
+                raise ValueError("untrusted rejection requires failed admission")
+        elif self.intake_state is TelegramUpdateIntakeState.REJECTED_MALFORMED:
+            if self.structural_classification is not TelegramUpdateStructuralClass.MALFORMED:
+                raise ValueError("malformed rejection requires malformed structure")
+        elif self.admission_state is not TelegramUpdateAdmissionState.AMBIGUOUS and (
+            self.structural_classification is not TelegramUpdateStructuralClass.AMBIGUOUS
+        ):
+            raise ValueError("ambiguous intake requires ambiguous admission or structure")
+
+        if self.intake_state is not TelegramUpdateIntakeState.ACCEPTED_FOR_NORMALIZATION:
+            if self.normalization_reference_id is not None:
+                raise ValueError("only accepted intake may have normalization reference")
+        return self
+
+
+class TelegramUpdateDeduplicationRecord(_TelegramContract):
+    telegram_update_deduplication_record_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    provider_update_identity: TelegramProviderUpdateIdentity
+    idempotency_key: IdempotencyKey
+    idempotency_scope: IdempotencyScope
+    fingerprint: IdempotencyFingerprint
+    state: TelegramUpdateDeduplicationState
+    current_intake_record_id: str = Field(min_length=1)
+    existing_intake_record_id: str | None = Field(default=None, min_length=1)
+    existing_fingerprint: IdempotencyFingerprint | None = None
+    replayed_adapter_outcome_ref: str | None = Field(default=None, min_length=1)
+    adapter_processing_authorized: bool
+    second_business_effect_authorized: Literal[False] = False
+    reason_code: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_dedup_matrix(self) -> "TelegramUpdateDeduplicationRecord":
+        if self.state is TelegramUpdateDeduplicationState.NEW_UPDATE:
+            if any(
+                (
+                    self.existing_intake_record_id,
+                    self.existing_fingerprint,
+                    self.replayed_adapter_outcome_ref,
+                )
+            ):
+                raise ValueError("new update cannot reference an existing outcome")
+            if not self.adapter_processing_authorized:
+                raise ValueError("new update authorizes adapter processing")
+        elif self.state is TelegramUpdateDeduplicationState.DUPLICATE_REPLAY:
+            if not self.existing_intake_record_id or self.existing_fingerprint is None:
+                raise ValueError("duplicate replay requires existing intake and fingerprint")
+            if self.existing_fingerprint != self.fingerprint:
+                raise ValueError("duplicate replay requires matching fingerprint")
+            if not self.replayed_adapter_outcome_ref or self.adapter_processing_authorized:
+                raise ValueError("duplicate replay requires safe outcome replay only")
+        elif self.state is TelegramUpdateDeduplicationState.FINGERPRINT_CONFLICT:
+            if not self.existing_intake_record_id or self.existing_fingerprint is None:
+                raise ValueError("fingerprint conflict requires existing intake and fingerprint")
+            if self.existing_fingerprint == self.fingerprint:
+                raise ValueError("fingerprint conflict requires different fingerprint")
+            if self.replayed_adapter_outcome_ref or self.adapter_processing_authorized:
+                raise ValueError("fingerprint conflict cannot authorize processing or replay")
+        else:
+            if not self.existing_intake_record_id or self.existing_fingerprint is None:
+                raise ValueError("ambiguous deduplication requires existing intake and fingerprint")
+            if self.replayed_adapter_outcome_ref or self.adapter_processing_authorized:
+                raise ValueError("ambiguous deduplication cannot authorize processing or replay")
+        return self
+
+
 __all__ = [
     "TelegramAccountLinkReference",
     "TelegramIdentityResolutionOutcome",
     "TelegramIdentityResolutionRequest",
     "TelegramIdentityResolutionState",
+    "TelegramProviderUpdateIdentity",
     "TelegramProviderIdentity",
+    "TelegramUpdateAdmissionState",
+    "TelegramUpdateStructuralClass",
+    "TelegramUpdateIntakeState",
+    "TelegramUpdateDeduplicationState",
+    "TelegramUpdateIntakeRecord",
+    "TelegramUpdateDeduplicationRecord",
     "VerifiedTelegramIdentityEvidence",
 ]
