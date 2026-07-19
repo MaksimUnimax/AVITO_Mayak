@@ -289,27 +289,52 @@ def test_boundary_is_frozen_and_safety_literals_are_not_runtime_authorizations()
     assert model.development_proof_requires_explicit_gate is True
     assert model.environment_mode_selected is False
     assert model.simultaneous_modes_authorized is False
-    assert getattr(model, "provider_" + "runtime_authorized") is False
+    assert model.provider_runtime_authorized is False
     assert model.provider_call_authorized is False
-    for field in (
-        "secret_material_present",
-        "http_acknowledgement_is_business_success",
-        "provider_request_authorized",
-        "process_local_cursor_authoritative",
-        "arrival_is_trusted_without_validation",
-        "offset_advance_before_durable_acceptance_authorized",
-    ):
-        values = (
+    assert webhook().http_acknowledgement_is_business_success is False
+    assert (
+        "http_acknowledgement_is_business_success"
+        in TelegramWebhookModeRequirements.model_fields
+    )
+    assert "provider_runtime_authorized" in TelegramProviderModeBoundary.model_fields
+    assert (
+        webhook().model_json_schema()["properties"][
+            "http_acknowledgement_is_business_success"
+        ]["default"]
+        is False
+    )
+    assert (
+        model.model_json_schema()["properties"]["provider_runtime_authorized"]["default"]
+        is False
+    )
+    assert webhook().model_dump()["http_acknowledgement_is_business_success"] is False
+    assert model.model_dump()["provider_runtime_authorized"] is False
+    assert (
+        TelegramWebhookModeRequirements.model_validate(
             webhook().model_dump()
-            if "secret" in field or "acknowledgement" in field
-            else get_updates().model_dump()
+        ).http_acknowledgement_is_business_success
+        is False
+    )
+    assert (
+        TelegramProviderModeBoundary.model_validate(
+            model.model_dump()
+        ).provider_runtime_authorized
+        is False
+    )
+    with pytest.raises(ValidationError):
+        TelegramWebhookModeRequirements.model_validate(
+            {**webhook().model_dump(), "http_acknowledgement_is_business_success": True}
         )
-        with pytest.raises(ValidationError):
-            type(
-                webhook() if "secret" in field or "acknowledgement" in field else get_updates()
-            ).model_validate({**values, field: True})
+    with pytest.raises(ValidationError):
+        TelegramProviderModeBoundary.model_validate(
+            {**model.model_dump(), "provider_runtime_authorized": True}
+        )
     with pytest.raises((TypeError, ValidationError)):
         model.reason_code = "changed"  # type: ignore[misc]
+    with pytest.raises((TypeError, ValidationError)):
+        webhook().http_acknowledgement_is_business_success = True  # type: ignore[assignment]
+    with pytest.raises((TypeError, ValidationError)):
+        model.provider_runtime_authorized = True  # type: ignore[assignment]
 
 
 def test_official_provider_semantics_are_only_policy_evidence() -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -272,10 +272,8 @@ class TelegramWebhookModeRequirements(_TelegramContract):
     failure_response_policy_ref: str = Field(min_length=1)
     drop_pending_transition_policy_ref: str = Field(min_length=1)
     secret_material_present: Literal[False] = False
+    http_acknowledgement_is_business_success: Literal[False] = False
     provider_request_authorized: Literal[False] = False
-    __annotations__["h" + "ttp_acknowledgement_is_business_success"] = Annotated[
-        Literal[False], Field(default=False)
-    ]
 
 
 class TelegramGetUpdatesModeRequirements(_TelegramContract):
@@ -322,10 +320,8 @@ class TelegramProviderModeBoundary(_TelegramContract):
     environment_mode_selected: Literal[False] = False
     simultaneous_modes_authorized: Literal[False] = False
     provider_call_authorized: Literal[False] = False
+    provider_runtime_authorized: Literal[False] = False
     reason_code: str = Field(min_length=1)
-    __annotations__["provider_run" + "time_authorized"] = Annotated[
-        Literal[False], Field(default=False)
-    ]
 
     @model_validator(mode="after")
     def _validate_state_matrix(self) -> "TelegramProviderModeBoundary":

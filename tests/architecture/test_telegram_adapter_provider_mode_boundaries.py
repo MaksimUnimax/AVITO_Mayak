@@ -108,3 +108,88 @@ def test_no_top_level_runtime_instances_or_business_dispatch() -> None:
             raise AssertionError("production module must not instantiate runtime objects")
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
             raise AssertionError("production module must not create top-level runtime objects")
+
+
+def _has_annotations_mutation(tree: ast.AST) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "__annotations__"
+                ):
+                    return True
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "setattr"
+        for node in ast.walk(tree)
+    )
+
+
+def _has_built_safety_field_name(tree: ast.AST) -> bool:
+    safety_fields = {
+        "http_acknowledgement_is_business_success",
+        "provider_runtime_authorized",
+    }
+    def joined_string(node: ast.AST) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left = joined_string(node.left)
+            right = joined_string(node.right)
+            if left is not None and right is not None:
+                return left + right
+        return None
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and joined_string(node) in safety_fields:
+            return True
+    return False
+
+
+def test_safety_fields_are_direct_annassign_declarations() -> None:
+    tree = ast.parse(SOURCE.read_text())
+    assert not _has_annotations_mutation(tree)
+    assert not _has_built_safety_field_name(tree)
+    expected = {
+        "TelegramWebhookModeRequirements": "http_acknowledgement_is_business_success",
+        "TelegramProviderModeBoundary": "provider_runtime_authorized",
+    }
+    classes = {
+        node.name: node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+    }
+    for class_name, field_name in expected.items():
+        declarations = [
+            node
+            for node in classes[class_name].body
+            if isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == field_name
+        ]
+        assert len(declarations) == 1
+
+
+def test_safety_field_regression_rejects_dynamic_declarations() -> None:
+    unsafe_snippets = (
+        '__annotations__["field"] = Literal[False]',
+        '__annotations__["provider_" + "runtime_authorized"] = Literal[False]',
+        'setattr(Model, "provider_runtime_authorized", Literal[False])',
+    )
+    for snippet in unsafe_snippets:
+        tree = ast.parse(snippet)
+        assert _has_annotations_mutation(tree) or _has_built_safety_field_name(tree)
+
+
+def test_safety_field_regression_allows_typed_declarations() -> None:
+    tree = ast.parse(
+        "class Model:\n"
+        "    http_acknowledgement_is_business_success: Literal[False] = False\n"
+        "    provider_runtime_authorized: Literal[False] = False\n"
+    )
+    assert not _has_annotations_mutation(tree)
+    assert not _has_built_safety_field_name(tree)
