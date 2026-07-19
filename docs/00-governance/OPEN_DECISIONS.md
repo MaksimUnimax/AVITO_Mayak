@@ -282,3 +282,49 @@ This update permits later exact semantic Egress tasks to use the captured route-
 | OD-010 | OPEN | Country-wide/provider-market support evidence remains unresolved outside already scoped module decisions. |
 | OD-011 | OPEN | Safe monitoring frequency and routing load boundary remain unresolved. |
 | OD-013 | OPEN | Retention/deletion of route, lease, outcome, audit and diagnostic evidence remains unresolved. |
+
+* * *
+## Governance capture update — 2026-07-19 — TG-01 Telegram Adapter owner decisions
+
+`ADR-0022` and `docs/04-modules/09-telegram-adapter/OWNER_TELEGRAM_DECISIONS_CAPTURE_v1.0.md` capture the owner decisions required for Module 09 `TG-01`.
+
+Technical task: `TG01-GOVERNANCE-CAPTURE-20260719-017`
+
+This update allows later exact semantic Telegram Adapter tasks to use the captured owner direction only after independent acceptance of the publishing commit.
+
+It does not authorize source code, tests, real provider fixtures, BotFather changes, token consumption/rotation/revocation/deletion, Telegram API, `getMe`, webhook, `getUpdates`, Mini App, provider SDK/client, command handlers, callback/deep-link implementation, templates, persistence, migrations, queues/workers/services, endpoint/domain/TLS/port, Docker, CI/CD, deploy, secrets or raw provider payload retention.
+
+| Item | Status after ADR-0022 | Notes |
+|---|---|---|
+| Internal user authority | INTERNAL_ACCOUNT_ID_AUTHORITATIVE | Telegram provider IDs remain external and never replace `account_id`. |
+| Telegram account linking | IDENTITY_AND_ACCESS_AUTHORITY | `/start` may request resolution/linking/account-creation flow only through Identity contracts; no weak merge. |
+| Telegram first practical channel | OWNER_POLICY_CAPTURED | Notification Delivery stays generic; MAX/Web remain separate; `OD-012` is not closed. |
+| Existing bot identity | OWNER_PROVISIONED | `@signalings_bot`, numeric bot ID `8664835407`; provider metadata only. |
+| Protected token evidence | REDACTED_PRESENCE_CAPTURED | Secret reference and owner/group/mode/non-zero size are captured; raw value remains unread and undisclosed. |
+| BotFather reconfiguration and token lifecycle | OWNER_GATED | New bot, repeated BotFather setup, rotation/revocation/deletion and secret changes require exact owner tasks. |
+| Telegram API/runtime | BLOCKED | Bot/token presence does not authorize provider calls or runtime. |
+| Production mode direction | WEBHOOK_TARGET_DIRECTION_ONLY | No live mode or endpoint is selected. |
+| Development proof mode | GETUPDATES_EXACT_TASK_ONLY | Mutually exclusive with webhook for the same bot/environment. |
+| Webhook authenticity | MANDATORY_IF_SELECTED | Missing/mismatched evidence and HTTP acknowledgement are not business success. |
+| Commands/messages/callbacks/deep links | UNTRUSTED_INPUT | Validation, replay controls, ownership/authorization and confirmation are required. |
+| Callback/deep-link formats | FUTURE_GATE | No raw internal IDs, secrets or authorization authority in payloads. |
+| Create Beacon from Avito link | BEACON_MANAGEMENT_BOUNDARY | Telegram normalizes candidate intent only; Beacon owns validation and mutation. |
+| Version 1 chat surface | PRIVATE_CHAT_ONLY | Groups/channels/topics/business/shared surfaces remain future gates. |
+| Mini App | DEFERRED_BLOCKED | `initDataUnsafe` is never trusted; raw `initData` server validation and exact security/UI gates are required. |
+| Multi-listing presentation | TELEGRAM_RENDERING_FUTURE_GATE | Preserve all safe references; no default one-message-per-listing spam. |
+| Optional listing details | UPSTREAM_SAFE_FACTS_ONLY | Telegram does not fetch or enrich Avito data. |
+| No-new status | NOTIFICATION_POLICY_AUTHORITY | User preference/eligibility/frequency remain generic Notification concerns. |
+| Avito unavailable/recovery rendering | FUTURE_TELEGRAM_RENDERING | Scan/Notification own facts and eligibility; no repeated identical error spam. |
+| Pause/resume/delete/settings | NORMALIZED_INTENTS_ONLY | Owning modules authorize/mutate; destructive actions require confirmation. |
+| Provider `ok=true` | PROVIDER_ACCEPTED_ONLY | Not human read/click/final delivery/business success. |
+| Unknown provider effect | RECONCILIATION_FIRST | Never blindly retry. |
+| Raw Telegram payload retention | BLOCKED_BY_DEFAULT | Minimized safe evidence only after exact gates. |
+| `OD-006` | OPEN | Exact phone/password/recovery policy remains unresolved where not governed elsewhere. |
+| `OD-007` | OPEN | Exact phone requirement remains unresolved. |
+| `OD-008` | OPEN | Exact account merge/cancellation policy remains unresolved. |
+| `OD-012` | OPEN | Future channels beyond Telegram/MAX remain unresolved. |
+| `OD-013` | OPEN | Retention/deletion/archive/compaction remains unresolved. |
+| `OD-014` | OPEN | Future Web Cabinet and Telegram/Mini App screen interaction remains unresolved. |
+| `TG-02` | ALLOWED_ONLY_AFTER_ACCEPTANCE_AND_EXACT_TASK | Requires fresh GitHub/parallel-main/playbook/dependency verification. |
+
+No numbered open decision is closed by assumption.

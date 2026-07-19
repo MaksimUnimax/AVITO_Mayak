@@ -842,3 +842,70 @@ Playbook Module 08 v1.0 определил generic Notification Delivery boundar
 - Исправленный module document является каноническим owner decision capture для Module 08.
 - Эта задача не создаёт product code, contracts, tests, fixtures or runtime.
 - Roadmap остаётся на `ND-01` до независимого принятия corrective commit.
+
+* * *
+## ADR-0022 — 2026-07-19 — Telegram Adapter owner decisions for TG-01
+
+Статус: APPROVED owner decision capture for Telegram Adapter governance.
+
+Модуль: `09-telegram-adapter`
+
+Roadmap step: `TG-01`
+
+Technical task: `TG01-GOVERNANCE-CAPTURE-20260719-017`
+
+Канонический module capture: `docs/04-modules/09-telegram-adapter/OWNER_TELEGRAM_DECISIONS_CAPTURE_v1.0.md`
+
+Открывает gate: использование зафиксированных owner decisions как input для последующих exact semantic Telegram Adapter tasks после независимого принятия publishing commit.
+
+Не открывает: source code, tests, real provider fixtures, BotFather action, bot creation, token consumption/rotation/revocation/deletion, Telegram API calls, `getMe`, webhook, `getUpdates`, Mini App, provider SDK/client, command handlers, callback/deep-link implementation, message templates, physical database schema, migrations, persistence, queue, worker, scheduler, service, runtime, endpoint/domain/TLS/certificate/port, Docker, CI/CD, deploy, secrets or raw provider payload retention.
+
+Контекст:
+
+Module 09 playbook fixes the Telegram-specific boundary but intentionally leaves owner product direction and runtime/provider choices gated. The owner supplied explicit decisions for internal account identity, existing bot provisioning, token handling, Telegram-first channel direction, webhook/`getUpdates` direction, webhook authenticity, callbacks, deep links, `/start` account linking, Avito-link intent, private-chat v1, Mini App deferral/security, listing presentation, status notifications, Beacon-management intents, provider outcome semantics and data minimization. These decisions must be captured before later semantic contracts, tests or implementation planning use them.
+
+Решение:
+
+1. Internal `account_id` is the authoritative project user identity. Telegram user/chat/message/update/callback identifiers remain external provider identifiers.
+2. Telegram Adapter must not create Accounts, merge accounts, use Telegram IDs as `account_id`, infer identity from username/display name/avatar/phone/chat title/group membership or maintain a Telegram-only user database.
+3. `/start` may request resolve/link/create flow only through Identity & Access public contracts. Identity owns account creation semantics, linking challenges, authorization and merge policy.
+4. Telegram is the first practical channel for notifications and user control. Notification Delivery remains generic; MAX and Web Cabinet retain separate ownership. This does not close `OD-012`.
+5. The owner-created bot already exists with non-secret provider metadata `@signalings_bot` and numeric bot ID `8664835407`.
+6. The protected token reference is `/etc/avito-mayak/secrets/telegram_bot_token`; accepted redacted evidence records `root:root`, mode `0600`, non-zero size `46` bytes and `TOKEN_VALUE=NOT_READ_NOT_PRINTED`.
+7. Public bot metadata is referenced by `/etc/avito-mayak/telegram-bot.conf` with accepted redacted evidence `root:root`, mode `0644`, size `65` bytes.
+8. Bot creation is complete. Creating another bot, repeating BotFather configuration, changing commands/description, configuring Mini App, changing the protected secret or rotating/revoking/deleting the token requires a separate exact owner task.
+9. Raw token material must never be pasted into ChatGPT/CLI reports, read, printed, hashed, fingerprinted, encoded, copied, transmitted, logged, committed, placed in fixtures/screenshots/URLs or exposed by diagnostics.
+10. Bot/token presence does not authorize Telegram API, `getMe`, webhook, `getUpdates`, Mini App, runtime, deploy or live proof.
+11. Production/staging target direction is webhook. Local/development proof may use `getUpdates` only after an exact task. Both modes are mutually exclusive for the same bot/environment.
+12. No live mode is selected by this ADR. Mode transition, drop-pending, acknowledgement point, polling offset, replay and reconciliation rules remain separate operations/security gates.
+13. If webhook is selected later, provider authenticity verification is mandatory. Missing/mismatched authenticity evidence and HTTP acknowledgement are not business success. Secret material must not appear in URLs/logs/reports/fixtures/Git.
+14. Telegram commands, message text, callback data, button labels, deep-link payloads, update structures, provider profile fields and Mini App launch data are untrusted until validated.
+15. Duplicate/replayed input must not create a second business effect. Unsupported or disallowed update types are safely ignored or explicitly rejected. Fingerprint conflict remains conflict/ambiguity.
+16. Callback data is not executable authority. Server-side identity resolution, ownership/authorization, action scope, replay/expiry controls and confirmation are required before a destructive or sensitive owning-module action.
+17. Raw internal IDs, secrets, payment identifiers and authorization decisions must not be trusted callback payload authority.
+18. Deep-link payloads are untrusted. Sensitive future links must use approved opaque/signed/one-time short-lived payloads. Raw account/Beacon IDs, email, phone, payment IDs, secrets and tokens are forbidden in deep links. A deep link is not authorization.
+19. Exact command catalog, button labels, conversation flow, callback format and deep-link format remain future gates.
+20. Creating a Beacon from a candidate Avito link is desired Telegram UX, but Telegram Adapter only normalizes the untrusted intent. Beacon Management owns source validation, creation, lifecycle, configuration and limits.
+21. Version 1 supports private chat only. Groups, supergroups, channels, forum topics, business connections, shared chats and multi-user ownership remain future gates.
+22. Mini App is deferred. `initDataUnsafe` is never trusted. Future backend authentication requires server-side validation of raw `Telegram.WebApp.initData`; hosting, screens, URL, BotFather configuration and `auth_date` policy remain future gates.
+23. Notification Delivery preserves all approved safe listing references. Telegram may later render summary/list/pagination/buttons, but must not send one message per listing by default or discard references at the adapter boundary.
+24. Phone/seller/rating/description may be displayed only when approved upstream contracts already provide safe facts. Telegram Adapter does not fetch, parse or enrich Avito data.
+25. Optional no-new Telegram status is controlled by generic Notification preference/eligibility policy, not Telegram-owned frequency; the captured current minimum is not more frequent than once per hour when enabled.
+26. Telegram may later render one material Avito/route/parser problem status and one recovery result when eligible. Telegram Adapter does not decide Scan recovery, retry scans, select Egress routes or repeat identical errors every interval.
+27. Pause/resume/settings/delete may be normalized as intents only. Owning modules perform authorization and mutation. Delete and other destructive/sensitive actions require confirmation.
+28. Telegram Adapter maps one approved Notification attempt to a Telegram provider request/outcome. It does not create generic outbox work or mark generic delivery success.
+29. Telegram Bot API `ok=true` means provider accepted the method result; it does not prove human read, click, final delivery or business success. Egress success and HTTP acknowledgement do not prove Telegram success.
+30. Unknown/interrupted provider effect is reconciliation-first and must never be retried blindly. Provider rejection, unavailability, rate limitation, malformed response and ambiguity remain explicit.
+31. Raw Telegram payloads are not ordinary logs or fixtures by default. Only minimized contract-required provider IDs, classes, fingerprints/references, safe reason codes and correlation/causation evidence may be retained after exact gates.
+32. `OD-013` remains open. This ADR does not select retention/deletion/archive/compaction policy or physical storage.
+33. `OD-006`, `OD-007`, `OD-008`, `OD-012`, `OD-013` and `OD-014` remain open where not governed by another accepted ADR. No numbered open decision is closed by assumption.
+34. Provider runtime, Telegram API, webhook, `getUpdates`, Mini App, BotFather changes, token consumption, schema, migrations, persistence, SDK/client, templates, queues/workers/services and deploy remain blocked.
+35. After independent acceptance, `TG-02` may be considered only through a fresh GitHub/parallel-main/playbook/dependency check and a separate exact task.
+
+Последствия:
+
+- The canonical Module 09 owner input is `docs/04-modules/09-telegram-adapter/OWNER_TELEGRAM_DECISIONS_CAPTURE_v1.0.md`.
+- Later exact semantic tasks may use these decisions without inventing product policy.
+- Identity & Access, Beacon Management, Scan Orchestration, Egress Routing, Notification Delivery, Entitlements & Billing, MAX and Web Cabinet retain their ownership boundaries.
+- This ADR creates no product code, tests, provider calls, runtime, persistence, secrets or infrastructure.
+- `TG-01` remains incomplete until the publishing commit is independently verified and accepted.
