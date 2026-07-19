@@ -447,7 +447,7 @@ class TelegramProtectedSecretPresenceEvidence(_TelegramContract):
     protected_secret_reference: str = Field(min_length=1)
     observed_owner: str = Field(min_length=1)
     observed_group: str = Field(min_length=1)
-    observed_mode: str = Field(min_length=1, pattern=r"0[0-7]{3}")
+    observed_mode: str = Field(min_length=1, pattern=r"^0[0-7]{3}$")
     observed_size_bytes: int = Field(gt=0)
     server_evidence_reference_id: str = Field(min_length=1)
     evidence_is_presence_and_metadata_only: Literal[True] = True
@@ -466,7 +466,7 @@ class TelegramPublicBotMetadataPresenceEvidence(_TelegramContract):
     public_metadata_reference: str = Field(min_length=1)
     observed_owner: str = Field(min_length=1)
     observed_group: str = Field(min_length=1)
-    observed_mode: str = Field(min_length=1, pattern=r"0[0-7]{3}")
+    observed_mode: str = Field(min_length=1, pattern=r"^0[0-7]{3}$")
     observed_size_bytes: int = Field(gt=0)
     server_evidence_reference_id: str = Field(min_length=1)
     evidence_is_presence_and_metadata_only: Literal[True] = True

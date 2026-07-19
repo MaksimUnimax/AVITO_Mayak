@@ -203,6 +203,79 @@ def test_modes_sizes_extras_and_secret_material_are_rejected() -> None:
     )
 
 
+@pytest.mark.parametrize("factory", [secret, public])
+@pytest.mark.parametrize("mode", ("0000", "0600", "0644", "0777"))
+def test_both_evidence_models_accept_exact_canonical_octal_modes(
+    factory: Callable[..., object], mode: str
+) -> None:
+    value = factory(observed_mode=mode)
+    assert isinstance(
+        value,
+        (TelegramProtectedSecretPresenceEvidence, TelegramPublicBotMetadataPresenceEvidence),
+    )
+    assert value.observed_mode == mode
+
+
+@pytest.mark.parametrize(
+    "mode",
+    (
+        "600", "060", "0800", "0o600", "x0600", "0600x", "10600", "06000",
+        "x0644", "0644x", "10644", "06440", "    ", "\t",
+    ),
+)
+@pytest.mark.parametrize("factory", [secret, public])
+def test_both_evidence_models_reject_noncanonical_octal_modes(
+    factory: Callable[..., object], mode: str
+) -> None:
+    with pytest.raises(ValidationError):
+        factory(observed_mode=mode)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [TelegramProtectedSecretPresenceEvidence, TelegramPublicBotMetadataPresenceEvidence],
+)
+def test_both_observed_mode_schemas_are_anchored(
+    model: type[TelegramProtectedSecretPresenceEvidence]
+    | type[TelegramPublicBotMetadataPresenceEvidence],
+) -> None:
+    assert model.model_json_schema()["properties"]["observed_mode"]["pattern"] == (
+        r"^0[0-7]{3}$"
+    )
+
+
+def test_canonical_approved_modes_verify_and_other_canonical_modes_mismatch() -> None:
+    verified = gate(TelegramExistingBotEvidenceState.VERIFIED_REDACTED_EVIDENCE)
+    assert verified.protected_secret_presence_evidence is not None
+    assert verified.public_bot_metadata_presence_evidence is not None
+    assert verified.protected_secret_presence_evidence.observed_mode == "0600"
+    assert verified.public_bot_metadata_presence_evidence.observed_mode == "0644"
+
+    mismatch = gate(
+        TelegramExistingBotEvidenceState.EVIDENCE_MISMATCH,
+        protected_secret_presence_evidence=secret(observed_mode="0644"),
+        blocking_decision_reference_id="block",
+    )
+    assert mismatch.state is TelegramExistingBotEvidenceState.EVIDENCE_MISMATCH
+
+
+def test_evidence_models_remain_forbid_extra_and_frozen() -> None:
+    for factory in (secret, public):
+        with pytest.raises(ValidationError):
+            factory(unapproved_field="x")
+        value = factory()
+        with pytest.raises(ValidationError):
+            value.observed_mode = "0777"  # type: ignore[misc]
+
+
+def test_mode_regression_values_are_not_secret_material() -> None:
+    values = (
+        "0000", "0600", "0644", "0777", "600", "060", "0800", "0o600", "x0600",
+        "0600x", "10600", "06000", "x0644", "0644x", "10644", "06440", "    ", "\t",
+    )
+    assert all("token" not in value.lower() for value in values)
+
+
 @pytest.mark.parametrize(
     "missing",
     ["bot_metadata", "protected_secret_presence_evidence", "public_bot_metadata_presence_evidence"],
