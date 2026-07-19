@@ -909,3 +909,99 @@ Module 09 playbook fixes the Telegram-specific boundary but intentionally leaves
 - Identity & Access, Beacon Management, Scan Orchestration, Egress Routing, Notification Delivery, Entitlements & Billing, MAX and Web Cabinet retain their ownership boundaries.
 - This ADR creates no product code, tests, provider calls, runtime, persistence, secrets or infrastructure.
 - `TG-01` remains incomplete until the publishing commit is independently verified and accepted.
+
+ADR-0023 — 2026-07-19 — MAX Adapter owner decisions for MX-01
+
+Статус: APPROVED owner decision capture for MAX Adapter governance.
+
+Модуль: 10-max-adapter
+
+Roadmap step: MX-01
+
+Technical task: MX-01-MAX-OWNER-DECISION-CAPTURE-20260719-01
+
+Канонический module capture: docs/04-modules/10-max-adapter/OWNER_DECISIONS_v1.0.md
+
+Открывает gate: использование зафиксированных owner decisions как input для последующих exact semantic MAX Adapter tasks только после независимой проверки и принятия publishing commit.
+
+Не открывает: product code, semantic Python contracts, tests, fixtures, real provider payloads, provider SDK, partner enrollment, verified-profile creation, bot creation, moderation submission, token handling, MAX API calls, Webhook subscription, Webhook endpoint, Long Polling loop, Mini App frontend, physical database schema, ORM models, migrations, persistence, queues, workers, schedulers, services, endpoint/domain/TLS/certificate/port/listener setup, Docker, CI/CD, deploy, secrets or raw provider payload retention.
+
+Контекст:
+
+Module 10 playbook defines the MAX-specific boundary but does not authorize implementation or resolve owner product direction. The owner supplied eight decisions that must be frozen before later exact semantic tasks can use them without invention.
+
+Решение:
+
+MAX is a future and secondary channel. Telegram remains the first practical channel. MAX does not block the MVP, Notification Delivery remains generic, and Telegram and MAX payload semantics remain separate provider-specific boundaries.
+
+MAX partner eligibility, partner or verified-profile status, bot creation and moderation remain unproven and blocked until safe accepted evidence exists. No bot, token, profile, moderation state or provider permission is assumed.
+
+The first MAX scope is personal chat between one user and the bot. Groups and channels remain blocked until a separate owner decision and accepted authorization, privacy, membership and recipient-semantics boundaries exist.
+
+MAX Mini App is a future server-side validation and handoff boundary only. Module 10 does not implement Mini App or Web Cabinet screens, frontend, hosting or runtime. Raw client launch data remains untrusted and validated MAX identity remains external provider identity resolved through Identity & Access.
+
+The first MAX scope does not request phone or contact data. Phone requiredness, account merge and personal-data retention remain open decisions.
+
+MAX commands, callbacks, buttons and deep links may later normalize into common product intents, but MAX payload remains separate provider-specific untrusted input. Telegram payload formats are not MAX authority, and client-visible payloads are not authorization.
+
+The current production update-delivery direction is Webhook. This ADR does not create a Webhook. Long Polling is limited to separately approved development or test contexts, is not a production fallback, and cannot be active simultaneously with Webhook for the same bot and environment.
+
+A MAX provider accepted result does not prove human read, click, final user-visible delivery, generic Notification success or business success. Unknown provider effect is reconciliation-first and must never be retried blindly.
+
+Ownership consequences:
+
+The internal account_id remains authoritative. MAX provider IDs remain external identifiers and are never account ownership or authorization by themselves.
+
+Identity & Access owns account resolution, identity linking, account creation semantics, authorization and merge policy.
+
+Notification Delivery owns generic eligibility, outbox, attempts and generic delivery lifecycle.
+
+Beacon Management owns source validation, Beacon creation, configuration and lifecycle.
+
+Scan Orchestration owns baseline, observations, difference, listing state and recovery facts.
+
+Egress Routing owns route and transport state.
+
+Entitlements & Billing owns tariff, payment, subscription and entitlement authority.
+
+Telegram Adapter owns Telegram-specific provider mapping.
+
+Web Cabinet owns web screens and sessions.
+
+Admin and Support retain their own authority.
+
+MAX Adapter must not mutate those modules' internal state directly.
+
+Security and data consequences:
+
+Raw tokens, webhook secrets, private keys, credentials, legal or personal provider documents, unnecessary personal data and real raw provider payloads are forbidden in Git, prompts, reports, fixtures and ordinary logs.
+
+Raw MAX payload retention is blocked by default.
+
+OD-013 remains open and this ADR does not select retention, deletion, archive, compaction or physical storage policy.
+
+This ADR does not establish provider eligibility, bot availability, moderation acceptance, token availability or production permission.
+
+Open decisions preserved:
+
+OD-006 remains OPEN where exact phone and password login and recovery policy is not governed elsewhere.
+
+OD-007 remains OPEN for whether and when phone is required.
+
+OD-008 remains OPEN for account merge and cancellation policy.
+
+OD-012 remains OPEN for future channels beyond Telegram and MAX.
+
+OD-013 remains OPEN for retention and deletion of logs, history, provider records and personal data.
+
+OD-014 remains OPEN for future Web Cabinet screens, analytics depth and UI interaction.
+
+No numbered open decision is closed by assumption.
+
+Roadmap consequence:
+
+MX-01 becomes complete only after the publishing commit containing this ADR and the canonical module document is independently verified and accepted.
+
+MX-02 may be considered only through a fresh GitHub main, parallel-main, Module 10 playbook, Identity & Access and Notification Delivery dependency verification and a separate exact task.
+
+This ADR creates no product code, contracts, tests, fixtures, provider calls, runtime, persistence, secrets or infrastructure.
