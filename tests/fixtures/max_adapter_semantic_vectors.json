@@ -1,0 +1,384 @@
+{
+  "schema_version": "1.0",
+  "module": "10-max-adapter",
+  "synthetic_only": true,
+  "contains_raw_provider_payload": false,
+  "contains_raw_web_app_data": false,
+  "contains_secret_material": false,
+  "contains_phone_or_contact": false,
+  "contains_personal_or_legal_data": false,
+  "network_required": false,
+  "vectors": [
+    {
+      "fixture_id": "FX-CONTRACT-VALID-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-CONTRACT-MISSING-META-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AUTH-UNAUTHENTICATED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AUTH-FORBIDDEN-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-IDEMP-FIRST-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-IDEMP-REPLAY-SAME-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-IDEMP-REPLAY-MISMATCH-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-INTERRUPT-UNKNOWN-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-EXT-SUCCESS-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-EXT-REJECTED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-EXT-UNAVAILABLE-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-EXT-MALFORMED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-EXT-AMBIGUOUS-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-SEC-PROVIDER-VERIFY-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-SEC-SECRET-REDACTION-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-SEC-PERSONAL-MINIMIZATION-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-SEC-SHELL-INTERPOLATION-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-REF-CURRENT-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-REF-STALE-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-REF-MISSING-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-REF-CHANGED-BREAKING-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-REF-UNSUPPORTED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-ELIGIBILITY-UNPROVEN-BLOCKED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-MODERATION-NOT-ACCEPTED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-WEBHOOK-SECRET-VALID-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-WEBHOOK-SECRET-MISSING-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-WEBHOOK-SECRET-MISMATCH-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-WEBHOOK-TLS-ENDPOINT-BLOCKED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-WEBHOOK-RETRY-DUPLICATE-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-SUBSCRIPTION-UNSUBSCRIBED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-LONGPOLLING-PROD-BLOCKED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-LONGPOLLING-MARKER-AFTER-COMMIT-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-LONGPOLLING-MARKER-PRECOMMIT-BLOCKED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-UPDATE-NO-UNIVERSAL-ID-AMBIGUOUS-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-UPDATE-FINGERPRINT-REPLAY-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-UNSUPPORTED-UPDATE-IGNORED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-COMMAND-NORMALIZED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-CALLBACK-UNTRUSTED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-CONTACT-POLICY-BLOCKED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-CONTACT-HASH-NOT-MERGE-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-MINIAPP-WEBAPPDATA-VALID-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-MINIAPP-WEBAPPDATA-REJECTED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-MINIAPP-AUTHDATE-STALE-BLOCKED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-IDENTITY-RESOLVE-VERIFIED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-WEAK-MERGE-FORBIDDEN-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-OUTBOUND-OK-NOT-READ-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-OUTBOUND-REJECTED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-OUTBOUND-AMBIGUOUS-RECONCILE-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-TOKEN-REDACTION-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "AMBIGUOUS",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-RETENTION-OD013-BLOCKED-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "SAFE",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-NOTIFICATION-BOUNDARY-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "VALID",
+      "valid": true,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-EGRESS-SUCCESS-NOT-PROVIDER-SUCCESS-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "REJECTED",
+      "valid": false,
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-MAX-TELEGRAM-ANALOGY-FORBIDDEN-001",
+      "category": "MAX_SYNTHETIC",
+      "expected_class": "BLOCKED",
+      "valid": false,
+      "synthetic_only": true
+    }
+  ]
+}
