@@ -1,32 +1,32 @@
-Маяк Авито — Module 10 MAX Adapter Full Evidence and Handoff v1.0
+# Маяк Авито — Module 10 MAX Adapter Full Evidence and Handoff v1.0
 
-status: final evidence/handoff for accepted governance, semantic contracts and synthetic deterministic tests scope
+- status: final evidence/handoff for accepted governance, semantic contracts and synthetic deterministic tests scope
 
-date: 2026-07-19
+- date: 2026-07-19
 
-module: 10-max-adapter
+- module: 10-max-adapter
 
-roadmap step: MX-10
+- roadmap step: MX-10
 
-technical task: MX-10-MAX-MODULE-EVIDENCE-HANDOFF-20260719-01
+- technical task: MX-10-MAX-MODULE-EVIDENCE-HANDOFF-20260719-01
 
-latest accepted semantic/test SHA: 16c744f3e5479081b4ebe93fc95735016627198a
+- latest accepted semantic/test SHA: 16c744f3e5479081b4ebe93fc95735016627198a
 
-source-of-truth playbook: docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md
+- source-of-truth playbook: docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md
 
-owner decision capture: docs/04-modules/10-max-adapter/OWNER_DECISIONS_v1.0.md
+- owner decision capture: docs/04-modules/10-max-adapter/OWNER_DECISIONS_v1.0.md
 
-open-decision register: docs/00-governance/OPEN_DECISIONS.md
+- open-decision register: docs/00-governance/OPEN_DECISIONS.md
 
 MX-10-MAX-MODULE-EVIDENCE-HANDOFF-20260719-01
 
-1. Executive summary
+## 1. Executive summary
 
 Module 10 is complete only inside the current accepted governance, provider-boundary semantic contracts, synthetic deterministic fixtures/tests and evidence scope.
 
 The module defines a transport-neutral but MAX-provider-specific boundary.
 
-It does not implement a MAX bot, partner enrollment, moderation, credential handling, provider SDK, provider call, Webhook endpoint, Long Polling loop, Mini App frontend, persistence, queue, worker, service, scheduler, infrastructure bot, partner enrollment, moderation, credential handling, provider SDK, provider call, or deployment.
+It does not implement a MAX bot, partner enrollment, moderation, credential handling, provider SDK, provider call, Webhook endpoint, Long Polling loop, Mini App frontend, persistence, queue, worker, service, scheduler, infrastructure or deployment.
 
 MAX remains a future and secondary channel.
 
@@ -54,21 +54,24 @@ This module is not production-ready.
 
 Physical persistence and live provider integration remain blocked.
 
-Upon independent acceptance of the MX-10 handoff commit, roadmap steps MX-00 through MX-10 are complete for the current semantic scope only.
+Upon independent acceptance of the MX-10 handoff correction commit, roadmap steps MX-00 through MX-10 are complete for the current semantic scope only.
 
-2. Accepted SHA chain
-Step	Accepted SHA	Commit subject	Accepted result
-MX-01	a193d9f197272bfeeadd59dd0900abd5d6df8943	mx-01: correct MAX inline code delimiters	Governance-safe capture of eight owner decisions after append-only serialization corrections
-MX-02	0a815fc53a2c67c3c9db990f9fdddb016b03118c	mx-02: add MAX semantic contract skeleton	Twelve authoritative records and initial provider-boundary invariants
-Parallel main	abd5a5a2fa037a560b164bf2ab31f72ce622f4c5	tg-06: add telegram intent normalization boundary	Telegram-only parallel change preserved without becoming a Module 10 step
-MX-03	8cc4173523a2278e4c9b3c8eb2a2b18efd4ec49f	mx-03: add MAX update intake semantics	Inbound update admission, intake and deduplication semantics
-MX-04	8d0442690728b150f403556a861c1990b947a8e3	mx-04: add MAX input normalization semantics	Command, callback, button and deep-link normalization semantics
-MX-05	1c4a4ec38ad5cb6058eecc70e63d405945f884a7	mx-05: add MAX Mini App validation semantics	Future server-side Mini App validation and Identity handoff boundary
-MX-06	4f5c2f80e5eb6843ff0539f6beb80e6cc1cc53de	mx-06: add MAX outbound mapping semantics	Generic Notification attempt to MAX request/outcome mapping semantics
-MX-07	6733806fc600e693d8fd19354cda8d05ee855cf7	mx-07: add MAX reconciliation semantics	Unknown-effect and reconcile-first semantics
-MX-08	3ab2b7fb90046e1a67fa888f72c097d15e488c44	mx-08: add MAX safe read model semantics	Authorized safe diagnostics/read-model projection semantics
-MX-09	189194177f543d7d35a67d9b3c77a61b8265c0af	mx-09: add MAX synthetic contract tests	Synthetic fixture manifest and deterministic contract tests
-MX-09 correction	16c744f3e5479081b4ebe93fc95735016627198a	mx-09: correct MAX architecture import guard	Exact reusable import/runtime boundary guard with real negative controls
+## 2. Accepted SHA chain
+| Step | Accepted SHA | Commit subject | Accepted result |
+| --- | --- | --- | --- |
+| MX-01 | a193d9f197272bfeeadd59dd0900abd5d6df8943 | mx-01: correct MAX inline code delimiters | Governance-safe capture of eight owner decisions after append-only serialization corrections |
+| MX-02 | 0a815fc53a2c67c3c9db990f9fdddb016b03118c | mx-02: add MAX semantic contract skeleton | Twelve authoritative records and initial provider-boundary invariants |
+| Parallel main | abd5a5a2fa037a560b164bf2ab31f72ce622f4c5 | tg-06: add telegram intent normalization boundary | Telegram-only parallel change preserved without becoming a Module 10 step |
+| MX-03 | 8cc4173523a2278e4c9b3c8eb2a2b18efd4ec49f | mx-03: add MAX update intake semantics | Inbound update admission, intake and deduplication semantics |
+| MX-04 | 8d0442690728b150f403556a861c1990b947a8e3 | mx-04: add MAX input normalization semantics | Command, callback, button and deep-link normalization semantics |
+| MX-05 | 1c4a4ec38ad5cb6058eecc70e63d405945f884a7 | mx-05: add MAX Mini App validation semantics | Future server-side Mini App validation and Identity handoff boundary |
+| MX-06 | 4f5c2f80e5eb6843ff0539f6beb80e6cc1cc53de | mx-06: add MAX outbound mapping semantics | Generic Notification attempt to MAX request/outcome mapping semantics |
+| MX-07 | 6733806fc600e693d8fd19354cda8d05ee855cf7 | mx-07: add MAX reconciliation semantics | Unknown-effect and reconcile-first semantics |
+| MX-08 | 3ab2b7fb90046e1a67fa888f72c097d15e488c44 | mx-08: add MAX safe read model semantics | Authorized safe diagnostics/read-model projection semantics |
+| MX-09 | 189194177f543d7d35a67d9b3c77a61b8265c0af | mx-09: add MAX synthetic contract tests | Synthetic fixture manifest and deterministic contract tests |
+| MX-09 correction | 16c744f3e5479081b4ebe93fc95735016627198a | mx-09: correct MAX architecture import guard | Exact reusable import/runtime boundary guard with real negative controls |
+
+| MX-10 rejected serialization | bf628c8e1c5a8d4cacc25d84e6e366c839880b90 | mx-10: add MAX module evidence handoff | Handoff semantics published, but Markdown serialization rejected and corrected by the current task |
 
 MX-01 technical-task identity is recorded in ADR-0023 and the canonical owner-decision document.
 
@@ -76,89 +79,90 @@ The final accepted MX-01 commit does not contain and was not required to contain
 
 Historical commits were not amended to manufacture missing trailers.
 
-All Module 10 implementation and test commits above are ancestors of 16c744f3e5479081b4ebe93fc95735016627198a.
+All Module 10 semantic and test commits above are ancestors of 16c744f3e5479081b4ebe93fc95735016627198a.
 
 The Telegram parallel-main commit is preserved as a separate provider-module change and is not presented as MAX implementation authority.
 
-No Module 10 commit rewrote unrelated parallel history.
+No Module 10 correction rewrites unrelated parallel history.
 
 No accepted Module 10 step used rebase, merge, cherry-pick, reset, amend, squash or force-push.
 
-3. Accepted artifact inventory
-Artifact	Step	Accepted role	Explicit non-authority
-docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md	MX-00 through MX-10	Approved documentation playbook and ownership boundary	Not runtime or provider permission
-docs/04-modules/10-max-adapter/OWNER_DECISIONS_v1.0.md	MX-01	Eight governance-safe owner decisions	Not proof of provider eligibility or production access
-docs/00-governance/DECISION_LOG_APPEND_ONLY.md	MX-01	Append-only governance trace for owner-decision capture and serialization corrections	Not runtime configuration
-src/mayak/modules/max_adapter/contracts.py	MX-02 through MX-08	Provider-specific semantic records, enums and validation matrices	Not ORM, wire payload, SDK or runtime
-src/mayak/modules/max_adapter/__init__.py	MX-02 through MX-04	Stable package export surface and module identifier	No import-time provider side effect
-tests/fixtures/max_adapter_semantic_vectors.json	MX-09	Synthetic-only deterministic fixture manifest	No recorded provider payload or real WebAppData
-tests/contract/test_max_adapter_semantic_contract_exports.py	MX-09	Deterministic export, identity and enum evidence	No provider integration
-tests/unit/test_max_adapter_semantic_contracts.py	MX-09	Contract validators and state-matrix evidence	No persistence, network or provider call
-tests/architecture/test_max_adapter_semantic_boundaries.py	MX-09 correction	Exact production file/class/import/runtime boundary guard	Static evidence only, not runtime security implementation
+## 3. Accepted artifact inventory
+| Artifact | Step | Accepted role | Explicit non-authority |
+| --- | --- | --- | --- |
+| docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md | MX-00 through MX-10 | Approved documentation playbook and ownership boundary | Not runtime or provider permission |
+| docs/04-modules/10-max-adapter/OWNER_DECISIONS_v1.0.md | MX-01 | Eight governance-safe owner decisions | Not proof of provider eligibility or production access |
+| docs/00-governance/DECISION_LOG_APPEND_ONLY.md | MX-01 | Append-only governance trace for owner-decision capture and serialization corrections | Not runtime configuration |
+| src/mayak/modules/max_adapter/contracts.py | MX-02 through MX-08 | Provider-specific semantic records, enums and validation matrices | Not ORM, wire payload, SDK or runtime |
+| src/mayak/modules/max_adapter/__init__.py | MX-02 through MX-04 | Stable package export surface and module identifier | No import-time provider side effect |
+| tests/fixtures/max_adapter_semantic_vectors.json | MX-09 | Synthetic-only deterministic fixture manifest | No recorded provider payload or real WebAppData |
+| tests/contract/test_max_adapter_semantic_contract_exports.py | MX-09 | Deterministic export, identity and enum evidence | No provider integration |
+| tests/unit/test_max_adapter_semantic_contracts.py | MX-09 | Contract validators and state-matrix evidence | No persistence, network or provider call |
+| tests/architecture/test_max_adapter_semantic_boundaries.py | MX-09 correction | Exact production file/class/import/runtime boundary guard | Static evidence only, not runtime security implementation |
 
 Logical records remain logical records.
 
 They are not physical tables, ORM models, queues, provider wire schemas, provider SDK objects or live transport requests.
 
-4. Public semantic contract surface
+## 4. Public semantic contract surface
 
 The accepted authoritative record count is twelve:
 
-MaxProviderIdentity
+- MaxProviderIdentity
 
-MaxAccountLinkReference
+- MaxAccountLinkReference
 
-MaxEligibilityEvidenceReference
+- MaxEligibilityEvidenceReference
 
-MaxUpdateIntakeRecord
+- MaxUpdateIntakeRecord
 
-MaxUpdateDeduplicationRecord
+- MaxUpdateDeduplicationRecord
 
-MaxCommandEnvelope
+- MaxCommandEnvelope
 
-MaxContactValidationResult
+- MaxContactValidationResult
 
-MaxMiniAppValidationResult
+- MaxMiniAppValidationResult
 
-MaxOutboundRequest
+- MaxOutboundRequest
 
-MaxProviderOutcome
+- MaxProviderOutcome
 
-MaxReconciliationRecord
+- MaxReconciliationRecord
 
-MaxAdapterReadModel
+- MaxAdapterReadModel
 
 The accepted supporting enum count is fifteen:
 
-MaxEligibilityState
+- MaxEligibilityState
 
-MaxUpdateIntakeState
+- MaxUpdateIntakeState
 
-MaxUpdateAdmissionState
+- MaxUpdateAdmissionState
 
-MaxUpdateSourceKind
+- MaxUpdateSourceKind
 
-MaxUpdateStructuralClass
+- MaxUpdateStructuralClass
 
-MaxUpdateDeduplicationState
+- MaxUpdateDeduplicationState
 
-MaxCommandSourceKind
+- MaxCommandSourceKind
 
-MaxCommandSurfaceKind
+- MaxCommandSurfaceKind
 
-MaxCommandNormalizationState
+- MaxCommandNormalizationState
 
-MaxContactValidationState
+- MaxContactValidationState
 
-MaxMiniAppValidationState
+- MaxMiniAppValidationState
 
-MaxOutboundRequestState
+- MaxOutboundRequestState
 
-MaxProviderOutcomeState
+- MaxProviderOutcomeState
 
-MaxRetryRecommendation
+- MaxRetryRecommendation
 
-MaxReconciliationState
+- MaxReconciliationState
 
 The accepted contracts export count is twenty-seven.
 
@@ -170,25 +174,25 @@ All public records use frozen, extra-forbidden and whitespace-stripping Pydantic
 
 No public contract grants runtime, persistence, authorization, retry-execution or provider-call authority.
 
-5. MX-01 governance evidence
+## 5. MX-01 governance evidence
 
 The accepted owner decisions are:
 
-MAX is a future and secondary channel; Telegram remains first practical.
+- MAX is a future and secondary channel; Telegram remains first practical.
 
-MAX eligibility, profile, bot and moderation remain unproven until safe evidence exists.
+- MAX eligibility, profile, bot and moderation remain unproven until safe evidence exists.
 
-First MAX scope is personal chat only; groups and channels remain blocked.
+- First MAX scope is personal chat only; groups and channels remain blocked.
 
-MAX Mini App is a future server-side validation and handoff boundary only.
+- MAX Mini App is a future server-side validation and handoff boundary only.
 
-Phone/contact is not requested in the first MAX scope.
+- Phone/contact is not requested in the first MAX scope.
 
-MAX inputs may map to common product intents but remain separate provider-specific untrusted inputs.
+- MAX inputs may map to common product intents but remain separate provider-specific untrusted inputs.
 
-Production direction is Webhook under current evidence; Long Polling is development/test only and is not production fallback.
+- Production direction is Webhook under current evidence; Long Polling is development/test only and is not production fallback.
 
-Provider acceptance is not human read or final business success; unknown effect is reconcile-first.
+- Provider acceptance is not human read or final business success; unknown effect is reconcile-first.
 
 The initial capture technical task is MX-01-MAX-OWNER-DECISION-CAPTURE-20260719-01.
 
@@ -196,7 +200,7 @@ Append-only serialization corrections are recorded by ADR-0024, ADR-0025 and ADR
 
 These decisions do not prove provider permission or production readiness.
 
-6. MX-02 semantic skeleton evidence
+## 6. MX-02 semantic skeleton evidence
 
 MX-02 established the provider-specific semantic boundary without importing or mutating Identity, Notification or Telegram internals.
 
@@ -212,7 +216,7 @@ Ambiguous provider outcome requires reconciliation and RECONCILE_FIRST.
 
 No raw provider payload, token, contact value or provider runtime was introduced.
 
-7. MX-03 inbound update and deduplication evidence
+## 7. MX-03 inbound update and deduplication evidence
 
 Inbound MAX provider data remains untrusted.
 
@@ -236,7 +240,7 @@ Fingerprint conflict and identity ambiguity remain explicit.
 
 No listener, endpoint, polling loop, persistence or provider call exists.
 
-8. MX-04 command and interaction normalization evidence
+## 8. MX-04 command and interaction normalization evidence
 
 Commands, callbacks, buttons and deep links remain separate MAX-specific untrusted inputs.
 
@@ -256,7 +260,7 @@ MAX Adapter does not mutate Beacon or Account.
 
 Exact command catalog, callback format, button UX and deep-link format remain open.
 
-9. MX-05 Mini App validation evidence
+## 9. MX-05 Mini App validation evidence
 
 Raw MAX WebAppData remains untrusted.
 
@@ -276,7 +280,7 @@ The auth-date freshness threshold remains unresolved.
 
 No frontend, screen, launch URL, runtime endpoint or validation implementation exists.
 
-10. MX-06 outbound mapping evidence
+## 10. MX-06 outbound mapping evidence
 
 One generic Notification attempt may be represented as one MAX provider request intent.
 
@@ -296,7 +300,7 @@ Retry and reconciliation remain recommendations under Notification policy.
 
 No live send, SDK, token, rendering implementation or provider request payload schema exists.
 
-11. MX-07 unknown-effect and reconciliation evidence
+## 11. MX-07 unknown-effect and reconciliation evidence
 
 Unknown effect is not success.
 
@@ -314,7 +318,7 @@ Generic Notification success/failure and retry policy remain Notification Delive
 
 No reconciliation execution, provider lookup, retry engine or manual-review workflow exists.
 
-12. MX-08 safe diagnostics and read-model evidence
+## 12. MX-08 safe diagnostics and read-model evidence
 
 The read model is an authorized safe projection only.
 
@@ -332,7 +336,7 @@ The read model has no mutation, provider-call, retry, reconciliation, Identity-l
 
 No projection builder, query handler, support UI or admin UI exists.
 
-13. MX-09 synthetic fixture and test evidence
+## 13. MX-09 synthetic fixture and test evidence
 
 The fixture manifest is synthetic-only.
 
@@ -352,41 +356,41 @@ The fixture manifest contains no raw provider payload, raw WebAppData, token, se
 
 The deterministic tests cover:
 
-exact exports and enum values;
+- exact exports and enum values;
 
-all twelve authoritative records;
+- all twelve authoritative records;
 
-model immutability and unknown-field rejection;
+- model immutability and unknown-field rejection;
 
-identity-reference consistency;
+- identity-reference consistency;
 
-eligibility matrices;
+- eligibility matrices;
 
-inbound intake and deduplication matrices;
+- inbound intake and deduplication matrices;
 
-personal-chat and blocked group/channel normalization;
+- personal-chat and blocked group/channel normalization;
 
-no-contact first-scope policy;
+- no-contact first-scope policy;
 
-Mini App validation matrices;
+- Mini App validation matrices;
 
-outbound request and provider-outcome matrices;
+- outbound request and provider-outcome matrices;
 
-reconcile-first matrices;
+- reconcile-first matrices;
 
-safe read-model projection;
+- safe read-model projection;
 
-false-success prohibition;
+- false-success prohibition;
 
-no-blind-retry prohibition;
+- no-blind-retry prohibition;
 
-duplicate-effect prevention;
+- duplicate-effect prevention;
 
-Identity and Notification ownership;
+- Identity and Notification ownership;
 
-Telegram/MAX provider separation;
+- Telegram/MAX provider separation;
 
-sensitive-data minimization.
+- sensitive-data minimization.
 
 The corrected architecture guard uses exact import allowlists.
 
@@ -396,21 +400,22 @@ Its negative and safe controls invoke the same reusable guard used for productio
 
 The accepted production MAX package contains only:
 
-src/mayak/modules/max_adapter/__init__.py
+- src/mayak/modules/max_adapter/__init__.py
 
-src/mayak/modules/max_adapter/contracts.py
+- src/mayak/modules/max_adapter/contracts.py
 
-14. Compatibility with Modules 01 through 09
-Owning module	Compatibility preserved by MAX Adapter
-01 Platform & Contracts	Uses common metadata/reference types and stable module boundary; no platform mutation
-02 Identity & Access	MAX identity remains external; account resolution, linking, authorization and merge remain Identity authority
-03 Entitlements & Billing	MAX provider input cannot grant tariff, entitlement, payment or subscription state
-04 Beacon Management	MAX may normalize an intent but cannot create or mutate Beacon state
-05 Avito Parser Access	MAX does not validate Avito URLs, parse listings or store raw Avito/provider payloads
-06 Scan Orchestration	MAX does not calculate baseline, anchors, differences, listing state or recovery
-07 Egress Routing	MAX does not choose Egress routes, leases, agents or transport state
-08 Notification Delivery	Notification owns generic outbox, attempts, retry policy and generic delivery lifecycle
-09 Telegram Adapter	Telegram and MAX payloads, identities and normalization remain separate provider-specific boundaries
+## 14. Compatibility with Modules 01 through 09
+| Owning module | Compatibility preserved by MAX Adapter |
+| --- | --- |
+| 01 Platform & Contracts | Uses common metadata/reference types and stable module boundary; no platform mutation |
+| 02 Identity & Access | MAX identity remains external; account resolution, linking, authorization and merge remain Identity authority |
+| 03 Entitlements & Billing | MAX provider input cannot grant tariff, entitlement, payment or subscription state |
+| 04 Beacon Management | MAX may normalize an intent but cannot create or mutate Beacon state |
+| 05 Avito Parser Access | MAX does not validate Avito URLs, parse listings or store raw Avito/provider payloads |
+| 06 Scan Orchestration | MAX does not calculate baseline, anchors, differences, listing state or recovery |
+| 07 Egress Routing | MAX does not choose Egress routes, leases, agents or transport state |
+| 08 Notification Delivery | Notification owns generic outbox, attempts, retry policy and generic delivery lifecycle |
+| 09 Telegram Adapter | Telegram and MAX payloads, identities and normalization remain separate provider-specific boundaries |
 
 Future Web Cabinet owns screens and web sessions.
 
@@ -418,31 +423,31 @@ Future Admin & Support owns operational UI and work-item execution.
 
 MAX safe read models do not create UI or mutation authority.
 
-15. Security and privacy evidence
+## 15. Security and privacy evidence
 
 The accepted Module 10 artifacts contain no:
 
-raw MAX bot token;
+- raw MAX bot token;
 
-webhook secret;
+- webhook secret;
 
-private key;
+- private key;
 
-provider credential;
+- provider credential;
 
-real raw MAX provider payload;
+- real raw MAX provider payload;
 
-real Mini App WebAppData;
+- real Mini App WebAppData;
 
-real phone/contact data;
+- real phone/contact data;
 
-private-message archive;
+- private-message archive;
 
-unnecessary profile data;
+- unnecessary profile data;
 
-legal or personal provider document;
+- legal or personal provider document;
 
-live provider response body.
+- live provider response body.
 
 Safe references are opaque.
 
@@ -454,169 +459,169 @@ The fixture and test scope is synthetic and deterministic.
 
 No network is required by accepted semantic tests.
 
-16. Forbidden artifact absence
+## 16. Forbidden artifact absence
 
 The accepted Module 10 scope contains no:
 
-MAX partner-profile creation;
+- MAX partner-profile creation;
 
-MAX bot creation;
+- MAX bot creation;
 
-moderation submission;
+- moderation submission;
 
-token storage or rotation implementation;
+- token storage or rotation implementation;
 
-Webhook subscription;
+- Webhook subscription;
 
-Webhook endpoint;
+- Webhook endpoint;
 
-Long Polling loop;
+- Long Polling loop;
 
-Mini App frontend;
+- Mini App frontend;
 
-Web Cabinet screen;
+- Web Cabinet screen;
 
-provider SDK;
+- provider SDK;
 
-provider HTTP client;
+- provider HTTP client;
 
-live provider call;
+- live provider call;
 
-physical database schema;
+- physical database schema;
 
-ORM model;
+- ORM model;
 
-migration;
+- migration;
 
-queue;
+- queue;
 
-broker;
+- broker;
 
-worker;
+- worker;
 
-scheduler;
+- scheduler;
 
-service;
+- service;
 
-listener;
+- listener;
 
-runtime configuration;
+- runtime configuration;
 
-port;
+- port;
 
-domain;
+- domain;
 
-TLS or certificate configuration;
+- TLS or certificate configuration;
 
-Docker change;
+- Docker change;
 
-CI/CD change;
+- CI/CD change;
 
-deployment change;
+- deployment change;
 
-dependency or lockfile change.
+- dependency or lockfile change.
 
-17. Remaining open decisions
+## 17. Remaining open decisions
 
 The following numbered decisions remain open where applicable:
 
-OD-006 — exact phone/password and recovery policy;
+- OD-006 — exact phone/password and recovery policy;
 
-OD-007 — whether phone is ever required;
+- OD-007 — whether phone is ever required;
 
-OD-008 — account merge policy;
+- OD-008 — account merge policy;
 
-OD-012 — channels beyond Telegram/MAX;
+- OD-012 — channels beyond Telegram/MAX;
 
-OD-013 — retention/deletion periods for history, logs and personal data;
+- OD-013 — retention/deletion periods for history, logs and personal data;
 
-OD-014 — future Web Cabinet screen composition and analytics depth.
+- OD-014 — future Web Cabinet screen composition and analytics depth.
 
 Module-specific unresolved decisions include:
 
-whether the owner satisfies MAX partner eligibility;
+- whether the owner satisfies MAX partner eligibility;
 
-verified-profile requirements;
+- verified-profile requirements;
 
-bot creation and naming;
+- bot creation and naming;
 
-moderation submission and acceptance;
+- moderation submission and acceptance;
 
-credential availability and storage;
+- credential availability and storage;
 
-production provider access;
+- production provider access;
 
-endpoint/domain/TLS/port/certificate ownership;
+- endpoint/domain/TLS/port/certificate ownership;
 
-Webhook operations topology and acknowledgement point;
+- Webhook operations topology and acknowledgement point;
 
-approved Long Polling development/test environments;
+- approved Long Polling development/test environments;
 
-supported provider update families;
+- supported provider update families;
 
-future group/channel support;
+- future group/channel support;
 
-command catalog;
+- command catalog;
 
-button/callback UX and payload format;
+- button/callback UX and payload format;
 
-deep-link parameter format;
+- deep-link parameter format;
 
-future contact-sharing adoption;
+- future contact-sharing adoption;
 
-maximum accepted Mini App auth-date age;
+- maximum accepted Mini App auth-date age;
 
-Mini App launch surfaces and screens;
+- Mini App launch surfaces and screens;
 
-provider retry count, delays, backoff and rate budgets;
+- provider retry count, delays, backoff and rate budgets;
 
-provider payload retention/redaction granularity;
+- provider payload retention/redaction granularity;
 
-adapter persistence schema, indexes and constraints;
+- adapter persistence schema, indexes and constraints;
 
-provider SDK/library and transport implementation.
+- provider SDK/library and transport implementation.
 
 Open means blocked.
 
 No future task may invent these values.
 
-18. Runtime and provider gates still blocked
+## 18. Runtime and provider gates still blocked
 
 A future runtime step requires separate accepted evidence and exact authorization for at least:
 
-MAX partner eligibility.
+- MAX partner eligibility.
 
-Verified profile or equivalent provider prerequisite.
+- Verified profile or equivalent provider prerequisite.
 
-Bot creation and moderation status.
+- Bot creation and moderation status.
 
-Secret-presence and credential-storage policy.
+- Secret-presence and credential-storage policy.
 
-Exact provider documentation revalidation.
+- Exact provider documentation revalidation.
 
-Provider SDK or direct transport choice.
+- Provider SDK or direct transport choice.
 
-Personal-chat recipient and authorization rules.
+- Personal-chat recipient and authorization rules.
 
-Webhook endpoint ownership and security controls.
+- Webhook endpoint ownership and security controls.
 
-Long Polling development/test environment policy, if used.
+- Long Polling development/test environment policy, if used.
 
-Durable intake, deduplication and marker-advancement commit point.
+- Durable intake, deduplication and marker-advancement commit point.
 
-Persistence schema and migration gate.
+- Persistence schema and migration gate.
 
-Notification runtime integration.
+- Notification runtime integration.
 
-Retry, reconciliation and rate-policy values.
+- Retry, reconciliation and rate-policy values.
 
-Logging, redaction, retention and deletion policy.
+- Logging, redaction, retention and deletion policy.
 
-Operations, monitoring, deployment and rollback evidence.
+- Operations, monitoring, deployment and rollback evidence.
 
 This handoff authorizes none of those runtime steps.
 
-19. Parallel-main and publication evidence
+## 19. Parallel-main and publication evidence
 
 GitHub main remained the source of truth.
 
@@ -628,6 +633,8 @@ Module 10 did not rewrite parallel history.
 
 Historical MX-01 commits were not amended to add commit trailers that were not part of their accepted publication.
 
+The rejected MX-10 serialization commit is preserved in history and corrected by a new fast-forward commit.
+
 No accepted step pushed over a changed main.
 
 No accepted step used rebase, merge, cherry-pick, reset, amend, squash or force-push.
@@ -636,32 +643,32 @@ Project publication used the project-specific deploy key with IdentitiesOnly=yes
 
 No private key content was exposed.
 
-20. Final semantic acceptance statement
+## 20. Final semantic acceptance statement
 
-The latest accepted semantic/test SHA before this handoff is:
+The latest accepted semantic/test SHA before the MX-10 handoff is:
 
 16c744f3e5479081b4ebe93fc95735016627198a
 
 At that SHA:
 
-governance capture is present;
+- governance capture is present;
 
-twelve authoritative records are present;
+- twelve authoritative records are present;
 
-fifteen supporting enums are present;
+- fifteen supporting enums are present;
 
-twenty-seven contracts exports are present;
+- twenty-seven contracts exports are present;
 
-twenty-eight package exports are present;
+- twenty-eight package exports are present;
 
-fifty-three synthetic fixture vectors are present;
+- fifty-three synthetic fixture vectors are present;
 
-the corrected reusable architecture boundary guard is present;
+- the corrected reusable architecture boundary guard is present;
 
-the full deterministic test suite reports 3811 passed;
+- the full deterministic test suite reports 3811 passed;
 
-no provider runtime, persistence, dependency, infrastructure or secret artifact is authorized or present in Module 10 scope.
+- no provider runtime, persistence, dependency, infrastructure or secret artifact is authorized or present in Module 10 scope.
 
-Upon independent GitHub acceptance of the commit adding this document, Module 10 roadmap steps MX-00 through MX-10 are complete for the accepted governance/semantic/synthetic-test/evidence scope.
+- Upon independent GitHub acceptance of the correction commit adding this exact Markdown document, Module 10 roadmap steps MX-00 through MX-10 are complete for the accepted governance/semantic/synthetic-test/evidence scope.
 
-This completion does not authorize MAX production implementation.
+- This completion does not authorize MAX production implementation.
