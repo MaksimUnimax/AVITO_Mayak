@@ -425,6 +425,124 @@ class TelegramProviderModeBoundary(_TelegramContract):
         raise ValueError("unsupported provider mode boundary state")
 
 
+class TelegramExistingBotEvidenceState(str, Enum):
+    VERIFIED_REDACTED_EVIDENCE = "VERIFIED_REDACTED_EVIDENCE"
+    EVIDENCE_INCOMPLETE = "EVIDENCE_INCOMPLETE"
+    EVIDENCE_MISMATCH = "EVIDENCE_MISMATCH"
+
+
+class TelegramExistingBotMetadata(_TelegramContract):
+    telegram_existing_bot_metadata_id: str = Field(min_length=1)
+    telegram_bot_username: str = Field(min_length=1)
+    telegram_bot_numeric_id: str = Field(min_length=1, pattern=r"^[1-9][0-9]*$")
+    owner_provisioning_reference_id: str = Field(min_length=1)
+    botfather_creation_completed: Literal[True] = True
+    telegram_bot_numeric_id_is_external_provider_identifier: Literal[True] = True
+    telegram_bot_numeric_id_is_internal_account_id: Literal[False] = False
+    botfather_reconfiguration_authorized: Literal[False] = False
+
+
+class TelegramProtectedSecretPresenceEvidence(_TelegramContract):
+    telegram_protected_secret_presence_evidence_id: str = Field(min_length=1)
+    protected_secret_reference: str = Field(min_length=1)
+    observed_owner: str = Field(min_length=1)
+    observed_group: str = Field(min_length=1)
+    observed_mode: str = Field(min_length=1, pattern=r"0[0-7]{3}")
+    observed_size_bytes: int = Field(gt=0)
+    server_evidence_reference_id: str = Field(min_length=1)
+    evidence_is_presence_and_metadata_only: Literal[True] = True
+    secret_content_read: Literal[False] = False
+    secret_content_printed: Literal[False] = False
+    secret_content_hashed: Literal[False] = False
+    secret_content_fingerprinted: Literal[False] = False
+    secret_content_encoded: Literal[False] = False
+    secret_content_copied: Literal[False] = False
+    secret_content_transmitted: Literal[False] = False
+    secret_modified: Literal[False] = False
+
+
+class TelegramPublicBotMetadataPresenceEvidence(_TelegramContract):
+    telegram_public_bot_metadata_presence_evidence_id: str = Field(min_length=1)
+    public_metadata_reference: str = Field(min_length=1)
+    observed_owner: str = Field(min_length=1)
+    observed_group: str = Field(min_length=1)
+    observed_mode: str = Field(min_length=1, pattern=r"0[0-7]{3}")
+    observed_size_bytes: int = Field(gt=0)
+    server_evidence_reference_id: str = Field(min_length=1)
+    evidence_is_presence_and_metadata_only: Literal[True] = True
+    file_content_read: Literal[False] = False
+    file_modified: Literal[False] = False
+
+
+class TelegramExistingBotOperationalGate(_TelegramContract):
+    telegram_existing_bot_operational_gate_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    owner_direction_reference_id: str = Field(min_length=1)
+    state: TelegramExistingBotEvidenceState
+    bot_metadata: TelegramExistingBotMetadata | None = None
+    protected_secret_presence_evidence: TelegramProtectedSecretPresenceEvidence | None = None
+    public_bot_metadata_presence_evidence: TelegramPublicBotMetadataPresenceEvidence | None = None
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
+    provider_runtime_authorized: Literal[False] = False
+    provider_call_authorized: Literal[False] = False
+    webhook_authorized: Literal[False] = False
+    get_updates_authorized: Literal[False] = False
+    mini_app_authorized: Literal[False] = False
+    protected_secret_consumption_authorized: Literal[False] = False
+    botfather_reconfiguration_authorized: Literal[False] = False
+    token_rotation_authorized: Literal[False] = False
+    token_revocation_authorized: Literal[False] = False
+    token_deletion_authorized: Literal[False] = False
+    secret_relocation_authorized: Literal[False] = False
+    secret_permission_change_authorized: Literal[False] = False
+    reason_code: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_state_matrix(self) -> "TelegramExistingBotOperationalGate":
+        complete = all(
+            (
+                self.bot_metadata,
+                self.protected_secret_presence_evidence,
+                self.public_bot_metadata_presence_evidence,
+            )
+        )
+        if self.state is TelegramExistingBotEvidenceState.EVIDENCE_INCOMPLETE:
+            if complete or self.blocking_decision_reference_id is None:
+                raise ValueError(
+                    "incomplete evidence requires missing evidence and blocking reference"
+                )
+            return self
+        if not complete:
+            raise ValueError("verified or mismatched evidence requires all evidence objects")
+        bot = self.bot_metadata
+        secret = self.protected_secret_presence_evidence
+        public = self.public_bot_metadata_presence_evidence
+        assert bot is not None and secret is not None and public is not None
+        matches = (
+            bot.telegram_bot_username == "@signalings_bot"
+            and bot.telegram_bot_numeric_id == "8664835407"
+            and secret.protected_secret_reference == "/etc/avito-mayak/secrets/telegram_bot_token"
+            and secret.observed_owner == "root"
+            and secret.observed_group == "root"
+            and secret.observed_mode == "0600"
+            and secret.observed_size_bytes > 0
+            and public.public_metadata_reference == "/etc/avito-mayak/telegram-bot.conf"
+            and public.observed_owner == "root"
+            and public.observed_group == "root"
+            and public.observed_mode == "0644"
+            and public.observed_size_bytes > 0
+        )
+        if self.state is TelegramExistingBotEvidenceState.VERIFIED_REDACTED_EVIDENCE:
+            if not matches or self.blocking_decision_reference_id is not None:
+                raise ValueError("verified state requires exact non-secret metadata and no block")
+        elif self.state is TelegramExistingBotEvidenceState.EVIDENCE_MISMATCH:
+            if matches or self.blocking_decision_reference_id is None:
+                raise ValueError(
+                    "mismatch state requires differing metadata and blocking reference"
+                )
+        return self
+
+
 __all__ = [
     "TelegramAccountLinkReference",
     "TelegramIdentityResolutionOutcome",
@@ -444,4 +562,9 @@ __all__ = [
     "TelegramWebhookModeRequirements",
     "TelegramGetUpdatesModeRequirements",
     "TelegramProviderModeBoundary",
+    "TelegramExistingBotEvidenceState",
+    "TelegramExistingBotMetadata",
+    "TelegramProtectedSecretPresenceEvidence",
+    "TelegramPublicBotMetadataPresenceEvidence",
+    "TelegramExistingBotOperationalGate",
 ]
