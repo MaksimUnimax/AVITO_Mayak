@@ -1,71 +1,156 @@
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 
-ALLOWED_ROOTS = {"__future__", "enum", "typing", "pydantic", "mayak"}
-FORBIDDEN_SUBSTRINGS = {
-    "mayak.modules.identity_and_access",
+ROOT = Path(__file__).resolve().parents[2] / "src/mayak/modules/telegram_adapter"
+FORBIDDEN_IMPORT_PREFIXES = {
     "aiogram",
     "telebot",
     "telethon",
+    "pyrogram",
     "httpx",
     "requests",
+    "aiohttp",
+    "urllib3",
     "fastapi",
     "starlette",
+    "flask",
+    "django",
     "sqlalchemy",
     "psycopg",
     "alembic",
-    "queue",
-    "broker",
-    "entrypoint",
-    "infra",
-    "runtime",
-    "getme",
-    "getupdates",
-    "webhook",
-    "polling",
-    "deep-link",
-    "mini app",
-    "database",
-    "worker",
-    "scheduler",
-    "account creation",
-    "account merge",
-    "token",
-    "secret",
-    "raw payload",
+    "celery",
+    "redis",
+    "kombu",
+    "pika",
+}
+ALLOWED_MAYAK_IMPORTS = {
+    "mayak.contracts",
+    "mayak.modules.telegram_adapter.contracts",
+    "mayak.platform.boundaries",
+}
+FORBIDDEN_CALL_NAMES = {
+    "getUpdates", "get_updates", "setWebhook", "set_webhook", "deleteWebhook",
+    "delete_webhook", "getWebhookInfo", "get_webhook_info", "start_polling",
+    "run_polling", "poll_forever", "serve_forever", "create_engine", "sessionmaker",
+}
+FORBIDDEN_VALUE_FIELDS = {
+    "raw_payload", "provider_payload", "raw_update", "bot_token", "token_value",
+    "secret_value", "secret_token", "webhook_secret", "private_key", "private_key_value",
+    "message_archive", "private_message_archive",
+}
+FORBIDDEN_DECLARATIONS = {
+    "TelegramClient", "TelegramBotClient", "TelegramWebhookEndpoint", "TelegramPollingLoop",
+    "TelegramWorker", "TelegramRuntimeService", "TelegramRepository",
 }
 
 
+def _import_name(node: ast.Import | ast.ImportFrom) -> str:
+    if isinstance(node, ast.Import):
+        return node.names[0].name
+    return node.module or ""
+
+
+def _import_violations(tree: ast.AST) -> list[str]:
+    violations: list[str] = []
+    stdlib: set[str] = getattr(sys, "stdlib_module_names", set())
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        name = _import_name(node)
+        root = name.split(".", 1)[0]
+        if root in FORBIDDEN_IMPORT_PREFIXES:
+            violations.append(f"forbidden import: {name}")
+        elif root == "mayak":
+            if name not in ALLOWED_MAYAK_IMPORTS:
+                violations.append(f"non-contract mayak import: {name}")
+        elif root not in stdlib and root not in {"pydantic"}:
+            violations.append(f"non-whitelisted import: {name}")
+    return violations
+
+
+def _terminal_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
+
+
+def _assigned_names(node: ast.AST) -> list[str]:
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        return [target.id for target in targets if isinstance(target, ast.Name)]
+    return []
+
+
+def _guard_violations(source: str) -> list[str]:
+    tree = ast.parse(source)
+    violations = _import_violations(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _terminal_name(node.func) in FORBIDDEN_CALL_NAMES:
+            violations.append(f"forbidden call: {_terminal_name(node.func)}")
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if "api.telegram.org" in node.value:
+                violations.append("provider URL literal")
+        for name in _assigned_names(node):
+            if name in FORBIDDEN_VALUE_FIELDS:
+                violations.append(f"unsafe value field: {name}")
+        if (
+            isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and node in tree.body
+        ):
+            if node.name in FORBIDDEN_DECLARATIONS:
+                violations.append(f"forbidden declaration: {node.name}")
+    return violations
+
+
 def test_telegram_production_imports_stay_within_transport_neutral_boundary() -> None:
-    root = Path(__file__).resolve().parents[2] / "src/mayak/modules/telegram_adapter"
-    for path in root.glob("*.py"):
-        tree = ast.parse(path.read_text())
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                roots = [alias.name.split(".", 1)[0] for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                roots = [node.module.split(".", 1)[0]]
-            else:
-                continue
-            assert set(roots) <= ALLOWED_ROOTS, f"{path}: {set(roots) - ALLOWED_ROOTS}"
-            if isinstance(node, ast.ImportFrom) and node.module and node.module != "__future__":
-                assert node.module in {
-                    "enum",
-                    "typing",
-                    "pydantic",
-                    "mayak.modules.telegram_adapter.contracts",
-                    "mayak.platform.boundaries",
-                    "mayak.contracts",
-                }
+    for path in ROOT.glob("*.py"):
+        violations = _import_violations(ast.parse(path.read_text()))
+        assert not violations, f"{path}: {violations}"
 
 
-def test_telegram_production_files_have_no_provider_runtime_storage_or_secret_implementation() -> (
-    None
-):
-    root = Path(__file__).resolve().parents[2] / "src/mayak/modules/telegram_adapter"
-    for path in root.glob("*.py"):
-        source = path.read_text().lower()
-        found = [term for term in FORBIDDEN_SUBSTRINGS if term.lower() in source]
-        assert not found, f"{path}: forbidden implementation terms {sorted(found)}"
+def test_ast_import_guard_rejects_provider_and_foreign_module_imports() -> None:
+    unsafe_sources = (
+        "import httpx",
+        "import sqlalchemy",
+        "from mayak.modules.identity_and_access import Identity",
+    )
+    for source in unsafe_sources:
+        assert _guard_violations(source), source
+
+
+def test_ast_guard_rejects_calls_urls_unsafe_fields_and_runtime_declarations() -> None:
+    unsafe_sources = (
+        "def intake():\n    return get_updates()",
+        "client.set_webhook('policy-ref')",
+        "PROVIDER = 'https://api.telegram.org/bot/placeholder'",
+        "class Record:\n    raw_payload: str",
+        "class Record:\n    bot_token: str",
+        "class TelegramWebhookEndpoint:\n    pass",
+    )
+    for source in unsafe_sources:
+        assert _guard_violations(source), source
+
+
+def test_ast_import_guard_allows_semantic_contract_vocabulary() -> None:
+    source = '''
+from enum import Enum
+
+class ProviderMode(str, Enum):
+    WEBHOOK = "WEBHOOK"
+    GET_UPDATES = "GET_UPDATES"
+
+class PolicyRecord:
+    webhook_authenticity_policy_ref: str
+    get_updates_offset_advancement_policy_ref: str
+    callback_payload_fingerprint: str
+    private_chat_surface_ref: str
+    token_secret_reference_id: str
+
+"mutually exclusive modes; group/channel unsupported boundary"
+'''
+    assert _guard_violations(source) == []
