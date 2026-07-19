@@ -71,6 +71,13 @@ class MaxCommandSourceKind(Enum):
     DEEP_LINK = "DEEP_LINK"
 
 
+class MaxCommandSurfaceKind(Enum):
+    PERSONAL_CHAT = "PERSONAL_CHAT"
+    GROUP = "GROUP"
+    CHANNEL = "CHANNEL"
+    UNKNOWN = "UNKNOWN"
+
+
 class MaxCommandNormalizationState(Enum):
     NORMALIZED = "NORMALIZED"
     IGNORED = "IGNORED"
@@ -318,8 +325,110 @@ class MaxCommandEnvelope(_MaxContract):
     normalized_product_intent_reference_id: str | None = Field(default=None, min_length=1)
     state: MaxCommandNormalizationState
     reason_code: str = Field(min_length=1)
+    intake_record: MaxUpdateIntakeRecord
+    deduplication_record: MaxUpdateDeduplicationRecord
+    surface_kind: MaxCommandSurfaceKind
+    normalization_policy_reference_id: str = Field(min_length=1)
+    owner_contract_reference_id: str | None = Field(default=None, min_length=1)
+    ambiguity_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
+    provider_payload_retained: Literal[False] = False
+    provider_payload_trusted: Literal[False] = False
+    telegram_payload_authority: Literal[False] = False
+    internal_authorization_authority: Literal[False] = False
+    account_merge_authority: Literal[False] = False
+    beacon_mutation_authority: Literal[False] = False
+    notification_eligibility_authority: Literal[False] = False
+    destructive_action_authority: Literal[False] = False
+    conversation_state_machine_authority: Literal[False] = False
+    provider_runtime_authority: Literal[False] = False
+    exact_command_catalog_selected: Literal[False] = False
+    exact_callback_payload_format_selected: Literal[False] = False
+    exact_deep_link_format_selected: Literal[False] = False
     client_payload_authority: Literal[False] = False
     business_execution_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_normalization_prerequisites(self) -> "MaxCommandEnvelope":
+        if self.intake_record.state is not MaxUpdateIntakeState.ACCEPTED:
+            raise ValueError("command normalization requires accepted intake")
+        if self.intake_record.admission_state is not MaxUpdateAdmissionState.VERIFIED:
+            raise ValueError("command normalization requires verified intake admission")
+        if self.intake_record.structural_classification is not MaxUpdateStructuralClass.SUPPORTED_CANDIDATE:
+            raise ValueError("command normalization requires supported candidate intake")
+        if self.intake_record.normalization_reference_id != self.max_command_envelope_id:
+            raise ValueError("intake normalization reference must match command envelope")
+        if self.intake_record.provider_identity is None:
+            raise ValueError("accepted intake requires provider identity for command normalization")
+        if self.intake_record.provider_identity != self.provider_identity:
+            raise ValueError("intake provider identity must match command provider identity")
+
+        dedup = self.deduplication_record
+        if dedup.state is not MaxUpdateDeduplicationState.NEW_UPDATE:
+            raise ValueError("only NEW_UPDATE deduplication may enter command normalization")
+        if not dedup.adapter_processing_authorized:
+            raise ValueError("NEW_UPDATE must authorize adapter processing")
+        if dedup.current_intake_record_id != self.intake_record.max_update_intake_record_id:
+            raise ValueError("dedup current intake reference must match intake record")
+        if dedup.max_update_reference != self.intake_record.max_update_reference:
+            raise ValueError("dedup update reference must match intake record")
+        if dedup.idempotency_key != self.intake_record.idempotency_key:
+            raise ValueError("dedup idempotency key must match intake record")
+        if dedup.idempotency_scope != self.intake_record.idempotency_scope:
+            raise ValueError("dedup idempotency scope must match intake record")
+        if dedup.fingerprint != self.intake_record.fingerprint:
+            raise ValueError("dedup fingerprint must match intake record")
+
+        if self.surface_kind is MaxCommandSurfaceKind.PERSONAL_CHAT:
+            if self.state is MaxCommandNormalizationState.NORMALIZED and self.provider_identity.max_chat_id is None:
+                raise ValueError("normalized personal chat requires MAX chat identity")
+        elif self.surface_kind in {MaxCommandSurfaceKind.GROUP, MaxCommandSurfaceKind.CHANNEL}:
+            if self.state is not MaxCommandNormalizationState.BLOCKED:
+                raise ValueError("group and channel normalization is blocked")
+            if self.blocking_decision_reference_id is None:
+                raise ValueError("blocked group or channel requires blocking decision")
+            if self.normalized_product_intent_reference_id is not None or self.owner_contract_reference_id is not None:
+                raise ValueError("blocked group or channel cannot carry intent or owner reference")
+        elif self.surface_kind is MaxCommandSurfaceKind.UNKNOWN:
+            if self.state not in {
+                MaxCommandNormalizationState.AMBIGUOUS,
+                MaxCommandNormalizationState.BLOCKED,
+            }:
+                raise ValueError("unknown command surface must be ambiguous or blocked")
+
+        if self.state is MaxCommandNormalizationState.NORMALIZED:
+            if self.surface_kind is not MaxCommandSurfaceKind.PERSONAL_CHAT:
+                raise ValueError("normalized command requires personal chat")
+            if self.normalized_product_intent_reference_id is None:
+                raise ValueError("normalized command requires opaque intent reference")
+            if self.owner_contract_reference_id is None:
+                raise ValueError("normalized command requires owner contract reference")
+            if self.ambiguity_evidence_reference_id is not None or self.blocking_decision_reference_id is not None:
+                raise ValueError("normalized command cannot carry ambiguity or blocking evidence")
+        elif self.state in {
+            MaxCommandNormalizationState.IGNORED,
+            MaxCommandNormalizationState.UNSUPPORTED,
+            MaxCommandNormalizationState.INVALID,
+        }:
+            if self.normalized_product_intent_reference_id is not None or self.owner_contract_reference_id is not None:
+                raise ValueError("non-normalized command cannot carry intent or owner reference")
+            if self.ambiguity_evidence_reference_id is not None or self.blocking_decision_reference_id is not None:
+                raise ValueError("ignored, unsupported or invalid command cannot carry ambiguity or blocking evidence")
+        elif self.state is MaxCommandNormalizationState.AMBIGUOUS:
+            if self.normalized_product_intent_reference_id is not None or self.owner_contract_reference_id is not None:
+                raise ValueError("ambiguous command cannot carry intent or owner reference")
+            if self.ambiguity_evidence_reference_id is None:
+                raise ValueError("ambiguous command requires ambiguity evidence")
+            if self.blocking_decision_reference_id is not None:
+                raise ValueError("ambiguous command cannot carry blocking decision")
+        elif self.state is MaxCommandNormalizationState.BLOCKED:
+            if self.normalized_product_intent_reference_id is not None or self.owner_contract_reference_id is not None:
+                raise ValueError("blocked command cannot carry intent or owner reference")
+            if self.ambiguity_evidence_reference_id is not None:
+                raise ValueError("blocked command cannot carry ambiguity evidence")
+            if self.blocking_decision_reference_id is None:
+                raise ValueError("blocked command requires blocking decision")
+        return self
 
 
 class MaxContactValidationResult(_MaxContract):
@@ -441,6 +550,7 @@ __all__ = [
     "MaxCommandEnvelope",
     "MaxCommandNormalizationState",
     "MaxCommandSourceKind",
+    "MaxCommandSurfaceKind",
     "MaxContactValidationResult",
     "MaxContactValidationState",
     "MaxEligibilityEvidenceReference",
