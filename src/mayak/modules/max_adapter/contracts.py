@@ -447,26 +447,107 @@ class MaxMiniAppValidationResult(_MaxContract):
     max_mini_app_validation_result_id: str = Field(min_length=1)
     metadata: ContractMetadata
     input_fingerprint: IdempotencyFingerprint
+    max_bot_ref: str = Field(min_length=1)
+    launch_context_reference_id: str = Field(min_length=1)
+    validation_policy_reference_id: str = Field(min_length=1)
     state: MaxMiniAppValidationState
     provider_identity: MaxProviderIdentity | None = None
     validation_evidence_reference_id: str | None = Field(default=None, min_length=1)
     auth_date_policy_reference_id: str | None = Field(default=None, min_length=1)
+    canonicalization_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    hash_validation_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    auth_date_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
     reason_code: str = Field(min_length=1)
     server_side_validation_performed: bool
     client_launch_data_trusted: Literal[False] = False
     authorization_authority: Literal[False] = False
+    raw_web_app_data_retained: Literal[False] = False
+    raw_web_app_data_trusted: Literal[False] = False
+    client_side_validation_authority: Literal[False] = False
+    internal_account_authority: Literal[False] = False
+    identity_link_authority: Literal[False] = False
+    web_cabinet_screen_authority: Literal[False] = False
+    mini_app_frontend_authority: Literal[False] = False
+    runtime_endpoint_authority: Literal[False] = False
+    provider_configuration_authority: Literal[False] = False
+    token_material_present: Literal[False] = False
+    auth_date_threshold_defined_here: Literal[False] = False
+    validated_external_identity_only: Literal[True] = True
+    server_side_authorization_still_required: Literal[True] = True
 
     @model_validator(mode="after")
     def _validate_server_evidence(self) -> "MaxMiniAppValidationResult":
-        if self.state is MaxMiniAppValidationState.VERIFIED:
+        if self.state is MaxMiniAppValidationState.BLOCKED:
+            if self.server_side_validation_performed:
+                raise ValueError("BLOCKED Mini App result cannot claim server validation")
+            if self.validation_evidence_reference_id is not None:
+                raise ValueError("BLOCKED Mini App result cannot carry validation evidence")
+            if self.blocking_decision_reference_id is None:
+                raise ValueError("BLOCKED Mini App result requires blocking decision reference")
+        else:
             if not self.server_side_validation_performed:
-                raise ValueError("VERIFIED Mini App result requires server validation")
+                raise ValueError("non-BLOCKED Mini App result requires server validation")
+            if self.validation_evidence_reference_id is None:
+                raise ValueError("non-BLOCKED Mini App result requires validation evidence")
+            if self.blocking_decision_reference_id is not None:
+                raise ValueError("non-BLOCKED Mini App result cannot carry blocking decision reference")
+
+        if self.state is MaxMiniAppValidationState.VERIFIED:
             if self.provider_identity is None:
                 raise ValueError("VERIFIED Mini App result requires provider identity")
-            if self.validation_evidence_reference_id is None:
-                raise ValueError("VERIFIED Mini App result requires validation evidence")
+            if self.provider_identity.max_bot_ref != self.max_bot_ref:
+                raise ValueError("provider identity bot reference must match Mini App bot reference")
+            if self.auth_date_policy_reference_id is None:
+                raise ValueError("VERIFIED Mini App result requires auth-date policy reference")
+            if self.canonicalization_evidence_reference_id is None:
+                raise ValueError("VERIFIED Mini App result requires canonicalization evidence")
+            if self.hash_validation_evidence_reference_id is None:
+                raise ValueError("VERIFIED Mini App result requires hash validation evidence")
+            if self.auth_date_evidence_reference_id is None:
+                raise ValueError("VERIFIED Mini App result requires auth-date evidence")
         elif self.provider_identity is not None:
             raise ValueError("non-VERIFIED Mini App result cannot carry provider identity")
+
+        if self.state is MaxMiniAppValidationState.REJECTED:
+            if self.canonicalization_evidence_reference_id is None:
+                raise ValueError("REJECTED Mini App result requires canonicalization evidence")
+            if self.hash_validation_evidence_reference_id is None:
+                raise ValueError("REJECTED Mini App result requires hash validation evidence")
+            if self.auth_date_policy_reference_id is not None:
+                raise ValueError("REJECTED Mini App result cannot carry auth-date policy reference")
+            if self.auth_date_evidence_reference_id is not None:
+                raise ValueError("REJECTED Mini App result cannot carry auth-date evidence")
+        elif self.state is MaxMiniAppValidationState.STALE:
+            if self.auth_date_policy_reference_id is None:
+                raise ValueError("STALE Mini App result requires auth-date policy reference")
+            if self.canonicalization_evidence_reference_id is None:
+                raise ValueError("STALE Mini App result requires canonicalization evidence")
+            if self.hash_validation_evidence_reference_id is None:
+                raise ValueError("STALE Mini App result requires hash validation evidence")
+            if self.auth_date_evidence_reference_id is None:
+                raise ValueError("STALE Mini App result requires auth-date evidence")
+        elif self.state in {
+            MaxMiniAppValidationState.MALFORMED,
+            MaxMiniAppValidationState.MISSING_HASH,
+        }:
+            if self.auth_date_policy_reference_id is not None:
+                raise ValueError(f"{self.state.value} Mini App result cannot carry auth-date policy reference")
+            if self.canonicalization_evidence_reference_id is not None:
+                raise ValueError(f"{self.state.value} Mini App result cannot carry canonicalization evidence")
+            if self.hash_validation_evidence_reference_id is not None:
+                raise ValueError(f"{self.state.value} Mini App result cannot carry hash validation evidence")
+            if self.auth_date_evidence_reference_id is not None:
+                raise ValueError(f"{self.state.value} Mini App result cannot carry auth-date evidence")
+        elif self.state is MaxMiniAppValidationState.BLOCKED:
+            if self.auth_date_policy_reference_id is not None:
+                raise ValueError("BLOCKED Mini App result cannot carry auth-date policy reference")
+            if self.canonicalization_evidence_reference_id is not None:
+                raise ValueError("BLOCKED Mini App result cannot carry canonicalization evidence")
+            if self.hash_validation_evidence_reference_id is not None:
+                raise ValueError("BLOCKED Mini App result cannot carry hash validation evidence")
+            if self.auth_date_evidence_reference_id is not None:
+                raise ValueError("BLOCKED Mini App result cannot carry auth-date evidence")
         return self
 
 
