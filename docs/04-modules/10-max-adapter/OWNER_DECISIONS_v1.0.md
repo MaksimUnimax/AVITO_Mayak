@@ -1,57 +1,55 @@
 Маяк Авито — MAX Adapter Owner Decisions v1.0
 1. Metadata
 
-version: 1.0
+Version: 1.0
 
-date: 2026-07-19
+Date: 2026-07-19
 
-module: 10-max-adapter
+Module: 10-max-adapter
 
-roadmap step: MX-01
+Roadmap step: MX-01
 
-technical task: MX-01-MAX-OWNER-DECISION-CAPTURE-20260719-01
+Technical task: MX-01-MAX-OWNER-DECISION-CAPTURE-20260719-01
 
-governance classification: APPROVED owner decision capture
+Governance classification: APPROVED owner decision capture
 
-status: APPROVED_OWNER_INPUT_PENDING_INDEPENDENT_GITHUB_ACCEPTANCE
+Status: APPROVED_OWNER_INPUT_PENDING_INDEPENDENT_GITHUB_ACCEPTANCE
 
-expected base: 9fff874f97ca74536e62a01ee2b6811c61c5cd8f
+Source-of-truth playbook: docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md
 
-source-of-truth playbook: docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md
+Scope: documentation/governance-only
 
-scope: documentation/governance-only
-
-this document is not product code, provider runtime, persistence, deployment, provider permission evidence or permission to implement
+This document is not product code, provider runtime, persistence, deployment, provider permission evidence or permission to implement.
 
 2. Purpose and authority
 
-This document freezes the owner-provided MAX Adapter decisions required for Module 10 roadmap step MX-01.
+This document freezes the eight owner-provided MAX Adapter decisions required for Module 10 roadmap step MX-01.
 
-These decisions may be used by later exact semantic tasks only after the publishing commit is independently verified and accepted against public GitHub main.
+These decisions may be used by later exact semantic tasks only after the publishing and corrective commits are independently verified and accepted against public GitHub main.
 
-This document records owner product direction. It does not claim new official MAX provider facts, partner eligibility, verified-profile status, bot availability, moderation acceptance, token availability, provider permission or production readiness.
+This document records owner product direction. It does not claim MAX partner eligibility, verified-profile status, bot availability, moderation acceptance, token availability, provider permission or production readiness.
 
-Public GitHub main, approved governance and the current Module 10 playbook remain the source of truth. This capture does not close any numbered open decision by implication.
+Public GitHub main, approved governance and the current Module 10 playbook remain the source of truth. No numbered open decision is closed by implication.
 
 3. Module boundary
 
-MAX Adapter owns MAX-specific verification, mapping, normalization and provider-outcome semantics at the boundary between MAX platform surfaces and internal project contracts.
+MAX Adapter owns MAX-specific verification, identity references, event intake, replay/deduplication classification, command/callback/button/deep-link normalization, future Mini App validation boundary, outbound provider-request mapping, provider-outcome mapping and safe adapter diagnostics.
 
 MAX Adapter does not own:
 
 internal Account, account_id, account creation, account merge, roles, credentials, sessions or authorization;
 
-tariff, subscription, payment or entitlement state;
+tariffs, payments, subscriptions or entitlement grants;
 
-Beacon source validation, Beacon creation, Beacon configuration or Beacon lifecycle;
+Beacon source validation, creation, configuration or lifecycle;
 
 Parser extraction or Avito provider evidence;
 
-Scan baseline, difference, observations, listing state or recovery decisions;
+Scan baseline, observations, differences, listing state or recovery decisions;
 
 Egress route, lease, agent or transport state;
 
-generic Notification outbox, generic delivery attempt lifecycle, eligibility or final generic delivery state;
+generic Notification outbox, eligibility, attempt lifecycle or final generic delivery state;
 
 Telegram provider mapping or Telegram payload semantics;
 
@@ -59,35 +57,30 @@ Web Cabinet screens, web sessions or Mini App frontend;
 
 Admin and Support mutation authority;
 
-raw MAX token material, webhook secrets, private keys or provider credentials.
+raw MAX tokens, webhook secrets, private keys or provider credentials.
 
-MAX Adapter must use public contracts of Identity & Access, Notification Delivery, Beacon Management, Scan Orchestration, Egress Routing, Entitlements & Billing, Telegram Adapter, Web Cabinet, Admin and other owning modules. It must never write those modules' internal state directly.
+MAX Adapter must use public contracts of owning modules and must never mutate their internal state directly.
 
-4. Owner decision 1 — MAX is a future and secondary channel
+4. Owner decisions
+4.1. MAX is a future and secondary channel
 
 MAX is a future and secondary project channel.
 
 Telegram remains the first practical channel for notifications and user control.
 
-This decision means:
+MAX must not block the MVP or displace Telegram.
 
-MAX must not block the MVP;
+Notification Delivery remains provider-neutral and generic.
 
-MAX must not displace Telegram as the first practical provider adapter;
+Telegram Adapter and MAX Adapter remain separate provider-specific boundaries.
 
-Notification Delivery remains provider-neutral and generic;
+Telegram payload formats are not MAX payload authority.
 
-Telegram Adapter and MAX Adapter remain separate provider-specific boundaries;
+Future MAX support remains conditional on accepted eligibility, moderation, credential, runtime, delivery, privacy, security and UX gates.
 
-Telegram provider payloads and MAX provider payloads must not be merged into one provider payload contract;
+4.2. Eligibility, profile, bot and moderation remain unproven
 
-future MAX support remains conditional on accepted eligibility, moderation, credential, runtime, delivery, privacy, security and UX gates.
-
-This decision does not close OD-012 and does not disable future channels.
-
-5. Owner decision 2 — eligibility, profile, bot and moderation remain unproven
-
-MAX partner eligibility, partner or verified-profile status, bot creation and moderation status are unproven and blocked until safe accepted evidence exists.
+MAX partner eligibility, partner or verified-profile status, bot creation, moderation status, token availability and production provider permission are unproven and blocked until safe accepted evidence exists.
 
 The project must not assume that:
 
@@ -103,95 +96,43 @@ a bot token or provider credential exists;
 
 production provider access has been granted.
 
-Future accepted evidence may use only safe status or redacted reference forms.
+Allowed evidence is limited to safe status references, redacted provider references, secret-presence evidence and moderation-status references. Raw tokens, credentials, private keys, legal or personal provider documents, unnecessary personal data and real raw provider payloads are forbidden in Git, prompts, reports, fixtures and ordinary logs.
 
-The public repository, ChatGPT prompts, CLI reports, fixtures and ordinary logs must not contain:
-
-raw tokens;
-
-webhook secrets;
-
-private keys;
-
-legal or personal provider documents;
-
-credentials;
-
-unnecessary personal data;
-
-real raw provider payloads.
-
-This decision does not create a partner profile, bot, moderation submission, token, provider permission or runtime.
-
-6. Owner decision 3 — first scope is personal chat only
+4.3. First scope is personal chat only
 
 The first MAX scope is personal chat between one user and the bot.
 
-Groups and channels remain blocked until a separate exact owner decision and later accepted contracts define permissions, membership, admin rights, recipient semantics, privacy and authorization.
+Groups and channels remain blocked until a separate exact owner decision and accepted permission, membership, admin-right, recipient, privacy and authorization boundaries exist.
 
-The personal-chat scope does not authorize:
+Group membership, chat title, username, avatar, display name and provider profile metadata are not internal identity or account ownership.
 
-group delivery;
-
-channel delivery;
-
-group callbacks;
-
-channel callbacks;
-
-multi-user ownership;
-
-account resolution from group membership;
-
-account resolution from chat title, username, display name, avatar or profile metadata.
-
-max_user_id, max_chat_id, max_message_id, callback identifiers and other MAX identifiers remain external provider identifiers.
+MAX user, chat, message, update, callback and bot identifiers remain external provider identifiers.
 
 A MAX provider identifier is never an internal account_id, account ownership proof or authorization decision.
 
-Identity & Access remains the authority for account resolution, identity linking, account creation semantics, authorization and account merge policy.
+Identity & Access remains the authority for account resolution, linking, creation semantics, authorization and merge policy.
 
-7. Owner decision 4 — Mini App is a future validation and handoff boundary only
+4.4. Mini App is a future validation and handoff boundary only
 
 MAX Mini App is a future server-side validation and handoff boundary only.
 
-Module 10 does not implement:
+Module 10 does not implement Mini App screens, frontend, Web Cabinet screens, hosting, launch URLs, final UX composition, provider configuration or runtime endpoints.
 
-Mini App screens;
+Raw MAX WebAppData or equivalent launch data remains untrusted client input.
 
-Mini App frontend;
+A future accepted backend task must validate raw launch evidence server-side under accepted official rules.
 
-Web Cabinet screens;
+Validated MAX identity remains an external provider identity and must pass through Identity & Access.
 
-client-side account authority;
+Mini App launch context is not authorization.
 
-hosting;
+The maximum accepted auth_date age and related freshness policy remain future decisions.
 
-launch URLs;
-
-final UX composition;
-
-provider configuration;
-
-runtime endpoints.
-
-Future raw MAX WebAppData or equivalent launch data remains untrusted client input.
-
-A future accepted backend task must validate raw launch evidence server-side under accepted official rules before it can produce a verified external MAX identity reference.
-
-Validated MAX identity remains an external provider identity and must still pass through Identity & Access account-resolution and authorization contracts.
-
-Mini App launch context is not authorization and does not permit direct mutation of Account, Beacon, Notification, Entitlements or other owning-module state.
-
-The maximum accepted auth_date age and related freshness policy remain future security and product decisions.
-
-8. Owner decision 5 — no phone or contact request in the first scope
-
-The first MAX scope must not request phone or contact data through MAX.
+4.5. No phone or contact request in the first scope
 
 The first MAX scope must not:
 
-ask the user to share a phone number or contact;
+request phone or contact data through MAX;
 
 use phone or contact as an account key;
 
@@ -199,97 +140,33 @@ merge accounts by phone or contact;
 
 store contact data in fixtures, prompts or ordinary logs;
 
-treat a manually forwarded or manually entered contact as provider-verified identity;
+treat manually forwarded or entered contact data as provider-verified identity;
 
-invent a phone-required policy;
+invent phone-required, retention or deletion policy.
 
-invent retention or deletion policy for phone or contact data.
+Future contact sharing requires a separate exact owner decision, privacy boundary, trust rule, retention policy and provider-verifiable evidence rule.
 
-Phone requiredness remains open under OD-007.
+4.6. Common product intents, separate untrusted MAX payloads
 
-Account merge policy remains open under OD-008.
+MAX commands, callbacks, buttons and deep links may later normalize into common internal product intents.
 
-Retention and deletion of personal and provider data remain open under OD-013.
+MAX provider payload remains separate, MAX-specific and untrusted.
 
-Any future contact-sharing adoption requires a separate exact owner decision, privacy boundary, trust rule, retention policy and provider-verifiable evidence rule.
+Telegram callback, command, button and deep-link formats must not be copied as MAX authority.
 
-9. Owner decision 6 — common product intents, separate untrusted MAX payloads
+A command, callback payload, button click, deep-link parameter, client-visible identifier, chat identifier or Mini App launch context is not authorization.
 
-MAX commands, callbacks, buttons and deep links may later normalize into product intents that are also understood by internal modules.
+Business action requires server-side identity resolution, ownership and authorization by the owning module.
 
-The provider payload remains MAX-specific and untrusted.
-
-MAX Adapter must not copy Telegram callback, button, command or deep-link payload formats as MAX authority.
-
-The following are not authorization:
-
-a MAX command;
-
-a callback payload;
-
-a button click;
-
-a deep-link parameter;
-
-a client-visible identifier;
-
-provider profile data;
-
-a chat identifier;
-
-Mini App launch context.
-
-A future allowed flow must preserve:
-
-MAX provider input received → MAX-specific structure and provider evidence validated → replay and deduplication evaluated → verified external MAX identity resolved through Identity & Access → owning module evaluates authorization, ownership and action scope → owning module performs an accepted business mutation.
-
-MAX Adapter may normalize an intent but must not:
-
-create or mutate a Beacon directly;
-
-create or merge an Account;
-
-decide entitlement grants;
-
-decide generic Notification eligibility;
-
-mutate Scan or Egress state;
-
-execute a destructive business action by itself.
+MAX Adapter may normalize an intent but must not create or mutate a Beacon, create or merge an Account, grant entitlement, decide generic Notification eligibility or execute a destructive business action.
 
 Exact command catalog, callback format, button UX and deep-link format remain future gates.
 
-10. Owner decision 7 — Webhook direction and Long Polling restriction
+4.7. Webhook direction and Long Polling restriction
 
-The current production update-delivery direction is Webhook.
+The current production update-delivery direction is Webhook under current accepted evidence.
 
-This is a governance direction only.
-
-It does not create or authorize:
-
-a Webhook subscription;
-
-a Webhook endpoint;
-
-a domain;
-
-TLS configuration;
-
-a certificate;
-
-a port;
-
-a listener;
-
-a service;
-
-a queue or worker;
-
-provider credentials;
-
-a provider call;
-
-production runtime.
+This governance direction does not create or authorize a Webhook subscription, endpoint, domain, TLS configuration, certificate, port, listener, service, queue, worker, credential, provider call or production runtime.
 
 Long Polling may be considered only for a separately approved development or test context.
 
@@ -297,113 +174,33 @@ Long Polling is not a production fallback.
 
 Active Webhook and Long Polling are mutually exclusive for the same bot and environment.
 
-This capture does not create a polling loop, marker storage, scheduler, service or mode transition.
+A future Long Polling marker is a provider cursor only; it is not business identity or a universal event idempotency key.
 
-A future Long Polling marker is a provider cursor only. It is not business identity or a universal event idempotency key and must not advance before a future approved durable safe-processing point.
+Mode transition, authenticity verification, acknowledgement point and marker advancement remain future operations and security gates.
 
-Endpoint ownership, domain, TLS, certificate, port, authenticity verification, acknowledgement point, mode transition and allowed development/test environments remain future operations and security gates.
+4.8. Provider acceptance is not final business success
 
-11. Owner decision 8 — provider acceptance is not final business success
+A MAX provider accepted result does not prove human read, human click, final user-visible delivery, generic Notification success or business success.
 
-A MAX provider accepted response means only the accepted provider result class supported by future verified provider evidence.
+MAX Adapter returns an explicit provider-specific success, failure or ambiguity outcome.
 
-It does not prove:
+Notification Delivery remains the authority that accepts provider outcomes into the generic delivery lifecycle.
 
-human read;
-
-human click;
-
-final user-visible delivery;
-
-business success;
-
-generic Notification delivery success;
-
-successful account or Beacon mutation.
-
-MAX Adapter returns an explicit provider-specific result, failure or ambiguity outcome.
-
-Notification Delivery remains the authority that accepts provider outcomes into the generic notification lifecycle.
-
-An unknown, interrupted or possible-send-without-result effect is reconciliation-first.
+Unknown, interrupted or possible-send-without-result effect is reconciliation-first.
 
 Unknown effect is not success.
 
 Unknown effect is not proven failure unless evidence establishes failure.
 
-Unknown or ambiguous provider effect must never be blindly retried.
+Unknown or ambiguous provider effect must never be retried blindly.
 
-Blind retry must not create a duplicate user-visible effect.
+Provider rejection, authentication failure, unavailability, rate limitation, malformed response and ambiguity must remain explicit outcomes.
 
-Provider rejection, authentication failure, unavailability, rate limitation, malformed response and ambiguity remain explicit outcomes and must not be collapsed into clean success.
-
-12. Identity and ownership preservation
-
-The internal project account_id remains the authoritative project user identity.
-
-MAX user, chat, message, update, callback, bot and delivery identifiers remain external provider identifiers.
-
-MAX Adapter may request Identity & Access resolution only after future accepted MAX-specific verification rules have produced sufficient provider evidence.
-
-MAX Adapter must not:
-
-create an internal Account directly;
-
-maintain a MAX-only user database;
-
-merge accounts;
-
-infer identity from username, display name, avatar, phone, contact, chat title or group membership;
-
-use max_chat_id as account ownership;
-
-bypass Identity & Access challenges or authorization.
-
-OD-006, OD-007 and OD-008 remain open where their exact login, phone and merge policies are not governed elsewhere.
-
-13. Notification and business ownership preservation
-
-Notification Delivery owns:
-
-generic source-event intake;
-
-generic eligibility;
-
-outbox;
-
-channel plan;
-
-notification attempts;
-
-generic deduplication;
-
-generic delivery lifecycle;
-
-acceptance of provider outcome into generic notification state.
-
-MAX Adapter may later map one approved Notification attempt to one MAX-specific request intent and return one explicit MAX provider outcome.
-
-MAX Adapter does not create generic outbox work and does not mark generic Notification delivery success by itself.
-
-Beacon Management owns source validation, Beacon creation, configuration and lifecycle.
-
-Scan Orchestration owns baseline, observations, differences, listing state and recovery facts.
-
-Egress Routing owns route and transport state.
-
-Entitlements & Billing owns tariff, subscription, payment and entitlement authority.
-
-Telegram Adapter owns Telegram-specific provider mapping.
-
-Web Cabinet owns web screens and sessions.
-
-Admin and Support retain their own authority.
-
-14. Data minimization and blocked retention
+5. Data minimization
 
 Raw MAX payloads are not ordinary logs or fixtures by default.
 
-Future minimized semantic records may contain only contract-required safe references, classifications, fingerprints, safe reason codes, provider correlation references and correlation or causation identifiers after separate accepted gates.
+Future minimized semantic records may contain only contract-required safe references, classifications, fingerprints, safe reason codes and correlation or causation identifiers after separate accepted gates.
 
 Forbidden by default:
 
@@ -412,6 +209,8 @@ raw MAX bot token;
 webhook secret;
 
 private key;
+
+credentials;
 
 full raw provider payload retention;
 
@@ -423,91 +222,13 @@ phone or contact data;
 
 legal or personal provider documents;
 
-unbounded retention;
+unbounded retention.
 
-credentials in reports, prompts, URLs, logs, screenshots, fixtures or Git.
+6. Open decisions preserved
 
-OD-013 remains open. This document does not select physical storage, retention, deletion, archive or compaction policy.
+The following remain OPEN where applicable:
 
-15. Explicitly blocked implementation
-
-This owner decision capture does not authorize:
-
-source code;
-
-semantic Python contracts;
-
-tests or fixtures;
-
-real provider payloads;
-
-provider SDK or library selection;
-
-partner enrollment;
-
-verified-profile creation;
-
-bot creation;
-
-moderation submission;
-
-token handling;
-
-MAX API calls;
-
-Webhook subscription;
-
-Webhook endpoint;
-
-Long Polling loop;
-
-Mini App frontend;
-
-runtime;
-
-physical database schema;
-
-ORM models;
-
-migrations;
-
-persistence;
-
-queue;
-
-worker;
-
-scheduler;
-
-service;
-
-endpoint;
-
-domain;
-
-TLS;
-
-certificate;
-
-port;
-
-listener;
-
-Docker;
-
-CI/CD;
-
-deployment;
-
-direct mutation of Identity, Notification, Beacon, Scan, Egress, Entitlements, Telegram, Web Cabinet, Admin or Support state.
-
-16. Open decisions preserved
-
-This capture closes no numbered open decision by assumption.
-
-The following remain open where applicable:
-
-OD-006 — exact phone and password login and recovery policy;
+OD-006 — exact phone/password login and recovery policy;
 
 OD-007 — whether and when phone is required;
 
@@ -519,58 +240,54 @@ OD-013 — retention and deletion of logs, history, provider records and persona
 
 OD-014 — future Web Cabinet screens, analytics depth and UI interaction.
 
-Also remaining as future exact gates:
-
-owner MAX partner eligibility;
-
-partner or verified-profile state;
-
-bot creation and bot identity;
-
-moderation submission and acceptance;
-
-token availability, storage, rotation, revocation and deletion;
-
-supported MAX update types;
-
-exact chat and channel support;
-
-command catalog;
-
-callback and button payload formats;
-
-deep-link formats;
-
-Mini App screens and freshness threshold;
-
-Webhook topology and authenticity mechanism;
-
-Long Polling development and test environments;
-
-marker persistence and advancement;
-
-retry count, delay, backoff and rate budgets;
-
-provider SDK or transport implementation;
-
-physical schema and indexes;
-
-runtime and deployment topology.
+Also blocked until separate exact gates: MAX eligibility, profile state, bot creation, moderation, token lifecycle, supported update types, group/channel support, command catalog, callback/button/deep-link formats, Mini App screens and freshness threshold, Webhook topology and authenticity, Long Polling environments, marker persistence, retry budgets, provider SDK, physical schema, runtime and deployment topology.
 
 Open means blocked. No later task may invent these values.
 
-17. Consequences and next admissible step
+7. Explicitly blocked implementation
 
-After this document and matching ADR-0023 are published and the publishing commit is independently verified and accepted:
+This owner decision capture does not authorize:
+
+product or runtime source code;
+
+semantic Python contracts;
+
+tests or fixtures;
+
+real provider payloads or provider SDK;
+
+partner enrollment, profile creation, bot creation or moderation submission;
+
+token handling or MAX API calls;
+
+Webhook subscription or endpoint;
+
+Long Polling loop;
+
+Mini App frontend;
+
+physical database schema, ORM models, migrations or persistence;
+
+queue, worker, scheduler or service;
+
+endpoint, domain, TLS, certificate, port or listener;
+
+Docker, CI/CD or deployment;
+
+direct mutation of Identity, Notification, Beacon, Scan, Egress, Entitlements, Telegram, Web Cabinet, Admin or Support state.
+
+8. Roadmap consequence
+
+After this document, ADR-0023 and the append-only corrective ADR are published and independently verified and accepted:
 
 MX-01 governance capture is complete;
 
 later exact semantic MAX Adapter tasks may use these owner decisions without inventing product policy;
 
-MX-02 may be considered only after a fresh GitHub main, parallel-main, Module 10 playbook, Identity & Access contract and Notification Delivery contract verification;
+MX-02 may be considered only after a fresh GitHub main, parallel-main, Module 10 playbook, Identity & Access and Notification Delivery dependency verification;
 
 MX-02 still requires a separate exact task;
 
-no runtime, provider, secret, persistence, database, migration, queue, worker, Mini App, Webhook, Long Polling or deployment gate is opened automatically.
+no runtime, provider, secret, persistence, database, migration, queue, worker, Mini App, Webhook, Long Polling or deployment gate opens automatically.
 
 This document does not authorize the CLI executor to select the next roadmap step.

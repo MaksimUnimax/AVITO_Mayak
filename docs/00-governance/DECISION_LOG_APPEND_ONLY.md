@@ -1005,3 +1005,62 @@ MX-01 becomes complete only after the publishing commit containing this ADR and 
 MX-02 may be considered only through a fresh GitHub main, parallel-main, Module 10 playbook, Identity & Access and Notification Delivery dependency verification and a separate exact task.
 
 This ADR creates no product code, contracts, tests, fixtures, provider calls, runtime, persistence, secrets or infrastructure.
+
+---
+ADR-0024 — 2026-07-19 — Correct MAX owner decision Markdown serialization
+
+Статус: APPROVED append-only correction for MX-01 governance capture.
+
+Модуль: 10-max-adapter
+
+Roadmap step: MX-01
+
+Technical task: MX-01-MAX-OWNER-DECISION-SERIALIZATION-CORRECTION-20260719-01
+
+Исправляет: механический Markdown serialization defect в docs/04-modules/10-max-adapter/OWNER_DECISIONS_v1.0.md и исторической публикации ADR-0023 из commit 212c98442d9f45b68c5e5da6d0a918c8c8ddfa11.
+
+Не переписывает: исторический текст ADR-0023; append-only history сохраняется byte-for-byte.
+
+Не изменяет product decisions: восемь owner decisions, module boundaries, open decisions, blocked gates и roadmap остаются прежними.
+
+Решение:
+
+ADR-0023 остаётся исторической append-only записью и не редактируется.
+
+Канонический полный owner capture для последующих Module 10 tasks — исправленный docs/04-modules/10-max-adapter/OWNER_DECISIONS_v1.0.md из commit этой corrective task.
+
+Исправленный module document восстанавливает Markdown headings, lists, inline-code delimiters и однозначную структуру без изменения восьми owner decisions.
+
+MAX остаётся future/secondary channel; Telegram остаётся первым практическим каналом.
+
+Eligibility, profile, bot, moderation, token и provider permission остаются unproven/blocked.
+
+Первый MAX scope остаётся personal-chat-only; groups/channels остаются blocked.
+
+Mini App остаётся future server-side validation/handoff boundary без frontend/screens/runtime.
+
+Phone/contact не запрашиваются в первом scope.
+
+MAX payload остаётся provider-specific untrusted input; Telegram payload formats не являются MAX authority.
+
+Production direction остаётся Webhook; Long Polling остаётся dev/test-only, не является production fallback и не может быть активен одновременно с Webhook для одного bot/environment.
+
+Provider acceptance не означает human read, final delivery или business success; unknown effect остаётся reconciliation-first и never blindly retried.
+
+OD-006, OD-007, OD-008, OD-012, OD-013 и OD-014 остаются OPEN там, где не governed другим accepted ADR.
+
+Product code, semantic contracts, tests, provider calls, token handling, Webhook, Long Polling, Mini App frontend, schema, migrations, persistence, queues/workers/services, runtime and deploy остаются blocked.
+
+MX-01 становится complete только после независимой проверки и принятия corrective commit.
+
+Последствия:
+
+Исправленный module document является каноническим owner decision capture для Module 10.
+
+Эта correction не создаёт product code, contracts, tests, fixtures, provider calls, runtime, persistence, secrets or infrastructure.
+
+ADR-0023 сохраняется неизменным как историческое evidence.
+
+No numbered open decision is closed by assumption.
+
+Roadmap остаётся на MX-01 до независимого принятия corrective commit.
