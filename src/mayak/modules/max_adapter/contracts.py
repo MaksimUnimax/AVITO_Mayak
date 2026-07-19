@@ -835,17 +835,144 @@ class MaxReconciliationRecord(_MaxContract):
 class MaxAdapterReadModel(_MaxContract):
     max_adapter_read_model_id: str = Field(min_length=1)
     metadata: ContractMetadata
+    projection_audience: Literal["SUPPORT", "ADMIN", "USER"]
+    projection_policy_reference_id: str = Field(min_length=1)
+    authorization_evidence_reference_id: str = Field(min_length=1)
+    provider_scope_reference_id: str = Field(min_length=1)
+    max_bot_ref: str = Field(min_length=1)
+    provenance_reference_ids: tuple[str, ...] = Field(min_length=1)
+    safe_diagnostic_reference_ids: tuple[str, ...] = Field(min_length=1)
+    correlation_id: str = Field(min_length=1)
+    causation_id: str | None = Field(default=None, min_length=1)
     max_provider_identity_ref: str | None = Field(default=None, min_length=1)
     max_eligibility_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    eligibility_state: MaxEligibilityState | None = None
     max_update_intake_record_id: str | None = Field(default=None, min_length=1)
+    update_intake_state: MaxUpdateIntakeState | None = None
+    update_source_kind: MaxUpdateSourceKind | None = None
+    update_structural_classification: MaxUpdateStructuralClass | None = None
+    max_update_deduplication_record_id: str | None = Field(default=None, min_length=1)
+    update_deduplication_state: MaxUpdateDeduplicationState | None = None
+    max_command_envelope_id: str | None = Field(default=None, min_length=1)
+    command_normalization_state: MaxCommandNormalizationState | None = None
+    command_surface_kind: MaxCommandSurfaceKind | None = None
+    max_contact_validation_result_id: str | None = Field(default=None, min_length=1)
+    contact_validation_state: MaxContactValidationState | None = None
+    max_mini_app_validation_result_id: str | None = Field(default=None, min_length=1)
+    mini_app_validation_state: MaxMiniAppValidationState | None = None
     max_outbound_request_id: str | None = Field(default=None, min_length=1)
+    outbound_request_state: MaxOutboundRequestState | None = None
     max_provider_outcome_id: str | None = Field(default=None, min_length=1)
-    safe_reason_codes: tuple[str, ...] = Field(default_factory=tuple)
+    provider_outcome_state: MaxProviderOutcomeState | None = None
+    max_reconciliation_record_id: str | None = Field(default=None, min_length=1)
+    reconciliation_state: MaxReconciliationState | None = None
+    latency_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    safe_reason_codes: tuple[str, ...] = Field(min_length=1)
     redacted_provider_reference_ids: tuple[str, ...] = Field(default_factory=tuple)
     raw_provider_payload_included: Literal[False] = False
     secret_material_included: Literal[False] = False
     phone_or_contact_included: Literal[False] = False
     mutation_authority: Literal[False] = False
+    safe_projection_committed: Literal[True] = True
+    references_are_opaque: Literal[True] = True
+    provider_identifiers_redacted: Literal[True] = True
+    authorization_decision_authority: Literal[False] = False
+    identity_link_authority: Literal[False] = False
+    account_merge_authority: Literal[False] = False
+    generic_notification_state_authority: Literal[False] = False
+    notification_retry_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    retry_execution_authority: Literal[False] = False
+    reconciliation_execution_authority: Literal[False] = False
+    support_admin_work_authority: Literal[False] = False
+    support_ui_authority: Literal[False] = False
+    admin_ui_authority: Literal[False] = False
+    web_ui_authority: Literal[False] = False
+    raw_web_app_data_included: Literal[False] = False
+    webhook_secret_included: Literal[False] = False
+    private_key_included: Literal[False] = False
+    legal_or_personal_document_included: Literal[False] = False
+    unnecessary_personal_data_included: Literal[False] = False
+    private_message_content_included: Literal[False] = False
+    group_channel_member_inventory_included: Literal[False] = False
+    provider_display_name_included: Literal[False] = False
+    provider_username_included: Literal[False] = False
+    provider_avatar_included: Literal[False] = False
+    chat_title_included: Literal[False] = False
+    retention_policy_defined_here: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_safe_projection(self) -> "MaxAdapterReadModel":
+        tuples = {
+            "provenance_reference_ids": self.provenance_reference_ids,
+            "safe_diagnostic_reference_ids": self.safe_diagnostic_reference_ids,
+            "safe_reason_codes": self.safe_reason_codes,
+            "redacted_provider_reference_ids": self.redacted_provider_reference_ids,
+        }
+        for name, values in tuples.items():
+            if any(not value.strip() for value in values):
+                raise ValueError(f"{name} cannot contain blank values")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{name} cannot contain duplicate values")
+
+        pairs = {
+            "eligibility": (self.max_eligibility_evidence_reference_id, self.eligibility_state),
+            "deduplication": (self.max_update_deduplication_record_id, self.update_deduplication_state),
+            "contact": (self.max_contact_validation_result_id, self.contact_validation_state),
+            "mini_app": (self.max_mini_app_validation_result_id, self.mini_app_validation_state),
+            "outbound": (self.max_outbound_request_id, self.outbound_request_state),
+            "provider_outcome": (self.max_provider_outcome_id, self.provider_outcome_state),
+            "reconciliation": (self.max_reconciliation_record_id, self.reconciliation_state),
+        }
+        for name, values in pairs.items():
+            if (values[0] is None) != (values[1] is None):
+                raise ValueError(f"{name} projection must be all-or-none")
+
+        intake = (
+            self.max_update_intake_record_id,
+            self.update_intake_state,
+            self.update_source_kind,
+            self.update_structural_classification,
+        )
+        if any(value is not None for value in intake) and not all(value is not None for value in intake):
+            raise ValueError("intake projection must be all-or-none")
+
+        command = (self.max_command_envelope_id, self.command_normalization_state, self.command_surface_kind)
+        if any(value is not None for value in command) and not all(value is not None for value in command):
+            raise ValueError("command projection must be all-or-none")
+
+        has_intake = all(value is not None for value in intake)
+        has_dedup = all(value is not None for value in pairs["deduplication"])
+        has_command = all(value is not None for value in command)
+        has_outbound = all(value is not None for value in pairs["outbound"])
+        has_outcome = all(value is not None for value in pairs["provider_outcome"])
+        has_reconciliation = all(value is not None for value in pairs["reconciliation"])
+        if has_dedup and not has_intake:
+            raise ValueError("deduplication projection requires intake projection")
+        if has_command and (not has_intake or not has_dedup):
+            raise ValueError("command projection requires intake and deduplication projections")
+        if has_outcome and not has_outbound:
+            raise ValueError("provider outcome projection requires outbound projection")
+        if has_reconciliation and not has_outcome:
+            raise ValueError("reconciliation projection requires provider outcome projection")
+        if has_reconciliation and not has_outbound:
+            raise ValueError("reconciliation projection requires outbound projection")
+
+        sources = (
+            self.max_provider_identity_ref,
+            self.max_eligibility_evidence_reference_id,
+            self.max_update_intake_record_id,
+            self.max_update_deduplication_record_id,
+            self.max_command_envelope_id,
+            self.max_contact_validation_result_id,
+            self.max_mini_app_validation_result_id,
+            self.max_outbound_request_id,
+            self.max_provider_outcome_id,
+            self.max_reconciliation_record_id,
+        )
+        if not any(source is not None for source in sources):
+            raise ValueError("read projection requires at least one source reference")
+        return self
 
 
 __all__ = [
