@@ -35,6 +35,27 @@ class MaxUpdateIntakeState(Enum):
     BLOCKED = "BLOCKED"
 
 
+class MaxUpdateAdmissionState(Enum):
+    VERIFIED = "VERIFIED"
+    NOT_VERIFIED = "NOT_VERIFIED"
+    REJECTED = "REJECTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+class MaxUpdateSourceKind(Enum):
+    WEBHOOK = "WEBHOOK"
+    LONG_POLLING_DEV_TEST = "LONG_POLLING_DEV_TEST"
+
+
+class MaxUpdateStructuralClass(Enum):
+    SUPPORTED_CANDIDATE = "SUPPORTED_CANDIDATE"
+    UNSUPPORTED = "UNSUPPORTED"
+    MALFORMED = "MALFORMED"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
 class MaxUpdateDeduplicationState(Enum):
     NEW_UPDATE = "NEW_UPDATE"
     DUPLICATE_REPLAY = "DUPLICATE_REPLAY"
@@ -158,6 +179,13 @@ class MaxUpdateIntakeRecord(_MaxContract):
     max_update_reference: str = Field(min_length=1)
     max_bot_ref: str = Field(min_length=1)
     provider_update_family_ref: str = Field(min_length=1)
+    source_kind: MaxUpdateSourceKind
+    admission_state: MaxUpdateAdmissionState
+    structural_classification: MaxUpdateStructuralClass
+    approved_dev_test_context_reference_id: str | None = Field(default=None, min_length=1)
+    long_polling_marker_reference_id: str | None = Field(default=None, min_length=1)
+    production_fallback_authority: Literal[False] = False
+    marker_business_identity_authority: Literal[False] = False
     provider_identity: MaxProviderIdentity | None = None
     idempotency_key: IdempotencyKey
     idempotency_scope: IdempotencyScope
@@ -168,6 +196,55 @@ class MaxUpdateIntakeRecord(_MaxContract):
     reason_code: str = Field(min_length=1)
     provider_payload_retained: Literal[False] = False
     business_dispatch_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_intake_matrix(self) -> "MaxUpdateIntakeRecord":
+        if self.source_kind is MaxUpdateSourceKind.WEBHOOK:
+            if self.approved_dev_test_context_reference_id is not None:
+                raise ValueError("WEBHOOK cannot carry development/test context")
+            if self.long_polling_marker_reference_id is not None:
+                raise ValueError("WEBHOOK cannot carry Long Polling marker")
+        if self.source_kind is MaxUpdateSourceKind.LONG_POLLING_DEV_TEST:
+            if self.approved_dev_test_context_reference_id is None:
+                raise ValueError("Long Polling requires approved development/test context")
+        if self.provider_identity is not None and self.provider_identity.max_bot_ref != self.max_bot_ref:
+            raise ValueError("provider identity bot reference must match intake bot reference")
+        if self.state is MaxUpdateIntakeState.ACCEPTED:
+            if self.admission_state is not MaxUpdateAdmissionState.VERIFIED:
+                raise ValueError("ACCEPTED intake requires verified admission")
+            if self.structural_classification is not MaxUpdateStructuralClass.SUPPORTED_CANDIDATE:
+                raise ValueError("ACCEPTED intake requires supported structure")
+            if self.authenticity_evidence_reference_id is None:
+                raise ValueError("ACCEPTED intake requires authenticity evidence")
+            if self.normalization_reference_id is None:
+                raise ValueError("ACCEPTED intake requires normalization reference")
+        elif self.normalization_reference_id is not None:
+            raise ValueError("only ACCEPTED intake may carry normalization reference")
+        if self.state is MaxUpdateIntakeState.IGNORED_UNSUPPORTED:
+            if self.structural_classification is not MaxUpdateStructuralClass.UNSUPPORTED:
+                raise ValueError("IGNORED_UNSUPPORTED requires unsupported structure")
+        elif self.state is MaxUpdateIntakeState.REJECTED_UNTRUSTED:
+            if self.admission_state not in {
+                MaxUpdateAdmissionState.NOT_VERIFIED,
+                MaxUpdateAdmissionState.REJECTED,
+            }:
+                raise ValueError("REJECTED_UNTRUSTED requires unverified or rejected admission")
+        elif self.state is MaxUpdateIntakeState.REJECTED_MALFORMED:
+            if self.structural_classification is not MaxUpdateStructuralClass.MALFORMED:
+                raise ValueError("REJECTED_MALFORMED requires malformed structure")
+        elif self.state is MaxUpdateIntakeState.AMBIGUOUS:
+            if (
+                self.admission_state is not MaxUpdateAdmissionState.AMBIGUOUS
+                and self.structural_classification is not MaxUpdateStructuralClass.AMBIGUOUS
+            ):
+                raise ValueError("AMBIGUOUS intake requires ambiguous admission or structure")
+        elif self.state is MaxUpdateIntakeState.BLOCKED:
+            if (
+                self.admission_state is not MaxUpdateAdmissionState.BLOCKED
+                and self.structural_classification is not MaxUpdateStructuralClass.BLOCKED
+            ):
+                raise ValueError("BLOCKED intake requires blocked admission or structure")
+        return self
 
 
 class MaxUpdateDeduplicationRecord(_MaxContract):
@@ -184,6 +261,52 @@ class MaxUpdateDeduplicationRecord(_MaxContract):
     replayed_adapter_outcome_reference_id: str | None = Field(default=None, min_length=1)
     reason_code: str = Field(min_length=1)
     second_business_effect_authority: Literal[False] = False
+    adapter_processing_authorized: bool
+    provider_marker_advance_authority: Literal[False] = False
+    marker_business_identity_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_deduplication_matrix(self) -> "MaxUpdateDeduplicationRecord":
+        if self.state is MaxUpdateDeduplicationState.NEW_UPDATE:
+            if self.existing_intake_record_id is not None or self.existing_fingerprint is not None:
+                raise ValueError("NEW_UPDATE cannot carry existing intake or fingerprint")
+            if self.replayed_adapter_outcome_reference_id is not None:
+                raise ValueError("NEW_UPDATE cannot carry replayed outcome")
+            if not self.adapter_processing_authorized:
+                raise ValueError("NEW_UPDATE requires adapter processing authorization")
+        elif self.state is MaxUpdateDeduplicationState.DUPLICATE_REPLAY:
+            if self.existing_intake_record_id is None or self.existing_fingerprint is None:
+                raise ValueError("DUPLICATE_REPLAY requires existing intake and fingerprint")
+            if self.existing_fingerprint != self.fingerprint:
+                raise ValueError("DUPLICATE_REPLAY requires matching fingerprint")
+            if self.replayed_adapter_outcome_reference_id is None:
+                raise ValueError("DUPLICATE_REPLAY requires replayed outcome")
+            if self.adapter_processing_authorized:
+                raise ValueError("DUPLICATE_REPLAY forbids adapter processing")
+        elif self.state is MaxUpdateDeduplicationState.FINGERPRINT_CONFLICT:
+            if self.existing_intake_record_id is None or self.existing_fingerprint is None:
+                raise ValueError("FINGERPRINT_CONFLICT requires existing intake and fingerprint")
+            if self.existing_fingerprint == self.fingerprint:
+                raise ValueError("FINGERPRINT_CONFLICT requires different fingerprint")
+            if self.replayed_adapter_outcome_reference_id is not None:
+                raise ValueError("FINGERPRINT_CONFLICT cannot carry replayed outcome")
+            if self.adapter_processing_authorized:
+                raise ValueError("FINGERPRINT_CONFLICT forbids adapter processing")
+        elif self.state is MaxUpdateDeduplicationState.IDENTITY_AMBIGUOUS:
+            if self.existing_intake_record_id is None or self.existing_fingerprint is None:
+                raise ValueError("IDENTITY_AMBIGUOUS requires existing intake and fingerprint")
+            if self.replayed_adapter_outcome_reference_id is not None:
+                raise ValueError("IDENTITY_AMBIGUOUS cannot carry replayed outcome")
+            if self.adapter_processing_authorized:
+                raise ValueError("IDENTITY_AMBIGUOUS forbids adapter processing")
+        elif self.state is MaxUpdateDeduplicationState.BLOCKED:
+            if self.replayed_adapter_outcome_reference_id is not None:
+                raise ValueError("BLOCKED cannot carry replayed outcome")
+            if self.adapter_processing_authorized:
+                raise ValueError("BLOCKED forbids adapter processing")
+            if (self.existing_intake_record_id is None) != (self.existing_fingerprint is None):
+                raise ValueError("BLOCKED requires paired existing intake and fingerprint")
+        return self
 
 
 class MaxCommandEnvelope(_MaxContract):
@@ -336,4 +459,7 @@ __all__ = [
     "MaxUpdateDeduplicationState",
     "MaxUpdateIntakeRecord",
     "MaxUpdateIntakeState",
+    "MaxUpdateAdmissionState",
+    "MaxUpdateSourceKind",
+    "MaxUpdateStructuralClass",
 ]

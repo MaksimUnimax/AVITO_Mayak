@@ -25,6 +25,9 @@ from .contracts import (
     MaxUpdateDeduplicationState,
     MaxUpdateIntakeRecord,
     MaxUpdateIntakeState,
+    MaxUpdateAdmissionState,
+    MaxUpdateSourceKind,
+    MaxUpdateStructuralClass,
 )
 
 MODULE_ID = MAX_ADAPTER_MODULE_ID
@@ -54,4 +57,7 @@ __all__ = [
     "MaxUpdateDeduplicationState",
     "MaxUpdateIntakeRecord",
     "MaxUpdateIntakeState",
+    "MaxUpdateAdmissionState",
+    "MaxUpdateSourceKind",
+    "MaxUpdateStructuralClass",
 ]
