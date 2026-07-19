@@ -247,6 +247,186 @@ class TelegramUpdateDeduplicationRecord(_TelegramContract):
         return self
 
 
+class TelegramInboundInputKind(str, Enum):
+    COMMAND_CANDIDATE = "COMMAND_CANDIDATE"
+    MESSAGE_TEXT_CANDIDATE = "MESSAGE_TEXT_CANDIDATE"
+    SOURCE_URL_CANDIDATE = "SOURCE_URL_CANDIDATE"
+    UNSUPPORTED_INPUT = "UNSUPPORTED_INPUT"
+    AMBIGUOUS_INPUT = "AMBIGUOUS_INPUT"
+
+
+class TelegramIntentFamily(str, Enum):
+    START_OR_LINK_TELEGRAM = "START_OR_LINK_TELEGRAM"
+    HELP_REQUESTED = "HELP_REQUESTED"
+    LIST_MY_BEACONS_REQUESTED = "LIST_MY_BEACONS_REQUESTED"
+    BEACON_STATUS_REQUESTED = "BEACON_STATUS_REQUESTED"
+    CREATE_BEACON_FROM_SOURCE_URL_REQUESTED = "CREATE_BEACON_FROM_SOURCE_URL_REQUESTED"
+    BEACON_SETTINGS_REQUESTED = "BEACON_SETTINGS_REQUESTED"
+    UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED = "UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED"  # noqa: E501
+    PAUSE_BEACON_REQUESTED = "PAUSE_BEACON_REQUESTED"
+    RESUME_BEACON_REQUESTED = "RESUME_BEACON_REQUESTED"
+    DELETE_BEACON_REQUESTED_WITH_CONFIRMATION = "DELETE_BEACON_REQUESTED_WITH_CONFIRMATION"
+    TARIFF_OR_LIMITS_REQUESTED = "TARIFF_OR_LIMITS_REQUESTED"
+    OPEN_FULL_LISTING_RESULT_REQUESTED = "OPEN_FULL_LISTING_RESULT_REQUESTED"
+    TOGGLE_NO_NEW_STATUS_NOTIFICATION_REQUESTED = "TOGGLE_NO_NEW_STATUS_NOTIFICATION_REQUESTED"
+    UNSUPPORTED_OR_AMBIGUOUS_INPUT = "UNSUPPORTED_OR_AMBIGUOUS_INPUT"
+
+
+class TelegramIntentNormalizationState(str, Enum):
+    NORMALIZED = "NORMALIZED"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+class TelegramIntentOwnerBoundary(str, Enum):
+    TELEGRAM_ADAPTER = "TELEGRAM_ADAPTER"
+    IDENTITY_AND_ACCESS = "IDENTITY_AND_ACCESS"
+    BEACON_MANAGEMENT = "BEACON_MANAGEMENT"
+    NOTIFICATION_DELIVERY = "NOTIFICATION_DELIVERY"
+    ENTITLEMENTS_AND_BILLING = "ENTITLEMENTS_AND_BILLING"
+    NONE = "NONE"
+
+
+_INTENT_OWNER_BOUNDARIES: dict[TelegramIntentFamily, tuple[TelegramIntentOwnerBoundary, ...]] = {
+    TelegramIntentFamily.START_OR_LINK_TELEGRAM: (TelegramIntentOwnerBoundary.IDENTITY_AND_ACCESS,),
+    TelegramIntentFamily.HELP_REQUESTED: (TelegramIntentOwnerBoundary.TELEGRAM_ADAPTER,),
+    TelegramIntentFamily.LIST_MY_BEACONS_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
+    TelegramIntentFamily.BEACON_STATUS_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),
+    TelegramIntentFamily.CREATE_BEACON_FROM_SOURCE_URL_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
+    TelegramIntentFamily.BEACON_SETTINGS_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
+    TelegramIntentFamily.UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED: (
+        TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+        TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,
+    ),
+    TelegramIntentFamily.PAUSE_BEACON_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),
+    TelegramIntentFamily.RESUME_BEACON_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),
+    TelegramIntentFamily.DELETE_BEACON_REQUESTED_WITH_CONFIRMATION: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
+    TelegramIntentFamily.TARIFF_OR_LIMITS_REQUESTED: (TelegramIntentOwnerBoundary.ENTITLEMENTS_AND_BILLING,),  # noqa: E501
+    TelegramIntentFamily.OPEN_FULL_LISTING_RESULT_REQUESTED: (TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,),  # noqa: E501
+    TelegramIntentFamily.TOGGLE_NO_NEW_STATUS_NOTIFICATION_REQUESTED: (TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,),  # noqa: E501
+    TelegramIntentFamily.UNSUPPORTED_OR_AMBIGUOUS_INPUT: (TelegramIntentOwnerBoundary.NONE,),
+}
+
+
+class TelegramUntrustedInputReference(_TelegramContract):
+    telegram_untrusted_input_reference_id: str = Field(min_length=1)
+    provider_update_identity: TelegramProviderUpdateIdentity
+    input_kind: TelegramInboundInputKind
+    input_evidence_reference_id: str = Field(min_length=1)
+    candidate_source_url_reference_id: str | None = Field(default=None, min_length=1)
+    raw_provider_payload_present: Literal[False] = False
+    input_text_retained: Literal[False] = False
+    input_trusted: Literal[False] = False
+    input_is_authorization: Literal[False] = False
+    candidate_source_url_validated: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_candidate_reference(self) -> "TelegramUntrustedInputReference":
+        if self.input_kind is TelegramInboundInputKind.SOURCE_URL_CANDIDATE:
+            if self.candidate_source_url_reference_id is None:
+                raise ValueError("source URL candidate requires an opaque reference")
+        elif self.candidate_source_url_reference_id is not None:
+            raise ValueError("only source URL candidates may carry a candidate reference")
+        return self
+
+
+class TelegramIntentNormalizationRequest(_TelegramContract):
+    telegram_intent_normalization_request_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    intake_record: TelegramUpdateIntakeRecord
+    deduplication_record: TelegramUpdateDeduplicationRecord
+    untrusted_input: TelegramUntrustedInputReference
+    normalization_policy_reference_id: str = Field(min_length=1)
+    business_dispatch_authorized: Literal[False] = False
+    handler_execution_authorized: Literal[False] = False
+    conversation_state_machine_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_prerequisites(self) -> "TelegramIntentNormalizationRequest":
+        intake = self.intake_record
+        dedup = self.deduplication_record
+        update = intake.provider_update_identity
+        if intake.intake_state is not TelegramUpdateIntakeState.ACCEPTED_FOR_NORMALIZATION:
+            raise ValueError("normalization requires accepted intake")
+        if intake.admission_state is not TelegramUpdateAdmissionState.VERIFIED:
+            raise ValueError("normalization requires verified admission")
+        if intake.structural_classification is not TelegramUpdateStructuralClass.SUPPORTED_CANDIDATE:  # noqa: E501
+            raise ValueError("normalization requires supported candidate")
+        if intake.provider_identity is None:
+            raise ValueError("normalization requires provider identity")
+        if intake.normalization_reference_id != self.telegram_intent_normalization_request_id:
+            raise ValueError("normalization reference must match request id")
+        if dedup.state is not TelegramUpdateDeduplicationState.NEW_UPDATE or not dedup.adapter_processing_authorized:  # noqa: E501
+            raise ValueError("normalization requires a new update authorized for adapter processing")  # noqa: E501
+        if dedup.current_intake_record_id != intake.telegram_update_intake_record_id:
+            raise ValueError("deduplication must point at current intake")
+        if not (
+            update == dedup.provider_update_identity
+            and intake.idempotency_key == dedup.idempotency_key
+            and intake.idempotency_scope == dedup.idempotency_scope
+            and intake.fingerprint == dedup.fingerprint
+            and self.untrusted_input.provider_update_identity == update
+            and intake.provider_identity.telegram_bot_ref == update.telegram_bot_ref
+        ):
+            raise ValueError("intake, deduplication and input identity must agree")
+        return self
+
+
+class TelegramCommandEnvelope(_TelegramContract):
+    telegram_command_envelope_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    normalization_request: TelegramIntentNormalizationRequest
+    state: TelegramIntentNormalizationState
+    intent_family: TelegramIntentFamily
+    owner_boundaries: tuple[TelegramIntentOwnerBoundary, ...]
+    owner_contract_reference_ids: tuple[str, ...]
+    candidate_source_url_reference_id: str | None = Field(default=None, min_length=1)
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
+    dangerous_action_confirmation_required: bool
+    reason_code: str = Field(min_length=1)
+    exact_command_catalog_selected: Literal[False] = False
+    command_handler_authorized: Literal[False] = False
+    conversation_state_machine_authorized: Literal[False] = False
+    business_dispatch_authorized: Literal[False] = False
+    account_creation_authorized: Literal[False] = False
+    beacon_creation_or_mutation_authorized: Literal[False] = False
+    source_url_business_validation_authorized: Literal[False] = False
+    notification_preference_mutation_authorized: Literal[False] = False
+    entitlement_mutation_authorized: Literal[False] = False
+    provider_runtime_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_envelope_matrix(self) -> "TelegramCommandEnvelope":
+        family = self.intent_family
+        input_kind = self.normalization_request.untrusted_input.input_kind
+        expected = _INTENT_OWNER_BOUNDARIES[family]
+        if self.state in {TelegramIntentNormalizationState.UNSUPPORTED, TelegramIntentNormalizationState.AMBIGUOUS}:  # noqa: E501
+            expected_family = TelegramIntentFamily.UNSUPPORTED_OR_AMBIGUOUS_INPUT
+            expected_kind = (TelegramInboundInputKind.UNSUPPORTED_INPUT if self.state is TelegramIntentNormalizationState.UNSUPPORTED else TelegramInboundInputKind.AMBIGUOUS_INPUT)  # noqa: E501
+            if family is not expected_family or input_kind is not expected_kind or self.owner_boundaries != (TelegramIntentOwnerBoundary.NONE,) or self.owner_contract_reference_ids or self.candidate_source_url_reference_id is not None or self.blocking_decision_reference_id is not None or self.dangerous_action_confirmation_required:  # noqa: E501
+                raise ValueError("unsupported and ambiguous envelope matrix is exact")
+            return self
+        if family is TelegramIntentFamily.UNSUPPORTED_OR_AMBIGUOUS_INPUT or input_kind in {TelegramInboundInputKind.UNSUPPORTED_INPUT, TelegramInboundInputKind.AMBIGUOUS_INPUT}:  # noqa: E501
+            raise ValueError("supported envelope cannot use unsupported or ambiguous input")
+        if self.owner_boundaries != expected or TelegramIntentOwnerBoundary.NONE in self.owner_boundaries:  # noqa: E501
+            raise ValueError("owner boundaries do not match intent family")
+        if self.state is TelegramIntentNormalizationState.NORMALIZED:
+            if self.blocking_decision_reference_id is not None or len(self.owner_contract_reference_ids) != len(expected) or any(not ref.strip() for ref in self.owner_contract_reference_ids):  # noqa: E501
+                raise ValueError("normalized envelope requires owner references and no block")
+        elif self.state is TelegramIntentNormalizationState.BLOCKED:
+            if not self.blocking_decision_reference_id or self.owner_contract_reference_ids:
+                raise ValueError("blocked envelope requires only a blocking reference")
+        if family is TelegramIntentFamily.CREATE_BEACON_FROM_SOURCE_URL_REQUESTED:
+            if input_kind is not TelegramInboundInputKind.SOURCE_URL_CANDIDATE or self.candidate_source_url_reference_id != self.normalization_request.untrusted_input.candidate_source_url_reference_id:  # noqa: E501
+                raise ValueError("create intent requires the exact opaque source reference")
+        elif self.candidate_source_url_reference_id is not None:
+            raise ValueError("only create intent may carry a source reference")
+        if self.dangerous_action_confirmation_required != (family is TelegramIntentFamily.DELETE_BEACON_REQUESTED_WITH_CONFIRMATION):  # noqa: E501
+            raise ValueError("only deletion requires confirmation")
+        return self
+
+
 class TelegramProviderMode(str, Enum):
     WEBHOOK = "WEBHOOK"
     GET_UPDATES = "GET_UPDATES"
@@ -544,6 +724,13 @@ class TelegramExistingBotOperationalGate(_TelegramContract):
 
 
 __all__ = [
+    "TelegramInboundInputKind",
+    "TelegramIntentFamily",
+    "TelegramIntentNormalizationState",
+    "TelegramIntentOwnerBoundary",
+    "TelegramUntrustedInputReference",
+    "TelegramIntentNormalizationRequest",
+    "TelegramCommandEnvelope",
     "TelegramAccountLinkReference",
     "TelegramIdentityResolutionOutcome",
     "TelegramIdentityResolutionRequest",

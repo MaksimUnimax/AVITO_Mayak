@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from mayak.contracts import (
@@ -44,13 +45,12 @@ def test_production_telegram_files_do_not_import_identity_or_other_modules() -> 
     root = Path(__file__).resolve().parents[2] / "src/mayak/modules/telegram_adapter"
     for path in root.glob("*.py"):
         tree = ast.parse(path.read_text())
-        imports = [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
-        imports += [
-            alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Import)
-            for alias in node.names
-        ]
+        imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imports.append(node.module or "")
         assert not any(
             name.startswith("mayak.modules.")
             and name != "mayak.modules.telegram_adapter.contracts"
@@ -59,13 +59,82 @@ def test_production_telegram_files_do_not_import_identity_or_other_modules() -> 
         assert "mayak.modules.identity_and_access" not in imports
 
 
+def _camel_case_tokens(name: str) -> tuple[str, ...]:
+    return tuple(
+        token
+        for token in re.findall(
+            r"[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|[A-Z]+|\d+", name
+        )
+        if token
+    )
+
+
+_FORBIDDEN_RUNTIME_TOKENS = {
+    "Client",
+    "Handler",
+    "ORM",
+    "Queue",
+    "Persistence",
+    "Repository",
+    "Worker",
+    "Service",
+    "Endpoint",
+    "Poller",
+}
+
+
 def test_shared_and_identity_files_are_unchanged_and_public_api_has_no_runtime_types() -> None:
     assert not any("identity_and_access" in name for name in telegram_adapter.__all__)
     assert not {
         name
         for name in telegram_adapter.__all__
-        if any(
-            token in name.lower()
-            for token in ("client", "handler", "orm", "http", "queue", "persistence")
-        )
+        if _FORBIDDEN_RUNTIME_TOKENS.intersection(_camel_case_tokens(name))
     }
+
+
+def test_camel_case_tokenizer_accepts_safe_synthetic_exports() -> None:
+    safe_names = (
+        "TelegramIntentNormalizationRequest",
+        "TelegramIntentNormalizationState",
+        "TelegramExistingBotOperationalGate",
+        "TelegramProviderModeBoundary",
+        "TelegramProviderRuntimeAuthorizationState",
+    )
+    for name in safe_names:
+        assert not _FORBIDDEN_RUNTIME_TOKENS.intersection(_camel_case_tokens(name))
+
+
+def test_camel_case_tokenizer_rejects_unsafe_synthetic_exports() -> None:
+    unsafe_names = (
+        "TelegramClient",
+        "TelegramHTTPClient",
+        "TelegramCommandHandler",
+        "TelegramORMRepository",
+        "TelegramDeliveryQueue",
+        "TelegramPersistenceService",
+        "TelegramUpdateWorker",
+        "TelegramWebhookEndpoint",
+        "TelegramGetUpdatesPoller",
+    )
+    for name in unsafe_names:
+        assert _FORBIDDEN_RUNTIME_TOKENS.intersection(_camel_case_tokens(name))
+
+
+def test_camel_case_tokenizer_distinguishes_normalization_from_orm() -> None:
+    assert _camel_case_tokens("TelegramIntentNormalizationRequest") == (
+        "Telegram",
+        "Intent",
+        "Normalization",
+        "Request",
+    )
+    assert "ORM" not in _camel_case_tokens("TelegramIntentNormalizationState")
+    assert _camel_case_tokens("TelegramHTTPClient") == (
+        "Telegram",
+        "HTTP",
+        "Client",
+    )
+    assert _camel_case_tokens("TelegramORMRepository") == (
+        "Telegram",
+        "ORM",
+        "Repository",
+    )

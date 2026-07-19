@@ -2,6 +2,7 @@
 
 from mayak.modules.telegram_adapter.contracts import (
     TelegramAccountLinkReference,
+    TelegramCommandEnvelope,
     TelegramExistingBotEvidenceState,
     TelegramExistingBotMetadata,
     TelegramExistingBotOperationalGate,
@@ -9,6 +10,11 @@ from mayak.modules.telegram_adapter.contracts import (
     TelegramIdentityResolutionOutcome,
     TelegramIdentityResolutionRequest,
     TelegramIdentityResolutionState,
+    TelegramInboundInputKind,
+    TelegramIntentFamily,
+    TelegramIntentNormalizationRequest,
+    TelegramIntentNormalizationState,
+    TelegramIntentOwnerBoundary,
     TelegramProtectedSecretPresenceEvidence,
     TelegramProviderIdentity,
     TelegramProviderMode,
@@ -16,6 +22,7 @@ from mayak.modules.telegram_adapter.contracts import (
     TelegramProviderModeBoundaryState,
     TelegramProviderUpdateIdentity,
     TelegramPublicBotMetadataPresenceEvidence,
+    TelegramUntrustedInputReference,
     TelegramUpdateAdmissionState,
     TelegramUpdateDeduplicationRecord,
     TelegramUpdateDeduplicationState,
@@ -31,6 +38,13 @@ MODULE_ID = TELEGRAM_ADAPTER_MODULE_ID
 
 __all__ = [
     "MODULE_ID",
+    "TelegramInboundInputKind",
+    "TelegramIntentFamily",
+    "TelegramIntentNormalizationState",
+    "TelegramIntentOwnerBoundary",
+    "TelegramUntrustedInputReference",
+    "TelegramIntentNormalizationRequest",
+    "TelegramCommandEnvelope",
     "TelegramAccountLinkReference",
     "TelegramIdentityResolutionOutcome",
     "TelegramIdentityResolutionRequest",
