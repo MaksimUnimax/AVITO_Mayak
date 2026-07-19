@@ -556,7 +556,12 @@ class MaxOutboundRequest(_MaxContract):
     metadata: ContractMetadata
     notification_outbox_item_id: str = Field(min_length=1)
     notification_attempt_id: str = Field(min_length=1)
+    notification_channel: Literal["MAX"] = "MAX"
+    notification_attempt_lifecycle: Literal["ATTEMPT_PLANNED"] = "ATTEMPT_PLANNED"
     target_reference_id: str = Field(min_length=1)
+    target_kind: Literal["PERSONAL_CHAT", "GROUP", "CHANNEL", "UNKNOWN"]
+    max_bot_ref: str = Field(min_length=1)
+    max_chat_id: str | None = Field(default=None, min_length=1)
     safe_message_reference_id: str = Field(min_length=1)
     safe_card_reference_id: str | None = Field(default=None, min_length=1)
     delivery_purpose_reference_id: str = Field(min_length=1)
@@ -564,36 +569,142 @@ class MaxOutboundRequest(_MaxContract):
     idempotency_scope: IdempotencyScope
     fingerprint: IdempotencyFingerprint
     adapter_policy_reference_id: str = Field(min_length=1)
+    provider_request_intent_reference_id: str | None = Field(default=None, min_length=1)
+    mapping_evidence_reference_id: str = Field(min_length=1)
+    ambiguity_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
+    correlation_id: str = Field(min_length=1)
+    causation_id: str = Field(min_length=1)
     state: MaxOutboundRequestState
     reason_code: str = Field(min_length=1)
     generic_outbox_authority: Literal[False] = False
     generic_delivery_success_authority: Literal[False] = False
+    notification_attempt_mutation_authority: Literal[False] = False
+    notification_retry_authority: Literal[False] = False
+    notification_reconciliation_authority: Literal[False] = False
+    notification_eligibility_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    live_provider_request_sent: Literal[False] = False
+    provider_payload_retained: Literal[False] = False
+    secret_material_present: Literal[False] = False
+    final_message_rendering_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_outbound_mapping(self) -> "MaxOutboundRequest":
+        if self.state is not MaxOutboundRequestState.REQUEST_PREPARED and self.provider_request_intent_reference_id is not None:
+            raise ValueError("only REQUEST_PREPARED may carry provider request intent")
+        if self.state is not MaxOutboundRequestState.AMBIGUOUS and self.ambiguity_evidence_reference_id is not None:
+            raise ValueError("only AMBIGUOUS may carry ambiguity evidence")
+        if self.state is not MaxOutboundRequestState.BLOCKED and self.blocking_decision_reference_id is not None:
+            raise ValueError("only BLOCKED may carry blocking decision")
+
+        if self.state is MaxOutboundRequestState.REQUEST_PREPARED:
+            if self.target_kind != "PERSONAL_CHAT" or self.max_chat_id is None:
+                raise ValueError("REQUEST_PREPARED requires a personal chat and MAX chat reference")
+            if self.provider_request_intent_reference_id is None:
+                raise ValueError("REQUEST_PREPARED requires provider request intent")
+        elif self.state is MaxOutboundRequestState.BLOCKED:
+            if self.blocking_decision_reference_id is None:
+                raise ValueError("BLOCKED requires blocking decision")
+            if self.max_chat_id is not None or self.provider_request_intent_reference_id is not None or self.ambiguity_evidence_reference_id is not None:
+                raise ValueError("BLOCKED forbids MAX chat, request intent, and ambiguity evidence")
+        elif self.state is MaxOutboundRequestState.UNSUPPORTED_TARGET:
+            if self.target_kind not in {"GROUP", "CHANNEL"} or self.max_chat_id is not None or self.provider_request_intent_reference_id is not None or self.ambiguity_evidence_reference_id is not None or self.blocking_decision_reference_id is not None:
+                raise ValueError("UNSUPPORTED_TARGET requires GROUP or CHANNEL without dispatch references")
+        elif self.state is MaxOutboundRequestState.INVALID_CONTENT:
+            if self.target_kind != "PERSONAL_CHAT" or self.max_chat_id is None or self.provider_request_intent_reference_id is not None or self.ambiguity_evidence_reference_id is not None or self.blocking_decision_reference_id is not None:
+                raise ValueError("INVALID_CONTENT requires personal chat without dispatch references")
+        elif self.state is MaxOutboundRequestState.AMBIGUOUS:
+            if self.target_kind != "UNKNOWN" or self.ambiguity_evidence_reference_id is None or self.max_chat_id is not None or self.provider_request_intent_reference_id is not None or self.blocking_decision_reference_id is not None:
+                raise ValueError("AMBIGUOUS requires UNKNOWN target and ambiguity evidence only")
+        return self
 
 
 class MaxProviderOutcome(_MaxContract):
     max_provider_outcome_id: str = Field(min_length=1)
     metadata: ContractMetadata
+    outbound_request: MaxOutboundRequest
     max_outbound_request_id: str = Field(min_length=1)
     notification_attempt_id: str = Field(min_length=1)
+    notification_outbox_item_id: str = Field(min_length=1)
+    target_reference_id: str = Field(min_length=1)
+    notification_channel: Literal["MAX"] = "MAX"
+    notification_outcome_class: Literal["DISPATCH_AMBIGUOUS", "PROVIDER_ACCEPTED", "PROVIDER_REJECTED", "PROVIDER_UNAVAILABLE", "RATE_OR_ACCESS_RESTRICTED", "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE", "DELIVERY_AMBIGUOUS", "SUPPRESSED_OR_CANCELLED", "TARGET_UNAVAILABLE_OR_UNVERIFIED"]
     state: MaxProviderOutcomeState
     provider_response_reference_id: str | None = Field(default=None, min_length=1)
     max_message_id: str | None = Field(default=None, min_length=1)
+    max_callback_reference_id: str | None = Field(default=None, min_length=1)
+    provider_safe_delivery_reference_id: str | None = Field(default=None, min_length=1)
+    egress_correlation_reference_id: str | None = Field(default=None, min_length=1)
     retry_recommendation: MaxRetryRecommendation
     reconciliation_required: bool
+    failure_policy_reference_id: str | None = Field(default=None, min_length=1)
+    ambiguity_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
+    outcome_evidence_reference_id: str = Field(min_length=1)
+    adapter_contract_reference_id: str = Field(min_length=1)
+    adapter_contract_version_reference_id: str = Field(min_length=1)
+    correlation_id: str = Field(min_length=1)
+    causation_id: str = Field(min_length=1)
     reason_code: str = Field(min_length=1)
     human_read_proven: Literal[False] = False
     generic_delivery_success_authority: Literal[False] = False
     blind_retry_authority: Literal[False] = False
+    adapter_outcome_committed: Literal[True] = True
+    contains_raw_provider_payload: Literal[False] = False
+    provider_payload_retained: Literal[False] = False
+    secret_material_present: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    notification_outbox_authority: Literal[False] = False
+    notification_attempt_mutation_authority: Literal[False] = False
+    notification_delivery_lifecycle_authority: Literal[False] = False
+    retry_execution_authority: Literal[False] = False
+    business_success_proven: Literal[False] = False
+    user_visible_delivery_proven: Literal[False] = False
 
     @model_validator(mode="after")
     def _validate_ambiguity(self) -> "MaxProviderOutcome":
-        if self.state is MaxProviderOutcomeState.AMBIGUOUS:
-            if not self.reconciliation_required:
-                raise ValueError("AMBIGUOUS outcome requires reconciliation")
-            if self.retry_recommendation is not MaxRetryRecommendation.RECONCILE_FIRST:
-                raise ValueError("AMBIGUOUS outcome requires reconcile-first recommendation")
-        if self.retry_recommendation is MaxRetryRecommendation.RECONCILE_FIRST and not self.reconciliation_required:
-            raise ValueError("reconcile-first recommendation requires reconciliation")
+        if self.outbound_request.state is not MaxOutboundRequestState.REQUEST_PREPARED:
+            raise ValueError("outcome requires REQUEST_PREPARED outbound request")
+        for field in ("max_outbound_request_id", "notification_attempt_id", "notification_outbox_item_id", "target_reference_id", "correlation_id", "causation_id"):
+            if getattr(self, field) != getattr(self.outbound_request, field):
+                raise ValueError(f"{field} must match outbound request")
+        if self.retry_recommendation is MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY:
+            if self.failure_policy_reference_id is None:
+                raise ValueError("policy retry requires failure policy reference")
+        elif self.failure_policy_reference_id is not None:
+            raise ValueError("failure policy reference is only for policy retry")
+        if self.state is not MaxProviderOutcomeState.AMBIGUOUS and self.ambiguity_evidence_reference_id is not None:
+            raise ValueError("only AMBIGUOUS may carry ambiguity evidence")
+        if self.state is not MaxProviderOutcomeState.BLOCKED and self.blocking_decision_reference_id is not None:
+            raise ValueError("only BLOCKED may carry blocking decision")
+        if self.state is not MaxProviderOutcomeState.PROVIDER_ACCEPTED and any((self.max_message_id, self.max_callback_reference_id, self.provider_safe_delivery_reference_id)):
+            raise ValueError("delivery references require PROVIDER_ACCEPTED")
+
+        if self.state is MaxProviderOutcomeState.PROVIDER_ACCEPTED:
+            if self.notification_outcome_class != "PROVIDER_ACCEPTED" or self.provider_response_reference_id is None or self.provider_safe_delivery_reference_id is None or self.retry_recommendation is not MaxRetryRecommendation.NOT_APPLICABLE or self.reconciliation_required or self.failure_policy_reference_id is not None or self.ambiguity_evidence_reference_id is not None or self.blocking_decision_reference_id is not None:
+                raise ValueError("invalid PROVIDER_ACCEPTED outcome mapping")
+        elif self.state is MaxProviderOutcomeState.PROVIDER_REJECTED:
+            if self.notification_outcome_class != "PROVIDER_REJECTED" or self.provider_response_reference_id is None or self.reconciliation_required or self.ambiguity_evidence_reference_id is not None or self.blocking_decision_reference_id is not None or self.max_message_id is not None or self.max_callback_reference_id is not None or self.provider_safe_delivery_reference_id is not None or self.retry_recommendation not in {MaxRetryRecommendation.DO_NOT_RETRY, MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY}:
+                raise ValueError("invalid PROVIDER_REJECTED outcome mapping")
+        elif self.state is MaxProviderOutcomeState.AUTH_FAILED:
+            if self.notification_outcome_class != "RATE_OR_ACCESS_RESTRICTED" or self.provider_response_reference_id is None or self.retry_recommendation is not MaxRetryRecommendation.DO_NOT_RETRY or self.reconciliation_required or any((self.failure_policy_reference_id, self.max_message_id, self.max_callback_reference_id, self.provider_safe_delivery_reference_id, self.ambiguity_evidence_reference_id, self.blocking_decision_reference_id)):
+                raise ValueError("invalid AUTH_FAILED outcome mapping")
+        elif self.state is MaxProviderOutcomeState.UNAVAILABLE:
+            if self.notification_outcome_class != "PROVIDER_UNAVAILABLE" or self.retry_recommendation is not MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY or self.failure_policy_reference_id is None or self.reconciliation_required or any((self.max_message_id, self.max_callback_reference_id, self.provider_safe_delivery_reference_id, self.ambiguity_evidence_reference_id, self.blocking_decision_reference_id)):
+                raise ValueError("invalid UNAVAILABLE outcome mapping")
+        elif self.state is MaxProviderOutcomeState.RATE_LIMITED:
+            if self.notification_outcome_class != "RATE_OR_ACCESS_RESTRICTED" or self.provider_response_reference_id is None or self.retry_recommendation is not MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY or self.failure_policy_reference_id is None or self.reconciliation_required or any((self.max_message_id, self.max_callback_reference_id, self.provider_safe_delivery_reference_id, self.ambiguity_evidence_reference_id, self.blocking_decision_reference_id)):
+                raise ValueError("invalid RATE_LIMITED outcome mapping")
+        elif self.state is MaxProviderOutcomeState.MALFORMED:
+            if self.notification_outcome_class != "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE" or self.provider_response_reference_id is None or self.retry_recommendation is not MaxRetryRecommendation.DO_NOT_RETRY or self.reconciliation_required or any((self.failure_policy_reference_id, self.max_message_id, self.max_callback_reference_id, self.provider_safe_delivery_reference_id, self.ambiguity_evidence_reference_id, self.blocking_decision_reference_id)):
+                raise ValueError("invalid MALFORMED outcome mapping")
+        elif self.state is MaxProviderOutcomeState.AMBIGUOUS:
+            if self.notification_outcome_class not in {"DISPATCH_AMBIGUOUS", "DELIVERY_AMBIGUOUS"} or self.retry_recommendation is not MaxRetryRecommendation.RECONCILE_FIRST or not self.reconciliation_required or self.ambiguity_evidence_reference_id is None or any((self.failure_policy_reference_id, self.max_message_id, self.max_callback_reference_id, self.provider_safe_delivery_reference_id, self.blocking_decision_reference_id)):
+                raise ValueError("invalid AMBIGUOUS outcome mapping")
+        elif self.state is MaxProviderOutcomeState.BLOCKED:
+            if self.notification_outcome_class != "SUPPRESSED_OR_CANCELLED" or self.retry_recommendation is not MaxRetryRecommendation.NOT_APPLICABLE or self.reconciliation_required or self.blocking_decision_reference_id is None or any((self.provider_response_reference_id, self.failure_policy_reference_id, self.max_message_id, self.max_callback_reference_id, self.provider_safe_delivery_reference_id, self.ambiguity_evidence_reference_id)):
+                raise ValueError("invalid BLOCKED outcome mapping")
         return self
 
 
