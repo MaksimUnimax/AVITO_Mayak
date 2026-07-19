@@ -5,17 +5,17 @@ Version: 1.0
 
 Date: 2026-07-19
 
-Module: \10-max-adapter``
+Module: `10-max-adapter`
 
-Roadmap step: \MX-01``
+Roadmap step: `MX-01`
 
-Technical task: MX-01-MAX-OWNER-DECISION-CAPTURE-20260719-01``
+Technical task: `MX-01-MAX-OWNER-DECISION-CAPTURE-20260719-01`
 
 Governance classification: APPROVED owner decision capture
 
 Status: APPROVED_OWNER_INPUT_PENDING_INDEPENDENT_GITHUB_ACCEPTANCE
 
-Source-of-truth playbook: \docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md``
+Source-of-truth playbook: `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md`
 
 Scope: documentation/governance-only
 
