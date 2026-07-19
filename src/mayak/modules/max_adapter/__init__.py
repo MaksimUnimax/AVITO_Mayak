@@ -1,5 +1,57 @@
 """MAX Adapter module package."""
 
 from mayak.platform.boundaries import MAX_ADAPTER_MODULE_ID
+from .contracts import (
+    MaxAccountLinkReference,
+    MaxAdapterReadModel,
+    MaxCommandEnvelope,
+    MaxCommandNormalizationState,
+    MaxCommandSourceKind,
+    MaxContactValidationResult,
+    MaxContactValidationState,
+    MaxEligibilityEvidenceReference,
+    MaxEligibilityState,
+    MaxMiniAppValidationResult,
+    MaxMiniAppValidationState,
+    MaxOutboundRequest,
+    MaxOutboundRequestState,
+    MaxProviderIdentity,
+    MaxProviderOutcome,
+    MaxProviderOutcomeState,
+    MaxReconciliationRecord,
+    MaxReconciliationState,
+    MaxRetryRecommendation,
+    MaxUpdateDeduplicationRecord,
+    MaxUpdateDeduplicationState,
+    MaxUpdateIntakeRecord,
+    MaxUpdateIntakeState,
+)
 
 MODULE_ID = MAX_ADAPTER_MODULE_ID
+
+__all__ = [
+    "MODULE_ID",
+    "MaxAccountLinkReference",
+    "MaxAdapterReadModel",
+    "MaxCommandEnvelope",
+    "MaxCommandNormalizationState",
+    "MaxCommandSourceKind",
+    "MaxContactValidationResult",
+    "MaxContactValidationState",
+    "MaxEligibilityEvidenceReference",
+    "MaxEligibilityState",
+    "MaxMiniAppValidationResult",
+    "MaxMiniAppValidationState",
+    "MaxOutboundRequest",
+    "MaxOutboundRequestState",
+    "MaxProviderIdentity",
+    "MaxProviderOutcome",
+    "MaxProviderOutcomeState",
+    "MaxReconciliationRecord",
+    "MaxReconciliationState",
+    "MaxRetryRecommendation",
+    "MaxUpdateDeduplicationRecord",
+    "MaxUpdateDeduplicationState",
+    "MaxUpdateIntakeRecord",
+    "MaxUpdateIntakeState",
+]
