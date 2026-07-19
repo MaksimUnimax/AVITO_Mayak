@@ -47,10 +47,10 @@ FORBIDDEN_DECLARATIONS = {
 }
 
 
-def _import_name(node: ast.Import | ast.ImportFrom) -> str:
+def _import_names(node: ast.Import | ast.ImportFrom) -> list[str]:
     if isinstance(node, ast.Import):
-        return node.names[0].name
-    return node.module or ""
+        return [alias.name for alias in node.names]
+    return [node.module] if node.module else []
 
 
 def _import_violations(tree: ast.AST) -> list[str]:
@@ -59,15 +59,15 @@ def _import_violations(tree: ast.AST) -> list[str]:
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
-        name = _import_name(node)
-        root = name.split(".", 1)[0]
-        if root in FORBIDDEN_IMPORT_PREFIXES:
-            violations.append(f"forbidden import: {name}")
-        elif root == "mayak":
-            if name not in ALLOWED_MAYAK_IMPORTS:
-                violations.append(f"non-contract mayak import: {name}")
-        elif root not in stdlib and root not in {"pydantic"}:
-            violations.append(f"non-whitelisted import: {name}")
+        for name in _import_names(node):
+            root = name.split(".", 1)[0]
+            if root in FORBIDDEN_IMPORT_PREFIXES:
+                violations.append(f"forbidden import: {name}")
+            elif root == "mayak":
+                if name not in ALLOWED_MAYAK_IMPORTS:
+                    violations.append(f"non-contract mayak import: {name}")
+            elif root not in stdlib and root not in {"pydantic"}:
+                violations.append(f"non-whitelisted import: {name}")
     return violations
 
 
@@ -118,9 +118,30 @@ def test_ast_import_guard_rejects_provider_and_foreign_module_imports() -> None:
         "import httpx",
         "import sqlalchemy",
         "from mayak.modules.identity_and_access import Identity",
+        "import os, httpx",
+        "import httpx, os",
+        "import pathlib, sqlalchemy",
+        "import enum, aiogram",
+        "import typing, telethon",
+        "import sys, mayak.modules.identity_and_access",
+        "import pydantic, requests",
+        "import os, sys, httpx, pathlib",
     )
     for source in unsafe_sources:
         assert _guard_violations(source), source
+
+
+def test_ast_import_guard_allows_safe_and_contract_multi_alias_imports() -> None:
+    safe_sources = (
+        "import os, sys",
+        "import pathlib, enum, typing",
+        "import pydantic",
+        "from mayak.contracts import ContractMetadata",
+        "from mayak.platform.boundaries import TELEGRAM_ADAPTER_MODULE_ID",
+        "from mayak.modules.telegram_adapter.contracts import TelegramProviderIdentity",
+    )
+    for source in safe_sources:
+        assert _guard_violations(source) == [], source
 
 
 def test_ast_guard_rejects_calls_urls_unsafe_fields_and_runtime_declarations() -> None:
