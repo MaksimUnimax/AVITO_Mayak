@@ -267,6 +267,13 @@ class AdminAnchorActionRequest(_AdminAnchorContract):
                 raise ValueError("rebase cannot carry recovery reference")
         if self.action_kind is AdminAnchorActionKind.REVIEW_LOST_ANCHORS_RECOVERY:
             if prepared and (
+                summary.lost_anchors_recovery_reference_id is None
+                or self.lost_anchors_recovery_reference_id is None
+            ):
+                raise ValueError(
+                    "prepared recovery review requires current and request recovery references"
+                )
+            if prepared and (
                 self.lost_anchors_recovery_reference_id
                 != summary.lost_anchors_recovery_reference_id
             ):
