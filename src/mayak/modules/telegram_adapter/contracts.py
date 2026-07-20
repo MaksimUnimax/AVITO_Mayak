@@ -262,7 +262,9 @@ class TelegramIntentFamily(str, Enum):
     BEACON_STATUS_REQUESTED = "BEACON_STATUS_REQUESTED"
     CREATE_BEACON_FROM_SOURCE_URL_REQUESTED = "CREATE_BEACON_FROM_SOURCE_URL_REQUESTED"
     BEACON_SETTINGS_REQUESTED = "BEACON_SETTINGS_REQUESTED"
-    UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED = "UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED"  # noqa: E501
+    UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED = (
+        "UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED"  # noqa: E501
+    )
     PAUSE_BEACON_REQUESTED = "PAUSE_BEACON_REQUESTED"
     RESUME_BEACON_REQUESTED = "RESUME_BEACON_REQUESTED"
     DELETE_BEACON_REQUESTED_WITH_CONFIRMATION = "DELETE_BEACON_REQUESTED_WITH_CONFIRMATION"
@@ -291,20 +293,34 @@ class TelegramIntentOwnerBoundary(str, Enum):
 _INTENT_OWNER_BOUNDARIES: dict[TelegramIntentFamily, tuple[TelegramIntentOwnerBoundary, ...]] = {
     TelegramIntentFamily.START_OR_LINK_TELEGRAM: (TelegramIntentOwnerBoundary.IDENTITY_AND_ACCESS,),
     TelegramIntentFamily.HELP_REQUESTED: (TelegramIntentOwnerBoundary.TELEGRAM_ADAPTER,),
-    TelegramIntentFamily.LIST_MY_BEACONS_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
+    TelegramIntentFamily.LIST_MY_BEACONS_REQUESTED: (
+        TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    ),  # noqa: E501
     TelegramIntentFamily.BEACON_STATUS_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),
-    TelegramIntentFamily.CREATE_BEACON_FROM_SOURCE_URL_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
-    TelegramIntentFamily.BEACON_SETTINGS_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
+    TelegramIntentFamily.CREATE_BEACON_FROM_SOURCE_URL_REQUESTED: (
+        TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    ),  # noqa: E501
+    TelegramIntentFamily.BEACON_SETTINGS_REQUESTED: (
+        TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    ),  # noqa: E501
     TelegramIntentFamily.UPDATE_BEACON_INTERVAL_OR_STATUS_PREF_REQUESTED: (
         TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
         TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,
     ),
     TelegramIntentFamily.PAUSE_BEACON_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),
     TelegramIntentFamily.RESUME_BEACON_REQUESTED: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),
-    TelegramIntentFamily.DELETE_BEACON_REQUESTED_WITH_CONFIRMATION: (TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,),  # noqa: E501
-    TelegramIntentFamily.TARIFF_OR_LIMITS_REQUESTED: (TelegramIntentOwnerBoundary.ENTITLEMENTS_AND_BILLING,),  # noqa: E501
-    TelegramIntentFamily.OPEN_FULL_LISTING_RESULT_REQUESTED: (TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,),  # noqa: E501
-    TelegramIntentFamily.TOGGLE_NO_NEW_STATUS_NOTIFICATION_REQUESTED: (TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,),  # noqa: E501
+    TelegramIntentFamily.DELETE_BEACON_REQUESTED_WITH_CONFIRMATION: (
+        TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    ),  # noqa: E501
+    TelegramIntentFamily.TARIFF_OR_LIMITS_REQUESTED: (
+        TelegramIntentOwnerBoundary.ENTITLEMENTS_AND_BILLING,
+    ),  # noqa: E501
+    TelegramIntentFamily.OPEN_FULL_LISTING_RESULT_REQUESTED: (
+        TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,
+    ),  # noqa: E501
+    TelegramIntentFamily.TOGGLE_NO_NEW_STATUS_NOTIFICATION_REQUESTED: (
+        TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,
+    ),  # noqa: E501
     TelegramIntentFamily.UNSUPPORTED_OR_AMBIGUOUS_INPUT: (TelegramIntentOwnerBoundary.NONE,),
 }
 
@@ -351,14 +367,22 @@ class TelegramIntentNormalizationRequest(_TelegramContract):
             raise ValueError("normalization requires accepted intake")
         if intake.admission_state is not TelegramUpdateAdmissionState.VERIFIED:
             raise ValueError("normalization requires verified admission")
-        if intake.structural_classification is not TelegramUpdateStructuralClass.SUPPORTED_CANDIDATE:  # noqa: E501
+        if (
+            intake.structural_classification
+            is not TelegramUpdateStructuralClass.SUPPORTED_CANDIDATE
+        ):  # noqa: E501
             raise ValueError("normalization requires supported candidate")
         if intake.provider_identity is None:
             raise ValueError("normalization requires provider identity")
         if intake.normalization_reference_id != self.telegram_intent_normalization_request_id:
             raise ValueError("normalization reference must match request id")
-        if dedup.state is not TelegramUpdateDeduplicationState.NEW_UPDATE or not dedup.adapter_processing_authorized:  # noqa: E501
-            raise ValueError("normalization requires a new update authorized for adapter processing")  # noqa: E501
+        if (
+            dedup.state is not TelegramUpdateDeduplicationState.NEW_UPDATE
+            or not dedup.adapter_processing_authorized
+        ):  # noqa: E501
+            raise ValueError(
+                "normalization requires a new update authorized for adapter processing"
+            )  # noqa: E501
         if dedup.current_intake_record_id != intake.telegram_update_intake_record_id:
             raise ValueError("deduplication must point at current intake")
         if not (
@@ -401,29 +425,535 @@ class TelegramCommandEnvelope(_TelegramContract):
         family = self.intent_family
         input_kind = self.normalization_request.untrusted_input.input_kind
         expected = _INTENT_OWNER_BOUNDARIES[family]
-        if self.state in {TelegramIntentNormalizationState.UNSUPPORTED, TelegramIntentNormalizationState.AMBIGUOUS}:  # noqa: E501
+        if self.state in {
+            TelegramIntentNormalizationState.UNSUPPORTED,
+            TelegramIntentNormalizationState.AMBIGUOUS,
+        }:  # noqa: E501
             expected_family = TelegramIntentFamily.UNSUPPORTED_OR_AMBIGUOUS_INPUT
-            expected_kind = (TelegramInboundInputKind.UNSUPPORTED_INPUT if self.state is TelegramIntentNormalizationState.UNSUPPORTED else TelegramInboundInputKind.AMBIGUOUS_INPUT)  # noqa: E501
-            if family is not expected_family or input_kind is not expected_kind or self.owner_boundaries != (TelegramIntentOwnerBoundary.NONE,) or self.owner_contract_reference_ids or self.candidate_source_url_reference_id is not None or self.blocking_decision_reference_id is not None or self.dangerous_action_confirmation_required:  # noqa: E501
+            expected_kind = (
+                TelegramInboundInputKind.UNSUPPORTED_INPUT
+                if self.state is TelegramIntentNormalizationState.UNSUPPORTED
+                else TelegramInboundInputKind.AMBIGUOUS_INPUT
+            )  # noqa: E501
+            if (
+                family is not expected_family
+                or input_kind is not expected_kind
+                or self.owner_boundaries != (TelegramIntentOwnerBoundary.NONE,)
+                or self.owner_contract_reference_ids
+                or self.candidate_source_url_reference_id is not None
+                or self.blocking_decision_reference_id is not None
+                or self.dangerous_action_confirmation_required
+            ):  # noqa: E501
                 raise ValueError("unsupported and ambiguous envelope matrix is exact")
             return self
-        if family is TelegramIntentFamily.UNSUPPORTED_OR_AMBIGUOUS_INPUT or input_kind in {TelegramInboundInputKind.UNSUPPORTED_INPUT, TelegramInboundInputKind.AMBIGUOUS_INPUT}:  # noqa: E501
+        if family is TelegramIntentFamily.UNSUPPORTED_OR_AMBIGUOUS_INPUT or input_kind in {
+            TelegramInboundInputKind.UNSUPPORTED_INPUT,
+            TelegramInboundInputKind.AMBIGUOUS_INPUT,
+        }:  # noqa: E501
             raise ValueError("supported envelope cannot use unsupported or ambiguous input")
-        if self.owner_boundaries != expected or TelegramIntentOwnerBoundary.NONE in self.owner_boundaries:  # noqa: E501
+        if (
+            self.owner_boundaries != expected
+            or TelegramIntentOwnerBoundary.NONE in self.owner_boundaries
+        ):  # noqa: E501
             raise ValueError("owner boundaries do not match intent family")
         if self.state is TelegramIntentNormalizationState.NORMALIZED:
-            if self.blocking_decision_reference_id is not None or len(self.owner_contract_reference_ids) != len(expected) or any(not ref.strip() for ref in self.owner_contract_reference_ids):  # noqa: E501
+            if (
+                self.blocking_decision_reference_id is not None
+                or len(self.owner_contract_reference_ids) != len(expected)
+                or any(not ref.strip() for ref in self.owner_contract_reference_ids)
+            ):  # noqa: E501
                 raise ValueError("normalized envelope requires owner references and no block")
         elif self.state is TelegramIntentNormalizationState.BLOCKED:
             if not self.blocking_decision_reference_id or self.owner_contract_reference_ids:
                 raise ValueError("blocked envelope requires only a blocking reference")
         if family is TelegramIntentFamily.CREATE_BEACON_FROM_SOURCE_URL_REQUESTED:
-            if input_kind is not TelegramInboundInputKind.SOURCE_URL_CANDIDATE or self.candidate_source_url_reference_id != self.normalization_request.untrusted_input.candidate_source_url_reference_id:  # noqa: E501
+            if (
+                input_kind is not TelegramInboundInputKind.SOURCE_URL_CANDIDATE
+                or self.candidate_source_url_reference_id
+                != self.normalization_request.untrusted_input.candidate_source_url_reference_id
+            ):  # noqa: E501
                 raise ValueError("create intent requires the exact opaque source reference")
         elif self.candidate_source_url_reference_id is not None:
             raise ValueError("only create intent may carry a source reference")
-        if self.dangerous_action_confirmation_required != (family is TelegramIntentFamily.DELETE_BEACON_REQUESTED_WITH_CONFIRMATION):  # noqa: E501
+        if self.dangerous_action_confirmation_required != (
+            family is TelegramIntentFamily.DELETE_BEACON_REQUESTED_WITH_CONFIRMATION
+        ):  # noqa: E501
             raise ValueError("only deletion requires confirmation")
+        return self
+
+
+class TelegramCallbackActionScope(str, Enum):
+    OPEN_CONTEXT = "OPEN_CONTEXT"
+    READ_BEACON = "READ_BEACON"
+    UPDATE_BEACON = "UPDATE_BEACON"
+    PAUSE_BEACON = "PAUSE_BEACON"
+    RESUME_BEACON = "RESUME_BEACON"
+    DELETE_BEACON = "DELETE_BEACON"
+    CHANGE_BEACON_SOURCE_URL = "CHANGE_BEACON_SOURCE_URL"
+    UNLINK_TELEGRAM_IDENTITY = "UNLINK_TELEGRAM_IDENTITY"
+    DISABLE_NOTIFICATION_CHANNEL = "DISABLE_NOTIFICATION_CHANNEL"
+    TARIFF_OR_PAYMENT_SENSITIVE_ACTION = "TARIFF_OR_PAYMENT_SENSITIVE_ACTION"
+    UNSUPPORTED_ACTION = "UNSUPPORTED_ACTION"
+    AMBIGUOUS_ACTION = "AMBIGUOUS_ACTION"
+
+
+class TelegramCallbackRiskClass(str, Enum):
+    NON_DESTRUCTIVE = "NON_DESTRUCTIVE"
+    STATE_CHANGING = "STATE_CHANGING"
+    DESTRUCTIVE = "DESTRUCTIVE"
+    IDENTITY_SENSITIVE = "IDENTITY_SENSITIVE"
+    NOTIFICATION_SENSITIVE = "NOTIFICATION_SENSITIVE"
+    PAYMENT_OR_TARIFF_SENSITIVE = "PAYMENT_OR_TARIFF_SENSITIVE"
+    UNSUPPORTED_OR_AMBIGUOUS = "UNSUPPORTED_OR_AMBIGUOUS"
+
+
+class TelegramCallbackPayloadValidationMode(str, Enum):
+    OPAQUE_SERVER_RESOLVED = "OPAQUE_SERVER_RESOLVED"
+    SIGNED_VALIDATED = "SIGNED_VALIDATED"
+    UNVALIDATED = "UNVALIDATED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramCallbackReplayState(str, Enum):
+    NEW_ACTION = "NEW_ACTION"
+    DUPLICATE_REPLAY = "DUPLICATE_REPLAY"
+    FINGERPRINT_CONFLICT = "FINGERPRINT_CONFLICT"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramCallbackExpiryState(str, Enum):
+    NOT_REQUIRED = "NOT_REQUIRED"
+    VALID = "VALID"
+    EXPIRED = "EXPIRED"
+    MISSING = "MISSING"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramCallbackConfirmationState(str, Enum):
+    NOT_REQUIRED = "NOT_REQUIRED"
+    REQUIRED = "REQUIRED"
+    VERIFIED = "VERIFIED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+
+
+class TelegramCallbackValidationState(str, Enum):
+    VALIDATED_FOR_OWNER_HANDOFF = "VALIDATED_FOR_OWNER_HANDOFF"
+    CONFIRMATION_REQUIRED = "CONFIRMATION_REQUIRED"
+    REJECTED_UNTRUSTED = "REJECTED_UNTRUSTED"
+    REJECTED_EXPIRED = "REJECTED_EXPIRED"
+    REJECTED_UNAUTHORIZED = "REJECTED_UNAUTHORIZED"
+    DUPLICATE_REPLAY = "DUPLICATE_REPLAY"
+    FINGERPRINT_CONFLICT = "FINGERPRINT_CONFLICT"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+_CALLBACK_OWNER: dict[TelegramCallbackActionScope, TelegramIntentOwnerBoundary] = {
+    TelegramCallbackActionScope.OPEN_CONTEXT: TelegramIntentOwnerBoundary.TELEGRAM_ADAPTER,
+    TelegramCallbackActionScope.READ_BEACON: TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    TelegramCallbackActionScope.UPDATE_BEACON: TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    TelegramCallbackActionScope.PAUSE_BEACON: TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    TelegramCallbackActionScope.RESUME_BEACON: TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    TelegramCallbackActionScope.DELETE_BEACON: TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,
+    TelegramCallbackActionScope.CHANGE_BEACON_SOURCE_URL: TelegramIntentOwnerBoundary.BEACON_MANAGEMENT,  # noqa: E501
+    TelegramCallbackActionScope.UNLINK_TELEGRAM_IDENTITY: TelegramIntentOwnerBoundary.IDENTITY_AND_ACCESS,  # noqa: E501
+    TelegramCallbackActionScope.DISABLE_NOTIFICATION_CHANNEL: TelegramIntentOwnerBoundary.NOTIFICATION_DELIVERY,  # noqa: E501
+    TelegramCallbackActionScope.TARIFF_OR_PAYMENT_SENSITIVE_ACTION: TelegramIntentOwnerBoundary.ENTITLEMENTS_AND_BILLING,  # noqa: E501
+    TelegramCallbackActionScope.UNSUPPORTED_ACTION: TelegramIntentOwnerBoundary.NONE,
+    TelegramCallbackActionScope.AMBIGUOUS_ACTION: TelegramIntentOwnerBoundary.NONE,
+}
+
+_CALLBACK_RISK: dict[TelegramCallbackActionScope, TelegramCallbackRiskClass] = {
+    TelegramCallbackActionScope.OPEN_CONTEXT: TelegramCallbackRiskClass.NON_DESTRUCTIVE,
+    TelegramCallbackActionScope.READ_BEACON: TelegramCallbackRiskClass.NON_DESTRUCTIVE,
+    TelegramCallbackActionScope.UPDATE_BEACON: TelegramCallbackRiskClass.STATE_CHANGING,
+    TelegramCallbackActionScope.PAUSE_BEACON: TelegramCallbackRiskClass.STATE_CHANGING,
+    TelegramCallbackActionScope.RESUME_BEACON: TelegramCallbackRiskClass.STATE_CHANGING,
+    TelegramCallbackActionScope.DELETE_BEACON: TelegramCallbackRiskClass.DESTRUCTIVE,
+    TelegramCallbackActionScope.CHANGE_BEACON_SOURCE_URL: TelegramCallbackRiskClass.DESTRUCTIVE,
+    TelegramCallbackActionScope.UNLINK_TELEGRAM_IDENTITY: TelegramCallbackRiskClass.IDENTITY_SENSITIVE,  # noqa: E501
+    TelegramCallbackActionScope.DISABLE_NOTIFICATION_CHANNEL: TelegramCallbackRiskClass.NOTIFICATION_SENSITIVE,  # noqa: E501
+    TelegramCallbackActionScope.TARIFF_OR_PAYMENT_SENSITIVE_ACTION: TelegramCallbackRiskClass.PAYMENT_OR_TARIFF_SENSITIVE,  # noqa: E501
+    TelegramCallbackActionScope.UNSUPPORTED_ACTION: TelegramCallbackRiskClass.UNSUPPORTED_OR_AMBIGUOUS,  # noqa: E501
+    TelegramCallbackActionScope.AMBIGUOUS_ACTION: TelegramCallbackRiskClass.UNSUPPORTED_OR_AMBIGUOUS,  # noqa: E501
+}
+
+_DANGEROUS_CALLBACK_ACTIONS = (
+    TelegramCallbackActionScope.DELETE_BEACON,
+    TelegramCallbackActionScope.CHANGE_BEACON_SOURCE_URL,
+    TelegramCallbackActionScope.UNLINK_TELEGRAM_IDENTITY,
+    TelegramCallbackActionScope.DISABLE_NOTIFICATION_CHANNEL,
+    TelegramCallbackActionScope.TARIFF_OR_PAYMENT_SENSITIVE_ACTION,
+)
+
+
+class TelegramUntrustedCallbackReference(_TelegramContract):
+    telegram_untrusted_callback_reference_id: str = Field(min_length=1)
+    provider_update_identity: TelegramProviderUpdateIdentity
+    callback_query_reference_id: str = Field(min_length=1)
+    opaque_callback_payload_reference_id: str = Field(min_length=1)
+    payload_validation_mode: TelegramCallbackPayloadValidationMode
+    callback_action_idempotency_key: IdempotencyKey
+    callback_action_idempotency_scope: IdempotencyScope
+    callback_payload_fingerprint: IdempotencyFingerprint
+    server_resolution_or_signature_evidence_reference_id: str | None = Field(
+        default=None, min_length=1
+    )
+    expiry_policy_reference_id: str | None = Field(default=None, min_length=1)
+    expiry_evidence_reference_id: str | None = Field(default=None, min_length=1)
+    raw_callback_data_present: Literal[False] = False
+    callback_data_trusted: Literal[False] = False
+    button_text_trusted: Literal[False] = False
+    callback_payload_is_authorization: Literal[False] = False
+    raw_account_id_embedded: Literal[False] = False
+    raw_beacon_id_embedded: Literal[False] = False
+    secret_material_embedded: Literal[False] = False
+    business_execution_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_callback_evidence(self) -> "TelegramUntrustedCallbackReference":
+        validated = {
+            TelegramCallbackPayloadValidationMode.OPAQUE_SERVER_RESOLVED,
+            TelegramCallbackPayloadValidationMode.SIGNED_VALIDATED,
+        }
+        if (
+            self.payload_validation_mode in validated
+            and not self.server_resolution_or_signature_evidence_reference_id
+        ):
+            raise ValueError("validated callback payload requires evidence")
+        if (
+            self.payload_validation_mode
+            in {
+                TelegramCallbackPayloadValidationMode.UNVALIDATED,
+                TelegramCallbackPayloadValidationMode.AMBIGUOUS,
+            }
+            and self.server_resolution_or_signature_evidence_reference_id is not None
+        ):
+            raise ValueError("unvalidated callback payload cannot claim validation evidence")
+        if (
+            self.expiry_evidence_reference_id is not None
+            and self.expiry_policy_reference_id is None
+        ):
+            raise ValueError("expiry evidence requires an expiry policy")
+        return self
+
+
+class TelegramCallbackAuthorizationEvidence(_TelegramContract):
+    telegram_callback_authorization_evidence_id: str = Field(min_length=1)
+    action_scope: TelegramCallbackActionScope
+    owner_boundary: TelegramIntentOwnerBoundary
+    owning_module_contract_reference_id: str = Field(min_length=1)
+    owning_module_decision_reference_id: str = Field(min_length=1)
+    identity_resolution_outcome: TelegramIdentityResolutionOutcome
+    server_side_ownership_check_performed: bool
+    authorization_granted: bool
+    action_scope_matches_decision: bool
+    actor_account_matches_owner: bool
+    client_payload_used_as_authorization: Literal[False] = False
+    telegram_provider_identity_used_as_account_id: Literal[False] = False
+    direct_foreign_mutation_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_authorization(self) -> "TelegramCallbackAuthorizationEvidence":
+        outcome = self.identity_resolution_outcome
+        if (
+            outcome.state is not TelegramIdentityResolutionState.RESOLVED_ACCOUNT
+            or outcome.account_link is None
+        ):
+            raise ValueError("callback authorization requires a resolved account link")
+        if outcome.provider_identity != outcome.account_link.provider_identity:
+            raise ValueError("resolved provider identity must match account link")
+        if self.owner_boundary in {
+            TelegramIntentOwnerBoundary.TELEGRAM_ADAPTER,
+            TelegramIntentOwnerBoundary.NONE,
+        }:
+            raise ValueError("adapter and none boundaries cannot issue authorization evidence")
+        if self.owner_boundary is not _CALLBACK_OWNER[self.action_scope]:
+            raise ValueError("authorization owner does not match action scope")
+        if self.authorization_granted and not (
+            self.server_side_ownership_check_performed
+            and self.action_scope_matches_decision
+            and self.actor_account_matches_owner
+        ):
+            raise ValueError("granted authorization requires all server-side checks")
+        return self
+
+
+class TelegramCallbackValidationRequest(_TelegramContract):
+    telegram_callback_validation_request_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    intake_record: TelegramUpdateIntakeRecord
+    deduplication_record: TelegramUpdateDeduplicationRecord
+    callback_reference: TelegramUntrustedCallbackReference
+    action_scope: TelegramCallbackActionScope
+    risk_class: TelegramCallbackRiskClass
+    owner_boundary: TelegramIntentOwnerBoundary
+    replay_state: TelegramCallbackReplayState
+    expiry_state: TelegramCallbackExpiryState
+    confirmation_state: TelegramCallbackConfirmationState
+    authorization_evidence: TelegramCallbackAuthorizationEvidence | None = None
+    existing_callback_outcome_reference_id: str | None = Field(default=None, min_length=1)
+    callback_policy_reference_id: str = Field(min_length=1)
+    reason_code: str = Field(min_length=1)
+    business_dispatch_authorized: Literal[False] = False
+    command_handler_authorized: Literal[False] = False
+    conversation_state_machine_authorized: Literal[False] = False
+    provider_runtime_authorized: Literal[False] = False
+    direct_foreign_mutation_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_request(self) -> "TelegramCallbackValidationRequest":
+        intake, dedup, callback = (
+            self.intake_record,
+            self.deduplication_record,
+            self.callback_reference,
+        )
+        if intake.intake_state is not TelegramUpdateIntakeState.ACCEPTED_FOR_NORMALIZATION:
+            raise ValueError("callback validation requires accepted intake")
+        if (
+            intake.admission_state is not TelegramUpdateAdmissionState.VERIFIED
+            or intake.structural_classification
+            is not TelegramUpdateStructuralClass.SUPPORTED_CANDIDATE
+        ):
+            raise ValueError("callback validation requires verified supported intake")
+        if intake.provider_identity is None:
+            raise ValueError("callback validation requires provider identity")
+        if (
+            dedup.state is not TelegramUpdateDeduplicationState.NEW_UPDATE
+            or not dedup.adapter_processing_authorized
+        ):
+            raise ValueError("callback validation requires a new adapter-authorized update")
+        if not (
+            dedup.current_intake_record_id == intake.telegram_update_intake_record_id
+            and callback.provider_update_identity
+            == intake.provider_update_identity
+            == dedup.provider_update_identity
+            and callback.callback_action_idempotency_key
+            == intake.idempotency_key
+            == dedup.idempotency_key
+            and callback.callback_action_idempotency_scope
+            == intake.idempotency_scope
+            == dedup.idempotency_scope
+            and callback.callback_payload_fingerprint == intake.fingerprint == dedup.fingerprint
+        ):
+            raise ValueError("callback and intake identity evidence must agree")
+        if (
+            self.owner_boundary is not _CALLBACK_OWNER[self.action_scope]
+            or self.risk_class is not _CALLBACK_RISK[self.action_scope]
+        ):
+            raise ValueError("callback owner and risk mappings are exact")
+        unsupported = self.action_scope is TelegramCallbackActionScope.UNSUPPORTED_ACTION
+        ambiguous = self.action_scope is TelegramCallbackActionScope.AMBIGUOUS_ACTION
+        if unsupported and (
+            self.risk_class is not TelegramCallbackRiskClass.UNSUPPORTED_OR_AMBIGUOUS
+            or self.owner_boundary is not TelegramIntentOwnerBoundary.NONE
+        ):
+            raise ValueError("unsupported action mapping is exact")
+        if ambiguous and (
+            self.risk_class is not TelegramCallbackRiskClass.UNSUPPORTED_OR_AMBIGUOUS
+            or self.owner_boundary is not TelegramIntentOwnerBoundary.NONE
+        ):
+            raise ValueError("ambiguous action mapping is exact")
+        if (
+            not unsupported
+            and not ambiguous
+            and callback.payload_validation_mode
+            in {
+                TelegramCallbackPayloadValidationMode.UNVALIDATED,
+                TelegramCallbackPayloadValidationMode.AMBIGUOUS,
+            }
+        ):
+            raise ValueError("supported callback action requires validated payload evidence")
+        if self.owner_boundary in {
+            TelegramIntentOwnerBoundary.TELEGRAM_ADAPTER,
+            TelegramIntentOwnerBoundary.NONE,
+        }:
+            if self.authorization_evidence is not None:
+                raise ValueError("local/none action cannot carry authorization evidence")
+        elif (
+            self.authorization_evidence is None
+            or self.authorization_evidence.action_scope is not self.action_scope
+            or self.authorization_evidence.owner_boundary is not self.owner_boundary
+        ):
+            raise ValueError("external owner requires matching authorization evidence")
+        if (
+            self.authorization_evidence is not None
+            and self.authorization_evidence.identity_resolution_outcome.provider_identity
+            != intake.provider_identity
+        ):
+            raise ValueError("authorization evidence must resolve the intake provider identity")
+        if (
+            self.replay_state is TelegramCallbackReplayState.NEW_ACTION
+            and self.existing_callback_outcome_reference_id is not None
+        ):
+            raise ValueError("new action cannot reference an existing outcome")
+        if (
+            self.replay_state
+            in {
+                TelegramCallbackReplayState.DUPLICATE_REPLAY,
+                TelegramCallbackReplayState.FINGERPRINT_CONFLICT,
+            }
+            and self.existing_callback_outcome_reference_id is None
+        ):
+            raise ValueError("replay/conflict requires existing outcome reference")
+        if (
+            self.replay_state is TelegramCallbackReplayState.AMBIGUOUS
+            and self.existing_callback_outcome_reference_id is not None
+            and not self.existing_callback_outcome_reference_id.strip()
+        ):
+            raise ValueError("ambiguous outcome reference must be opaque")
+        policy, evidence = (
+            callback.expiry_policy_reference_id,
+            callback.expiry_evidence_reference_id,
+        )
+        if policy is None:
+            if (
+                self.expiry_state is not TelegramCallbackExpiryState.NOT_REQUIRED
+                or evidence is not None
+            ):
+                raise ValueError("no expiry policy permits only NOT_REQUIRED without evidence")
+        elif self.expiry_state is TelegramCallbackExpiryState.NOT_REQUIRED:
+            raise ValueError("expiry policy requires an evaluated state")
+        elif (
+            self.expiry_state
+            in {TelegramCallbackExpiryState.VALID, TelegramCallbackExpiryState.EXPIRED}
+            and evidence is None
+        ):
+            raise ValueError("evaluated expiry requires evidence")
+        elif self.expiry_state is TelegramCallbackExpiryState.MISSING and evidence is not None:
+            raise ValueError("missing expiry cannot fabricate evidence")
+        dangerous = self.action_scope in _DANGEROUS_CALLBACK_ACTIONS
+        if dangerous and self.confirmation_state is TelegramCallbackConfirmationState.NOT_REQUIRED:
+            raise ValueError("dangerous action requires confirmation state")
+        if (
+            not dangerous
+            and not unsupported
+            and not ambiguous
+            and self.confirmation_state is not TelegramCallbackConfirmationState.NOT_REQUIRED
+        ):
+            raise ValueError("non-dangerous supported action does not require confirmation")
+        if (
+            unsupported or ambiguous
+        ) and self.confirmation_state is not TelegramCallbackConfirmationState.NOT_REQUIRED:
+            raise ValueError("unsupported/ambiguous action cannot require confirmation")
+        return self
+
+
+class TelegramCallbackValidationOutcome(_TelegramContract):
+    telegram_callback_validation_outcome_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    validation_request: TelegramCallbackValidationRequest
+    state: TelegramCallbackValidationState
+    owner_handoff_reference_id: str | None = Field(default=None, min_length=1)
+    replayed_callback_outcome_reference_id: str | None = Field(default=None, min_length=1)
+    blocking_decision_reference_id: str | None = Field(default=None, min_length=1)
+    confirmation_challenge_reference_id: str | None = Field(default=None, min_length=1)
+    reason_code: str = Field(min_length=1)
+    owner_handoff_authorized: bool
+    second_business_effect_authorized: Literal[False] = False
+    business_execution_authorized: Literal[False] = False
+    direct_beacon_mutation_authorized: Literal[False] = False
+    direct_identity_mutation_authorized: Literal[False] = False
+    direct_notification_mutation_authorized: Literal[False] = False
+    direct_entitlement_mutation_authorized: Literal[False] = False
+    callback_data_is_authorization: Literal[False] = False
+    provider_runtime_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_outcome(self) -> "TelegramCallbackValidationOutcome":
+        request, state = self.validation_request, self.state
+        action = request.action_scope
+        if state is TelegramCallbackValidationState.VALIDATED_FOR_OWNER_HANDOFF:
+            if (
+                request.replay_state is not TelegramCallbackReplayState.NEW_ACTION
+                or request.expiry_state
+                not in {TelegramCallbackExpiryState.NOT_REQUIRED, TelegramCallbackExpiryState.VALID}
+                or request.confirmation_state
+                not in {
+                    TelegramCallbackConfirmationState.NOT_REQUIRED,
+                    TelegramCallbackConfirmationState.VERIFIED,
+                }
+                or request.callback_reference.payload_validation_mode
+                not in {
+                    TelegramCallbackPayloadValidationMode.OPAQUE_SERVER_RESOLVED,
+                    TelegramCallbackPayloadValidationMode.SIGNED_VALIDATED,
+                }
+                or (
+                    request.authorization_evidence is not None
+                    and not request.authorization_evidence.authorization_granted
+                )
+                or not self.owner_handoff_reference_id
+                or self.replayed_callback_outcome_reference_id is not None
+                or self.blocking_decision_reference_id is not None
+                or self.confirmation_challenge_reference_id is not None
+                or not self.owner_handoff_authorized
+            ):
+                raise ValueError("validated handoff matrix is exact")
+        elif state is TelegramCallbackValidationState.CONFIRMATION_REQUIRED:
+            if (
+                action not in _DANGEROUS_CALLBACK_ACTIONS
+                or request.replay_state is not TelegramCallbackReplayState.NEW_ACTION
+                or request.expiry_state
+                not in {TelegramCallbackExpiryState.NOT_REQUIRED, TelegramCallbackExpiryState.VALID}
+                or request.confirmation_state is not TelegramCallbackConfirmationState.REQUIRED
+                or request.authorization_evidence is None
+                or not request.authorization_evidence.authorization_granted
+                or not self.confirmation_challenge_reference_id
+                or self.owner_handoff_reference_id is not None
+                or self.replayed_callback_outcome_reference_id is not None
+                or self.blocking_decision_reference_id is not None
+                or self.owner_handoff_authorized
+            ):
+                raise ValueError("confirmation-required matrix is exact")
+        else:
+            if self.owner_handoff_authorized or self.owner_handoff_reference_id is not None:
+                raise ValueError("only validated handoff may authorize or reference handoff")
+            if not self.blocking_decision_reference_id and state not in {
+                TelegramCallbackValidationState.DUPLICATE_REPLAY
+            }:
+                raise ValueError("blocked outcome requires blocking reference")
+            if (
+                state is TelegramCallbackValidationState.REJECTED_UNTRUSTED
+                and request.callback_reference.payload_validation_mode
+                is not TelegramCallbackPayloadValidationMode.UNVALIDATED
+            ):
+                raise ValueError("untrusted rejection requires unvalidated payload")
+            if (
+                state is TelegramCallbackValidationState.REJECTED_EXPIRED
+                and request.expiry_state is not TelegramCallbackExpiryState.EXPIRED
+            ):
+                raise ValueError("expired rejection requires expired state")
+            if state is TelegramCallbackValidationState.REJECTED_UNAUTHORIZED and (
+                request.authorization_evidence is None
+                or request.authorization_evidence.authorization_granted
+            ):
+                raise ValueError("unauthorized rejection requires denied owner evidence")
+            if state is TelegramCallbackValidationState.DUPLICATE_REPLAY and (
+                request.replay_state is not TelegramCallbackReplayState.DUPLICATE_REPLAY
+                or self.replayed_callback_outcome_reference_id
+                != request.existing_callback_outcome_reference_id
+            ):
+                raise ValueError("duplicate replay must reference exact prior outcome")
+            if (
+                state is TelegramCallbackValidationState.FINGERPRINT_CONFLICT
+                and request.replay_state is not TelegramCallbackReplayState.FINGERPRINT_CONFLICT
+            ):
+                raise ValueError("fingerprint conflict requires conflict replay state")
+            if state is TelegramCallbackValidationState.UNSUPPORTED and (
+                action is not TelegramCallbackActionScope.UNSUPPORTED_ACTION
+                or request.owner_boundary is not TelegramIntentOwnerBoundary.NONE
+            ):
+                raise ValueError("unsupported outcome mapping is exact")
+            if state is TelegramCallbackValidationState.AMBIGUOUS and not (
+                action is TelegramCallbackActionScope.AMBIGUOUS_ACTION
+                or request.callback_reference.payload_validation_mode
+                is TelegramCallbackPayloadValidationMode.AMBIGUOUS
+                or request.replay_state is TelegramCallbackReplayState.AMBIGUOUS
+                or request.expiry_state is TelegramCallbackExpiryState.AMBIGUOUS
+            ):
+                raise ValueError("ambiguous outcome requires an ambiguous input")
         return self
 
 
