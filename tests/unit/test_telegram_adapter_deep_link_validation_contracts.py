@@ -247,6 +247,70 @@ def _changed_record_dump(record: BaseModel, field: str, value: object) -> dict:
     return result
 
 
+def test_verified_provider_identity_mismatch_is_rejected_independently() -> None:
+    request = _parts()[2]
+    valid_request = TelegramDeepLinkValidationRequest.model_validate(
+        request.model_dump(mode="python")
+    )
+    original_dump = valid_request.model_dump(mode="python")
+    mutated = _changed_dump(
+        valid_request,
+        "verified_telegram_provider_identity_evidence.provider_identity.telegram_user_id",
+        "other-external-user-ref",
+    )
+
+    assert (
+        mutated["verified_telegram_provider_identity_evidence"]["provider_identity"][
+            "telegram_user_id"
+        ]
+        == "other-external-user-ref"
+    )
+    assert (
+        mutated["verified_telegram_provider_identity_evidence"]["provider_identity"][
+            "telegram_user_id"
+        ]
+        != mutated["accepted_telegram_update_intake"]["provider_identity"][
+            "telegram_user_id"
+        ]
+    )
+    assert (
+        mutated["verified_telegram_provider_identity_evidence"]["provider_identity"][
+            "telegram_bot_ref"
+        ]
+        == mutated["accepted_telegram_update_intake"]["provider_identity"][
+            "telegram_bot_ref"
+        ]
+    )
+    assert (
+        mutated["untrusted_deep_link_reference"]["provider_update_identity"]
+        == original_dump["untrusted_deep_link_reference"]["provider_update_identity"]
+    )
+    assert (
+        mutated["accepted_telegram_update_intake"]["provider_update_identity"]
+        == original_dump["accepted_telegram_update_intake"]["provider_update_identity"]
+    )
+    assert (
+        mutated["deduplication_evidence"]["provider_update_identity"]
+        == original_dump["deduplication_evidence"]["provider_update_identity"]
+    )
+    assert mutated["accepted_telegram_update_intake"]["provider_identity"] == (
+        original_dump["accepted_telegram_update_intake"]["provider_identity"]
+    )
+    expected_verified_evidence = copy.deepcopy(
+        original_dump["verified_telegram_provider_identity_evidence"]
+    )
+    expected_verified_evidence["provider_identity"]["telegram_user_id"] = (
+        "other-external-user-ref"
+    )
+    assert mutated["verified_telegram_provider_identity_evidence"] == expected_verified_evidence
+    for section in original_dump:
+        if section != "verified_telegram_provider_identity_evidence":
+            assert mutated[section] == original_dump[section]
+
+    with pytest.raises(ValidationError):
+        TelegramDeepLinkValidationRequest.model_validate(mutated)
+
+
 def test_exact_enums_and_owner_mapping() -> None:
     assert tuple(TelegramDeepLinkPurpose) == tuple(
         TelegramDeepLinkPurpose(value)
