@@ -51,7 +51,9 @@ def violations(source: str, *, package_init: bool = False,
                     result.append(f"forbidden-import:{module}")
         if isinstance(node, ast.ClassDef):
             lowered = node.name.lower()
-            if lowered in FORBIDDEN_CLASS_NAMES or any(part in lowered for part in FORBIDDEN_CLASS_PARTS):
+            if lowered in FORBIDDEN_CLASS_NAMES or any(
+                part in lowered for part in FORBIDDEN_CLASS_PARTS
+            ):
                 result.append(f"forbidden-class:{node.name}")
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
@@ -89,7 +91,9 @@ def violations(source: str, *, package_init: bool = False,
                 result.append("top-level-runtime-instance")
 
     if production_file is not None:
-        if sorted(path.name for path in production_file.parent.iterdir()) != ["__init__.py", "contracts.py"]:
+        direct_entries = sorted(path.name for path in production_file.parent.iterdir()
+                                if path.name != "__pycache__")
+        if direct_entries != ["__init__.py", "contracts.py"]:
             result.append("production-file-set")
         if not package_init:
             classes = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
@@ -99,8 +103,28 @@ def violations(source: str, *, package_init: bool = False,
 
 
 def test_production_file_set_is_exact():
-    assert violations(FILES[0].read_text(encoding="utf-8"), package_init=True, production_file=FILES[0]) == []
+    assert violations(
+        FILES[0].read_text(encoding="utf-8"), package_init=True, production_file=FILES[0]
+    ) == []
     assert violations(FILES[1].read_text(encoding="utf-8"), production_file=FILES[1]) == []
+
+
+def test_production_file_set_ignores_only_pycache(tmp_path):
+    package = tmp_path / "max_adapter"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    contracts = package / "contracts.py"
+    contracts.write_text("from __future__ import annotations\n", encoding="utf-8")
+    (package / "__pycache__").mkdir()
+
+    assert "production-file-set" not in violations(
+        contracts.read_text(encoding="utf-8"), production_file=contracts
+    )
+
+    (package / "runtime").mkdir()
+    assert "production-file-set" in violations(
+        contracts.read_text(encoding="utf-8"), production_file=contracts
+    )
 
 
 def test_imports_are_limited_to_safe_dependencies():
