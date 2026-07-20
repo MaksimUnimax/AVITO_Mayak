@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from mayak.contracts import (
     ContractMetadata,
@@ -17,6 +17,895 @@ from mayak.contracts import (
 
 class _TelegramContract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+
+class TelegramOutboundRequestClass(str, Enum):
+    PRIVATE_CHAT_MESSAGE_REQUEST = "PRIVATE_CHAT_MESSAGE_REQUEST"
+
+
+class TelegramOutboundMappingState(str, Enum):
+    REQUEST_PREPARED = "REQUEST_PREPARED"
+    BLOCKED = "BLOCKED"
+    UNSUPPORTED_TARGET = "UNSUPPORTED_TARGET"
+    INVALID_CONTENT = "INVALID_CONTENT"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramOutboundMappingReasonCode(str, Enum):
+    TELEGRAM_PRIVATE_CHAT_REQUEST_PREPARED = "TELEGRAM_PRIVATE_CHAT_REQUEST_PREPARED"
+    NOTIFICATION_ATTEMPT_NOT_READY = "NOTIFICATION_ATTEMPT_NOT_READY"
+    NOTIFICATION_SCOPE_MISMATCH = "NOTIFICATION_SCOPE_MISMATCH"
+    PRIVATE_CHAT_ADMISSION_REQUIRED = "PRIVATE_CHAT_ADMISSION_REQUIRED"
+    TELEGRAM_TARGET_SCOPE_MISMATCH = "TELEGRAM_TARGET_SCOPE_MISMATCH"
+    SAFE_CONTENT_REFERENCE_MISMATCH = "SAFE_CONTENT_REFERENCE_MISMATCH"
+
+
+_NotificationChannelValue = Literal["TELEGRAM", "MAX"]
+_NotificationAttemptPlanningStatusValue = Literal[
+    "PLANNED", "BLOCKED_DELIVERY_PLAN", "BLOCKED_CHANNEL_PLAN"
+]
+_NotificationDeliveryPlanDecisionStatusValue = Literal[
+    "PLANNED", "BLOCKED_OUTBOX", "BLOCKED_CHANNEL_PLAN_AMBIGUOUS", "BLOCKED_NO_PUSH_CHANNEL"
+]
+_NotificationDeliveryChannelPlanStatusValue = Literal[
+    "TELEGRAM_ENABLED",
+    "MAX_ENABLED",
+    "WEB_STATUS_READ_MODEL",
+    "CHANNEL_DISABLED_BY_USER",
+    "CHANNEL_TARGET_UNVERIFIED",
+    "CHANNEL_TARGET_UNAVAILABLE",
+]
+_NotificationAttemptLifecycleValue = Literal[
+    "NOT_ATTEMPTED",
+    "ATTEMPT_PLANNED",
+    "ATTEMPT_IN_PROGRESS",
+    "DISPATCH_AMBIGUOUS",
+    "PROVIDER_ACCEPTED",
+    "PROVIDER_REJECTED",
+    "PROVIDER_UNAVAILABLE",
+    "RATE_OR_ACCESS_RESTRICTED",
+    "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE",
+    "DELIVERY_FAILURE",
+    "DELIVERY_AMBIGUOUS",
+    "SUPPRESSED_OR_CANCELLED",
+    "TARGET_UNAVAILABLE_OR_UNVERIFIED",
+    "RECONCILIATION_REQUIRED",
+    "DELIVERED_ACCEPTED",
+    "FAILED_RETRYABLE_AFTER_POLICY",
+    "FAILED_NON_RETRYABLE",
+]
+_NotificationSourceFamilyValue = Literal[
+    "NEW_LISTINGS_FOUND",
+    "RECOVERY_SCAN_COMPLETED",
+    "EXTERNAL_UNAVAILABLE_STATUS",
+    "LOST_ANCHORS_RECOVERED",
+    "NO_NEW_LISTINGS_STATUS",
+    "APPROVED_SERVICE_ACCESS_FACT",
+    "BEACON_BASELINE_ESTABLISHED",
+    "SCAN_RUN_PLANNED",
+    "SCAN_RUN_STARTED",
+    "LISTING_PRICE_PAIR_FIRST_SEEN",
+    "PARSER_ONLY_OUTCOME",
+    "EGRESS_ONLY_OUTCOME",
+    "PROVIDER_ONLY_CALLBACK",
+]
+_NotificationListingProjectionStatusValue = Literal[
+    "ACCEPTED_FIELDS", "ACCEPTED_REFERENCE_ONLY", "NOT_APPLICABLE_NO_LISTINGS"
+]
+
+
+def _outbound_text(value: object, field_name: str) -> str:
+    if type(value) is not str or not value.strip():
+        raise ValueError(f"{field_name} must be a non-blank string")
+    return value
+
+
+def _outbound_tuple(value: object, field_name: str, *, unique: bool = True) -> tuple[str, ...]:
+    if type(value) is not tuple:
+        raise ValueError(f"{field_name} must be a tuple")
+    result = tuple(_outbound_text(item, field_name) for item in value)
+    if unique and len(result) != len(set(result)):
+        raise ValueError(f"{field_name} must be unique")
+    return result
+
+
+def _outbound_exact(value: object, expected: type[object], field_name: str) -> None:
+    if type(value) is not expected:
+        raise ValueError(f"{field_name} must be {expected.__name__}")
+
+
+def _outbound_false(value: object, field_name: str) -> None:
+    if value is not False:
+        raise ValueError(f"{field_name} must be False")
+
+
+def _outbound_true(value: object, field_name: str) -> None:
+    if value is not True:
+        raise ValueError(f"{field_name} must be True")
+
+
+class TelegramNotificationAttemptHandoff(_TelegramContract):
+    telegram_notification_attempt_handoff_id: str
+    metadata: ContractMetadata
+    planning_decision_reference_id: str
+    planning_status: _NotificationAttemptPlanningStatusValue
+    planning_channel: _NotificationChannelValue
+    attempt_created: bool
+    delivery_plan_decision_reference_id: str
+    delivery_plan_decision_status: _NotificationDeliveryPlanDecisionStatusValue
+    delivery_plan_reference_id: str | None
+    delivery_plan_outbox_item_reference_id: str | None
+    delivery_plan_account_reference_id: str | None
+    delivery_plan_beacon_reference_id: str | None
+    telegram_channel_plan_entry_count: int
+    telegram_channel_plan_status: _NotificationDeliveryChannelPlanStatusValue | None
+    telegram_channel_plan_push_planned: bool
+    telegram_channel_plan_read_model_planned: bool
+    telegram_channel_plan_target_reference_id: str | None
+    telegram_channel_plan_outbox_target_reference_id: str | None
+    outbox_item_reference_id: str | None
+    outbox_account_reference_id: str | None
+    outbox_beacon_reference_id: str | None
+    outbox_event_reason: _NotificationSourceFamilyValue | None
+    outbox_listing_count: int
+    outbox_safe_listing_reference_ids: tuple[str, ...]
+    outbox_telegram_channel_intent_count: int
+    outbox_telegram_target_reference_id: str | None
+    outbox_lifecycle_status: Literal["PLANNED"] | None
+    outbox_idempotency_key: IdempotencyKey | None
+    outbox_idempotency_scope: IdempotencyScope | None
+    outbox_idempotency_fingerprint: IdempotencyFingerprint | None
+    outbox_correlation_id: str | None
+    outbox_causation_id: str | None
+    outbox_evidence_reference_ids: tuple[str, ...]
+    attempt_reference_id: str | None
+    attempt_delivery_plan_reference_id: str | None
+    attempt_outbox_item_reference_id: str | None
+    attempt_account_reference_id: str | None
+    attempt_beacon_reference_id: str | None
+    attempt_channel: _NotificationChannelValue | None
+    attempt_target_reference_id: str | None
+    attempt_lifecycle_status: _NotificationAttemptLifecycleValue | None
+    attempt_idempotency_key: IdempotencyKey | None
+    attempt_idempotency_scope: IdempotencyScope | None
+    attempt_idempotency_fingerprint: IdempotencyFingerprint | None
+    attempt_provider_outcome_reference_id: str | None
+    attempt_provider_outcome_class_reference_id: str | None
+    attempt_adapter_contract_reference_id: str | None
+    attempt_adapter_contract_version_reference_id: str | None
+    attempt_provider_safe_delivery_reference_id: str | None
+    attempt_egress_correlation_reference_id: str | None
+    attempt_provider_reason_codes: tuple[str, ...]
+    attempt_failure_policy_reference_id: str | None
+    attempt_reconciliation_required: bool | None
+    attempt_delivery_accepted: bool | None
+    attempt_retry_authorized: bool | None
+    attempt_dispatch_effect_authorized: bool | None
+    attempt_provider_mapping_authorized: bool | None
+    attempt_correlation_id: str | None
+    attempt_causation_id: str | None
+    attempt_evidence_reference_ids: tuple[str, ...]
+    notification_delivery_projection: Literal[True] = True
+    safe_reference_snapshot_only: Literal[True] = True
+    generic_outbox_mutation_authority: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    retry_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_snapshot(self) -> "TelegramNotificationAttemptHandoff":
+        for name in (
+            "telegram_notification_attempt_handoff_id",
+            "planning_decision_reference_id",
+            "delivery_plan_decision_reference_id",
+        ):
+            _outbound_text(getattr(self, name), name)
+        _outbound_exact(self.metadata, ContractMetadata, "metadata")
+        for name in ("planning_status", "planning_channel", "delivery_plan_decision_status"):
+            _outbound_text(getattr(self, name), name)
+        for name in (
+            "outbox_safe_listing_reference_ids",
+            "outbox_evidence_reference_ids",
+            "attempt_provider_reason_codes",
+            "attempt_evidence_reference_ids",
+        ):
+            _outbound_tuple(
+                getattr(self, name), name, unique=name != "outbox_safe_listing_reference_ids"
+            )
+        for name in (
+            "telegram_channel_plan_entry_count",
+            "outbox_listing_count",
+            "outbox_telegram_channel_intent_count",
+        ):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        _outbound_true(self.notification_delivery_projection, "notification_delivery_projection")
+        _outbound_true(self.safe_reference_snapshot_only, "safe_reference_snapshot_only")
+        for name in (
+            "generic_outbox_mutation_authority",
+            "notification_lifecycle_mutation_authority",
+            "provider_call_authority",
+            "retry_authority",
+        ):
+            _outbound_false(getattr(self, name), name)
+        outbox_present = self.outbox_item_reference_id is not None
+        if not outbox_present:
+            if (
+                any(
+                    getattr(self, n) is not None
+                    for n in (
+                        "outbox_account_reference_id",
+                        "outbox_beacon_reference_id",
+                        "outbox_event_reason",
+                        "outbox_telegram_target_reference_id",
+                        "outbox_lifecycle_status",
+                        "outbox_idempotency_key",
+                        "outbox_idempotency_scope",
+                        "outbox_idempotency_fingerprint",
+                        "outbox_correlation_id",
+                        "outbox_causation_id",
+                    )
+                )
+                or self.outbox_listing_count
+                or self.outbox_safe_listing_reference_ids
+                or self.outbox_telegram_channel_intent_count
+            ):
+                raise ValueError("absent outbox carries facts")
+        else:
+            for n in (
+                "outbox_account_reference_id",
+                "outbox_event_reason",
+                "outbox_lifecycle_status",
+                "outbox_idempotency_key",
+                "outbox_idempotency_scope",
+                "outbox_idempotency_fingerprint",
+                "outbox_correlation_id",
+                "outbox_causation_id",
+            ):
+                if getattr(self, n) is None:
+                    raise ValueError(f"present outbox requires {n}")
+        plan_present = self.delivery_plan_reference_id is not None
+        if not plan_present:
+            if self.telegram_channel_plan_entry_count or any(
+                getattr(self, n) is not None
+                for n in (
+                    "delivery_plan_outbox_item_reference_id",
+                    "delivery_plan_account_reference_id",
+                    "delivery_plan_beacon_reference_id",
+                    "telegram_channel_plan_status",
+                    "telegram_channel_plan_target_reference_id",
+                    "telegram_channel_plan_outbox_target_reference_id",
+                )
+            ):
+                raise ValueError("absent plan carries facts")
+        else:
+            for n in (
+                "delivery_plan_outbox_item_reference_id",
+                "delivery_plan_account_reference_id",
+                "telegram_channel_plan_status",
+            ):
+                if getattr(self, n) is None:
+                    raise ValueError(f"present plan requires {n}")
+        attempt_present = self.attempt_reference_id is not None
+        if not attempt_present:
+            if (
+                self.attempt_created
+                or any(
+                    getattr(self, n) is not None
+                    for n in (
+                        "attempt_delivery_plan_reference_id",
+                        "attempt_outbox_item_reference_id",
+                        "attempt_account_reference_id",
+                        "attempt_beacon_reference_id",
+                        "attempt_channel",
+                        "attempt_target_reference_id",
+                        "attempt_lifecycle_status",
+                        "attempt_idempotency_key",
+                        "attempt_idempotency_scope",
+                        "attempt_idempotency_fingerprint",
+                        "attempt_correlation_id",
+                        "attempt_causation_id",
+                    )
+                )
+                or self.attempt_provider_reason_codes
+                or self.attempt_evidence_reference_ids
+            ):
+                raise ValueError("absent attempt carries facts")
+        else:
+            for n in (
+                "attempt_delivery_plan_reference_id",
+                "attempt_outbox_item_reference_id",
+                "attempt_account_reference_id",
+                "attempt_channel",
+                "attempt_target_reference_id",
+                "attempt_lifecycle_status",
+                "attempt_idempotency_key",
+                "attempt_idempotency_scope",
+                "attempt_idempotency_fingerprint",
+                "attempt_correlation_id",
+                "attempt_causation_id",
+            ):
+                if getattr(self, n) is None:
+                    raise ValueError(f"present attempt requires {n}")
+            _outbound_true(self.attempt_created, "attempt_created")
+        if self.outbox_listing_count != len(self.outbox_safe_listing_reference_ids):
+            raise ValueError("outbox listing count mismatch")
+        return self
+
+
+class TelegramListingCardProjectionHandoff(_TelegramContract):
+    telegram_listing_card_projection_handoff_id: str
+    metadata: ContractMetadata
+    projection_decision_reference_id: str
+    projection_status: _NotificationListingProjectionStatusValue
+    listing_reference_ids: tuple[str, ...]
+    listing_card_reference_ids: tuple[str, ...]
+    listing_card_account_reference_ids: tuple[str, ...]
+    listing_card_beacon_reference_ids: tuple[str, ...]
+    listing_card_correlation_ids: tuple[str, ...]
+    listing_card_causation_ids: tuple[str, ...]
+    listing_references_preserved: bool
+    optional_fields_missing_allowed: bool
+    display_rendering_authorized: bool
+    delivery_attempt_authorized: bool
+    provider_mapping_authorized: bool
+    evidence_reference_ids: tuple[str, ...]
+    notification_delivery_projection: Literal[True] = True
+    safe_reference_snapshot_only: Literal[True] = True
+    rendering_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_projection(self) -> "TelegramListingCardProjectionHandoff":
+        for n in (
+            "telegram_listing_card_projection_handoff_id",
+            "projection_decision_reference_id",
+        ):
+            _outbound_text(getattr(self, n), n)
+        _outbound_exact(self.metadata, ContractMetadata, "metadata")
+        groups = (
+            self.listing_reference_ids,
+            self.listing_card_reference_ids,
+            self.listing_card_account_reference_ids,
+            self.listing_card_beacon_reference_ids,
+            self.listing_card_correlation_ids,
+            self.listing_card_causation_ids,
+        )
+        for g in groups:
+            _outbound_tuple(g, "listing projection tuple", unique=False)
+        if len({len(g) for g in groups}) != 1:
+            raise ValueError("parallel card tuples must have equal length")
+        if len(self.listing_reference_ids) != len(self.listing_card_reference_ids):
+            raise ValueError("listing/card counts mismatch")
+        _outbound_true(self.listing_references_preserved, "listing_references_preserved")
+        _outbound_true(self.optional_fields_missing_allowed, "optional_fields_missing_allowed")
+        for n in (
+            "display_rendering_authorized",
+            "delivery_attempt_authorized",
+            "provider_mapping_authorized",
+            "rendering_authority",
+            "provider_call_authority",
+        ):
+            _outbound_false(getattr(self, n), n)
+        _outbound_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        return self
+
+
+class TelegramOutboundTargetReference(_TelegramContract):
+    telegram_outbound_target_reference_id: str
+    notification_target_reference_id: str
+    telegram_bot_ref: str
+    telegram_chat_provider_reference: str
+    telegram_provider_identity_reference: str
+    private_chat_only_v1: Literal[True] = True
+    internal_account_authority: Literal[False] = False
+    group_or_channel_target_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_target(self) -> "TelegramOutboundTargetReference":
+        for field_name in (
+            "telegram_outbound_target_reference_id",
+            "notification_target_reference_id",
+            "telegram_bot_ref",
+            "telegram_chat_provider_reference",
+            "telegram_provider_identity_reference",
+        ):
+            _outbound_text(getattr(self, field_name), field_name)
+        _outbound_true(self.private_chat_only_v1, "private_chat_only_v1")
+        _outbound_false(self.internal_account_authority, "internal_account_authority")
+        _outbound_false(self.group_or_channel_target_authority, "group_or_channel_target_authority")
+        _outbound_false(self.provider_call_authority, "provider_call_authority")
+        return self
+
+
+class TelegramOutboundMappingRequest(_TelegramContract):
+    telegram_outbound_mapping_request_id: str
+    metadata: ContractMetadata
+    notification_attempt_handoff: TelegramNotificationAttemptHandoff
+    telegram_chat_surface_admission_outcome: TelegramChatSurfaceAdmissionOutcome | None
+    telegram_target: TelegramOutboundTargetReference | None
+    listing_card_projection_handoff: TelegramListingCardProjectionHandoff | None
+    mapping_policy_reference_id: str
+    notification_delivery_authority_preserved: Literal[True] = True
+    target_scope_requires_private_chat_admission: Literal[True] = True
+    generic_outbox_mutation_authority: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    rendering_authority: Literal[False] = False
+    retry_authority: Literal[False] = False
+    business_success_authority: Literal[False] = False
+
+    @field_validator(
+        "metadata",
+        "notification_attempt_handoff",
+        "telegram_chat_surface_admission_outcome",
+        "telegram_target",
+        "listing_card_projection_handoff",
+        mode="before",
+    )
+    @classmethod
+    def _reject_non_exact_request_objects(cls, value: object, info: ValidationInfo) -> object:
+        if value is None:
+            return value
+        expected = {
+            "metadata": ContractMetadata,
+            "notification_attempt_handoff": TelegramNotificationAttemptHandoff,
+            "telegram_chat_surface_admission_outcome": TelegramChatSurfaceAdmissionOutcome,
+            "telegram_target": TelegramOutboundTargetReference,
+            "listing_card_projection_handoff": TelegramListingCardProjectionHandoff,
+        }
+        field_name = info.field_name
+        assert field_name is not None
+        if type(value) is not expected[field_name]:
+            raise ValueError(f"{info.field_name} must be an exact public contract object")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_request(self) -> "TelegramOutboundMappingRequest":
+        _outbound_text(
+            self.telegram_outbound_mapping_request_id, "telegram_outbound_mapping_request_id"
+        )
+        _outbound_exact(self.metadata, ContractMetadata, "metadata")
+        _outbound_exact(
+            self.notification_attempt_handoff,
+            TelegramNotificationAttemptHandoff,
+            "notification_attempt_handoff",
+        )
+        if self.notification_attempt_handoff.metadata != self.metadata:
+            raise ValueError("metadata must match the attempt handoff")
+        if (
+            self.telegram_chat_surface_admission_outcome is not None
+            and type(self.telegram_chat_surface_admission_outcome)
+            is not TelegramChatSurfaceAdmissionOutcome
+        ):
+            raise ValueError("telegram_chat_surface_admission_outcome has an invalid object type")
+        if (
+            self.listing_card_projection_handoff is not None
+            and type(self.listing_card_projection_handoff)
+            is not TelegramListingCardProjectionHandoff
+        ):
+            raise ValueError("listing_card_projection_handoff has an invalid object type")
+        if (
+            self.telegram_chat_surface_admission_outcome is not None
+            and self.telegram_chat_surface_admission_outcome.metadata != self.metadata
+        ):
+            raise ValueError("metadata must match the admission outcome")
+        if (
+            self.listing_card_projection_handoff is not None
+            and self.listing_card_projection_handoff.metadata != self.metadata
+        ):
+            raise ValueError("metadata must match the listing projection handoff")
+        if self.telegram_target is not None:
+            _outbound_exact(
+                self.telegram_target, TelegramOutboundTargetReference, "telegram_target"
+            )
+        _outbound_text(self.mapping_policy_reference_id, "mapping_policy_reference_id")
+        _outbound_true(
+            self.notification_delivery_authority_preserved,
+            "notification_delivery_authority_preserved",
+        )
+        _outbound_true(
+            self.target_scope_requires_private_chat_admission,
+            "target_scope_requires_private_chat_admission",
+        )
+        for field_name in (
+            "generic_outbox_mutation_authority",
+            "notification_lifecycle_mutation_authority",
+            "provider_call_authority",
+            "rendering_authority",
+            "retry_authority",
+            "business_success_authority",
+        ):
+            _outbound_false(getattr(self, field_name), field_name)
+        return self
+
+
+class TelegramOutboundRequestIntent(_TelegramContract):
+    telegram_outbound_request_intent_id: str
+    metadata: ContractMetadata
+    request_class: TelegramOutboundRequestClass
+    notification_attempt_id: str
+    notification_outbox_item_id: str
+    notification_delivery_plan_id: str
+    notification_target_reference_id: str
+    telegram_bot_ref: str
+    telegram_chat_provider_reference: str
+    telegram_provider_identity_reference: str
+    delivery_purpose: _NotificationSourceFamilyValue
+    safe_listing_reference_ids: tuple[str, ...]
+    safe_listing_card_reference_ids: tuple[str, ...]
+    idempotency_key: IdempotencyKey
+    idempotency_scope: IdempotencyScope
+    idempotency_fingerprint: IdempotencyFingerprint
+    correlation_id: str
+    causation_id: str
+    evidence_reference_ids: tuple[str, ...]
+    provider_request_classified: Literal[True] = True
+    provider_call_authorized: Literal[False] = False
+    provider_effect_committed: Literal[False] = False
+    notification_delivery_accepted: Literal[False] = False
+    human_read_or_click_proven: Literal[False] = False
+    retry_authorized: Literal[False] = False
+    reconciliation_recommendation_authority: Literal[False] = False
+    rendering_authority: Literal[False] = False
+    generic_outbox_mutation_authority: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+
+    @field_validator(
+        "metadata",
+        "idempotency_key",
+        "idempotency_scope",
+        "idempotency_fingerprint",
+        mode="before",
+    )
+    @classmethod
+    def _reject_non_exact_intent_objects(cls, value: object, info: ValidationInfo) -> object:
+        expected = {
+            "metadata": ContractMetadata,
+            "idempotency_key": IdempotencyKey,
+            "idempotency_scope": IdempotencyScope,
+            "idempotency_fingerprint": IdempotencyFingerprint,
+        }
+        field_name = info.field_name
+        assert field_name is not None
+        if type(value) is not expected[field_name]:
+            raise ValueError(f"{info.field_name} must be an exact public contract object")
+        return value
+
+    @field_validator(
+        "safe_listing_reference_ids",
+        "safe_listing_card_reference_ids",
+        "evidence_reference_ids",
+        mode="before",
+    )
+    @classmethod
+    def _reject_intent_reference_lists(cls, value: object) -> object:
+        if type(value) is not tuple:
+            raise ValueError("intent reference collections must be tuples")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_intent(self) -> "TelegramOutboundRequestIntent":
+        for field_name in (
+            "telegram_outbound_request_intent_id",
+            "notification_attempt_id",
+            "notification_outbox_item_id",
+            "notification_delivery_plan_id",
+            "notification_target_reference_id",
+            "telegram_bot_ref",
+            "telegram_chat_provider_reference",
+            "telegram_provider_identity_reference",
+            "correlation_id",
+            "causation_id",
+        ):
+            _outbound_text(getattr(self, field_name), field_name)
+        _outbound_exact(self.metadata, ContractMetadata, "metadata")
+        _outbound_exact(self.request_class, TelegramOutboundRequestClass, "request_class")
+        _outbound_text(self.delivery_purpose, "delivery_purpose")
+        for field_name in (
+            "safe_listing_reference_ids",
+            "safe_listing_card_reference_ids",
+            "evidence_reference_ids",
+        ):
+            _outbound_tuple(getattr(self, field_name), field_name)
+        for field_name, expected in (
+            ("idempotency_key", IdempotencyKey),
+            ("idempotency_scope", IdempotencyScope),
+            ("idempotency_fingerprint", IdempotencyFingerprint),
+        ):
+            _outbound_exact(getattr(self, field_name), expected, field_name)
+        _outbound_true(self.provider_request_classified, "provider_request_classified")
+        for field_name in (
+            "provider_call_authorized",
+            "provider_effect_committed",
+            "notification_delivery_accepted",
+            "human_read_or_click_proven",
+            "retry_authorized",
+            "reconciliation_recommendation_authority",
+            "rendering_authority",
+            "generic_outbox_mutation_authority",
+            "notification_lifecycle_mutation_authority",
+        ):
+            _outbound_false(getattr(self, field_name), field_name)
+        return self
+
+
+def _outbound_lineage(
+    request: TelegramOutboundMappingRequest,
+) -> tuple[TelegramOutboundMappingState, TelegramOutboundMappingReasonCode]:
+    h = request.notification_attempt_handoff
+    if (
+        h.planning_status != "PLANNED"
+        or h.planning_channel != "TELEGRAM"
+        or not h.attempt_created
+        or h.attempt_reference_id is None
+        or h.attempt_channel != "TELEGRAM"
+        or h.attempt_lifecycle_status != "ATTEMPT_PLANNED"
+        or any(
+            getattr(h, n) is not None
+            for n in (
+                "attempt_provider_outcome_reference_id",
+                "attempt_provider_outcome_class_reference_id",
+                "attempt_adapter_contract_reference_id",
+                "attempt_adapter_contract_version_reference_id",
+                "attempt_provider_safe_delivery_reference_id",
+                "attempt_egress_correlation_reference_id",
+                "attempt_failure_policy_reference_id",
+            )
+        )
+        or h.attempt_provider_reason_codes
+        or h.attempt_reconciliation_required is True
+        or h.attempt_delivery_accepted is True
+        or h.attempt_retry_authorized is True
+        or h.attempt_dispatch_effect_authorized is True
+        or h.attempt_provider_mapping_authorized is True
+    ):
+        return (
+            TelegramOutboundMappingState.BLOCKED,
+            TelegramOutboundMappingReasonCode.NOTIFICATION_ATTEMPT_NOT_READY,
+        )
+    if (
+        h.delivery_plan_decision_status != "PLANNED"
+        or h.delivery_plan_reference_id is None
+        or h.outbox_item_reference_id is None
+        or h.delivery_plan_outbox_item_reference_id != h.outbox_item_reference_id
+        or h.delivery_plan_account_reference_id != h.outbox_account_reference_id
+        or h.delivery_plan_beacon_reference_id != h.outbox_beacon_reference_id
+        or h.attempt_delivery_plan_reference_id != h.delivery_plan_reference_id
+        or h.attempt_outbox_item_reference_id != h.outbox_item_reference_id
+        or h.attempt_account_reference_id != h.outbox_account_reference_id
+        or h.attempt_beacon_reference_id != h.outbox_beacon_reference_id
+        or h.outbox_lifecycle_status != "PLANNED"
+        or h.telegram_channel_plan_entry_count != 1
+        or h.telegram_channel_plan_status != "TELEGRAM_ENABLED"
+        or h.telegram_channel_plan_push_planned is not True
+        or h.telegram_channel_plan_read_model_planned is not False
+        or h.outbox_telegram_channel_intent_count != 1
+        or h.telegram_channel_plan_target_reference_id
+        != h.telegram_channel_plan_outbox_target_reference_id
+        or h.telegram_channel_plan_target_reference_id != h.outbox_telegram_target_reference_id
+        or h.telegram_channel_plan_target_reference_id != h.attempt_target_reference_id
+        or h.outbox_idempotency_key != h.attempt_idempotency_key
+        or h.outbox_idempotency_scope != h.attempt_idempotency_scope
+        or h.outbox_idempotency_fingerprint != h.attempt_idempotency_fingerprint
+        or h.outbox_correlation_id != h.attempt_correlation_id
+        or h.outbox_causation_id != h.attempt_causation_id
+    ):
+        return (
+            TelegramOutboundMappingState.AMBIGUOUS,
+            TelegramOutboundMappingReasonCode.NOTIFICATION_SCOPE_MISMATCH,
+        )
+    admission = request.telegram_chat_surface_admission_outcome
+    if (
+        admission is None
+        or getattr(admission.admission_state, "value", admission.admission_state)
+        != "PRIVATE_CHAT_ADMITTED"
+        or getattr(admission.reason_code, "value", admission.reason_code)
+        != "PRIVATE_CHAT_V1_SUPPORTED"
+        or getattr(
+            admission.request.chat_surface.surface_class,
+            "value",
+            admission.request.chat_surface.surface_class,
+        )
+        != "PRIVATE_CHAT"
+        or admission.admitted_update_intake_record_id is None
+        or admission.verified_provider_identity_reference is None
+        or admission.request.verified_telegram_provider_identity_evidence is None
+    ):
+        return (
+            TelegramOutboundMappingState.UNSUPPORTED_TARGET,
+            TelegramOutboundMappingReasonCode.PRIVATE_CHAT_ADMISSION_REQUIRED,
+        )
+    surface = admission.request.chat_surface
+    evidence = admission.request.verified_telegram_provider_identity_evidence
+    identity = (
+        evidence.provider_identity.telegram_provider_identity_ref if evidence is not None else None
+    )
+    target = request.telegram_target
+    if (
+        target is None
+        or target.notification_target_reference_id != h.attempt_target_reference_id
+        or target.telegram_bot_ref != surface.telegram_bot_ref
+        or target.telegram_chat_provider_reference != surface.telegram_chat_provider_reference
+        or target.telegram_provider_identity_reference != identity
+    ):
+        return (
+            TelegramOutboundMappingState.AMBIGUOUS,
+            TelegramOutboundMappingReasonCode.TELEGRAM_TARGET_SCOPE_MISMATCH,
+        )
+    refs = h.outbox_safe_listing_reference_ids
+    projection = request.listing_card_projection_handoff
+    if refs:
+        if (
+            projection is None
+            or projection.projection_status not in ("ACCEPTED_FIELDS", "ACCEPTED_REFERENCE_ONLY")
+            or projection.listing_reference_ids != refs
+            or not projection.listing_references_preserved
+            or len(set(projection.listing_reference_ids)) != len(projection.listing_reference_ids)
+            or len(set(projection.listing_card_reference_ids))
+            != len(projection.listing_card_reference_ids)
+            or any(
+                v != h.outbox_account_reference_id
+                for v in projection.listing_card_account_reference_ids
+            )
+            or any(
+                v != h.outbox_beacon_reference_id
+                for v in projection.listing_card_beacon_reference_ids
+            )
+            or any(v != h.outbox_correlation_id for v in projection.listing_card_correlation_ids)
+            or any(v != h.outbox_causation_id for v in projection.listing_card_causation_ids)
+        ):
+            return (
+                TelegramOutboundMappingState.INVALID_CONTENT,
+                TelegramOutboundMappingReasonCode.SAFE_CONTENT_REFERENCE_MISMATCH,
+            )
+    elif projection is not None and (
+        projection.projection_status != "NOT_APPLICABLE_NO_LISTINGS"
+        or projection.listing_reference_ids
+        or projection.listing_card_reference_ids
+    ):
+        return (
+            TelegramOutboundMappingState.INVALID_CONTENT,
+            TelegramOutboundMappingReasonCode.SAFE_CONTENT_REFERENCE_MISMATCH,
+        )
+    return (
+        TelegramOutboundMappingState.REQUEST_PREPARED,
+        TelegramOutboundMappingReasonCode.TELEGRAM_PRIVATE_CHAT_REQUEST_PREPARED,
+    )
+
+
+class TelegramOutboundMappingOutcome(_TelegramContract):
+    telegram_outbound_mapping_outcome_id: str
+    metadata: ContractMetadata
+    request: TelegramOutboundMappingRequest
+    state: TelegramOutboundMappingState
+    reason_code: TelegramOutboundMappingReasonCode
+    request_intent: TelegramOutboundRequestIntent | None
+    safe_diagnostic_reference_id: str | None
+    evidence_reference_ids: tuple[str, ...]
+    provider_call_performed: Literal[False] = False
+    provider_effect_committed: Literal[False] = False
+    notification_delivery_accepted: Literal[False] = False
+    human_read_or_click_proven: Literal[False] = False
+    retry_authorized: Literal[False] = False
+    generic_outbox_mutation_authority: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+
+    @field_validator("metadata", "request", "request_intent", mode="before")
+    @classmethod
+    def _reject_non_exact_outcome_objects(cls, value: object, info: ValidationInfo) -> object:
+        if value is None:
+            return value
+        expected = {
+            "metadata": ContractMetadata,
+            "request": TelegramOutboundMappingRequest,
+            "request_intent": TelegramOutboundRequestIntent,
+        }
+        field_name = info.field_name
+        assert field_name is not None
+        if type(value) is not expected[field_name]:
+            raise ValueError(f"{info.field_name} must be an exact public contract object")
+        return value
+
+    @field_validator("evidence_reference_ids", mode="before")
+    @classmethod
+    def _reject_outcome_reference_lists(cls, value: object) -> object:
+        if type(value) is not tuple:
+            raise ValueError("evidence_reference_ids must be a tuple")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_outcome(self) -> "TelegramOutboundMappingOutcome":
+        _outbound_text(
+            self.telegram_outbound_mapping_outcome_id, "telegram_outbound_mapping_outcome_id"
+        )
+        _outbound_exact(self.metadata, ContractMetadata, "metadata")
+        _outbound_exact(self.request, TelegramOutboundMappingRequest, "request")
+        if self.request.metadata != self.metadata:
+            raise ValueError("metadata must match the mapping request")
+        _outbound_exact(self.state, TelegramOutboundMappingState, "state")
+        _outbound_exact(self.reason_code, TelegramOutboundMappingReasonCode, "reason_code")
+        _outbound_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        expected_state, expected_reason = _outbound_lineage(self.request)
+        if (self.state, self.reason_code) != (expected_state, expected_reason):
+            raise ValueError("state and reason_code do not match deterministic classification")
+        if self.state is TelegramOutboundMappingState.REQUEST_PREPARED:
+            if self.request_intent is None or self.safe_diagnostic_reference_id is not None:
+                raise ValueError("prepared outcome requires intent and forbids diagnostics")
+            _outbound_exact(self.request_intent, TelegramOutboundRequestIntent, "request_intent")
+            _validate_outbound_projection(self.request, self.request_intent)
+        else:
+            if self.request_intent is not None or self.safe_diagnostic_reference_id is None:
+                raise ValueError("non-success outcome requires diagnostic and forbids intent")
+            _outbound_text(self.safe_diagnostic_reference_id, "safe_diagnostic_reference_id")
+        for field_name in (
+            "provider_call_performed",
+            "provider_effect_committed",
+            "notification_delivery_accepted",
+            "human_read_or_click_proven",
+            "retry_authorized",
+            "generic_outbox_mutation_authority",
+            "notification_lifecycle_mutation_authority",
+        ):
+            _outbound_false(getattr(self, field_name), field_name)
+        return self
+
+
+def _validate_outbound_projection(
+    request: TelegramOutboundMappingRequest, intent: TelegramOutboundRequestIntent
+) -> None:
+    h = request.notification_attempt_handoff
+    target = request.telegram_target
+    projection = request.listing_card_projection_handoff
+    if (
+        target is None
+        or h.attempt_reference_id is None
+        or h.outbox_item_reference_id is None
+        or h.delivery_plan_reference_id is None
+    ):
+        raise ValueError("prepared request lacks required projection facts")
+    card_refs = () if projection is None else projection.listing_card_reference_ids
+    expected_evidence = _outbound_union(
+        h.outbox_evidence_reference_ids,
+        h.attempt_evidence_reference_ids,
+        () if projection is None else projection.evidence_reference_ids,
+    )
+    expected = {
+        "request_class": TelegramOutboundRequestClass.PRIVATE_CHAT_MESSAGE_REQUEST,
+        "metadata": request.metadata,
+        "notification_attempt_id": h.attempt_reference_id,
+        "notification_outbox_item_id": h.outbox_item_reference_id,
+        "notification_delivery_plan_id": h.delivery_plan_reference_id,
+        "notification_target_reference_id": h.attempt_target_reference_id,
+        "telegram_bot_ref": target.telegram_bot_ref,
+        "telegram_chat_provider_reference": target.telegram_chat_provider_reference,
+        "telegram_provider_identity_reference": target.telegram_provider_identity_reference,
+        "delivery_purpose": h.outbox_event_reason,
+        "safe_listing_reference_ids": h.outbox_safe_listing_reference_ids,
+        "safe_listing_card_reference_ids": card_refs,
+        "idempotency_key": h.attempt_idempotency_key,
+        "idempotency_scope": h.attempt_idempotency_scope,
+        "idempotency_fingerprint": h.attempt_idempotency_fingerprint,
+        "correlation_id": h.attempt_correlation_id,
+        "causation_id": h.attempt_causation_id,
+        "evidence_reference_ids": expected_evidence,
+    }
+    for name, value in expected.items():
+        if getattr(intent, name) != value:
+            raise ValueError(f"request intent projection mismatch: {name}")
+
+
+def _outbound_union(*values: tuple[str, ...]) -> tuple[str, ...]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for group in values:
+        for value in group:
+            _outbound_text(value, "evidence_reference_ids")
+            if value not in seen:
+                seen.add(value)
+                result.append(value)
+    return tuple(result)
 
 
 class TelegramIdentityResolutionState(str, Enum):
@@ -1502,15 +2391,11 @@ class TelegramDeepLinkValidationState(str, Enum):
     BLOCKED = "BLOCKED"
 
 
-_DEEP_LINK_OWNER: dict[
-    TelegramDeepLinkPurpose, TelegramDeepLinkContextOwnerBoundary
-] = {
+_DEEP_LINK_OWNER: dict[TelegramDeepLinkPurpose, TelegramDeepLinkContextOwnerBoundary] = {
     TelegramDeepLinkPurpose.LINK_EXISTING_ACCOUNT: (
         TelegramDeepLinkContextOwnerBoundary.IDENTITY_AND_ACCESS
     ),
-    TelegramDeepLinkPurpose.BOT_ONBOARDING: (
-        TelegramDeepLinkContextOwnerBoundary.TELEGRAM_ADAPTER
-    ),
+    TelegramDeepLinkPurpose.BOT_ONBOARDING: (TelegramDeepLinkContextOwnerBoundary.TELEGRAM_ADAPTER),
     TelegramDeepLinkPurpose.OPEN_BEACON_CONTEXT: (
         TelegramDeepLinkContextOwnerBoundary.BEACON_MANAGEMENT
     ),
@@ -1584,8 +2469,8 @@ class TelegramDeepLinkContextResolutionEvidence(_TelegramContract):
         eligible = (
             self.validation_mode
             in {
-            TelegramDeepLinkPayloadValidationMode.OPAQUE_SERVER_RESOLVED,
-            TelegramDeepLinkPayloadValidationMode.SIGNED_VALIDATED,
+                TelegramDeepLinkPayloadValidationMode.OPAQUE_SERVER_RESOLVED,
+                TelegramDeepLinkPayloadValidationMode.SIGNED_VALIDATED,
             }
             and self.replay_state is TelegramDeepLinkReplayState.NEW_LINK
             and self.expiry_state is TelegramDeepLinkExpiryState.VALID
@@ -1731,10 +2616,14 @@ class TelegramDeepLinkValidationOutcome(_TelegramContract):
             expected = TelegramDeepLinkValidationState.FINGERPRINT_CONFLICT
         elif purpose is TelegramDeepLinkPurpose.UNSUPPORTED:
             expected = TelegramDeepLinkValidationState.UNSUPPORTED
-        elif purpose in {
-            TelegramDeepLinkPurpose.RETURN_FROM_WEB_CABINET,
-            TelegramDeepLinkPurpose.OPEN_FUTURE_MINI_APP_CONTEXT,
-        } and evidence.external_context_decision_reference is None:
+        elif (
+            purpose
+            in {
+                TelegramDeepLinkPurpose.RETURN_FROM_WEB_CABINET,
+                TelegramDeepLinkPurpose.OPEN_FUTURE_MINI_APP_CONTEXT,
+            }
+            and evidence.external_context_decision_reference is None
+        ):
             expected = TelegramDeepLinkValidationState.BLOCKED_PENDING_CONTEXT_DECISION
         elif mode not in {
             TelegramDeepLinkPayloadValidationMode.OPAQUE_SERVER_RESOLVED,
@@ -1937,9 +2826,7 @@ class TelegramMiniAppOfficialValidationEvidence(_TelegramContract):
             is TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_PASSED
         )
         if passed != (self.validated_provider_identity_reference is not None):
-            raise ValueError(
-                "only passed official validation may have provider identity reference"
-            )
+            raise ValueError("only passed official validation may have provider identity reference")
         return self
 
 
@@ -2080,6 +2967,15 @@ class TelegramMiniAppValidationOutcome(_TelegramContract):
 
 
 __all__ = [
+    "TelegramOutboundRequestClass",
+    "TelegramOutboundMappingState",
+    "TelegramOutboundMappingReasonCode",
+    "TelegramNotificationAttemptHandoff",
+    "TelegramListingCardProjectionHandoff",
+    "TelegramOutboundTargetReference",
+    "TelegramOutboundMappingRequest",
+    "TelegramOutboundRequestIntent",
+    "TelegramOutboundMappingOutcome",
     "TelegramChatSurfaceClass",
     "TelegramChatSurfaceAdmissionState",
     "TelegramChatSurfaceReasonCode",
