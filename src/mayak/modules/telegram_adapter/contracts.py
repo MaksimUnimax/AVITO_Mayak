@@ -1587,6 +1587,274 @@ class TelegramDeepLinkValidationOutcome(_TelegramContract):
         return self
 
 
+class TelegramMiniAppPurpose(str, Enum):
+    SHOW_FULL_LISTING_RESULT = "SHOW_FULL_LISTING_RESULT"
+    SHOW_BEACON_SETTINGS = "SHOW_BEACON_SETTINGS"
+    SHOW_BEACON_STATUS = "SHOW_BEACON_STATUS"
+    RICH_ONBOARDING = "RICH_ONBOARDING"
+    OPEN_FROM_NOTIFICATION_ACTION = "OPEN_FROM_NOTIFICATION_ACTION"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramMiniAppContextOwnerBoundary(str, Enum):
+    IDENTITY_AND_ACCESS = "IDENTITY_AND_ACCESS"
+    BEACON_MANAGEMENT = "BEACON_MANAGEMENT"
+    NOTIFICATION_DELIVERY = "NOTIFICATION_DELIVERY"
+    NONE = "NONE"
+
+
+class TelegramMiniAppInitDataValidationState(str, Enum):
+    OFFICIAL_VALIDATION_PASSED = "OFFICIAL_VALIDATION_PASSED"
+    OFFICIAL_VALIDATION_REJECTED = "OFFICIAL_VALIDATION_REJECTED"
+    INIT_DATA_MISSING = "INIT_DATA_MISSING"
+    INIT_DATA_UNSAFE_ONLY = "INIT_DATA_UNSAFE_ONLY"
+    NOT_PERFORMED = "NOT_PERFORMED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramMiniAppFreshnessState(str, Enum):
+    WITHIN_EXTERNAL_POLICY = "WITHIN_EXTERNAL_POLICY"
+    STALE = "STALE"
+    MISSING = "MISSING"
+    POLICY_NOT_SELECTED = "POLICY_NOT_SELECTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramMiniAppFrontendDecisionState(str, Enum):
+    EXTERNAL_DECISION_ACCEPTED = "EXTERNAL_DECISION_ACCEPTED"
+    MISSING = "MISSING"
+    REJECTED = "REJECTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramMiniAppValidationState(str, Enum):
+    IDENTITY_HANDOFF_REQUIRED = "IDENTITY_HANDOFF_REQUIRED"
+    BLOCKED_PENDING_FRONTEND_DECISION = "BLOCKED_PENDING_FRONTEND_DECISION"
+    BLOCKED_PENDING_FRESHNESS_POLICY = "BLOCKED_PENDING_FRESHNESS_POLICY"
+    REJECTED_INIT_DATA_UNSAFE_ONLY = "REJECTED_INIT_DATA_UNSAFE_ONLY"
+    REJECTED_INIT_DATA_MISSING = "REJECTED_INIT_DATA_MISSING"
+    REJECTED_OFFICIAL_VALIDATION = "REJECTED_OFFICIAL_VALIDATION"
+    REJECTED_STALE_OR_MISSING_AUTH_DATE = "REJECTED_STALE_OR_MISSING_AUTH_DATE"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+_MINI_APP_PURPOSE_OWNERS: dict[TelegramMiniAppPurpose, TelegramMiniAppContextOwnerBoundary] = {
+    TelegramMiniAppPurpose.SHOW_FULL_LISTING_RESULT: (
+        TelegramMiniAppContextOwnerBoundary.NOTIFICATION_DELIVERY
+    ),
+    TelegramMiniAppPurpose.SHOW_BEACON_SETTINGS: (
+        TelegramMiniAppContextOwnerBoundary.BEACON_MANAGEMENT
+    ),
+    TelegramMiniAppPurpose.SHOW_BEACON_STATUS: (
+        TelegramMiniAppContextOwnerBoundary.BEACON_MANAGEMENT
+    ),
+    TelegramMiniAppPurpose.RICH_ONBOARDING: (
+        TelegramMiniAppContextOwnerBoundary.IDENTITY_AND_ACCESS
+    ),
+    TelegramMiniAppPurpose.OPEN_FROM_NOTIFICATION_ACTION: (
+        TelegramMiniAppContextOwnerBoundary.NOTIFICATION_DELIVERY
+    ),
+    TelegramMiniAppPurpose.UNSUPPORTED: TelegramMiniAppContextOwnerBoundary.NONE,
+    TelegramMiniAppPurpose.AMBIGUOUS: TelegramMiniAppContextOwnerBoundary.NONE,
+}
+
+
+class TelegramUntrustedMiniAppLaunchReference(_TelegramContract):
+    telegram_mini_app_launch_reference_id: str = Field(min_length=1)
+    telegram_bot_ref: str = Field(min_length=1)
+    launch_context_reference: str = Field(min_length=1)
+    launch_data_fingerprint: IdempotencyFingerprint
+    purpose_candidate: TelegramMiniAppPurpose
+    unsafe_context_present: bool
+    launch_input_untrusted: Literal[True] = True
+    unsafe_context_untrusted: Literal[True] = True
+    raw_launch_data_retained: Literal[False] = False
+    raw_unsafe_context_retained: Literal[False] = False
+    client_ui_authorization: Literal[False] = False
+    raw_provider_payload_retained: Literal[False] = False
+
+
+class TelegramMiniAppOfficialValidationEvidence(_TelegramContract):
+    telegram_mini_app_official_validation_evidence_id: str = Field(min_length=1)
+    telegram_bot_ref: str = Field(min_length=1)
+    matching_launch_data_fingerprint: IdempotencyFingerprint
+    init_data_validation_state: TelegramMiniAppInitDataValidationState
+    freshness_state: TelegramMiniAppFreshnessState
+    official_provider_evidence_reference: str = Field(min_length=1)
+    official_validation_policy_reference: str = Field(min_length=1)
+    external_freshness_policy_reference: str | None = Field(default=None, min_length=1)
+    backend_received_raw_launch_data_for_validation: bool
+    raw_launch_data_retained: Literal[False] = False
+    unsafe_context_used_for_authentication: Literal[False] = False
+    unsafe_context_used_for_authorization: Literal[False] = False
+    validation_algorithm_implemented: Literal[False] = False
+    bot_token_consumed: Literal[False] = False
+    provider_runtime_performed: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_evidence_matrix(self) -> "TelegramMiniAppOfficialValidationEvidence":
+        passed_or_rejected = {
+            TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_PASSED,
+            TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_REJECTED,
+            TelegramMiniAppInitDataValidationState.AMBIGUOUS,
+        }
+        if (self.init_data_validation_state in passed_or_rejected) != (
+            self.backend_received_raw_launch_data_for_validation
+        ):
+            raise ValueError("official or ambiguous validation requires backend raw input receipt")
+        if (
+            self.init_data_validation_state
+            is TelegramMiniAppInitDataValidationState.INIT_DATA_MISSING
+        ):
+            if self.freshness_state is not TelegramMiniAppFreshnessState.MISSING:
+                raise ValueError("missing launch data requires missing freshness")
+        if (
+            self.init_data_validation_state
+            in {
+                TelegramMiniAppInitDataValidationState.INIT_DATA_UNSAFE_ONLY,
+                TelegramMiniAppInitDataValidationState.NOT_PERFORMED,
+            }
+            and self.freshness_state is not TelegramMiniAppFreshnessState.POLICY_NOT_SELECTED
+        ):
+            raise ValueError("unsafe-only or unperformed validation requires unselected policy")
+        if (
+            self.init_data_validation_state
+            is TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_REJECTED
+            and self.freshness_state is TelegramMiniAppFreshnessState.WITHIN_EXTERNAL_POLICY
+        ):
+            raise ValueError("rejected validation cannot be fresh")
+        policy_states = {
+            TelegramMiniAppFreshnessState.WITHIN_EXTERNAL_POLICY,
+            TelegramMiniAppFreshnessState.STALE,
+            TelegramMiniAppFreshnessState.MISSING,
+            TelegramMiniAppFreshnessState.AMBIGUOUS,
+        }
+        if self.freshness_state in policy_states:
+            if self.external_freshness_policy_reference is None:
+                raise ValueError("freshness evaluation requires external policy reference")
+        elif self.external_freshness_policy_reference is not None:
+            raise ValueError("unselected freshness policy cannot have policy reference")
+        return self
+
+
+class TelegramMiniAppValidationRequest(_TelegramContract):
+    telegram_mini_app_validation_request_id: str = Field(min_length=1)
+    untrusted_launch_reference: TelegramUntrustedMiniAppLaunchReference
+    official_validation_evidence: TelegramMiniAppOfficialValidationEvidence
+    verified_telegram_provider_identity_evidence: VerifiedTelegramIdentityEvidence | None = None
+    frontend_decision_state: TelegramMiniAppFrontendDecisionState
+    external_frontend_decision_reference: str | None = Field(default=None, min_length=1)
+    requested_context_owner_boundary: TelegramMiniAppContextOwnerBoundary
+    provider_identity_remains_external: Literal[True] = True
+    client_ui_state_authorization: Literal[False] = False
+    internal_account_resolved: Literal[False] = False
+    account_created: Literal[False] = False
+    account_linked: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+    business_owner_handoff_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_request_matrix(self) -> "TelegramMiniAppValidationRequest":
+        launch = self.untrusted_launch_reference
+        evidence = self.official_validation_evidence
+        if launch.telegram_bot_ref != evidence.telegram_bot_ref:
+            raise ValueError("launch and validation bot scopes must match")
+        if launch.launch_data_fingerprint != evidence.matching_launch_data_fingerprint:
+            raise ValueError("launch and validation fingerprints must match")
+        expected_owner = _MINI_APP_PURPOSE_OWNERS[launch.purpose_candidate]
+        if self.requested_context_owner_boundary is not expected_owner:
+            raise ValueError("requested owner does not match purpose mapping")
+        if (
+            self.frontend_decision_state
+            is TelegramMiniAppFrontendDecisionState.EXTERNAL_DECISION_ACCEPTED
+        ):
+            if self.external_frontend_decision_reference is None:
+                raise ValueError("accepted frontend decision requires reference")
+        elif self.external_frontend_decision_reference is not None:
+            raise ValueError("non-accepted frontend decision cannot have reference")
+        passed = (
+            evidence.init_data_validation_state
+            is TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_PASSED
+        )
+        if passed != (self.verified_telegram_provider_identity_evidence is not None):
+            raise ValueError("verified identity is required only after passed validation")
+        identity = self.verified_telegram_provider_identity_evidence
+        if identity is not None and (
+            identity.provider_identity.telegram_bot_ref != launch.telegram_bot_ref
+        ):
+            raise ValueError("verified identity bot scope must match launch scope")
+        return self
+
+
+class TelegramMiniAppValidationOutcome(_TelegramContract):
+    telegram_mini_app_validation_outcome_id: str = Field(min_length=1)
+    validation_request: TelegramMiniAppValidationRequest
+    validation_state: TelegramMiniAppValidationState
+    requested_context_owner_boundary: TelegramMiniAppContextOwnerBoundary
+    identity_handoff_reference: str | None = Field(default=None, min_length=1)
+    blocking_or_rejection_reason_reference: str | None = Field(default=None, min_length=1)
+    internal_account_authorization_granted: Literal[False] = False
+    business_owner_authorization_granted: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+    client_ui_state_trusted_for_authorization: Literal[False] = False
+    raw_launch_data_retained: Literal[False] = False
+    provider_runtime_performed: Literal[False] = False
+    account_created: Literal[False] = False
+    account_linked: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_outcome_matrix(self) -> "TelegramMiniAppValidationOutcome":
+        request = self.validation_request
+        evidence = request.official_validation_evidence
+        launch = request.untrusted_launch_reference
+        if self.requested_context_owner_boundary is not request.requested_context_owner_boundary:
+            raise ValueError("outcome owner must match request owner")
+        validation = evidence.init_data_validation_state
+        freshness = evidence.freshness_state
+        if validation is TelegramMiniAppInitDataValidationState.INIT_DATA_UNSAFE_ONLY:
+            expected = TelegramMiniAppValidationState.REJECTED_INIT_DATA_UNSAFE_ONLY
+        elif validation is TelegramMiniAppInitDataValidationState.INIT_DATA_MISSING:
+            expected = TelegramMiniAppValidationState.REJECTED_INIT_DATA_MISSING
+        elif validation is TelegramMiniAppInitDataValidationState.NOT_PERFORMED:
+            expected = TelegramMiniAppValidationState.BLOCKED
+        elif validation is TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_REJECTED:
+            expected = TelegramMiniAppValidationState.REJECTED_OFFICIAL_VALIDATION
+        elif validation is TelegramMiniAppInitDataValidationState.AMBIGUOUS:
+            expected = TelegramMiniAppValidationState.AMBIGUOUS
+        elif freshness is TelegramMiniAppFreshnessState.POLICY_NOT_SELECTED:
+            expected = TelegramMiniAppValidationState.BLOCKED_PENDING_FRESHNESS_POLICY
+        elif freshness in {
+            TelegramMiniAppFreshnessState.STALE,
+            TelegramMiniAppFreshnessState.MISSING,
+        }:
+            expected = TelegramMiniAppValidationState.REJECTED_STALE_OR_MISSING_AUTH_DATE
+        elif freshness is TelegramMiniAppFreshnessState.AMBIGUOUS:
+            expected = TelegramMiniAppValidationState.AMBIGUOUS
+        elif launch.purpose_candidate is TelegramMiniAppPurpose.UNSUPPORTED:
+            expected = TelegramMiniAppValidationState.UNSUPPORTED
+        elif launch.purpose_candidate is TelegramMiniAppPurpose.AMBIGUOUS:
+            expected = TelegramMiniAppValidationState.AMBIGUOUS
+        elif request.frontend_decision_state is TelegramMiniAppFrontendDecisionState.MISSING:
+            expected = TelegramMiniAppValidationState.BLOCKED_PENDING_FRONTEND_DECISION
+        elif request.frontend_decision_state is TelegramMiniAppFrontendDecisionState.REJECTED:
+            expected = TelegramMiniAppValidationState.BLOCKED
+        elif request.frontend_decision_state is TelegramMiniAppFrontendDecisionState.AMBIGUOUS:
+            expected = TelegramMiniAppValidationState.AMBIGUOUS
+        else:
+            expected = TelegramMiniAppValidationState.IDENTITY_HANDOFF_REQUIRED
+        if self.validation_state is not expected:
+            raise ValueError("outcome state does not match validation matrix")
+        success = expected is TelegramMiniAppValidationState.IDENTITY_HANDOFF_REQUIRED
+        if success != (self.identity_handoff_reference is not None):
+            raise ValueError("only successful outcome may carry identity handoff")
+        if success != (self.blocking_or_rejection_reason_reference is None):
+            raise ValueError("successful outcome forbids reason; other outcomes require reason")
+        return self
+
+
 __all__ = [
     "TelegramInboundInputKind",
     "TelegramIntentFamily",
@@ -1628,4 +1896,14 @@ __all__ = [
     "TelegramDeepLinkContextResolutionEvidence",
     "TelegramDeepLinkValidationRequest",
     "TelegramDeepLinkValidationOutcome",
+    "TelegramMiniAppPurpose",
+    "TelegramMiniAppContextOwnerBoundary",
+    "TelegramMiniAppInitDataValidationState",
+    "TelegramMiniAppFreshnessState",
+    "TelegramMiniAppFrontendDecisionState",
+    "TelegramMiniAppValidationState",
+    "TelegramUntrustedMiniAppLaunchReference",
+    "TelegramMiniAppOfficialValidationEvidence",
+    "TelegramMiniAppValidationRequest",
+    "TelegramMiniAppValidationOutcome",
 ]
