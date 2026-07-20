@@ -1139,3 +1139,38 @@ Product code, semantic contracts, tests, fixtures, provider calls, token handlin
 **Roadmap consequence:** MX-02 requires a separate exact task after a fresh verification of GitHub main, the Module 10 playbook, Identity and Access contracts, Notification Delivery contracts and parallel-main compatibility.
 
 No numbered open decision is closed by assumption.
+
+## ADR-0027 — 2026-07-20 — Admin & Support owner decisions for AS-01
+
+
+**Status:** OWNER-APPROVED decision capture pending independent GitHub acceptance
+**Module:** `11-admin-and-support`
+**Roadmap step:** `AS-01`
+**Technical task:** `AS-01-PRECOMMIT-GATE-CORRECTION-REFRESH-TO-4622B2-20260720-006`
+**Source tasks:** `AS-01-ADMIN-SUPPORT-OWNER-DECISIONS-CAPTURE-20260720-001`; `AS-01-ADMIN-SUPPORT-OWNER-DECISIONS-CAPTURE-REFRESH-TO-8D0682-20260720-002`; `AS-01-CLEAN-CHECKOUT-AND-GOVERNANCE-CAPTURE-20260720-003`; `AS-01-SSH-TRANSPORT-DIAGNOSIS-AND-CAPTURE-20260720-004`; `AS-01-HASH-EVIDENCE-CORRECTION-REFRESH-TO-8C9C28-20260720-005`
+**Canonical document:** `docs/04-modules/11-admin-and-support/OWNER_DECISIONS_CAPTURE_v1.0.md`
+
+**Decision capture:**
+
+1. First scope is safe read/explain, account, Beacon, tariff/access/limit and scan/anchor summaries, limited manual actions, support cases/work items, internal notes and append-style audit; authoritative effects remain with owning modules.
+2. Role changes go only through Identity & Access with verified actor, server-side capability/scope, target account, old/new role references, reason, idempotency, correlation/causation, Identity outcome and audit; provider or client presentation is not authorization, and role taxonomy remains open there.
+3. Tariff create/edit/publish/deactivate goes only through Entitlements & Billing with actor, reason, version/effective interval, intended effect, outcome and audit; prices, periods, currencies, limits and retroactive policy are not invented, history is not silently rewritten, and active-condition changes require future approved version/effect policy.
+4. Subscription and manual-access assignment/change/extension/cancellation goes only through Entitlements & Billing with verified actor, target, exact scope, explicit interval, reason, idempotency, outcome and audit; current manual grants require both `starts_at` and `ends_at`, while open-ended grants remain blocked pending separate approval.
+5. Anchor operations go only through Scan Orchestration with Beacon, safe current summary, freshness indicator, reason, intended action, outcome and audit; direct writes, false claims, unsafe deletion, ambiguous clearing, hard-coded window size, full archive and raw payload are prohibited.
+6. Future Beacon support actions go only through Beacon Management using current configuration, patch save, supplied fields only, authoritative reload after success and audit; stale overwrite, unsupported mutation and rewriting committed scan/audit facts are prohibited, and this task does not authorize Beacon runtime.
+7. Manual actions require support/action and applicable case IDs, verified actor scope, target, family, reason, idempotency key, semantic fingerprint, owning module, command reference, outcome, correlation/causation, timestamp policy, safe evidence and append-style audit.
+8. Admin & Support does not write foreign authoritative state, call providers, change routes/services/credentials, bypass authorization, hide outcomes or calculate entitlements.
+9. Support reads are authorized, scoped, provenance/freshness aware, redacted and minimal-PII; fresh/stale/unknown/ambiguous/forbidden remain distinct and support records contain no secrets, raw payloads, full private-message archives or excess PII.
+10. Support notes are internal by default, case-bound, verified-author, redacted, append-style, non-authoritative and non-mutating; customer-visible explanation is a separate future safe form.
+11. Direct/blind resend is prohibited; Admin & Support prepares only an authorized Notification Delivery request, while Notification Delivery owns outbox, attempts, lifecycle, idempotency, duplicate protection, replay/reconciliation and ambiguous provider effect; direct Telegram/MAX send/outbox mutation is prohibited.
+12. Break-glass, impersonation, login as user, session takeover, silent privileged override, full export, full account deletion and retention/deletion implementation remain blocked until separate explicit policies.
+
+**Ownership consequences:** Identity & Access owns identity, roles and authorization; Entitlements & Billing owns tariff, subscription, grant and effective access; Beacon Management owns Beacon lifecycle/current configuration; Scan Orchestration owns scans, baseline, anchors/listing and recovery facts; Notification Delivery owns generic outbox/delivery lifecycle; Egress Routing owns routes/agents/transport; Telegram/MAX adapters own provider mapping; Admin & Support owns only support cases/work items, safe notes, explanations/read models, command envelopes and support audit references.
+
+**Security and privacy consequences:** verified server-side authorization, scoped/provenance/freshness-aware redacted minimal-PII reads, case-bound verified append notes, no secrets or raw provider/private-message material, no provider calls, direct writes, bypasses or hidden outcomes.
+
+**Preserved open decisions:** exact role taxonomy; tariff prices, periods, currencies, limits and retroactive/version migration policy; command/wire names and schemas; anchor reset/rebase policy and window size; notification resend/suppression; staffing/approvals; Admin UI; search/filter; rate limits; evidence attachments; audit retention. `OD-006`, `OD-007`, `OD-008`, `OD-013`, `OD-014` and other numbered open decisions remain open unless governed by another accepted ADR.
+
+**Blocked gates:** no code, contracts, tests, runtime, persistence, UI, provider, secrets or infrastructure work is authorized.
+
+AS-01 is complete only after independent verification and acceptance of the publishing commit by ChatGPT. AS-02 may begin only after AS-01 acceptance and a fresh verification of GitHub main, the playbook, linked modules and parallel changes. This ADR does not authorize code/contracts/tests/runtime/persistence/UI/provider/secrets/infrastructure.
