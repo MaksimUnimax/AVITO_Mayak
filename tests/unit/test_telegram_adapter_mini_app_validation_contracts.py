@@ -44,6 +44,8 @@ PURPOSE_OWNERS = {
 
 def launch(
     purpose: TelegramMiniAppPurpose = TelegramMiniAppPurpose.RICH_ONBOARDING,
+    *,
+    unsafe_context_present: bool = True,
 ) -> TelegramUntrustedMiniAppLaunchReference:
     return TelegramUntrustedMiniAppLaunchReference(
         telegram_mini_app_launch_reference_id=" launch-ref ",
@@ -51,7 +53,7 @@ def launch(
         launch_context_reference=" context-ref ",
         launch_data_fingerprint=IdempotencyFingerprint(value="launch-fp"),
         purpose_candidate=purpose,
-        unsafe_context_present=True,
+        unsafe_context_present=unsafe_context_present,
     )
 
 
@@ -63,6 +65,7 @@ def evidence(
     *,
     received: bool = True,
     policy_ref: str | None = "freshness-policy",
+    provider_identity_ref: str | None = "provider-ref",
 ) -> TelegramMiniAppOfficialValidationEvidence:
     return TelegramMiniAppOfficialValidationEvidence(
         telegram_mini_app_official_validation_evidence_id=" evidence-ref ",
@@ -73,6 +76,9 @@ def evidence(
         official_provider_evidence_reference="provider-evidence",
         official_validation_policy_reference="official-policy",
         external_freshness_policy_reference=policy_ref,
+        validated_provider_identity_reference=provider_identity_ref
+        if state is TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_PASSED
+        else None,
         backend_received_raw_launch_data_for_validation=received,
     )
 
@@ -107,9 +113,14 @@ def request(
         if verified
         else None
     )
+    unsafe_context_present = validation.init_data_validation_state is not (
+        TelegramMiniAppInitDataValidationState.INIT_DATA_MISSING
+    )
     return TelegramMiniAppValidationRequest(
         telegram_mini_app_validation_request_id="request-ref",
-        untrusted_launch_reference=launch(purpose),
+        untrusted_launch_reference=launch(
+            purpose, unsafe_context_present=unsafe_context_present
+        ),
         official_validation_evidence=validation,
         verified_telegram_provider_identity_evidence=identity,
         frontend_decision_state=frontend,
@@ -153,6 +164,32 @@ def test_records_are_frozen_forbid_extra_and_strip_strings() -> None:
         data["unknown"] = "rejected"
         with pytest.raises(ValidationError):
             type(factory())(**data)
+
+
+def test_each_tg09_record_independently_freezes_forbids_extra_and_strips() -> None:
+    records = (
+        launch(),
+        evidence(),
+        request(),
+        outcome(request(), TelegramMiniAppValidationState.IDENTITY_HANDOFF_REQUIRED),
+    )
+    for record in records:
+        field = next(name for name, value in record.model_dump().items() if isinstance(value, str))
+        with pytest.raises(ValidationError):
+            setattr(record, field, "changed")
+        data = record.model_dump(mode="python")
+        data["unknown_extra_field"] = "rejected"
+        with pytest.raises(ValidationError):
+            type(record)(**data)
+    assert launch().telegram_mini_app_launch_reference_id == "launch-ref"
+    assert evidence().telegram_mini_app_official_validation_evidence_id == "evidence-ref"
+    assert request().telegram_mini_app_validation_request_id == "request-ref"
+    assert (
+        outcome(
+            request(), TelegramMiniAppValidationState.IDENTITY_HANDOFF_REQUIRED
+        ).telegram_mini_app_validation_outcome_id
+        == "outcome-ref"
+    )
 
 
 @pytest.mark.parametrize("purpose", tuple(PURPOSE_OWNERS))
@@ -325,6 +362,41 @@ def test_validation_outcome_matrix(
     assert outcome(req, state).validation_state is state
 
 
+def test_unsafe_context_coherence_is_exact() -> None:
+    unsafe = evidence(
+        TelegramMiniAppInitDataValidationState.INIT_DATA_UNSAFE_ONLY,
+        TelegramMiniAppFreshnessState.POLICY_NOT_SELECTED,
+        received=False,
+        policy_ref=None,
+    )
+    assert outcome(
+        request(validation=unsafe),
+        TelegramMiniAppValidationState.REJECTED_INIT_DATA_UNSAFE_ONLY,
+    ).validation_state is TelegramMiniAppValidationState.REJECTED_INIT_DATA_UNSAFE_ONLY
+    bad_unsafe = request(validation=unsafe)
+    data = bad_unsafe.model_dump(mode="python")
+    data["untrusted_launch_reference"]["unsafe_context_present"] = False
+    with pytest.raises(ValidationError):
+        TelegramMiniAppValidationRequest(**data)
+
+    missing = evidence(
+        TelegramMiniAppInitDataValidationState.INIT_DATA_MISSING,
+        TelegramMiniAppFreshnessState.MISSING,
+        received=False,
+    )
+    missing_request = request(validation=missing)
+    missing_data = missing_request.model_dump(mode="python")
+    missing_data["untrusted_launch_reference"]["unsafe_context_present"] = False
+    assert outcome(
+        TelegramMiniAppValidationRequest(**missing_data),
+        TelegramMiniAppValidationState.REJECTED_INIT_DATA_MISSING,
+    ).validation_state is TelegramMiniAppValidationState.REJECTED_INIT_DATA_MISSING
+    bad_missing = missing_request.model_dump(mode="python")
+    bad_missing["untrusted_launch_reference"]["unsafe_context_present"] = True
+    with pytest.raises(ValidationError):
+        TelegramMiniAppValidationRequest(**bad_missing)
+
+
 def test_supported_frontend_and_purpose_outcomes() -> None:
     for purpose in PURPOSE_OWNERS:
         if purpose in {TelegramMiniAppPurpose.UNSUPPORTED, TelegramMiniAppPurpose.AMBIGUOUS}:
@@ -407,3 +479,46 @@ def test_verified_identity_required_only_after_passed_and_scope_matches() -> Non
     )
     with pytest.raises(ValidationError):
         TelegramMiniAppValidationRequest(**bad)
+
+
+def test_passed_validation_requires_exact_provider_identity_reference() -> None:
+    req = request()
+    verified = req.verified_telegram_provider_identity_evidence
+    assert verified is not None
+    assert req.official_validation_evidence.validated_provider_identity_reference == (
+        verified.provider_identity.telegram_provider_identity_ref
+    )
+    with pytest.raises(ValidationError):
+        request(validation=evidence(provider_identity_ref=None))
+
+
+def test_nonpassed_validation_forbids_provider_identity_reference() -> None:
+    data = evidence(
+        TelegramMiniAppInitDataValidationState.NOT_PERFORMED,
+        TelegramMiniAppFreshnessState.POLICY_NOT_SELECTED,
+        received=False,
+        policy_ref=None,
+    ).model_dump(mode="python")
+    data["validated_provider_identity_reference"] = "provider-ref"
+    with pytest.raises(ValidationError):
+        TelegramMiniAppOfficialValidationEvidence(**data)
+
+
+def test_same_bot_different_provider_identity_is_rejected() -> None:
+    data = request().model_dump(mode="python")
+    data["verified_telegram_provider_identity_evidence"]["provider_identity"][
+        "telegram_provider_identity_ref"
+    ] = "different-provider-ref"
+    with pytest.raises(ValidationError):
+        TelegramMiniAppValidationRequest(**data)
+
+
+def test_launch_and_evidence_bot_scope_mismatches_are_independent() -> None:
+    launch_data = request().model_dump(mode="python")
+    launch_data["untrusted_launch_reference"]["telegram_bot_ref"] = "other-launch-bot"
+    with pytest.raises(ValidationError):
+        TelegramMiniAppValidationRequest(**launch_data)
+    evidence_data = request().model_dump(mode="python")
+    evidence_data["official_validation_evidence"]["telegram_bot_ref"] = "other-evidence-bot"
+    with pytest.raises(ValidationError):
+        TelegramMiniAppValidationRequest(**evidence_data)

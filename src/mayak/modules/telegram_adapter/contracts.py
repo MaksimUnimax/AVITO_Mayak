@@ -1686,6 +1686,7 @@ class TelegramMiniAppOfficialValidationEvidence(_TelegramContract):
     official_provider_evidence_reference: str = Field(min_length=1)
     official_validation_policy_reference: str = Field(min_length=1)
     external_freshness_policy_reference: str | None = Field(default=None, min_length=1)
+    validated_provider_identity_reference: str | None = Field(default=None, min_length=1)
     backend_received_raw_launch_data_for_validation: bool
     raw_launch_data_retained: Literal[False] = False
     unsafe_context_used_for_authentication: Literal[False] = False
@@ -1737,6 +1738,14 @@ class TelegramMiniAppOfficialValidationEvidence(_TelegramContract):
                 raise ValueError("freshness evaluation requires external policy reference")
         elif self.external_freshness_policy_reference is not None:
             raise ValueError("unselected freshness policy cannot have policy reference")
+        passed = (
+            self.init_data_validation_state
+            is TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_PASSED
+        )
+        if passed != (self.validated_provider_identity_reference is not None):
+            raise ValueError(
+                "only passed official validation may have provider identity reference"
+            )
         return self
 
 
@@ -1779,13 +1788,34 @@ class TelegramMiniAppValidationRequest(_TelegramContract):
             evidence.init_data_validation_state
             is TelegramMiniAppInitDataValidationState.OFFICIAL_VALIDATION_PASSED
         )
+        if (
+            evidence.init_data_validation_state
+            is TelegramMiniAppInitDataValidationState.INIT_DATA_UNSAFE_ONLY
+            and not launch.unsafe_context_present
+        ):
+            raise ValueError("unsafe-only validation requires unsafe context presence")
+        if (
+            evidence.init_data_validation_state
+            is TelegramMiniAppInitDataValidationState.INIT_DATA_MISSING
+            and launch.unsafe_context_present
+        ):
+            raise ValueError("missing init data requires absent unsafe context")
         if passed != (self.verified_telegram_provider_identity_evidence is not None):
             raise ValueError("verified identity is required only after passed validation")
         identity = self.verified_telegram_provider_identity_evidence
-        if identity is not None and (
-            identity.provider_identity.telegram_bot_ref != launch.telegram_bot_ref
-        ):
-            raise ValueError("verified identity bot scope must match launch scope")
+        if passed:
+            assert identity is not None
+            if evidence.validated_provider_identity_reference != (
+                identity.provider_identity.telegram_provider_identity_ref
+            ):
+                raise ValueError("official evidence must bind the exact verified provider identity")
+            if identity.provider_identity.telegram_bot_ref not in {
+                launch.telegram_bot_ref,
+                evidence.telegram_bot_ref,
+            }:
+                raise ValueError("verified identity bot scope must match launch and evidence")
+        elif evidence.validated_provider_identity_reference is not None:
+            raise ValueError("non-passed validation cannot have provider identity reference")
         return self
 
 

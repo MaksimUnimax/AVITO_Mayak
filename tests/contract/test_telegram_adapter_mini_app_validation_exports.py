@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha1
+from pathlib import Path
 
 from mayak.modules import telegram_adapter
 from mayak.modules.telegram_adapter import contracts
@@ -45,13 +47,36 @@ FORBIDDEN_SCHEMA_NAMES = {
     "duration",
     "threshold",
     "freshness_threshold",
+    "raw_user",
+    "raw_chat",
+    "raw_profile",
+    "internal_account",
+    "business_authorization",
+    "provider_token",
+    "bot_token_value",
+    "webhook_secret",
 }
 
 
 def test_exact_ten_tg09_exports_and_public_identity() -> None:
-    assert all(name in contracts.__all__ for name in TG09_SYMBOLS)
-    assert all(name in telegram_adapter.__all__ for name in TG09_SYMBOLS)
+    def filtered(exports: list[str]) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name in exports
+            if name.startswith("TelegramMiniApp")
+            or name == "TelegramUntrustedMiniAppLaunchReference"
+        )
+
+    assert filtered(contracts.__all__) == TG09_SYMBOLS
+    assert filtered(telegram_adapter.__all__) == TG09_SYMBOLS
+    assert contracts.__all__.count("TelegramUntrustedMiniAppLaunchReference") == 1
+    assert telegram_adapter.__all__.count("TelegramUntrustedMiniAppLaunchReference") == 1
     assert all(getattr(contracts, name) is getattr(telegram_adapter, name) for name in TG09_SYMBOLS)
+    package_bytes = Path(telegram_adapter.__file__).read_bytes()
+    assert (
+        sha1(b"blob " + str(len(package_bytes)).encode() + b"\0" + package_bytes).hexdigest()
+        == "704e5fb27be12af3d6bf961db96b55279da7b06e"
+    )
 
 
 def test_enum_serialization_is_stable() -> None:
@@ -68,8 +93,11 @@ def test_recursive_tg09_schema_has_no_forbidden_property_or_definition_name() ->
         def scan(node: object) -> None:
             if isinstance(node, dict):
                 for key, value in node.items():
-                    if key in {"properties", "$defs", "definitions"} and isinstance(value, dict):
-                        seen.update(value)
+                    if (
+                        key.lower() in {"properties", "$defs", "definitions"}
+                        and isinstance(value, dict)
+                    ):
+                        seen.update(name.lower() for name in value)
                         for nested in value.values():
                             scan(nested)
                     else:
