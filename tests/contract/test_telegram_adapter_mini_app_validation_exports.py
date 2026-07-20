@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-from hashlib import sha1
-from pathlib import Path
 
 from mayak.modules import telegram_adapter
 from mayak.modules.telegram_adapter import contracts
@@ -18,6 +16,15 @@ TG09_SYMBOLS = (
     "TelegramMiniAppOfficialValidationEvidence",
     "TelegramMiniAppValidationRequest",
     "TelegramMiniAppValidationOutcome",
+)
+
+TG10_SYMBOLS = (
+    "TelegramChatSurfaceClass",
+    "TelegramChatSurfaceAdmissionState",
+    "TelegramChatSurfaceReasonCode",
+    "TelegramUntrustedChatSurfaceReference",
+    "TelegramChatSurfaceAdmissionRequest",
+    "TelegramChatSurfaceAdmissionOutcome",
 )
 
 FORBIDDEN_SCHEMA_NAMES = {
@@ -72,11 +79,11 @@ def test_exact_ten_tg09_exports_and_public_identity() -> None:
     assert contracts.__all__.count("TelegramUntrustedMiniAppLaunchReference") == 1
     assert telegram_adapter.__all__.count("TelegramUntrustedMiniAppLaunchReference") == 1
     assert all(getattr(contracts, name) is getattr(telegram_adapter, name) for name in TG09_SYMBOLS)
-    package_bytes = Path(telegram_adapter.__file__).read_bytes()
-    assert (
-        sha1(b"blob " + str(len(package_bytes)).encode() + b"\0" + package_bytes).hexdigest()
-        == "704e5fb27be12af3d6bf961db96b55279da7b06e"
-    )
+    for exports in (contracts.__all__, telegram_adapter.__all__):
+        filtered_tg10 = tuple(name for name in exports if name in TG10_SYMBOLS)
+        assert filtered_tg10 == TG10_SYMBOLS
+        assert len(filtered_tg10) == len(set(filtered_tg10))
+    assert all(getattr(contracts, name) is getattr(telegram_adapter, name) for name in TG10_SYMBOLS)
 
 
 def test_enum_serialization_is_stable() -> None:

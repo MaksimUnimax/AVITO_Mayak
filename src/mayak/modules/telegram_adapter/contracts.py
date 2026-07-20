@@ -45,6 +45,34 @@ class VerifiedTelegramIdentityEvidence(_TelegramContract):
     verification_result_ref: str = Field(min_length=1)
 
 
+class TelegramChatSurfaceClass(str, Enum):
+    PRIVATE_CHAT = "PRIVATE_CHAT"
+    GROUP = "GROUP"
+    SUPERGROUP = "SUPERGROUP"
+    CHANNEL = "CHANNEL"
+    FORUM_TOPIC = "FORUM_TOPIC"
+    BUSINESS_CONNECTION = "BUSINESS_CONNECTION"
+    SHARED_CHAT = "SHARED_CHAT"
+    UNKNOWN = "UNKNOWN"
+
+
+class TelegramChatSurfaceAdmissionState(str, Enum):
+    PRIVATE_CHAT_ADMITTED = "PRIVATE_CHAT_ADMITTED"
+    UNSUPPORTED_SURFACE_IGNORED = "UNSUPPORTED_SURFACE_IGNORED"
+    AMBIGUOUS_SURFACE_REJECTED = "AMBIGUOUS_SURFACE_REJECTED"
+
+
+class TelegramChatSurfaceReasonCode(str, Enum):
+    PRIVATE_CHAT_V1_SUPPORTED = "PRIVATE_CHAT_V1_SUPPORTED"
+    GROUP_NOT_SUPPORTED = "GROUP_NOT_SUPPORTED"
+    SUPERGROUP_NOT_SUPPORTED = "SUPERGROUP_NOT_SUPPORTED"
+    CHANNEL_NOT_SUPPORTED = "CHANNEL_NOT_SUPPORTED"
+    FORUM_TOPIC_NOT_SUPPORTED = "FORUM_TOPIC_NOT_SUPPORTED"
+    BUSINESS_CONNECTION_NOT_SUPPORTED = "BUSINESS_CONNECTION_NOT_SUPPORTED"
+    SHARED_CHAT_NOT_SUPPORTED = "SHARED_CHAT_NOT_SUPPORTED"
+    UNKNOWN_SURFACE = "UNKNOWN_SURFACE"
+
+
 class TelegramAccountLinkReference(_TelegramContract):
     """Telegram-owned reference to an already accepted Identity decision."""
 
@@ -193,6 +221,172 @@ class TelegramUpdateIntakeRecord(_TelegramContract):
         if self.intake_state is not TelegramUpdateIntakeState.ACCEPTED_FOR_NORMALIZATION:
             if self.normalization_reference_id is not None:
                 raise ValueError("only accepted intake may have normalization reference")
+        return self
+
+
+class TelegramUntrustedChatSurfaceReference(_TelegramContract):
+    telegram_chat_surface_reference_id: str = Field(min_length=1)
+    telegram_bot_ref: str = Field(min_length=1)
+    telegram_update_intake_record_id: str = Field(min_length=1)
+    telegram_chat_provider_reference: str = Field(min_length=1)
+    surface_class: TelegramChatSurfaceClass
+    private_participant_provider_identity_reference: str | None = Field(default=None, min_length=1)
+    forum_topic_provider_reference: str | None = Field(default=None, min_length=1)
+    business_connection_provider_reference: str | None = Field(default=None, min_length=1)
+    shared_chat_provider_reference: str | None = Field(default=None, min_length=1)
+    provider_input_untrusted: Literal[True] = True
+    private_chat_only_v1: Literal[True] = True
+    group_membership_used_as_ownership: Literal[False] = False
+    chat_title_used_as_ownership: Literal[False] = False
+    username_or_display_name_used_as_ownership: Literal[False] = False
+    multi_user_chat_ownership_supported: Literal[False] = False
+    internal_account_authority: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+    raw_provider_payload_retained: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_specialized_reference_matrix(self) -> "TelegramUntrustedChatSurfaceReference":
+        references = {
+            "private participant": self.private_participant_provider_identity_reference,
+            "forum topic": self.forum_topic_provider_reference,
+            "business connection": self.business_connection_provider_reference,
+            "shared chat": self.shared_chat_provider_reference,
+        }
+        required_by_surface = {
+            TelegramChatSurfaceClass.PRIVATE_CHAT: "private participant",
+            TelegramChatSurfaceClass.FORUM_TOPIC: "forum topic",
+            TelegramChatSurfaceClass.BUSINESS_CONNECTION: "business connection",
+            TelegramChatSurfaceClass.SHARED_CHAT: "shared chat",
+        }
+        required = (
+            required_by_surface[self.surface_class]
+            if self.surface_class in required_by_surface
+            else None
+        )
+        if required is not None and references[required] is None:
+            raise ValueError(f"{required} reference is required for {self.surface_class.value}")
+        for label, value in references.items():
+            if label != required and value is not None:
+                raise ValueError(f"{label} reference is forbidden for {self.surface_class.value}")
+        return self
+
+
+class TelegramChatSurfaceAdmissionRequest(_TelegramContract):
+    telegram_chat_surface_admission_request_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    update_intake_record: TelegramUpdateIntakeRecord
+    chat_surface: TelegramUntrustedChatSurfaceReference
+    verified_telegram_provider_identity_evidence: VerifiedTelegramIdentityEvidence | None = None
+    surface_policy_reference_id: str = Field(min_length=1)
+    private_chat_only_v1: Literal[True] = True
+    unsupported_surfaces_have_no_business_effect: Literal[True] = True
+    internal_account_resolution_authority: Literal[False] = False
+    business_effect_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    outbound_delivery_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_intake_and_identity_binding(self) -> "TelegramChatSurfaceAdmissionRequest":
+        surface = self.chat_surface
+        intake = self.update_intake_record
+        intake_bot_ref = intake.provider_update_identity.telegram_bot_ref
+        if surface.telegram_update_intake_record_id != intake.telegram_update_intake_record_id:
+            raise ValueError("surface intake reference must match update intake record")
+        if surface.telegram_bot_ref != intake_bot_ref:
+            raise ValueError("surface bot scope must match update intake bot scope")
+        evidence = self.verified_telegram_provider_identity_evidence
+        if surface.surface_class is TelegramChatSurfaceClass.PRIVATE_CHAT:
+            if evidence is None:
+                raise ValueError("private chat requires verified identity evidence")
+            if (
+                surface.private_participant_provider_identity_reference
+                != evidence.provider_identity.telegram_provider_identity_ref
+            ):
+                raise ValueError("private participant must match verified provider identity")
+            if evidence.provider_identity.telegram_bot_ref != surface.telegram_bot_ref:
+                raise ValueError("verified identity bot scope must match surface bot scope")
+        elif evidence is not None:
+            raise ValueError("non-private surfaces forbid identity evidence")
+        return self
+
+
+class TelegramChatSurfaceAdmissionOutcome(_TelegramContract):
+    telegram_chat_surface_admission_outcome_id: str = Field(min_length=1)
+    metadata: ContractMetadata
+    request: TelegramChatSurfaceAdmissionRequest
+    admission_state: TelegramChatSurfaceAdmissionState
+    reason_code: TelegramChatSurfaceReasonCode
+    admitted_update_intake_record_id: str | None = Field(default=None, min_length=1)
+    verified_provider_identity_reference: str | None = Field(default=None, min_length=1)
+    safe_diagnostic_reference_id: str | None = Field(default=None, min_length=1)
+    private_chat_only_v1: Literal[True] = True
+    unsupported_surface_business_effect: Literal[False] = False
+    chat_surface_establishes_internal_account_ownership: Literal[False] = False
+    group_or_channel_delivery_authorized: Literal[False] = False
+    private_listing_delivery_authorized: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+    raw_provider_payload_retained: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_outcome_matrix(self) -> "TelegramChatSurfaceAdmissionOutcome":
+        surface_class = self.request.chat_surface.surface_class
+        unsupported_reasons = {
+            TelegramChatSurfaceClass.GROUP: TelegramChatSurfaceReasonCode.GROUP_NOT_SUPPORTED,
+            TelegramChatSurfaceClass.SUPERGROUP: (
+                TelegramChatSurfaceReasonCode.SUPERGROUP_NOT_SUPPORTED
+            ),
+            TelegramChatSurfaceClass.CHANNEL: TelegramChatSurfaceReasonCode.CHANNEL_NOT_SUPPORTED,
+            TelegramChatSurfaceClass.FORUM_TOPIC: (
+                TelegramChatSurfaceReasonCode.FORUM_TOPIC_NOT_SUPPORTED
+            ),
+            TelegramChatSurfaceClass.BUSINESS_CONNECTION: (
+                TelegramChatSurfaceReasonCode.BUSINESS_CONNECTION_NOT_SUPPORTED
+            ),
+            TelegramChatSurfaceClass.SHARED_CHAT: (
+                TelegramChatSurfaceReasonCode.SHARED_CHAT_NOT_SUPPORTED
+            ),
+        }
+        if surface_class is TelegramChatSurfaceClass.PRIVATE_CHAT:
+            expected = (
+                TelegramChatSurfaceAdmissionState.PRIVATE_CHAT_ADMITTED,
+                TelegramChatSurfaceReasonCode.PRIVATE_CHAT_V1_SUPPORTED,
+            )
+            if (self.admission_state, self.reason_code) != expected:
+                raise ValueError("private chat outcome has invalid state or reason")
+            if (
+                self.admitted_update_intake_record_id
+                != self.request.update_intake_record.telegram_update_intake_record_id
+            ):
+                raise ValueError("admitted outcome must carry the intake identifier")
+            expected_identity = self.request.verified_telegram_provider_identity_evidence
+            if (
+                expected_identity is None
+                or self.verified_provider_identity_reference
+                != expected_identity.provider_identity.telegram_provider_identity_ref
+            ):
+                raise ValueError("admitted outcome must carry the verified identity reference")
+            if self.safe_diagnostic_reference_id is not None:
+                raise ValueError("admitted outcome forbids diagnostic reference")
+        else:
+            expected_state = (
+                TelegramChatSurfaceAdmissionState.AMBIGUOUS_SURFACE_REJECTED
+                if surface_class is TelegramChatSurfaceClass.UNKNOWN
+                else TelegramChatSurfaceAdmissionState.UNSUPPORTED_SURFACE_IGNORED
+            )
+            expected_reason = (
+                TelegramChatSurfaceReasonCode.UNKNOWN_SURFACE
+                if surface_class is TelegramChatSurfaceClass.UNKNOWN
+                else unsupported_reasons[surface_class]
+            )
+            if (self.admission_state, self.reason_code) != (expected_state, expected_reason):
+                raise ValueError("unsupported or ambiguous outcome has invalid state or reason")
+            if (
+                self.admitted_update_intake_record_id is not None
+                or self.verified_provider_identity_reference is not None
+            ):
+                raise ValueError("ignored or rejected outcome forbids handoff references")
+            if self.safe_diagnostic_reference_id is None:
+                raise ValueError("ignored or rejected outcome requires a diagnostic reference")
         return self
 
 
@@ -1886,6 +2080,12 @@ class TelegramMiniAppValidationOutcome(_TelegramContract):
 
 
 __all__ = [
+    "TelegramChatSurfaceClass",
+    "TelegramChatSurfaceAdmissionState",
+    "TelegramChatSurfaceReasonCode",
+    "TelegramUntrustedChatSurfaceReference",
+    "TelegramChatSurfaceAdmissionRequest",
+    "TelegramChatSurfaceAdmissionOutcome",
     "TelegramInboundInputKind",
     "TelegramIntentFamily",
     "TelegramIntentNormalizationState",
