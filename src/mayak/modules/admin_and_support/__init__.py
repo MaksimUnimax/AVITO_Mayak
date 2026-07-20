@@ -1,5 +1,11 @@
 """Admin and Support module package."""
 
+from mayak.modules.admin_and_support.access_actions import (
+    AdminUserAccessActionKind,
+    AdminUserAccessActionOutcome,
+    AdminUserAccessActionRequest,
+    AdminUserAccessOutcomeState,
+)
 from mayak.modules.admin_and_support.contracts import (
     SupportActionAuditRecord,
     SupportActionAuditState,
@@ -86,4 +92,8 @@ __all__ = [
     "AdminTariffCatalogOutcomeState",
     "AdminTariffCatalogActionRequest",
     "AdminTariffCatalogActionOutcome",
+    "AdminUserAccessActionKind",
+    "AdminUserAccessOutcomeState",
+    "AdminUserAccessActionRequest",
+    "AdminUserAccessActionOutcome",
 ]
