@@ -22,6 +22,15 @@ from mayak.modules.admin_and_support.beacon_actions import (
     AdminBeaconSupportActionRequest,
     AdminBeaconSupportOutcomeState,
 )
+from mayak.modules.admin_and_support.case_records import (
+    SupportCaseActionKind,
+    SupportCaseActionOutcome,
+    SupportCaseActionOutcomeState,
+    SupportCaseActionRequest,
+    SupportCaseAuditLinkState,
+    SupportCaseAuditTrailEntry,
+    SupportInternalNoteRecord,
+)
 from mayak.modules.admin_and_support.contracts import (
     SupportActionAuditRecord,
     SupportActionAuditState,
@@ -124,4 +133,11 @@ __all__ = [
     "AdminBeaconPatchFieldReference",
     "AdminBeaconSupportActionRequest",
     "AdminBeaconSupportActionOutcome",
+    "SupportCaseActionKind",
+    "SupportCaseActionOutcomeState",
+    "SupportCaseAuditLinkState",
+    "SupportInternalNoteRecord",
+    "SupportCaseActionRequest",
+    "SupportCaseActionOutcome",
+    "SupportCaseAuditTrailEntry",
 ]
