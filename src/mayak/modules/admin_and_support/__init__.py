@@ -13,6 +13,15 @@ from mayak.modules.admin_and_support.anchor_actions import (
     AdminAnchorActionRequest,
     AdminAnchorStateSummary,
 )
+from mayak.modules.admin_and_support.beacon_actions import (
+    AdminBeaconCurrentStateSummary,
+    AdminBeaconPatchFieldReference,
+    AdminBeaconPatchFieldSupportState,
+    AdminBeaconSupportActionKind,
+    AdminBeaconSupportActionOutcome,
+    AdminBeaconSupportActionRequest,
+    AdminBeaconSupportOutcomeState,
+)
 from mayak.modules.admin_and_support.contracts import (
     SupportActionAuditRecord,
     SupportActionAuditState,
@@ -108,4 +117,11 @@ __all__ = [
     "AdminAnchorStateSummary",
     "AdminAnchorActionRequest",
     "AdminAnchorActionOutcome",
+    "AdminBeaconSupportActionKind",
+    "AdminBeaconPatchFieldSupportState",
+    "AdminBeaconSupportOutcomeState",
+    "AdminBeaconCurrentStateSummary",
+    "AdminBeaconPatchFieldReference",
+    "AdminBeaconSupportActionRequest",
+    "AdminBeaconSupportActionOutcome",
 ]
