@@ -299,8 +299,6 @@ def test_required_safe_controls_accepted(snippet: str) -> None:
 def test_reload_side_effect_guards_verify_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     class Explodes:
         def __call__(self, *args: object, **kwargs: object) -> None:
-            if args == ("PYDANTIC_DISABLE_PLUGINS",) and not kwargs:
-                return None
             raise AssertionError("side effect")
 
     modules = (
@@ -319,9 +317,13 @@ def test_reload_side_effect_guards_verify_calls(monkeypatch: pytest.MonkeyPatch)
     for module_name in modules:
         importlib.import_module(module_name)
 
+    pydantic_loader = importlib.import_module("pydantic.plugin._loader")
+    monkeypatch.setattr(pydantic_loader, "get_plugins", lambda: ())
     monkeypatch.setattr("os.getenv", Explodes())
     with pytest.raises(AssertionError, match="side effect"):
         os.getenv("synthetic")
+    with pytest.raises(AssertionError, match="side effect"):
+        os.getenv("PYDANTIC_DISABLE_PLUGINS")
 
     for module_name in modules:
         importlib.reload(importlib.import_module(module_name))
