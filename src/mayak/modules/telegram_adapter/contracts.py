@@ -1253,6 +1253,340 @@ class TelegramExistingBotOperationalGate(_TelegramContract):
         return self
 
 
+class TelegramDeepLinkPurpose(str, Enum):
+    LINK_EXISTING_ACCOUNT = "LINK_EXISTING_ACCOUNT"
+    BOT_ONBOARDING = "BOT_ONBOARDING"
+    OPEN_BEACON_CONTEXT = "OPEN_BEACON_CONTEXT"
+    OPEN_RESULT_OR_LISTING_CONTEXT = "OPEN_RESULT_OR_LISTING_CONTEXT"
+    RETURN_FROM_WEB_CABINET = "RETURN_FROM_WEB_CABINET"
+    OPEN_FUTURE_MINI_APP_CONTEXT = "OPEN_FUTURE_MINI_APP_CONTEXT"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramDeepLinkContextOwnerBoundary(str, Enum):
+    TELEGRAM_ADAPTER = "TELEGRAM_ADAPTER"
+    IDENTITY_AND_ACCESS = "IDENTITY_AND_ACCESS"
+    BEACON_MANAGEMENT = "BEACON_MANAGEMENT"
+    NOTIFICATION_DELIVERY = "NOTIFICATION_DELIVERY"
+    WEB_CABINET = "WEB_CABINET"
+    FUTURE_MINI_APP_GATE = "FUTURE_MINI_APP_GATE"
+    NONE = "NONE"
+
+
+class TelegramDeepLinkPayloadValidationMode(str, Enum):
+    OPAQUE_SERVER_RESOLVED = "OPAQUE_SERVER_RESOLVED"
+    SIGNED_VALIDATED = "SIGNED_VALIDATED"
+    UNVALIDATED = "UNVALIDATED"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramDeepLinkReplayState(str, Enum):
+    NEW_LINK = "NEW_LINK"
+    DUPLICATE_REPLAY = "DUPLICATE_REPLAY"
+    FINGERPRINT_CONFLICT = "FINGERPRINT_CONFLICT"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramDeepLinkExpiryState(str, Enum):
+    VALID = "VALID"
+    EXPIRED = "EXPIRED"
+    MISSING = "MISSING"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramDeepLinkValidationState(str, Enum):
+    VALIDATED_FOR_OWNER_HANDOFF = "VALIDATED_FOR_OWNER_HANDOFF"
+    IDENTITY_HANDOFF_REQUIRED = "IDENTITY_HANDOFF_REQUIRED"
+    BLOCKED_PENDING_CONTEXT_DECISION = "BLOCKED_PENDING_CONTEXT_DECISION"
+    REJECTED_UNTRUSTED = "REJECTED_UNTRUSTED"
+    REJECTED_EXPIRED = "REJECTED_EXPIRED"
+    DUPLICATE_REPLAY = "DUPLICATE_REPLAY"
+    FINGERPRINT_CONFLICT = "FINGERPRINT_CONFLICT"
+    UNSUPPORTED = "UNSUPPORTED"
+    AMBIGUOUS = "AMBIGUOUS"
+    BLOCKED = "BLOCKED"
+
+
+_DEEP_LINK_OWNER: dict[
+    TelegramDeepLinkPurpose, TelegramDeepLinkContextOwnerBoundary
+] = {
+    TelegramDeepLinkPurpose.LINK_EXISTING_ACCOUNT: (
+        TelegramDeepLinkContextOwnerBoundary.IDENTITY_AND_ACCESS
+    ),
+    TelegramDeepLinkPurpose.BOT_ONBOARDING: (
+        TelegramDeepLinkContextOwnerBoundary.TELEGRAM_ADAPTER
+    ),
+    TelegramDeepLinkPurpose.OPEN_BEACON_CONTEXT: (
+        TelegramDeepLinkContextOwnerBoundary.BEACON_MANAGEMENT
+    ),
+    TelegramDeepLinkPurpose.OPEN_RESULT_OR_LISTING_CONTEXT: (
+        TelegramDeepLinkContextOwnerBoundary.NOTIFICATION_DELIVERY
+    ),
+    TelegramDeepLinkPurpose.RETURN_FROM_WEB_CABINET: (
+        TelegramDeepLinkContextOwnerBoundary.WEB_CABINET
+    ),
+    TelegramDeepLinkPurpose.OPEN_FUTURE_MINI_APP_CONTEXT: (
+        TelegramDeepLinkContextOwnerBoundary.FUTURE_MINI_APP_GATE
+    ),
+    TelegramDeepLinkPurpose.UNSUPPORTED: TelegramDeepLinkContextOwnerBoundary.NONE,
+    TelegramDeepLinkPurpose.AMBIGUOUS: TelegramDeepLinkContextOwnerBoundary.NONE,
+}
+
+_DEEP_LINK_DEDUPLICATION_STATE: dict[
+    TelegramDeepLinkReplayState, TelegramUpdateDeduplicationState
+] = {
+    TelegramDeepLinkReplayState.NEW_LINK: TelegramUpdateDeduplicationState.NEW_UPDATE,
+    TelegramDeepLinkReplayState.DUPLICATE_REPLAY: TelegramUpdateDeduplicationState.DUPLICATE_REPLAY,
+    TelegramDeepLinkReplayState.FINGERPRINT_CONFLICT: (
+        TelegramUpdateDeduplicationState.FINGERPRINT_CONFLICT
+    ),
+    TelegramDeepLinkReplayState.AMBIGUOUS: TelegramUpdateDeduplicationState.AMBIGUOUS,
+}
+
+
+class TelegramUntrustedDeepLinkReference(_TelegramContract):
+    telegram_untrusted_deep_link_reference_id: str = Field(min_length=1)
+    telegram_bot_ref: str = Field(min_length=1)
+    telegram_update_intake_reference_id: str = Field(min_length=1)
+    provider_update_identity: TelegramProviderUpdateIdentity
+    deep_link_payload_fingerprint: IdempotencyFingerprint
+    purpose_candidate: TelegramDeepLinkPurpose
+    payload_remains_untrusted: Literal[True] = True
+    raw_payload_retained: Literal[False] = False
+    raw_internal_identifiers_absent: Literal[True] = True
+    secrets_personal_payment_data_absent: Literal[True] = True
+
+    @model_validator(mode="after")
+    def _validate_scope(self) -> "TelegramUntrustedDeepLinkReference":
+        if self.provider_update_identity.telegram_bot_ref != self.telegram_bot_ref:
+            raise ValueError("deep link bot scope must match provider update identity")
+        return self
+
+
+class TelegramDeepLinkContextResolutionEvidence(_TelegramContract):
+    telegram_deep_link_context_resolution_evidence_id: str = Field(min_length=1)
+    purpose: TelegramDeepLinkPurpose
+    owner_boundary: TelegramDeepLinkContextOwnerBoundary
+    validation_mode: TelegramDeepLinkPayloadValidationMode
+    replay_state: TelegramDeepLinkReplayState
+    expiry_state: TelegramDeepLinkExpiryState
+    matching_payload_fingerprint: IdempotencyFingerprint
+    external_validation_policy_reference: str = Field(min_length=1)
+    external_signing_policy_reference: str | None = Field(default=None, min_length=1)
+    server_side_context_resolution_reference: str | None = Field(default=None, min_length=1)
+    owner_contract_handoff_reference: str | None = Field(default=None, min_length=1)
+    external_context_decision_reference: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_evidence_matrix(self) -> "TelegramDeepLinkContextResolutionEvidence":
+        if _DEEP_LINK_OWNER[self.purpose] is not self.owner_boundary:
+            raise ValueError("owner boundary must match purpose")
+        if self.validation_mode is TelegramDeepLinkPayloadValidationMode.SIGNED_VALIDATED:
+            if self.external_signing_policy_reference is None:
+                raise ValueError("signed validation requires signing policy reference")
+        elif self.external_signing_policy_reference is not None:
+            raise ValueError("only signed validation may carry signing policy reference")
+        eligible = (
+            self.validation_mode
+            in {
+            TelegramDeepLinkPayloadValidationMode.OPAQUE_SERVER_RESOLVED,
+            TelegramDeepLinkPayloadValidationMode.SIGNED_VALIDATED,
+            }
+            and self.replay_state is TelegramDeepLinkReplayState.NEW_LINK
+            and self.expiry_state is TelegramDeepLinkExpiryState.VALID
+            and self.purpose
+            not in {TelegramDeepLinkPurpose.UNSUPPORTED, TelegramDeepLinkPurpose.AMBIGUOUS}
+            and (
+                self.purpose
+                not in {
+                    TelegramDeepLinkPurpose.RETURN_FROM_WEB_CABINET,
+                    TelegramDeepLinkPurpose.OPEN_FUTURE_MINI_APP_CONTEXT,
+                }
+                or self.external_context_decision_reference is not None
+            )
+        )
+        if not eligible and (
+            self.server_side_context_resolution_reference is not None
+            or self.owner_contract_handoff_reference is not None
+        ):
+            raise ValueError("ineligible links cannot resolve or hand off")
+        if eligible:
+            if self.purpose is TelegramDeepLinkPurpose.LINK_EXISTING_ACCOUNT:
+                if self.owner_contract_handoff_reference is None:
+                    raise ValueError("account linking requires owner handoff reference")
+            elif (
+                self.server_side_context_resolution_reference is None
+                or self.owner_contract_handoff_reference is None
+            ):
+                raise ValueError("supported purpose requires exact semantic handoff references")
+        return self
+
+
+class TelegramDeepLinkValidationRequest(_TelegramContract):
+    telegram_deep_link_validation_request_id: str = Field(min_length=1)
+    untrusted_deep_link_reference: TelegramUntrustedDeepLinkReference
+    accepted_telegram_update_intake: TelegramUpdateIntakeRecord
+    deduplication_evidence: TelegramUpdateDeduplicationRecord
+    verified_telegram_provider_identity_evidence: VerifiedTelegramIdentityEvidence
+    context_resolution_evidence: TelegramDeepLinkContextResolutionEvidence
+    intake_accepted: Literal[True] = True
+    intake_structurally_supported: Literal[True] = True
+    deduplication_allows_new_processing: bool = True
+    payload_fingerprints_match: Literal[True] = True
+    provider_identity_is_external: Literal[True] = True
+    deep_link_is_not_identity_authorization: Literal[True] = True
+    account_created: Literal[False] = False
+    account_linked: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_request_matrix(self) -> "TelegramDeepLinkValidationRequest":
+        link = self.untrusted_deep_link_reference
+        intake = self.accepted_telegram_update_intake
+        dedup = self.deduplication_evidence
+        identity = self.verified_telegram_provider_identity_evidence
+        evidence = self.context_resolution_evidence
+        if intake.telegram_update_intake_record_id != link.telegram_update_intake_reference_id:
+            raise ValueError("intake reference must match deep link")
+        if intake.provider_update_identity != link.provider_update_identity:
+            raise ValueError("provider update identity must match deep link")
+        if dedup.provider_update_identity != intake.provider_update_identity:
+            raise ValueError("deduplication identity must match intake")
+        if dedup.state is not _DEEP_LINK_DEDUPLICATION_STATE[evidence.replay_state]:
+            raise ValueError("replay and deduplication states must map exactly")
+        if dedup.adapter_processing_authorized != (
+            dedup.state is TelegramUpdateDeduplicationState.NEW_UPDATE
+        ):
+            raise ValueError("adapter processing authorization must match deduplication state")
+        if not (
+            dedup.idempotency_key == intake.idempotency_key
+            and dedup.idempotency_scope == intake.idempotency_scope
+            and dedup.fingerprint == intake.fingerprint
+        ):
+            raise ValueError("deduplication identity evidence must match intake")
+        if identity.provider_identity.telegram_bot_ref != link.telegram_bot_ref:
+            raise ValueError("verified provider scope must match deep link")
+        if identity.provider_identity != intake.provider_identity:
+            raise ValueError("verified provider identity must match accepted intake")
+        if intake.intake_state is not TelegramUpdateIntakeState.ACCEPTED_FOR_NORMALIZATION:
+            raise ValueError("deep link requires accepted intake")
+        if (
+            intake.structural_classification
+            is not TelegramUpdateStructuralClass.SUPPORTED_CANDIDATE
+        ):
+            raise ValueError("deep link requires structurally supported intake")
+        if self.deduplication_allows_new_processing != (
+            dedup.state is TelegramUpdateDeduplicationState.NEW_UPDATE
+        ):
+            raise ValueError("deduplication processing flag must match deduplication state")
+        if link.deep_link_payload_fingerprint != evidence.matching_payload_fingerprint:
+            raise ValueError("deep link payload fingerprints must match")
+        if evidence.purpose is not link.purpose_candidate:
+            raise ValueError("resolved purpose must match purpose candidate")
+        return self
+
+
+class TelegramDeepLinkValidationOutcome(_TelegramContract):
+    telegram_deep_link_validation_outcome_id: str = Field(min_length=1)
+    request: TelegramDeepLinkValidationRequest
+    validation_state: TelegramDeepLinkValidationState
+    owner_boundary: TelegramDeepLinkContextOwnerBoundary
+    owner_handoff_reference: str | None = Field(default=None, min_length=1)
+    blocking_reason_reference: str | None = Field(default=None, min_length=1)
+    deep_link_authorization_granted: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+    account_link_performed: Literal[False] = False
+    raw_payload_retained: Literal[False] = False
+    provider_runtime_performed: Literal[False] = False
+    second_business_effect_authorized: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_outcome_matrix(self) -> "TelegramDeepLinkValidationOutcome":
+        evidence = self.request.context_resolution_evidence
+        purpose = evidence.purpose
+        mode = evidence.validation_mode
+        replay = evidence.replay_state
+        expiry = evidence.expiry_state
+        owner = _DEEP_LINK_OWNER[purpose]
+        if self.owner_boundary is not owner:
+            raise ValueError("outcome owner boundary must match purpose")
+        if mode in {
+            TelegramDeepLinkPayloadValidationMode.UNVALIDATED,
+            TelegramDeepLinkPayloadValidationMode.AMBIGUOUS,
+        }:
+            expected = (
+                TelegramDeepLinkValidationState.REJECTED_UNTRUSTED
+                if mode is TelegramDeepLinkPayloadValidationMode.UNVALIDATED
+                else TelegramDeepLinkValidationState.AMBIGUOUS
+            )
+        elif expiry in {
+            TelegramDeepLinkExpiryState.EXPIRED,
+            TelegramDeepLinkExpiryState.MISSING,
+        }:
+            expected = TelegramDeepLinkValidationState.REJECTED_EXPIRED
+        elif (
+            expiry is TelegramDeepLinkExpiryState.AMBIGUOUS
+            or replay is TelegramDeepLinkReplayState.AMBIGUOUS
+            or purpose is TelegramDeepLinkPurpose.AMBIGUOUS
+        ):
+            expected = TelegramDeepLinkValidationState.AMBIGUOUS
+        elif replay is TelegramDeepLinkReplayState.DUPLICATE_REPLAY:
+            expected = TelegramDeepLinkValidationState.DUPLICATE_REPLAY
+        elif replay is TelegramDeepLinkReplayState.FINGERPRINT_CONFLICT:
+            expected = TelegramDeepLinkValidationState.FINGERPRINT_CONFLICT
+        elif purpose is TelegramDeepLinkPurpose.UNSUPPORTED:
+            expected = TelegramDeepLinkValidationState.UNSUPPORTED
+        elif purpose in {
+            TelegramDeepLinkPurpose.RETURN_FROM_WEB_CABINET,
+            TelegramDeepLinkPurpose.OPEN_FUTURE_MINI_APP_CONTEXT,
+        } and evidence.external_context_decision_reference is None:
+            expected = TelegramDeepLinkValidationState.BLOCKED_PENDING_CONTEXT_DECISION
+        elif mode not in {
+            TelegramDeepLinkPayloadValidationMode.OPAQUE_SERVER_RESOLVED,
+            TelegramDeepLinkPayloadValidationMode.SIGNED_VALIDATED,
+        }:
+            expected = TelegramDeepLinkValidationState.REJECTED_UNTRUSTED
+        elif purpose is TelegramDeepLinkPurpose.LINK_EXISTING_ACCOUNT:
+            expected = TelegramDeepLinkValidationState.IDENTITY_HANDOFF_REQUIRED
+        else:
+            expected = TelegramDeepLinkValidationState.VALIDATED_FOR_OWNER_HANDOFF
+        if self.validation_state is not expected:
+            raise ValueError("outcome state does not match validation matrix")
+        needs_handoff = expected in {
+            TelegramDeepLinkValidationState.IDENTITY_HANDOFF_REQUIRED,
+            TelegramDeepLinkValidationState.VALIDATED_FOR_OWNER_HANDOFF,
+        }
+        if needs_handoff:
+            if self.owner_handoff_reference is None:
+                raise ValueError("successful validation requires owner handoff reference")
+            if self.owner_handoff_reference != evidence.owner_contract_handoff_reference:
+                raise ValueError("outcome and evidence handoff references must match")
+        elif self.owner_handoff_reference is not None:
+            raise ValueError("rejected or blocked validation cannot hand off")
+        if not needs_handoff and (
+            evidence.owner_contract_handoff_reference is not None
+            or evidence.server_side_context_resolution_reference is not None
+        ):
+            raise ValueError("rejected or blocked validation cannot carry context references")
+        if (
+            expected is TelegramDeepLinkValidationState.VALIDATED_FOR_OWNER_HANDOFF
+            and evidence.server_side_context_resolution_reference is None
+        ):
+            raise ValueError("supported purpose requires context resolution reference")
+        if (
+            expected is TelegramDeepLinkValidationState.IDENTITY_HANDOFF_REQUIRED
+            and owner is not TelegramDeepLinkContextOwnerBoundary.IDENTITY_AND_ACCESS
+        ):
+            raise ValueError("identity handoff requires Identity owner")
+        if (
+            expected is TelegramDeepLinkValidationState.FINGERPRINT_CONFLICT
+            and self.owner_handoff_reference is not None
+        ):
+            raise ValueError("fingerprint conflict cannot hand off")
+        return self
+
+
 __all__ = [
     "TelegramInboundInputKind",
     "TelegramIntentFamily",
@@ -1284,4 +1618,14 @@ __all__ = [
     "TelegramProtectedSecretPresenceEvidence",
     "TelegramPublicBotMetadataPresenceEvidence",
     "TelegramExistingBotOperationalGate",
+    "TelegramDeepLinkPurpose",
+    "TelegramDeepLinkContextOwnerBoundary",
+    "TelegramDeepLinkPayloadValidationMode",
+    "TelegramDeepLinkReplayState",
+    "TelegramDeepLinkExpiryState",
+    "TelegramDeepLinkValidationState",
+    "TelegramUntrustedDeepLinkReference",
+    "TelegramDeepLinkContextResolutionEvidence",
+    "TelegramDeepLinkValidationRequest",
+    "TelegramDeepLinkValidationOutcome",
 ]
