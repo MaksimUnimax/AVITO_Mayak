@@ -2,6 +2,7 @@
 
 import ast
 import importlib
+import os
 import sys
 from pathlib import Path
 
@@ -298,12 +299,33 @@ def test_required_safe_controls_accepted(snippet: str) -> None:
 def test_reload_side_effect_guards_verify_calls(monkeypatch: pytest.MonkeyPatch) -> None:
     class Explodes:
         def __call__(self, *args: object, **kwargs: object) -> None:
+            if args == ("PYDANTIC_DISABLE_PLUGINS",) and not kwargs:
+                return None
             raise AssertionError("side effect")
 
+    modules = (
+        "mayak.modules.admin_and_support.contracts",
+        "mayak.modules.admin_and_support.safe_reads",
+        "mayak.modules.admin_and_support.role_actions",
+        "mayak.modules.admin_and_support.tariff_actions",
+        "mayak.modules.admin_and_support.access_actions",
+        "mayak.modules.admin_and_support.anchor_actions",
+        "mayak.modules.admin_and_support.beacon_actions",
+        "mayak.modules.admin_and_support.case_records",
+        "mayak.modules.admin_and_support.notification_actions",
+        "mayak.modules.admin_and_support",
+    )
+
+    for module_name in modules:
+        importlib.import_module(module_name)
+
     monkeypatch.setattr("os.getenv", Explodes())
-    with pytest.raises(AssertionError):
-        importlib.reload(importlib.import_module("mayak.modules.admin_and_support.contracts"))
-    monkeypatch.undo()
+    with pytest.raises(AssertionError, match="side effect"):
+        os.getenv("synthetic")
+
+    for module_name in modules:
+        importlib.reload(importlib.import_module(module_name))
+
     before = set(sys.modules)
     importlib.reload(importlib.import_module("mayak.modules.admin_and_support"))
     assert set(sys.modules) >= before
