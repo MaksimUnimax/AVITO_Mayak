@@ -7,12 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from mayak.contracts import (
-    ContractMetadata,
-    IdempotencyFingerprint,
-    IdempotencyKey,
-    IdempotencyScope,
-)
+from mayak.contracts import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
+from mayak.contracts.metadata import ContractMetadata
 from mayak.modules.admin_and_support.contracts import (
     SupportActionAuditRecord,
     SupportActionAuditState,
@@ -227,6 +223,8 @@ class SupportCaseActionRequest(_CaseRecordContract):
         elif self.action_kind is SupportCaseActionKind.RECORD_INTERNAL_NOTE:
             if (
                 self.current_case is None
+                or self.current_case.support_case_id != self.support_case_id
+                or self.current_case.primary_subject != self.subject
                 or self.target_state is not None
                 or any(getattr(self, f) is None for f in _NOTE_FIELDS[:3])
             ):
@@ -287,9 +285,8 @@ class SupportCaseActionOutcome(_CaseRecordContract):
             or self.metadata.causation_id != request.metadata.message_id
         ):
             raise ValueError("outcome correlation/causation does not link to request")
+        request_ids = _ids(request.evidence_references, "request")
         outcome_ids = _ids(self.evidence_references, "outcome")
-        if outcome_ids != _ids(request.evidence_references, "request"):
-            raise ValueError("outcome evidence must equal request evidence")
         if outcome_ids != _ids(self.audit_record.evidence_references, "audit"):
             raise ValueError("audit evidence must equal outcome evidence")
         expected = _SUCCESS[request.action_kind]
@@ -342,7 +339,7 @@ class SupportCaseActionOutcome(_CaseRecordContract):
             if (
                 note.metadata.correlation_id != request.metadata.correlation_id
                 or note.metadata.causation_id != request.metadata.message_id
-                or _ids(note.evidence_references, "note") != outcome_ids
+                or _ids(note.evidence_references, "note") != request_ids
             ):
                 raise ValueError("note causation or evidence does not match")
         elif self.internal_note_record is not None:
@@ -354,14 +351,13 @@ class SupportCaseActionOutcome(_CaseRecordContract):
             ):
                 raise ValueError("resulting case identity must match request")
             if request.action_kind is SupportCaseActionKind.OPEN_CASE:
-                if (
-                    self.state is not SupportCaseActionOutcomeState.CASE_OPENED
-                    or self.resulting_case.state is not SupportCaseState.OPEN
+                if self.state is SupportCaseActionOutcomeState.CASE_OPENED and (
+                    self.resulting_case.state is not SupportCaseState.OPEN
                     or self.resulting_case.opened_by != request.actor_context
-                    or _ids(self.resulting_case.evidence_references, "case") != outcome_ids
+                    or _ids(self.resulting_case.evidence_references, "case") != request_ids
                 ):
                     raise ValueError("open result does not match request")
-            elif (
+            elif request.action_kind is not SupportCaseActionKind.OPEN_CASE and (
                 request.current_case is None
                 or self.resulting_case.opened_by != request.current_case.opened_by
             ):
@@ -373,12 +369,13 @@ class SupportCaseActionOutcome(_CaseRecordContract):
                 raise ValueError("lifecycle result state does not match request")
             if (
                 self.state is not SupportCaseActionOutcomeState.UNCHANGED
-                and not outcome_ids.issubset(_ids(self.resulting_case.evidence_references, "case"))
+                and not request_ids.issubset(_ids(self.resulting_case.evidence_references, "case"))
             ):
                 raise ValueError("lifecycle result must include request evidence")
         if (
             self.state is SupportCaseActionOutcomeState.UNCHANGED
             and not is_note
+            and request.action_kind is not SupportCaseActionKind.OPEN_CASE
             and self.resulting_case != request.current_case
         ):
             raise ValueError("unchanged non-note result must preserve current case")
