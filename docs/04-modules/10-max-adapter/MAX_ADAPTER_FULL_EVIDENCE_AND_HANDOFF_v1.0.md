@@ -2,15 +2,15 @@
 
 - status: final evidence/handoff for accepted governance, semantic contracts and synthetic deterministic tests scope
 
-- date: 2026-07-19
+- date: 2026-07-20
 
 - module: 10-max-adapter
 
-- roadmap step: MX-10
+- roadmap step: post-MX-10 accepted corrective evidence
 
-- technical task: MX-10-MAX-MODULE-EVIDENCE-HANDOFF-20260719-01
+- technical task: MX-13-MAX-FINAL-EVIDENCE-REFRESH-AFTER-CACHE-GUARD-CORRECTION-20260720-01
 
-- latest accepted semantic/test SHA: 16c744f3e5479081b4ebe93fc95735016627198a
+- latest accepted semantic/test SHA: 23d0af099fff86d45756e524358b29cd1bb839af
 
 - source-of-truth playbook: docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md
 
@@ -54,7 +54,7 @@ This module is not production-ready.
 
 Physical persistence and live provider integration remain blocked.
 
-Upon independent acceptance of the MX-10 handoff correction commit, roadmap steps MX-00 through MX-10 are complete for the current semantic scope only.
+Upon independent acceptance of the MX-12 correction and this evidence refresh, roadmap steps MX-00 through MX-10 remain complete for the current semantic scope only; MX-11 and MX-12 are accepted corrective evidence, not runtime authorization.
 
 ## 2. Accepted SHA chain
 | Step | Accepted SHA | Commit subject | Accepted result |
@@ -70,8 +70,10 @@ Upon independent acceptance of the MX-10 handoff correction commit, roadmap step
 | MX-08 | 3ab2b7fb90046e1a67fa888f72c097d15e488c44 | mx-08: add MAX safe read model semantics | Authorized safe diagnostics/read-model projection semantics |
 | MX-09 | 189194177f543d7d35a67d9b3c77a61b8265c0af | mx-09: add MAX synthetic contract tests | Synthetic fixture manifest and deterministic contract tests |
 | MX-09 correction | 16c744f3e5479081b4ebe93fc95735016627198a | mx-09: correct MAX architecture import guard | Exact reusable import/runtime boundary guard with real negative controls |
-
 | MX-10 rejected serialization | bf628c8e1c5a8d4cacc25d84e6e366c839880b90 | mx-10: add MAX module evidence handoff | Handoff semantics published, but Markdown serialization rejected and corrected by the current task |
+| MX-10 correction | 91da116582eb83cfa60af0be101e584af35797fb | mx-10: correct MAX handoff serialization | Final handoff Markdown serialization corrected without semantic/test/runtime changes |
+| MX-11 read-only revalidation | no commit | — | Technical-ID: MX-11-MAX-ADAPTER-CURRENT-MAIN-READONLY-REVALIDATION-20260720-01; ordinary pytest execution proved the architecture file-set guard was cache-sensitive because direct __pycache__ caused production-file-set; targeted evidence: 133 passed, 1 failed; full evidence: 3810 passed, 1 failed; clean python -B targeted evidence: 134 passed. Diagnostic evidence only, not final acceptance. |
+| MX-12 correction | 23d0af099fff86d45756e524358b29cd1bb839af | mx-12: make MAX architecture guard cache-safe | Technical-ID: MX-12-MAX-ARCHITECTURE-GUARD-CACHE-SAFE-CORRECTION-20260720-01; only exact direct child __pycache__ is ignored; unexpected direct entries remain blocked; focused regression added |
 
 MX-01 technical-task identity is recorded in ADR-0023 and the canonical owner-decision document.
 
@@ -79,7 +81,7 @@ The final accepted MX-01 commit does not contain and was not required to contain
 
 Historical commits were not amended to manufacture missing trailers.
 
-All Module 10 semantic and test commits above are ancestors of 16c744f3e5479081b4ebe93fc95735016627198a.
+All Module 10 semantic and test commits above are ancestors of 23d0af099fff86d45756e524358b29cd1bb839af.
 
 The Telegram parallel-main commit is preserved as a separate provider-module change and is not presented as MAX implementation authority.
 
@@ -98,7 +100,7 @@ No accepted Module 10 step used rebase, merge, cherry-pick, reset, amend, squash
 | tests/fixtures/max_adapter_semantic_vectors.json | MX-09 | Synthetic-only deterministic fixture manifest | No recorded provider payload or real WebAppData |
 | tests/contract/test_max_adapter_semantic_contract_exports.py | MX-09 | Deterministic export, identity and enum evidence | No provider integration |
 | tests/unit/test_max_adapter_semantic_contracts.py | MX-09 | Contract validators and state-matrix evidence | No persistence, network or provider call |
-| tests/architecture/test_max_adapter_semantic_boundaries.py | MX-09 correction | Exact production file/class/import/runtime boundary guard | Static evidence only, not runtime security implementation |
+| tests/architecture/test_max_adapter_semantic_boundaries.py | MX-09 correction and MX-12 correction | Exact production file/class/import/runtime boundary guard; cache-safe exact direct-entry handling | Static evidence only, not runtime security implementation |
 
 Logical records remain logical records.
 
@@ -348,9 +350,18 @@ The accepted fixture vector count is fifty-three.
 
 The accepted MX-09 test-node increase is one hundred thirty-four.
 
-The accepted full suite result after MX-09 and its correction is:
+The historical accepted full suite result after MX-09 and its first correction remains:
 
 3811 passed
+
+The current post-MX-12 evidence is:
+
+- first ordinary architecture run: 10 passed;
+- second ordinary architecture run without cache cleanup: 10 passed;
+- MAX semantic test set: 135 passed;
+- full suite: 3812 passed.
+
+Final acceptance did not rely on python -B or PYTHONDONTWRITEBYTECODE. The clean python -B result of 134 passed is retained as MX-11 diagnostic evidence only.
 
 The fixture manifest contains no raw provider payload, raw WebAppData, token, secret, phone/contact, real provider identity or personal/legal data.
 
@@ -392,11 +403,13 @@ The deterministic tests cover:
 
 - sensitive-data minimization.
 
-The corrected architecture guard uses exact import allowlists.
+The current reusable architecture guard uses exact import allowlists, contains no empty prefix, ignores only the direct entry named __pycache__, does not ignore all directories, and still rejects unexpected direct files or directories. A focused tmp_path regression proves that __pycache__ passes and runtime fails.
 
 It rejects unknown standard-library imports, unknown third-party imports, foreign project-module imports and forbidden relative imports.
 
-Its negative and safe controls invoke the same reusable guard used for production sources.
+Its negative and safe controls invoke the same reusable guard used for production sources, preserving controls for unknown standard-library imports, unknown third-party imports, foreign mayak imports, relative runtime imports, provider calls, sensitive fields, dynamic annotations, runtime instances and mutation.
+
+Production semantic files remain unchanged, the fixture manifest remains unchanged, and contract/unit tests remain unchanged. Only the architecture test was corrected after MX-10.
 
 The accepted production MAX package contains only:
 
@@ -635,6 +648,10 @@ Historical MX-01 commits were not amended to add commit trailers that were not p
 
 The rejected MX-10 serialization commit is preserved in history and corrected by a new fast-forward commit.
 
+The incomplete canonical Base64 correction is preserved as a historical failed run that stopped without changing GitHub; it created no commit and is not represented as a defect in the accepted evidence.
+
+Two failed MX-12 transport attempts are retained only as execution-history blockers caused by malformed repository URLs, followed by successful use of the literal SSH URI.
+
 No accepted step pushed over a changed main.
 
 No accepted step used rebase, merge, cherry-pick, reset, amend, squash or force-push.
@@ -643,11 +660,13 @@ Project publication used the project-specific deploy key with IdentitiesOnly=yes
 
 No private key content was exposed.
 
+MX-12 publication evidence: parent 91da116582eb83cfa60af0be101e584af35797fb; changed path tests/architecture/test_max_adapter_semantic_boundaries.py; published test blob 887d3090000f388f88143871f0f1465bf41eb5c4; published test SHA-256 7482b3560214e65857e42dbf73d8ec985509794a4534c15e27a5a4442246e786. No parallel-main overwrite occurred. No production code, contracts, fixtures, dependencies, runtime or provider artifacts changed.
+
 ## 20. Final semantic acceptance statement
 
-The latest accepted semantic/test SHA before the MX-10 handoff is:
+The latest accepted semantic/test SHA is:
 
-16c744f3e5479081b4ebe93fc95735016627198a
+23d0af099fff86d45756e524358b29cd1bb839af
 
 At that SHA:
 
@@ -665,10 +684,16 @@ At that SHA:
 
 - the corrected reusable architecture boundary guard is present;
 
-- the full deterministic test suite reports 3811 passed;
+- the full deterministic test suite reports 3812 passed;
+
+- the cache-safe exact architecture boundary guard is accepted;
 
 - no provider runtime, persistence, dependency, infrastructure or secret artifact is authorized or present in Module 10 scope.
 
-- Upon independent GitHub acceptance of the correction commit adding this exact Markdown document, Module 10 roadmap steps MX-00 through MX-10 are complete for the accepted governance/semantic/synthetic-test/evidence scope.
+- twelve authoritative records, fifteen supporting enums, twenty-seven contracts exports, twenty-eight package exports and fifty-three synthetic fixture vectors are accepted;
+
+- Module 10 completion is limited to governance, semantic-contract, synthetic-test and evidence scope;
+
+- all MAX runtime, provider, persistence, infrastructure and production gates remain blocked; no MAX runtime/provider implementation is authorized;
 
 - This completion does not authorize MAX production implementation.
