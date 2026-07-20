@@ -6,6 +6,13 @@ from mayak.modules.admin_and_support.access_actions import (
     AdminUserAccessActionRequest,
     AdminUserAccessOutcomeState,
 )
+from mayak.modules.admin_and_support.anchor_actions import (
+    AdminAnchorActionKind,
+    AdminAnchorActionOutcome,
+    AdminAnchorActionOutcomeState,
+    AdminAnchorActionRequest,
+    AdminAnchorStateSummary,
+)
 from mayak.modules.admin_and_support.contracts import (
     SupportActionAuditRecord,
     SupportActionAuditState,
@@ -96,4 +103,9 @@ __all__ = [
     "AdminUserAccessOutcomeState",
     "AdminUserAccessActionRequest",
     "AdminUserAccessActionOutcome",
+    "AdminAnchorActionKind",
+    "AdminAnchorActionOutcomeState",
+    "AdminAnchorStateSummary",
+    "AdminAnchorActionRequest",
+    "AdminAnchorActionOutcome",
 ]
