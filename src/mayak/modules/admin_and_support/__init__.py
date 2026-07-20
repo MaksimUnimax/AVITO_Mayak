@@ -37,6 +37,13 @@ from mayak.modules.admin_and_support.safe_reads import (
     SupportSafeSummaryState,
     SupportSummaryFamily,
 )
+from mayak.modules.admin_and_support.tariff_actions import (
+    AdminTariffCatalogActionKind,
+    AdminTariffCatalogActionOutcome,
+    AdminTariffCatalogActionRequest,
+    AdminTariffCatalogOutcomeState,
+    AdminTariffPopulationEffect,
+)
 from mayak.platform.boundaries import ADMIN_AND_SUPPORT_MODULE_ID
 
 MODULE_ID = ADMIN_AND_SUPPORT_MODULE_ID
@@ -74,4 +81,9 @@ __all__ = [
     "AdminRoleActionOutcomeState",
     "AdminRoleActionRequest",
     "AdminRoleActionOutcome",
+    "AdminTariffCatalogActionKind",
+    "AdminTariffPopulationEffect",
+    "AdminTariffCatalogOutcomeState",
+    "AdminTariffCatalogActionRequest",
+    "AdminTariffCatalogActionOutcome",
 ]
