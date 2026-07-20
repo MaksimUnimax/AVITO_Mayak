@@ -74,7 +74,7 @@ Hashes below were computed from the expected-base checkout. Git blob values are 
 | Production semantic package | `src/mayak/modules/admin_and_support/notification_actions.py` | `067c38a2bc556add8d4121c97e8731d5a2c92bf3` | `0329e6874ed10c9bf31cdbc0d326f623f13f354639d3355956da3c9ef14bf4f1` |
 | Synthetic evidence | `tests/fixtures/admin_and_support_semantic_vectors.json` | `e12f7ea47083993531880445967232feed4bbff6` | `41f36b4472b4e1a95faa9c62c7639df4db4d5c133dfda3ba45abbdd834fe6d86` |
 | Synthetic evidence | `tests/contract/test_admin_and_support_semantic_contract_exports.py` | `750ab480e146757d93d7353ed1aefea2ac65287c` | `de0964c0906ee8bb35265b9e2d5f0efffa31a197bdd3b2bac10683cf52d96531` |
-| Synthetic evidence | `tests/unit/test_admin_and_support_semantic_contracts.py` | `7dad0aa00fe204b351ebaadfece24128d9d1065c` | `f7cd30f95a292c938fff47bbf5affb4d449ca54833d4193eceae852bc0128` |
+| Synthetic evidence | `tests/unit/test_admin_and_support_semantic_contracts.py` | `7dad0aa00fe204b351ebaadfece24128d9d1065c` | `f7cd30f95a292c938fff47bbf5affb4d449ca54833d4193eceae852854bc0128` |
 | Synthetic evidence | `tests/architecture/test_admin_and_support_semantic_boundaries.py` | `4dd69b56f406e30da7ff0956c3bd3d22847e5d75` | `1d2b3b442ce49af15b3ffc088c0831ec6d312ec252ed7f2d12751f213fc530f2` |
 
 ## Governance and owner-decision evidence
