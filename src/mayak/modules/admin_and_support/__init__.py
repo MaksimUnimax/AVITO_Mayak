@@ -22,6 +22,15 @@ from mayak.modules.admin_and_support.contracts import (
     SupportWorkItem,
     SupportWorkItemState,
 )
+from mayak.modules.admin_and_support.safe_reads import (
+    SupportSafeExplanationOutcome,
+    SupportSafeExplanationRequest,
+    SupportSafeReadProjection,
+    SupportSafeReadRequest,
+    SupportSafeSummaryReference,
+    SupportSafeSummaryState,
+    SupportSummaryFamily,
+)
 from mayak.platform.boundaries import ADMIN_AND_SUPPORT_MODULE_ID
 
 MODULE_ID = ADMIN_AND_SUPPORT_MODULE_ID
@@ -48,4 +57,11 @@ __all__ = [
     "SupportSubjectReference",
     "SupportWorkItem",
     "SupportWorkItemState",
+    "SupportSafeExplanationOutcome",
+    "SupportSafeExplanationRequest",
+    "SupportSafeReadProjection",
+    "SupportSafeReadRequest",
+    "SupportSafeSummaryReference",
+    "SupportSafeSummaryState",
+    "SupportSummaryFamily",
 ]
