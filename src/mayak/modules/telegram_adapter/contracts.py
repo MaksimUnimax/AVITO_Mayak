@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+# TG-13 field names intentionally mirror the public boundary vocabulary.
+# ruff: noqa: E501
 from enum import Enum
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
@@ -1578,6 +1580,1039 @@ class TelegramDisplayBoundaryOutcome(_TelegramContract):
         if diagnostic is False:
             raise ValueError("classification diagnostic requirement violated")
         return self
+
+
+# TG-13 deliberately mirrors upstream semantic values with private Literals.  The
+# adapter is a projection boundary and must not import Egress or Notification.
+class TelegramProviderOutcomeClass(str, Enum):
+    PROVIDER_REQUEST_NOT_SENT = "PROVIDER_REQUEST_NOT_SENT"
+    PROVIDER_ACCEPTED = "PROVIDER_ACCEPTED"
+    PROVIDER_REJECTED = "PROVIDER_REJECTED"
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    RATE_LIMITED_OR_RESTRICTED = "RATE_LIMITED_OR_RESTRICTED"
+    MALFORMED_OR_UNUSABLE_RESPONSE = "MALFORMED_OR_UNUSABLE_RESPONSE"
+    PROVIDER_EFFECT_AMBIGUOUS = "PROVIDER_EFFECT_AMBIGUOUS"
+    RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
+    RECONCILED_NO_EFFECT = "RECONCILED_NO_EFFECT"
+    RECONCILED_EFFECT = "RECONCILED_EFFECT"
+
+
+class TelegramProviderOutcomeMappingState(str, Enum):
+    OUTCOME_MAPPED = "OUTCOME_MAPPED"
+    OUTCOME_BLOCKED = "OUTCOME_BLOCKED"
+    INVALID_EVIDENCE = "INVALID_EVIDENCE"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramProviderOutcomeReasonCode(str, Enum):
+    OUTBOUND_REQUEST_NOT_PREPARED = "OUTBOUND_REQUEST_NOT_PREPARED"
+    OUTCOME_SCOPE_MISMATCH = "OUTCOME_SCOPE_MISMATCH"
+    TRANSPORT_OUTCOME_NOT_COMMITTED = "TRANSPORT_OUTCOME_NOT_COMMITTED"
+    UNSAFE_PROVIDER_EVIDENCE = "UNSAFE_PROVIDER_EVIDENCE"
+    PROVIDER_REQUEST_NOT_SENT = "PROVIDER_REQUEST_NOT_SENT"
+    PROVIDER_ACCEPTED = "PROVIDER_ACCEPTED"
+    PROVIDER_REJECTED = "PROVIDER_REJECTED"
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    RATE_LIMITED_OR_RESTRICTED = "RATE_LIMITED_OR_RESTRICTED"
+    MALFORMED_OR_UNUSABLE_RESPONSE = "MALFORMED_OR_UNUSABLE_RESPONSE"
+    PROVIDER_EFFECT_AMBIGUOUS = "PROVIDER_EFFECT_AMBIGUOUS"
+    RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
+    RECONCILED_NO_EFFECT = "RECONCILED_NO_EFFECT"
+    RECONCILED_EFFECT = "RECONCILED_EFFECT"
+
+
+_TG13_TRANSPORT = Literal[
+    "NOT_SENT",
+    "DISPATCH_REJECTED",
+    "DISPATCH_UNKNOWN",
+    "SENT_NO_RESPONSE",
+    "TRANSPORT_UNAVAILABLE",
+    "TRANSPORT_TIMEOUT",
+    "TRANSPORT_AMBIGUOUS",
+    "RESPONSE_RECEIVED_UNCLASSIFIED",
+    "USABLE_RESPONSE_TRANSPORT_ONLY",
+    "RATE_OR_ACCESS_RESTRICTED",
+    "CAPTCHA_OR_CHALLENGE",
+    "PROVIDER_REJECTED",
+    "MALFORMED_RESPONSE_TRANSPORT_LAYER",
+    "ROUTE_QUARANTINED",
+    "ROUTE_DEGRADED",
+    "NO_APPROVED_ROUTE_AVAILABLE",
+    "POLICY_FALLBACK_ATTEMPTED",
+    "POLICY_FALLBACK_EXHAUSTED",
+    "RECONCILIATION_REQUIRED",
+]
+_TG13_DISPATCH = Literal[
+    "PENDING", "ATTEMPTED", "ACKNOWLEDGED", "REJECTED", "UNKNOWN", "NOT_SENT", "SENT"
+]
+_TG13_RECONCILIATION = Literal[
+    "NOT_REQUIRED",
+    "REQUIRED",
+    "PENDING",
+    "RESOLVED_NOT_SENT",
+    "RESOLVED_SENT",
+    "RESOLVED_TERMINAL",
+    "REMAINS_AMBIGUOUS",
+    "MANUAL_REVIEW_REQUIRED",
+]
+_TG13_NOTIFICATION_CLASS = Literal[
+    "DISPATCH_AMBIGUOUS",
+    "PROVIDER_ACCEPTED",
+    "PROVIDER_REJECTED",
+    "PROVIDER_UNAVAILABLE",
+    "RATE_OR_ACCESS_RESTRICTED",
+    "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE",
+    "DELIVERY_FAILURE",
+    "DELIVERY_AMBIGUOUS",
+    "SUPPRESSED_OR_CANCELLED",
+    "TARGET_UNAVAILABLE_OR_UNVERIFIED",
+]
+
+_TG13_UNRESOLVED = {"REQUIRED", "PENDING", "REMAINS_AMBIGUOUS", "MANUAL_REVIEW_REQUIRED"}
+_TG13_NO_SEND = {"NOT_SENT", "DISPATCH_REJECTED", "NO_APPROVED_ROUTE_AVAILABLE"}
+_TG13_UNKNOWN_TRANSPORT = {
+    "DISPATCH_UNKNOWN",
+    "SENT_NO_RESPONSE",
+    "TRANSPORT_TIMEOUT",
+    "TRANSPORT_AMBIGUOUS",
+    "RESPONSE_RECEIVED_UNCLASSIFIED",
+    "USABLE_RESPONSE_TRANSPORT_ONLY",
+    "RECONCILIATION_REQUIRED",
+}
+
+
+def _tg13_text(value: object, name: str) -> None:
+    if type(value) is not str or not value.strip():
+        raise ValueError(f"{name} must be a non-blank string")
+
+
+def _tg13_tuple(value: object, name: str) -> tuple[str, ...]:
+    if type(value) is not tuple or any(type(v) is not str or not v.strip() for v in value):
+        raise ValueError(f"{name} must be a tuple of non-blank strings")
+    if len(value) != len(set(value)):
+        raise ValueError(f"{name} must be unique")
+    return value
+
+
+def _tg13_optional_text(value: object, name: str) -> None:
+    if value is not None:
+        _tg13_text(value, name)
+
+
+def _tg13_false(value: object, name: str) -> None:
+    if value is not False:
+        raise ValueError(f"{name} must be False")
+
+
+def _tg13_exact(value: object, cls: type[object], name: str) -> None:
+    if type(value) is not cls:
+        raise ValueError(f"{name} must be an exact {cls.__name__}")
+
+
+class TelegramTransportOutcomeObservation(_TelegramContract):
+    telegram_transport_outcome_observation_id: str
+    metadata: ContractMetadata
+    outbound_mapping_outcome_reference_id: str
+    notification_attempt_reference_id: str
+    notification_target_reference_id: str
+    egress_dispatch_attempt_reference_id: str
+    egress_transport_outcome_reference_id: str
+    dispatch_status: _TG13_DISPATCH
+    transport_outcome_status: _TG13_TRANSPORT
+    egress_reconciliation_status: _TG13_RECONCILIATION
+    transport_outcome_committed: bool
+    provider_request_sent: bool
+    provider_response_received: bool
+    provider_response_usable: bool
+    provider_effect_known: bool
+    provider_safe_response_reference_id: str | None
+    egress_correlation_reference_id: str | None
+    contains_raw_provider_payload: Literal[False] = False
+    egress_transport_projection: Literal[True] = True
+    transport_success_is_provider_success: Literal[False] = False
+    notification_delivery_inferred: Literal[False] = False
+    new_dispatch_authority: Literal[False] = False
+    retry_authority: Literal[False] = False
+    evidence_reference_ids: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TelegramTransportOutcomeObservation":
+        _tg13_exact(self.metadata, ContractMetadata, "metadata")
+        for n in (
+            "telegram_transport_outcome_observation_id",
+            "outbound_mapping_outcome_reference_id",
+            "notification_attempt_reference_id",
+            "notification_target_reference_id",
+            "egress_dispatch_attempt_reference_id",
+            "egress_transport_outcome_reference_id",
+        ):
+            _tg13_text(getattr(self, n), n)
+        _tg13_optional_text(
+            self.provider_safe_response_reference_id, "provider_safe_response_reference_id"
+        )
+        _tg13_optional_text(self.egress_correlation_reference_id, "egress_correlation_reference_id")
+        _tg13_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        if self.transport_outcome_committed is not True:
+            raise ValueError("transport outcome must be committed")
+        for n in (
+            "contains_raw_provider_payload",
+            "transport_success_is_provider_success",
+            "notification_delivery_inferred",
+            "new_dispatch_authority",
+            "retry_authority",
+        ):
+            _tg13_false(getattr(self, n), n)
+        if self.egress_transport_projection is not True:
+            raise ValueError("egress_transport_projection must be True")
+        if self.dispatch_status in _TG13_NO_SEND or self.transport_outcome_status in {
+            "NOT_SENT",
+            "DISPATCH_REJECTED",
+            "NO_APPROVED_ROUTE_AVAILABLE",
+        }:
+            if self.provider_request_sent:
+                raise ValueError("definitely-no-route outcome cannot claim provider request sent")
+            if (
+                self.provider_response_received
+                or self.provider_response_usable
+                or self.provider_effect_known
+            ):
+                raise ValueError("definitely-no-route outcome cannot claim provider evidence")
+        if self.transport_outcome_status == "SENT_NO_RESPONSE" and (
+            self.provider_response_received or self.provider_response_usable
+        ):
+            raise ValueError("SENT_NO_RESPONSE cannot claim a response")
+        if self.provider_response_usable and not self.provider_response_received:
+            raise ValueError("usable response requires response received")
+        if self.transport_outcome_status in _TG13_UNKNOWN_TRANSPORT and self.provider_effect_known:
+            raise ValueError("unknown transport cannot claim known provider effect")
+        return self
+
+
+class TelegramProviderResponseObservation(_TelegramContract):
+    telegram_provider_response_observation_id: str
+    metadata: ContractMetadata
+    transport_observation_reference_id: str
+    provider_response_reference_id: str
+    provider_response_committed: bool
+    provider_ok: bool | None
+    provider_rejected: bool
+    provider_unavailable: bool
+    rate_or_access_restricted: bool
+    malformed_or_unusable_response: bool
+    provider_effect_known: bool
+    provider_effect_committed: bool
+    provider_safe_delivery_reference_id: str | None
+    telegram_message_reference_id: str | None
+    telegram_callback_correlation_reference_id: str | None
+    contains_raw_provider_payload: Literal[False] = False
+    human_read_or_click_proven: Literal[False] = False
+    business_success_proven: Literal[False] = False
+    notification_delivery_accepted: Literal[False] = False
+    retry_authorized: Literal[False] = False
+    evidence_reference_ids: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TelegramProviderResponseObservation":
+        _tg13_exact(self.metadata, ContractMetadata, "metadata")
+        for n in (
+            "telegram_provider_response_observation_id",
+            "transport_observation_reference_id",
+            "provider_response_reference_id",
+        ):
+            _tg13_text(getattr(self, n), n)
+        _tg13_optional_text(
+            self.provider_safe_delivery_reference_id, "provider_safe_delivery_reference_id"
+        )
+        _tg13_optional_text(self.telegram_message_reference_id, "telegram_message_reference_id")
+        _tg13_optional_text(
+            self.telegram_callback_correlation_reference_id,
+            "telegram_callback_correlation_reference_id",
+        )
+        _tg13_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        if self.provider_response_committed is not True:
+            raise ValueError("provider response must be committed")
+        active = [
+            self.provider_ok is True,
+            self.provider_rejected,
+            self.provider_unavailable,
+            self.rate_or_access_restricted,
+            self.malformed_or_unusable_response,
+        ]
+        if sum(active) != 1:
+            raise ValueError("exactly one provider classification must be active")
+        if self.provider_ok is True and not (
+            self.provider_effect_known
+            and self.provider_effect_committed
+            and self.provider_safe_delivery_reference_id
+        ):
+            raise ValueError("provider_ok=True requires committed known effect and safe delivery")
+        if self.provider_ok is not True and self.provider_safe_delivery_reference_id is not None:
+            raise ValueError("non-accepted provider outcome cannot carry safe delivery")
+        for n in (
+            "contains_raw_provider_payload",
+            "human_read_or_click_proven",
+            "business_success_proven",
+            "notification_delivery_accepted",
+            "retry_authorized",
+        ):
+            _tg13_false(getattr(self, n), n)
+        if self.provider_ok is not True and self.provider_effect_known:
+            raise ValueError("non-accepted classification cannot claim provider effect")
+        return self
+
+
+class TelegramProviderReconciliationObservation(_TelegramContract):
+    telegram_provider_reconciliation_observation_id: str
+    metadata: ContractMetadata
+    transport_observation_reference_id: str
+    original_provider_outcome_reference_id: str
+    egress_reconciliation_reference_id: str
+    egress_reconciliation_status: _TG13_RECONCILIATION
+    reconciliation_committed: bool
+    resolved_outcome_reference_id: str | None
+    provider_effect_observed: bool | None
+    provider_safe_delivery_reference_id: str | None
+    contains_raw_provider_payload: Literal[False] = False
+    new_provider_request_authorized: Literal[False] = False
+    blind_retry_authorized: Literal[False] = False
+    retry_authorized: Literal[False] = False
+    notification_delivery_mutation_authority: Literal[False] = False
+    evidence_reference_ids: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TelegramProviderReconciliationObservation":
+        _tg13_exact(self.metadata, ContractMetadata, "metadata")
+        for n in (
+            "telegram_provider_reconciliation_observation_id",
+            "transport_observation_reference_id",
+            "original_provider_outcome_reference_id",
+            "egress_reconciliation_reference_id",
+        ):
+            _tg13_text(getattr(self, n), n)
+        _tg13_optional_text(self.resolved_outcome_reference_id, "resolved_outcome_reference_id")
+        _tg13_optional_text(
+            self.provider_safe_delivery_reference_id,
+            "provider_safe_delivery_reference_id",
+        )
+        _tg13_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        if self.reconciliation_committed is not True:
+            raise ValueError("reconciliation must be committed")
+        for n in (
+            "contains_raw_provider_payload",
+            "new_provider_request_authorized",
+            "blind_retry_authorized",
+            "retry_authorized",
+            "notification_delivery_mutation_authority",
+        ):
+            _tg13_false(getattr(self, n), n)
+        status = self.egress_reconciliation_status
+        if status in _TG13_UNRESOLVED:
+            if (
+                self.resolved_outcome_reference_id is not None
+                or self.provider_effect_observed is not None
+                or self.provider_safe_delivery_reference_id is not None
+            ):
+                raise ValueError("unresolved reconciliation carries resolution facts")
+        elif status == "RESOLVED_NOT_SENT":
+            if (
+                not self.resolved_outcome_reference_id
+                or self.provider_effect_observed is not False
+                or self.provider_safe_delivery_reference_id is not None
+            ):
+                raise ValueError("RESOLVED_NOT_SENT matrix mismatch")
+        elif status == "RESOLVED_SENT":
+            if (
+                not self.resolved_outcome_reference_id
+                or self.provider_effect_observed is not True
+                or not self.provider_safe_delivery_reference_id
+            ):
+                raise ValueError("RESOLVED_SENT matrix mismatch")
+        elif status == "RESOLVED_TERMINAL":
+            if (
+                not self.resolved_outcome_reference_id
+                or self.provider_effect_observed is None
+                or (self.provider_effect_observed and not self.provider_safe_delivery_reference_id)
+            ):
+                raise ValueError("RESOLVED_TERMINAL matrix mismatch")
+        elif status == "NOT_REQUIRED":
+            if (
+                self.resolved_outcome_reference_id is not None
+                or self.provider_effect_observed is not None
+            ):
+                raise ValueError("NOT_REQUIRED cannot masquerade as resolution")
+        return self
+
+
+class TelegramProviderOutcomeMappingRequest(_TelegramContract):
+    telegram_provider_outcome_mapping_request_id: str
+    metadata: ContractMetadata
+    outbound_mapping_outcome: TelegramOutboundMappingOutcome
+    transport_observation: TelegramTransportOutcomeObservation | None
+    provider_response_observation: TelegramProviderResponseObservation | None
+    reconciliation_observation: TelegramProviderReconciliationObservation | None
+    adapter_contract: Literal["telegram.provider.outcome"] = "telegram.provider.outcome"
+    adapter_contract_version: Literal["1"] = "1"
+    outcome_policy_reference_id: str
+    provider_call_authority: Literal[False] = False
+    reconciliation_execution_authority: Literal[False] = False
+    retry_authority: Literal[False] = False
+    notification_acceptance_authority: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+    human_read_or_click_authority: Literal[False] = False
+    business_success_authority: Literal[False] = False
+
+    @field_validator(
+        "metadata",
+        "outbound_mapping_outcome",
+        "transport_observation",
+        "provider_response_observation",
+        "reconciliation_observation",
+        mode="before",
+    )
+    @classmethod
+    def _exact(cls, value: object, info: ValidationInfo) -> object:
+        if value is None:
+            return value
+        field_name = info.field_name
+        assert field_name is not None
+        expected = {
+            "metadata": ContractMetadata,
+            "outbound_mapping_outcome": TelegramOutboundMappingOutcome,
+            "transport_observation": TelegramTransportOutcomeObservation,
+            "provider_response_observation": TelegramProviderResponseObservation,
+            "reconciliation_observation": TelegramProviderReconciliationObservation,
+        }[field_name]
+        _tg13_exact(value, expected, field_name)
+        return value
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TelegramProviderOutcomeMappingRequest":
+        _tg13_text(
+            self.telegram_provider_outcome_mapping_request_id,
+            "telegram_provider_outcome_mapping_request_id",
+        )
+        _tg13_text(self.outcome_policy_reference_id, "outcome_policy_reference_id")
+        _tg13_exact(self.metadata, ContractMetadata, "metadata")
+        _tg13_exact(
+            self.outbound_mapping_outcome,
+            TelegramOutboundMappingOutcome,
+            "outbound_mapping_outcome",
+        )
+        if self.outbound_mapping_outcome.metadata != self.metadata:
+            raise ValueError("metadata mismatch")
+        attempt_handoff = self.outbound_mapping_outcome.request.notification_attempt_handoff
+        outbound_intent = self.outbound_mapping_outcome.request_intent
+        if self.provider_response_observation is not None and self.transport_observation is None:
+            raise ValueError("provider response requires transport observation")
+        if self.reconciliation_observation is not None and self.transport_observation is None:
+            raise ValueError("reconciliation requires transport observation")
+        if self.transport_observation is not None:
+            transport_observation = self.transport_observation
+            if (
+                attempt_handoff.attempt_reference_id is None
+                or attempt_handoff.attempt_target_reference_id is None
+                or outbound_intent is None
+                or transport_observation.notification_attempt_reference_id
+                != attempt_handoff.attempt_reference_id
+                or transport_observation.notification_target_reference_id
+                != attempt_handoff.attempt_target_reference_id
+            ):
+                raise ValueError("transport attempt/target lineage mismatch")
+            _tg13_exact(
+                transport_observation,
+                TelegramTransportOutcomeObservation,
+                "transport_observation",
+            )
+            if (
+                transport_observation.metadata != self.metadata
+                or transport_observation.outbound_mapping_outcome_reference_id
+                != self.outbound_mapping_outcome.telegram_outbound_mapping_outcome_id
+            ):
+                raise ValueError("transport lineage mismatch")
+        if self.provider_response_observation is not None:
+            provider_transport = self.transport_observation
+            assert provider_transport is not None
+            if (
+                self.provider_response_observation.metadata != self.metadata
+                or self.provider_response_observation.transport_observation_reference_id
+                != provider_transport.telegram_transport_outcome_observation_id
+            ):
+                raise ValueError("provider response lineage mismatch")
+        if self.reconciliation_observation is not None:
+            reconciliation_transport = self.transport_observation
+            assert reconciliation_transport is not None
+            r = self.reconciliation_observation
+            if (
+                r.metadata != self.metadata
+                or r.transport_observation_reference_id
+                != reconciliation_transport.telegram_transport_outcome_observation_id
+                or r.original_provider_outcome_reference_id
+                not in {
+                    self.outbound_mapping_outcome.telegram_outbound_mapping_outcome_id,
+                    *(
+                        (self.provider_response_observation.provider_response_reference_id,)
+                        if self.provider_response_observation
+                        else ()
+                    ),
+                }
+            ):
+                raise ValueError("reconciliation lineage mismatch")
+        for n in (
+            "provider_call_authority",
+            "reconciliation_execution_authority",
+            "retry_authority",
+            "notification_acceptance_authority",
+            "notification_lifecycle_mutation_authority",
+            "human_read_or_click_authority",
+            "business_success_authority",
+        ):
+            _tg13_false(getattr(self, n), n)
+        return self
+
+
+class TelegramNotificationProviderOutcomeHandoff(_TelegramContract):
+    outcome_reference_id: str
+    adapter_contract: Literal["telegram.provider.outcome"]
+    adapter_contract_version: Literal["1"]
+    attempt_id: str
+    channel_class: Literal["TELEGRAM"]
+    target_reference_id: str
+    outcome_class: _TG13_NOTIFICATION_CLASS
+    adapter_outcome_committed: Literal[True] = True
+    provider_safe_delivery_reference: str | None
+    egress_correlation_reference: str | None
+    contains_raw_provider_payload: Literal[False] = False
+    identity_ambiguous: Literal[False] = False
+    correlation_id: str
+    causation_id: str
+    reason_codes: tuple[str, ...]
+    evidence_reference_ids: tuple[str, ...]
+    notification_delivery_projection: Literal[True] = True
+    notification_acceptance_authority: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+    retry_authority: Literal[False] = False
+    human_read_or_click_proven: Literal[False] = False
+    business_success_proven: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TelegramNotificationProviderOutcomeHandoff":
+        for n in (
+            "outcome_reference_id",
+            "attempt_id",
+            "target_reference_id",
+            "correlation_id",
+            "causation_id",
+        ):
+            _tg13_text(getattr(self, n), n)
+        _tg13_tuple(self.reason_codes, "reason_codes")
+        _tg13_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        for n in (
+            "contains_raw_provider_payload",
+            "identity_ambiguous",
+            "notification_acceptance_authority",
+            "notification_lifecycle_mutation_authority",
+            "retry_authority",
+            "human_read_or_click_proven",
+            "business_success_proven",
+        ):
+            _tg13_false(getattr(self, n), n)
+        if (
+            self.adapter_outcome_committed is not True
+            or self.notification_delivery_projection is not True
+        ):
+            raise ValueError("handoff commitment/projection flags are fixed")
+        if (
+            self.outcome_class in {"PROVIDER_ACCEPTED"}
+            and not self.provider_safe_delivery_reference
+        ):
+            raise ValueError("accepted handoff requires safe delivery reference")
+        if (
+            self.outcome_class
+            in {
+                "DISPATCH_AMBIGUOUS",
+                "DELIVERY_AMBIGUOUS",
+                "DELIVERY_FAILURE",
+                "PROVIDER_REJECTED",
+                "PROVIDER_UNAVAILABLE",
+                "RATE_OR_ACCESS_RESTRICTED",
+                "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE",
+                "SUPPRESSED_OR_CANCELLED",
+                "TARGET_UNAVAILABLE_OR_UNVERIFIED",
+            }
+            and self.provider_safe_delivery_reference is not None
+        ):
+            raise ValueError("ambiguous/failure handoff cannot carry safe delivery")
+        return self
+
+
+class TelegramProviderOutcome(_TelegramContract):
+    telegram_provider_outcome_id: str
+    metadata: ContractMetadata
+    mapping_request_reference_id: str
+    outbound_mapping_outcome_reference_id: str
+    notification_attempt_reference_id: str
+    notification_target_reference_id: str
+    outcome_class: TelegramProviderOutcomeClass
+    reason_code: TelegramProviderOutcomeReasonCode
+    notification_handoff: TelegramNotificationProviderOutcomeHandoff | None
+    provider_safe_delivery_reference_id: str | None
+    egress_correlation_reference_id: str | None
+    reconciliation_reference_id: str | None
+    evidence_reference_ids: tuple[str, ...]
+    adapter_outcome_committed: Literal[True] = True
+    provider_request_sent: bool
+    provider_accepted: bool
+    provider_effect_known: bool
+    reconciliation_required: bool
+    reconciliation_resolved: bool
+    provider_call_performed_by_boundary: Literal[False] = False
+    blind_retry_authorized: Literal[False] = False
+    retry_authorized: Literal[False] = False
+    notification_delivery_accepted: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+    human_read_or_click_proven: Literal[False] = False
+    business_success_proven: Literal[False] = False
+
+    @field_validator("metadata", "notification_handoff", mode="before")
+    @classmethod
+    def _exact(cls, value: object, info: ValidationInfo) -> object:
+        if value is None:
+            return value
+        field_name = info.field_name
+        assert field_name is not None
+        _tg13_exact(
+            value,
+            {
+                "metadata": ContractMetadata,
+                "notification_handoff": TelegramNotificationProviderOutcomeHandoff,
+            }[field_name],
+            field_name,
+        )
+        return value
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TelegramProviderOutcome":
+        _tg13_exact(self.metadata, ContractMetadata, "metadata")
+        for n in (
+            "telegram_provider_outcome_id",
+            "mapping_request_reference_id",
+            "outbound_mapping_outcome_reference_id",
+            "notification_attempt_reference_id",
+            "notification_target_reference_id",
+        ):
+            _tg13_text(getattr(self, n), n)
+        _tg13_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        if self.adapter_outcome_committed is not True:
+            raise ValueError("outcome must be committed")
+        for n in (
+            "provider_call_performed_by_boundary",
+            "blind_retry_authorized",
+            "retry_authorized",
+            "notification_delivery_accepted",
+            "notification_lifecycle_mutation_authority",
+            "human_read_or_click_proven",
+            "business_success_proven",
+        ):
+            _tg13_false(getattr(self, n), n)
+        c = self.outcome_class
+        if c == TelegramProviderOutcomeClass.PROVIDER_REQUEST_NOT_SENT:
+            if (
+                self.provider_request_sent
+                or self.provider_accepted
+                or not self.provider_effect_known
+                or self.reconciliation_required
+                or self.reconciliation_resolved
+                or self.notification_handoff is not None
+            ):
+                raise ValueError("request-not-sent matrix mismatch")
+        elif c in {
+            TelegramProviderOutcomeClass.PROVIDER_ACCEPTED,
+            TelegramProviderOutcomeClass.RECONCILED_EFFECT,
+        }:
+            if not (
+                self.provider_request_sent
+                and self.provider_accepted
+                and self.provider_effect_known
+                and self.provider_safe_delivery_reference_id
+                and self.notification_handoff
+            ):
+                raise ValueError("accepted matrix mismatch")
+        elif c in {
+            TelegramProviderOutcomeClass.PROVIDER_EFFECT_AMBIGUOUS,
+            TelegramProviderOutcomeClass.RECONCILIATION_REQUIRED,
+        }:
+            if (
+                self.provider_accepted
+                or self.provider_effect_known
+                or not self.reconciliation_required
+                or self.reconciliation_resolved
+                or self.notification_handoff is None
+            ):
+                raise ValueError("ambiguous matrix mismatch")
+        elif c == TelegramProviderOutcomeClass.RECONCILED_NO_EFFECT:
+            if (
+                not (self.provider_effect_known and self.reconciliation_resolved)
+                or self.provider_accepted
+                or self.reconciliation_required
+                or not self.notification_handoff
+            ):
+                raise ValueError("reconciled no-effect matrix mismatch")
+        else:
+            if (
+                self.provider_accepted
+                or self.provider_safe_delivery_reference_id is not None
+                or not self.notification_handoff
+                or self.retry_authorized
+            ):
+                raise ValueError("provider failure matrix mismatch")
+        handoff = self.notification_handoff
+        if (
+            c
+            in {
+                TelegramProviderOutcomeClass.PROVIDER_ACCEPTED,
+                TelegramProviderOutcomeClass.RECONCILED_EFFECT,
+            }
+            and handoff is not None
+            and handoff.outcome_class != "PROVIDER_ACCEPTED"
+        ):
+            raise ValueError("accepted outcome requires accepted handoff")
+        if (
+            c == TelegramProviderOutcomeClass.RECONCILED_NO_EFFECT
+            and handoff is not None
+            and handoff.outcome_class != "DELIVERY_FAILURE"
+        ):
+            raise ValueError("no-effect outcome requires failure handoff")
+        return self
+
+
+def _tg13_handoff(
+    request: TelegramProviderOutcomeMappingRequest,
+    outcome_id: str,
+    outcome_class: TelegramProviderOutcomeClass,
+    safe_ref: str | None,
+    egress_ref: str | None,
+    reason: TelegramProviderOutcomeReasonCode,
+) -> TelegramNotificationProviderOutcomeHandoff:
+    h = request.outbound_mapping_outcome.request.notification_attempt_handoff
+    intent = request.outbound_mapping_outcome.request_intent
+    if h.attempt_reference_id is None or h.attempt_target_reference_id is None or intent is None:
+        raise ValueError("prepared outbound outcome lacks lineage")
+    notification_class = {
+        TelegramProviderOutcomeClass.PROVIDER_ACCEPTED: "PROVIDER_ACCEPTED",
+        TelegramProviderOutcomeClass.RECONCILED_EFFECT: "PROVIDER_ACCEPTED",
+        TelegramProviderOutcomeClass.PROVIDER_REJECTED: "PROVIDER_REJECTED",
+        TelegramProviderOutcomeClass.PROVIDER_UNAVAILABLE: "PROVIDER_UNAVAILABLE",
+        TelegramProviderOutcomeClass.RATE_LIMITED_OR_RESTRICTED: "RATE_OR_ACCESS_RESTRICTED",
+        TelegramProviderOutcomeClass.MALFORMED_OR_UNUSABLE_RESPONSE: "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE",
+        TelegramProviderOutcomeClass.RECONCILED_NO_EFFECT: "DELIVERY_FAILURE",
+        TelegramProviderOutcomeClass.RECONCILIATION_REQUIRED: "DELIVERY_AMBIGUOUS",
+        TelegramProviderOutcomeClass.PROVIDER_EFFECT_AMBIGUOUS: "DELIVERY_AMBIGUOUS",
+    }[outcome_class]
+    if (
+        outcome_class is TelegramProviderOutcomeClass.PROVIDER_EFFECT_AMBIGUOUS
+        and request.transport_observation is not None
+        and request.transport_observation.dispatch_status == "UNKNOWN"
+    ):
+        notification_class = "DISPATCH_AMBIGUOUS"
+    notification_class = cast(_TG13_NOTIFICATION_CLASS, notification_class)
+    evidence = list(request.outbound_mapping_outcome.evidence_reference_ids)
+    if request.transport_observation is not None:
+        evidence.extend(request.transport_observation.evidence_reference_ids)
+    if request.provider_response_observation is not None:
+        evidence.extend(request.provider_response_observation.evidence_reference_ids)
+    if request.reconciliation_observation is not None:
+        evidence.extend(request.reconciliation_observation.evidence_reference_ids)
+    return TelegramNotificationProviderOutcomeHandoff(
+        outcome_reference_id=outcome_id,
+        adapter_contract="telegram.provider.outcome",
+        adapter_contract_version="1",
+        attempt_id=h.attempt_reference_id,
+        channel_class="TELEGRAM",
+        target_reference_id=h.attempt_target_reference_id,
+        outcome_class=notification_class,
+        provider_safe_delivery_reference=safe_ref,
+        egress_correlation_reference=egress_ref,
+        correlation_id=intent.correlation_id,
+        causation_id=intent.causation_id,
+        reason_codes=(reason.value,),
+        evidence_reference_ids=tuple(dict.fromkeys(evidence)),
+    )
+
+
+def _tg13_mapping(
+    request: TelegramProviderOutcomeMappingRequest,
+) -> tuple[TelegramProviderOutcomeClass, TelegramProviderOutcomeReasonCode]:
+    o = request.outbound_mapping_outcome
+    if (
+        o.state is not TelegramOutboundMappingState.REQUEST_PREPARED
+        or o.reason_code
+        is not TelegramOutboundMappingReasonCode.TELEGRAM_PRIVATE_CHAT_REQUEST_PREPARED
+        or o.request_intent is None
+    ):
+        raise ValueError("OUTBOUND_REQUEST_NOT_PREPARED")
+    t = request.transport_observation
+    if t is None:
+        raise ValueError("TRANSPORT_OUTCOME_NOT_COMMITTED")
+    if (
+        t.metadata != request.metadata
+        or t.outbound_mapping_outcome_reference_id != o.telegram_outbound_mapping_outcome_id
+    ):
+        raise ValueError("OUTCOME_SCOPE_MISMATCH")
+    if t.transport_outcome_committed is not True:
+        raise ValueError("TRANSPORT_OUTCOME_NOT_COMMITTED")
+    if (
+        t.contains_raw_provider_payload is not False
+        or t.egress_transport_projection is not True
+        or t.transport_success_is_provider_success is not False
+        or t.notification_delivery_inferred is not False
+        or t.new_dispatch_authority is not False
+        or t.retry_authority is not False
+    ):
+        raise ValueError("UNSAFE_PROVIDER_EVIDENCE")
+    r = request.reconciliation_observation
+    if r is not None:
+        if (
+            r.metadata != request.metadata
+            or r.transport_observation_reference_id != t.telegram_transport_outcome_observation_id
+        ):
+            raise ValueError("OUTCOME_SCOPE_MISMATCH")
+        if r.egress_reconciliation_status in _TG13_UNRESOLVED:
+            return (
+                TelegramProviderOutcomeClass.RECONCILIATION_REQUIRED,
+                TelegramProviderOutcomeReasonCode.RECONCILIATION_REQUIRED,
+            )
+        if r.egress_reconciliation_status == "RESOLVED_NOT_SENT":
+            return (
+                TelegramProviderOutcomeClass.RECONCILED_NO_EFFECT,
+                TelegramProviderOutcomeReasonCode.RECONCILED_NO_EFFECT,
+            )
+        if r.egress_reconciliation_status == "RESOLVED_SENT":
+            return (
+                TelegramProviderOutcomeClass.RECONCILED_EFFECT,
+                TelegramProviderOutcomeReasonCode.RECONCILED_EFFECT,
+            )
+        if r.egress_reconciliation_status == "RESOLVED_TERMINAL":
+            return (
+                (
+                    TelegramProviderOutcomeClass.RECONCILED_EFFECT,
+                    TelegramProviderOutcomeReasonCode.RECONCILED_EFFECT,
+                )
+                if r.provider_effect_observed
+                else (
+                    TelegramProviderOutcomeClass.RECONCILED_NO_EFFECT,
+                    TelegramProviderOutcomeReasonCode.RECONCILED_NO_EFFECT,
+                )
+            )
+    if not t.provider_request_sent or t.transport_outcome_status in _TG13_NO_SEND:
+        return (
+            TelegramProviderOutcomeClass.PROVIDER_REQUEST_NOT_SENT,
+            TelegramProviderOutcomeReasonCode.PROVIDER_REQUEST_NOT_SENT,
+        )
+    p = request.provider_response_observation
+    if p is not None:
+        if (
+            p.metadata != request.metadata
+            or p.transport_observation_reference_id != t.telegram_transport_outcome_observation_id
+        ):
+            raise ValueError("OUTCOME_SCOPE_MISMATCH")
+        if (
+            p.contains_raw_provider_payload is not False
+            or p.human_read_or_click_proven is not False
+            or p.business_success_proven is not False
+            or p.notification_delivery_accepted is not False
+            or p.retry_authorized is not False
+        ):
+            raise ValueError("UNSAFE_PROVIDER_EVIDENCE")
+        if p.provider_ok is True:
+            return (
+                TelegramProviderOutcomeClass.PROVIDER_ACCEPTED,
+                TelegramProviderOutcomeReasonCode.PROVIDER_ACCEPTED,
+            )
+        if p.provider_rejected:
+            return (
+                TelegramProviderOutcomeClass.PROVIDER_REJECTED,
+                TelegramProviderOutcomeReasonCode.PROVIDER_REJECTED,
+            )
+        if p.provider_unavailable:
+            return (
+                TelegramProviderOutcomeClass.PROVIDER_UNAVAILABLE,
+                TelegramProviderOutcomeReasonCode.PROVIDER_UNAVAILABLE,
+            )
+        if p.rate_or_access_restricted:
+            return (
+                TelegramProviderOutcomeClass.RATE_LIMITED_OR_RESTRICTED,
+                TelegramProviderOutcomeReasonCode.RATE_LIMITED_OR_RESTRICTED,
+            )
+        return (
+            TelegramProviderOutcomeClass.MALFORMED_OR_UNUSABLE_RESPONSE,
+            TelegramProviderOutcomeReasonCode.MALFORMED_OR_UNUSABLE_RESPONSE,
+        )
+    return (
+        TelegramProviderOutcomeClass.PROVIDER_EFFECT_AMBIGUOUS,
+        TelegramProviderOutcomeReasonCode.PROVIDER_EFFECT_AMBIGUOUS,
+    )
+
+
+class TelegramProviderOutcomeMappingDecision(_TelegramContract):
+    telegram_provider_outcome_mapping_decision_id: str
+    metadata: ContractMetadata
+    request: TelegramProviderOutcomeMappingRequest
+    state: TelegramProviderOutcomeMappingState
+    reason_code: TelegramProviderOutcomeReasonCode
+    outcome: TelegramProviderOutcome | None
+    safe_diagnostic_reference_id: str | None
+    evidence_reference_ids: tuple[str, ...]
+    provider_call_performed: Literal[False] = False
+    reconciliation_performed: Literal[False] = False
+    retry_authorized: Literal[False] = False
+    notification_delivery_accepted: Literal[False] = False
+    notification_lifecycle_mutation_authority: Literal[False] = False
+    human_read_or_click_proven: Literal[False] = False
+    business_success_proven: Literal[False] = False
+
+    @field_validator("metadata", "request", "outcome", mode="before")
+    @classmethod
+    def _exact(cls, value: object, info: ValidationInfo) -> object:
+        if value is None:
+            return value
+        field_name = info.field_name
+        assert field_name is not None
+        _tg13_exact(
+            value,
+            {
+                "metadata": ContractMetadata,
+                "request": TelegramProviderOutcomeMappingRequest,
+                "outcome": TelegramProviderOutcome,
+            }[field_name],
+            field_name,
+        )
+        return value
+
+    @model_validator(mode="after")
+    def _validate(self) -> "TelegramProviderOutcomeMappingDecision":
+        _tg13_text(
+            self.telegram_provider_outcome_mapping_decision_id,
+            "telegram_provider_outcome_mapping_decision_id",
+        )
+        _tg13_exact(self.metadata, ContractMetadata, "metadata")
+        _tg13_exact(self.request, TelegramProviderOutcomeMappingRequest, "request")
+        _tg13_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        for n in (
+            "provider_call_performed",
+            "reconciliation_performed",
+            "retry_authorized",
+            "notification_delivery_accepted",
+            "notification_lifecycle_mutation_authority",
+            "human_read_or_click_proven",
+            "business_success_proven",
+        ):
+            _tg13_false(getattr(self, n), n)
+        try:
+            c, reason = _tg13_mapping(self.request)
+            state = TelegramProviderOutcomeMappingState.OUTCOME_MAPPED
+            outcome = self._build_outcome(c, reason)
+        except ValueError as exc:
+            token = str(exc)
+            if token == "OUTBOUND_REQUEST_NOT_PREPARED":
+                state, reason, outcome = (
+                    TelegramProviderOutcomeMappingState.OUTCOME_BLOCKED,
+                    TelegramProviderOutcomeReasonCode.OUTBOUND_REQUEST_NOT_PREPARED,
+                    None,
+                )
+            elif token == "TRANSPORT_OUTCOME_NOT_COMMITTED":
+                state, reason, outcome = (
+                    TelegramProviderOutcomeMappingState.INVALID_EVIDENCE,
+                    TelegramProviderOutcomeReasonCode.TRANSPORT_OUTCOME_NOT_COMMITTED,
+                    None,
+                )
+            elif token == "UNSAFE_PROVIDER_EVIDENCE":
+                state, reason, outcome = (
+                    TelegramProviderOutcomeMappingState.INVALID_EVIDENCE,
+                    TelegramProviderOutcomeReasonCode.UNSAFE_PROVIDER_EVIDENCE,
+                    None,
+                )
+            else:
+                state, reason, outcome = (
+                    TelegramProviderOutcomeMappingState.AMBIGUOUS,
+                    TelegramProviderOutcomeReasonCode.OUTCOME_SCOPE_MISMATCH,
+                    None,
+                )
+        if self.state is not state or self.reason_code is not reason or self.outcome != outcome:
+            raise ValueError("decision does not match deterministic precedence")
+        if state is TelegramProviderOutcomeMappingState.OUTCOME_MAPPED:
+            if outcome is None or self.safe_diagnostic_reference_id is not None:
+                raise ValueError("mapped decision requires outcome and forbids diagnostic")
+        elif outcome is not None or not self.safe_diagnostic_reference_id:
+            raise ValueError(
+                "blocked/invalid/ambiguous decision requires diagnostic and no outcome"
+            )
+        return self
+
+    def _build_outcome(
+        self, c: TelegramProviderOutcomeClass, reason: TelegramProviderOutcomeReasonCode
+    ) -> TelegramProviderOutcome:
+        req = self.request
+        t = req.transport_observation
+        p = req.provider_response_observation
+        r = req.reconciliation_observation
+        assert t is not None
+        h = req.outbound_mapping_outcome.request.notification_attempt_handoff
+        assert h.attempt_reference_id is not None and h.attempt_target_reference_id is not None
+        safe = (
+            p.provider_safe_delivery_reference_id
+            if p is not None and p.provider_ok is True
+            else (
+                r.provider_safe_delivery_reference_id
+                if r is not None and r.provider_effect_observed
+                else None
+            )
+        )
+        oid = f"{req.telegram_provider_outcome_mapping_request_id}:outcome"
+        handoff = (
+            None
+            if c is TelegramProviderOutcomeClass.PROVIDER_REQUEST_NOT_SENT
+            else _tg13_handoff(req, oid, c, safe, t.egress_correlation_reference_id, reason)
+        )
+        return TelegramProviderOutcome(
+            telegram_provider_outcome_id=oid,
+            metadata=req.metadata,
+            mapping_request_reference_id=req.telegram_provider_outcome_mapping_request_id,
+            outbound_mapping_outcome_reference_id=req.outbound_mapping_outcome.telegram_outbound_mapping_outcome_id,
+            notification_attempt_reference_id=h.attempt_reference_id,
+            notification_target_reference_id=h.attempt_target_reference_id,
+            outcome_class=c,
+            reason_code=reason,
+            notification_handoff=handoff,
+            provider_safe_delivery_reference_id=safe,
+            egress_correlation_reference_id=t.egress_correlation_reference_id,
+            reconciliation_reference_id=r.egress_reconciliation_reference_id if r else None,
+            evidence_reference_ids=tuple(
+                dict.fromkeys(
+                    req.outbound_mapping_outcome.evidence_reference_ids + t.evidence_reference_ids
+                )
+            ),
+            provider_request_sent=t.provider_request_sent,
+            provider_accepted=c
+            in {
+                TelegramProviderOutcomeClass.PROVIDER_ACCEPTED,
+                TelegramProviderOutcomeClass.RECONCILED_EFFECT,
+            },
+            provider_effect_known=c
+            not in {
+                TelegramProviderOutcomeClass.PROVIDER_EFFECT_AMBIGUOUS,
+                TelegramProviderOutcomeClass.RECONCILIATION_REQUIRED,
+            },
+            reconciliation_required=c
+            in {
+                TelegramProviderOutcomeClass.PROVIDER_EFFECT_AMBIGUOUS,
+                TelegramProviderOutcomeClass.RECONCILIATION_REQUIRED,
+            },
+            reconciliation_resolved=c
+            in {
+                TelegramProviderOutcomeClass.RECONCILED_NO_EFFECT,
+                TelegramProviderOutcomeClass.RECONCILED_EFFECT,
+            },
+        )
 
 
 def _classify_display(
@@ -3828,6 +4863,16 @@ __all__ = [
     "TelegramDisplayBoundaryRequest",
     "TelegramDisplayProjection",
     "TelegramDisplayBoundaryOutcome",
+    "TelegramProviderOutcomeClass",
+    "TelegramProviderOutcomeMappingState",
+    "TelegramProviderOutcomeReasonCode",
+    "TelegramTransportOutcomeObservation",
+    "TelegramProviderResponseObservation",
+    "TelegramProviderReconciliationObservation",
+    "TelegramProviderOutcomeMappingRequest",
+    "TelegramNotificationProviderOutcomeHandoff",
+    "TelegramProviderOutcome",
+    "TelegramProviderOutcomeMappingDecision",
     "TelegramChatSurfaceClass",
     "TelegramChatSurfaceAdmissionState",
     "TelegramChatSurfaceReasonCode",
