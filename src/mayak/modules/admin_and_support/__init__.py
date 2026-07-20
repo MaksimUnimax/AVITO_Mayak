@@ -22,6 +22,12 @@ from mayak.modules.admin_and_support.contracts import (
     SupportWorkItem,
     SupportWorkItemState,
 )
+from mayak.modules.admin_and_support.role_actions import (
+    AdminRoleActionKind,
+    AdminRoleActionOutcome,
+    AdminRoleActionOutcomeState,
+    AdminRoleActionRequest,
+)
 from mayak.modules.admin_and_support.safe_reads import (
     SupportSafeExplanationOutcome,
     SupportSafeExplanationRequest,
@@ -64,4 +70,8 @@ __all__ = [
     "SupportSafeSummaryReference",
     "SupportSafeSummaryState",
     "SupportSummaryFamily",
+    "AdminRoleActionKind",
+    "AdminRoleActionOutcomeState",
+    "AdminRoleActionRequest",
+    "AdminRoleActionOutcome",
 ]
