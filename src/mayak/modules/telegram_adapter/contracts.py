@@ -908,6 +908,848 @@ def _outbound_union(*values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(result)
 
 
+class TelegramDisplayClass(str, Enum):
+    NEW_LISTINGS_SUMMARY = "NEW_LISTINGS_SUMMARY"
+    NEW_LISTINGS_COMPACT_LIST = "NEW_LISTINGS_COMPACT_LIST"
+    FULL_RESULT_OPEN_ACTION = "FULL_RESULT_OPEN_ACTION"
+    SHOW_MORE_ACTION = "SHOW_MORE_ACTION"
+    BEACON_SETTINGS_ACTION = "BEACON_SETTINGS_ACTION"
+    NO_NEW_STATUS_MESSAGE = "NO_NEW_STATUS_MESSAGE"
+    AVITO_UNAVAILABLE_STATUS_MESSAGE = "AVITO_UNAVAILABLE_STATUS_MESSAGE"
+    RECOVERY_RESULT_MESSAGE = "RECOVERY_RESULT_MESSAGE"
+    LOST_ANCHORS_RESTORED_MESSAGE = "LOST_ANCHORS_RESTORED_MESSAGE"
+    UNSUPPORTED_CONTENT_BLOCKED = "UNSUPPORTED_CONTENT_BLOCKED"
+
+
+class TelegramDisplayProjectionState(str, Enum):
+    DISPLAY_PROJECTED = "DISPLAY_PROJECTED"
+    DISPLAY_BLOCKED = "DISPLAY_BLOCKED"
+    INVALID_CONTENT = "INVALID_CONTENT"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramDisplayReasonCode(str, Enum):
+    NEW_LISTINGS_DISPLAY_PROJECTED = "NEW_LISTINGS_DISPLAY_PROJECTED"
+    RECOVERY_RESULT_DISPLAY_PROJECTED = "RECOVERY_RESULT_DISPLAY_PROJECTED"
+    LOST_ANCHORS_RESTORED_DISPLAY_PROJECTED = "LOST_ANCHORS_RESTORED_DISPLAY_PROJECTED"
+    NO_NEW_STATUS_DISPLAY_PROJECTED = "NO_NEW_STATUS_DISPLAY_PROJECTED"
+    AVITO_UNAVAILABLE_STATUS_DISPLAY_PROJECTED = "AVITO_UNAVAILABLE_STATUS_DISPLAY_PROJECTED"
+    OUTBOUND_REQUEST_NOT_PREPARED = "OUTBOUND_REQUEST_NOT_PREPARED"
+    OUTBOUND_DISPLAY_SCOPE_MISMATCH = "OUTBOUND_DISPLAY_SCOPE_MISMATCH"
+    UNSUPPORTED_DELIVERY_PURPOSE = "UNSUPPORTED_DELIVERY_PURPOSE"
+    SAFE_LISTING_DISPLAY_MISMATCH = "SAFE_LISTING_DISPLAY_MISMATCH"
+
+
+_NotificationListingCardFieldClassValue = Literal[
+    "TITLE",
+    "PRICE",
+    "GEOGRAPHY",
+    "LISTING_URL_REFERENCE",
+    "PREVIEW_REFERENCE",
+    "DESCRIPTION",
+    "SELLER",
+    "SELLER_RATING",
+    "PHONE",
+]
+_NotificationListingCardValueClassValue = Literal["SAFE_TEXT", "SAFE_REFERENCE"]
+_NotificationListingCardProvenanceTierValue = Literal[
+    "TIER_1_SEARCH_RESULT", "TIER_2_LISTING_DETAIL", "TIER_3_CONTACT"
+]
+_NotificationListingCardReasonClassValue = Literal[
+    "NEW_LISTING", "RECOVERED_NEW_LISTING", "LATEST_FRESH_STATE_RESTORED"
+]
+_NotificationListingCardProjectionStatusValue = Literal[
+    "ACCEPTED_FIELDS", "ACCEPTED_REFERENCE_ONLY", "NOT_APPLICABLE_NO_LISTINGS"
+]
+_TelegramDisplayActionOwnerValue = Literal["NOTIFICATION_DELIVERY", "BEACON_MANAGEMENT"]
+
+_DISPLAY_FIELD_COMPATIBILITY = {
+    "TITLE": ("SAFE_TEXT", "TITLE", "TIER_1_SEARCH_RESULT", False, False),
+    "PRICE": ("SAFE_TEXT", "NORMALIZED_PRICE", "TIER_1_SEARCH_RESULT", False, False),
+    "GEOGRAPHY": ("SAFE_TEXT", "GEOGRAPHY", "TIER_1_SEARCH_RESULT", False, False),
+    "LISTING_URL_REFERENCE": (
+        "SAFE_REFERENCE",
+        "LISTING_URL",
+        "TIER_1_SEARCH_RESULT",
+        False,
+        False,
+    ),
+    "PREVIEW_REFERENCE": ("SAFE_REFERENCE", "PREVIEW_IMAGE", "TIER_1_SEARCH_RESULT", False, False),
+    "DESCRIPTION": ("SAFE_TEXT", "DESCRIPTION", "TIER_2_LISTING_DETAIL", True, False),
+    "SELLER": ("SAFE_TEXT", "SELLER", "TIER_2_LISTING_DETAIL", True, False),
+    "SELLER_RATING": ("SAFE_TEXT", "SELLER_RATING", "TIER_2_LISTING_DETAIL", True, False),
+    "PHONE": ("SAFE_TEXT", "PHONE_VALUE", "TIER_3_CONTACT", True, True),
+}
+_DISPLAY_REASON_BY_PURPOSE = {
+    "NEW_LISTINGS_FOUND": "NEW_LISTING",
+    "RECOVERY_SCAN_COMPLETED": "RECOVERED_NEW_LISTING",
+    "LOST_ANCHORS_RECOVERED": "LATEST_FRESH_STATE_RESTORED",
+}
+_DISPLAY_STATUS_REASONS = {
+    "ACCEPTED_FIELDS": ("listing-card-fields-accepted",),
+    "ACCEPTED_REFERENCE_ONLY": ("listing-card-reference-only-accepted",),
+    "NOT_APPLICABLE_NO_LISTINGS": ("listing-card-no-listings-not-applicable",),
+}
+_DISPLAY_PURPOSES = (
+    "NEW_LISTINGS_FOUND",
+    "RECOVERY_SCAN_COMPLETED",
+    "LOST_ANCHORS_RECOVERED",
+    "NO_NEW_LISTINGS_STATUS",
+    "EXTERNAL_UNAVAILABLE_STATUS",
+)
+
+
+def _display_exact(value: object, expected: type[object], name: str) -> None:
+    if type(value) is not expected:
+        raise ValueError(f"{name} must be an exact {expected.__name__}")
+
+
+def _display_text(value: object, name: str) -> None:
+    if type(value) is not str or not value.strip():
+        raise ValueError(f"{name} must be a non-blank string")
+
+
+def _display_tuple(value: object, name: str, *, unique: bool = True) -> tuple[str, ...]:
+    if type(value) is not tuple:
+        raise ValueError(f"{name} must be a tuple")
+    for item in value:
+        _display_text(item, name)
+    if unique and len(value) != len(set(value)):
+        raise ValueError(f"{name} must be unique")
+    return value
+
+
+def _display_bool(value: object, expected: bool, name: str) -> None:
+    if value is not expected:
+        raise ValueError(f"{name} must be {expected}")
+
+
+def _display_union(*groups: tuple[str, ...]) -> tuple[str, ...]:
+    result: list[str] = []
+    for group in groups:
+        for value in group:
+            if value not in result:
+                result.append(value)
+    return tuple(result)
+
+
+class TelegramSafeListingFieldFact(_TelegramContract):
+    telegram_safe_listing_field_fact_id: str
+    listing_reference_id: str
+    field_class: _NotificationListingCardFieldClassValue
+    value_class: _NotificationListingCardValueClassValue
+    safe_value: str
+    upstream_field_family: str
+    provenance_tier: _NotificationListingCardProvenanceTierValue
+    upstream_field_reference_id: str
+    compatibility_profile_reference_id: str
+    source_committed: bool
+    source_commit_reference: str
+    field_evidence_approved: bool
+    detail_gate_approved: bool
+    contact_gate_approved: bool
+    contains_raw_provider_payload: Literal[False] = False
+    evidence_reference_ids: tuple[str, ...]
+    notification_delivery_projection: Literal[True] = True
+    safe_field_snapshot_only: Literal[True] = True
+    field_enrichment_authority: Literal[False] = False
+    provider_fetch_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_field(self) -> "TelegramSafeListingFieldFact":
+        for name in (
+            "telegram_safe_listing_field_fact_id",
+            "listing_reference_id",
+            "safe_value",
+            "upstream_field_family",
+            "upstream_field_reference_id",
+            "compatibility_profile_reference_id",
+            "source_commit_reference",
+        ):
+            _display_text(getattr(self, name), name)
+        _display_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        _display_bool(self.source_committed, True, "source_committed")
+        _display_bool(self.field_evidence_approved, True, "field_evidence_approved")
+        _display_bool(self.contains_raw_provider_payload, False, "contains_raw_provider_payload")
+        _display_bool(
+            self.notification_delivery_projection, True, "notification_delivery_projection"
+        )
+        _display_bool(self.safe_field_snapshot_only, True, "safe_field_snapshot_only")
+        _display_bool(self.field_enrichment_authority, False, "field_enrichment_authority")
+        _display_bool(self.provider_fetch_authority, False, "provider_fetch_authority")
+        expected = _DISPLAY_FIELD_COMPATIBILITY[self.field_class]
+        if (
+            self.value_class,
+            self.upstream_field_family,
+            self.provenance_tier,
+            self.detail_gate_approved,
+            self.contact_gate_approved,
+        ) != expected:
+            raise ValueError("unsafe listing field compatibility")
+        if self.provenance_tier == "TIER_3_CONTACT" and not self.contact_gate_approved:
+            raise ValueError("contact field requires contact gate")
+        if self.provenance_tier == "TIER_2_LISTING_DETAIL" and not self.detail_gate_approved:
+            raise ValueError("detail field requires detail gate")
+        return self
+
+
+class TelegramListingCardDisplaySnapshot(_TelegramContract):
+    telegram_listing_card_display_snapshot_id: str
+    listing_card_reference_id: str
+    listing_reference_id: str
+    account_reference_id: str
+    beacon_reference_id: str
+    source_event_reference_id: str
+    source_fact_reference_id: str
+    source_family: _NotificationSourceFamilyValue
+    reason_class: _NotificationListingCardReasonClassValue
+    beacon_name_reference_id: str | None
+    field_facts: tuple[TelegramSafeListingFieldFact, ...]
+    correlation_id: str
+    causation_id: str
+    evidence_reference_ids: tuple[str, ...]
+    notification_delivery_projection: Literal[True] = True
+    safe_card_snapshot_only: Literal[True] = True
+    rendering_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+
+    @field_validator("field_facts", mode="before")
+    @classmethod
+    def _exact_field_facts(cls, value: object) -> object:
+        if type(value) is not tuple or any(
+            type(item) is not TelegramSafeListingFieldFact for item in value
+        ):
+            raise ValueError("field_facts must contain exact safe field facts")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_card(self) -> "TelegramListingCardDisplaySnapshot":
+        for name in (
+            "telegram_listing_card_display_snapshot_id",
+            "listing_card_reference_id",
+            "listing_reference_id",
+            "account_reference_id",
+            "beacon_reference_id",
+            "source_event_reference_id",
+            "source_fact_reference_id",
+            "correlation_id",
+            "causation_id",
+        ):
+            _display_text(getattr(self, name), name)
+        _display_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        _display_exact(self.field_facts, tuple, "field_facts")
+        seen: set[str] = set()
+        for fact in self.field_facts:
+            _display_exact(fact, TelegramSafeListingFieldFact, "field_facts element")
+            if fact.listing_reference_id != self.listing_reference_id or fact.field_class in seen:
+                raise ValueError("field fact listing reference or class mismatch")
+            seen.add(fact.field_class)
+        _display_bool(
+            self.notification_delivery_projection, True, "notification_delivery_projection"
+        )
+        _display_bool(self.safe_card_snapshot_only, True, "safe_card_snapshot_only")
+        _display_bool(self.rendering_authority, False, "rendering_authority")
+        _display_bool(self.provider_call_authority, False, "provider_call_authority")
+        if self.source_family not in _DISPLAY_REASON_BY_PURPOSE:
+            raise ValueError("listing card source family is not supported")
+        if self.reason_class != _DISPLAY_REASON_BY_PURPOSE[self.source_family]:
+            raise ValueError("listing card reason class mismatch")
+        return self
+
+
+class TelegramListingDisplayHandoff(_TelegramContract):
+    telegram_listing_display_handoff_id: str
+    metadata: ContractMetadata
+    projection_decision_reference_id: str
+    projection_status: _NotificationListingCardProjectionStatusValue
+    listing_reference_ids: tuple[str, ...]
+    listing_card_reference_ids: tuple[str, ...]
+    cards: tuple[TelegramListingCardDisplaySnapshot, ...]
+    listing_references_preserved: bool
+    optional_fields_missing_allowed: bool
+    display_rendering_authorized: bool
+    delivery_attempt_authorized: bool
+    provider_mapping_authorized: bool
+    reason_codes: tuple[str, ...]
+    evidence_reference_ids: tuple[str, ...]
+    notification_delivery_projection: Literal[True] = True
+    safe_reference_snapshot_only: Literal[True] = True
+    rendering_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _exact_metadata(cls, value: object) -> object:
+        if type(value) is not ContractMetadata:
+            raise ValueError("metadata must be an exact public contract object")
+        return value
+
+    @field_validator("cards", mode="before")
+    @classmethod
+    def _exact_cards(cls, value: object) -> object:
+        if type(value) is not tuple or any(
+            type(item) is not TelegramListingCardDisplaySnapshot for item in value
+        ):
+            raise ValueError("cards must contain exact display snapshots")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_handoff(self) -> "TelegramListingDisplayHandoff":
+        for name in ("telegram_listing_display_handoff_id", "projection_decision_reference_id"):
+            _display_text(getattr(self, name), name)
+        _display_exact(self.metadata, ContractMetadata, "metadata")
+        _display_tuple(self.listing_reference_ids, "listing_reference_ids")
+        _display_tuple(self.listing_card_reference_ids, "listing_card_reference_ids")
+        _display_tuple(self.reason_codes, "reason_codes")
+        _display_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        _display_exact(self.cards, tuple, "cards")
+        if (
+            tuple(c.listing_reference_id for c in self.cards) != self.listing_reference_ids
+            or tuple(c.listing_card_reference_id for c in self.cards)
+            != self.listing_card_reference_ids
+        ):
+            raise ValueError("cards must preserve exact listing and card reference order")
+        if self.projection_status == "ACCEPTED_FIELDS" and (
+            not self.cards or not any(c.field_facts for c in self.cards)
+        ):
+            raise ValueError("accepted fields requires field facts")
+        if self.projection_status == "ACCEPTED_REFERENCE_ONLY" and (
+            not self.cards or any(c.field_facts for c in self.cards)
+        ):
+            raise ValueError("reference-only requires cards without fields")
+        if self.projection_status == "NOT_APPLICABLE_NO_LISTINGS" and (
+            self.listing_reference_ids or self.listing_card_reference_ids or self.cards
+        ):
+            raise ValueError("no-listings handoff must be empty")
+        if self.reason_codes != _DISPLAY_STATUS_REASONS[self.projection_status]:
+            raise ValueError("reason codes must match projection status")
+        for name in (
+            "listing_references_preserved",
+            "optional_fields_missing_allowed",
+            "notification_delivery_projection",
+            "safe_reference_snapshot_only",
+        ):
+            _display_bool(getattr(self, name), True, name)
+        for name in (
+            "display_rendering_authorized",
+            "delivery_attempt_authorized",
+            "provider_mapping_authorized",
+            "rendering_authority",
+            "provider_call_authority",
+        ):
+            _display_bool(getattr(self, name), False, name)
+        return self
+
+
+class TelegramDisplayActionReference(_TelegramContract):
+    telegram_display_action_reference_id: str
+    action_class: TelegramDisplayClass
+    context_owner: _TelegramDisplayActionOwnerValue
+    source_subject_reference_id: str
+    safe_context_reference_id: str
+    action_policy_reference_id: str
+    evidence_reference_ids: tuple[str, ...]
+    safe_context_snapshot_only: Literal[True] = True
+    callback_payload_defined: Literal[False] = False
+    button_label_defined: Literal[False] = False
+    execution_authority: Literal[False] = False
+    authorization_source: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    mini_app_launch_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_action(self) -> "TelegramDisplayActionReference":
+        for name in (
+            "telegram_display_action_reference_id",
+            "source_subject_reference_id",
+            "safe_context_reference_id",
+            "action_policy_reference_id",
+        ):
+            _display_text(getattr(self, name), name)
+        _display_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        if self.action_class not in (
+            TelegramDisplayClass.FULL_RESULT_OPEN_ACTION,
+            TelegramDisplayClass.SHOW_MORE_ACTION,
+            TelegramDisplayClass.BEACON_SETTINGS_ACTION,
+        ):
+            raise ValueError("unsupported display action")
+        if self.context_owner not in ("NOTIFICATION_DELIVERY", "BEACON_MANAGEMENT"):
+            raise ValueError("unsupported action owner")
+        for name in ("safe_context_snapshot_only",):
+            _display_bool(getattr(self, name), True, name)
+        for name in (
+            "callback_payload_defined",
+            "button_label_defined",
+            "execution_authority",
+            "authorization_source",
+            "provider_call_authority",
+            "mini_app_launch_authority",
+        ):
+            _display_bool(getattr(self, name), False, name)
+        return self
+
+
+class TelegramDisplayBoundaryRequest(_TelegramContract):
+    telegram_display_boundary_request_id: str
+    metadata: ContractMetadata
+    outbound_mapping_outcome: TelegramOutboundMappingOutcome
+    listing_display_handoff: TelegramListingDisplayHandoff | None
+    action_references: tuple[TelegramDisplayActionReference, ...]
+    display_policy_reference_id: str
+    notification_delivery_authority_preserved: Literal[True] = True
+    all_listing_references_must_be_preserved: Literal[True] = True
+    single_summary_preferred: Literal[True] = True
+    per_listing_message_burst_authorized: Literal[False] = False
+    template_selection_authority: Literal[False] = False
+    message_text_rendering_authority: Literal[False] = False
+    pagination_size_selection_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    mini_app_implementation_authority: Literal[False] = False
+    business_success_authority: Literal[False] = False
+
+    @field_validator("metadata", "outbound_mapping_outcome", mode="before")
+    @classmethod
+    def _exact_request_objects(cls, value: object, info: ValidationInfo) -> object:
+        field_name = info.field_name
+        assert field_name is not None
+        expected = {
+            "metadata": ContractMetadata,
+            "outbound_mapping_outcome": TelegramOutboundMappingOutcome,
+        }[field_name]
+        if type(value) is not expected:
+            raise ValueError(f"{field_name} must be an exact public contract object")
+        return value
+
+    @field_validator("action_references", mode="before")
+    @classmethod
+    def _exact_actions(cls, value: object) -> object:
+        if type(value) is not tuple or any(
+            type(item) is not TelegramDisplayActionReference for item in value
+        ):
+            raise ValueError("action_references must contain exact action references")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_request(self) -> "TelegramDisplayBoundaryRequest":
+        _display_text(
+            self.telegram_display_boundary_request_id, "telegram_display_boundary_request_id"
+        )
+        _display_exact(self.metadata, ContractMetadata, "metadata")
+        _display_exact(
+            self.outbound_mapping_outcome,
+            TelegramOutboundMappingOutcome,
+            "outbound_mapping_outcome",
+        )
+        if self.outbound_mapping_outcome.metadata != self.metadata:
+            raise ValueError("metadata must match outbound outcome")
+        _display_exact(self.action_references, tuple, "action_references")
+        classes: set[TelegramDisplayClass] = set()
+        for action in self.action_references:
+            _display_exact(action, TelegramDisplayActionReference, "action reference")
+            if action.action_class in classes:
+                raise ValueError("action classes must be unique")
+            classes.add(action.action_class)
+        _display_text(self.display_policy_reference_id, "display_policy_reference_id")
+        for name in (
+            "notification_delivery_authority_preserved",
+            "all_listing_references_must_be_preserved",
+            "single_summary_preferred",
+        ):
+            _display_bool(getattr(self, name), True, name)
+        for name in (
+            "per_listing_message_burst_authorized",
+            "template_selection_authority",
+            "message_text_rendering_authority",
+            "pagination_size_selection_authority",
+            "provider_call_authority",
+            "mini_app_implementation_authority",
+            "business_success_authority",
+        ):
+            _display_bool(getattr(self, name), False, name)
+        return self
+
+
+class TelegramDisplayProjection(_TelegramContract):
+    telegram_display_projection_id: str
+    metadata: ContractMetadata
+    outbound_mapping_outcome_reference_id: str
+    outbound_request_intent_reference_id: str
+    notification_attempt_reference_id: str
+    notification_outbox_item_reference_id: str
+    delivery_purpose: _NotificationSourceFamilyValue
+    display_classes: tuple[TelegramDisplayClass, ...]
+    listing_reference_ids: tuple[str, ...]
+    listing_card_reference_ids: tuple[str, ...]
+    listing_cards: tuple[TelegramListingCardDisplaySnapshot, ...]
+    action_references: tuple[TelegramDisplayActionReference, ...]
+    total_listing_count: int
+    evidence_reference_ids: tuple[str, ...]
+    all_listing_references_preserved: Literal[True] = True
+    safe_field_values_only: Literal[True] = True
+    single_summary_preferred: Literal[True] = True
+    per_listing_message_burst_authorized: Literal[False] = False
+    message_text_rendered: Literal[False] = False
+    template_selected: Literal[False] = False
+    pagination_size_selected: Literal[False] = False
+    provider_call_authorized: Literal[False] = False
+    mini_app_implemented: Literal[False] = False
+    notification_delivery_mutation_authority: Literal[False] = False
+    business_success_authority: Literal[False] = False
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _exact_projection_metadata(cls, value: object) -> object:
+        if type(value) is not ContractMetadata:
+            raise ValueError("metadata must be an exact public contract object")
+        return value
+
+    @field_validator("listing_cards", "action_references", mode="before")
+    @classmethod
+    def _exact_projection_collections(cls, value: object, info: ValidationInfo) -> object:
+        field_name = info.field_name
+        assert field_name is not None
+        expected = {
+            "listing_cards": TelegramListingCardDisplaySnapshot,
+            "action_references": TelegramDisplayActionReference,
+        }[field_name]
+        if type(value) is not tuple or any(type(item) is not expected for item in value):
+            raise ValueError(f"{field_name} must contain exact public contract objects")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_projection(self) -> "TelegramDisplayProjection":
+        for name in (
+            "telegram_display_projection_id",
+            "outbound_mapping_outcome_reference_id",
+            "outbound_request_intent_reference_id",
+            "notification_attempt_reference_id",
+            "notification_outbox_item_reference_id",
+        ):
+            _display_text(getattr(self, name), name)
+        _display_exact(self.metadata, ContractMetadata, "metadata")
+        _display_tuple(self.display_classes, "display_classes", unique=False)
+        if any(type(c) is not TelegramDisplayClass for c in self.display_classes):
+            raise ValueError("display_classes must contain exact enum values")
+        _display_tuple(self.listing_reference_ids, "listing_reference_ids")
+        _display_tuple(self.listing_card_reference_ids, "listing_card_reference_ids")
+        _display_exact(self.listing_cards, tuple, "listing_cards")
+        _display_exact(self.action_references, tuple, "action_references")
+        if (
+            tuple(c.listing_reference_id for c in self.listing_cards) != self.listing_reference_ids
+            or tuple(c.listing_card_reference_id for c in self.listing_cards)
+            != self.listing_card_reference_ids
+        ):
+            raise ValueError("projection listing references are not preserved")
+        if type(self.total_listing_count) is not int or self.total_listing_count != len(
+            self.listing_reference_ids
+        ):
+            raise ValueError("total_listing_count mismatch")
+        _display_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        for name in (
+            "all_listing_references_preserved",
+            "safe_field_values_only",
+            "single_summary_preferred",
+        ):
+            _display_bool(getattr(self, name), True, name)
+        for name in (
+            "per_listing_message_burst_authorized",
+            "message_text_rendered",
+            "template_selected",
+            "pagination_size_selected",
+            "provider_call_authorized",
+            "mini_app_implemented",
+            "notification_delivery_mutation_authority",
+            "business_success_authority",
+        ):
+            _display_bool(getattr(self, name), False, name)
+        return self
+
+
+class TelegramDisplayBoundaryOutcome(_TelegramContract):
+    telegram_display_boundary_outcome_id: str
+    metadata: ContractMetadata
+    request: TelegramDisplayBoundaryRequest
+    state: TelegramDisplayProjectionState
+    reason_code: TelegramDisplayReasonCode
+    projection: TelegramDisplayProjection | None
+    blocked_display_class: TelegramDisplayClass | None
+    safe_diagnostic_reference_id: str | None
+    evidence_reference_ids: tuple[str, ...]
+    provider_call_performed: Literal[False] = False
+    message_text_rendered: Literal[False] = False
+    template_selected: Literal[False] = False
+    callback_payload_defined: Literal[False] = False
+    pagination_size_selected: Literal[False] = False
+    mini_app_implemented: Literal[False] = False
+    notification_delivery_mutation_authority: Literal[False] = False
+    business_success_authority: Literal[False] = False
+
+    @field_validator("metadata", "request", "projection", mode="before")
+    @classmethod
+    def _exact_outcome_objects(cls, value: object, info: ValidationInfo) -> object:
+        if value is None:
+            return value
+        field_name = info.field_name
+        assert field_name is not None
+        expected = {
+            "metadata": ContractMetadata,
+            "request": TelegramDisplayBoundaryRequest,
+            "projection": TelegramDisplayProjection,
+        }[field_name]
+        if type(value) is not expected:
+            raise ValueError(f"{field_name} must be an exact public contract object")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_outcome(self) -> "TelegramDisplayBoundaryOutcome":
+        _display_text(
+            self.telegram_display_boundary_outcome_id, "telegram_display_boundary_outcome_id"
+        )
+        _display_exact(self.metadata, ContractMetadata, "metadata")
+        _display_exact(self.request, TelegramDisplayBoundaryRequest, "request")
+        if self.metadata != self.request.metadata:
+            raise ValueError("metadata must match request")
+        _display_tuple(self.evidence_reference_ids, "evidence_reference_ids")
+        for name in (
+            "provider_call_performed",
+            "message_text_rendered",
+            "template_selected",
+            "callback_payload_defined",
+            "pagination_size_selected",
+            "mini_app_implemented",
+            "notification_delivery_mutation_authority",
+            "business_success_authority",
+        ):
+            _display_bool(getattr(self, name), False, name)
+        expected_state, expected_reason, expected_class, diagnostic = _classify_display(
+            self.request
+        )
+        if (self.state, self.reason_code, self.blocked_display_class) != (
+            expected_state,
+            expected_reason,
+            expected_class,
+        ):
+            raise ValueError("display outcome classification mismatch")
+        if expected_state is TelegramDisplayProjectionState.DISPLAY_PROJECTED:
+            if self.projection is None or self.safe_diagnostic_reference_id is not None:
+                raise ValueError("projected outcome requires projection and no diagnostic")
+            intent = self.request.outbound_mapping_outcome.request_intent
+            assert intent is not None
+            purpose_classes = {
+                "NEW_LISTINGS_FOUND": (
+                    TelegramDisplayClass.NEW_LISTINGS_SUMMARY,
+                    TelegramDisplayClass.NEW_LISTINGS_COMPACT_LIST,
+                ),
+                "RECOVERY_SCAN_COMPLETED": (
+                    (
+                        TelegramDisplayClass.RECOVERY_RESULT_MESSAGE,
+                        TelegramDisplayClass.NEW_LISTINGS_COMPACT_LIST,
+                    )
+                    if intent.safe_listing_reference_ids
+                    else (TelegramDisplayClass.RECOVERY_RESULT_MESSAGE,),
+                ),
+                "LOST_ANCHORS_RECOVERED": (
+                    TelegramDisplayClass.LOST_ANCHORS_RESTORED_MESSAGE,
+                    TelegramDisplayClass.NEW_LISTINGS_COMPACT_LIST,
+                ),
+                "NO_NEW_LISTINGS_STATUS": (TelegramDisplayClass.NO_NEW_STATUS_MESSAGE,),
+                "EXTERNAL_UNAVAILABLE_STATUS": (
+                    TelegramDisplayClass.AVITO_UNAVAILABLE_STATUS_MESSAGE,
+                ),
+            }[intent.delivery_purpose]
+            expected_classes = purpose_classes + tuple(
+                action.action_class for action in self.request.action_references
+            )
+            if self.projection.display_classes != expected_classes:
+                raise ValueError("display class order mismatch")
+            if self.projection.metadata != self.metadata:
+                raise ValueError("projection metadata mismatch")
+            if (
+                self.projection.outbound_mapping_outcome_reference_id
+                != self.request.outbound_mapping_outcome.telegram_outbound_mapping_outcome_id
+            ):
+                raise ValueError("projection outcome lineage mismatch")
+        else:
+            if self.projection is not None or self.safe_diagnostic_reference_id is None:
+                raise ValueError("blocked outcome requires diagnostic and no projection")
+        _display_text(
+            self.safe_diagnostic_reference_id, "safe_diagnostic_reference_id"
+        ) if self.safe_diagnostic_reference_id is not None else None
+        if diagnostic is False:
+            raise ValueError("classification diagnostic requirement violated")
+        return self
+
+
+def _classify_display(
+    request: TelegramDisplayBoundaryRequest,
+) -> tuple[
+    TelegramDisplayProjectionState, TelegramDisplayReasonCode, TelegramDisplayClass | None, bool
+]:
+    outcome = request.outbound_mapping_outcome
+    intent = outcome.request_intent
+    h = outcome.request.notification_attempt_handoff
+    if (
+        outcome.state is not TelegramOutboundMappingState.REQUEST_PREPARED
+        or outcome.reason_code
+        is not TelegramOutboundMappingReasonCode.TELEGRAM_PRIVATE_CHAT_REQUEST_PREPARED
+        or intent is None
+        or outcome.safe_diagnostic_reference_id is not None
+        or any(
+            getattr(outcome, n) is True
+            for n in (
+                "provider_call_performed",
+                "provider_effect_committed",
+                "notification_delivery_accepted",
+                "human_read_or_click_proven",
+                "retry_authorized",
+                "generic_outbox_mutation_authority",
+                "notification_lifecycle_mutation_authority",
+            )
+        )
+    ):
+        return (
+            TelegramDisplayProjectionState.DISPLAY_BLOCKED,
+            TelegramDisplayReasonCode.OUTBOUND_REQUEST_NOT_PREPARED,
+            None,
+            True,
+        )
+    handoff = request.listing_display_handoff
+    if (
+        intent.metadata != outcome.metadata
+        or outcome.request.metadata != intent.metadata
+        or intent.notification_attempt_id != h.attempt_reference_id
+        or intent.notification_outbox_item_id != h.outbox_item_reference_id
+        or intent.notification_delivery_plan_id != h.delivery_plan_reference_id
+        or (handoff is not None and handoff.metadata != outcome.metadata)
+    ):
+        return (
+            TelegramDisplayProjectionState.AMBIGUOUS,
+            TelegramDisplayReasonCode.OUTBOUND_DISPLAY_SCOPE_MISMATCH,
+            None,
+            True,
+        )
+    for action in request.action_references:
+        if (
+            action.action_class is TelegramDisplayClass.BEACON_SETTINGS_ACTION
+            and action.context_owner != "BEACON_MANAGEMENT"
+        ):
+            return (
+                TelegramDisplayProjectionState.AMBIGUOUS,
+                TelegramDisplayReasonCode.OUTBOUND_DISPLAY_SCOPE_MISMATCH,
+                None,
+                True,
+            )
+        if (
+            action.action_class
+            in (TelegramDisplayClass.FULL_RESULT_OPEN_ACTION, TelegramDisplayClass.SHOW_MORE_ACTION)
+            and action.context_owner != "NOTIFICATION_DELIVERY"
+        ):
+            return (
+                TelegramDisplayProjectionState.AMBIGUOUS,
+                TelegramDisplayReasonCode.OUTBOUND_DISPLAY_SCOPE_MISMATCH,
+                None,
+                True,
+            )
+    purpose = intent.delivery_purpose
+    if purpose not in _DISPLAY_PURPOSES:
+        return (
+            TelegramDisplayProjectionState.DISPLAY_BLOCKED,
+            TelegramDisplayReasonCode.UNSUPPORTED_DELIVERY_PURPOSE,
+            TelegramDisplayClass.UNSUPPORTED_CONTENT_BLOCKED,
+            True,
+        )
+    refs = intent.safe_listing_reference_ids
+    card_refs = intent.safe_listing_card_reference_ids
+    if (
+        (refs and handoff is None)
+        or (handoff is not None and tuple(handoff.listing_reference_ids) != refs)
+        or (handoff is not None and tuple(handoff.listing_card_reference_ids) != card_refs)
+    ):
+        return (
+            TelegramDisplayProjectionState.INVALID_CONTENT,
+            TelegramDisplayReasonCode.SAFE_LISTING_DISPLAY_MISMATCH,
+            None,
+            True,
+        )
+    if handoff is not None:
+        for card in handoff.cards:
+            if (
+                card.account_reference_id != h.outbox_account_reference_id
+                or card.beacon_reference_id != h.outbox_beacon_reference_id
+                or card.correlation_id != intent.correlation_id
+                or card.causation_id != intent.causation_id
+                or card.source_family != purpose
+            ):
+                return (
+                    TelegramDisplayProjectionState.INVALID_CONTENT,
+                    TelegramDisplayReasonCode.SAFE_LISTING_DISPLAY_MISMATCH,
+                    None,
+                    True,
+                )
+    if purpose in ("NO_NEW_LISTINGS_STATUS", "EXTERNAL_UNAVAILABLE_STATUS") and (
+        refs or card_refs or handoff is not None
+    ):
+        return (
+            TelegramDisplayProjectionState.INVALID_CONTENT,
+            TelegramDisplayReasonCode.SAFE_LISTING_DISPLAY_MISMATCH,
+            None,
+            True,
+        )
+    if purpose in ("NEW_LISTINGS_FOUND", "LOST_ANCHORS_RECOVERED") and not refs:
+        return (
+            TelegramDisplayProjectionState.INVALID_CONTENT,
+            TelegramDisplayReasonCode.SAFE_LISTING_DISPLAY_MISMATCH,
+            None,
+            True,
+        )
+    if purpose == "RECOVERY_SCAN_COMPLETED" and refs and handoff is None:
+        return (
+            TelegramDisplayProjectionState.INVALID_CONTENT,
+            TelegramDisplayReasonCode.SAFE_LISTING_DISPLAY_MISMATCH,
+            None,
+            True,
+        )
+    for action in request.action_references:
+        if action.action_class in (
+            TelegramDisplayClass.FULL_RESULT_OPEN_ACTION,
+            TelegramDisplayClass.SHOW_MORE_ACTION,
+        ) and (
+            not refs or action.source_subject_reference_id != intent.notification_outbox_item_id
+        ):
+            return (
+                TelegramDisplayProjectionState.INVALID_CONTENT,
+                TelegramDisplayReasonCode.SAFE_LISTING_DISPLAY_MISMATCH,
+                None,
+                True,
+            )
+        if action.action_class is TelegramDisplayClass.BEACON_SETTINGS_ACTION and (
+            h.outbox_beacon_reference_id is None
+            or action.source_subject_reference_id != h.outbox_beacon_reference_id
+        ):
+            return (
+                TelegramDisplayProjectionState.INVALID_CONTENT,
+                TelegramDisplayReasonCode.SAFE_LISTING_DISPLAY_MISMATCH,
+                None,
+                True,
+            )
+    return (
+        TelegramDisplayProjectionState.DISPLAY_PROJECTED,
+        {
+            "NEW_LISTINGS_FOUND": TelegramDisplayReasonCode.NEW_LISTINGS_DISPLAY_PROJECTED,
+            "RECOVERY_SCAN_COMPLETED": TelegramDisplayReasonCode.RECOVERY_RESULT_DISPLAY_PROJECTED,
+            "LOST_ANCHORS_RECOVERED": (
+                TelegramDisplayReasonCode.LOST_ANCHORS_RESTORED_DISPLAY_PROJECTED
+            ),
+            "NO_NEW_LISTINGS_STATUS": TelegramDisplayReasonCode.NO_NEW_STATUS_DISPLAY_PROJECTED,
+            "EXTERNAL_UNAVAILABLE_STATUS": (
+                TelegramDisplayReasonCode.AVITO_UNAVAILABLE_STATUS_DISPLAY_PROJECTED
+            ),
+        }[purpose],
+        None,
+        True,
+    )
+
+
 class TelegramIdentityResolutionState(str, Enum):
     RESOLVED_ACCOUNT = "RESOLVED_ACCOUNT"
     NEW_ACCOUNT_REQUESTED = "NEW_ACCOUNT_REQUESTED"
@@ -2976,6 +3818,16 @@ __all__ = [
     "TelegramOutboundMappingRequest",
     "TelegramOutboundRequestIntent",
     "TelegramOutboundMappingOutcome",
+    "TelegramDisplayClass",
+    "TelegramDisplayProjectionState",
+    "TelegramDisplayReasonCode",
+    "TelegramSafeListingFieldFact",
+    "TelegramListingCardDisplaySnapshot",
+    "TelegramListingDisplayHandoff",
+    "TelegramDisplayActionReference",
+    "TelegramDisplayBoundaryRequest",
+    "TelegramDisplayProjection",
+    "TelegramDisplayBoundaryOutcome",
     "TelegramChatSurfaceClass",
     "TelegramChatSurfaceAdmissionState",
     "TelegramChatSurfaceReasonCode",
