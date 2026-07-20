@@ -1,0 +1,800 @@
+{
+  "schema_version": "1.0",
+  "module": "11-admin-and-support",
+  "accepted_through_step": "AS-10",
+  "synthetic_only": true,
+  "contains_real_user_data": false,
+  "contains_real_support_notes": false,
+  "contains_secret_material": false,
+  "contains_raw_provider_payload": false,
+  "contains_payment_document": false,
+  "contains_personal_or_legal_data": false,
+  "network_required": false,
+  "provider_api_required": false,
+  "database_required": false,
+  "vectors": [
+    {
+      "fixture_id": "FX-AS11-CORE-FROZEN-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-001",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-EXTRA-FORBID-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-002",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-BLANK-REFERENCE-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-003",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-DUPLICATE-EVIDENCE-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-004",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-ACTOR-AUTHORITY-FLAGS-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-005",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-SUBJECT-REDACTION-FLAGS-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-006",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-EVIDENCE-PRIVACY-FLAGS-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-007",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-COMMAND-PREPARATION-MATRIX-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-008",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-AUDIT-APPEND-MATRIX-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-009",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CORE-ESCALATION-RESOLUTION-MATRIX-001",
+      "roadmap_step": "AS-10",
+      "category": "CORE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-010",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-OWNER-MAPPING-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-011",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-AVAILABLE-FRESH-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-012",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-STALE-MATRIX-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-013",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-UNKNOWN-MATRIX-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-014",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-AMBIGUITY-MATRIX-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-015",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-FORBIDDEN-NO-SUMMARY-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-016",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-PROJECTION-LINKAGE-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-017",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-READ-EXPLANATION-NO-GUESS-001",
+      "roadmap_step": "AS-10",
+      "category": "READ",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-018",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ROLE-ASSIGN-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ROLE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-019",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ROLE-CHANGE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ROLE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-020",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ROLE-REVOKE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ROLE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-021",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ROLE-WRONG-OWNER-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "ROLE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-022",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ROLE-PROVIDER-UI-AUTHORITY-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "ROLE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-023",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ROLE-OUTCOME-AUDIT-CAUSATION-001",
+      "roadmap_step": "AS-10",
+      "category": "ROLE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-024",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-TARIFF-CREATE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "TARIFF",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-025",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-TARIFF-EDIT-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "TARIFF",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-026",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-TARIFF-PUBLISH-FUTURE-ONLY-001",
+      "roadmap_step": "AS-10",
+      "category": "TARIFF",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-027",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-TARIFF-DEACTIVATE-FUTURE-ONLY-001",
+      "roadmap_step": "AS-10",
+      "category": "TARIFF",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-028",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-TARIFF-EXISTING-USERS-POLICY-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "TARIFF",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-029",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-TARIFF-UNRESOLVED-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "TARIFF",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-030",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-TARIFF-OUTCOME-AUDIT-CAUSATION-001",
+      "roadmap_step": "AS-10",
+      "category": "TARIFF",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-031",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-ASSIGN-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-032",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-CHANGE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-033",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-EXTEND-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-034",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-CANCEL-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-035",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-MANUAL-GRANT-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-036",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-MANUAL-REVOKE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-037",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-OPEN-INTERVAL-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-038",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ACCESS-PAYMENT-PROVIDER-UI-AUTHORITY-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "ACCESS",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-039",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-SUMMARY-FRESH-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-040",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-SUMMARY-STALE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-041",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-RESET-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-042",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-REBASE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-043",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-RECOVERY-REVIEW-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-044",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-STALE-PREPARED-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-045",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-CONFIRMED-NEW-AUTHORITY-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-046",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-ANCHOR-RAW-PAYLOAD-ARCHIVE-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "ANCHOR",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-047",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-SUMMARY-FRESH-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-048",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-PATCH-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-049",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-PATCH-EMPTY-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-050",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-PATCH-DUPLICATE-FIELD-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-051",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-UNSUPPORTED-POLICY-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-052",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-STALE-FULL-OVERWRITE-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-053",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-RELOAD-REQUIRED-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-054",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-BEACON-RAW-SOURCE-PARSER-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "BEACON",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-055",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-OPEN-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-056",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-START-WORK-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-057",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-NOTE-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-058",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-NOTE-SECRET-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-059",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-NOTE-EDIT-DELETE-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-060",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-LIFECYCLE-MISMATCH-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-061",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-OUTCOME-AUDIT-EVIDENCE-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-062",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-CASE-CUSTOMER-EXPLANATION-SEPARATE-001",
+      "roadmap_step": "AS-10",
+      "category": "CASE",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-063",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-SUMMARY-OUTBOX-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-064",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-SUMMARY-ATTEMPT-VALID-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-065",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-PROVIDER-OUTCOME-OPTIONAL-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-066",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-NONAUTHORITATIVE-REF-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-067",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-RECONCILIATION-POLICY-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-068",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-BOUNDED-RETRY-POLICY-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-069",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-SUPPRESSION-POLICY-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-070",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-CANCELLATION-POLICY-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-071",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-POLICY-COLLISION-BLOCKED-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-072",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-AMBIGUITY-RECONCILIATION-FIRST-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-073",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-BOUNDED-RETRY-FAILED-ONLY-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-074",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-NO-SEND-RESEND-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-075",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-ACCEPTED-OUTCOME-MAPPING-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-076",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-UNCHANGED-DISTINCT-POST-REFS-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-077",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-AUDIT-CAUSATION-EVIDENCE-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-078",
+      "expected_result": "PASS",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-NOTIFICATION-NO-PROVIDER-SUCCESS-INFERENCE-001",
+      "roadmap_step": "AS-10",
+      "category": "NOTIFICATION",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-079",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-EXACT-PRODUCTION-FILE-SET-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-080",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-IMPORT-ISOLATION-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-081",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-NO-NETWORK-CALLS-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-082",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-NO-RUNTIME-CLASSES-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-083",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-SENSITIVE-FIELDS-LITERAL-SAFE-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-084",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-EXACT-EXPORTS-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-085",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-RELOAD-NO-SIDE-EFFECT-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-086",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    },
+    {
+      "fixture_id": "FX-AS11-STATIC-FIXTURE-PAYLOAD-FREE-001",
+      "roadmap_step": "AS-10",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.admin_and_support",
+      "scenario": "synthetic-087",
+      "expected_result": "STATIC_BLOCK",
+      "synthetic_only": true
+    }
+  ]
+}
