@@ -122,8 +122,16 @@ def _current_reference_values(summary: AdminNotificationCurrentStateSummary) -> 
         summary.notification_history_entry_reference_id,
         summary.notification_security_decision_reference_id,
         summary.notification_deduplication_reference_id,
-        summary.provider_outcome_acceptance_reference_id,
         summary.delivery_state_class,
+    )
+
+
+def _all_current_reference_values(
+    summary: AdminNotificationCurrentStateSummary,
+) -> tuple[object, ...]:
+    return (
+        *_current_reference_values(summary),
+        summary.provider_outcome_acceptance_reference_id,
     )
 
 
@@ -212,7 +220,7 @@ class AdminNotificationCurrentStateSummary(_AdminNotificationContract):
             SupportSafeSummaryState.UNKNOWN,
             SupportSafeSummaryState.AMBIGUOUS,
             SupportSafeSummaryState.UNSUPPORTED,
-        } and any(value is not None for value in _current_reference_values(self)):
+        } and any(value is not None for value in _all_current_reference_values(self)):
             raise ValueError("non-authoritative summary carries current references")
         if (
             self.delivery_state_class
@@ -264,26 +272,53 @@ class AdminNotificationInterventionPolicyReference(_AdminNotificationContract):
 
     @model_validator(mode="after")
     def _validate_policy(self) -> AdminNotificationInterventionPolicyReference:
-        refs = (
-            self.reconciliation_obligation_reference_id,
-            self.reconciliation_clearance_reference_id,
-            self.retry_policy_reference_id,
-            self.suppression_policy_reference_id,
-            self.cancellation_policy_reference_id,
-        )
         if self.action_kind is AdminNotificationSupportActionKind.REQUEST_RECONCILIATION:
-            expected: tuple[str | None, ...] = (self.reconciliation_obligation_reference_id,)
+            if self.reconciliation_obligation_reference_id is None or any(
+                value is not None
+                for value in (
+                    self.reconciliation_clearance_reference_id,
+                    self.retry_policy_reference_id,
+                    self.suppression_policy_reference_id,
+                    self.cancellation_policy_reference_id,
+                )
+            ):
+                raise ValueError("policy references do not match action matrix")
         elif (
             self.action_kind
             is AdminNotificationSupportActionKind.REQUEST_BOUNDED_RETRY_AFTER_POLICY
         ):
-            expected = (self.reconciliation_clearance_reference_id, self.retry_policy_reference_id)
+            if (
+                self.reconciliation_clearance_reference_id is None
+                or self.retry_policy_reference_id is None
+                or any(
+                    value is not None
+                    for value in (
+                        self.reconciliation_obligation_reference_id,
+                        self.suppression_policy_reference_id,
+                        self.cancellation_policy_reference_id,
+                    )
+                )
+            ):
+                raise ValueError("policy references do not match action matrix")
         elif self.action_kind is AdminNotificationSupportActionKind.REQUEST_SUPPRESSION:
-            expected = (self.suppression_policy_reference_id,)
-        else:
-            expected = (self.cancellation_policy_reference_id,)
-        if any(value is None for value in expected) or any(
-            value is not None for value in refs if value not in expected
+            if self.suppression_policy_reference_id is None or any(
+                value is not None
+                for value in (
+                    self.reconciliation_obligation_reference_id,
+                    self.reconciliation_clearance_reference_id,
+                    self.retry_policy_reference_id,
+                    self.cancellation_policy_reference_id,
+                )
+            ):
+                raise ValueError("policy references do not match action matrix")
+        elif self.cancellation_policy_reference_id is None or any(
+            value is not None
+            for value in (
+                self.reconciliation_obligation_reference_id,
+                self.reconciliation_clearance_reference_id,
+                self.retry_policy_reference_id,
+                self.suppression_policy_reference_id,
+            )
         ):
             raise ValueError("policy references do not match action matrix")
         return self
@@ -545,6 +580,7 @@ class AdminNotificationSupportActionOutcome(_AdminNotificationContract):
                 self.notification_deduplication_decision_reference_id is None
                 or any(value is None for value in post)
                 or any(value is not None for value in effects)
+                or len(set(post)) != 3
             ):
                 raise ValueError("unchanged outcome matrix mismatch")
         elif self.notification_deduplication_decision_reference_id is not None or any(
