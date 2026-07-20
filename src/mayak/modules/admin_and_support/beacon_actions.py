@@ -354,7 +354,7 @@ class AdminBeaconSupportActionOutcome(_AdminBeaconSupportContract):
             != self.beacon_patch_save_decision_reference_id
             or audit.state is not _AUDIT_STATE_BY_OUTCOME[self.state]
             or audit.metadata.correlation_id != self.metadata.correlation_id
-            or audit.metadata.causation_id != self.metadata.causation_id
+            or audit.metadata.causation_id != self.metadata.message_id
         ):
             raise ValueError("audit record does not align with outcome and envelope")
         return self
