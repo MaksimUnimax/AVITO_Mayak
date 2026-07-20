@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -15,6 +15,9 @@ from mayak.contracts import (
 
 class _AdminSupportContract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+
+_NonEmptyReferenceId = Annotated[str, Field(min_length=1)]
 
 
 class SupportCaseState(str, Enum):
@@ -113,8 +116,9 @@ class SupportEscalationState(str, Enum):
 
 
 def _reject_duplicate_ids(values: tuple[str, ...], label: str) -> None:
-    non_empty = tuple(value for value in values if value)
-    if len(non_empty) != len(set(non_empty)):
+    if any(not value for value in values):
+        raise ValueError(f"{label} identifiers must be non-empty")
+    if len(values) != len(set(values)):
         raise ValueError(f"duplicate {label} identifiers are not allowed")
 
 
@@ -163,7 +167,7 @@ class SupportCase(_AdminSupportContract):
     primary_subject: SupportSubjectReference
     state: SupportCaseState
     reason_code: str = Field(min_length=1)
-    work_item_ids: tuple[str, ...] = ()
+    work_item_ids: tuple[_NonEmptyReferenceId, ...] = ()
     evidence_references: tuple[SupportEvidenceReference, ...] = ()
     internal_record: Literal[True] = True
     business_state_authority: Literal[False] = False
@@ -214,7 +218,7 @@ class SupportReadModel(_AdminSupportContract):
     state: SupportReadState
     freshness: SupportFreshnessState
     summary_reference_id: str | None = Field(default=None, min_length=1)
-    provenance_reference_ids: tuple[str, ...] = ()
+    provenance_reference_ids: tuple[_NonEmptyReferenceId, ...] = ()
     evidence_references: tuple[SupportEvidenceReference, ...] = ()
     redacted: Literal[True] = True
     contains_secret_material: Literal[False] = False
