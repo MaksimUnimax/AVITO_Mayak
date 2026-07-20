@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from mayak.contracts import ContractMetadata
+from mayak.contracts.metadata import ContractMetadata
 from mayak.modules.admin_and_support.contracts import (
     SupportActionAuditRecord,
     SupportActionAuditState,
@@ -157,6 +157,8 @@ class AdminBeaconCurrentStateSummary(_AdminBeaconSupportContract):
             tuple(item.support_evidence_reference_id for item in self.evidence_references),
             "evidence-reference",
         )
+        if not self.evidence_references:
+            raise ValueError("summary requires evidence")
         return self
 
 
@@ -243,6 +245,11 @@ class AdminBeaconSupportActionRequest(_AdminBeaconSupportContract):
             tuple(item.field_reference_id for item in self.patch_field_references),
             "field-reference",
         )
+        if any(
+            field.support_state is not AdminBeaconPatchFieldSupportState.SUPPORTED
+            for field in self.patch_field_references
+        ) and envelope.state is not SupportCommandPreparationState.POLICY_BLOCKED:
+            raise ValueError("non-supported patch requires policy-blocked envelope")
         if (
             self.expected_current_configuration_reference_id
             != summary.current_configuration_reference_id
@@ -266,11 +273,6 @@ class AdminBeaconSupportActionRequest(_AdminBeaconSupportContract):
                 raise ValueError("prepared request requires expected current references")
             if not summary.provenance_reference_ids or not summary.evidence_references:
                 raise ValueError("prepared request requires summary provenance and evidence")
-            if any(
-                field.support_state is not AdminBeaconPatchFieldSupportState.SUPPORTED
-                for field in self.patch_field_references
-            ):
-                raise ValueError("prepared request cannot contain unsupported field state")
         return self
 
 
