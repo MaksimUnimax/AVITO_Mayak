@@ -447,9 +447,14 @@ class WebChannelSurfaceResult(_WebChannelLinkingContract):
             self.channel_projections
         ) or len({p.channel for p in self.channel_projections}) != len(self.channel_projections):
             raise ValueError("projection IDs and channels must be unique")
-        if {p.channel for p in self.channel_projections} != set(
-            self.query.requested_channels
-        ) or any(p.account_id != self.query.account_id for p in self.channel_projections):
+        if self.state not in {
+            WebChannelSurfaceResultState.FORBIDDEN,
+            WebChannelSurfaceResultState.NOT_FOUND_SAFE,
+        } and (
+            {p.channel for p in self.channel_projections}
+            != set(self.query.requested_channels)
+            or any(p.account_id != self.query.account_id for p in self.channel_projections)
+        ):
             raise ValueError("projections must exactly cover the requested single account")
         if any(
             p.owning_adapter_module_id != _ADAPTER_BY_CHANNEL[p.channel]
