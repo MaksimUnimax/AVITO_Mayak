@@ -57,6 +57,11 @@ FORBIDDEN_WORDS = frozenset(
         "subprocess",
         "socket",
         "getenv",
+        "client",
+        "handler",
+        "session_store",
+        "environment",
+        "filesystem",
     }
 )
 SENSITIVE_FIELDS = frozenset(
@@ -71,6 +76,12 @@ SENSITIVE_FIELDS = frozenset(
         "stack_trace",
         "secret",
         "personal_data",
+        "one_time_code",
+        "session_material",
+        "environment_secret",
+        "raw_avito_payload",
+        "internal_exception",
+        "unnecessary_personal_data",
     }
 )
 
@@ -93,6 +104,15 @@ def violations(source: str) -> list[str]:
             and node.module.split(".")[0] in FORBIDDEN_IMPORT_ROOTS
         ):
             found.append(f"import:{node.module}")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name.lower() in FORBIDDEN_WORDS:
+                found.append(f"implementation:{node.name}")
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id.lower() in SENSITIVE_FIELDS:
+                annotation = ast.unparse(node.annotation)
+                default = ast.unparse(node.value) if node.value is not None else None
+                if annotation != "Literal[False]" or default != "False":
+                    found.append(f"sensitive:{node.target.id}")
         elif (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)
@@ -105,6 +125,14 @@ def violations(source: str) -> list[str]:
             and node.func.attr in {"getenv", "run", "Popen", "call", "check_call", "connect"}
         ):
             found.append(f"call:{node.func.attr}")
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr in {"import_module", "getattr", "setattr", "__build_class__"}:
+                found.append(f"reflection:{node.func.attr}")
+        elif isinstance(node, ast.Attribute) and node.attr in {"git", "diff", "index", "status"}:
+            found.append(f"worktree:{node.attr}")
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if ".git" in node.value or "git status" in node.value or "git diff" in node.value:
+                found.append("worktree:git")
     return found
 
 
@@ -143,10 +171,31 @@ def test_required_unsafe_and_safe_synthetic_snippets() -> None:
         "from fastapi import FastAPI\n",
         "import subprocess\n",
         "x = eval('1')\n",
+        "class Client: pass\n",
+        "secret: str = 'x'\n",
+        "import importlib\nimportlib.import_module('x')\n",
+        "from pathlib import Path\nPath('.git').read_text()\n",
+        "import subprocess\nsubprocess.run(['git', 'status'])\n",
     )
     safe = "from typing import Literal\nallowed: Literal[False] = False\n"
     assert all(violations(snippet) for snippet in unsafe)
     assert violations(safe) == []
+
+
+@pytest.mark.parametrize(
+    "snippet,label",
+    (
+        ("class Gateway: pass\n", "implementation:Gateway"),
+        ("def repository(): pass\n", "implementation:repository"),
+        ("password: str = 'x'\n", "sensitive:password"),
+        ("token: Literal[False] = True\n", "sensitive:token"),
+        ("x = compile('1', 'x', 'exec')\n", "call:compile"),
+        ("importlib.import_module('x')\n", "reflection:import_module"),
+        ("Path('.git/index')\n", "worktree:git"),
+    ),
+)
+def test_detector_has_literal_negative_controls(snippet: str, label: str) -> None:
+    assert label in violations(snippet)
 
 
 def test_every_direct_semantic_model_has_literal_safety_config() -> None:

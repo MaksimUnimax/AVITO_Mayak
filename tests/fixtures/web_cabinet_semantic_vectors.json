@@ -109,7 +109,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-COMMAND-006",
+      "fixture_id": "FX-WC12-COMMAND-001",
       "roadmap_step": "WC-03",
       "category": "COMMAND",
       "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
@@ -121,7 +121,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-COMMAND-007",
+      "fixture_id": "FX-WC12-COMMAND-002",
       "roadmap_step": "WC-03",
       "category": "COMMAND",
       "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
@@ -133,7 +133,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-COMMAND-008",
+      "fixture_id": "FX-WC12-COMMAND-003",
       "roadmap_step": "WC-03",
       "category": "COMMAND",
       "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
@@ -145,7 +145,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-COMMAND-009",
+      "fixture_id": "FX-WC12-COMMAND-004",
       "roadmap_step": "WC-03",
       "category": "COMMAND",
       "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
@@ -157,7 +157,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-COMMAND-010",
+      "fixture_id": "FX-WC12-COMMAND-005",
       "roadmap_step": "WC-03",
       "category": "COMMAND",
       "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
@@ -169,7 +169,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-AUTH-011",
+      "fixture_id": "FX-WC12-AUTH-001",
       "roadmap_step": "WC-04",
       "category": "AUTH",
       "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
@@ -181,7 +181,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-AUTH-012",
+      "fixture_id": "FX-WC12-AUTH-002",
       "roadmap_step": "WC-04",
       "category": "AUTH",
       "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
@@ -193,7 +193,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-AUTH-013",
+      "fixture_id": "FX-WC12-AUTH-003",
       "roadmap_step": "WC-04",
       "category": "AUTH",
       "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
@@ -205,7 +205,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-AUTH-014",
+      "fixture_id": "FX-WC12-AUTH-004",
       "roadmap_step": "WC-04",
       "category": "AUTH",
       "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
@@ -217,7 +217,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-AUTH-015",
+      "fixture_id": "FX-WC12-AUTH-005",
       "roadmap_step": "WC-04",
       "category": "AUTH",
       "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
@@ -229,7 +229,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ENTITLEMENT-016",
+      "fixture_id": "FX-WC12-ENTITLEMENT-001",
       "roadmap_step": "WC-05",
       "category": "ENTITLEMENT",
       "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
@@ -241,7 +241,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ENTITLEMENT-017",
+      "fixture_id": "FX-WC12-ENTITLEMENT-002",
       "roadmap_step": "WC-05",
       "category": "ENTITLEMENT",
       "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
@@ -253,7 +253,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ENTITLEMENT-018",
+      "fixture_id": "FX-WC12-ENTITLEMENT-003",
       "roadmap_step": "WC-05",
       "category": "ENTITLEMENT",
       "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
@@ -265,7 +265,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ENTITLEMENT-019",
+      "fixture_id": "FX-WC12-ENTITLEMENT-004",
       "roadmap_step": "WC-05",
       "category": "ENTITLEMENT",
       "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
@@ -277,7 +277,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ENTITLEMENT-020",
+      "fixture_id": "FX-WC12-ENTITLEMENT-005",
       "roadmap_step": "WC-05",
       "category": "ENTITLEMENT",
       "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
@@ -289,7 +289,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-HISTORY-021",
+      "fixture_id": "FX-WC12-HISTORY-001",
       "roadmap_step": "WC-06",
       "category": "HISTORY",
       "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
@@ -301,7 +301,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-HISTORY-022",
+      "fixture_id": "FX-WC12-HISTORY-002",
       "roadmap_step": "WC-06",
       "category": "HISTORY",
       "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
@@ -313,7 +313,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-HISTORY-023",
+      "fixture_id": "FX-WC12-HISTORY-003",
       "roadmap_step": "WC-06",
       "category": "HISTORY",
       "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
@@ -325,7 +325,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-HISTORY-024",
+      "fixture_id": "FX-WC12-HISTORY-004",
       "roadmap_step": "WC-06",
       "category": "HISTORY",
       "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
@@ -337,7 +337,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-HISTORY-025",
+      "fixture_id": "FX-WC12-HISTORY-005",
       "roadmap_step": "WC-06",
       "category": "HISTORY",
       "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
@@ -349,7 +349,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATUS-026",
+      "fixture_id": "FX-WC12-STATUS-001",
       "roadmap_step": "WC-07",
       "category": "STATUS",
       "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
@@ -361,7 +361,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATUS-027",
+      "fixture_id": "FX-WC12-STATUS-002",
       "roadmap_step": "WC-07",
       "category": "STATUS",
       "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
@@ -373,7 +373,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATUS-028",
+      "fixture_id": "FX-WC12-STATUS-003",
       "roadmap_step": "WC-07",
       "category": "STATUS",
       "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
@@ -385,7 +385,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATUS-029",
+      "fixture_id": "FX-WC12-STATUS-004",
       "roadmap_step": "WC-07",
       "category": "STATUS",
       "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
@@ -397,7 +397,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATUS-030",
+      "fixture_id": "FX-WC12-STATUS-005",
       "roadmap_step": "WC-07",
       "category": "STATUS",
       "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
@@ -409,7 +409,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-CHANNEL-031",
+      "fixture_id": "FX-WC12-CHANNEL-001",
       "roadmap_step": "WC-08",
       "category": "CHANNEL",
       "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
@@ -421,7 +421,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-CHANNEL-032",
+      "fixture_id": "FX-WC12-CHANNEL-002",
       "roadmap_step": "WC-08",
       "category": "CHANNEL",
       "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
@@ -433,7 +433,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-CHANNEL-033",
+      "fixture_id": "FX-WC12-CHANNEL-003",
       "roadmap_step": "WC-08",
       "category": "CHANNEL",
       "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
@@ -445,7 +445,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-CHANNEL-034",
+      "fixture_id": "FX-WC12-CHANNEL-004",
       "roadmap_step": "WC-08",
       "category": "CHANNEL",
       "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
@@ -457,7 +457,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-CHANNEL-035",
+      "fixture_id": "FX-WC12-CHANNEL-005",
       "roadmap_step": "WC-08",
       "category": "CHANNEL",
       "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
@@ -469,7 +469,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ANALYTICS-036",
+      "fixture_id": "FX-WC12-ANALYTICS-001",
       "roadmap_step": "WC-09",
       "category": "ANALYTICS",
       "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
@@ -481,7 +481,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ANALYTICS-037",
+      "fixture_id": "FX-WC12-ANALYTICS-002",
       "roadmap_step": "WC-09",
       "category": "ANALYTICS",
       "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
@@ -493,7 +493,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ANALYTICS-038",
+      "fixture_id": "FX-WC12-ANALYTICS-003",
       "roadmap_step": "WC-09",
       "category": "ANALYTICS",
       "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
@@ -505,7 +505,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ANALYTICS-039",
+      "fixture_id": "FX-WC12-ANALYTICS-004",
       "roadmap_step": "WC-09",
       "category": "ANALYTICS",
       "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
@@ -517,7 +517,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-ANALYTICS-040",
+      "fixture_id": "FX-WC12-ANALYTICS-005",
       "roadmap_step": "WC-09",
       "category": "ANALYTICS",
       "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
@@ -529,7 +529,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-SUPPORT-041",
+      "fixture_id": "FX-WC12-SUPPORT-001",
       "roadmap_step": "WC-10",
       "category": "SUPPORT",
       "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
@@ -541,7 +541,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-SUPPORT-042",
+      "fixture_id": "FX-WC12-SUPPORT-002",
       "roadmap_step": "WC-10",
       "category": "SUPPORT",
       "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
@@ -553,7 +553,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-SUPPORT-043",
+      "fixture_id": "FX-WC12-SUPPORT-003",
       "roadmap_step": "WC-10",
       "category": "SUPPORT",
       "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
@@ -565,7 +565,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-SUPPORT-044",
+      "fixture_id": "FX-WC12-SUPPORT-004",
       "roadmap_step": "WC-10",
       "category": "SUPPORT",
       "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
@@ -577,7 +577,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-SUPPORT-045",
+      "fixture_id": "FX-WC12-SUPPORT-005",
       "roadmap_step": "WC-10",
       "category": "SUPPORT",
       "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
@@ -589,7 +589,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-PRIVACY-046",
+      "fixture_id": "FX-WC12-PRIVACY-001",
       "roadmap_step": "WC-11",
       "category": "PRIVACY",
       "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
@@ -601,7 +601,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-PRIVACY-047",
+      "fixture_id": "FX-WC12-PRIVACY-002",
       "roadmap_step": "WC-11",
       "category": "PRIVACY",
       "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
@@ -613,7 +613,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-PRIVACY-048",
+      "fixture_id": "FX-WC12-PRIVACY-003",
       "roadmap_step": "WC-11",
       "category": "PRIVACY",
       "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
@@ -625,7 +625,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-PRIVACY-049",
+      "fixture_id": "FX-WC12-PRIVACY-004",
       "roadmap_step": "WC-11",
       "category": "PRIVACY",
       "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
@@ -637,7 +637,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-PRIVACY-050",
+      "fixture_id": "FX-WC12-PRIVACY-005",
       "roadmap_step": "WC-11",
       "category": "PRIVACY",
       "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
@@ -649,7 +649,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATIC-051",
+      "fixture_id": "FX-WC12-STATIC-001",
       "roadmap_step": "WC-12",
       "category": "STATIC",
       "target_contract": "mayak.modules.web_cabinet",
@@ -661,43 +661,43 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATIC-052",
+      "fixture_id": "FX-WC12-STATIC-002",
       "roadmap_step": "WC-12",
       "category": "STATIC",
       "target_contract": "mayak.modules.web_cabinet",
       "scenario": "import_isolation",
-      "expected_result": "VALIDATION_ERROR",
+      "expected_result": "STATIC_VIOLATION",
       "synthetic_only": true,
       "canonical_fixture_reference_ids": [
         "FX-WEB-OWNING-MODULE-REJECTED-001"
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATIC-053",
+      "fixture_id": "FX-WC12-STATIC-003",
       "roadmap_step": "WC-12",
       "category": "STATIC",
       "target_contract": "mayak.modules.web_cabinet",
       "scenario": "frozen_extra_forbid",
-      "expected_result": "VALIDATION_ERROR",
+      "expected_result": "STATIC_VIOLATION",
       "synthetic_only": true,
       "canonical_fixture_reference_ids": [
         "FX-WEB-OWNING-MODULE-AMBIGUOUS-001"
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATIC-054",
+      "fixture_id": "FX-WC12-STATIC-004",
       "roadmap_step": "WC-12",
       "category": "STATIC",
       "target_contract": "mayak.modules.web_cabinet",
       "scenario": "synthetic_fixture_integrity",
-      "expected_result": "VALIDATION_ERROR",
+      "expected_result": "STATIC_VIOLATION",
       "synthetic_only": true,
       "canonical_fixture_reference_ids": [
         "FX-WEB-HIDDEN-MERGE-FORBIDDEN-001"
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATIC-055",
+      "fixture_id": "FX-WC12-STATIC-005",
       "roadmap_step": "WC-12",
       "category": "STATIC",
       "target_contract": "mayak.modules.web_cabinet",
@@ -709,7 +709,7 @@
       ]
     },
     {
-      "fixture_id": "FX-WC12-STATIC-056",
+      "fixture_id": "FX-WC12-STATIC-006",
       "roadmap_step": "WC-12",
       "category": "STATIC",
       "target_contract": "mayak.modules.web_cabinet",
