@@ -80,6 +80,14 @@ from mayak.modules.web_cabinet.admin_analytics import (
     WebAdminAnalyticsSortDirection,
     WebAdminAnalyticsSortField,
 )
+from mayak.modules.web_cabinet.support_handoff import (
+    RequestWebSupportHandoffQuery,
+    WebSupportHandoffItemKind,
+    WebSupportHandoffItemState,
+    WebSupportHandoffProjection,
+    WebSupportHandoffResult,
+    WebSupportHandoffResultState,
+)
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
 MODULE_ID = WEB_CABINET_MODULE_ID
@@ -148,4 +156,10 @@ __all__ = [
     "WebAdminAnalyticsResultState",
     "WebAdminAnalyticsSortDirection",
     "WebAdminAnalyticsSortField",
+    "RequestWebSupportHandoffQuery",
+    "WebSupportHandoffItemKind",
+    "WebSupportHandoffItemState",
+    "WebSupportHandoffProjection",
+    "WebSupportHandoffResult",
+    "WebSupportHandoffResultState",
 ]
