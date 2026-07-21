@@ -198,6 +198,11 @@ class WebChannelSurfaceProjection(_WebChannelLinkingContract):
     def _validate_projection(self) -> "WebChannelSurfaceProjection":
         if self.owning_adapter_module_id != _ADAPTER_BY_CHANNEL[self.channel]:
             raise ValueError("adapter owner does not match channel")
+        if (
+            self.adapter_runtime_gate_safe_reference_id is not None
+            and self.channel is not WebChannelKind.TELEGRAM
+        ):
+            raise ValueError("runtime gate evidence is Telegram-only")
         _validate_references(self.source_reference_ids, "source", non_empty=True)
         _validate_references(self.evidence_reference_ids, "evidence", non_empty=True)
         refs = (
@@ -587,6 +592,11 @@ class SubmitWebChannelCommandCommand(_WebChannelLinkingContract):
 
     @model_validator(mode="after")
     def _validate_command(self) -> "SubmitWebChannelCommandCommand":
+        if (
+            self.adapter_runtime_gate_safe_reference_id is not None
+            and self.channel is not WebChannelKind.TELEGRAM
+        ):
+            raise ValueError("runtime gate evidence is Telegram-only")
         if self.command_kind is WebChannelCommandKind.START_CONNECTION:
             if (
                 self.requested_owning_module_id != _ADAPTER_BY_CHANNEL[self.channel]
