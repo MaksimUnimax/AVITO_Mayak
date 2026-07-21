@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import ast
-import copy
-import importlib
 import json
 import os
 import re
@@ -3555,26 +3553,158 @@ def scenario_fx_wc12_static_004(vector: dict) -> ExecutionEvidence:
 
 
 def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
-    before_env = copy.deepcopy(dict(os.environ))
-    before_exports = tuple(package.__all__)
-    importlib.reload(package)
-    for module in (
-        read_models,
-        beacon_commands,
-        auth_context,
-        entitlement_projections,
-        notification_history,
-        status_display,
-        channel_linking,
-        admin_analytics,
-        support_handoff,
-        security_privacy,
-    ):
-        importlib.reload(module)
-    assert tuple(package.__all__) == before_exports
-    assert dict(os.environ) == before_env
+    import json
+    import subprocess
+    import sys
+
+    parent_package_id = id(package)
+    parent_module_ids = {
+        name: id(mod)
+        for name, mod in [
+            ("read_models", read_models),
+            ("beacon_commands", beacon_commands),
+            ("auth_context", auth_context),
+            ("entitlement_projections", entitlement_projections),
+            ("notification_history", notification_history),
+            ("status_display", status_display),
+            ("channel_linking", channel_linking),
+            ("admin_analytics", admin_analytics),
+            ("support_handoff", support_handoff),
+            ("security_privacy", security_privacy),
+        ]
+    }
+    parent_export_ids = {name: id(package.__dict__[name]) for name in package.__all__}
+    before_env = dict(os.environ)
+
+    audit_script = (
+        "import os, sys, json, importlib\n"
+        "import mayak.modules.web_cabinet as pkg\n"
+        "from mayak.modules.web_cabinet import (\n"
+        "    read_models, beacon_commands, auth_context, entitlement_projections,\n"
+        "    notification_history, status_display, channel_linking, admin_analytics,\n"
+        "    support_handoff, security_privacy,\n"
+        ")\n"
+        "modules = [\n"
+        "    read_models, beacon_commands, auth_context, entitlement_projections,\n"
+        "    notification_history, status_display, channel_linking, admin_analytics,\n"
+        "    support_handoff, security_privacy,\n"
+        "]\n"
+        "before_exports = tuple(pkg.__all__)\n"
+        "before_env = dict(os.environ)\n"
+        "reload_errors = []\n"
+        "for m in modules:\n"
+        "    try:\n"
+        "        importlib.reload(m)\n"
+        "    except Exception as e:\n"
+        "        reload_errors.append(str(e))\n"
+        "try:\n"
+        "    importlib.reload(pkg)\n"
+        "except Exception as e:\n"
+        "    reload_errors.append(str(e))\n"
+        "after_exports = tuple(pkg.__all__)\n"
+        "after_env = dict(os.environ)\n"
+        "export_order_same = before_exports == after_exports\n"
+        "exports_count = len(after_exports)\n"
+        "exports_unique = len(set(after_exports)) == len(after_exports)\n"
+        "module_id_value = pkg.__dict__.get('MODULE_ID')\n"
+        "env_unchanged = before_env == after_env\n"
+        "identity_checks = []\n"
+        "for name in after_exports:\n"
+        "    owner_name = 'mayak.modules.web_cabinet'\n"
+        "    parts = name.split('.')\n"
+        "    if len(parts) > 1:\n"
+        "        owner_name = 'mayak.modules.web_cabinet.' + parts[0]\n"
+        "    owner_mod = sys.modules.get(owner_name, pkg)\n"
+        "    identity_checks.append(pkg.__dict__[name] is owner_mod.__dict__[name])\n"
+        "result = {\n"
+        "    'export_order_same': export_order_same,\n"
+        "    'exports_count': exports_count,\n"
+        "    'exports_unique': exports_unique,\n"
+        "    'module_id': module_id_value,\n"
+        "    'env_unchanged': env_unchanged,\n"
+        "    'identity_checks_ok': all(identity_checks),\n"
+        "    'reload_errors': reload_errors,\n"
+        "    'modules_reloaded': len(reload_errors) == 0,\n"
+        "}\n"
+        "print(json.dumps(result))\n"
+        "sys.exit(0 if all([\n"
+        "    export_order_same, exports_count == 75, exports_unique,\n"
+        "    len(reload_errors) == 0, module_id_value == '12-web-cabinet',\n"
+        "    env_unchanged, all(identity_checks),\n"
+        "]) else 1)\n"
+    )
+
+    repo_root = str(Path(__file__).resolve().parents[2])
+    safe_env = {
+        k: v for k, v in before_env.items()
+        if 'SECRET' not in k and 'TOKEN' not in k
+        and 'KEY' not in k and 'PASSWORD' not in k
+    }
+    safe_env["PYTHONPATH"] = os.pathsep.join(
+        [os.path.join(repo_root, "src")] + sys.path
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", audit_script],
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+        env=safe_env,
+        shell=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, f"Subprocess reload audit failed: {result.stderr}"
+    audit = json.loads(result.stdout.strip())
+
+    assert audit["export_order_same"], "Export order changed after reload"
+    assert audit["exports_count"] == 75, f"Expected 75 exports, got {audit['exports_count']}"
+    assert audit["exports_unique"], "Exports are not unique"
+    assert audit["modules_reloaded"], f"Module reload failed: {audit['reload_errors']}"
+    assert audit["module_id"] == "12-web-cabinet", f"MODULE_ID mismatch: {audit['module_id']}"
+    assert audit["env_unchanged"], "Environment changed in child process"
+    assert audit["identity_checks_ok"], "Identity checks failed"
+
+    assert id(package) == parent_package_id, "Parent package identity changed"
+    for name, mod_id in parent_module_ids.items():
+        current_mod = {
+            "read_models": read_models,
+            "beacon_commands": beacon_commands,
+            "auth_context": auth_context,
+            "entitlement_projections": entitlement_projections,
+            "notification_history": notification_history,
+            "status_display": status_display,
+            "channel_linking": channel_linking,
+            "admin_analytics": admin_analytics,
+            "support_handoff": support_handoff,
+            "security_privacy": security_privacy,
+        }[name]
+        assert id(current_mod) == mod_id, f"Parent module {name} identity changed"
+
+    for name, exp_id in parent_export_ids.items():
+        assert id(package.__dict__[name]) == exp_id, f"Parent export {name} identity changed"
+
+    assert dict(os.environ) == before_env, "Parent environment changed"
+
+    for name in package.__all__:
+        parts = name.split(".")
+        if len(parts) > 1:
+            owner_module = sys.modules.get(
+                f"mayak.modules.web_cabinet.{parts[0]}", package
+            )
+        else:
+            owner_module = package
+        assert package.__dict__[name] is owner_module.__dict__[name], (
+            f"Contract invariant broken for {name}"
+        )
+
     return _evidence(
-        vector, (), ("reload package and all web modules", "environment byte equality")
+        vector,
+        (),
+        (
+            "reload package and all web modules via subprocess",
+            "environment byte equality",
+            "parent identity preservation",
+        ),
     )
 
 
@@ -3906,3 +4036,79 @@ def test_invalid_evidence_has_exact_validator_signature() -> None:
             assert evidence.validation_error_locations
             assert evidence.validation_error_types
             assert evidence.validation_error_message_fragments
+
+
+def test_static_005_isolation_preserves_parent_identities() -> None:
+    import sys
+
+    parent_package_id = id(package)
+    parent_module_ids = {
+        name: id(mod)
+        for name, mod in [
+            ("read_models", read_models),
+            ("beacon_commands", beacon_commands),
+            ("auth_context", auth_context),
+            ("entitlement_projections", entitlement_projections),
+            ("notification_history", notification_history),
+            ("status_display", status_display),
+            ("channel_linking", channel_linking),
+            ("admin_analytics", admin_analytics),
+            ("support_handoff", support_handoff),
+            ("security_privacy", security_privacy),
+        ]
+    }
+    parent_export_ids = {
+        name: id(package.__dict__[name]) for name in package.__all__
+    }
+    before_env = dict(os.environ)
+
+    vector = {
+        "fixture_id": "FX-WC12-STATIC-005",
+        "category": "STATIC",
+        "scenario": "reload_stability",
+    }
+    evidence = scenario_fx_wc12_static_005(vector)
+    assert evidence.result == "PASS"
+
+    assert id(package) == parent_package_id, (
+        "Parent package identity changed after STATIC-005"
+    )
+    for name, mod_id in parent_module_ids.items():
+        current_mod = {
+            "read_models": read_models,
+            "beacon_commands": beacon_commands,
+            "auth_context": auth_context,
+            "entitlement_projections": entitlement_projections,
+            "notification_history": notification_history,
+            "status_display": status_display,
+            "channel_linking": channel_linking,
+            "admin_analytics": admin_analytics,
+            "support_handoff": support_handoff,
+            "security_privacy": security_privacy,
+        }[name]
+        assert id(current_mod) == mod_id, (
+            f"Parent module {name} identity changed after STATIC-005"
+        )
+    for name, exp_id in parent_export_ids.items():
+        assert id(package.__dict__[name]) == exp_id, (
+            f"Parent export {name} identity changed after STATIC-005"
+        )
+    assert dict(os.environ) == before_env, (
+        "Parent environment changed after STATIC-005"
+    )
+
+    for name in package.__all__:
+        parts = name.split(".")
+        if len(parts) > 1:
+            owner_module = sys.modules.get(
+                f"mayak.modules.web_cabinet.{parts[0]}", package
+            )
+        else:
+            owner_module = package
+        assert package.__dict__[name] is owner_module.__dict__[name], (
+            f"Contract invariant broken for {name} after STATIC-005"
+        )
+
+    evidence2 = scenario_fx_wc12_static_005(vector)
+    assert evidence2.result == "PASS"
+    assert id(package) == parent_package_id, "Package identity changed on second STATIC-005 run"
