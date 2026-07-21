@@ -61,36 +61,53 @@ Rejected or corrected commits are historical evidence only and are not accepted 
 
 ### WC-08 rejected/corrected history
 
-| Rejected/corrected SHA | Subject | Classification |
-|---|---|---|
-| `5f36dce250e634cb0c177d6a7c8a2070281e40d6` | wc-08: add channel linking web boundary | initial rejected attempt |
-| `0250bbb402553a3cca9a9fd1d55ccd740fb299e1` | wc-08: complete channel linking state matrices | intermediate rejected attempt |
-| `684a39ee61924916c303bf4fb5b83f48c1d62003` | wc-08: allow empty terminal channel results | intermediate rejected attempt |
+| Historical SHA | Historical subject | Classification | Accepted correction SHA | Accepted correction subject |
+|---|---|---|---|---|
+| `e7bcbaa8e34d0bc6afe7469278f761566ebd6db9` | tests: remove worktree-coupled tg14 scope check | corrective prerequisite | `ef91ae8aeaaccbee20a02ee78e63677f2d5d5fb4` | wc-08: scope runtime gate evidence to telegram |
+| `5f36dce250e634cb0c177d6a7c8a2070281e40d6` | wc-08: add channel linking web boundary | initial rejected attempt | `ef91ae8aeaaccbee20a02ee78e63677f2d5d5fb4` | wc-08: scope runtime gate evidence to telegram |
+| `0250bbb402553a3cca9a9fd1d55ccd740fb299e1` | wc-08: complete channel linking state matrices | intermediate rejected attempt | `ef91ae8aeaaccbee20a02ee78e63677f2d5d5fb4` | wc-08: scope runtime gate evidence to telegram |
+| `684a39ee61924916c303bf4fb5b83f48c1d62003` | wc-08: allow empty terminal channel results | intermediate rejected attempt | `ef91ae8aeaaccbee20a02ee78e63677f2d5d5fb4` | wc-08: scope runtime gate evidence to telegram |
 
 ### WC-09 rejected/corrected history
 
-| Rejected/corrected SHA | Subject | Classification |
-|---|---|---|
-| `3b02248f7e00b0ddfe3b475c0a99451b7c0148d8` | wc-09: add admin analytics web projections | initial rejected attempt |
+| Historical SHA | Historical subject | Classification | Accepted correction SHA | Accepted correction subject |
+|---|---|---|---|---|
+| `3b02248f7e00b0ddfe3b475c0a99451b7c0148d8` | wc-09: add admin analytics web projections | initial rejected attempt | `ddf84c3f66bb49d7f312dde745e01be8c4a6a7ab` | wc-09: fix terminal analytics result validation |
+
+### WC-10 rejected/corrected history
+
+| Historical SHA | Historical subject | Classification | Accepted correction SHA | Accepted correction subject |
+|---|---|---|---|---|
+| no R1/R2 historical commits found in reachable Git objects | verified unavailable historical task/commit evidence | R1/R2 evidence unavailable | `39811e99eb2b19e6c2d567dcb0e3e71af7fb3698` | wc-10: add customer support handoff projections |
+
+Note: The accepted commit `39811e99eb2b19e6c2d567dcb0e3e71af7fb3698` has Technical-ID `WC-10-WEB-CUSTOMER-SUPPORT-HANDOFF-SEMANTIC-BOUNDARY-20260721-010-R3` with Retry-Of pointing to R2. R1 and R2 commits are not reachable in the current Git history.
+
+### WC-11 rejected/corrected history
+
+| Historical SHA | Historical subject | Classification | Accepted correction SHA | Accepted correction subject |
+|---|---|---|---|---|
+| no initial historical commit found in reachable Git objects | verified unavailable historical task/commit evidence | initial evidence unavailable | `3544dc8edc54aeab43dc316b2fc1f45d636f1e8f` | wc-11: add web security privacy projections |
+
+Note: The accepted commit `3544dc8edc54aeab43dc316b2fc1f45d636f1e8f` has Technical-ID `WC-11-WEB-SECURITY-PRIVACY-REDACTION-RETENTION-SEMANTIC-BOUNDARY-20260721-011-R2` with Retry-Of pointing to the initial task. The initial commit is not reachable in the current Git history.
 
 ### WC-12 rejected/corrected history
 
-| Rejected/corrected SHA | Subject | Classification |
-|---|---|---|
-| `02cc4cf` | wc-12: add web cabinet synthetic contract tests | initial rejected attempt |
-| `3da39bf` | wc-12: correct executable synthetic contract coverage | reload/order correction |
-| `7dfb1a7` | wc-12: execute target-specific web contract vectors | scenario-specific correction |
-| `aa67e99` | wc-12: validate scenario-specific web contract vectors | owner-identity correction |
-| `08395d4` | wc-12: enforce literal direct validator scenarios | child isolation correction |
-| `4f15e5c` | wc-12: execute command outcome matrix validators | schema/binding correction |
-| `e97cc28` | wc-12: isolate reload stability evidence | reload result binding correction |
-| `bc58d30` | wc-12: verify real owner export identities | owner identity correction |
-| `3f40c2b` | wc-12: prove true pre post owner identities | owner identity correction |
-| `c5a97d6` | wc-12: prove handler parent owner identities | child isolation correction |
-| `480b811` | wc-12: isolate contract reload tests | reload isolation correction |
-| `a0cce44` | wc-12: prove isolated reload state safety | reload state safety correction |
-| `abd263b` | wc-12: validate isolated reload results | reload result validation correction |
-| `57c94fd` | wc-12: harden isolated reload validation | reload validation hardening |
+| Historical SHA | Historical subject | Classification | Accepted correction SHA | Accepted correction subject |
+|---|---|---|---|---|
+| `02cc4cf8294712133c2660f443d72907717a7040` | wc-12: add web cabinet synthetic contract tests | initial rejected attempt | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `3da39bf18a3b521605e4890a6db56bbec8d5fefb` | wc-12: correct executable synthetic contract coverage | reload/order correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `7dfb1a755d5477bb103facbbf9a60db165a22966` | wc-12: execute target-specific web contract vectors | scenario-specific correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `aa67e99c6ec9237aa6068eff0aff2daea743f71d` | wc-12: validate scenario-specific web contract vectors | owner-identity correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `08395d4769261a977e8c34ac2848c3ef409f4e14` | wc-12: enforce literal direct validator scenarios | child isolation correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `4f15e5c34044be5821268534fbc1e0a2813bf7ea` | wc-12: execute command outcome matrix validators | schema/binding correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `e97cc280556d95640ee9a22b5a08817ed7e658a6` | wc-12: isolate reload stability evidence | reload result binding correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `bc58d30f5f674540453c87a8c11fd80f50f130cb` | wc-12: verify real owner export identities | owner identity correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `3f40c2b9f9b6e7959bc14683b7948c90c15f9b9a` | wc-12: prove true pre post owner identities | owner identity correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `c5a97d61072aea11ee3eebb31145ca66749df310` | wc-12: prove handler parent owner identities | child isolation correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `480b811091269f7a26a1b88b44acb706f1be25cf` | wc-12: isolate contract reload tests | reload isolation correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `a0cce4474e3d3fd0a1400886fd4ecdd02bac0fdf` | wc-12: prove isolated reload state safety | reload state safety correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `abd263b3d2be4888807dc29a3ee056513ce02331` | wc-12: validate isolated reload results | reload result validation correction | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
+| `57c94fdabc15625d5f10e821bb6bc4b9f5993913` | wc-12: harden isolated reload validation | reload validation hardening | `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f` | wc-12: enforce isolated reload result binding |
 
 Final accepted evidence base: `ba0e6c3528945e5e76cd9bb430125b368c5f3c8f`
 Final read-only audit task: `WC-12-FINAL-READONLY-EVIDENCE-AUDIT-20260721-029` with no commit.
@@ -184,11 +201,35 @@ The read-only review checked the accepted public boundaries referenced by the Mo
 
 ## Compatibility and dependency boundary with module 13
 
-Filter Catalog & Builder is Run 24 and remains reserved until accepted. Web Cabinet cannot invent filter catalog definitions; visual filter builder screens are blocked until Run 24 acceptance and later exact task; OD-009 remains unresolved. Web Cabinet may only state that future builder uses the same Beacon configuration model.
+Filter Catalog & Builder (Module 13, Run 24) has accepted governance and semantic skeleton commits (`22ce21e7bffa8b378fc362255925897016ef996a` — fc-01: capture filter catalog owner decisions; `b99187ef41c99717394b2bfb5d7993dd0c0e6474` — fc-02: add filter catalog semantic skeleton). However, Web Cabinet does not own Filter Catalog definitions; visual filter builder screens and web filter-builder/runtime use remain blocked until exact accepted Module 13 gate and separate Web implementation task; OD-009 remains unresolved.
 
 ## Open decisions and blocked gates
 
-The following remain open and blocked: `OD-006` (phone+password and recovery policy), `OD-007` (phone requirement), `OD-008` (account merge), `OD-009` (editable filter catalog), `OD-013` (retention/deletion), `OD-014` (public website screens and analytics); exact web UI screen map; exact frontend framework/package choices; exact routing/API surface; exact session storage mechanism; exact email/phone recovery flow; exact analytics events, consent, retention and reporting; exact public marketing pages; exact customer support visibility; exact web notification preferences and channel management; Filter Catalog Run 24/module 13 dependency. Open means blocked; none are closed by this handoff.
+The following remain open and blocked:
+
+- `OD-001` — tariff period for Basic 990 ₽ (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
+- `OD-002` — exact later tariff names, prices and limits (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
+- `OD-003` — exact allowed intervals and change rules (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
+- `OD-004` — behavior after access expiration (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
+- `OD-005` — payment provider, refunds, recurring/manual payments (CLOSED_BY_ADR_0009 for planning, but Web Cabinet payment projection remains gated by exact implementation task)
+- `OD-006` (phone+password and recovery policy)
+- `OD-007` (phone requirement)
+- `OD-008` (account merge)
+- `OD-009` (editable filter catalog)
+- `OD-013` (retention/deletion)
+- `OD-014` (public website screens and analytics)
+- exact web UI screen map
+- exact frontend framework/package choices
+- exact routing/API surface
+- exact session storage mechanism
+- exact email/phone recovery flow
+- exact analytics events, consent, retention and reporting
+- exact public marketing pages
+- exact customer support visibility
+- exact web notification preferences and channel management
+- Filter Catalog Run 24/module 13 dependency
+
+Open means blocked; none are closed by this handoff for Web Cabinet implementation purposes.
 
 ## No-runtime/no-product-artifact evidence
 
