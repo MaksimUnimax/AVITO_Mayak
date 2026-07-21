@@ -9,6 +9,7 @@ import sys
 import types
 from enum import Enum
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -26,6 +27,119 @@ from mayak.modules.web_cabinet import (
     status_display,
     support_handoff,
 )
+
+_OWNER_MODULES: dict[str, types.ModuleType] = {
+    "read_models": read_models,
+    "beacon_commands": beacon_commands,
+    "auth_context": auth_context,
+    "entitlement_projections": entitlement_projections,
+    "notification_history": notification_history,
+    "status_display": status_display,
+    "channel_linking": channel_linking,
+    "admin_analytics": admin_analytics,
+    "support_handoff": support_handoff,
+    "security_privacy": security_privacy,
+}
+
+_SENSITIVE_PREFIXES = (
+    "SECRET", "TOKEN", "PASSWORD", "PASSWD", "PRIVATE", "CREDENTIAL",
+    "API_KEY", "AUTH", "COOKIE", "SESSION", "SSH_", "GITHUB_",
+    "AWS_", "AZURE_", "GOOGLE_",
+)
+
+
+def _safe_environ() -> dict[str, str]:
+    safe: dict[str, str] = {}
+    for key, value in os.environ.items():
+        upper_key = key.upper()
+        if any(prefix in upper_key for prefix in _SENSITIVE_PREFIXES):
+            continue
+        safe[key] = value
+    repo_src = str(Path(__file__).resolve().parents[2] / "src")
+    safe["PYTHONPATH"] = repo_src
+    return safe
+
+
+def _snapshot_parent_state() -> dict[str, Any]:
+    pkg_id = id(package)
+    module_ids = {name: id(mod) for name, mod in _OWNER_MODULES.items()}
+    export_ids = {name: id(package.__dict__[name]) for name in package.__all__}
+    owner_export_ids: dict[tuple[str, str], int] = {}
+    owner_all_lists: dict[str, tuple[str, ...]] = {}
+    for mod_name, mod in _OWNER_MODULES.items():
+        owner_all_lists[mod_name] = tuple(mod.__all__)
+        for export_name in mod.__all__:
+            owner_export_ids[(mod_name, export_name)] = id(mod.__dict__[export_name])
+    pkg_all_before = tuple(package.__all__)
+    env_before = dict(os.environ)
+    assert pkg_all_before == tuple(PACKAGE_EXPORTS), (
+        f"Package exports mismatch before snapshot: {len(pkg_all_before)} vs {len(PACKAGE_EXPORTS)}"
+    )
+    for mod in _OWNER_MODULES.values():
+        mod_name = mod.__name__.rsplit(".", 1)[-1]
+        assert tuple(mod.__all__) == tuple(MODULE_EXPORTS[mod]), (
+            f"Module {mod_name} exports mismatch before snapshot"
+        )
+    for name in package.__all__:
+        if name == "MODULE_ID":
+            continue
+        for mod in _OWNER_MODULES.values():
+            if name in mod.__dict__:
+                assert package.__dict__[name] is mod.__dict__[name], (
+                    f"Package-to-owner identity broken for {name}"
+                )
+                break
+    seen_names: set[str] = set()
+    for mod in _OWNER_MODULES.values():
+        for name in mod.__all__:
+            assert name not in seen_names, f"Duplicate owner export: {name}"
+            seen_names.add(name)
+    assert package.MODULE_ID == "12-web-cabinet", (
+        f"MODULE_ID mismatch: {package.MODULE_ID}"
+    )
+    return {
+        "pkg_id": pkg_id,
+        "module_ids": module_ids,
+        "export_ids": export_ids,
+        "owner_export_ids": owner_export_ids,
+        "owner_all_lists": owner_all_lists,
+        "pkg_all": pkg_all_before,
+        "env": env_before,
+    }
+
+
+def _compare_parent_state(snapshot: dict[str, Any]) -> None:
+    assert id(package) == snapshot["pkg_id"], "Package identity changed"
+    for name, expected_id in snapshot["module_ids"].items():
+        current_mod = _OWNER_MODULES[name]
+        assert id(current_mod) == expected_id, (
+            f"Module {name} identity changed: {id(current_mod)} != {expected_id}"
+        )
+    for name, expected_id in snapshot["export_ids"].items():
+        assert id(package.__dict__[name]) == expected_id, (
+            f"Package export {name} identity changed"
+        )
+    for (mod_name, exp_name), expected_id in snapshot["owner_export_ids"].items():
+        mod = _OWNER_MODULES[mod_name]
+        assert id(mod.__dict__[exp_name]) == expected_id, (
+            f"Owner export {mod_name}.{exp_name} identity changed"
+        )
+    assert tuple(package.__all__) == snapshot["pkg_all"], "Package __all__ changed"
+    for mod_name, expected_all in snapshot["owner_all_lists"].items():
+        mod = _OWNER_MODULES[mod_name]
+        assert tuple(mod.__all__) == expected_all, (
+            f"Owner module {mod_name} __all__ changed"
+        )
+    for name in package.__all__:
+        if name == "MODULE_ID":
+            continue
+        for mod in _OWNER_MODULES.values():
+            if name in mod.__dict__:
+                assert package.__dict__[name] is mod.__dict__[name], (
+                    f"Package-to-owner identity broken for {name} after subprocess"
+                )
+                break
+    assert dict(os.environ) == snapshot["env"], "Parent environment changed"
 
 MODULE_EXPORTS = {
     read_models: [
@@ -131,6 +245,7 @@ def _run_isolated_reload_check(
     expected_exports: list[str],
     package_target: bool = False,
 ) -> dict:
+    parent_snapshot = _snapshot_parent_state()
     child_script = (
         "import sys, json, importlib, os\n"
         "args = json.loads(sys.argv[1])\n"
@@ -167,12 +282,17 @@ def _run_isolated_reload_check(
         "    'pre_exports_match': pre_matches,\n"
         "    'pre_export_count': pre_count,\n"
         "    'post_exports_match': post_matches,\n"
+        "    'post_export_count': len(post_all),\n"
         "    'export_order_same': order_same,\n"
         "    'exports_unique': unique,\n"
         "    'env_unchanged': env_unchanged,\n"
         "    'module_id': module_id,\n"
         "    'errors': [],\n"
         "}\n"
+        "if not pre_matches:\n"
+        "    result['errors'].append('pre_exports_mismatch')\n"
+        "if pre_count != len(expected_exports):\n"
+        "    result['errors'].append('pre_export_count_mismatch')\n"
         "if not obj_same:\n"
         "    result['errors'].append('module_object_changed')\n"
         "if not post_matches:\n"
@@ -189,6 +309,7 @@ def _run_isolated_reload_check(
         "    if len(post_all) != 75:\n"
         "        result['errors'].append('package_export_count_mismatch')\n"
         "print(json.dumps(result))\n"
+        "sys.exit(0 if result['errors'] == [] else 1)\n"
     )
     proc = subprocess.run(
         [sys.executable, "-c", child_script, json.dumps({
@@ -199,20 +320,31 @@ def _run_isolated_reload_check(
         capture_output=True,
         text=True,
         cwd=str(Path(__file__).parents[2]),
-        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[2] / "src")},
+        env=_safe_environ(),
         timeout=30,
         shell=False,
     )
-    if proc.returncode != 0:
-        raise AssertionError(
-            f"Child process failed (rc={proc.returncode}): {proc.stderr.strip()}"
-        )
     try:
-        return json.loads(proc.stdout.strip())
-    except json.JSONDecodeError as exc:
+        result = json.loads(proc.stdout.strip())
+    except (json.JSONDecodeError, ValueError) as exc:
+        safe_stderr = proc.stderr[:500] if proc.stderr else ""
         raise AssertionError(
-            f"Child JSON parse error: {exc}; stdout={proc.stdout[:500]!r}"
+            f"Child JSON parse error: {exc}; "
+            f"returncode={proc.returncode}; stderr={safe_stderr!r}"
         )
+    if proc.returncode != 0:
+        safe_errors = result.get("errors", [])
+        safe_stderr = proc.stderr[:200] if proc.stderr else ""
+        raise AssertionError(
+            f"Child returned nonzero rc={proc.returncode}: "
+            f"errors={safe_errors}; stderr={safe_stderr!r}"
+        )
+    if result.get("errors"):
+        raise AssertionError(
+            f"Child reported errors: {result['errors']}"
+        )
+    _compare_parent_state(parent_snapshot)
+    return result
 
 
 ENUM_VALUES = {
@@ -1734,6 +1866,10 @@ def test_reload_preserves_order_without_environment_side_effect(module: types.Mo
     import_path = f"mayak.modules.web_cabinet.{module.__name__.rsplit('.', 1)[-1]}"
     expected = list(MODULE_EXPORTS[module])
     result = _run_isolated_reload_check(import_path, expected)
+    assert result["reload_count"] == 1, result["errors"]
+    assert result["expected_export_count"] == len(expected), result["errors"]
+    assert result["pre_export_count"] == len(expected), result["errors"]
+    assert result["errors"] == [], result["errors"]
     assert result["module_object_same"], result["errors"]
     assert result["pre_exports_match"], result["errors"]
     assert result["post_exports_match"], result["errors"]
@@ -1752,6 +1888,10 @@ def test_reload_package_and_modules_are_deterministic(module: types.ModuleType) 
         import_path = f"mayak.modules.web_cabinet.{module.__name__.rsplit('.', 1)[-1]}"
         expected = list(MODULE_EXPORTS[module])
     result = _run_isolated_reload_check(import_path, expected, package_target=is_package)
+    assert result["reload_count"] == 1, result["errors"]
+    assert result["expected_export_count"] == len(expected), result["errors"]
+    assert result["pre_export_count"] == len(expected), result["errors"]
+    assert result["errors"] == [], result["errors"]
     assert result["module_object_same"], result["errors"]
     assert result["pre_exports_match"], result["errors"]
     assert result["post_exports_match"], result["errors"]
@@ -1761,6 +1901,7 @@ def test_reload_package_and_modules_are_deterministic(module: types.ModuleType) 
     if is_package:
         assert result["module_id"] == "12-web-cabinet", result["errors"]
         assert result["expected_export_count"] == 75, result["errors"]
+        assert result["post_export_count"] == 75, result["errors"]
 
 
 def test_literal_field_order_controls_reject_obvious_contract_mutations() -> None:
