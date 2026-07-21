@@ -156,7 +156,7 @@ WC-04 establishes that Identity & Access owns account, authentication, authoriza
 
 ## Tariff and entitlement projection boundary
 
-WC-05 establishes that Entitlements & Billing owns effective rights, tariffs, grants and payment authority. Web Cabinet may display effective entitlements and payment/upgrade placeholders only as approved projections. Web Cabinet cannot invent tariff names, prices, intervals or limits, cannot grant access and cannot create payments. OD-001–OD-005 remain open where applicable.
+WC-05 establishes that Entitlements & Billing owns effective rights, tariffs, grants and payment authority. Web Cabinet may display effective entitlements and payment/upgrade placeholders only as approved projections. Web Cabinet cannot invent tariff names, prices, intervals or limits, cannot grant access and cannot create payments. OD-001–OD-005 are CLOSED_BY_ADR_0009 for planning/semantic policy; Web Cabinet tariff/payment presentation remains gated by exact implementation task.
 
 ## Notification message/result history boundary
 
@@ -201,21 +201,45 @@ The read-only review checked the accepted public boundaries referenced by the Mo
 
 ## Compatibility and dependency boundary with module 13
 
-Filter Catalog & Builder (Module 13, Run 24) has accepted governance and semantic skeleton commits (`22ce21e7bffa8b378fc362255925897016ef996a` — fc-01: capture filter catalog owner decisions; `b99187ef41c99717394b2bfb5d7993dd0c0e6474` — fc-02: add filter catalog semantic skeleton). However, Web Cabinet does not own Filter Catalog definitions; visual filter builder screens and web filter-builder/runtime use remain blocked until exact accepted Module 13 gate and separate Web implementation task; OD-009 remains unresolved.
+Filter Catalog & Builder (Module 13, Run 24) has accepted governance and semantic contracts through FC-07. Final accepted Module 13 chain:
+
+| Step | Accepted SHA | Subject |
+|---|---|---|
+| FC-01 | `22ce21e7bffa8b378fc362255925897016ef996a` | fc-01: capture filter catalog owner decisions |
+| FC-02 | `0748d28089ca7bae6cfcee205cb0665c37e3976b` | fc-02: fix catalog read model version checks |
+| FC-03 | `6c89efa08ea399bf88249ee15dd430e166226c35` | fc-03: add evidence approval boundary semantics |
+| FC-04 | `6ab0451980209dd78603e680e2256b5c6fb4be17` | fc-04: add builder field and draft validation semantics |
+| FC-05 | `b361ac92c132d73d91804a6e2d7f1c8751657d10` | fc-05: correct dependency graph linkage blocker |
+| FC-06 | `9e6f1fe38b637fee22ee49b16124ce885dc58150` | fc-06: add beacon override candidate mapping semantics |
+| FC-07 | `948c1efbe8ccc43eff02d4c40741d47dfd52595e` | fc-07: add safe catalog read models |
+
+Note: `b99187ef41c99717394b2bfb5d7993dd0c0e6474` (fc-02: add filter catalog semantic skeleton) was the initial FC-02 commit, superseded by the final accepted correction `0748d28089ca7bae6cfcee205cb0665c37e3976b`.
+
+Web Cabinet does not own Filter Catalog definitions; Web Cabinet cannot invent catalog definitions. Visual filter builder screens and web filter-builder/runtime use remain blocked until exact accepted Module 13 gate and separate Web implementation task; OD-009 remains unresolved. Accepted semantic Module 13 artifacts do not mean frontend/runtime implementation. No direct Filter Catalog state write by Web Cabinet is authorized.
 
 ## Open decisions and blocked gates
 
+### Decisions closed by ADR-0009 but not runtime authorization
+
+The following decisions are closed by `ADR-0009` for planning/semantic policy purposes. They are not active open decisions. However, `ADR-0009` does not implement Web Cabinet UI/runtime and does not authorize provider/payment runtime, persistence, session, API or UI. Web tariff/payment presentation still requires a separate exact implementation gate/task.
+
+- `OD-001` — CLOSED_BY_ADR_0009: tariff period for Basic 990 ₽ is one month.
+- `OD-002` — CLOSED_BY_ADR_0009: current stage has Free and Basic only; future tariffs must be admin-configurable but are not predeclared.
+- `OD-003` — CLOSED_BY_ADR_0009: Basic interval starts at 5 minutes with 5-minute step; Free interval starts at 3 hours with 3-hour step and one Beacon limit.
+- `OD-004` — CLOSED_BY_ADR_0009: expired paid access freezes all Beacons; user chooses and fixes one Free-compliant Beacon manually.
+- `OD-005` — CLOSED_BY_ADR_0009: YooKassa, Telegram Stars and Tinkoff are provider candidates; first stage is manual renewal/manual refunds only, no recurring, no trial/grace/proration, RUB and Telegram Stars.
+
+### Active unresolved decisions
+
 The following remain open and blocked:
 
-- `OD-001` — tariff period for Basic 990 ₽ (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
-- `OD-002` — exact later tariff names, prices and limits (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
-- `OD-003` — exact allowed intervals and change rules (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
-- `OD-004` — behavior after access expiration (CLOSED_BY_ADR_0009 for planning, but Web Cabinet tariff projection remains gated by exact implementation task)
-- `OD-005` — payment provider, refunds, recurring/manual payments (CLOSED_BY_ADR_0009 for planning, but Web Cabinet payment projection remains gated by exact implementation task)
 - `OD-006` (phone+password and recovery policy)
 - `OD-007` (phone requirement)
 - `OD-008` (account merge)
 - `OD-009` (editable filter catalog)
+- `OD-010` (country-wide availability conditions)
+- `OD-011` (minimum monitoring frequency safety)
+- `OD-012` (future channels beyond Telegram/MAX)
 - `OD-013` (retention/deletion)
 - `OD-014` (public website screens and analytics)
 - exact web UI screen map
@@ -228,6 +252,7 @@ The following remain open and blocked:
 - exact customer support visibility
 - exact web notification preferences and channel management
 - Filter Catalog Run 24/module 13 dependency
+- runtime/deploy evidence
 
 Open means blocked; none are closed by this handoff for Web Cabinet implementation purposes.
 
