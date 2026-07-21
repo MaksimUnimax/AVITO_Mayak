@@ -2413,16 +2413,205 @@ def scenario_fx_wc12_command_003(vector: dict) -> ExecutionEvidence:
 
 def scenario_fx_wc12_command_004(vector: dict) -> ExecutionEvidence:
     field, command, outcome = _valid_command()
-    assert outcome.state in tuple(beacon_commands.WebBeaconCommandSubmitState)
-    models = (field, command, outcome)
+    assert outcome.state is beacon_commands.WebBeaconCommandSubmitState.SUBMITTED
+    assert outcome.owning_module_accepted is True
+    assert outcome.owning_module_outcome_reference_id is not None
+    assert outcome.authoritative_state_reference_id is not None
+    assert outcome.authoritative_state_reloaded is True
+    assert outcome.applied_field_names and set(outcome.applied_field_names).issubset(
+        {f.field_name for f in command.patch_fields}
+    )
+    assert outcome.replay_of_outcome_reference_id is None
+    assert outcome.rejection_reason_code is None
+    assert outcome.ambiguity_reference_id is None
+
+    replayed = beacon_commands.WebBeaconCommandSubmitOutcome(
+        **{
+            **outcome.model_dump(),
+            "web_beacon_command_submit_outcome_id": "outcome-synthetic-replayed-001",
+            "state": beacon_commands.WebBeaconCommandSubmitState.REPLAYED,
+            "replay_of_outcome_reference_id": "replay-ref-synthetic-001",
+            "owning_module_accepted": True,
+            "authoritative_state_reference_id": "state-ref-synthetic-001",
+            "authoritative_state_reloaded": True,
+        }
+    )
+    assert replayed.state is beacon_commands.WebBeaconCommandSubmitState.REPLAYED
+    assert replayed.replay_of_outcome_reference_id is not None
+    assert replayed.owning_module_outcome_reference_id is not None
+    assert replayed.owning_module_accepted is True
+    assert replayed.authoritative_state_reloaded is True
+    assert set(replayed.applied_field_names).issubset(
+        {f.field_name for f in command.patch_fields}
+    )
+    assert replayed.rejection_reason_code is None
+    assert replayed.ambiguity_reference_id is None
+
+    rejected = beacon_commands.WebBeaconCommandSubmitOutcome(
+        **{
+            **outcome.model_dump(),
+            "web_beacon_command_submit_outcome_id": "outcome-synthetic-rejected-001",
+            "state": beacon_commands.WebBeaconCommandSubmitState.REJECTED,
+            "owning_module_accepted": False,
+            "rejection_reason_code": "rejection-synthetic-001",
+            "applied_field_names": (),
+            "authoritative_state_reference_id": None,
+            "authoritative_state_reloaded": False,
+        }
+    )
+    assert rejected.state is beacon_commands.WebBeaconCommandSubmitState.REJECTED
+    assert rejected.owning_module_accepted is False
+    assert rejected.rejection_reason_code is not None
+    assert rejected.applied_field_names == ()
+    assert rejected.replay_of_outcome_reference_id is None
+    assert rejected.ambiguity_reference_id is None
+    assert rejected.authoritative_state_reference_id is None
+
+    stale = beacon_commands.WebBeaconCommandSubmitOutcome(
+        **{
+            **outcome.model_dump(),
+            "web_beacon_command_submit_outcome_id": "outcome-synthetic-stale-001",
+            "state": beacon_commands.WebBeaconCommandSubmitState.STALE,
+            "owning_module_accepted": False,
+            "rejection_reason_code": "stale-synthetic-001",
+            "applied_field_names": (),
+            "authoritative_state_reference_id": None,
+            "authoritative_state_reloaded": False,
+        }
+    )
+    assert stale.state is beacon_commands.WebBeaconCommandSubmitState.STALE
+    assert stale.owning_module_accepted is False
+    assert stale.rejection_reason_code is not None
+    assert stale.applied_field_names == ()
+    assert stale.replay_of_outcome_reference_id is None
+    assert stale.ambiguity_reference_id is None
+    assert stale.authoritative_state_reference_id is None
+
+    ambiguous = beacon_commands.WebBeaconCommandSubmitOutcome(
+        **{
+            **outcome.model_dump(),
+            "web_beacon_command_submit_outcome_id": "outcome-synthetic-ambiguous-001",
+            "state": beacon_commands.WebBeaconCommandSubmitState.AMBIGUOUS,
+            "owning_module_accepted": False,
+            "ambiguity_reference_id": "ambiguity-synthetic-001",
+            "applied_field_names": (),
+            "rejection_reason_code": None,
+            "authoritative_state_reference_id": None,
+            "authoritative_state_reloaded": False,
+        }
+    )
+    assert ambiguous.state is beacon_commands.WebBeaconCommandSubmitState.AMBIGUOUS
+    assert ambiguous.owning_module_accepted is False
+    assert ambiguous.ambiguity_reference_id is not None
+    assert ambiguous.applied_field_names == ()
+    assert ambiguous.replay_of_outcome_reference_id is None
+    assert ambiguous.authoritative_state_reference_id is None
+
+    with pytest.raises(ValidationError) as caught:
+        beacon_commands.WebBeaconCommandSubmitOutcome(
+            **{
+                **outcome.model_dump(),
+                "web_beacon_command_submit_outcome_id": "outcome-synthetic-neg-sub-001",
+                "state": beacon_commands.WebBeaconCommandSubmitState.SUBMITTED,
+                "owning_module_accepted": False,
+            }
+        )
+    nc1 = _validation_tuple(caught.value)
+    assert nc1 == (
+        ((),),
+        ("value_error",),
+        ("Value error, submitted outcome requires owning-module acceptance and outcome",),
+    )
+
+    with pytest.raises(ValidationError) as caught:
+        beacon_commands.WebBeaconCommandSubmitOutcome(
+            **{
+                **outcome.model_dump(),
+                "web_beacon_command_submit_outcome_id": "outcome-synthetic-neg-rep-001",
+                "state": beacon_commands.WebBeaconCommandSubmitState.REPLAYED,
+                "replay_of_outcome_reference_id": None,
+            }
+        )
+    nc2 = _validation_tuple(caught.value)
+    assert nc2 == (
+        ((),),
+        ("value_error",),
+        ("Value error, replayed outcome requires replay and owning-module references",),
+    )
+
+    with pytest.raises(ValidationError) as caught:
+        beacon_commands.WebBeaconCommandSubmitOutcome(
+            **{
+                **outcome.model_dump(),
+                "web_beacon_command_submit_outcome_id": "outcome-synthetic-neg-rej-001",
+                "state": beacon_commands.WebBeaconCommandSubmitState.REJECTED,
+                "owning_module_accepted": False,
+                "rejection_reason_code": None,
+                "applied_field_names": (),
+                "authoritative_state_reference_id": None,
+                "authoritative_state_reloaded": False,
+            }
+        )
+    nc3 = _validation_tuple(caught.value)
+    assert nc3 == (
+        ((),),
+        ("value_error",),
+        ("Value error, rejected outcome requires rejection reason",),
+    )
+
+    with pytest.raises(ValidationError) as caught:
+        beacon_commands.WebBeaconCommandSubmitOutcome(
+            **{
+                **outcome.model_dump(),
+                "web_beacon_command_submit_outcome_id": "outcome-synthetic-neg-sta-001",
+                "state": beacon_commands.WebBeaconCommandSubmitState.STALE,
+                "owning_module_accepted": False,
+                "rejection_reason_code": None,
+                "applied_field_names": (),
+                "authoritative_state_reference_id": None,
+                "authoritative_state_reloaded": False,
+            }
+        )
+    nc4 = _validation_tuple(caught.value)
+    assert nc4 == (
+        ((),),
+        ("value_error",),
+        ("Value error, rejected outcome requires rejection reason",),
+    )
+
+    with pytest.raises(ValidationError) as caught:
+        beacon_commands.WebBeaconCommandSubmitOutcome(
+            **{
+                **outcome.model_dump(),
+                "web_beacon_command_submit_outcome_id": "outcome-synthetic-neg-amb-001",
+                "state": beacon_commands.WebBeaconCommandSubmitState.AMBIGUOUS,
+                "owning_module_accepted": False,
+                "ambiguity_reference_id": None,
+                "applied_field_names": (),
+                "rejection_reason_code": None,
+                "authoritative_state_reference_id": None,
+                "authoritative_state_reloaded": False,
+            }
+        )
+    nc5 = _validation_tuple(caught.value)
+    assert nc5 == (
+        ((),),
+        ("value_error",),
+        ("Value error, ambiguous outcome requires ambiguity reference",),
+    )
+
+    models = (field, command, outcome, replayed, rejected, stale, ambiguous)
     assert all(isinstance(model, BaseModel) for model in models)
     return _evidence(
         vector,
         models,
         (
-            "submitted outcome matrix records owning-module acceptance and reload",
-            "normal constructor validation",
-            "complete required payload",
+            "five valid outcome states SUBMITTED REPLAYED REJECTED STALE AMBIGUOUS proven",
+            "negative controls SUBMITTED-no-accept REPLAYED-no-ref"
+            " REJECTED-no-reason STALE-no-reason AMBIGUOUS-no-ref",
+            "applied-field subset invariant maintained across all states",
+            "replay rejection ambiguity reference invariants enforced",
+            "authoritative reload absent for rejected stale ambiguous",
         ),
     )
 
