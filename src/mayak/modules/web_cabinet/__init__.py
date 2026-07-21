@@ -1,5 +1,7 @@
 """Web Cabinet module package."""
 
+# ruff: noqa: I001
+
 from mayak.modules.web_cabinet.beacon_commands import (
     SubmitBeaconWebCommandCommand,
     WebBeaconCommandKind,
@@ -16,6 +18,14 @@ from mayak.modules.web_cabinet.read_models import (
     WebReadModelSourceReference,
     WebSourceState,
     WebViewAudience,
+)
+from mayak.modules.web_cabinet.auth_context import (
+    RequestWebPresentationContextQuery,
+    WebIdentityAuthorityReference,
+    WebPresentationActorState,
+    WebPresentationContextResult,
+    WebPresentationContextState,
+    WebSessionReferenceState,
 )
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
@@ -36,4 +46,10 @@ __all__ = [
     "WebBeaconCommandSubmitOutcome",
     "WebBeaconCommandSubmitState",
     "WebBeaconPatchField",
+    "RequestWebPresentationContextQuery",
+    "WebIdentityAuthorityReference",
+    "WebPresentationActorState",
+    "WebPresentationContextResult",
+    "WebPresentationContextState",
+    "WebSessionReferenceState",
 ]
