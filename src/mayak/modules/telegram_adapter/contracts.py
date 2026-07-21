@@ -4929,4 +4929,466 @@ __all__ = [
     "TelegramMiniAppOfficialValidationEvidence",
     "TelegramMiniAppValidationRequest",
     "TelegramMiniAppValidationOutcome",
+    "TelegramPrivacyDataClass",
+    "TelegramDiagnosticPurpose",
+    "TelegramPrivacyProjectionState",
+    "TelegramPrivacyReasonCode",
+    "TelegramUntrustedPrivacyReference",
+    "TelegramSafeDiagnosticFact",
+    "TelegramRetentionGateReference",
+    "TelegramPrivacyBoundaryRequest",
+    "TelegramSafeDiagnosticProjection",
+    "TelegramPrivacyBoundaryOutcome",
 ]
+
+
+# TG-14 semantic-only security, privacy and retention boundary.
+class TelegramPrivacyDataClass(str, Enum):
+    SAFE_PROVIDER_IDENTIFIER = "SAFE_PROVIDER_IDENTIFIER"
+    SAFE_DIAGNOSTIC_METADATA = "SAFE_DIAGNOSTIC_METADATA"
+    PRIVATE_MESSAGE_OR_COMMAND_CONTENT = "PRIVATE_MESSAGE_OR_COMMAND_CONTENT"
+    CALLBACK_OR_DEEP_LINK_INPUT = "CALLBACK_OR_DEEP_LINK_INPUT"
+    MINI_APP_LAUNCH_DATA = "MINI_APP_LAUNCH_DATA"
+    CONTACT_OR_PHONE_DATA = "CONTACT_OR_PHONE_DATA"
+    PROFILE_OR_MEMBERSHIP_DATA = "PROFILE_OR_MEMBERSHIP_DATA"
+    RAW_PROVIDER_PAYLOAD = "RAW_PROVIDER_PAYLOAD"
+    PROVIDER_SECRET = "PROVIDER_SECRET"
+
+
+class TelegramDiagnosticPurpose(str, Enum):
+    SECURITY_REJECTION = "SECURITY_REJECTION"
+    INPUT_VALIDATION = "INPUT_VALIDATION"
+    DEDUPLICATION_OR_REPLAY = "DEDUPLICATION_OR_REPLAY"
+    UNSUPPORTED_SURFACE = "UNSUPPORTED_SURFACE"
+    OUTBOUND_PROVIDER_OUTCOME = "OUTBOUND_PROVIDER_OUTCOME"
+    RECONCILIATION = "RECONCILIATION"
+    OPERATIONS_HEALTH = "OPERATIONS_HEALTH"
+
+
+class TelegramPrivacyProjectionState(str, Enum):
+    SAFE_DIAGNOSTIC_PROJECTED = "SAFE_DIAGNOSTIC_PROJECTED"
+    BLOCKED_SECRET = "BLOCKED_SECRET"
+    BLOCKED_RAW_PAYLOAD = "BLOCKED_RAW_PAYLOAD"
+    BLOCKED_PRIVATE_CONTENT = "BLOCKED_PRIVATE_CONTENT"
+    BLOCKED_EXCESS_PERSONAL_DATA = "BLOCKED_EXCESS_PERSONAL_DATA"
+    BLOCKED_UNSAFE_EXTERNAL_STRING = "BLOCKED_UNSAFE_EXTERNAL_STRING"
+    RETENTION_DECISION_REQUIRED = "RETENTION_DECISION_REQUIRED"
+    INVALID_SCOPE = "INVALID_SCOPE"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+class TelegramPrivacyReasonCode(str, Enum):
+    SAFE_MINIMIZED_DIAGNOSTIC = "SAFE_MINIMIZED_DIAGNOSTIC"
+    SECRET_MATERIAL_FORBIDDEN = "SECRET_MATERIAL_FORBIDDEN"
+    RAW_PROVIDER_PAYLOAD_FORBIDDEN = "RAW_PROVIDER_PAYLOAD_FORBIDDEN"
+    PRIVATE_MESSAGE_ARCHIVE_FORBIDDEN = "PRIVATE_MESSAGE_ARCHIVE_FORBIDDEN"
+    CONTACT_OR_PHONE_DEFAULT_FORBIDDEN = "CONTACT_OR_PHONE_DEFAULT_FORBIDDEN"
+    GROUP_MEMBERSHIP_RETENTION_FORBIDDEN = "GROUP_MEMBERSHIP_RETENTION_FORBIDDEN"
+    UNNECESSARY_PROFILE_DATA_FORBIDDEN = "UNNECESSARY_PROFILE_DATA_FORBIDDEN"
+    EXTERNAL_STRING_EXECUTION_FORBIDDEN = "EXTERNAL_STRING_EXECUTION_FORBIDDEN"
+    OD_013_RETENTION_POLICY_OPEN = "OD_013_RETENTION_POLICY_OPEN"
+    PRIVACY_SCOPE_MISMATCH = "PRIVACY_SCOPE_MISMATCH"
+    UNSAFE_DIAGNOSTIC_FACT = "UNSAFE_DIAGNOSTIC_FACT"
+    AMBIGUOUS_PRIVACY_EVIDENCE = "AMBIGUOUS_PRIVACY_EVIDENCE"
+
+
+def _tg14_id(value: object, name: str) -> str:
+    _tg13_text(value, name)
+    return value
+
+
+def _tg14_tuple(value: object, name: str) -> tuple[str, ...]:
+    return _tg13_tuple(value, name)
+
+
+def _tg14_exact(value: object, expected: type[object], name: str) -> None:
+    if type(value) is not expected:
+        raise ValueError(f"{name} must be an exact {expected.__name__}")
+
+
+def _tg14_exact_tuple(value: object, expected: type[object], name: str) -> object:
+    if type(value) is not tuple or any(type(item) is not expected for item in value):
+        raise ValueError(f"{name} must be a tuple of exact {expected.__name__}")
+    return value
+
+
+class TelegramUntrustedPrivacyReference(_TelegramContract):
+    telegram_untrusted_privacy_reference_id: str
+    metadata: ContractMetadata
+    data_class: TelegramPrivacyDataClass
+    source_reference_id: str
+    provider_bot_scope_reference_id: str
+    provider_identifier_reference_ids: tuple[str, ...]
+    safe_evidence_reference_ids: tuple[str, ...]
+    raw_provider_payload_observed: bool
+    secret_material_observed: bool
+    private_message_content_observed: bool
+    contact_or_phone_data_observed: bool
+    group_membership_data_observed: bool
+    unnecessary_profile_data_observed: bool
+    external_string_present: bool
+    external_string_requires_execution: bool
+    raw_value_embedded: Literal[False] = False
+    raw_value_retained: Literal[False] = False
+    safe_reference_only: Literal[True] = True
+    internal_account_authority: Literal[False] = False
+    business_effect_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    shell_execution_authority: Literal[False] = False
+
+    _validate_ids = field_validator(
+        "telegram_untrusted_privacy_reference_id",
+        "source_reference_id",
+        "provider_bot_scope_reference_id",
+        mode="before",
+    )(_tg14_id)
+    _validate_tuples = field_validator(
+        "provider_identifier_reference_ids", "safe_evidence_reference_ids", mode="before"
+    )(_tg14_tuple)
+
+    @model_validator(mode="after")
+    def _validate_consistency(self) -> "TelegramUntrustedPrivacyReference":
+        if self.external_string_requires_execution and not self.external_string_present:
+            raise ValueError("execution requirement needs an external string")
+        expected = {
+            TelegramPrivacyDataClass.SAFE_PROVIDER_IDENTIFIER: not any(
+                (
+                    self.raw_provider_payload_observed,
+                    self.secret_material_observed,
+                    self.private_message_content_observed,
+                    self.contact_or_phone_data_observed,
+                    self.group_membership_data_observed,
+                    self.unnecessary_profile_data_observed,
+                    self.external_string_present,
+                )
+            ),
+            TelegramPrivacyDataClass.SAFE_DIAGNOSTIC_METADATA: not any(
+                (
+                    self.raw_provider_payload_observed,
+                    self.secret_material_observed,
+                    self.private_message_content_observed,
+                    self.contact_or_phone_data_observed,
+                    self.group_membership_data_observed,
+                    self.unnecessary_profile_data_observed,
+                )
+            ),
+        }
+        if self.data_class in expected and not expected[self.data_class]:
+            raise ValueError("data class is inconsistent with observations")
+        observed_classes = {
+            "raw_provider_payload_observed": TelegramPrivacyDataClass.RAW_PROVIDER_PAYLOAD,
+            "secret_material_observed": TelegramPrivacyDataClass.PROVIDER_SECRET,
+            "private_message_content_observed": TelegramPrivacyDataClass.PRIVATE_MESSAGE_OR_COMMAND_CONTENT,
+            "contact_or_phone_data_observed": TelegramPrivacyDataClass.CONTACT_OR_PHONE_DATA,
+            "group_membership_data_observed": TelegramPrivacyDataClass.PROFILE_OR_MEMBERSHIP_DATA,
+            "unnecessary_profile_data_observed": TelegramPrivacyDataClass.PROFILE_OR_MEMBERSHIP_DATA,
+            "external_string_present": TelegramPrivacyDataClass.CALLBACK_OR_DEEP_LINK_INPUT,
+        }
+        matched = False
+        for flag, data_class in observed_classes.items():
+            if getattr(self, flag) and self.data_class is data_class:
+                matched = True
+        if any(getattr(self, flag) for flag in observed_classes) and not matched:
+            raise ValueError("safe data class cannot carry unsafe observations")
+        return self
+
+
+class TelegramSafeDiagnosticFact(_TelegramContract):
+    telegram_safe_diagnostic_fact_id: str
+    metadata: ContractMetadata
+    diagnostic_purpose: TelegramDiagnosticPurpose
+    fact_class: str
+    reason_code: TelegramPrivacyReasonCode
+    provider_bot_scope_reference_id: str | None
+    provider_identifier_reference_ids: tuple[str, ...]
+    correlation_id: str | None
+    causation_id: str | None
+    source_privacy_reference_ids: tuple[str, ...]
+    safe_evidence_reference_ids: tuple[str, ...]
+    safe_reference_only: Literal[True] = True
+    minimized: Literal[True] = True
+    redacted: Literal[True] = True
+    raw_provider_payload_present: Literal[False] = False
+    token_or_secret_present: Literal[False] = False
+    private_message_content_present: Literal[False] = False
+    contact_or_phone_present: Literal[False] = False
+    group_member_list_present: Literal[False] = False
+    unnecessary_profile_data_present: Literal[False] = False
+    executable_external_string_present: Literal[False] = False
+    business_success_authority: Literal[False] = False
+
+    _validate_id = field_validator("telegram_safe_diagnostic_fact_id", mode="before")(_tg14_id)
+    _validate_metadata = field_validator("metadata", mode="before")(
+        lambda value: (_tg14_exact(value, ContractMetadata, "metadata"), value)[1]
+    )
+    _validate_optional = field_validator(
+        "provider_bot_scope_reference_id", "correlation_id", "causation_id", mode="before"
+    )(_tg13_optional_text)
+    _validate_fact_class = field_validator("fact_class", mode="before")(_tg14_id)
+    _validate_tuples = field_validator(
+        "provider_identifier_reference_ids",
+        "source_privacy_reference_ids",
+        "safe_evidence_reference_ids",
+        mode="before",
+    )(_tg14_tuple)
+
+
+class TelegramRetentionGateReference(_TelegramContract):
+    telegram_retention_gate_reference_id: str
+    od_reference: Literal["OD-013"]
+    decision_state: Literal["OPEN"]
+    retention_period_defined: Literal[False] = False
+    deletion_policy_defined: Literal[False] = False
+    archive_policy_defined: Literal[False] = False
+    compaction_policy_defined: Literal[False] = False
+    provider_payload_retention_authorized: Literal[False] = False
+    private_message_archive_authorized: Literal[False] = False
+    persistence_implementation_authorized: Literal[False] = False
+    implementation_may_guess: Literal[False] = False
+    open_decision_blocks_mutation: Literal[True] = True
+
+    _validate_id = field_validator("telegram_retention_gate_reference_id", mode="before")(_tg14_id)
+
+
+class TelegramPrivacyBoundaryRequest(_TelegramContract):
+    telegram_privacy_boundary_request_id: str
+    metadata: ContractMetadata
+    privacy_reference: TelegramUntrustedPrivacyReference
+    diagnostic_purpose: TelegramDiagnosticPurpose
+    safe_diagnostic_facts: tuple[TelegramSafeDiagnosticFact, ...]
+    retention_gate: TelegramRetentionGateReference
+    retention_or_storage_policy_requested: bool
+    persistence_requested: bool
+    deletion_requested: bool
+    archive_requested: bool
+    compaction_requested: bool
+    diagnostic_projection_only: Literal[True] = True
+    provider_call_requested: Literal[False] = False
+    business_effect_requested: Literal[False] = False
+    shell_execution_requested: Literal[False] = False
+
+    _validate_id = field_validator("telegram_privacy_boundary_request_id", mode="before")(_tg14_id)
+    _validate_metadata = field_validator("metadata", mode="before")(
+        lambda value: (_tg14_exact(value, ContractMetadata, "metadata"), value)[1]
+    )
+
+    @field_validator("privacy_reference", "retention_gate", mode="before")
+    @classmethod
+    def _validate_exact_refs(cls, value: object, info: ValidationInfo) -> object:
+        expected = (
+            TelegramUntrustedPrivacyReference
+            if info.field_name == "privacy_reference"
+            else TelegramRetentionGateReference
+        )
+        _tg14_exact(value, expected, info.field_name)
+        return value
+
+    @field_validator("safe_diagnostic_facts", mode="before")
+    @classmethod
+    def _validate_exact_facts(cls, value: object) -> object:
+        if type(value) is not tuple or any(
+            type(item) is not TelegramSafeDiagnosticFact for item in value
+        ):
+            raise ValueError("safe_diagnostic_facts must be a tuple of exact safe facts")
+        ids = tuple(item.telegram_safe_diagnostic_fact_id for item in value)
+        if len(ids) != len(set(ids)):
+            raise ValueError("safe diagnostic fact IDs must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_scope(self) -> "TelegramPrivacyBoundaryRequest":
+        if (
+            self.privacy_reference.metadata != self.metadata
+            or self.retention_gate.od_reference != "OD-013"
+            or self.retention_gate.decision_state != "OPEN"
+        ):
+            raise ValueError("privacy request metadata or retention gate mismatch")
+        for fact in self.safe_diagnostic_facts:
+            if (
+                fact.metadata != self.metadata
+                or fact.diagnostic_purpose is not self.diagnostic_purpose
+            ):
+                raise ValueError("nested diagnostic fact scope mismatch")
+            if (
+                self.privacy_reference.telegram_untrusted_privacy_reference_id
+                not in fact.source_privacy_reference_ids
+            ):
+                raise ValueError("diagnostic fact is not bound to privacy reference")
+        if (
+            self.provider_call_requested
+            or self.business_effect_requested
+            or self.shell_execution_requested
+        ):
+            raise ValueError("runtime, business and shell authority are forbidden")
+        return self
+
+
+class TelegramSafeDiagnosticProjection(_TelegramContract):
+    telegram_safe_diagnostic_projection_id: str
+    metadata: ContractMetadata
+    request_reference_id: str
+    diagnostic_purpose: TelegramDiagnosticPurpose
+    safe_diagnostic_facts: tuple[TelegramSafeDiagnosticFact, ...]
+    source_privacy_reference_ids: tuple[str, ...]
+    reason_code: TelegramPrivacyReasonCode
+    retention_gate_reference_id: str
+    safe_diagnostic_only: Literal[True] = True
+    minimized: Literal[True] = True
+    redacted: Literal[True] = True
+    raw_provider_payload_retained: Literal[False] = False
+    secret_material_retained: Literal[False] = False
+    private_message_content_retained: Literal[False] = False
+    contact_or_phone_retained: Literal[False] = False
+    group_membership_retained: Literal[False] = False
+    unnecessary_profile_data_retained: Literal[False] = False
+    external_string_executed: Literal[False] = False
+    retention_policy_applied: Literal[False] = False
+    persistence_mutation_performed: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+
+    _validate_ids = field_validator(
+        "telegram_safe_diagnostic_projection_id",
+        "request_reference_id",
+        "retention_gate_reference_id",
+        mode="before",
+    )(_tg14_id)
+    _validate_metadata = field_validator("metadata", mode="before")(
+        lambda value: (_tg14_exact(value, ContractMetadata, "metadata"), value)[1]
+    )
+    _validate_facts = field_validator("safe_diagnostic_facts", mode="before")(
+        lambda value: _tg14_exact_tuple(value, TelegramSafeDiagnosticFact, "safe_diagnostic_facts")
+    )
+    _validate_tuples = field_validator("source_privacy_reference_ids", mode="before")(_tg14_tuple)
+
+
+class TelegramPrivacyBoundaryOutcome(_TelegramContract):
+    telegram_privacy_boundary_outcome_id: str
+    metadata: ContractMetadata
+    request: TelegramPrivacyBoundaryRequest
+    state: TelegramPrivacyProjectionState
+    reason_code: TelegramPrivacyReasonCode
+    safe_projection: TelegramSafeDiagnosticProjection | None
+    safe_diagnostic_reference_id: str | None
+    provider_call_performed: Literal[False] = False
+    raw_provider_payload_retained: Literal[False] = False
+    secret_material_retained: Literal[False] = False
+    private_message_archived: Literal[False] = False
+    personal_data_expanded: Literal[False] = False
+    external_string_executed: Literal[False] = False
+    persistence_mutation_performed: Literal[False] = False
+    retention_policy_implemented: Literal[False] = False
+    deletion_policy_implemented: Literal[False] = False
+    archive_policy_implemented: Literal[False] = False
+    compaction_policy_implemented: Literal[False] = False
+    business_effect_authorized: Literal[False] = False
+
+    _validate_id = field_validator("telegram_privacy_boundary_outcome_id", mode="before")(_tg14_id)
+    _validate_metadata = field_validator("metadata", mode="before")(
+        lambda value: (_tg14_exact(value, ContractMetadata, "metadata"), value)[1]
+    )
+    _validate_request = field_validator("request", mode="before")(
+        lambda value: (_tg14_exact(value, TelegramPrivacyBoundaryRequest, "request"), value)[1]
+    )
+    _validate_projection = field_validator("safe_projection", mode="before")(
+        lambda value: (
+            value
+            if value is None
+            else (_tg14_exact(value, TelegramSafeDiagnosticProjection, "safe_projection"), value)[1]
+        )
+    )
+
+    @model_validator(mode="after")
+    def _validate_outcome(self) -> "TelegramPrivacyBoundaryOutcome":
+        if self.metadata != self.request.metadata:
+            raise ValueError("outcome metadata mismatch")
+        ref = self.request.privacy_reference
+        if ref.secret_material_observed:
+            expected = (
+                TelegramPrivacyProjectionState.BLOCKED_SECRET,
+                TelegramPrivacyReasonCode.SECRET_MATERIAL_FORBIDDEN,
+            )
+        elif ref.raw_provider_payload_observed:
+            expected = (
+                TelegramPrivacyProjectionState.BLOCKED_RAW_PAYLOAD,
+                TelegramPrivacyReasonCode.RAW_PROVIDER_PAYLOAD_FORBIDDEN,
+            )
+        elif ref.private_message_content_observed:
+            expected = (
+                TelegramPrivacyProjectionState.BLOCKED_PRIVATE_CONTENT,
+                TelegramPrivacyReasonCode.PRIVATE_MESSAGE_ARCHIVE_FORBIDDEN,
+            )
+        elif ref.contact_or_phone_data_observed:
+            expected = (
+                TelegramPrivacyProjectionState.BLOCKED_EXCESS_PERSONAL_DATA,
+                TelegramPrivacyReasonCode.CONTACT_OR_PHONE_DEFAULT_FORBIDDEN,
+            )
+        elif ref.group_membership_data_observed:
+            expected = (
+                TelegramPrivacyProjectionState.BLOCKED_EXCESS_PERSONAL_DATA,
+                TelegramPrivacyReasonCode.GROUP_MEMBERSHIP_RETENTION_FORBIDDEN,
+            )
+        elif ref.unnecessary_profile_data_observed:
+            expected = (
+                TelegramPrivacyProjectionState.BLOCKED_EXCESS_PERSONAL_DATA,
+                TelegramPrivacyReasonCode.UNNECESSARY_PROFILE_DATA_FORBIDDEN,
+            )
+        elif ref.external_string_requires_execution:
+            expected = (
+                TelegramPrivacyProjectionState.BLOCKED_UNSAFE_EXTERNAL_STRING,
+                TelegramPrivacyReasonCode.EXTERNAL_STRING_EXECUTION_FORBIDDEN,
+            )
+        elif any(
+            (
+                self.request.retention_or_storage_policy_requested,
+                self.request.persistence_requested,
+                self.request.deletion_requested,
+                self.request.archive_requested,
+                self.request.compaction_requested,
+            )
+        ):
+            expected = (
+                TelegramPrivacyProjectionState.RETENTION_DECISION_REQUIRED,
+                TelegramPrivacyReasonCode.OD_013_RETENTION_POLICY_OPEN,
+            )
+        elif not self.request.safe_diagnostic_facts:
+            expected = (
+                TelegramPrivacyProjectionState.INVALID_SCOPE,
+                TelegramPrivacyReasonCode.UNSAFE_DIAGNOSTIC_FACT,
+            )
+        else:
+            expected = (
+                TelegramPrivacyProjectionState.SAFE_DIAGNOSTIC_PROJECTED,
+                TelegramPrivacyReasonCode.SAFE_MINIMIZED_DIAGNOSTIC,
+            )
+        if (self.state, self.reason_code) != expected:
+            raise ValueError("outcome state/reason does not match privacy precedence")
+        safe = self.state is TelegramPrivacyProjectionState.SAFE_DIAGNOSTIC_PROJECTED
+        if safe:
+            if self.safe_projection is None or self.safe_diagnostic_reference_id is not None:
+                raise ValueError(
+                    "safe outcome requires projection and forbids diagnostic reference"
+                )
+            if (
+                self.safe_projection.telegram_safe_diagnostic_projection_id
+                != f"{self.request.telegram_privacy_boundary_request_id}:projection"
+            ):
+                raise ValueError("projection ID is not deterministic")
+            if self.safe_projection.metadata != self.metadata:
+                raise ValueError("projection metadata mismatch")
+            if (
+                self.safe_projection.request_reference_id
+                != self.request.telegram_privacy_boundary_request_id
+            ):
+                raise ValueError("projection request binding mismatch")
+            if self.safe_projection.diagnostic_purpose is not self.request.diagnostic_purpose:
+                raise ValueError("projection purpose mismatch")
+            if self.safe_projection.safe_diagnostic_facts != self.request.safe_diagnostic_facts:
+                raise ValueError("projection facts mismatch")
+            if (
+                self.safe_projection.retention_gate_reference_id
+                != self.request.retention_gate.telegram_retention_gate_reference_id
+            ):
+                raise ValueError("projection retention gate mismatch")
+        elif self.safe_projection is not None or not self.safe_diagnostic_reference_id:
+            raise ValueError("blocked outcome requires a safe diagnostic reference only")
+        return self
