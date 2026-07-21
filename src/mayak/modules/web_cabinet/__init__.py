@@ -67,6 +67,19 @@ from mayak.modules.web_cabinet.channel_linking import (
     WebChannelSurfaceResultState,
     WebChannelSurfaceState,
 )
+from mayak.modules.web_cabinet.admin_analytics import (
+    RequestWebAdminAnalyticsQuery,
+    WebAdminAnalyticsFilterKind,
+    WebAdminAnalyticsFilterReference,
+    WebAdminAnalyticsMetricKind,
+    WebAdminAnalyticsMetricProjection,
+    WebAdminAnalyticsMetricRequest,
+    WebAdminAnalyticsMetricState,
+    WebAdminAnalyticsResult,
+    WebAdminAnalyticsResultState,
+    WebAdminAnalyticsSortDirection,
+    WebAdminAnalyticsSortField,
+)
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
 MODULE_ID = WEB_CABINET_MODULE_ID
@@ -124,4 +137,15 @@ __all__ = [
     "WebChannelSurfaceResult",
     "WebChannelSurfaceResultState",
     "WebChannelSurfaceState",
+    "RequestWebAdminAnalyticsQuery",
+    "WebAdminAnalyticsFilterKind",
+    "WebAdminAnalyticsFilterReference",
+    "WebAdminAnalyticsMetricKind",
+    "WebAdminAnalyticsMetricProjection",
+    "WebAdminAnalyticsMetricRequest",
+    "WebAdminAnalyticsMetricState",
+    "WebAdminAnalyticsResult",
+    "WebAdminAnalyticsResultState",
+    "WebAdminAnalyticsSortDirection",
+    "WebAdminAnalyticsSortField",
 ]
