@@ -367,6 +367,117 @@ def _validate_child_result_schema(
         seen_codes.add(code)
 
 
+def _validate_child_result_binding(
+    result: dict,
+    import_path: str,
+    expected_exports: list[str],
+    package_target: bool,
+    return_code: int,
+) -> None:
+    if result["module_name"] != import_path:
+        raise AssertionError(
+            f"Binding failure: module_name {result['module_name']!r} "
+            f"!= requested import_path {import_path!r}"
+        )
+    if result["reload_count"] != 1:
+        raise AssertionError(
+            f"Binding failure: reload_count {result['reload_count']} != 1"
+        )
+    if result["expected_export_count"] != len(expected_exports):
+        raise AssertionError(
+            f"Binding failure: expected_export_count "
+            f"{result['expected_export_count']} != len(expected_exports) "
+            f"{len(expected_exports)}"
+        )
+    errors = result["errors"]
+    if return_code == 0 and errors:
+        raise AssertionError(
+            f"Return-code consistency failure: rc=0 but errors={errors}"
+        )
+    if return_code != 0 and not errors:
+        raise AssertionError(
+            f"Return-code consistency failure: rc={return_code} but errors=[]"
+        )
+    if return_code == 0:
+        if result["pre_export_count"] != len(expected_exports):
+            raise AssertionError(
+                f"Success binding failure: pre_export_count "
+                f"{result['pre_export_count']} != len(expected_exports) "
+                f"{len(expected_exports)}"
+            )
+        if result["post_export_count"] != len(expected_exports):
+            raise AssertionError(
+                f"Success binding failure: post_export_count "
+                f"{result['post_export_count']} != len(expected_exports) "
+                f"{len(expected_exports)}"
+            )
+        if not result["pre_exports_match"]:
+            raise AssertionError(
+                "Success binding failure: pre_exports_match is False"
+            )
+        if not result["post_exports_match"]:
+            raise AssertionError(
+                "Success binding failure: post_exports_match is False"
+            )
+        if not result["module_object_same"]:
+            raise AssertionError(
+                "Success binding failure: module_object_same is False"
+            )
+        if not result["export_order_same"]:
+            raise AssertionError(
+                "Success binding failure: export_order_same is False"
+            )
+        if not result["exports_unique"]:
+            raise AssertionError(
+                "Success binding failure: exports_unique is False"
+            )
+        if not result["env_unchanged"]:
+            raise AssertionError(
+                "Success binding failure: env_unchanged is False"
+            )
+        if package_target:
+            if result["module_id"] != "12-web-cabinet":
+                raise AssertionError(
+                    f"Success binding failure: module_id "
+                    f"{result['module_id']!r} != '12-web-cabinet'"
+                )
+            if result["expected_export_count"] != 75:
+                raise AssertionError(
+                    f"Success binding failure: expected_export_count "
+                    f"{result['expected_export_count']} != 75"
+                )
+            if result["pre_export_count"] != 75:
+                raise AssertionError(
+                    f"Success binding failure: pre_export_count "
+                    f"{result['pre_export_count']} != 75"
+                )
+            if result["post_export_count"] != 75:
+                raise AssertionError(
+                    f"Success binding failure: post_export_count "
+                    f"{result['post_export_count']} != 75"
+                )
+        else:
+            if result["module_id"] is not None:
+                raise AssertionError(
+                    f"Success binding failure: module_id "
+                    f"{result['module_id']!r} != None for non-package target"
+                )
+    if return_code != 0:
+        if not errors:
+            raise AssertionError(
+                f"Negative result with rc={return_code} must have errors, "
+                f"got empty errors list"
+            )
+        for code in errors:
+            if code not in _KNOWN_ERROR_CODES:
+                raise AssertionError(
+                    f"Negative result with unknown error code {code!r}"
+                )
+        raise AssertionError(
+            f"Negative child result: rc={return_code}, errors={errors}"
+        )
+
+
 def _run_isolated_reload_check(
     import_path: str,
     expected_exports: list[str],
@@ -469,6 +580,13 @@ def _run_isolated_reload_check(
             )
         if child_defect is None and result is not None:
             _validate_child_result_schema(result, import_path, package_target)
+        if child_defect is None and result is not None:
+            try:
+                _validate_child_result_binding(
+                    result, import_path, expected_exports, package_target, proc.returncode
+                )
+            except AssertionError as exc:
+                child_defect = exc
         if child_defect is None and proc.returncode != 0:
             safe_errors = result.get("errors", [])  # type: ignore[union-attr]
             safe_stderr = proc.stderr[:200] if proc.stderr else ""
