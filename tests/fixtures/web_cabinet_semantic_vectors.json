@@ -1,0 +1,724 @@
+{
+  "schema_version": "1.0",
+  "module": "12-web-cabinet",
+  "accepted_through_step": "WC-11",
+  "synthetic_only": true,
+  "contains_real_user_data": false,
+  "contains_real_session_data": false,
+  "contains_secret_material": false,
+  "contains_raw_provider_payload": false,
+  "contains_raw_avito_payload": false,
+  "contains_private_support_data": false,
+  "contains_personal_or_legal_data": false,
+  "network_required": false,
+  "provider_api_required": false,
+  "database_required": false,
+  "runtime_required": false,
+  "canonical_fixture_references": [
+    "FX-CONTRACT-VALID-001",
+    "FX-CONTRACT-MISSING-META-001",
+    "FX-AUTH-UNAUTHENTICATED-001",
+    "FX-AUTH-FORBIDDEN-001",
+    "FX-OWNER-FOREIGN-BEACON-001",
+    "FX-IDEMP-FIRST-001",
+    "FX-IDEMP-REPLAY-SAME-001",
+    "FX-IDEMP-REPLAY-MISMATCH-001",
+    "FX-DATA-READMODEL-STALE-001",
+    "FX-DATA-UNKNOWN-NO-DEFAULT-001",
+    "FX-SEC-SECRET-REDACTION-001",
+    "FX-SEC-PERSONAL-MINIMIZATION-001",
+    "FX-SEC-SHELL-INTERPOLATION-001",
+    "FX-WEB-ACTOR-UNAUTHENTICATED-001",
+    "FX-WEB-ACTOR-FORBIDDEN-001",
+    "FX-WEB-TARGET-FORBIDDEN-001",
+    "FX-WEB-READMODEL-STALE-001",
+    "FX-WEB-DRAFT-NOT-AUTHORITY-001",
+    "FX-WEB-DRAFT-EXPIRED-001",
+    "FX-WEB-COMMAND-SUBMITTED-001",
+    "FX-WEB-OWNING-MODULE-REJECTED-001",
+    "FX-WEB-OWNING-MODULE-AMBIGUOUS-001",
+    "FX-WEB-HIDDEN-MERGE-FORBIDDEN-001",
+    "FX-WEB-PHONE-REQUIRED-OD007-BLOCKED-001",
+    "FX-WEB-TARIFF-OD001-BLOCKED-001",
+    "FX-WEB-ANALYTICS-OD014-BLOCKED-001",
+    "FX-WEB-RETENTION-OD013-BLOCKED-001",
+    "FX-WEB-FILTER-CATALOG-RUN24-BLOCKED-001",
+    "FX-WEB-SECRET-REDACTION-001",
+    "FX-WEB-SAFE-ERROR-001",
+    "FX-WEB-NO-SECOND-USER-DB-001"
+  ],
+  "vectors": [
+    {
+      "fixture_id": "FX-WC12-VIEW-001",
+      "roadmap_step": "WC-02",
+      "category": "VIEW",
+      "target_contract": "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+      "scenario": "valid_composition",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-CONTRACT-VALID-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-VIEW-002",
+      "roadmap_step": "WC-02",
+      "category": "VIEW",
+      "target_contract": "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+      "scenario": "owner_mapping",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-CONTRACT-MISSING-META-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-VIEW-003",
+      "roadmap_step": "WC-02",
+      "category": "VIEW",
+      "target_contract": "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+      "scenario": "terminal_empty",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-AUTH-UNAUTHENTICATED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-VIEW-004",
+      "roadmap_step": "WC-02",
+      "category": "VIEW",
+      "target_contract": "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+      "scenario": "stale_ambiguous",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-AUTH-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-VIEW-005",
+      "roadmap_step": "WC-02",
+      "category": "VIEW",
+      "target_contract": "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+      "scenario": "duplicate_source_rejected",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-OWNER-FOREIGN-BEACON-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-COMMAND-006",
+      "roadmap_step": "WC-03",
+      "category": "COMMAND",
+      "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+      "scenario": "patch_submission_valid",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-IDEMP-FIRST-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-COMMAND-007",
+      "roadmap_step": "WC-03",
+      "category": "COMMAND",
+      "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+      "scenario": "patch_field_uniqueness",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-IDEMP-REPLAY-SAME-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-COMMAND-008",
+      "roadmap_step": "WC-03",
+      "category": "COMMAND",
+      "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+      "scenario": "lifecycle_command_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-IDEMP-REPLAY-MISMATCH-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-COMMAND-009",
+      "roadmap_step": "WC-03",
+      "category": "COMMAND",
+      "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+      "scenario": "idempotency_outcomes",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-DATA-READMODEL-STALE-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-COMMAND-010",
+      "roadmap_step": "WC-03",
+      "category": "COMMAND",
+      "target_contract": "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+      "scenario": "business_authority_forbidden",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-DATA-UNKNOWN-NO-DEFAULT-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-AUTH-011",
+      "roadmap_step": "WC-04",
+      "category": "AUTH",
+      "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+      "scenario": "verified_context_valid",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-SEC-SECRET-REDACTION-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-AUTH-012",
+      "roadmap_step": "WC-04",
+      "category": "AUTH",
+      "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+      "scenario": "session_non_authority",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-SEC-PERSONAL-MINIMIZATION-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-AUTH-013",
+      "roadmap_step": "WC-04",
+      "category": "AUTH",
+      "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+      "scenario": "unauthenticated_forbidden",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-SEC-SHELL-INTERPOLATION-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-AUTH-014",
+      "roadmap_step": "WC-04",
+      "category": "AUTH",
+      "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+      "scenario": "phone_recovery_blocked",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-ACTOR-UNAUTHENTICATED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-AUTH-015",
+      "roadmap_step": "WC-04",
+      "category": "AUTH",
+      "target_contract": "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+      "scenario": "merge_second_account_forbidden",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-ACTOR-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ENTITLEMENT-016",
+      "roadmap_step": "WC-05",
+      "category": "ENTITLEMENT",
+      "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+      "scenario": "effective_access_valid",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-TARGET-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ENTITLEMENT-017",
+      "roadmap_step": "WC-05",
+      "category": "ENTITLEMENT",
+      "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+      "scenario": "tariff_options_source_owned",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-READMODEL-STALE-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ENTITLEMENT-018",
+      "roadmap_step": "WC-05",
+      "category": "ENTITLEMENT",
+      "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+      "scenario": "terminal_state_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-DRAFT-NOT-AUTHORITY-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ENTITLEMENT-019",
+      "roadmap_step": "WC-05",
+      "category": "ENTITLEMENT",
+      "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+      "scenario": "invented_values_forbidden",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-DRAFT-EXPIRED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ENTITLEMENT-020",
+      "roadmap_step": "WC-05",
+      "category": "ENTITLEMENT",
+      "target_contract": "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+      "scenario": "duplicate_reference_rejected",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-COMMAND-SUBMITTED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-HISTORY-021",
+      "roadmap_step": "WC-06",
+      "category": "HISTORY",
+      "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+      "scenario": "grouped_history_valid",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-OWNING-MODULE-REJECTED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-HISTORY-022",
+      "roadmap_step": "WC-06",
+      "category": "HISTORY",
+      "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+      "scenario": "all_safe_listing_references",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-OWNING-MODULE-AMBIGUOUS-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-HISTORY-023",
+      "roadmap_step": "WC-06",
+      "category": "HISTORY",
+      "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+      "scenario": "terminal_state_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-HIDDEN-MERGE-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-HISTORY-024",
+      "roadmap_step": "WC-06",
+      "category": "HISTORY",
+      "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+      "scenario": "ambiguous_delivery",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-PHONE-REQUIRED-OD007-BLOCKED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-HISTORY-025",
+      "roadmap_step": "WC-06",
+      "category": "HISTORY",
+      "target_contract": "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+      "scenario": "raw_payload_archive_forbidden",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-TARIFF-OD001-BLOCKED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATUS-026",
+      "roadmap_step": "WC-07",
+      "category": "STATUS",
+      "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+      "scenario": "no_new_clean",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-ANALYTICS-OD014-BLOCKED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATUS-027",
+      "roadmap_step": "WC-07",
+      "category": "STATUS",
+      "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+      "scenario": "external_unavailable_not_no_new",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-RETENTION-OD013-BLOCKED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATUS-028",
+      "roadmap_step": "WC-07",
+      "category": "STATUS",
+      "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+      "scenario": "recovery_one_result",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-FILTER-CATALOG-RUN24-BLOCKED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATUS-029",
+      "roadmap_step": "WC-07",
+      "category": "STATUS",
+      "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+      "scenario": "lost_anchor_not_confirmed_new",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-SECRET-REDACTION-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATUS-030",
+      "roadmap_step": "WC-07",
+      "category": "STATUS",
+      "target_contract": "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+      "scenario": "stale_delivery_ambiguity",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-SAFE-ERROR-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-CHANNEL-031",
+      "roadmap_step": "WC-08",
+      "category": "CHANNEL",
+      "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+      "scenario": "linked_state_valid",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-NO-SECOND-USER-DB-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-CHANNEL-032",
+      "roadmap_step": "WC-08",
+      "category": "CHANNEL",
+      "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+      "scenario": "connect_start_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-CONTRACT-VALID-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-CHANNEL-033",
+      "roadmap_step": "WC-08",
+      "category": "CHANNEL",
+      "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+      "scenario": "preference_enable_disable",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-CONTRACT-MISSING-META-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-CHANNEL-034",
+      "roadmap_step": "WC-08",
+      "category": "CHANNEL",
+      "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+      "scenario": "one_account_continuity",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-AUTH-UNAUTHENTICATED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-CHANNEL-035",
+      "roadmap_step": "WC-08",
+      "category": "CHANNEL",
+      "target_contract": "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+      "scenario": "terminal_and_runtime_gate",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-AUTH-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ANALYTICS-036",
+      "roadmap_step": "WC-09",
+      "category": "ANALYTICS",
+      "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+      "scenario": "metric_request_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-OWNER-FOREIGN-BEACON-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ANALYTICS-037",
+      "roadmap_step": "WC-09",
+      "category": "ANALYTICS",
+      "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+      "scenario": "filter_sort_order",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-IDEMP-FIRST-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ANALYTICS-038",
+      "roadmap_step": "WC-09",
+      "category": "ANALYTICS",
+      "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+      "scenario": "terminal_result_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-IDEMP-REPLAY-SAME-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ANALYTICS-039",
+      "roadmap_step": "WC-09",
+      "category": "ANALYTICS",
+      "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+      "scenario": "aggregated_counts_only",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-IDEMP-REPLAY-MISMATCH-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-ANALYTICS-040",
+      "roadmap_step": "WC-09",
+      "category": "ANALYTICS",
+      "target_contract": "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+      "scenario": "user_level_tracking_forbidden",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-DATA-READMODEL-STALE-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-SUPPORT-041",
+      "roadmap_step": "WC-10",
+      "category": "SUPPORT",
+      "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+      "scenario": "query_kind_case_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-DATA-UNKNOWN-NO-DEFAULT-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-SUPPORT-042",
+      "roadmap_step": "WC-10",
+      "category": "SUPPORT",
+      "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+      "scenario": "projection_kind_state_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-SEC-SECRET-REDACTION-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-SUPPORT-043",
+      "roadmap_step": "WC-10",
+      "category": "SUPPORT",
+      "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+      "scenario": "publication_separation",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-SEC-PERSONAL-MINIMIZATION-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-SUPPORT-044",
+      "roadmap_step": "WC-10",
+      "category": "SUPPORT",
+      "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+      "scenario": "terminal_ordered_coverage",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-SEC-SHELL-INTERPOLATION-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-SUPPORT-045",
+      "roadmap_step": "WC-10",
+      "category": "SUPPORT",
+      "target_contract": "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+      "scenario": "internal_records_forbidden",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-ACTOR-UNAUTHENTICATED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-PRIVACY-046",
+      "roadmap_step": "WC-11",
+      "category": "PRIVACY",
+      "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+      "scenario": "open_decision_gate",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-ACTOR-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-PRIVACY-047",
+      "roadmap_step": "WC-11",
+      "category": "PRIVACY",
+      "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+      "scenario": "projection_state_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-TARGET-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-PRIVACY-048",
+      "roadmap_step": "WC-11",
+      "category": "PRIVACY",
+      "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+      "scenario": "terminal_result_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-READMODEL-STALE-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-PRIVACY-049",
+      "roadmap_step": "WC-11",
+      "category": "PRIVACY",
+      "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+      "scenario": "policy_blocked_matrix",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-DRAFT-NOT-AUTHORITY-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-PRIVACY-050",
+      "roadmap_step": "WC-11",
+      "category": "PRIVACY",
+      "target_contract": "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+      "scenario": "secret_retention_no_invention",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-DRAFT-EXPIRED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATIC-051",
+      "roadmap_step": "WC-12",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.web_cabinet",
+      "scenario": "exact_exports",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-COMMAND-SUBMITTED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATIC-052",
+      "roadmap_step": "WC-12",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.web_cabinet",
+      "scenario": "import_isolation",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-OWNING-MODULE-REJECTED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATIC-053",
+      "roadmap_step": "WC-12",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.web_cabinet",
+      "scenario": "frozen_extra_forbid",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-OWNING-MODULE-AMBIGUOUS-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATIC-054",
+      "roadmap_step": "WC-12",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.web_cabinet",
+      "scenario": "synthetic_fixture_integrity",
+      "expected_result": "VALIDATION_ERROR",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-HIDDEN-MERGE-FORBIDDEN-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATIC-055",
+      "roadmap_step": "WC-12",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.web_cabinet",
+      "scenario": "reload_stability",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-PHONE-REQUIRED-OD007-BLOCKED-001"
+      ]
+    },
+    {
+      "fixture_id": "FX-WC12-STATIC-056",
+      "roadmap_step": "WC-12",
+      "category": "STATIC",
+      "target_contract": "mayak.modules.web_cabinet",
+      "scenario": "negative_controls",
+      "expected_result": "PASS",
+      "synthetic_only": true,
+      "canonical_fixture_reference_ids": [
+        "FX-WEB-TARIFF-OD001-BLOCKED-001"
+      ]
+    }
+  ]
+}
