@@ -88,6 +88,14 @@ from mayak.modules.web_cabinet.support_handoff import (
     WebSupportHandoffResult,
     WebSupportHandoffResultState,
 )
+from mayak.modules.web_cabinet.security_privacy import (
+    RequestWebSecurityPrivacyAssessmentQuery,
+    WebPrivacyControlProjection,
+    WebPrivacyProjectionState,
+    WebPrivacySurfaceKind,
+    WebSecurityPrivacyAssessmentResult,
+    WebSecurityPrivacyResultState,
+)
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
 MODULE_ID = WEB_CABINET_MODULE_ID
@@ -162,4 +170,10 @@ __all__ = [
     "WebSupportHandoffProjection",
     "WebSupportHandoffResult",
     "WebSupportHandoffResultState",
+    "RequestWebSecurityPrivacyAssessmentQuery",
+    "WebPrivacyControlProjection",
+    "WebPrivacyProjectionState",
+    "WebPrivacySurfaceKind",
+    "WebSecurityPrivacyAssessmentResult",
+    "WebSecurityPrivacyResultState",
 ]
