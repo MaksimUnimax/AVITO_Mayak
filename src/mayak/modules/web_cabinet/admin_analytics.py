@@ -365,6 +365,10 @@ class WebAdminAnalyticsResult(_WebAdminAnalyticsContract):
             raise ValueError("result sort does not match query")
         _unique(self.source_reference_ids, "result source references")
         _unique(self.evidence_reference_ids, "result evidence references")
+        if not self.source_reference_ids:
+            raise ValueError("result source references must be non-empty")
+        if not self.evidence_reference_ids:
+            raise ValueError("result evidence references must be non-empty")
         projection_ids = tuple(
             item.web_admin_analytics_metric_projection_id for item in self.metric_projections
         )
@@ -374,10 +378,6 @@ class WebAdminAnalyticsResult(_WebAdminAnalyticsContract):
         query_filter_ids = tuple(
             item.web_admin_analytics_filter_reference_id for item in self.query.filters
         )
-        if self.applied_filter_reference_ids != query_filter_ids:
-            raise ValueError("applied filters do not match query")
-        if len(self.applied_filter_reference_ids) != len(set(self.applied_filter_reference_ids)):
-            raise ValueError("applied filters must be unique")
         if self.state in {
             WebAdminAnalyticsResultState.FORBIDDEN,
             WebAdminAnalyticsResultState.POLICY_BLOCKED,
@@ -400,6 +400,10 @@ class WebAdminAnalyticsResult(_WebAdminAnalyticsContract):
             if self.freshness is not expected:
                 raise ValueError("invalid terminal freshness")
             return self
+        if self.applied_filter_reference_ids != query_filter_ids:
+            raise ValueError("applied filters do not match query")
+        if len(self.applied_filter_reference_ids) != len(set(self.applied_filter_reference_ids)):
+            raise ValueError("applied filters must be unique")
         if (
             self.safe_table_projection_reference_id is None
             or self.safe_sort_application_reference_id is None
