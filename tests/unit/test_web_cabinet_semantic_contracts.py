@@ -3579,6 +3579,39 @@ def _resolve_owner_inventory() -> list[tuple[Any, tuple[str, ...]]]:
     return result
 
 
+def _static_005_identity_detector(
+    pkg: Any, owner_inventory: list[tuple[Any, tuple[str, ...]]]
+) -> dict[str, Any]:
+    check_count = 0
+    failures: list[tuple[str, str]] = []
+    seen_names: set[str] = set()
+    duplicate_owner_exports: list[str] = []
+    for mod, exports in owner_inventory:
+        for name in exports:
+            if name in seen_names:
+                duplicate_owner_exports.append(name)
+            seen_names.add(name)
+            check_count += 1
+            try:
+                mod_val = mod.__dict__[name]
+            except KeyError:
+                failures.append((name, mod.__name__))
+                continue
+            if name not in pkg.__dict__:
+                failures.append((name, mod.__name__))
+            elif pkg.__dict__[name] is not mod_val:
+                failures.append((name, mod.__name__))
+    missing = [n for n in seen_names if n not in pkg.__all__]
+    unknown = [n for n in pkg.__all__ if n not in seen_names and n != "MODULE_ID"]
+    return {
+        "check_count": check_count,
+        "failures": failures,
+        "duplicate_owner_exports": duplicate_owner_exports,
+        "missing_package_exports": missing,
+        "unknown_package_exports": unknown,
+    }
+
+
 def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
     import json
     import subprocess
@@ -3623,10 +3656,24 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
         "    (support_handoff, tuple(support_handoff.__all__)),\n"
         "    (security_privacy, tuple(security_privacy.__all__)),\n"
         "]\n"
-        "export_to_owner = {}\n"
-        "for mod, exports in owner_inventory:\n"
-        "    for name in exports:\n"
-        "        export_to_owner[name] = mod\n"
+        "pre_identity = {\n"
+        "    'check_count': 0, 'failures': [], 'dups': [], 'missing': [], 'unknown': [],\n"
+        "}\n"
+        "_seen_pre = set()\n"
+        "for _mod, _exports in owner_inventory:\n"
+        "    for _name in _exports:\n"
+        "        if _name in _seen_pre:\n"
+        "            pre_identity['dups'].append(_name)\n"
+        "        _seen_pre.add(_name)\n"
+        "        pre_identity['check_count'] += 1\n"
+        "        if _name not in pkg.__dict__:\n"
+        "            pre_identity['failures'].append(_name)\n"
+        "        elif pkg.__dict__[_name] is not _mod.__dict__[_name]:\n"
+        "            pre_identity['failures'].append(_name)\n"
+        "pre_identity['missing'] = [n for n in _seen_pre\n"
+        "    if n not in pkg.__all__]\n"
+        "pre_identity['unknown'] = [n for n in pkg.__all__\n"
+        "    if n not in _seen_pre and n != 'MODULE_ID']\n"
         "before_exports = tuple(pkg.__all__)\n"
         "before_env = dict(os.environ)\n"
         "reload_errors = []\n"
@@ -3646,26 +3693,50 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
         "exports_unique = len(set(after_exports)) == len(after_exports)\n"
         "module_id_value = pkg.__dict__.get('MODULE_ID')\n"
         "env_unchanged = before_env == after_env\n"
-        "after_export_to_owner = {}\n"
-        "for mod, exports in owner_inventory:\n"
-        "    for name in exports:\n"
-        "        after_export_to_owner[name] = mod\n"
-        "owner_checks_before = []\n"
-        "for mod, exports in owner_inventory:\n"
-        "    for name in exports:\n"
-        "        owner_checks_before.append(pkg.__dict__[name] is mod.__dict__[name])\n"
-        "owner_checks_after = []\n"
-        "for mod, exports in owner_inventory:\n"
-        "    for name in exports:\n"
-        "        owner_checks_after.append(pkg.__dict__[name] is mod.__dict__[name])\n"
+        "owner_inventory_after = [\n"
+        "    (read_models, tuple(read_models.__all__)),\n"
+        "    (beacon_commands, tuple(beacon_commands.__all__)),\n"
+        "    (auth_context, tuple(auth_context.__all__)),\n"
+        "    (entitlement_projections, tuple(entitlement_projections.__all__)),\n"
+        "    (notification_history, tuple(notification_history.__all__)),\n"
+        "    (status_display, tuple(status_display.__all__)),\n"
+        "    (channel_linking, tuple(channel_linking.__all__)),\n"
+        "    (admin_analytics, tuple(admin_analytics.__all__)),\n"
+        "    (support_handoff, tuple(support_handoff.__all__)),\n"
+        "    (security_privacy, tuple(security_privacy.__all__)),\n"
+        "]\n"
+        "post_identity = {\n"
+        "    'check_count': 0, 'failures': [], 'dups': [], 'missing': [], 'unknown': [],\n"
+        "}\n"
+        "_seen_post = set()\n"
+        "for _mod, _exports in owner_inventory_after:\n"
+        "    for _name in _exports:\n"
+        "        if _name in _seen_post:\n"
+        "            post_identity['dups'].append(_name)\n"
+        "        _seen_post.add(_name)\n"
+        "        post_identity['check_count'] += 1\n"
+        "        if _name not in pkg.__dict__:\n"
+        "            post_identity['failures'].append(_name)\n"
+        "        elif pkg.__dict__[_name] is not _mod.__dict__[_name]:\n"
+        "            post_identity['failures'].append(_name)\n"
+        "post_identity['missing'] = [n for n in _seen_post\n"
+        "    if n not in pkg.__all__]\n"
+        "post_identity['unknown'] = [n for n in pkg.__all__\n"
+        "    if n not in _seen_post and n != 'MODULE_ID']\n"
         "result = {\n"
         "    'owner_module_count': len(owner_inventory),\n"
         "    'package_reload_count': 1,\n"
         "    'module_owned_export_count': sum(len(e) for _, e in owner_inventory),\n"
-        "    'owner_identity_check_count_before': len(owner_checks_before),\n"
-        "    'owner_identity_check_count_after': len(owner_checks_after),\n"
-        "    'owner_identity_failures_before': sum(1 for c in owner_checks_before if not c),\n"
-        "    'owner_identity_failures_after': sum(1 for c in owner_checks_after if not c),\n"
+        "    'pre_owner_identity_check_count': pre_identity['check_count'],\n"
+        "    'pre_owner_identity_failures': len(pre_identity['failures']),\n"
+        "    'pre_duplicate_owner_exports': len(pre_identity['dups']),\n"
+        "    'pre_missing_package_exports': len(pre_identity['missing']),\n"
+        "    'pre_unknown_package_exports': len(pre_identity['unknown']),\n"
+        "    'post_owner_identity_check_count': post_identity['check_count'],\n"
+        "    'post_owner_identity_failures': len(post_identity['failures']),\n"
+        "    'post_duplicate_owner_exports': len(post_identity['dups']),\n"
+        "    'post_missing_package_exports': len(post_identity['missing']),\n"
+        "    'post_unknown_package_exports': len(post_identity['unknown']),\n"
         "    'export_order_same': export_order_same,\n"
         "    'exports_count': exports_count,\n"
         "    'exports_unique': exports_unique,\n"
@@ -3677,8 +3748,8 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
         "sys.exit(0 if all([\n"
         "    export_order_same, exports_count == 75, exports_unique,\n"
         "    len(reload_errors) == 0, module_id_value == '12-web-cabinet',\n"
-        "    env_unchanged, not result['owner_identity_failures_before'],\n"
-        "    not result['owner_identity_failures_after'],\n"
+        "    env_unchanged, not result['pre_owner_identity_failures'],\n"
+        "    not result['post_owner_identity_failures'],\n"
         "]) else 1)\n"
     )
 
@@ -3718,14 +3789,20 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
         f"Expected 74 module-owned exports, "
         f"got {audit['module_owned_export_count']}"
     )
-    assert audit["owner_identity_check_count_before"] == 74
-    assert audit["owner_identity_check_count_after"] == 74
-    assert audit["owner_identity_failures_before"] == 0, (
-        f"Pre-reload failures: {audit['owner_identity_failures_before']}"
+    assert audit["pre_owner_identity_check_count"] == 74
+    assert audit["post_owner_identity_check_count"] == 74
+    assert audit["pre_owner_identity_failures"] == 0, (
+        f"Pre-reload failures: {audit['pre_owner_identity_failures']}"
     )
-    assert audit["owner_identity_failures_after"] == 0, (
-        f"Post-reload failures: {audit['owner_identity_failures_after']}"
+    assert audit["post_owner_identity_failures"] == 0, (
+        f"Post-reload failures: {audit['post_owner_identity_failures']}"
     )
+    assert audit["pre_duplicate_owner_exports"] == 0
+    assert audit["pre_missing_package_exports"] == 0
+    assert audit["pre_unknown_package_exports"] == 0
+    assert audit["post_duplicate_owner_exports"] == 0
+    assert audit["post_missing_package_exports"] == 0
+    assert audit["post_unknown_package_exports"] == 0
 
     assert id(package) == parent_package_id, "Parent package identity changed"
     for name, mod_id in parent_module_ids.items():
@@ -4107,6 +4184,9 @@ def test_invalid_evidence_has_exact_validator_signature() -> None:
 
 
 def test_static_005_isolation_preserves_parent_identities() -> None:
+    import importlib as _importlib
+
+    _importlib.reload(package)
     parent_package_id = id(package)
     parent_module_ids = {
         name: id(mod)
@@ -4126,6 +4206,10 @@ def test_static_005_isolation_preserves_parent_identities() -> None:
     parent_export_ids = {
         name: id(package.__dict__[name]) for name in package.__all__
     }
+    parent_owner_export_ids = {}
+    for owner_mod, exports in _resolve_owner_inventory():
+        for name in exports:
+            parent_owner_export_ids[name] = id(owner_mod.__dict__[name])
     before_env = dict(os.environ)
 
     vector = {
@@ -4163,37 +4247,59 @@ def test_static_005_isolation_preserves_parent_identities() -> None:
         "Parent environment changed after STATIC-005"
     )
 
-    pkg_all_set = set(package.__all__)
+    pre_inv = _resolve_owner_inventory()
+    pre_result = _static_005_identity_detector(package, pre_inv)
+    assert pre_result["check_count"] == 74
+    assert pre_result["failures"] == []
+    assert pre_result["duplicate_owner_exports"] == []
+    assert pre_result["missing_package_exports"] == []
+    assert pre_result["unknown_package_exports"] == []
+
     seen = set()
     check_count = 0
     for owner_mod, exports in _resolve_owner_inventory():
         for name in exports:
-            assert name in pkg_all_set, (
-                f"Real owner mapping broken for {name} after STATIC-005"
-            )
+            assert name in seen or name in set(package.__all__) - {"MODULE_ID"}
             assert name not in seen, f"Duplicate export: {name} after STATIC-005"
             seen.add(name)
             check_count += 1
     assert check_count == 74, f"Expected 74 module-owned exports, got {check_count}"
     assert len(seen) == 74
-    assert seen == pkg_all_set - {"MODULE_ID"}
+    assert seen == set(package.__all__) - {"MODULE_ID"}
+
+    for owner_mod, exports in _resolve_owner_inventory():
+        for name in exports:
+            assert package.__dict__[name] is owner_mod.__dict__[name], (
+                f"Real owner mapping broken for {name} after STATIC-005"
+            )
 
     evidence2 = scenario_fx_wc12_static_005(vector)
     assert evidence2.result == "PASS"
     assert id(package) == parent_package_id, "Package identity changed on second STATIC-005 run"
 
+    post_inv2 = _resolve_owner_inventory()
+    post_result2 = _static_005_identity_detector(package, post_inv2)
+    assert post_result2["check_count"] == 74
+    assert post_result2["failures"] == []
+    assert post_result2["duplicate_owner_exports"] == []
+    assert post_result2["missing_package_exports"] == []
+    assert post_result2["unknown_package_exports"] == []
+
     seen2 = set()
     check_count2 = 0
     for owner_mod, exports in _resolve_owner_inventory():
         for name in exports:
-            assert name in pkg_all_set, (
-                f"Real owner mapping broken for {name} after second STATIC-005"
-            )
             assert name not in seen2, f"Duplicate export: {name} after second STATIC-005"
             seen2.add(name)
             check_count2 += 1
     assert check_count2 == 74
-    assert seen2 == pkg_all_set - {"MODULE_ID"}
+    assert seen2 == set(package.__all__) - {"MODULE_ID"}
+
+    for owner_mod, exports in _resolve_owner_inventory():
+        for name in exports:
+            assert package.__dict__[name] is owner_mod.__dict__[name], (
+                f"Real owner mapping broken for {name} after second STATIC-005"
+            )
 
     assert dict(os.environ) == before_env, "Environment changed after second STATIC-005"
 
@@ -4205,16 +4311,19 @@ def test_static_005_negative_control_detects_wrong_owner() -> None:
     ]
     first_export = synthetic_inventory[0][1][0]
     wrong_owner = synthetic_inventory[1][0]
-    synthetic_mapping = {}
+    synthetic_mapping = []
     for mod, exports in synthetic_inventory:
-        for name in exports:
-            synthetic_mapping[name] = mod
-    synthetic_mapping[first_export] = wrong_owner
-    failures = []
-    for name, claimed_owner in synthetic_mapping.items():
-        if name not in claimed_owner.__dict__:
-            failures.append(name)
-        elif package.__dict__[name] is not claimed_owner.__dict__[name]:
-            failures.append(name)
-    assert len(failures) > 0, "Negative control failed to detect wrong owner"
-    assert first_export in failures
+        synthetic_mapping.append((mod, exports))
+    synthetic_mapping[0] = (wrong_owner, synthetic_inventory[0][1])
+    nc_result = _static_005_identity_detector(package, synthetic_mapping)
+    assert nc_result["check_count"] > 0
+    assert len(nc_result["failures"]) > 0
+    assert any(f[0] == first_export for f in nc_result["failures"])
+
+    normal_inv = _resolve_owner_inventory()
+    normal_result = _static_005_identity_detector(package, normal_inv)
+    assert normal_result["check_count"] == 74
+    assert normal_result["failures"] == []
+    assert normal_result["duplicate_owner_exports"] == []
+    assert normal_result["missing_package_exports"] == []
+    assert normal_result["unknown_package_exports"] == []
