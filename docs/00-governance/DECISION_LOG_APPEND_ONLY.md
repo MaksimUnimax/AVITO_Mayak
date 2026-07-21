@@ -1207,3 +1207,33 @@ AS-01 is complete only after independent verification and acceptance of the publ
 **Blocked gates:** product code, semantic Python contracts, tests, fixtures, frontend/pages/routes/API handlers/UI components, auth/session/recovery/account merge, analytics/tracking, payment UI/provider calls, database/ORM/migrations/persistence, queues/workers/schedulers/services/runtime, Telegram/MAX/Avito/payment calls, Docker, CI/CD, deploy, ports/listeners/certificates, credentials/secrets, raw payload retention and direct foreign-state mutation remain blocked.
 
 WC-01 is complete only after independent verification and acceptance by ChatGPT. WC-02 requires a separate exact task after fresh GitHub/playbook/dependency/parallel-main checks. CLI does not select the next roadmap step.
+
+## ADR-0029 — 2026-07-21 — Filter Catalog & Builder owner decisions for FC-01
+
+**Status:** OWNER-APPROVED decision capture pending independent GitHub acceptance
+**Module:** `13-filter-catalog-and-builder`
+**Roadmap step:** `FC-01`
+**Technical task:** `FC-01-FILTER-CATALOG-OWNER-DECISIONS-CAPTURE-20260721-003`
+**Canonical document:** `docs/04-modules/13-filter-catalog-and-builder/OWNER_FILTER_CATALOG_AND_BUILDER_DECISIONS_CAPTURE_v1.0.md`
+
+**Decision capture:**
+
+1. The first scope does not approve a complete Avito filter catalog manually.
+2. Editability is determined by the rule/evidence boundary, not by a visible UI label, parser success or a user request.
+3. Geography/city, price range, category, search text, and simple single-value and multivalue parameters are priority candidates for future evidence verification only; they are not approved and are not universal.
+4. A found but unsupported, uncertain or ambiguous filter is shown as `found-but-not-editable`; it must not be silently hidden, discarded or made editable.
+5. Published catalog versions are immutable; changed evidence creates a new version or supersession, and historical Beacon revisions are never rewritten.
+6. Beacon Management owns source URL, accepted snapshot, overrides, effective configuration, revisions, lifecycle and acceptance of the Beacon override candidate.
+7. Avito Parser Adapter supplies extraction/normalization evidence and warnings, but does not approve editability; parser success and an internal endpoint are not catalog authority.
+8. Web Cabinet may display only catalog-approved UI-neutral builder definitions; a web draft/client validation is not business authority and does not authorize direct Beacon writes.
+9. Entitlements & Billing owns tariff, access, limits and allowed intervals; Filter Catalog does not duplicate or issue entitlement.
+
+**Ownership consequences:** Filter Catalog & Builder owns only the evidence-bound catalog-definition and UI-neutral builder boundary. Beacon Management owns Beacon configuration, revisions, lifecycle and override-candidate acceptance; Parser Adapter owns extraction/normalization evidence and warnings; Web Cabinet owns presentation and command-boundary behavior; Entitlements & Billing owns tariff, access, limits and allowed intervals.
+
+**Evidence/editability boundary:** stale, missing, contradictory, unsupported, uncertain or ambiguous evidence blocks editability and remains explicit as `found-but-not-editable`. Visible UI labels, parser success, internal endpoints and user requests are not catalog authority. Repeated or multivalue parameters must not be silently collapsed; client validation is usability only. Raw Avito/provider payload retention is prohibited by default.
+
+**Preserved open decisions:** `OD-009` remains OPEN. The exact first-stage supported filter list, category taxonomy, URL mapping, option sets, range units/bounds/inclusivity, dependency graph, evidence approval thresholds and refresh cadence remain open. `OD-013` and relevant retention/privacy decisions remain open.
+
+**Blocked gates:** no exact catalog, parser implementation/probe, Avito live/provider call, frontend/UI/routes/API, database/ORM/schema/migration/persistence, runtime/service/worker/scheduler, Docker, CI/CD, deploy, credentials, secrets or foreign authoritative-state mutation is authorized. This capture does not authorize FC-02 or product implementation before independent acceptance and a fresh GitHub gate.
+
+This ADR creates no product code, tests, fixtures, runtime, provider behavior or implementation authorization.
