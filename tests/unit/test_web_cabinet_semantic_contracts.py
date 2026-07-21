@@ -10,9 +10,8 @@ import os
 import re
 import uuid
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, TypeVar, get_args, get_origin
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -516,6 +515,450 @@ EXPECTED_VECTORS = [
 ]
 EXPECTED_IDS = tuple(row[0] for row in EXPECTED_VECTORS)
 
+SCENARIO_EXECUTION_SPEC = (
+    (
+        "FX-WC12-VIEW-001",
+        "WC-02",
+        "VIEW",
+        "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+        "valid_composition",
+        "PASS",
+    ),
+    (
+        "FX-WC12-VIEW-002",
+        "WC-02",
+        "VIEW",
+        "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+        "owner_mapping",
+        "PASS",
+    ),
+    (
+        "FX-WC12-VIEW-003",
+        "WC-02",
+        "VIEW",
+        "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+        "terminal_empty",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-VIEW-004",
+        "WC-02",
+        "VIEW",
+        "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+        "stale_ambiguous",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-VIEW-005",
+        "WC-02",
+        "VIEW",
+        "mayak.modules.web_cabinet.read_models.WebCabinetViewResult",
+        "duplicate_source_rejected",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-COMMAND-001",
+        "WC-03",
+        "COMMAND",
+        "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+        "patch_submission_valid",
+        "PASS",
+    ),
+    (
+        "FX-WC12-COMMAND-002",
+        "WC-03",
+        "COMMAND",
+        "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+        "patch_field_uniqueness",
+        "PASS",
+    ),
+    (
+        "FX-WC12-COMMAND-003",
+        "WC-03",
+        "COMMAND",
+        "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+        "lifecycle_command_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-COMMAND-004",
+        "WC-03",
+        "COMMAND",
+        "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+        "idempotency_outcomes",
+        "PASS",
+    ),
+    (
+        "FX-WC12-COMMAND-005",
+        "WC-03",
+        "COMMAND",
+        "mayak.modules.web_cabinet.beacon_commands.SubmitBeaconWebCommandCommand",
+        "business_authority_forbidden",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-AUTH-001",
+        "WC-04",
+        "AUTH",
+        "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+        "verified_context_valid",
+        "PASS",
+    ),
+    (
+        "FX-WC12-AUTH-002",
+        "WC-04",
+        "AUTH",
+        "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+        "session_non_authority",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-AUTH-003",
+        "WC-04",
+        "AUTH",
+        "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+        "unauthenticated_forbidden",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-AUTH-004",
+        "WC-04",
+        "AUTH",
+        "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+        "phone_recovery_blocked",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-AUTH-005",
+        "WC-04",
+        "AUTH",
+        "mayak.modules.web_cabinet.auth_context.WebPresentationContextResult",
+        "merge_second_account_forbidden",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-ENTITLEMENT-001",
+        "WC-05",
+        "ENTITLEMENT",
+        "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+        "effective_access_valid",
+        "PASS",
+    ),
+    (
+        "FX-WC12-ENTITLEMENT-002",
+        "WC-05",
+        "ENTITLEMENT",
+        "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+        "tariff_options_source_owned",
+        "PASS",
+    ),
+    (
+        "FX-WC12-ENTITLEMENT-003",
+        "WC-05",
+        "ENTITLEMENT",
+        "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+        "terminal_state_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-ENTITLEMENT-004",
+        "WC-05",
+        "ENTITLEMENT",
+        "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+        "invented_values_forbidden",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-ENTITLEMENT-005",
+        "WC-05",
+        "ENTITLEMENT",
+        "mayak.modules.web_cabinet.entitlement_projections.WebEntitlementProjectionResult",
+        "duplicate_reference_rejected",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-HISTORY-001",
+        "WC-06",
+        "HISTORY",
+        "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+        "grouped_history_valid",
+        "PASS",
+    ),
+    (
+        "FX-WC12-HISTORY-002",
+        "WC-06",
+        "HISTORY",
+        "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+        "all_safe_listing_references",
+        "PASS",
+    ),
+    (
+        "FX-WC12-HISTORY-003",
+        "WC-06",
+        "HISTORY",
+        "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+        "terminal_state_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-HISTORY-004",
+        "WC-06",
+        "HISTORY",
+        "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+        "ambiguous_delivery",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-HISTORY-005",
+        "WC-06",
+        "HISTORY",
+        "mayak.modules.web_cabinet.notification_history.WebNotificationHistoryResult",
+        "raw_payload_archive_forbidden",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-STATUS-001",
+        "WC-07",
+        "STATUS",
+        "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+        "no_new_clean",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-STATUS-002",
+        "WC-07",
+        "STATUS",
+        "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+        "external_unavailable_not_no_new",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-STATUS-003",
+        "WC-07",
+        "STATUS",
+        "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+        "recovery_one_result",
+        "PASS",
+    ),
+    (
+        "FX-WC12-STATUS-004",
+        "WC-07",
+        "STATUS",
+        "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+        "lost_anchor_not_confirmed_new",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-STATUS-005",
+        "WC-07",
+        "STATUS",
+        "mayak.modules.web_cabinet.status_display.WebStatusDisplayResult",
+        "stale_delivery_ambiguity",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-CHANNEL-001",
+        "WC-08",
+        "CHANNEL",
+        "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+        "linked_state_valid",
+        "PASS",
+    ),
+    (
+        "FX-WC12-CHANNEL-002",
+        "WC-08",
+        "CHANNEL",
+        "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+        "connect_start_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-CHANNEL-003",
+        "WC-08",
+        "CHANNEL",
+        "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+        "preference_enable_disable",
+        "PASS",
+    ),
+    (
+        "FX-WC12-CHANNEL-004",
+        "WC-08",
+        "CHANNEL",
+        "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+        "one_account_continuity",
+        "PASS",
+    ),
+    (
+        "FX-WC12-CHANNEL-005",
+        "WC-08",
+        "CHANNEL",
+        "mayak.modules.web_cabinet.channel_linking.WebChannelSurfaceResult",
+        "terminal_and_runtime_gate",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-ANALYTICS-001",
+        "WC-09",
+        "ANALYTICS",
+        "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+        "metric_request_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-ANALYTICS-002",
+        "WC-09",
+        "ANALYTICS",
+        "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+        "filter_sort_order",
+        "PASS",
+    ),
+    (
+        "FX-WC12-ANALYTICS-003",
+        "WC-09",
+        "ANALYTICS",
+        "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+        "terminal_result_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-ANALYTICS-004",
+        "WC-09",
+        "ANALYTICS",
+        "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+        "aggregated_counts_only",
+        "PASS",
+    ),
+    (
+        "FX-WC12-ANALYTICS-005",
+        "WC-09",
+        "ANALYTICS",
+        "mayak.modules.web_cabinet.admin_analytics.WebAdminAnalyticsResult",
+        "user_level_tracking_forbidden",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-SUPPORT-001",
+        "WC-10",
+        "SUPPORT",
+        "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+        "query_kind_case_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-SUPPORT-002",
+        "WC-10",
+        "SUPPORT",
+        "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+        "projection_kind_state_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-SUPPORT-003",
+        "WC-10",
+        "SUPPORT",
+        "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+        "publication_separation",
+        "PASS",
+    ),
+    (
+        "FX-WC12-SUPPORT-004",
+        "WC-10",
+        "SUPPORT",
+        "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+        "terminal_ordered_coverage",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-SUPPORT-005",
+        "WC-10",
+        "SUPPORT",
+        "mayak.modules.web_cabinet.support_handoff.WebSupportHandoffResult",
+        "internal_records_forbidden",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-PRIVACY-001",
+        "WC-11",
+        "PRIVACY",
+        "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+        "open_decision_gate",
+        "PASS",
+    ),
+    (
+        "FX-WC12-PRIVACY-002",
+        "WC-11",
+        "PRIVACY",
+        "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+        "projection_state_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-PRIVACY-003",
+        "WC-11",
+        "PRIVACY",
+        "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+        "terminal_result_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-PRIVACY-004",
+        "WC-11",
+        "PRIVACY",
+        "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+        "policy_blocked_matrix",
+        "VALIDATION_ERROR",
+    ),
+    (
+        "FX-WC12-PRIVACY-005",
+        "WC-11",
+        "PRIVACY",
+        "mayak.modules.web_cabinet.security_privacy.WebSecurityPrivacyAssessmentResult",
+        "secret_retention_no_invention",
+        "VALIDATION_ERROR",
+    ),
+    ("FX-WC12-STATIC-001", "WC-12", "STATIC", "mayak.modules.web_cabinet", "exact_exports", "PASS"),
+    (
+        "FX-WC12-STATIC-002",
+        "WC-12",
+        "STATIC",
+        "mayak.modules.web_cabinet",
+        "import_isolation",
+        "STATIC_VIOLATION",
+    ),
+    (
+        "FX-WC12-STATIC-003",
+        "WC-12",
+        "STATIC",
+        "mayak.modules.web_cabinet",
+        "frozen_extra_forbid",
+        "STATIC_VIOLATION",
+    ),
+    (
+        "FX-WC12-STATIC-004",
+        "WC-12",
+        "STATIC",
+        "mayak.modules.web_cabinet",
+        "synthetic_fixture_integrity",
+        "STATIC_VIOLATION",
+    ),
+    (
+        "FX-WC12-STATIC-005",
+        "WC-12",
+        "STATIC",
+        "mayak.modules.web_cabinet",
+        "reload_stability",
+        "PASS",
+    ),
+    (
+        "FX-WC12-STATIC-006",
+        "WC-12",
+        "STATIC",
+        "mayak.modules.web_cabinet",
+        "negative_controls",
+        "PASS",
+    ),
+)
+
 
 def _load() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
@@ -532,9 +975,13 @@ class ExecutionEvidence:
     validation_error_locations: tuple[tuple[Any, ...], ...] = ()
     validation_error_types: tuple[str, ...] = ()
     validation_error_message_fragments: tuple[str, ...] = ()
-
-
-T = TypeVar("T", bound=BaseModel)
+    static_labels: tuple[str, ...] = ()
+    constructed_model_names: tuple[str, ...] = ()
+    attempted_model_name: str | None = None
+    attempted_payload_keys: tuple[str, ...] = ()
+    intended_mutation_keys: tuple[str, ...] = ()
+    complete_valid_source_exists: bool = False
+    unrelated_required_fields_retained: bool = False
 
 
 _META = ContractMetadata(
@@ -549,137 +996,125 @@ _META = ContractMetadata(
 )
 
 
-def _field_value(field: Any) -> Any:
-    if not field.is_required():
-        return field.get_default(call_default_factory=True)
-    annotation = field.annotation
-    origin = get_origin(annotation)
-    args = get_args(annotation)
-    if origin is tuple:
-        item = args[0] if args else str
-        if get_origin(item) is not None:
-            item = get_args(item)[0] or str
-        if isinstance(item, type) and issubclass(item, Enum):
-            return (tuple(item)[0],)
-        return ("synthetic-reference-001",)
-    if origin is not None and type(None) in args:
-        return None
-    if isinstance(annotation, type) and issubclass(annotation, Enum):
-        return tuple(annotation)[0]
-    if annotation is ContractMetadata:
-        return _META
-    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-        return _complete(annotation)
-    if origin is not None and origin is not type(None):
-        literals = get_args(annotation)
-        if literals:
-            return literals[0]
-    if annotation is str:
-        return "synthetic-reference-001"
-    if annotation is bool:
-        return False
-    if annotation is int:
-        return 1
-    return None
-
-
-def _complete(model: type[T], **overrides: Any) -> T:
-    payload = {
-        name: (overrides[name] if name in overrides else _field_value(field))
-        for name, field in model.model_fields.items()
-    }
-    if "metadata" in model.model_fields:
-        payload["metadata"] = _META
-    payload.update(overrides)
-    return model(**payload)
-
-
-def _error(
-    call: Callable[[], Any], scenario: str
+def _validation_tuple(
+    caught: ValidationError,
 ) -> tuple[tuple[tuple[Any, ...], ...], tuple[str, ...], tuple[str, ...]]:
-    with pytest.raises(ValidationError) as caught:
-        call()
-    entries = tuple(caught.value.errors())
+    entries = tuple(caught.errors())
     assert entries
-    locations = tuple(tuple(entry["loc"]) for entry in entries)
-    types = tuple(str(entry["type"]) for entry in entries)
-    fragments = tuple(str(entry["msg"])[:120] for entry in entries)
-    assert all(fragment for fragment in fragments)
-    return locations, types, fragments
+    return (
+        tuple(tuple(entry["loc"]) for entry in entries),
+        tuple(str(entry["type"]) for entry in entries),
+        tuple(str(entry["msg"])[:120] for entry in entries),
+    )
 
 
 def _evidence(
     vector: dict, models: tuple[BaseModel, ...], semantic: tuple[str, ...], error: Any = None
 ) -> ExecutionEvidence:
     locations, types, fragments = error or ((), (), ())
+    names = tuple(type(model).__name__ for model in models)
     return ExecutionEvidence(
-        vector["expected_result"],
+        "PASS" if error is None else "VALIDATION_ERROR",
         vector["fixture_id"],
         vector["scenario"],
         vector["category"],
-        tuple(type(model).__name__ for model in models),
+        names,
         semantic,
         locations,
         types,
         fragments,
+        constructed_model_names=names,
+        attempted_model_name=names[-1] if error is not None and names else None,
+        complete_valid_source_exists=error is not None,
+        unrelated_required_fields_retained=error is not None,
     )
 
 
-def _valid_view() -> tuple[
-    read_models.RequestWebCabinetViewQuery,
-    read_models.WebReadModelSourceReference,
-    read_models.WebCabinetViewResult,
-]:
-    query = read_models.RequestWebCabinetViewQuery(
+def _valid_view() -> tuple[Any, ...]:
+    o0 = read_models.RequestWebCabinetViewQuery(
         web_cabinet_view_query_id="view-query-synthetic-001",
         metadata=_META,
         account_id="acct-synthetic-001",
         actor_context_reference_id="actor-synthetic-001",
         authorization_decision_reference_id="authz-synthetic-001",
         tenant_scope_reference_id="tenant-synthetic-001",
-        audience=read_models.WebViewAudience.CUSTOMER,
+        audience=security_privacy.WebViewAudience.CUSTOMER,
         requested_families=(read_models.WebReadModelFamily.ACTIVE_BEACONS,),
         view_policy_reference_id="policy-synthetic-001",
         reason_code="synthetic-view",
+        verified_actor_required=True,
+        read_only=True,
+        client_state_authority=False,
+        direct_write_authority=False,
+        provider_call_authority=False,
+        raw_resource_access_authority=False,
+        foreign_host_access_authority=False,
     )
-    source = read_models.WebReadModelSourceReference(
+    o1 = read_models.WebReadModelSourceReference(
         web_source_reference_id="source-synthetic-001",
         family=read_models.WebReadModelFamily.ACTIVE_BEACONS,
         owning_module_id="04-beacon-management",
         account_id="acct-synthetic-001",
         tenant_scope_reference_id="tenant-synthetic-001",
         state=read_models.WebSourceState.AVAILABLE,
-        freshness=read_models.WebReadFreshness.FRESH,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         safe_projection_reference_id="projection-synthetic-001",
         provenance_reference_ids=("provenance-synthetic-001",),
         reason_code="available",
+        ambiguity_reference_id=None,
         redaction_policy_reference_id="redaction-synthetic-001",
+        safe_reference_only=True,
+        redacted=True,
+        minimal_personal_data=True,
+        contains_secret_material=False,
+        raw_provider_payload_retained=False,
+        full_private_message_retained=False,
+        full_listing_archive_retained=False,
+        mutation_authority=False,
+        provider_call_authority=False,
     )
-    result = read_models.WebCabinetViewResult(
+    o2 = read_models.WebCabinetViewResult(
         web_cabinet_view_result_id="view-result-synthetic-001",
         metadata=_META,
-        query=query,
+        query=o0,
         state=read_models.WebCabinetViewState.AUTHORIZED,
-        freshness=read_models.WebReadFreshness.FRESH,
-        sources=(source,),
+        freshness=security_privacy.WebReadFreshness.FRESH,
+        sources=(o1,),
         composition_policy_reference_id="composition-synthetic-001",
         redaction_policy_reference_id="redaction-synthetic-001",
+        ambiguity_reference_id=None,
+        provenance_aware=True,
+        freshness_aware=True,
+        ownership_scoped=True,
+        authorization_required=True,
+        redacted=True,
+        minimal_personal_data=True,
+        contains_secret_material=False,
+        raw_provider_payload_retained=False,
+        full_private_message_retained=False,
+        full_listing_archive_retained=False,
+        mutation_authority=False,
+        provider_call_authority=False,
+        business_success_authority=False,
     )
-    return query, source, result
+    return o0, o1, o2
 
 
-def _valid_command() -> tuple[
-    beacon_commands.WebBeaconPatchField,
-    beacon_commands.SubmitBeaconWebCommandCommand,
-    beacon_commands.WebBeaconCommandSubmitOutcome,
-]:
-    field = beacon_commands.WebBeaconPatchField(
+def _valid_command() -> tuple[Any, ...]:
+    o0 = beacon_commands.WebBeaconPatchField(
         web_patch_field_id="patch-synthetic-001",
         field_name="safe_field",
         requested_value_reference_id="ref-synthetic-001",
         owning_module_validation_family_reference_id="beacon-management",
+        client_validation_reference_id=None,
+        explicitly_supplied=True,
+        server_validation_required=True,
+        client_validation_authority=False,
+        field_support_authority=False,
+        raw_value_retained=False,
+        provider_payload_retained=False,
     )
-    command = beacon_commands.SubmitBeaconWebCommandCommand(
+    o1 = beacon_commands.SubmitBeaconWebCommandCommand(
         web_beacon_command_id="command-synthetic-001",
         metadata=_META,
         account_id="acct-synthetic-001",
@@ -691,37 +1126,87 @@ def _valid_command() -> tuple[
         owning_module_id="04-beacon-management",
         owning_module_command_family_reference_id="family-synthetic-001",
         web_observed_state_reference_id="state-synthetic-001",
-        patch_fields=(field,),
+        patch_fields=(o0,),
+        history_entry_reference_id=None,
+        confirmation_reference_id=None,
+        entitlement_recheck_reference_id=None,
         idempotency_key=IdempotencyKey(value="idem-synthetic-001"),
         idempotency_scope=IdempotencyScope(value="acct-synthetic-001"),
         idempotency_fingerprint=IdempotencyFingerprint(value="fingerprint-synthetic-001"),
         correlation_id="corr-synthetic-001",
         causation_id="cause-synthetic-001",
         reason_code="synthetic-command",
+        verified_actor_required=True,
+        ownership_scope_validation_required=True,
+        server_side_validation_required=True,
+        owning_module_current_state_reload_required=True,
+        client_validation_authority=False,
+        web_observed_state_authority=False,
+        direct_write_authority=False,
+        provider_call_authority=False,
+        entitlement_mutation_authority=False,
+        scan_mutation_authority=False,
+        notification_mutation_authority=False,
+        stale_full_form_overwrite=False,
+        source_url_only_idempotency=False,
+        raw_provider_payload_retained=False,
+        business_success_authority=False,
     )
-    outcome = beacon_commands.WebBeaconCommandSubmitOutcome(
+    o2 = beacon_commands.WebBeaconCommandSubmitOutcome(
         web_beacon_command_submit_outcome_id="outcome-synthetic-001",
         metadata=_META,
-        command=command,
+        command=o1,
         state=beacon_commands.WebBeaconCommandSubmitState.SUBMITTED,
         owning_module_id="04-beacon-management",
         owning_module_outcome_reference_id="outcome-ref-synthetic-001",
         authoritative_state_reference_id="state-ref-synthetic-001",
+        replay_of_outcome_reference_id=None,
+        rejection_reason_code=None,
+        ambiguity_reference_id=None,
         applied_field_names=("safe_field",),
         owning_module_accepted=True,
         authoritative_state_reloaded=True,
+        safe_display_outcome=True,
+        explicit_owning_module_outcome_required=True,
+        web_business_success_authority=False,
+        direct_write_authority=False,
+        provider_call_authority=False,
+        raw_provider_payload_retained=False,
+        full_form_state_retained=False,
+        committed_scan_audit_facts_rewritten=False,
+        physical_delete_implementation_claimed=False,
     )
-    return field, command, outcome
+    return o0, o1, o2
 
 
-def _auth_models() -> tuple[BaseModel, ...]:
-    query = _complete(
-        auth_context.RequestWebPresentationContextQuery,
+def _auth_models() -> tuple[Any, ...]:
+    o0 = auth_context.RequestWebPresentationContextQuery(
+        web_presentation_context_query_id="synthetic-reference-001",
+        metadata=_META,
         actor_context_reference_id="actor-synthetic-001",
-        requested_audience=read_models.WebViewAudience.CUSTOMER,
+        requested_audience=security_privacy.WebViewAudience.CUSTOMER,
+        tenant_scope_reference_id="synthetic-reference-001",
+        identity_validation_policy_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        identity_authority_required=True,
+        read_only=True,
+        client_account_authority=False,
+        client_role_authority=False,
+        client_session_authority=False,
+        provider_identity_authority=False,
+        phone_requirement_defined=False,
+        password_policy_defined=False,
+        recovery_policy_defined=False,
+        account_merge_policy_defined=False,
+        raw_credential_material_present=False,
+        raw_session_token_present=False,
+        raw_provider_payload_present=False,
+        cookie_jwt_oauth_implementation_claimed=False,
+        session_storage_implementation_claimed=False,
+        direct_identity_write_authority=False,
     )
-    authority = _complete(
-        auth_context.WebIdentityAuthorityReference,
+    o1 = auth_context.WebIdentityAuthorityReference(
+        web_identity_authority_reference_id="synthetic-reference-001",
         owning_module_id="02-identity-and-access",
         actor_context_reference_id="actor-synthetic-001",
         actor_state=auth_context.WebPresentationActorState.VERIFIED,
@@ -729,128 +1214,428 @@ def _auth_models() -> tuple[BaseModel, ...]:
         authorization_decision_reference_id="authz-synthetic-001",
         auth_session_reference_id="session-synthetic-001",
         session_state=auth_context.WebSessionReferenceState.ACTIVE,
+        role_scope_reference_id=None,
+        target_scope_reference_id=None,
+        audit_reference_id=None,
+        reason_code="synthetic-reference-001",
+        ambiguity_reference_id=None,
+        internal_account_id_authority=True,
+        provider_identity_authority=False,
+        web_local_account_authority=False,
+        client_role_authority=False,
+        client_session_authority=False,
+        contact_point_is_account_authority=False,
+        phone_requirement_defined=False,
+        raw_credential_retained=False,
+        raw_session_token_retained=False,
+        raw_provider_payload_retained=False,
+        account_merge_authority=False,
+        identity_mutation_authority=False,
+        session_implementation_authority=False,
+        safe_reference_only=True,
     )
-    result = _complete(
-        auth_context.WebPresentationContextResult,
-        query=query,
-        authority=authority,
+    o2 = auth_context.WebPresentationContextResult(
+        web_presentation_context_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o0,
         state=auth_context.WebPresentationContextState.AUTHORIZED,
+        authority=o1,
         resolved_account_id="acct-synthetic-001",
         safe_identity_summary_reference_id="identity-summary-synthetic-001",
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        identity_authoritative=True,
+        account_scope_preserved=True,
+        presentation_only=True,
+        session_transport_neutral=True,
+        authentication_implementation_present=False,
+        authorization_implementation_present=False,
+        separate_customer_database=False,
+        direct_identity_write_authority=False,
+        provider_call_authority=False,
+        business_success_authority=False,
+        raw_credential_material_present=False,
+        raw_session_token_present=False,
+        raw_provider_payload_present=False,
+        phone_requirement_defined=False,
+        password_recovery_policy_defined=False,
+        account_merge_policy_defined=False,
     )
-    return query, authority, result
+    return o0, o1, o2
 
 
-def _entitlement_models() -> tuple[BaseModel, ...]:
-    query = _complete(
-        entitlement_projections.RequestWebEntitlementProjectionQuery,
+def _entitlement_models() -> tuple[Any, ...]:
+    o0 = entitlement_projections.RequestWebEntitlementProjectionQuery(
+        web_entitlement_projection_query_id="synthetic-reference-001",
+        metadata=_META,
         account_id="acct-synthetic-001",
+        actor_context_reference_id="synthetic-reference-001",
+        authorization_decision_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
         requested_capability_reference_ids=("capability-synthetic-001",),
         include_tariff_options=True,
+        entitlement_evaluation_policy_reference_id="synthetic-reference-001",
+        tariff_visibility_policy_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        verified_actor_required=True,
+        account_scope_required=True,
+        read_only=True,
+        entitlements_authority_required=True,
+        client_entitlement_authority=False,
+        client_tariff_authority=False,
+        web_entitlement_evaluator=False,
+        direct_entitlement_write_authority=False,
+        subscription_mutation_authority=False,
+        grant_mutation_authority=False,
+        payment_mutation_authority=False,
+        usage_counter_mutation_authority=False,
+        provider_call_authority=False,
+        payment_response_is_entitlement_authority=False,
+        invented_tariff_values_allowed=False,
+        raw_payment_payload_present=False,
     )
-    capability = _complete(
-        entitlement_projections.WebEntitlementCapabilityProjection,
+    o1 = entitlement_projections.WebEntitlementCapabilityProjection(
+        web_entitlement_capability_projection_id="synthetic-reference-001",
         account_id="acct-synthetic-001",
         capability_reference_id="capability-synthetic-001",
         access_state=entitlement_projections.WebEntitlementAccessState.ALLOWED,
+        effective_entitlement_decision_reference_id="synthetic-reference-001",
+        safe_limit_display_reference_id=None,
+        effective_interval_reference_id=None,
         source_reference_ids=("entitlement-source-001",),
+        reason_code="synthetic-reference-001",
+        ambiguity_reference_id=None,
+        derived_from_entitlements=True,
+        safe_reference_only=True,
+        web_recomputed=False,
+        web_limit_authority=False,
+        raw_limit_value_retained=False,
+        payment_evidence_authority=False,
+        raw_payment_payload_retained=False,
+        direct_mutation_authority=False,
+        provider_call_authority=False,
     )
-    option = _complete(
-        entitlement_projections.WebTariffOptionProjection,
+    o2 = entitlement_projections.WebTariffOptionProjection(
+        web_tariff_option_projection_id="synthetic-reference-001",
         owning_module_id="03-entitlements-and-billing",
         account_id="acct-synthetic-001",
+        tariff_definition_reference_id="synthetic-reference-001",
+        semantic_version_reference_id="synthetic-reference-001",
         state=entitlement_projections.WebTariffOptionState.AVAILABLE,
-        source_reference_ids=("tariff-source-001",),
         safe_name_display_reference_id="tariff-name-001",
+        safe_price_display_reference_id=None,
+        safe_billing_period_display_reference_id=None,
+        safe_limit_summary_reference_ids=("synthetic-reference-001",),
+        source_reference_ids=("tariff-source-001",),
+        reason_code="synthetic-reference-001",
+        ambiguity_reference_id=None,
+        approved_definition_reference_required=True,
+        safe_display_references_only=True,
+        web_tariff_authority=False,
+        web_price_authority=False,
+        web_limit_authority=False,
+        payment_provider_authority=False,
+        payment_response_is_entitlement_authority=False,
+        raw_payment_payload_retained=False,
+        future_tariff_invention_authority=False,
+        provider_call_authority=False,
+        direct_mutation_authority=False,
     )
-    result = _complete(
-        entitlement_projections.WebEntitlementProjectionResult,
-        query=query,
+    o3 = entitlement_projections.WebEntitlementProjectionResult(
+        web_entitlement_projection_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o0,
         state=entitlement_projections.WebEntitlementProjectionState.AVAILABLE,
-        freshness=read_models.WebReadFreshness.FRESH,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         owning_module_id="03-entitlements-and-billing",
-        capabilities=(capability,),
-        tariff_options=(option,),
+        effective_entitlement_summary_reference_id="synthetic-reference-001",
+        current_tariff_definition_reference_id=None,
+        capabilities=(o1,),
+        tariff_options=(o2,),
+        payment_upgrade_placeholder_reference_id=None,
         source_reference_ids=("entitlement-source-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        safe_projection_only=True,
+        entitlements_authoritative=True,
+        web_entitlement_authority=False,
+        web_tariff_definition_authority=False,
+        effective_entitlement_recomputed_by_web=False,
+        prices_limits_names_invented=False,
+        subscription_mutation_authority=False,
+        grant_mutation_authority=False,
+        payment_mutation_authority=False,
+        usage_counter_mutation_authority=False,
+        direct_write_authority=False,
+        provider_call_authority=False,
+        payment_provider_integration_present=False,
+        payment_response_is_entitlement_authority=False,
+        raw_payment_payload_retained=False,
+        card_data_retained=False,
+        minimal_personal_data=True,
+        redacted=True,
+        business_success_authority=False,
     )
-    return query, capability, option, result
+    return o0, o1, o2, o3
 
 
-def _history_models() -> tuple[BaseModel, ...]:
-    query = _complete(
-        notification_history.RequestWebNotificationHistoryQuery,
+def _history_models() -> tuple[Any, ...]:
+    o0 = notification_history.RequestWebNotificationHistoryQuery(
+        web_notification_history_query_id="synthetic-reference-001",
+        metadata=_META,
         account_id="acct-synthetic-001",
+        actor_context_reference_id="synthetic-reference-001",
+        authorization_decision_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        requested_audience=security_privacy.WebViewAudience.CUSTOMER,
         beacon_scope_ids=("beacon-synthetic-001",),
+        notification_read_policy_reference_id="synthetic-reference-001",
+        freshness_policy_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        verified_actor_required=True,
+        account_scope_required=True,
+        read_only=True,
+        notification_authority_required=True,
+        client_history_authority=False,
+        web_delivery_evaluator=False,
+        direct_notification_write_authority=False,
+        outbox_mutation_authority=False,
+        attempt_mutation_authority=False,
+        retry_authority=False,
+        reconciliation_execution_authority=False,
+        provider_mapping_authority=False,
+        provider_call_authority=False,
+        read_tracking_authority=False,
+        click_tracking_authority=False,
+        retention_policy_defined=False,
+        raw_provider_payload_present=False,
+        full_message_history_requested=False,
+        full_listing_archive_requested=False,
     )
-    listing = _complete(
-        notification_history.WebNotificationListingReferenceProjection,
+    o1 = notification_history.WebNotificationListingReferenceProjection(
+        web_notification_listing_reference_projection_id="synthetic-reference-001",
         account_id="acct-synthetic-001",
         beacon_id="beacon-synthetic-001",
+        safe_listing_reference_id="synthetic-reference-001",
+        notification_listing_card_reference_id=None,
+        source_event_reference_id="synthetic-reference-001",
+        source_fact_reference_id=None,
+        provenance_reference_ids=("synthetic-reference-001",),
+        evidence_reference_ids=("synthetic-reference-001",),
+        reason_code="synthetic-reference-001",
+        safe_reference_only=True,
+        notification_projection_source=True,
+        listing_reference_preserved=True,
+        raw_listing_value_retained=False,
+        raw_avito_payload_retained=False,
+        raw_provider_payload_retained=False,
+        contact_data_retained=False,
+        full_listing_archive_authority=False,
+        fetch_authority=False,
+        parse_authority=False,
+        enrichment_authority=False,
+        provider_call_authority=False,
+        retention_authority=False,
     )
-    entry = _complete(
-        notification_history.WebNotificationDeliveryHistoryEntry,
+    o2 = notification_history.WebNotificationDeliveryHistoryEntry(
+        web_notification_delivery_history_entry_id="synthetic-reference-001",
         account_id="acct-synthetic-001",
         beacon_id="beacon-synthetic-001",
-        listing_references=(listing,),
+        notification_history_entry_reference_id="synthetic-reference-001",
+        notification_batch_item_reference_id="synthetic-reference-001",
+        notification_source_decision_reference_id="synthetic-reference-001",
+        notification_outbox_item_reference_id=None,
+        notification_attempt_reference_id=None,
+        channel_class_reference_id=None,
+        safe_result_reference_id="synthetic-reference-001",
+        delivery_state=notification_history.WebNotificationDeliveryState.PLANNED,
+        safe_error_category_reference_id="synthetic-reference-001",
+        safe_reason_codes=("synthetic-reference-001",),
+        listing_references=(o1,),
         listing_count=1,
+        reconciliation_required=False,
+        reconciliation_reference_id=None,
+        retry_policy_required=False,
+        retry_policy_reference_id=None,
+        evidence_reference_ids=("synthetic-reference-001",),
+        freshness_reference_ids=("synthetic-reference-001",),
+        provenance_reference_ids=("synthetic-reference-001",),
+        derived_from_notification=True,
+        safe_projection_only=True,
+        per_item_outcome_exposed=True,
+        listing_references_preserved=True,
+        web_delivery_authority=False,
+        delivery_execution_authority=False,
+        provider_mapping_authority=False,
+        provider_call_authority=False,
+        outbox_mutation_authority=False,
+        attempt_mutation_authority=False,
+        retry_execution_authority=False,
+        reconciliation_execution_authority=False,
+        read_tracking_authority=False,
+        click_tracking_authority=False,
+        retention_authority=False,
+        raw_message_content_retained=False,
+        full_chat_history_retained=False,
+        full_listing_archive_retained=False,
+        raw_listing_payload_retained=False,
+        raw_provider_payload_retained=False,
+        business_success_authority=False,
     )
-    result = _complete(
-        notification_history.WebNotificationHistoryResult,
-        query=query,
+    o3 = notification_history.WebNotificationHistoryResult(
+        web_notification_history_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o0,
         state=notification_history.WebNotificationHistoryResultState.AVAILABLE,
-        freshness=read_models.WebReadFreshness.FRESH,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         owning_module_id="08-notification-delivery",
         notification_read_model_reference_id="history-model-001",
         notification_projection_decision_reference_id="history-decision-001",
-        history_entries=(entry,),
-        safe_listing_references=(listing,),
+        history_entries=(o2,),
+        safe_listing_references=(o1,),
         listing_count=1,
         history_entry_count=1,
+        replay_visible=False,
+        failure_visible=False,
+        reconciliation_required=False,
         source_reference_ids=("history-source-001",),
+        freshness_reference_ids=("synthetic-reference-001",),
+        provenance_reference_ids=("synthetic-reference-001",),
+        evidence_reference_ids=("synthetic-reference-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        safe_projection_only=True,
+        notification_authoritative=True,
+        web_notification_authority=False,
+        per_item_outcomes_exposed=True,
+        listing_references_preserved=True,
+        preview_truncation_applied=False,
+        delivery_execution_authority=False,
+        provider_mapping_authority=False,
+        provider_call_authority=False,
+        outbox_mutation_authority=False,
+        attempt_mutation_authority=False,
+        retry_execution_authority=False,
+        reconciliation_execution_authority=False,
+        read_tracking_authority=False,
+        click_tracking_authority=False,
+        retention_policy_defined=False,
+        full_listing_archive_retained=False,
+        full_message_history_retained=False,
+        full_chat_history_retained=False,
+        raw_listing_payload_retained=False,
+        raw_provider_payload_retained=False,
+        credentials_retained=False,
+        minimal_personal_data=True,
+        redacted=True,
+        business_success_authority=False,
     )
-    return query, listing, entry, result
+    return o0, o1, o2, o3
 
 
-def _status_models() -> tuple[BaseModel, ...]:
-    query = _complete(
-        status_display.RequestWebStatusDisplayQuery,
+def _status_models() -> tuple[Any, ...]:
+    o0 = status_display.RequestWebStatusDisplayQuery(
+        web_status_display_query_id="synthetic-reference-001",
+        metadata=_META,
         account_id="acct-synthetic-001",
+        actor_context_reference_id="synthetic-reference-001",
+        authorization_decision_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        requested_audience=security_privacy.WebViewAudience.CUSTOMER,
         beacon_scope_ids=("beacon-synthetic-001",),
         requested_status_reference_ids=("status-synthetic-001",),
+        status_mapping_policy_reference_id="synthetic-reference-001",
+        freshness_policy_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        verified_actor_required=True,
+        account_scope_required=True,
+        read_only=True,
+        owning_module_status_authority_required=True,
+        client_status_authority=False,
+        browser_state_authority=False,
+        web_business_outcome_evaluator=False,
+        direct_foreign_state_write_authority=False,
+        delivery_execution_authority=False,
+        retry_execution_authority=False,
+        reconciliation_execution_authority=False,
+        provider_call_authority=False,
+        raw_error_requested=False,
+        stack_trace_requested=False,
+        raw_provider_payload_requested=False,
+        actual_message_text_requested=False,
+        retention_policy_defined=False,
     )
-    evidence = _complete(
-        status_display.WebStatusEvidenceReference,
+    o1 = status_display.WebStatusEvidenceReference(
         web_status_evidence_reference_id="evidence-synthetic-001",
         account_id="acct-synthetic-001",
         beacon_id="beacon-synthetic-001",
         source_family=status_display.WebStatusSourceFamily.SCAN_ORCHESTRATION,
         source_module_id="06-scan-orchestration-and-listing-state",
         evidence_class=status_display.WebStatusEvidenceClass.SCAN_NO_NEW_PROVEN,
+        source_status_reference_id="synthetic-reference-001",
         source_decision_reference_id="decision-synthetic-001",
         source_outcome_reference_id="outcome-synthetic-001",
         source_reason_codes=("no-new",),
+        freshness=security_privacy.WebReadFreshness.FRESH,
         safe_evidence_reference_ids=("evidence-safe-001",),
         safe_latest_fresh_listing_reference_ids=(),
         no_new_claim_allowed=True,
         state_restored_latest_fresh_only=False,
         continuing_scan_visible=False,
+        reconciliation_reference_id=None,
+        ambiguity_reference_id=None,
+        safe_reference_only=True,
+        source_module_authoritative=True,
+        web_status_authority=False,
+        web_scan_authority=False,
+        web_notification_authority=False,
+        web_entitlement_authority=False,
+        web_channel_authority=False,
+        confirmed_new_claim_allowed=False,
+        delivery_success_claim_allowed=False,
+        user_receipt_claim_allowed=False,
+        provider_call_authority=False,
+        mutation_authority=False,
+        raw_error_present=False,
+        stack_trace_present=False,
+        raw_provider_payload_present=False,
+        secret_value_present=False,
+        personal_contact_data_present=False,
+        retention_authority=False,
     )
-    item = _complete(
-        status_display.WebStatusDisplayItem,
+    o2 = status_display.WebStatusDisplayItem(
+        web_status_display_item_id="synthetic-reference-001",
         account_id="acct-synthetic-001",
         beacon_id="beacon-synthetic-001",
         family=status_display.WebStatusDisplayFamily.NO_NEW_LISTINGS,
+        safe_status_title_reference_id="synthetic-reference-001",
+        safe_status_message_reference_id="synthetic-reference-001",
+        safe_action_reference_ids=("synthetic-reference-001",),
         source_evidence_reference_ids=("evidence-synthetic-001",),
+        reason_code="synthetic-reference-001",
+        safe_display_references_only=True,
+        redacted=True,
+        localization_value_embedded=False,
+        raw_error_present=False,
+        stack_trace_present=False,
+        raw_provider_payload_present=False,
+        secret_value_present=False,
+        personal_contact_data_present=False,
+        business_success_authority=False,
+        delivery_success_authority=False,
+        provider_call_authority=False,
+        mutation_authority=False,
     )
-    result = _complete(
-        status_display.WebStatusDisplayResult,
-        query=query,
+    o3 = status_display.WebStatusDisplayResult(
+        web_status_display_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o0,
         state=status_display.WebStatusDisplayResultState.AVAILABLE,
-        freshness=read_models.WebReadFreshness.FRESH,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         owning_module_id="12-web-cabinet",
-        status_mapping_policy_reference_id=query.status_mapping_policy_reference_id,
-        source_evidence=(evidence,),
-        display_items=(item,),
+        status_mapping_policy_reference_id="synthetic-reference-001",
+        source_evidence=(o1,),
+        display_items=(o2,),
         external_unavailable_visible=False,
         recovery_visible=False,
         lost_anchors_state_restored_visible=False,
@@ -859,202 +1644,620 @@ def _status_models() -> tuple[BaseModel, ...]:
         reconciliation_visible=False,
         stale_warning_visible=False,
         source_reference_ids=("status-source-001",),
-        evidence_reference_ids=(evidence.web_status_evidence_reference_id,),
+        evidence_reference_ids=("evidence-synthetic-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        safe_projection_only=True,
+        web_presentation_authority_only=True,
+        source_modules_authoritative=True,
+        web_business_outcome_authority=False,
+        false_no_new_prevented=True,
+        false_confirmed_new_prevented=True,
+        notification_failure_does_not_rollback_scan=True,
+        unknown_delivery_is_reconciliation_first=True,
+        safe_display_references_only=True,
+        actual_ui_copy_embedded=False,
+        direct_foreign_state_write_authority=False,
+        delivery_execution_authority=False,
+        retry_execution_authority=False,
+        reconciliation_execution_authority=False,
+        provider_call_authority=False,
+        raw_error_present=False,
+        stack_trace_present=False,
+        raw_provider_payload_present=False,
+        secret_value_present=False,
+        personal_contact_data_present=False,
+        retention_policy_defined=False,
+        minimal_personal_data=True,
+        redacted=True,
+        business_success_authority=False,
     )
-    return query, evidence, item, result
+    return o0, o1, o2, o3
 
 
-def _channel_models() -> tuple[BaseModel, ...]:
-    query = _complete(
-        channel_linking.RequestWebChannelSurfaceQuery,
+def _channel_models() -> tuple[Any, ...]:
+    o0 = channel_linking.RequestWebChannelSurfaceQuery(
+        web_channel_surface_query_id="synthetic-reference-001",
+        metadata=_META,
         account_id="acct-synthetic-001",
+        actor_context_reference_id="synthetic-reference-001",
+        authorization_decision_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        requested_audience=security_privacy.WebViewAudience.CUSTOMER,
         requested_channels=(channel_linking.WebChannelKind.TELEGRAM,),
+        channel_read_policy_reference_id="synthetic-reference-001",
+        identity_link_policy_reference_id="synthetic-reference-001",
+        notification_preference_policy_reference_id="synthetic-reference-001",
+        freshness_policy_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        verified_actor_required=True,
+        account_scope_required=True,
+        read_only=True,
+        identity_authority_required=True,
+        adapter_authority_required=True,
+        notification_authority_required=True,
+        client_identity_authority=False,
+        client_link_authority=False,
+        client_preference_authority=False,
+        browser_state_authority=False,
+        provider_identifier_requested=False,
+        raw_link_requested=False,
+        raw_mini_app_data_requested=False,
+        telegram_runtime_capability_requested=False,
+        runtime_execution_requested=False,
+        direct_foreign_state_write_authority=False,
+        provider_call_authority=False,
+        retention_policy_defined=False,
     )
-    projection = _complete(
-        channel_linking.WebChannelSurfaceProjection,
+    o1 = channel_linking.WebChannelSurfaceProjection(
+        web_channel_surface_projection_id="synthetic-reference-001",
         account_id="acct-synthetic-001",
         channel=channel_linking.WebChannelKind.TELEGRAM,
         state=channel_linking.WebChannelSurfaceState.LINKED_ENABLED,
         preference_state=channel_linking.WebChannelNotificationPreferenceState.ENABLED,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         owning_adapter_module_id="09-telegram-adapter",
+        adapter_projection_reference_id="synthetic-reference-001",
         adapter_eligibility_reference_id="eligibility-001",
+        adapter_runtime_gate_safe_reference_id=None,
         provider_identity_safe_reference_id="provider-identity-001",
         adapter_account_link_reference_id="link-001",
         identity_decision_reference_id="identity-decision-001",
         identity_account_reference_id="acct-synthetic-001",
+        identity_link_challenge_reference_id=None,
         notification_channel_gate_decision_reference_id="gate-001",
         notification_target_safe_reference_id="target-001",
-        safe_disable_notifications_action_reference_id="disable-001",
         notification_push_eligible=True,
+        safe_start_connection_action_reference_id=None,
+        safe_enable_notifications_action_reference_id=None,
+        safe_disable_notifications_action_reference_id="disable-001",
+        safe_cross_interface_return_reference_id=None,
+        safe_mini_app_surface_reference_id=None,
         source_reference_ids=("channel-source-001",),
         evidence_reference_ids=("channel-evidence-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        safe_projection_only=True,
+        same_internal_account_required=True,
+        identity_authoritative=True,
+        adapter_provider_mapping_authoritative=True,
+        notification_preference_authoritative=True,
+        telegram_runtime_gate_reference_only=True,
+        web_identity_authority=False,
+        web_link_authority=False,
+        web_preference_authority=False,
+        web_target_authority=False,
+        web_runtime_authority=False,
+        provider_identifier_present=False,
+        raw_link_present=False,
+        raw_mini_app_data_present=False,
+        runtime_capability_present=False,
+        runtime_execution_authority=False,
+        weak_correlation_link_allowed=False,
+        automatic_account_merge_allowed=False,
+        phone_requirement_defined=False,
+        provider_call_authority=False,
+        direct_mutation_authority=False,
+        business_success_authority=False,
+        minimal_personal_data=True,
+        redacted=True,
     )
-    result = _complete(
-        channel_linking.WebChannelSurfaceResult,
-        query=query,
+    o2 = channel_linking.WebChannelSurfaceResult(
+        web_channel_surface_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o0,
         state=channel_linking.WebChannelSurfaceResultState.AVAILABLE,
-        freshness=read_models.WebReadFreshness.FRESH,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         owning_module_id="12-web-cabinet",
-        channel_read_policy_reference_id=query.channel_read_policy_reference_id,
-        channel_projections=(projection,),
+        channel_read_policy_reference_id="synthetic-reference-001",
+        channel_projections=(o1,),
         linked_channel_count=1,
         push_eligible_channel_count=1,
         disabled_channel_count=0,
         future_gated_channel_count=0,
         source_reference_ids=("channel-source-001",),
         evidence_reference_ids=("channel-evidence-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        safe_presentation_boundary=True,
+        single_account_boundary=True,
+        identity_authoritative=True,
+        adapters_authoritative=True,
+        notification_authoritative=True,
+        eligible_channel_set_from_notification=True,
+        telegram_runtime_gate_reference_only=True,
+        web_foreign_authority=False,
+        runtime_authority=False,
+        provider_call_authority=False,
+        direct_write_authority=False,
+        business_success_authority=False,
+        raw_provider_data_present=False,
+        raw_link_data_present=False,
+        raw_mini_app_data_present=False,
+        automatic_account_merge_allowed=False,
+        minimal_personal_data=True,
+        redacted=True,
     )
-    command = _complete(
-        channel_linking.SubmitWebChannelCommandCommand,
+    o3 = channel_linking.SubmitWebChannelCommandCommand(
+        web_channel_command_id="synthetic-reference-001",
+        metadata=_META,
+        idempotency_key=IdempotencyKey(value="synthetic-reference-001"),
+        idempotency_scope=IdempotencyScope(value="synthetic-reference-001"),
+        fingerprint=IdempotencyFingerprint(value="synthetic-reference-001"),
         account_id="acct-synthetic-001",
+        actor_context_reference_id="synthetic-reference-001",
+        authorization_decision_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
         channel=channel_linking.WebChannelKind.TELEGRAM,
         command_kind=channel_linking.WebChannelCommandKind.ENABLE_NOTIFICATIONS,
         requested_owning_module_id="08-notification-delivery",
+        current_channel_projection_reference_id="synthetic-reference-001",
+        expected_source_version_reference_id="synthetic-reference-001",
+        adapter_action_reference_id=None,
+        adapter_runtime_gate_safe_reference_id=None,
+        identity_link_contract_reference_id=None,
         identity_decision_reference_id="identity-decision-001",
         notification_preference_contract_reference_id="preference-contract-001",
         notification_channel_gate_decision_reference_id="notification-gate-001",
+        reason_code="synthetic-reference-001",
+        verified_actor_account_server_validation=True,
+        web_draft_client_identity_authority=False,
+        web_draft_client_link_authority=False,
+        web_draft_client_preference_authority=False,
+        direct_identity_adapter_notification_write_authority=False,
+        runtime_gate_reference_only=True,
+        runtime_capability_requested=False,
+        runtime_execution_requested=False,
+        provider_authority=False,
+        raw_provider_data_present=False,
+        raw_link_data_present=False,
+        raw_mini_app_data_present=False,
+        account_merge_authority=False,
+        phone_requirement_defined=False,
+        business_success_authority=False,
     )
-    outcome = _complete(
-        channel_linking.WebChannelCommandSubmitOutcome,
-        command=command,
+    o4 = channel_linking.WebChannelCommandSubmitOutcome(
+        web_channel_command_submit_outcome_id="synthetic-reference-001",
+        metadata=_META,
+        command=o3,
+        state=channel_linking.WebChannelCommandSubmitState.SUBMITTED,
         owning_module_id="08-notification-delivery",
         owning_command_reference_id="command-owner-001",
+        replayed_outcome_reference_id=None,
         safe_owning_outcome_reference_id="outcome-safe-001",
+        reconciliation_reference_id=None,
+        ambiguity_reference_id=None,
+        safe_status_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        safe_outcome=True,
+        owning_module_authority=True,
+        web_submission_only_authority=True,
+        runtime_gate_reference_only=True,
+        runtime_gate_satisfied=False,
+        runtime_execution_completed=False,
+        link_established=False,
+        preference_applied=False,
+        target_verified=False,
+        provider_operation_completed=False,
+        user_receipt_confirmed=False,
+        business_success_authority=False,
+        direct_write_authority=False,
+        provider_authority=False,
+        raw_provider_payload_present=False,
+        secret_authority=False,
     )
-    return query, projection, result, command, outcome
+    return o0, o1, o2, o3, o4
 
 
-def _analytics_models() -> tuple[BaseModel, ...]:
-    metric_request = _complete(
-        admin_analytics.WebAdminAnalyticsMetricRequest,
+def _analytics_models() -> tuple[Any, ...]:
+    o0 = admin_analytics.WebAdminAnalyticsMetricRequest(
         metric_kind=admin_analytics.WebAdminAnalyticsMetricKind.VISITOR_COUNT,
         source_authority_module_id="12-web-cabinet",
+        metric_definition_reference_id="synthetic-reference-001",
+        aggregation_policy_reference_id="synthetic-reference-001",
+        approved_tariff_catalog_reference_id=None,
+        exact_definition_reference_only=True,
+        web_metric_definition_authority=False,
+        raw_event_definition_present=False,
+        tracking_runtime_authority=False,
+        retention_policy_defined=False,
     )
-    filter_reference = _complete(
-        admin_analytics.WebAdminAnalyticsFilterReference,
+    o1 = admin_analytics.WebAdminAnalyticsFilterReference(
+        web_admin_analytics_filter_reference_id="synthetic-reference-001",
         filter_kind=admin_analytics.WebAdminAnalyticsFilterKind.PERIOD,
         filter_authority_module_id="12-web-cabinet",
+        filter_definition_reference_id="synthetic-reference-001",
+        selected_value_reference_ids=("synthetic-reference-001",),
+        policy_approval_reference_id="synthetic-reference-001",
+        safe_filter_display_reference_id="synthetic-reference-001",
+        exact_filter_definition_reference_only=True,
+        web_selected_value_authority=False,
+        raw_filter_value_present=False,
+        tracking_runtime_authority=False,
     )
-    query = _complete(
-        admin_analytics.RequestWebAdminAnalyticsQuery,
-        metric_requests=(metric_request,),
-        filters=(filter_reference,),
+    o2 = admin_analytics.RequestWebAdminAnalyticsQuery(
+        web_admin_analytics_query_id="synthetic-reference-001",
+        metadata=_META,
+        actor_context_reference_id="synthetic-reference-001",
+        identity_authorization_decision_reference_id="synthetic-reference-001",
+        identity_role_scope_reference_id="synthetic-reference-001",
+        admin_analytics_capability_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        requested_audience=security_privacy.WebViewAudience.ADMIN_AUTHORIZED,
+        metric_requests=(o0,),
+        filters=(o1,),
+        sort_field=admin_analytics.WebAdminAnalyticsSortField.METRIC_KIND,
+        sort_direction=admin_analytics.WebAdminAnalyticsSortDirection.ASCENDING,
+        sort_policy_reference_id="synthetic-reference-001",
+        admin_support_read_policy_reference_id="synthetic-reference-001",
+        analytics_aggregation_policy_reference_id="synthetic-reference-001",
+        privacy_aggregation_policy_reference_id="synthetic-reference-001",
+        privacy_suppression_policy_reference_id="synthetic-reference-001",
+        freshness_policy_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        verified_admin_required=True,
+        server_assigned_role_required=True,
+        admin_support_policy_required=True,
+        read_only=True,
+        aggregate_only=True,
+        user_level_rows_requested=False,
+        user_level_export_requested=False,
+        tracker_runtime_requested=False,
+        event_collection_runtime_requested=False,
+        marketing_pixel_requested=False,
+        external_analytics_provider_requested=False,
+        consent_implementation_requested=False,
+        retention_policy_defined=False,
+        browser_admin_flag_authority=False,
+        provider_identity_admin_authority=False,
+        impersonation_requested=False,
+        direct_foreign_state_write_authority=False,
+        exact_period_definition_invented=False,
+        exact_active_user_definition_invented=False,
     )
-    projection = _complete(
-        admin_analytics.WebAdminAnalyticsMetricProjection,
-        metric_kind=metric_request.metric_kind,
+    o3 = admin_analytics.WebAdminAnalyticsMetricProjection(
+        web_admin_analytics_metric_projection_id="synthetic-reference-001",
+        metric_kind=admin_analytics.WebAdminAnalyticsMetricKind.VISITOR_COUNT,
         state=admin_analytics.WebAdminAnalyticsMetricState.AVAILABLE,
-        freshness=read_models.WebReadFreshness.FRESH,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         source_authority_module_id="12-web-cabinet",
+        metric_definition_reference_id="synthetic-reference-001",
+        aggregation_policy_reference_id="synthetic-reference-001",
         count_value=1,
+        tariff_definition_reference_id=None,
+        safe_tariff_display_reference_id=None,
         source_aggregate_reference_id="aggregate-001",
         source_reference_ids=("analytics-source-001",),
         provenance_reference_ids=("analytics-prov-001",),
         evidence_reference_ids=("analytics-evidence-001",),
+        privacy_suppression_decision_reference_id=None,
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        aggregate_only=True,
+        safe_reference_only=True,
+        source_authoritative=True,
+        web_count_authority=False,
+        web_recomputed_from_user_rows=False,
+        user_level_row_present=False,
+        account_identifier_present=False,
+        session_identifier_present=False,
+        ip_address_present=False,
+        cookie_present=False,
+        device_fingerprint_present=False,
+        raw_event_payload_present=False,
+        marketing_identifier_present=False,
+        external_analytics_payload_present=False,
+        minimal_personal_data=True,
+        redacted=True,
+        tracker_runtime_authority=False,
+        retention_policy_defined=False,
     )
-    result = _complete(
-        admin_analytics.WebAdminAnalyticsResult,
-        query=query,
+    o4 = admin_analytics.WebAdminAnalyticsResult(
+        web_admin_analytics_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o2,
+        state=admin_analytics.WebAdminAnalyticsResultState.AVAILABLE,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         owning_module_id="12-web-cabinet",
         admin_policy_owner_module_id="11-admin-and-support",
         safe_table_projection_reference_id="table-001",
         safe_sort_application_reference_id="sort-001",
         sort_field=admin_analytics.WebAdminAnalyticsSortField.METRIC_KIND,
         sort_direction=admin_analytics.WebAdminAnalyticsSortDirection.ASCENDING,
-        metric_projections=(projection,),
-        applied_filter_reference_ids=(filter_reference.web_admin_analytics_filter_reference_id,),
+        sort_policy_reference_id="synthetic-reference-001",
+        applied_filter_reference_ids=("synthetic-reference-001",),
+        metric_projections=(o3,),
+        projection_count=1,
+        source_reference_ids=("synthetic-reference-001",),
+        evidence_reference_ids=("synthetic-reference-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        admin_only=True,
+        identity_authorization_authoritative=True,
+        admin_support_policy_authoritative=True,
+        web_presentation_boundary=True,
+        aggregate_only=True,
+        privacy_suppression_policy_required=True,
+        user_level_rows_present=False,
+        user_level_export_present=False,
+        tracker_implementation_present=False,
+        event_collection_runtime_present=False,
+        external_analytics_provider_present=False,
+        marketing_pixel_present=False,
+        consent_implementation_present=False,
+        retention_policy_defined=False,
+        direct_foreign_state_write_authority=False,
+        cross_metric_sum_authority=False,
+        screen_or_route_authority=False,
+        business_success_authority=False,
+        minimal_personal_data=True,
+        redacted=True,
     )
-    return metric_request, filter_reference, query, projection, result
+    return o0, o1, o2, o3, o4
 
 
-def _support_models() -> tuple[BaseModel, ...]:
-    query = _complete(
-        support_handoff.RequestWebSupportHandoffQuery, account_id="acct-synthetic-001"
-    )
-    projection = _complete(
-        support_handoff.WebSupportHandoffProjection,
+def _support_models() -> tuple[Any, ...]:
+    o0 = support_handoff.RequestWebSupportHandoffQuery(
+        web_support_handoff_query_id="synthetic-reference-001",
+        metadata=_META,
         account_id="acct-synthetic-001",
-        owning_module_id="11-admin-and-support",
+        actor_context_reference_id="synthetic-reference-001",
+        identity_authorization_decision_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        requested_audience=security_privacy.WebViewAudience.CUSTOMER,
+        requested_item_kinds=(support_handoff.WebSupportHandoffItemKind.SUPPORT_ENTRY,),
+        support_case_reference_id=None,
+        web_support_handoff_policy_reference_id="synthetic-reference-001",
+        admin_support_customer_read_policy_reference_id="synthetic-reference-001",
+        customer_visibility_policy_reference_id="synthetic-reference-001",
+        customer_publication_policy_reference_id="synthetic-reference-001",
+        redaction_policy_reference_id="synthetic-reference-001",
+        freshness_policy_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        verified_customer_required=True,
+        read_only=True,
+        customer_publication_required=True,
+        support_case_mutation_requested=False,
+        operator_action_requested=False,
+        internal_note_requested=False,
+        private_audit_requested=False,
+        raw_log_requested=False,
+        provider_call_requested=False,
+        raw_resource_access_requested=False,
+        exact_customer_visibility_policy_invented=False,
+        business_success_authority=False,
+    )
+    o1 = support_handoff.WebSupportHandoffProjection(
+        web_support_handoff_projection_id="synthetic-reference-001",
         item_kind=support_handoff.WebSupportHandoffItemKind.SUPPORT_ENTRY,
         state=support_handoff.WebSupportHandoffItemState.AVAILABLE,
-        freshness=read_models.WebReadFreshness.FRESH,
-        support_entry_reference_id="support-entry-001",
+        freshness=security_privacy.WebReadFreshness.FRESH,
+        owning_module_id="11-admin-and-support",
+        account_id="acct-synthetic-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        support_case_reference_id=None,
+        customer_visibility_policy_reference_id="synthetic-reference-001",
+        customer_publication_policy_reference_id="synthetic-reference-001",
         customer_publication_decision_reference_id="publication-001",
+        support_entry_reference_id="support-entry-001",
+        customer_status_reference_id=None,
+        customer_public_answer_reference_id=None,
+        source_reference_ids=("synthetic-reference-001",),
+        provenance_reference_ids=("synthetic-reference-001",),
+        evidence_reference_ids=("synthetic-reference-001",),
+        redaction_policy_reference_id="synthetic-reference-001",
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        customer_visible=True,
+        separate_customer_publication=True,
+        admin_support_authoritative=True,
+        web_presentation_boundary=True,
+        safe_reference_only=True,
+        redacted=True,
+        minimal_personal_data=True,
+        admin_support_safe_explanation_record_exposed=False,
+        admin_support_internal_case_record_exposed=False,
+        internal_note_present=False,
+        private_audit_present=False,
+        operator_only_field_present=False,
+        raw_log_present=False,
+        secret_material_present=False,
+        raw_provider_payload_present=False,
+        full_private_message_present=False,
+        mutation_authority=False,
+        business_state_authority=False,
     )
-    result = _complete(
-        support_handoff.WebSupportHandoffResult,
-        query=query,
+    o2 = support_handoff.WebSupportHandoffResult(
+        web_support_handoff_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o0,
+        state=support_handoff.WebSupportHandoffResultState.AVAILABLE,
+        freshness=security_privacy.WebReadFreshness.FRESH,
         owning_module_id="12-web-cabinet",
         source_owner_module_id="11-admin-and-support",
-        projections=(projection,),
+        projections=(o1,),
         projection_count=1,
+        source_reference_ids=("synthetic-reference-001",),
+        evidence_reference_ids=("synthetic-reference-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        customer_only=True,
+        admin_support_publication_authoritative=True,
+        web_presentation_boundary=True,
+        read_only=True,
+        safe_reference_only=True,
+        redacted=True,
+        minimal_personal_data=True,
+        internal_note_present=False,
+        private_audit_present=False,
+        operator_action_present=False,
+        raw_log_present=False,
+        secret_material_present=False,
+        raw_provider_payload_present=False,
+        full_private_message_present=False,
+        support_case_mutation_authority=False,
+        operator_action_authority=False,
+        route_or_ui_authority=False,
+        business_success_authority=False,
     )
-    return query, projection, result
+    return o0, o1, o2
 
 
-def _privacy_models() -> tuple[BaseModel, ...]:
-    query = _complete(
-        security_privacy.RequestWebSecurityPrivacyAssessmentQuery,
+def _privacy_models() -> tuple[Any, ...]:
+    o0 = security_privacy.RequestWebSecurityPrivacyAssessmentQuery(
+        web_security_privacy_query_id="synthetic-reference-001",
+        metadata=_META,
         account_id="acct-synthetic-001",
+        actor_context_reference_id="synthetic-reference-001",
+        authorization_decision_reference_id="synthetic-reference-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        audience=security_privacy.WebViewAudience.CUSTOMER,
         requested_surface_kinds=(security_privacy.WebPrivacySurfaceKind.RETENTION_POLICY,),
         open_decision_reference_ids=("OD-013",),
+        web_security_policy_reference_id="synthetic-reference-001",
+        browser_minimization_policy_reference_id="synthetic-reference-001",
+        redaction_policy_reference_id="synthetic-reference-001",
+        safe_error_policy_reference_id="synthetic-reference-001",
+        analytics_policy_gate_reference_id="synthetic-reference-001",
+        retention_policy_gate_reference_id="synthetic-reference-001",
+        deletion_export_policy_gate_reference_id="synthetic-reference-001",
+        reason_code="synthetic-reference-001",
+        verified_actor_required=True,
+        read_only=True,
+        untrusted_input=True,
+        external_string_shell_authority=False,
+        analytics_collection_requested=False,
+        consent_assumed=False,
+        retention_period_selected=False,
+        deletion_export_policy_selected=False,
+        raw_secret_requested=False,
+        raw_provider_payload_requested=False,
+        raw_personal_data_requested=False,
+        runtime_authority=False,
+        persistence_authority=False,
+        business_success_authority=False,
     )
-    projection = _complete(
-        security_privacy.WebPrivacyControlProjection,
-        account_id="acct-synthetic-001",
+    o1 = security_privacy.WebPrivacyControlProjection(
+        web_privacy_control_projection_id="synthetic-reference-001",
         surface_kind=security_privacy.WebPrivacySurfaceKind.RETENTION_POLICY,
         state=security_privacy.WebPrivacyProjectionState.POLICY_BLOCKED,
-        freshness=read_models.WebReadFreshness.UNKNOWN,
-        policy_gate_reference_id=query.retention_policy_gate_reference_id,
-        open_decision_reference_ids=("OD-013",),
+        freshness=security_privacy.WebReadFreshness.UNKNOWN,
+        account_id="acct-synthetic-001",
+        tenant_scope_reference_id="synthetic-reference-001",
+        web_security_policy_reference_id="synthetic-reference-001",
+        browser_minimization_policy_reference_id="synthetic-reference-001",
+        redaction_policy_reference_id="synthetic-reference-001",
+        safe_error_policy_reference_id="synthetic-reference-001",
+        policy_gate_reference_id="synthetic-reference-001",
+        policy_decision_reference_id=None,
+        safe_display_reference_id=None,
+        redaction_evidence_reference_id=None,
         source_reference_ids=("privacy-source-001",),
         provenance_reference_ids=("privacy-prov-001",),
         evidence_reference_ids=("privacy-evidence-001",),
+        open_decision_reference_ids=("OD-013",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        browser_visible=True,
+        safe_reference_only=True,
+        minimal_personal_data=True,
+        redaction_enforced=True,
+        safe_error_semantics=True,
+        foreign_object_existence_disclosed=False,
+        stack_trace_present=False,
+        internal_exception_present=False,
+        secret_material_present=False,
+        password_present=False,
+        one_time_code_present=False,
+        token_present=False,
+        cookie_present=False,
+        session_material_present=False,
+        private_key_present=False,
+        environment_secret_present=False,
+        raw_provider_payload_present=False,
+        raw_avito_payload_present=False,
+        full_private_message_present=False,
+        internal_support_note_present=False,
+        private_audit_present=False,
+        unnecessary_personal_data_present=False,
+        shell_command_constructed=False,
+        analytics_event_recorded=False,
+        consent_assumed=False,
+        retention_period_selected=False,
+        deletion_export_policy_selected=False,
+        runtime_authority=False,
+        persistence_authority=False,
+        business_success_authority=False,
     )
-    result = _complete(
-        security_privacy.WebSecurityPrivacyAssessmentResult,
-        query=query,
-        owning_module_id="12-web-cabinet",
+    o2 = security_privacy.WebSecurityPrivacyAssessmentResult(
+        web_security_privacy_result_id="synthetic-reference-001",
+        metadata=_META,
+        query=o0,
         state=security_privacy.WebSecurityPrivacyResultState.POLICY_BLOCKED,
-        freshness=read_models.WebReadFreshness.UNKNOWN,
-        projections=(projection,),
+        freshness=security_privacy.WebReadFreshness.UNKNOWN,
+        owning_module_id="12-web-cabinet",
+        projections=(o1,),
         projection_count=1,
         source_reference_ids=("privacy-source-001",),
         evidence_reference_ids=("privacy-evidence-001",),
+        ambiguity_reference_id=None,
+        reason_code="synthetic-reference-001",
+        browser_minimized=True,
+        redaction_enforced=True,
+        safe_error_enforced=True,
+        untrusted_input_preserved=True,
+        secret_material_present=False,
+        raw_provider_payload_present=False,
+        raw_personal_data_present=False,
+        internal_support_data_present=False,
+        stack_trace_present=False,
+        foreign_object_existence_disclosed=False,
+        shell_command_constructed=False,
+        analytics_event_recorded=False,
+        consent_selected=False,
+        retention_period_selected=False,
+        deletion_export_policy_selected=False,
+        runtime_authority=False,
+        persistence_authority=False,
+        route_or_ui_authority=False,
+        business_success_authority=False,
     )
-    return query, projection, result
-
-
-def _validated_scenario(
-    vector: dict, models: tuple[BaseModel, ...], semantic: str
-) -> ExecutionEvidence:
-    assert all(isinstance(model, BaseModel) for model in models)
-    return _evidence(
-        vector, models, (semantic, "normal constructor validation", "complete required payload")
-    )
-
-
-def _invalid_from(
-    model: BaseModel, mutation: dict[str, Any], vector: dict, semantic: str
-) -> ExecutionEvidence:
-    payload = model.model_dump()
-    payload.update(mutation)
-    error = _error(lambda: type(model)(**payload), semantic)
-    return _evidence(
-        vector,
-        (model,),
-        (semantic, "one intended mutation", "all unrelated fields retained"),
-        error,
-    )
+    return o0, o1, o2
 
 
 def scenario_fx_wc12_view_001(vector: dict) -> ExecutionEvidence:
     q, source, result = _valid_view()
     assert result.query is q and result.sources == (source,)
-    return _validated_scenario(
+    models = (q, source, result)
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
         vector,
-        (q, source, result),
-        "ordered sources cover requested family, authorized scope, fresh composition",
+        models,
+        (
+            "ordered sources cover requested family, authorized scope, fresh composition",
+            "normal constructor validation",
+            "complete required payload",
+        ),
     )
 
 
@@ -1064,375 +2267,1032 @@ def scenario_fx_wc12_view_002(vector: dict) -> ExecutionEvidence:
         source.owning_module_id == "04-beacon-management"
         and result.sources[0].family is q.requested_families[0]
     )
-    return _validated_scenario(vector, (q, source, result), "exact family-to-owning-module mapping")  # noqa: E501
+    models = (q, source, result)
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "exact family-to-owning-module mapping",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_view_003(vector: dict) -> ExecutionEvidence:
     _, _, result = _valid_view()
-    return _invalid_from(
-        result, {"state": read_models.WebCabinetViewState.FORBIDDEN}, vector, "terminal_empty"
+    model = result
+    payload = model.model_dump()
+    payload.update({"state": read_models.WebCabinetViewState.FORBIDDEN})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, forbidden or not-found-safe result cannot carry sources",),
+    )
+    return _evidence(
+        vector,
+        (model,),
+        ("terminal_empty", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_view_004(vector: dict) -> ExecutionEvidence:
     _, _, result = _valid_view()
-    return _invalid_from(
-        result,
-        {"freshness": read_models.WebReadFreshness.STALE, "ambiguity_reference_id": None},
+    model = result
+    payload = model.model_dump()
+    payload.update(
+        {"freshness": read_models.WebReadFreshness.STALE, "ambiguity_reference_id": None}
+    )
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, stale freshness requires stale source",),
+    )
+    return _evidence(
         vector,
-        "stale_ambiguous",
+        (model,),
+        ("stale_ambiguous", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_view_005(vector: dict) -> ExecutionEvidence:
     _, source, result = _valid_view()
-    return _invalid_from(result, {"sources": (source, source)}, vector, "duplicate_source_rejected")  # noqa: E501
+    model = result
+    payload = model.model_dump()
+    payload.update({"sources": (source, source)})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, duplicate source identifiers are not allowed",),
+    )
+    return _evidence(
+        vector,
+        (model,),
+        ("duplicate_source_rejected", "one intended mutation", "all unrelated fields retained"),
+        error,
+    )
 
 
 def scenario_fx_wc12_command_001(vector: dict) -> ExecutionEvidence:
     field, command, outcome = _valid_command()
     assert field.client_validation_authority is False and outcome.command is command
-    return _validated_scenario(
-        vector, (field, command, outcome), "valid patch command and explicit idempotent outcome"
+    models = (field, command, outcome)
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "valid patch command and explicit idempotent outcome",
+            "normal constructor validation",
+            "complete required payload",
+        ),
     )
 
 
 def scenario_fx_wc12_command_002(vector: dict) -> ExecutionEvidence:
     field, command, outcome = _valid_command()
-    duplicate = beacon_commands.WebBeaconPatchField(**field.model_dump())
-    with pytest.raises(ValidationError) as caught:
-        beacon_commands.SubmitBeaconWebCommandCommand(
-            **{**command.model_dump(), "patch_fields": (field, duplicate)}
-        )
-    error = (
-        tuple(tuple(e["loc"]) for e in caught.value.errors()),
-        tuple(e["type"] for e in caught.value.errors()),
-        tuple(e["msg"][:120] for e in caught.value.errors()),
+    second = beacon_commands.WebBeaconPatchField(
+        web_patch_field_id="patch-synthetic-002",
+        field_name="safe_field_two",
+        requested_value_reference_id="ref-synthetic-002",
+        owning_module_validation_family_reference_id="beacon-management",
     )
+    complete = beacon_commands.SubmitBeaconWebCommandCommand(
+        **{**command.model_dump(), "patch_fields": (field, second)}
+    )
+    assert (field.web_patch_field_id, second.web_patch_field_id) == (
+        "patch-synthetic-001",
+        "patch-synthetic-002",
+    )
+    assert (field.field_name, second.field_name) == ("safe_field", "safe_field_two")
+    assert complete.patch_fields == (field, second)
+    assert outcome.command.patch_fields == (field,)
     return _evidence(
         vector,
-        (field, command, outcome),
-        ("duplicate patch fields rejected by command validator",),
-        error,
+        (field, second, complete),
+        (
+            "two distinct patch IDs",
+            "two distinct field names",
+            "ordered complete command validates",
+        ),
     )
 
 
 def scenario_fx_wc12_command_003(vector: dict) -> ExecutionEvidence:
     _, command, outcome = _valid_command()
-    return _invalid_from(
-        command,
-        {"command_kind": beacon_commands.WebBeaconCommandKind.ARCHIVE_TO_HISTORY},
+    model = command
+    payload = model.model_dump()
+    payload.update({"command_kind": beacon_commands.WebBeaconCommandKind.ARCHIVE_TO_HISTORY})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, lifecycle command cannot carry patch fields",),
+    )
+    return _evidence(
         vector,
-        "lifecycle_command_matrix",
+        (model,),
+        ("lifecycle_command_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_command_004(vector: dict) -> ExecutionEvidence:
     field, command, outcome = _valid_command()
     assert outcome.state in tuple(beacon_commands.WebBeaconCommandSubmitState)
-    return _validated_scenario(
+    models = (field, command, outcome)
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
         vector,
-        (field, command, outcome),
-        "submitted outcome matrix records owning-module acceptance and reload",
+        models,
+        (
+            "submitted outcome matrix records owning-module acceptance and reload",
+            "normal constructor validation",
+            "complete required payload",
+        ),
     )
 
 
 def scenario_fx_wc12_command_005(vector: dict) -> ExecutionEvidence:
     _, command, _ = _valid_command()
-    return _invalid_from(
-        command, {"business_success_authority": True}, vector, "business_authority_forbidden"
+    model = command
+    payload = model.model_dump()
+    payload.update({"business_success_authority": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("business_success_authority",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
+        vector,
+        (model,),
+        ("business_authority_forbidden", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
-def _scenario_family(vector: dict, models: tuple[BaseModel, ...]) -> ExecutionEvidence:
-    if vector["expected_result"] == "PASS" or vector["expected_result"] == "STATIC_VIOLATION":
-        return _validated_scenario(
-            vector, models, vector["scenario"] + " semantic fields and invariants"
-        )
-    return _invalid_from(models[-1], {"reason_code": ""}, vector, vector["scenario"])
-
-
 def scenario_fx_wc12_auth_001(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _auth_models())
+    models = _auth_models()
+    assert models[-1].state is auth_context.WebPresentationContextState.AUTHORIZED
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "verified actor, active session and account continuity",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_auth_002(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _auth_models()[-1],
-        {"state": auth_context.WebPresentationContextState.UNAUTHENTICATED},
+    model = _auth_models()[-1]
+    payload = model.model_dump()
+    payload.update({"state": auth_context.WebPresentationContextState.UNAUTHENTICATED})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, non-authorized result cannot expose account or identity summary",),
+    )
+    return _evidence(
         vector,
-        "session_non_authority",
+        (model,),
+        ("session_non_authority", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_auth_003(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _auth_models()[-1],
-        {"state": auth_context.WebPresentationContextState.FORBIDDEN},
+    model = _auth_models()[-1]
+    payload = model.model_dump()
+    payload.update({"state": auth_context.WebPresentationContextState.FORBIDDEN})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, non-authorized result cannot expose account or identity summary",),
+    )
+    return _evidence(
         vector,
-        "unauthenticated_forbidden",
+        (model,),
+        ("unauthenticated_forbidden", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_auth_004(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _auth_models()[-1], {"phone_requirement_defined": True}, vector, "phone_recovery_blocked"
+    model = _auth_models()[-1]
+    payload = model.model_dump()
+    payload.update({"phone_requirement_defined": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("phone_requirement_defined",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
+        vector,
+        (model,),
+        ("phone_recovery_blocked", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_auth_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _auth_models()[-1],
-        {"account_merge_policy_defined": True},
+    model = _auth_models()[-1]
+    payload = model.model_dump()
+    payload.update({"account_merge_policy_defined": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("account_merge_policy_defined",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
         vector,
-        "merge_second_account_forbidden",
+        (model,),
+        (
+            "merge_second_account_forbidden",
+            "one intended mutation",
+            "all unrelated fields retained",
+        ),
+        error,
     )
 
 
 def scenario_fx_wc12_entitlement_001(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _entitlement_models())
+    models = _entitlement_models()
+    assert (
+        models[-1].capabilities[0].access_state
+        is entitlement_projections.WebEntitlementAccessState.ALLOWED
+    )
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "effective allowed capability and fresh projection",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_entitlement_002(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _entitlement_models())
+    models = _entitlement_models()
+    assert models[-1].tariff_options[0].owning_module_id == "03-entitlements-and-billing"
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "tariff option is source-owned and safe",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_entitlement_003(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _entitlement_models()[-1],
-        {"state": entitlement_projections.WebEntitlementProjectionState.DENIED},
+    model = _entitlement_models()[-1]
+    payload = model.model_dump()
+    payload.update({"state": entitlement_projections.WebEntitlementProjectionState.DENIED})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, result state requires a matching capability state",),
+    )
+    return _evidence(
         vector,
-        "terminal_state_matrix",
+        (model,),
+        ("terminal_state_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_entitlement_004(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _entitlement_models()[0],
-        {"invented_tariff_values_allowed": True},
+    model = _entitlement_models()[0]
+    payload = model.model_dump()
+    payload.update({"invented_tariff_values_allowed": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("invented_tariff_values_allowed",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
         vector,
-        "invented_values_forbidden",
+        (model,),
+        ("invented_values_forbidden", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_entitlement_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _entitlement_models()[-1],
-        {"source_reference_ids": ("x", "x")},
+    model = _entitlement_models()[-1]
+    payload = model.model_dump()
+    payload.update({"source_reference_ids": ("x", "x")})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, duplicate source references are not allowed",),
+    )
+    return _evidence(
         vector,
-        "duplicate_reference_rejected",
+        (model,),
+        ("duplicate_reference_rejected", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_history_001(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _history_models())
+    models = _history_models()
+    assert models[-1].history_entry_count == len(models[-1].history_entries) == 1
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "grouped notification history preserves safe listing",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_history_002(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _history_models())
+    query, listing, entry, result = _history_models()
+    listings = tuple(
+        notification_history.WebNotificationListingReferenceProjection(
+            **{
+                **listing.model_dump(),
+                "web_notification_listing_reference_projection_id": f"listing-synthetic-00{i}",
+                "safe_listing_reference_id": f"safe-listing-synthetic-00{i}",
+            }
+        )
+        for i in (1, 2, 3)
+    )
+    expanded_entry = notification_history.WebNotificationDeliveryHistoryEntry(
+        **{**entry.model_dump(), "listing_references": listings, "listing_count": 3}
+    )
+    expanded_result = notification_history.WebNotificationHistoryResult(
+        **{
+            **result.model_dump(),
+            "history_entries": (expanded_entry,),
+            "safe_listing_references": listings,
+            "listing_count": 3,
+            "history_entry_count": 1,
+        }
+    )
+    assert tuple(item.safe_listing_reference_id for item in listings) == (
+        "safe-listing-synthetic-001",
+        "safe-listing-synthetic-002",
+        "safe-listing-synthetic-003",
+    )
+    assert expanded_entry.listing_references == listings
+    assert expanded_result.safe_listing_references == listings
+    models = (query, listings[0], listings[1], listings[2], expanded_entry, expanded_result)
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "safe listing references preserve entry order and count",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_history_003(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _history_models()[-1],
-        {"state": notification_history.WebNotificationHistoryResultState.FORBIDDEN},
+    model = _history_models()[-1]
+    payload = model.model_dump()
+    payload.update({"state": notification_history.WebNotificationHistoryResultState.FORBIDDEN})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, forbidden result must not expose notification data",),
+    )
+    return _evidence(
         vector,
-        "terminal_state_matrix",
+        (model,),
+        ("terminal_state_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_history_004(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _history_models()[2],
+    model = _history_models()[2]
+    payload = model.model_dump()
+    reconciliation = notification_history.WebNotificationDeliveryState.RECONCILIATION_REQUIRED
+    payload.update(
         {
-            "delivery_state": notification_history.WebNotificationDeliveryState.RECONCILIATION_REQUIRED,  # noqa: E501
+            "delivery_state": reconciliation,
             "reconciliation_required": False,
-        },
+        }
+    )
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, reconciliation-required entry requires reconciliation reference",),
+    )
+    return _evidence(
         vector,
-        "ambiguous_delivery",
+        (model,),
+        ("ambiguous_delivery", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_history_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _history_models()[-1],
-        {"raw_provider_payload_retained": True},
+    model = _history_models()[-1]
+    payload = model.model_dump()
+    payload.update({"raw_provider_payload_retained": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("raw_provider_payload_retained",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
         vector,
-        "raw_payload_archive_forbidden",
+        (model,),
+        ("raw_payload_archive_forbidden", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_status_001(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _status_models()[-1],
-        {"state": status_display.WebStatusDisplayResultState.FORBIDDEN},
+    _, evidence_model, _, _ = _status_models()
+    model = evidence_model
+    payload = model.model_dump()
+    payload.update({"no_new_claim_allowed": False})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (((),), ("value_error",), ("Value error, invalid proven no-new boundary",))
+    return _evidence(
         vector,
-        "no_new_clean",
+        (model,),
+        (
+            "no-new evidence mismatch",
+            "only no_new_claim_allowed mutated",
+            "all unrelated fields retained",
+        ),
+        error,
     )
 
 
 def scenario_fx_wc12_status_002(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _status_models()[-1],
-        {"state": status_display.WebStatusDisplayResultState.FORBIDDEN},
+    _, evidence_model, _, _ = _status_models()
+    model = evidence_model
+    payload = model.model_dump()
+    payload.update(
+        {"evidence_class": status_display.WebStatusEvidenceClass.SCAN_EXTERNAL_UNAVAILABLE}
+    )
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, only proven comparison may claim no-new",),
+    )
+    return _evidence(
         vector,
-        "external_unavailable_not_no_new",
+        (model,),
+        (
+            "external-unavailable evidence paired with no-new claim",
+            "only evidence_class mutated",
+            "all unrelated fields retained",
+        ),
+        error,
     )
 
 
 def scenario_fx_wc12_status_003(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _status_models())
+    query, evidence_model, item, result = _status_models()
+    evidence_payload = evidence_model.model_dump()
+    evidence_payload.update(
+        {
+            "evidence_class": status_display.WebStatusEvidenceClass.SCAN_RECOVERY_COMPLETED,
+            "source_reason_codes": ("recovery-completed",),
+            "no_new_claim_allowed": False,
+            "safe_latest_fresh_listing_reference_ids": (),
+            "state_restored_latest_fresh_only": False,
+            "continuing_scan_visible": False,
+        }
+    )
+    recovery_evidence = status_display.WebStatusEvidenceReference(**evidence_payload)
+    item_payload = item.model_dump()
+    item_payload.update(
+        {
+            "family": status_display.WebStatusDisplayFamily.RECOVERY_COMPLETED,
+            "source_evidence_reference_ids": (recovery_evidence.web_status_evidence_reference_id,),
+        }
+    )
+    recovery_item = status_display.WebStatusDisplayItem(**item_payload)
+    result_payload = result.model_dump()
+    result_payload.update(
+        {
+            "source_evidence": (recovery_evidence,),
+            "display_items": (recovery_item,),
+            "recovery_visible": True,
+            "evidence_reference_ids": (recovery_evidence.web_status_evidence_reference_id,),
+        }
+    )
+    recovery_result = status_display.WebStatusDisplayResult(**result_payload)
+    assert recovery_result.recovery_visible is True
+    assert (
+        recovery_result.display_items[0].family
+        is status_display.WebStatusDisplayFamily.RECOVERY_COMPLETED
+    )
+    assert (
+        recovery_evidence.evidence_class
+        is status_display.WebStatusEvidenceClass.SCAN_RECOVERY_COMPLETED
+    )
+    return _evidence(
+        vector,
+        (query, recovery_evidence, recovery_item, recovery_result),
+        (
+            "status evidence and display are directly validated",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_status_004(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _status_models()[-1],
-        {"state": status_display.WebStatusDisplayResultState.FORBIDDEN},
+    _, evidence_model, _, _ = _status_models()
+    model = evidence_model
+    payload = model.model_dump()
+    payload.update({"confirmed_new_claim_allowed": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("confirmed_new_claim_allowed",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
         vector,
-        "lost_anchor_not_confirmed_new",
+        (model,),
+        (
+            "lost-anchor recovery rejects confirmed-new claim",
+            "only confirmed_new_claim_allowed mutated",
+            "all unrelated fields retained",
+        ),
+        error,
     )
 
 
 def scenario_fx_wc12_status_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _status_models()[-1],
-        {"state": status_display.WebStatusDisplayResultState.AMBIGUOUS},
+    model = _status_models()[-1]
+    payload = model.model_dump()
+    payload.update({"state": status_display.WebStatusDisplayResultState.AMBIGUOUS})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, ambiguous result requires ambiguity item",),
+    )
+    return _evidence(
         vector,
-        "stale_delivery_ambiguity",
+        (model,),
+        ("stale_delivery_ambiguity", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_channel_001(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _channel_models())
+    models = _channel_models()
+    assert models[-1].owning_module_id == "08-notification-delivery"
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "linked channel projection and safe result",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_channel_002(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _channel_models()[3],
-        {"command_kind": channel_linking.WebChannelCommandKind.START_CONNECTION},
+    model = _channel_models()[3]
+    payload = model.model_dump()
+    payload.update({"command_kind": channel_linking.WebChannelCommandKind.START_CONNECTION})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, start connection routing matrix mismatch",),
+    )
+    return _evidence(
         vector,
-        "connect_start_matrix",
+        (model,),
+        ("connect_start_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_channel_003(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _channel_models())
+    query, projection, result, enable, outcome = _channel_models()
+    disable = channel_linking.SubmitWebChannelCommandCommand(
+        **{
+            **enable.model_dump(),
+            "web_channel_command_id": "channel-command-disable-001",
+            "command_kind": channel_linking.WebChannelCommandKind.DISABLE_NOTIFICATIONS,
+        }
+    )
+    disable_outcome = channel_linking.WebChannelCommandSubmitOutcome(
+        **{
+            **outcome.model_dump(),
+            "web_channel_command_submit_outcome_id": "channel-outcome-disable-001",
+            "command": disable,
+        }
+    )
+    assert enable.command_kind is channel_linking.WebChannelCommandKind.ENABLE_NOTIFICATIONS
+    assert disable.command_kind is channel_linking.WebChannelCommandKind.DISABLE_NOTIFICATIONS
+    assert (
+        enable.requested_owning_module_id
+        == disable.requested_owning_module_id
+        == "08-notification-delivery"
+    )
+    models = (query, projection, result, enable, disable, outcome, disable_outcome)
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "enable command routes to notification delivery",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_channel_004(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _channel_models())
+    models = _channel_models()
+    assert (
+        models[0].account_id
+        == models[1].account_id
+        == models[2].query.account_id
+        == "acct-synthetic-001"
+    )
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "one-account continuity through query projection and result",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_channel_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _channel_models()[2],
-        {"provider_call_authority": True},
+    model = _channel_models()[2]
+    payload = model.model_dump()
+    payload.update({"provider_call_authority": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("provider_call_authority",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
         vector,
-        "terminal_and_runtime_gate",  # noqa: E501
+        (model,),
+        ("terminal_and_runtime_gate", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_analytics_001(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _analytics_models()[2], {"metric_requests": ()}, vector, "metric_request_matrix"
+    model = _analytics_models()[2]
+    payload = model.model_dump()
+    payload.update({"metric_requests": ()})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (((),), ("value_error",), ("Value error, metric requests must be non-empty",))
+    return _evidence(
+        vector,
+        (model,),
+        ("metric_request_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_analytics_002(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _analytics_models())
+    models = _analytics_models()
+    assert models[-1].sort_field is admin_analytics.WebAdminAnalyticsSortField.METRIC_KIND
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "literal filters and sort order are preserved",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_analytics_003(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _analytics_models()[-1],
-        {"state": admin_analytics.WebAdminAnalyticsResultState.FORBIDDEN},
+    model = _analytics_models()[-1]
+    payload = model.model_dump()
+    payload.update({"state": admin_analytics.WebAdminAnalyticsResultState.FORBIDDEN})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, terminal result must not expose projections or filters",),
+    )
+    return _evidence(
         vector,
-        "terminal_result_matrix",
+        (model,),
+        ("terminal_result_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_analytics_004(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _analytics_models())
+    models = _analytics_models()
+    assert models[-1].metric_projections[0].aggregate_only is True
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "aggregate metrics contain no user-level records",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_analytics_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _analytics_models()[0],
-        {"tracker_runtime_authority": True},
+    model = _analytics_models()[0]
+    payload = model.model_dump()
+    payload.update({"tracker_runtime_authority": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("tracker_runtime_authority",),),
+        ("extra_forbidden",),
+        ("Extra inputs are not permitted",),
+    )
+    return _evidence(
         vector,
-        "user_level_tracking_forbidden",
+        (model,),
+        ("user_level_tracking_forbidden", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_support_001(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _support_models()[0],
-        {"support_case_reference_id": "case-synthetic-001"},
+    model = _support_models()[0]
+    payload = model.model_dump()
+    payload.update({"support_case_reference_id": "case-synthetic-001"})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, entry-only query cannot carry a support case reference",),
+    )
+    return _evidence(
         vector,
-        "query_kind_case_matrix",
+        (model,),
+        ("query_kind_case_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_support_002(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _support_models()[1],
-        {"state": support_handoff.WebSupportHandoffItemState.STALE},
+    model = _support_models()[1]
+    payload = model.model_dump()
+    payload.update({"state": support_handoff.WebSupportHandoffItemState.STALE})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, projection state and freshness do not match",),
+    )
+    return _evidence(
         vector,
-        "projection_kind_state_matrix",
+        (model,),
+        ("projection_kind_state_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_support_003(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _support_models())
+    models = _support_models()
+    assert models[1].customer_publication_decision_reference_id == "publication-001"
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "customer publication is separate and authoritative",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_support_004(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _support_models()[-1], {"projection_count": 0}, vector, "terminal_ordered_coverage"
+    model = _support_models()[-1]
+    payload = model.model_dump()
+    payload.update({"projection_count": 0})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, projection count must match projections",),
+    )
+    return _evidence(
+        vector,
+        (model,),
+        ("terminal_ordered_coverage", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_support_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _support_models()[0],
-        {"internal_note_requested": True},
+    model = _support_models()[0]
+    payload = model.model_dump()
+    payload.update({"internal_note_requested": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        (("internal_note_requested",),),
+        ("literal_error",),
+        ("Input should be False",),
+    )
+    return _evidence(
         vector,
-        "internal_records_forbidden",
+        (model,),
+        ("internal_records_forbidden", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_privacy_001(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _privacy_models())
+    models = _privacy_models()
+    assert models[0].open_decision_reference_ids == ("OD-013",)
+    models = models
+    assert all(isinstance(model, BaseModel) for model in models)
+    return _evidence(
+        vector,
+        models,
+        (
+            "OD-013 retention gate is mapped",
+            "normal constructor validation",
+            "complete required payload",
+        ),
+    )
 
 
 def scenario_fx_wc12_privacy_002(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _privacy_models()[1],
-        {"state": security_privacy.WebPrivacyProjectionState.SAFE},
+    model = _privacy_models()[1]
+    payload = model.model_dump()
+    payload.update({"state": security_privacy.WebPrivacyProjectionState.SAFE})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (
+        ((),),
+        ("value_error",),
+        ("Value error, policy projection must be blocked, unknown and open",),
+    )
+    return _evidence(
         vector,
-        "projection_state_matrix",
+        (model,),
+        ("projection_state_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_privacy_003(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _privacy_models()[-1],
-        {"state": security_privacy.WebSecurityPrivacyResultState.FORBIDDEN},
+    model = _privacy_models()[-1]
+    payload = model.model_dump()
+    payload.update({"state": security_privacy.WebSecurityPrivacyResultState.FORBIDDEN})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == (((),), ("value_error",), ("Value error, terminal result payload is invalid",))
+    return _evidence(
         vector,
-        "terminal_result_matrix",
+        (model,),
+        ("terminal_result_matrix", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
 def scenario_fx_wc12_privacy_004(vector: dict) -> ExecutionEvidence:
-    return _scenario_family(vector, _privacy_models())
+    query, projection, result = _privacy_models()
+    payload = query.model_dump()
+    payload["open_decision_reference_ids"] = ("OD-014",)
+    with pytest.raises(ValidationError) as caught:
+        security_privacy.RequestWebSecurityPrivacyAssessmentQuery(**payload)
+    error = _validation_tuple(caught.value)
+    assert error[0] == ((),) and error[1] == ("value_error",)
+    assert "open decisions do not match policy-gated surfaces" in error[2][0]
+    return _evidence(
+        vector,
+        (query, projection, result),
+        ("incorrect complete policy-gate mapping rejected", "all unrelated query fields retained"),
+        error,
+    )
 
 
 def scenario_fx_wc12_privacy_005(vector: dict) -> ExecutionEvidence:
-    return _invalid_from(
-        _privacy_models()[0],
-        {"raw_secret_requested": True},
+    model = _privacy_models()[0]
+    payload = model.model_dump()
+    payload.update({"raw_secret_requested": True})
+    with pytest.raises(ValidationError) as caught:
+        type(model)(**payload)
+    error = _validation_tuple(caught.value)
+    assert error == ((("raw_secret_requested",),), ("literal_error",), ("Input should be False",))
+    return _evidence(
         vector,
-        "secret_retention_no_invention",
+        (model,),
+        ("secret_retention_no_invention", "one intended mutation", "all unrelated fields retained"),
+        error,
     )
 
 
@@ -1445,7 +3305,15 @@ def scenario_fx_wc12_static_001(vector: dict) -> ExecutionEvidence:
 def scenario_fx_wc12_static_002(vector: dict) -> ExecutionEvidence:
     found = violations("import requests\n")
     assert "import:requests" in found
-    return _evidence(vector, (), ("actual architecture detector label import:requests",))
+    return ExecutionEvidence(
+        "STATIC_VIOLATION",
+        vector["fixture_id"],
+        vector["scenario"],
+        vector["category"],
+        (),
+        ("actual architecture detector label import:requests",),
+        static_labels=("import:requests",),
+    )
 
 
 def scenario_fx_wc12_static_003(vector: dict) -> ExecutionEvidence:
@@ -1454,15 +3322,47 @@ def scenario_fx_wc12_static_003(vector: dict) -> ExecutionEvidence:
         setattr(model, "redacted", False)
     with pytest.raises(ValidationError):
         type(model)(**{**model.model_dump(), "unexpected": "x"})
-    return _evidence(vector, (model,), ("frozen-instance rejection", "extra_forbidden rejection"))
+    return ExecutionEvidence(
+        "STATIC_VIOLATION",
+        vector["fixture_id"],
+        vector["scenario"],
+        vector["category"],
+        (type(model).__name__,),
+        ("frozen-instance rejection", "extra_forbidden rejection"),
+        static_labels=("frozen-instance", "extra_forbidden"),
+    )
 
 
 def scenario_fx_wc12_static_004(vector: dict) -> ExecutionEvidence:
     fixture_text = FIXTURE.read_text(encoding="utf-8")
     assert not re.search(r"(?i)(https?://|[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,})", fixture_text)
-    found = violations("import requests\n")
-    assert "import:requests" in found
-    return _evidence(vector, (), ("fixture safety assertion and exact import detector label",))
+    unsafe_samples = (
+        ("unsafe_url", "https://synthetic.invalid/path"),
+        ("unsafe_email", "synthetic@example.invalid"),
+        ("unsafe_token", "Bearer synthetic-secret-token"),
+    )
+    labels = tuple(
+        label
+        for label, sample in unsafe_samples
+        if re.search(r"https?://", sample)
+        or re.search(r"[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}", sample)
+        or ("@" in sample and "." in sample.split("@", 1)[1])
+        or re.search(r"(?i)bearer|token|secret", sample)
+    )
+    assert labels == ("unsafe_url", "unsafe_email", "unsafe_token")
+    return ExecutionEvidence(
+        "STATIC_VIOLATION",
+        vector["fixture_id"],
+        vector["scenario"],
+        vector["category"],
+        (),
+        (
+            "literal unsafe URL rejection",
+            "literal unsafe email rejection",
+            "literal token rejection",
+        ),
+        static_labels=labels,
+    )
 
 
 def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
@@ -1644,6 +3544,41 @@ def test_literal_vector_inventory_matches_fixture() -> None:
         for v in data["vectors"]
     ]
     assert actual == EXPECTED_VECTORS
+    assert len(SCENARIO_EXECUTION_SPEC) == 56
+    assert SCENARIO_EXECUTION_SPEC == tuple(EXPECTED_VECTORS)
+
+
+def test_literal_direct_source_regressions() -> None:
+    source = Path(__file__).read_text(encoding="utf-8")
+    forbidden = (
+        "_" + "field_value",
+        "_" + "complete",
+        "_" + "error",
+        "_" + "validated_scenario",
+        "_" + "invalid_from",
+        "_" + "scenario_family",
+        "_" + "scenario_model",
+        "_" + "scenario_value",
+        "_" + "family_dispatch",
+        "model_fields",
+        "get_origin",
+        "get_args",
+    )
+    tree = ast.parse(source)
+    identifiers = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    assert not any(name in identifiers or name in attributes for name in forbidden)
+    assert (
+        len(
+            [
+                node
+                for node in ast.walk(tree)
+                if isinstance(node, ast.FunctionDef) and node.name.startswith("scenario_fx_wc12_")
+            ]
+        )
+        == 56
+    )
+    assert len(SCENARIO_EXECUTION_SPEC) == 56
 
 
 def test_synthetic_safety_and_reference_usage() -> None:
@@ -1762,3 +3697,23 @@ def test_all_families_are_genuinely_covered() -> None:
         "STATIC",
     }
     assert all(EXPECTED_HANDLER_TARGETS.values())
+
+
+def test_execution_spec_has_every_literal_fixture_id() -> None:
+    assert tuple(row[0] for row in SCENARIO_EXECUTION_SPEC) == EXPECTED_IDS
+
+
+def test_pass_evidence_has_no_validation_error() -> None:
+    for vector in _load()["vectors"]:
+        evidence = HANDLERS[vector["fixture_id"]](vector)
+        if vector["expected_result"] == "PASS":
+            assert not evidence.validation_error_types
+
+
+def test_invalid_evidence_has_exact_validator_signature() -> None:
+    for vector in _load()["vectors"]:
+        evidence = HANDLERS[vector["fixture_id"]](vector)
+        if vector["expected_result"] == "VALIDATION_ERROR":
+            assert evidence.validation_error_locations
+            assert evidence.validation_error_types
+            assert evidence.validation_error_message_fragments
