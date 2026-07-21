@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import importlib
+import json
 import os
+import subprocess
+import sys
 import types
 from enum import Enum
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel, ValidationError
@@ -121,6 +124,97 @@ MODULE_EXPORTS = {
     ],
 }
 PACKAGE_EXPORTS = ["MODULE_ID"] + [name for module in MODULE_EXPORTS.values() for name in module]
+
+
+def _run_isolated_reload_check(
+    import_path: str,
+    expected_exports: list[str],
+    package_target: bool = False,
+) -> dict:
+    child_script = (
+        "import sys, json, importlib, os\n"
+        "args = json.loads(sys.argv[1])\n"
+        "import_path = args['import_path']\n"
+        "expected_exports = args['expected_exports']\n"
+        "package_target = args.get('package_target', False)\n"
+        "\n"
+        "before_env = dict(os.environ)\n"
+        "target = importlib.import_module(import_path)\n"
+        "\n"
+        "pre_all = list(target.__all__)\n"
+        "pre_matches = pre_all == expected_exports\n"
+        "pre_count = len(pre_all)\n"
+        "module_object_id = id(target)\n"
+        "\n"
+        "reloaded = importlib.reload(target)\n"
+        "\n"
+        "post_all = list(target.__all__)\n"
+        "post_matches = post_all == expected_exports\n"
+        "obj_same = reloaded is target\n"
+        "order_same = pre_all == post_all\n"
+        "unique = len(post_all) == len(set(post_all))\n"
+        "env_unchanged = dict(os.environ) == before_env\n"
+        "\n"
+        "module_id = None\n"
+        "if package_target:\n"
+        "    module_id = getattr(target, 'MODULE_ID', None)\n"
+        "\n"
+        "result = {\n"
+        "    'module_name': import_path,\n"
+        "    'reload_count': 1,\n"
+        "    'module_object_same': obj_same,\n"
+        "    'expected_export_count': len(expected_exports),\n"
+        "    'pre_exports_match': pre_matches,\n"
+        "    'pre_export_count': pre_count,\n"
+        "    'post_exports_match': post_matches,\n"
+        "    'export_order_same': order_same,\n"
+        "    'exports_unique': unique,\n"
+        "    'env_unchanged': env_unchanged,\n"
+        "    'module_id': module_id,\n"
+        "    'errors': [],\n"
+        "}\n"
+        "if not obj_same:\n"
+        "    result['errors'].append('module_object_changed')\n"
+        "if not post_matches:\n"
+        "    result['errors'].append('post_exports_mismatch')\n"
+        "if not order_same:\n"
+        "    result['errors'].append('export_order_changed')\n"
+        "if not unique:\n"
+        "    result['errors'].append('duplicate_exports')\n"
+        "if not env_unchanged:\n"
+        "    result['errors'].append('env_changed')\n"
+        "if package_target:\n"
+        "    if module_id != '12-web-cabinet':\n"
+        "        result['errors'].append('module_id_mismatch')\n"
+        "    if len(post_all) != 75:\n"
+        "        result['errors'].append('package_export_count_mismatch')\n"
+        "print(json.dumps(result))\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", child_script, json.dumps({
+            "import_path": import_path,
+            "expected_exports": expected_exports,
+            "package_target": package_target,
+        })],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).parents[2]),
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).parents[2] / "src")},
+        timeout=30,
+        shell=False,
+    )
+    if proc.returncode != 0:
+        raise AssertionError(
+            f"Child process failed (rc={proc.returncode}): {proc.stderr.strip()}"
+        )
+    try:
+        return json.loads(proc.stdout.strip())
+    except json.JSONDecodeError as exc:
+        raise AssertionError(
+            f"Child JSON parse error: {exc}; stdout={proc.stdout[:500]!r}"
+        )
+
+
 ENUM_VALUES = {
     "WebCabinetViewState": (
         "AUTHORIZED",
@@ -1637,20 +1731,36 @@ def test_exports_are_exact_and_no_alias_or_private_names() -> None:
 
 @pytest.mark.parametrize("module", tuple(MODULE_EXPORTS))
 def test_reload_preserves_order_without_environment_side_effect(module: types.ModuleType) -> None:
-    before = os.environ.copy()
+    import_path = f"mayak.modules.web_cabinet.{module.__name__.rsplit('.', 1)[-1]}"
     expected = list(MODULE_EXPORTS[module])
-    importlib.reload(module)
-    assert module.__all__ == expected
-    assert os.environ == before
+    result = _run_isolated_reload_check(import_path, expected)
+    assert result["module_object_same"], result["errors"]
+    assert result["pre_exports_match"], result["errors"]
+    assert result["post_exports_match"], result["errors"]
+    assert result["export_order_same"], result["errors"]
+    assert result["exports_unique"], result["errors"]
+    assert result["env_unchanged"], result["errors"]
 
 
 @pytest.mark.parametrize("module", (package, *MODULE_EXPORTS))
 def test_reload_package_and_modules_are_deterministic(module: types.ModuleType) -> None:
-    before = os.environ.copy()
-    expected = list(module.__all__)
-    importlib.reload(module)
-    assert module.__all__ == expected
-    assert os.environ == before
+    is_package = module is package
+    if is_package:
+        import_path = "mayak.modules.web_cabinet"
+        expected = list(PACKAGE_EXPORTS)
+    else:
+        import_path = f"mayak.modules.web_cabinet.{module.__name__.rsplit('.', 1)[-1]}"
+        expected = list(MODULE_EXPORTS[module])
+    result = _run_isolated_reload_check(import_path, expected, package_target=is_package)
+    assert result["module_object_same"], result["errors"]
+    assert result["pre_exports_match"], result["errors"]
+    assert result["post_exports_match"], result["errors"]
+    assert result["export_order_same"], result["errors"]
+    assert result["exports_unique"], result["errors"]
+    assert result["env_unchanged"], result["errors"]
+    if is_package:
+        assert result["module_id"] == "12-web-cabinet", result["errors"]
+        assert result["expected_export_count"] == 75, result["errors"]
 
 
 def test_literal_field_order_controls_reject_obvious_contract_mutations() -> None:
