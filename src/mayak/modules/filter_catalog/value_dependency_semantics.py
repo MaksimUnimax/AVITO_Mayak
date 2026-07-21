@@ -373,7 +373,7 @@ def evaluate_filter_semantic_exposure(request: FilterSemanticExposureRequest) ->
             reasons.add(FilterSemanticExposureReason.GLOBAL_SCOPE_APPROVAL_REQUIRED)
     if set(supplied_ids) != set(required_ids):
         reasons.add(FilterSemanticExposureReason.DEPENDENCY_RULE_SET_MISMATCH)
-    if request.dependency_rules and not any(definition.filter_definition_id in (rule.source_filter_definition_id, rule.target_filter_definition_id) for rule in request.dependency_rules):
+    if required_ids and not any(definition.filter_definition_id in (rule.source_filter_definition_id, rule.target_filter_definition_id) for rule in request.dependency_rules):
         reasons.add(FilterSemanticExposureReason.DEPENDENCY_GRAPH_NOT_LINKED)
     known = set(request.known_filter_definition_ids)
     if any(rule.source_filter_definition_id not in known or rule.target_filter_definition_id not in known for rule in request.dependency_rules):
