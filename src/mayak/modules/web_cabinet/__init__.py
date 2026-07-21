@@ -1,5 +1,12 @@
 """Web Cabinet module package."""
 
+from mayak.modules.web_cabinet.beacon_commands import (
+    SubmitBeaconWebCommandCommand,
+    WebBeaconCommandKind,
+    WebBeaconCommandSubmitOutcome,
+    WebBeaconCommandSubmitState,
+    WebBeaconPatchField,
+)
 from mayak.modules.web_cabinet.read_models import (
     RequestWebCabinetViewQuery,
     WebCabinetViewResult,
@@ -24,4 +31,9 @@ __all__ = [
     "WebReadModelSourceReference",
     "WebSourceState",
     "WebViewAudience",
+    "SubmitBeaconWebCommandCommand",
+    "WebBeaconCommandKind",
+    "WebBeaconCommandSubmitOutcome",
+    "WebBeaconCommandSubmitState",
+    "WebBeaconPatchField",
 ]
