@@ -44,6 +44,16 @@ from mayak.modules.web_cabinet.notification_history import (
     WebNotificationHistoryResultState,
     WebNotificationListingReferenceProjection,
 )
+from mayak.modules.web_cabinet.status_display import (
+    RequestWebStatusDisplayQuery,
+    WebStatusDisplayFamily,
+    WebStatusDisplayItem,
+    WebStatusDisplayResult,
+    WebStatusDisplayResultState,
+    WebStatusEvidenceClass,
+    WebStatusEvidenceReference,
+    WebStatusSourceFamily,
+)
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
 MODULE_ID = WEB_CABINET_MODULE_ID
@@ -82,4 +92,12 @@ __all__ = [
     "WebNotificationHistoryResult",
     "WebNotificationHistoryResultState",
     "WebNotificationListingReferenceProjection",
+    "RequestWebStatusDisplayQuery",
+    "WebStatusDisplayFamily",
+    "WebStatusDisplayItem",
+    "WebStatusDisplayResult",
+    "WebStatusDisplayResultState",
+    "WebStatusEvidenceClass",
+    "WebStatusEvidenceReference",
+    "WebStatusSourceFamily",
 ]
