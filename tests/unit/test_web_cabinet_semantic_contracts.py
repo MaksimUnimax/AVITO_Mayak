@@ -3636,6 +3636,22 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
     parent_export_ids = {name: id(package.__dict__[name]) for name in package.__all__}
     before_env = dict(os.environ)
 
+    parent_owner_inventory_before = _resolve_owner_inventory()
+    parent_pre_result = _static_005_identity_detector(package, parent_owner_inventory_before)
+    assert parent_pre_result["check_count"] == 74
+    assert parent_pre_result["failures"] == [], (
+        f"Parent pre-subprocess identity failures: {parent_pre_result['failures']}"
+    )
+    assert parent_pre_result["duplicate_owner_exports"] == []
+    assert parent_pre_result["missing_package_exports"] == []
+    assert parent_pre_result["unknown_package_exports"] == []
+    parent_pre_owner_export_ids = {}
+    for owner_mod, exports in parent_owner_inventory_before:
+        for name in exports:
+            parent_pre_owner_export_ids[(owner_mod.__name__, name)] = id(
+                owner_mod.__dict__[name]
+            )
+
     audit_script = (
         "import os, sys, json, importlib\n"
         "import mayak.modules.web_cabinet as pkg\n"
@@ -3841,14 +3857,42 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
     assert len(seen) == 74
     assert seen == pkg_all_set - {"MODULE_ID"}
 
+    parent_owner_inventory_after = _resolve_owner_inventory()
+    parent_post_result = _static_005_identity_detector(package, parent_owner_inventory_after)
+    assert parent_post_result["check_count"] == 74
+    assert parent_post_result["failures"] == [], (
+        f"Parent post-subprocess identity failures: {parent_post_result['failures']}"
+    )
+    assert parent_post_result["duplicate_owner_exports"] == []
+    assert parent_post_result["missing_package_exports"] == []
+    assert parent_post_result["unknown_package_exports"] == []
+
+    for (mod_name, exp_name), pre_id in parent_pre_owner_export_ids.items():
+        owner_mod_dict = {m.__name__: m for m, _ in parent_owner_inventory_after}
+        assert id(owner_mod_dict[mod_name].__dict__[exp_name]) == pre_id, (
+            f"Owner export {mod_name}.{exp_name} identity changed after subprocess"
+        )
+
+    pre_module_names = [mod.__name__ for mod, _ in parent_owner_inventory_before]
+    post_module_names = [mod.__name__ for mod, _ in parent_owner_inventory_after]
+    assert pre_module_names == post_module_names, (
+        "Owner module order changed after subprocess"
+    )
+    pre_export_lists = [tuple(exports) for _, exports in parent_owner_inventory_before]
+    post_export_lists = [tuple(exports) for _, exports in parent_owner_inventory_after]
+    assert pre_export_lists == post_export_lists, (
+        "Owner export lists changed after subprocess"
+    )
+
     return _evidence(
         vector,
         (),
         (
-            "reload package and all web modules via subprocess",
-            "environment byte equality",
-            "parent identity preservation",
-            "real owner identity invariant proven",
+            "parent pre-subprocess owner identity 74/74",
+            "child pre/post reload owner identity",
+            "parent post-subprocess owner identity 74/74",
+            "parent package/module/export identity preservation",
+            "environment preservation",
         ),
     )
 
@@ -4184,9 +4228,6 @@ def test_invalid_evidence_has_exact_validator_signature() -> None:
 
 
 def test_static_005_isolation_preserves_parent_identities() -> None:
-    import importlib as _importlib
-
-    _importlib.reload(package)
     parent_package_id = id(package)
     parent_module_ids = {
         name: id(mod)
@@ -4206,10 +4247,22 @@ def test_static_005_isolation_preserves_parent_identities() -> None:
     parent_export_ids = {
         name: id(package.__dict__[name]) for name in package.__all__
     }
-    parent_owner_export_ids = {}
-    for owner_mod, exports in _resolve_owner_inventory():
+
+    parent_before_inv = _resolve_owner_inventory()
+    parent_before_result = _static_005_identity_detector(package, parent_before_inv)
+    assert parent_before_result["check_count"] == 74
+    assert parent_before_result["failures"] == []
+    assert parent_before_result["duplicate_owner_exports"] == []
+    assert parent_before_result["missing_package_exports"] == []
+    assert parent_before_result["unknown_package_exports"] == []
+
+    parent_before_owner_export_ids = {}
+    for owner_mod, exports in parent_before_inv:
         for name in exports:
-            parent_owner_export_ids[name] = id(owner_mod.__dict__[name])
+            parent_before_owner_export_ids[(owner_mod.__name__, name)] = id(
+                owner_mod.__dict__[name]
+            )
+
     before_env = dict(os.environ)
 
     vector = {
@@ -4219,6 +4272,16 @@ def test_static_005_isolation_preserves_parent_identities() -> None:
     }
     evidence = scenario_fx_wc12_static_005(vector)
     assert evidence.result == "PASS"
+
+    parent_after_first_inv = _resolve_owner_inventory()
+    parent_after_first_result = _static_005_identity_detector(
+        package, parent_after_first_inv
+    )
+    assert parent_after_first_result["check_count"] == 74
+    assert parent_after_first_result["failures"] == []
+    assert parent_after_first_result["duplicate_owner_exports"] == []
+    assert parent_after_first_result["missing_package_exports"] == []
+    assert parent_after_first_result["unknown_package_exports"] == []
 
     assert id(package) == parent_package_id, (
         "Parent package identity changed after STATIC-005"
@@ -4243,65 +4306,63 @@ def test_static_005_isolation_preserves_parent_identities() -> None:
         assert id(package.__dict__[name]) == exp_id, (
             f"Parent export {name} identity changed after STATIC-005"
         )
+
+    for (mod_name, exp_name), before_id in parent_before_owner_export_ids.items():
+        owner_mod = {m.__name__: m for m, _ in parent_after_first_inv}[mod_name]
+        assert id(owner_mod.__dict__[exp_name]) == before_id, (
+            f"Owner export {mod_name}.{exp_name} identity changed after first STATIC-005"
+        )
+
     assert dict(os.environ) == before_env, (
         "Parent environment changed after STATIC-005"
     )
 
-    pre_inv = _resolve_owner_inventory()
-    pre_result = _static_005_identity_detector(package, pre_inv)
-    assert pre_result["check_count"] == 74
-    assert pre_result["failures"] == []
-    assert pre_result["duplicate_owner_exports"] == []
-    assert pre_result["missing_package_exports"] == []
-    assert pre_result["unknown_package_exports"] == []
-
-    seen = set()
-    check_count = 0
-    for owner_mod, exports in _resolve_owner_inventory():
-        for name in exports:
-            assert name in seen or name in set(package.__all__) - {"MODULE_ID"}
-            assert name not in seen, f"Duplicate export: {name} after STATIC-005"
-            seen.add(name)
-            check_count += 1
-    assert check_count == 74, f"Expected 74 module-owned exports, got {check_count}"
-    assert len(seen) == 74
-    assert seen == set(package.__all__) - {"MODULE_ID"}
-
-    for owner_mod, exports in _resolve_owner_inventory():
-        for name in exports:
-            assert package.__dict__[name] is owner_mod.__dict__[name], (
-                f"Real owner mapping broken for {name} after STATIC-005"
-            )
-
     evidence2 = scenario_fx_wc12_static_005(vector)
     assert evidence2.result == "PASS"
-    assert id(package) == parent_package_id, "Package identity changed on second STATIC-005 run"
 
-    post_inv2 = _resolve_owner_inventory()
-    post_result2 = _static_005_identity_detector(package, post_inv2)
-    assert post_result2["check_count"] == 74
-    assert post_result2["failures"] == []
-    assert post_result2["duplicate_owner_exports"] == []
-    assert post_result2["missing_package_exports"] == []
-    assert post_result2["unknown_package_exports"] == []
+    parent_after_second_inv = _resolve_owner_inventory()
+    parent_after_second_result = _static_005_identity_detector(
+        package, parent_after_second_inv
+    )
+    assert parent_after_second_result["check_count"] == 74
+    assert parent_after_second_result["failures"] == []
+    assert parent_after_second_result["duplicate_owner_exports"] == []
+    assert parent_after_second_result["missing_package_exports"] == []
+    assert parent_after_second_result["unknown_package_exports"] == []
 
-    seen2 = set()
-    check_count2 = 0
-    for owner_mod, exports in _resolve_owner_inventory():
-        for name in exports:
-            assert name not in seen2, f"Duplicate export: {name} after second STATIC-005"
-            seen2.add(name)
-            check_count2 += 1
-    assert check_count2 == 74
-    assert seen2 == set(package.__all__) - {"MODULE_ID"}
+    assert id(package) == parent_package_id, (
+        "Package identity changed on second STATIC-005 run"
+    )
+    for name, mod_id in parent_module_ids.items():
+        current_mod = {
+            "read_models": read_models,
+            "beacon_commands": beacon_commands,
+            "auth_context": auth_context,
+            "entitlement_projections": entitlement_projections,
+            "notification_history": notification_history,
+            "status_display": status_display,
+            "channel_linking": channel_linking,
+            "admin_analytics": admin_analytics,
+            "support_handoff": support_handoff,
+            "security_privacy": security_privacy,
+        }[name]
+        assert id(current_mod) == mod_id, (
+            f"Parent module {name} identity changed after second STATIC-005"
+        )
+    for name, exp_id in parent_export_ids.items():
+        assert id(package.__dict__[name]) == exp_id, (
+            f"Parent export {name} identity changed after second STATIC-005"
+        )
 
-    for owner_mod, exports in _resolve_owner_inventory():
-        for name in exports:
-            assert package.__dict__[name] is owner_mod.__dict__[name], (
-                f"Real owner mapping broken for {name} after second STATIC-005"
-            )
+    for (mod_name, exp_name), before_id in parent_before_owner_export_ids.items():
+        owner_mod = {m.__name__: m for m, _ in parent_after_second_inv}[mod_name]
+        assert id(owner_mod.__dict__[exp_name]) == before_id, (
+            f"Owner export {mod_name}.{exp_name} identity changed after second STATIC-005"
+        )
 
-    assert dict(os.environ) == before_env, "Environment changed after second STATIC-005"
+    assert dict(os.environ) == before_env, (
+        "Environment changed after second STATIC-005"
+    )
 
 
 def test_static_005_negative_control_detects_wrong_owner() -> None:
@@ -4319,6 +4380,15 @@ def test_static_005_negative_control_detects_wrong_owner() -> None:
     assert nc_result["check_count"] > 0
     assert len(nc_result["failures"]) > 0
     assert any(f[0] == first_export for f in nc_result["failures"])
+    assert any(f[0] in package.__all__ for f in nc_result["failures"]), (
+        "At least one failure must be for a name that exists in package.__all__"
+    )
+    for fail_name, fail_mod in nc_result["failures"]:
+        assert fail_name in package.__all__, (
+            f"Failure {fail_name} from {fail_mod} not in package.__all__"
+        )
+    assert nc_result["duplicate_owner_exports"] == []
+    assert nc_result["missing_package_exports"] == []
 
     normal_inv = _resolve_owner_inventory()
     normal_result = _static_005_identity_detector(package, normal_inv)
