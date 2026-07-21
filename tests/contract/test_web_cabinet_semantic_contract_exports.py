@@ -256,21 +256,21 @@ _EXPECTED_RESULT_KEYS = frozenset({
     "errors",
 })
 
-_RESULT_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
-    "module_name": str,
-    "reload_count": int,
-    "module_object_same": bool,
-    "expected_export_count": int,
-    "pre_exports_match": bool,
-    "pre_export_count": int,
-    "post_exports_match": bool,
-    "post_export_count": int,
-    "export_order_same": bool,
-    "exports_unique": bool,
-    "env_unchanged": bool,
-    "module_id": (str, type(None)),
-    "errors": list,
-}
+_INTEGER_FIELDS = frozenset({
+    "reload_count",
+    "expected_export_count",
+    "pre_export_count",
+    "post_export_count",
+})
+
+_BOOLEAN_FIELDS = frozenset({
+    "module_object_same",
+    "pre_exports_match",
+    "post_exports_match",
+    "export_order_same",
+    "exports_unique",
+    "env_unchanged",
+})
 
 _KNOWN_ERROR_CODES = frozenset({
     "pre_exports_mismatch",
@@ -285,7 +285,15 @@ _KNOWN_ERROR_CODES = frozenset({
 })
 
 
-def _validate_child_result_schema(result: dict, import_path: str) -> None:
+def _validate_child_result_schema(
+    result: dict,
+    import_path: str,
+    package_target: bool = False,
+) -> None:
+    if type(result) is not dict:
+        raise AssertionError(
+            f"Child result is not a dict: {type(result).__name__}"
+        )
     actual_keys = frozenset(result.keys())
     if actual_keys != _EXPECTED_RESULT_KEYS:
         missing = _EXPECTED_RESULT_KEYS - actual_keys
@@ -298,22 +306,65 @@ def _validate_child_result_schema(result: dict, import_path: str) -> None:
         raise AssertionError(
             f"Child result schema mismatch: {'; '.join(parts)}"
         )
-    for field, expected_type in _RESULT_FIELD_TYPES.items():
-        if not isinstance(result[field], expected_type):
+    for field in _INTEGER_FIELDS:
+        if type(result[field]) is not int:
             raise AssertionError(
                 f"Child result field {field!r} type "
-                f"{type(result[field]).__name__} != {expected_type}"
+                f"{type(result[field]).__name__} != int"
             )
+    for field in _BOOLEAN_FIELDS:
+        if type(result[field]) is not bool:
+            raise AssertionError(
+                f"Child result field {field!r} type "
+                f"{type(result[field]).__name__} != bool"
+            )
+    if type(result["module_name"]) is not str:
+        raise AssertionError(
+            f"Child result field 'module_name' type "
+            f"{type(result['module_name']).__name__} != str"
+        )
     if result["module_name"] != import_path:
         raise AssertionError(
             f"Child module_name {result['module_name']!r} "
             f"!= requested import_path {import_path!r}"
         )
+    if package_target:
+        if type(result["module_id"]) is not str:
+            raise AssertionError(
+                f"Child result field 'module_id' type "
+                f"{type(result['module_id']).__name__} != str for package target"
+            )
+        if result["module_id"] != "12-web-cabinet":
+            raise AssertionError(
+                f"Child module_id {result['module_id']!r} "
+                f"!= expected '12-web-cabinet'"
+            )
+    else:
+        if result["module_id"] is not None:
+            raise AssertionError(
+                f"Child result field 'module_id' "
+                f"must be None for non-package target, got {result['module_id']!r}"
+            )
+    if type(result["errors"]) is not list:
+        raise AssertionError(
+            f"Child result field 'errors' type "
+            f"{type(result['errors']).__name__} != list"
+        )
+    seen_codes: set[str] = set()
     for code in result["errors"]:
+        if type(code) is not str:
+            raise AssertionError(
+                f"Child error code type {type(code).__name__} != str"
+            )
         if code not in _KNOWN_ERROR_CODES:
             raise AssertionError(
                 f"Child unknown error code {code!r}"
             )
+        if code in seen_codes:
+            raise AssertionError(
+                f"Child duplicate error code {code!r}"
+            )
+        seen_codes.add(code)
 
 
 def _run_isolated_reload_check(
@@ -401,6 +452,7 @@ def _run_isolated_reload_check(
         shell=False,
     )
     child_defect: AssertionError | None = None
+    parent_defect: AssertionError | None = None
     result: dict | None = None
     try:
         try:
@@ -411,6 +463,12 @@ def _run_isolated_reload_check(
                 f"Child JSON parse error: {exc}; "
                 f"returncode={proc.returncode}; stderr={safe_stderr!r}"
             )
+        if child_defect is None and type(result) is not dict:
+            child_defect = AssertionError(
+                f"Child result is not a dict: {type(result).__name__}"
+            )
+        if child_defect is None and result is not None:
+            _validate_child_result_schema(result, import_path, package_target)
         if child_defect is None and proc.returncode != 0:
             safe_errors = result.get("errors", [])  # type: ignore[union-attr]
             safe_stderr = proc.stderr[:200] if proc.stderr else ""
@@ -418,16 +476,25 @@ def _run_isolated_reload_check(
                 f"Child returned nonzero rc={proc.returncode}: "
                 f"errors={safe_errors}; stderr={safe_stderr!r}"
             )
-        if child_defect is None and result is not None:
-            _validate_child_result_schema(result, import_path)
-            if result.get("errors"):
-                child_defect = AssertionError(
-                    f"Child reported errors: {result['errors']}"
-                )
-    finally:
+        if child_defect is None and result is not None and result.get("errors"):
+            child_defect = AssertionError(
+                f"Child reported errors: {result['errors']}"
+            )
+    except AssertionError as exc:
+        child_defect = exc
+    try:
         _compare_parent_state(parent_snapshot)
+    except AssertionError as exc:
+        parent_defect = exc
+    if child_defect is not None and parent_defect is not None:
+        raise AssertionError(
+            f"Combined child_result_defect and parent_state_defect: "
+            f"child={child_defect!s}; parent={parent_defect!s}"
+        )
     if child_defect is not None:
         raise child_defect
+    if parent_defect is not None:
+        raise parent_defect
     return result  # type: ignore[return-value]
 
 
