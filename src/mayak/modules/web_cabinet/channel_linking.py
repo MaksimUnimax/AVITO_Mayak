@@ -476,6 +476,26 @@ class WebChannelSurfaceResult(_WebChannelLinkingContract):
         ):
             raise ValueError("result counts do not match projections")
         states = {p.state for p in self.channel_projections}
+        if (
+            self.state is WebChannelSurfaceResultState.NOT_FOUND_SAFE
+            and self.freshness is not WebReadFreshness.FRESH
+        ):
+            raise ValueError("not-found-safe result requires fresh freshness")
+        if (
+            self.state is not WebChannelSurfaceResultState.STALE
+            and self.freshness is WebReadFreshness.STALE
+        ):
+            raise ValueError("only stale result may use stale freshness")
+        if (
+            self.state is not WebChannelSurfaceResultState.AMBIGUOUS
+            and self.freshness is WebReadFreshness.AMBIGUOUS
+        ):
+            raise ValueError("only ambiguous result may use ambiguous freshness")
+        if (
+            self.state is not WebChannelSurfaceResultState.AMBIGUOUS
+            and self.ambiguity_reference_id is not None
+        ):
+            raise ValueError("only ambiguous result may carry ambiguity reference")
         if self.state is WebChannelSurfaceResultState.AVAILABLE and (
             not self.channel_projections
             or self.freshness is not WebReadFreshness.FRESH
@@ -625,6 +645,18 @@ class WebChannelCommandSubmitOutcome(_WebChannelLinkingContract):
     def _validate_outcome(self) -> "WebChannelCommandSubmitOutcome":
         if self.owning_module_id != self.command.requested_owning_module_id:
             raise ValueError("outcome owner must match command owner")
+        if (
+            self.state is not WebChannelCommandSubmitState.AMBIGUOUS
+            and self.ambiguity_reference_id is not None
+        ):
+            raise ValueError("only ambiguous outcome may carry ambiguity reference")
+        if (
+            self.state is not WebChannelCommandSubmitState.RECONCILIATION_REQUIRED
+            and self.reconciliation_reference_id is not None
+        ):
+            raise ValueError(
+                "only reconciliation-required outcome may carry reconciliation reference"
+            )
         if self.state is WebChannelCommandSubmitState.SUBMITTED and (
             self.owning_command_reference_id is None
             or self.safe_owning_outcome_reference_id is None
