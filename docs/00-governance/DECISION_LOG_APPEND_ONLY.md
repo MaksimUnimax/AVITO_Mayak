@@ -1174,3 +1174,36 @@ No numbered open decision is closed by assumption.
 **Blocked gates:** no code, contracts, tests, runtime, persistence, UI, provider, secrets or infrastructure work is authorized.
 
 AS-01 is complete only after independent verification and acceptance of the publishing commit by ChatGPT. AS-02 may begin only after AS-01 acceptance and a fresh verification of GitHub main, the playbook, linked modules and parallel changes. This ADR does not authorize code/contracts/tests/runtime/persistence/UI/provider/secrets/infrastructure.
+
+## ADR-0028 — 2026-07-21 — Web Cabinet owner decisions for WC-01
+
+**Status:** OWNER-APPROVED decision capture pending independent GitHub acceptance
+**Module:** `12-web-cabinet`
+**Roadmap step:** `WC-01`
+**Technical task:** `WC-01-WEB-CABINET-OWNER-DECISIONS-CAPTURE-20260721-001`
+**Canonical document:** `docs/04-modules/12-web-cabinet/OWNER_WEB_CABINET_DECISIONS_CAPTURE_v1.0.md`
+
+**Decision capture:**
+
+1. Web Cabinet v1 presents active Beacons and Beacon History/Archive; Beacon Management owns archive, restore, ordinary delete and permanent delete, while Web Cabinet reads safe projections and sends public commands. History/archive does not consume the active limit, and restore requires current entitlement, policy and validation without re-entering the source URL.
+2. Beacon editing uses Module 04 current-config policy: drafts are non-authoritative, saves are patch-based public commands, server validation is authoritative, stale full-form overwrite is prohibited, and accepted saves reload authoritative state.
+3. Web authorization/login is not invented in Module 12. Identity & Access owns the internal account identity, login/session/recovery and account boundaries; Telegram/MAX linking uses their adapters plus Identity & Access; provider profile fields are not account authority.
+4. Tariff, access and limits are displayed only from Entitlements & Billing safe projections. Web Cabinet does not invent tariff values, grant entitlement or mutate billing; payment and provider runtime remain gated.
+5. Message/result history comes from Notification Delivery, including Beacon/source-event linkage, full found-listing count, all approved safe grouped listing references and safe channel/status/reason summaries. No new full chat or unbounded listing archive, and no raw provider material, is allowed.
+6. User-facing statuses come from Scan and Notification semantics, preserving no-new, unavailable/external-failure, recovery, lost-anchor, access, channel, notification and stale families. Stack traces, secrets, raw payloads, false no-new, false confirmed-new and ambiguous-success claims are prohibited.
+7. All interfaces use one internal account and verified adapter projections. Channel intents and enable/disable use accepted adapter, Identity and generic preference/owning-module boundaries. Telegram is first practical; MAX is future/secondary; Web Cabinet is not push-provider runtime.
+8. Future Module 12 v1 semantic scope includes an admin-only analytics read model with visitor, registered/linked, active/using, Free and approved-paid-tariff counts, sortable tabular projection, future approved filters, aggregated counts by default and minimal personal data. The current playbook blocks analytics through OD-014 and OD-013; this direction does not authorize implementation, and tracker, pixels, external analytics, consent, event runtime, exact screens/periods, retention, user-level export and unnecessary PII remain gated.
+9. Customer-facing support handoff is separate from internal support state. Web Cabinet may show safe customer-visible support entry/status/answer, but not private notes, audit, operator fields, raw logs, secrets or hidden evidence, and it does not mutate cases or create operator actions.
+10. Web Cabinet remains a safe-read, composition, explanation, non-authoritative-draft and command-envelope boundary. Owning-module outcomes remain authoritative; freshness, provenance, redaction, ownership, authorization, idempotency, correlation/causation and ambiguity are preserved; filters and visual-builder behavior are not invented here.
+
+**Ownership consequences:** Beacon Management owns Beacon lifecycle; Identity & Access owns account, authorization and web session boundaries; Entitlements & Billing owns tariff/access/billing; Scan owns scan and listing semantics; Notification Delivery owns message/delivery history and notification policy; Telegram/MAX adapters own provider mapping; Admin & Support owns support cases and internal state. Web Cabinet owns presentation, safe composition and public command-boundary behavior only and never writes foreign authoritative state.
+
+**Security/privacy consequences:** only scoped safe projections and redacted minimal data may be presented; provider usernames, display names, avatars, phones and chat state are not account authority; raw provider payloads, cookies, tokens, secrets, private notes, hidden evidence and unnecessary personal data are excluded; no provider calls or direct foreign writes are authorized.
+
+**Analytics/playbook compatibility:** the current Web Cabinet playbook blocks analytics through OD-014 and OD-013. Owner direction places the future admin-only analytics semantic boundary in Module 12 roadmap scope, but does not close either open decision or authorize tracker, consent, event collection, provider, retention or UI implementation.
+
+**Preserved open decisions:** `OD-006`, `OD-007`, `OD-008`, `OD-009`, `OD-013`, `OD-014`, exact web screen map, frontend framework/component library, route/API surface, session storage, login/recovery flow, analytics event catalog, consent, analytics retention, exact visitor/active-user definitions, exact period filters, customer support visibility details, notification preference storage, channel-link UX, exact tariff values except separately approved Entitlements facts, and payment/runtime/provider decisions remain open.
+
+**Blocked gates:** product code, semantic Python contracts, tests, fixtures, frontend/pages/routes/API handlers/UI components, auth/session/recovery/account merge, analytics/tracking, payment UI/provider calls, database/ORM/migrations/persistence, queues/workers/schedulers/services/runtime, Telegram/MAX/Avito/payment calls, Docker, CI/CD, deploy, ports/listeners/certificates, credentials/secrets, raw payload retention and direct foreign-state mutation remain blocked.
+
+WC-01 is complete only after independent verification and acceptance by ChatGPT. WC-02 requires a separate exact task after fresh GitHub/playbook/dependency/parallel-main checks. CLI does not select the next roadmap step.
