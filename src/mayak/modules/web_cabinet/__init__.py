@@ -27,6 +27,15 @@ from mayak.modules.web_cabinet.auth_context import (
     WebPresentationContextState,
     WebSessionReferenceState,
 )
+from mayak.modules.web_cabinet.entitlement_projections import (
+    RequestWebEntitlementProjectionQuery,
+    WebEntitlementAccessState,
+    WebEntitlementCapabilityProjection,
+    WebEntitlementProjectionResult,
+    WebEntitlementProjectionState,
+    WebTariffOptionProjection,
+    WebTariffOptionState,
+)
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
 MODULE_ID = WEB_CABINET_MODULE_ID
@@ -52,4 +61,11 @@ __all__ = [
     "WebPresentationContextResult",
     "WebPresentationContextState",
     "WebSessionReferenceState",
+    "RequestWebEntitlementProjectionQuery",
+    "WebEntitlementAccessState",
+    "WebEntitlementCapabilityProjection",
+    "WebEntitlementProjectionResult",
+    "WebEntitlementProjectionState",
+    "WebTariffOptionProjection",
+    "WebTariffOptionState",
 ]
