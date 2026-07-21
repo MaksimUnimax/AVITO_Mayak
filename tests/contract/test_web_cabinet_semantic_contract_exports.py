@@ -240,6 +240,82 @@ MODULE_EXPORTS = {
 PACKAGE_EXPORTS = ["MODULE_ID"] + [name for module in MODULE_EXPORTS.values() for name in module]
 
 
+_EXPECTED_RESULT_KEYS = frozenset({
+    "module_name",
+    "reload_count",
+    "module_object_same",
+    "expected_export_count",
+    "pre_exports_match",
+    "pre_export_count",
+    "post_exports_match",
+    "post_export_count",
+    "export_order_same",
+    "exports_unique",
+    "env_unchanged",
+    "module_id",
+    "errors",
+})
+
+_RESULT_FIELD_TYPES: dict[str, type | tuple[type, ...]] = {
+    "module_name": str,
+    "reload_count": int,
+    "module_object_same": bool,
+    "expected_export_count": int,
+    "pre_exports_match": bool,
+    "pre_export_count": int,
+    "post_exports_match": bool,
+    "post_export_count": int,
+    "export_order_same": bool,
+    "exports_unique": bool,
+    "env_unchanged": bool,
+    "module_id": (str, type(None)),
+    "errors": list,
+}
+
+_KNOWN_ERROR_CODES = frozenset({
+    "pre_exports_mismatch",
+    "pre_export_count_mismatch",
+    "module_object_changed",
+    "post_exports_mismatch",
+    "export_order_changed",
+    "duplicate_exports",
+    "env_changed",
+    "module_id_mismatch",
+    "package_export_count_mismatch",
+})
+
+
+def _validate_child_result_schema(result: dict, import_path: str) -> None:
+    actual_keys = frozenset(result.keys())
+    if actual_keys != _EXPECTED_RESULT_KEYS:
+        missing = _EXPECTED_RESULT_KEYS - actual_keys
+        extra = actual_keys - _EXPECTED_RESULT_KEYS
+        parts = []
+        if missing:
+            parts.append(f"missing={sorted(missing)}")
+        if extra:
+            parts.append(f"unknown={sorted(extra)}")
+        raise AssertionError(
+            f"Child result schema mismatch: {'; '.join(parts)}"
+        )
+    for field, expected_type in _RESULT_FIELD_TYPES.items():
+        if not isinstance(result[field], expected_type):
+            raise AssertionError(
+                f"Child result field {field!r} type "
+                f"{type(result[field]).__name__} != {expected_type}"
+            )
+    if result["module_name"] != import_path:
+        raise AssertionError(
+            f"Child module_name {result['module_name']!r} "
+            f"!= requested import_path {import_path!r}"
+        )
+    for code in result["errors"]:
+        if code not in _KNOWN_ERROR_CODES:
+            raise AssertionError(
+                f"Child unknown error code {code!r}"
+            )
+
+
 def _run_isolated_reload_check(
     import_path: str,
     expected_exports: list[str],
@@ -324,27 +400,35 @@ def _run_isolated_reload_check(
         timeout=30,
         shell=False,
     )
+    child_defect: AssertionError | None = None
+    result: dict | None = None
     try:
-        result = json.loads(proc.stdout.strip())
-    except (json.JSONDecodeError, ValueError) as exc:
-        safe_stderr = proc.stderr[:500] if proc.stderr else ""
-        raise AssertionError(
-            f"Child JSON parse error: {exc}; "
-            f"returncode={proc.returncode}; stderr={safe_stderr!r}"
-        )
-    if proc.returncode != 0:
-        safe_errors = result.get("errors", [])
-        safe_stderr = proc.stderr[:200] if proc.stderr else ""
-        raise AssertionError(
-            f"Child returned nonzero rc={proc.returncode}: "
-            f"errors={safe_errors}; stderr={safe_stderr!r}"
-        )
-    if result.get("errors"):
-        raise AssertionError(
-            f"Child reported errors: {result['errors']}"
-        )
-    _compare_parent_state(parent_snapshot)
-    return result
+        try:
+            result = json.loads(proc.stdout.strip())
+        except (json.JSONDecodeError, ValueError) as exc:
+            safe_stderr = proc.stderr[:500] if proc.stderr else ""
+            child_defect = AssertionError(
+                f"Child JSON parse error: {exc}; "
+                f"returncode={proc.returncode}; stderr={safe_stderr!r}"
+            )
+        if child_defect is None and proc.returncode != 0:
+            safe_errors = result.get("errors", [])  # type: ignore[union-attr]
+            safe_stderr = proc.stderr[:200] if proc.stderr else ""
+            child_defect = AssertionError(
+                f"Child returned nonzero rc={proc.returncode}: "
+                f"errors={safe_errors}; stderr={safe_stderr!r}"
+            )
+        if child_defect is None and result is not None:
+            _validate_child_result_schema(result, import_path)
+            if result.get("errors"):
+                child_defect = AssertionError(
+                    f"Child reported errors: {result['errors']}"
+                )
+    finally:
+        _compare_parent_state(parent_snapshot)
+    if child_defect is not None:
+        raise child_defect
+    return result  # type: ignore[return-value]
 
 
 ENUM_VALUES = {
