@@ -54,6 +54,19 @@ from mayak.modules.web_cabinet.status_display import (
     WebStatusEvidenceReference,
     WebStatusSourceFamily,
 )
+from mayak.modules.web_cabinet.channel_linking import (
+    RequestWebChannelSurfaceQuery,
+    SubmitWebChannelCommandCommand,
+    WebChannelCommandKind,
+    WebChannelCommandSubmitOutcome,
+    WebChannelCommandSubmitState,
+    WebChannelKind,
+    WebChannelNotificationPreferenceState,
+    WebChannelSurfaceProjection,
+    WebChannelSurfaceResult,
+    WebChannelSurfaceResultState,
+    WebChannelSurfaceState,
+)
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
 MODULE_ID = WEB_CABINET_MODULE_ID
@@ -100,4 +113,15 @@ __all__ = [
     "WebStatusEvidenceClass",
     "WebStatusEvidenceReference",
     "WebStatusSourceFamily",
+    "RequestWebChannelSurfaceQuery",
+    "SubmitWebChannelCommandCommand",
+    "WebChannelCommandKind",
+    "WebChannelCommandSubmitOutcome",
+    "WebChannelCommandSubmitState",
+    "WebChannelKind",
+    "WebChannelNotificationPreferenceState",
+    "WebChannelSurfaceProjection",
+    "WebChannelSurfaceResult",
+    "WebChannelSurfaceResultState",
+    "WebChannelSurfaceState",
 ]
