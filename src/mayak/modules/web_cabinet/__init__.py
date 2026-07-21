@@ -36,6 +36,14 @@ from mayak.modules.web_cabinet.entitlement_projections import (
     WebTariffOptionProjection,
     WebTariffOptionState,
 )
+from mayak.modules.web_cabinet.notification_history import (
+    RequestWebNotificationHistoryQuery,
+    WebNotificationDeliveryHistoryEntry,
+    WebNotificationDeliveryState,
+    WebNotificationHistoryResult,
+    WebNotificationHistoryResultState,
+    WebNotificationListingReferenceProjection,
+)
 from mayak.platform.boundaries import WEB_CABINET_MODULE_ID
 
 MODULE_ID = WEB_CABINET_MODULE_ID
@@ -68,4 +76,10 @@ __all__ = [
     "WebEntitlementProjectionState",
     "WebTariffOptionProjection",
     "WebTariffOptionState",
+    "RequestWebNotificationHistoryQuery",
+    "WebNotificationDeliveryHistoryEntry",
+    "WebNotificationDeliveryState",
+    "WebNotificationHistoryResult",
+    "WebNotificationHistoryResultState",
+    "WebNotificationListingReferenceProjection",
 ]
