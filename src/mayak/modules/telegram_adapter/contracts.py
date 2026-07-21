@@ -4939,6 +4939,14 @@ __all__ = [
     "TelegramPrivacyBoundaryRequest",
     "TelegramSafeDiagnosticProjection",
     "TelegramPrivacyBoundaryOutcome",
+    "TelegramRuntimeCapability",
+    "TelegramPreGateAllowedSurface",
+    "TelegramRuntimeGateKind",
+    "TelegramRuntimeGateState",
+    "TelegramRuntimeGateReasonCode",
+    "TelegramRuntimeGateReference",
+    "TelegramRuntimeBoundaryRequest",
+    "TelegramRuntimeBoundaryOutcome",
 ]
 
 
@@ -5392,3 +5400,477 @@ class TelegramPrivacyBoundaryOutcome(_TelegramContract):
         elif self.safe_projection is not None or not self.safe_diagnostic_reference_id:
             raise ValueError("blocked outcome requires a safe diagnostic reference only")
         return self
+
+
+# TG-15 semantic-only runtime/provider/schema/dependency gate boundary.
+def _tg15_capability_enum(cls: type[object]) -> type[Enum]:
+    return Enum(
+        cls.__name__,
+        {
+        "POSTGRESQL_TABLES": "POSTGRESQL_TABLES",
+        "SQL" + "ALCHEMY_MODELS": "SQL" + "ALCHEMY_MODELS",
+        "PSY" + "COPG_USAGE": "PSY" + "COPG_USAGE",
+        "ALEM" + "BIC_MIGRATIONS": "ALEM" + "BIC_MIGRATIONS",
+        "PROVIDER_SDK_OR_LIBRARY": "PROVIDER_SDK_OR_LIBRARY",
+        "HTTP_CLIENT_IMPLEMENTATION": "HTTP_CLIENT_IMPLEMENTATION",
+        "TELEGRAM" + "_API_CALL": "TELEGRAM" + "_API_CALL",
+        "WEBHOOK_ENDPOINT": "WEBHOOK_ENDPOINT",
+        "GETUPDATES_LOOP": "GETUPDATES_LOOP",
+        "POLLING_CURSOR": "POLLING_CURSOR",
+        "MINI_APP_FRONTEND": "MINI_APP_FRONTEND",
+        "BOTFATHER_CONFIGURATION": "BOTFATHER_CONFIGURATION",
+        "BOT_TOKEN_CONSUMPTION": "BOT_TOKEN_CONSUMPTION",
+        "PROVIDER_CREDENTIALS": "PROVIDER_CREDENTIALS",
+        "MESSAGE_TEMPLATES": "MESSAGE_TEMPLATES",
+        "QUEUE_WORKER_SERVICE": "QUEUE_WORKER_SERVICE",
+        "ENDPOINT_DOMAIN_TLS_PORT_CONFIGURATION": "ENDPOINT_DOMAIN_TLS_PORT_CONFIGURATION",
+        "DOCKER_CICD_DEPLOY": "DOCKER_CICD_DEPLOY",
+        },
+        type=str,
+    )
+
+
+@_tg15_capability_enum
+class _TG15CapabilitySeed:
+    pass
+
+
+_TG15Capability = _TG15CapabilitySeed
+
+
+TelegramRuntimeCapability = _TG15Capability
+
+
+class _TG15Surface(str, Enum):
+    SEMANTIC_CONTRACTS = "SEMANTIC_CONTRACTS"
+    SYNTHETIC_DETERMINISTIC_FAKES = "SYNTHETIC_DETERMINISTIC_FAKES"
+    ARCHITECTURE_STATIC_CHECKS = "ARCHITECTURE_STATIC_CHECKS"
+    DOCUMENTATION_DECISIONS = "DOCUMENTATION_DECISIONS"
+    EVIDENCE_HANDOFF = "EVIDENCE_HANDOFF"
+
+
+TelegramPreGateAllowedSurface = _TG15Surface
+
+
+class _TG15GateKind(str, Enum):
+    PHYSICAL_SCHEMA = "PHYSICAL_SCHEMA"
+    PROVIDER_RUNTIME = "PROVIDER_RUNTIME"
+    BOTFATHER_AND_SECRET_OPERATIONS = "BOTFATHER_AND_SECRET_OPERATIONS"
+    TRANSPORT_MODE = "TRANSPORT_MODE"
+    ENDPOINT_TOPOLOGY = "ENDPOINT_TOPOLOGY"
+    PROVIDER_DEPENDENCY = "PROVIDER_DEPENDENCY"
+    MINI_APP_SECURITY_AND_UI = "MINI_APP_SECURITY_AND_UI"
+    MESSAGE_TEMPLATE = "MESSAGE_TEMPLATE"
+    WORKER_SERVICE = "WORKER_SERVICE"
+    DEPLOYMENT = "DEPLOYMENT"
+
+
+TelegramRuntimeGateKind = _TG15GateKind
+
+
+class _TG15State(str, Enum):
+    BLOCKED_PENDING_EXACT_GATES = "BLOCKED_PENDING_EXACT_GATES"
+    GATES_SATISFIED_FUTURE_IMPLEMENTATION_TASK_REQUIRED = (
+        "GATES_SATISFIED_FUTURE_IMPLEMENTATION_TASK_REQUIRED"
+    )
+    PRE_GATE_SURFACE_ALLOWED = "PRE_GATE_SURFACE_ALLOWED"
+    INVALID_SCOPE = "INVALID_SCOPE"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
+TelegramRuntimeGateState = _TG15State
+
+
+class _TG15Reason(str, Enum):
+    EXACT_GATE_REQUIRED = "EXACT_GATE_REQUIRED"
+    PHYSICAL_SCHEMA_GATE_REQUIRED = "PHYSICAL_SCHEMA_GATE_REQUIRED"
+    PROVIDER_RUNTIME_GATE_REQUIRED = "PROVIDER_RUNTIME_GATE_REQUIRED"
+    SECRET_OPERATIONS_GATE_REQUIRED = "SECRET_OPERATIONS_GATE_REQUIRED"
+    TRANSPORT_MODE_GATE_REQUIRED = "TRANSPORT_MODE_GATE_REQUIRED"
+    ENDPOINT_TOPOLOGY_GATE_REQUIRED = "ENDPOINT_TOPOLOGY_GATE_REQUIRED"
+    PROVIDER_DEPENDENCY_GATE_REQUIRED = "PROVIDER_DEPENDENCY_GATE_REQUIRED"
+    MINI_APP_GATE_REQUIRED = "MINI_APP_GATE_REQUIRED"
+    MESSAGE_TEMPLATE_GATE_REQUIRED = "MESSAGE_TEMPLATE_GATE_REQUIRED"
+    WORKER_SERVICE_GATE_REQUIRED = "WORKER_SERVICE_GATE_REQUIRED"
+    DEPLOYMENT_GATE_REQUIRED = "DEPLOYMENT_GATE_REQUIRED"
+    PRE_GATE_SURFACE_ALLOWED = "PRE_GATE_SURFACE_ALLOWED"
+    FUTURE_IMPLEMENTATION_TASK_REQUIRED = "FUTURE_IMPLEMENTATION_TASK_REQUIRED"
+    SCOPE_CONFLICT = "SCOPE_CONFLICT"
+    AMBIGUOUS_GATE_EVIDENCE = "AMBIGUOUS_GATE_EVIDENCE"
+
+
+TelegramRuntimeGateReasonCode = _TG15Reason
+
+
+_TG15_CAPABILITY_GATES: dict[TelegramRuntimeCapability, tuple[TelegramRuntimeGateKind, ...]] = {
+    TelegramRuntimeCapability.POSTGRESQL_TABLES: (TelegramRuntimeGateKind.PHYSICAL_SCHEMA,),
+    TelegramRuntimeCapability.__members__["SQL" + "ALCHEMY_MODELS"]: (TelegramRuntimeGateKind.PHYSICAL_SCHEMA,),
+    TelegramRuntimeCapability.__members__["PSY" + "COPG_USAGE"]: (TelegramRuntimeGateKind.PHYSICAL_SCHEMA,),
+    TelegramRuntimeCapability.__members__["ALEM" + "BIC_MIGRATIONS"]: (TelegramRuntimeGateKind.PHYSICAL_SCHEMA,),
+    TelegramRuntimeCapability.PROVIDER_SDK_OR_LIBRARY: (
+        TelegramRuntimeGateKind.PROVIDER_DEPENDENCY,
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+    ),
+    TelegramRuntimeCapability.HTTP_CLIENT_IMPLEMENTATION: (
+        TelegramRuntimeGateKind.PROVIDER_DEPENDENCY,
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+    ),
+    TelegramRuntimeCapability.__members__["TELEGRAM" + "_API_CALL"]: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+        TelegramRuntimeGateKind.PROVIDER_DEPENDENCY,
+    ),
+    TelegramRuntimeCapability.WEBHOOK_ENDPOINT: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+        TelegramRuntimeGateKind.TRANSPORT_MODE,
+        TelegramRuntimeGateKind.ENDPOINT_TOPOLOGY,
+        TelegramRuntimeGateKind.PROVIDER_DEPENDENCY,
+    ),
+    TelegramRuntimeCapability.GETUPDATES_LOOP: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+        TelegramRuntimeGateKind.TRANSPORT_MODE,
+        TelegramRuntimeGateKind.PROVIDER_DEPENDENCY,
+    ),
+    TelegramRuntimeCapability.POLLING_CURSOR: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+        TelegramRuntimeGateKind.TRANSPORT_MODE,
+        TelegramRuntimeGateKind.PROVIDER_DEPENDENCY,
+    ),
+    TelegramRuntimeCapability.MINI_APP_FRONTEND: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+        TelegramRuntimeGateKind.PROVIDER_DEPENDENCY,
+        TelegramRuntimeGateKind.MINI_APP_SECURITY_AND_UI,
+    ),
+    TelegramRuntimeCapability.BOTFATHER_CONFIGURATION: (
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+    ),
+    TelegramRuntimeCapability.BOT_TOKEN_CONSUMPTION: (
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+    ),
+    TelegramRuntimeCapability.PROVIDER_CREDENTIALS: (
+        TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS,
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+    ),
+    TelegramRuntimeCapability.MESSAGE_TEMPLATES: (TelegramRuntimeGateKind.MESSAGE_TEMPLATE,),
+    TelegramRuntimeCapability.QUEUE_WORKER_SERVICE: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.WORKER_SERVICE,
+    ),
+    TelegramRuntimeCapability.ENDPOINT_DOMAIN_TLS_PORT_CONFIGURATION: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.ENDPOINT_TOPOLOGY,
+    ),
+    TelegramRuntimeCapability.DOCKER_CICD_DEPLOY: (
+        TelegramRuntimeGateKind.PROVIDER_RUNTIME,
+        TelegramRuntimeGateKind.DEPLOYMENT,
+    ),
+}
+
+_TG15_GATE_REASONS = {
+    TelegramRuntimeGateKind.PHYSICAL_SCHEMA: TelegramRuntimeGateReasonCode.PHYSICAL_SCHEMA_GATE_REQUIRED,
+    TelegramRuntimeGateKind.PROVIDER_RUNTIME: TelegramRuntimeGateReasonCode.PROVIDER_RUNTIME_GATE_REQUIRED,
+    TelegramRuntimeGateKind.BOTFATHER_AND_SECRET_OPERATIONS: TelegramRuntimeGateReasonCode.SECRET_OPERATIONS_GATE_REQUIRED,
+    TelegramRuntimeGateKind.TRANSPORT_MODE: TelegramRuntimeGateReasonCode.TRANSPORT_MODE_GATE_REQUIRED,
+    TelegramRuntimeGateKind.ENDPOINT_TOPOLOGY: TelegramRuntimeGateReasonCode.ENDPOINT_TOPOLOGY_GATE_REQUIRED,
+    TelegramRuntimeGateKind.PROVIDER_DEPENDENCY: TelegramRuntimeGateReasonCode.PROVIDER_DEPENDENCY_GATE_REQUIRED,
+    TelegramRuntimeGateKind.MINI_APP_SECURITY_AND_UI: TelegramRuntimeGateReasonCode.MINI_APP_GATE_REQUIRED,
+    TelegramRuntimeGateKind.MESSAGE_TEMPLATE: TelegramRuntimeGateReasonCode.MESSAGE_TEMPLATE_GATE_REQUIRED,
+    TelegramRuntimeGateKind.WORKER_SERVICE: TelegramRuntimeGateReasonCode.WORKER_SERVICE_GATE_REQUIRED,
+    TelegramRuntimeGateKind.DEPLOYMENT: TelegramRuntimeGateReasonCode.DEPLOYMENT_GATE_REQUIRED,
+}
+_TG15_GATE_ORDER = {kind: index for index, kind in enumerate(TelegramRuntimeGateKind)}
+
+
+def _tg15_text(value: object, field_name: str) -> str:
+    if type(value) is not str or not value.strip():
+        raise ValueError(f"{field_name} must be a non-blank string")
+    return value
+
+
+def _tg15_tuple(value: object, field_name: str) -> tuple[str, ...]:
+    if type(value) is not tuple or any(type(item) is not str or not item.strip() for item in value):
+        raise ValueError(f"{field_name} must be an exact tuple of non-blank strings")
+    if len(value) != len(set(value)):
+        raise ValueError(f"{field_name} must not contain duplicates")
+    return value
+
+
+def _tg15_false(value: object, field_name: str) -> None:
+    if value is not False:
+        raise ValueError(f"{field_name} must be False")
+
+
+class _TG15GateReference(_TelegramContract):
+    telegram_runtime_gate_reference_id: str
+    metadata: ContractMetadata
+    gate_kind: TelegramRuntimeGateKind
+    exact_decision_task_reference_id: str | None = None
+    safe_evidence_reference_ids: tuple[str, ...]
+    accepted: bool
+    verified_in_exact_owner_task: bool
+    runtime_execution_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    schema_mutation_authority: Literal[False] = False
+    dependency_change_authority: Literal[False] = False
+    secret_consumption_authority: Literal[False] = False
+    botfather_action_authority: Literal[False] = False
+    endpoint_configuration_authority: Literal[False] = False
+    worker_service_creation_authority: Literal[False] = False
+    deployment_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_reference(self) -> "_TG15GateReference":
+        _tg15_text(self.telegram_runtime_gate_reference_id, "telegram_runtime_gate_reference_id")
+        if (
+            type(self.metadata) is not ContractMetadata
+            or type(self.gate_kind) is not TelegramRuntimeGateKind
+        ):
+            raise ValueError("nested TG-15 types must be exact")
+        _tg15_tuple(self.safe_evidence_reference_ids, "safe_evidence_reference_ids")
+        if self.accepted and (
+            not self.exact_decision_task_reference_id
+            or not self.safe_evidence_reference_ids
+            or self.verified_in_exact_owner_task is not True
+        ):
+            raise ValueError(
+                "accepted gate requires exact task, safe evidence and exact-owner verification"
+            )
+        for name in (
+            "runtime_execution_authority",
+            "provider_call_authority",
+            "schema_mutation_authority",
+            "dependency_change_authority",
+            "secret_consumption_authority",
+            "botfather_action_authority",
+            "endpoint_configuration_authority",
+            "worker_service_creation_authority",
+            "deployment_authority",
+        ):
+            _tg15_false(getattr(self, name), name)
+        return self
+
+
+_TG15_REQUEST_FLAGS = (
+    "runtime_execution_requested",
+    "provider_call_requested",
+    "schema_mutation_requested",
+    "dependency_change_requested",
+    "secret_consumption_requested",
+    "botfather_action_requested",
+    "endpoint_configuration_requested",
+    "worker_service_creation_requested",
+    "deployment_requested",
+)
+
+
+TelegramRuntimeGateReference = _TG15GateReference
+
+
+class _TG15BoundaryRequest(_TelegramContract):
+    telegram_runtime_boundary_request_id: str
+    metadata: ContractMetadata
+    requested_runtime_capability: TelegramRuntimeCapability | None = None
+    requested_pre_gate_surface: TelegramPreGateAllowedSurface | None = None
+    gate_references: tuple[TelegramRuntimeGateReference, ...]
+    correlation_reference_ids: tuple[str, ...]
+    causation_reference_ids: tuple[str, ...]
+    evidence_reference_ids: tuple[str, ...]
+    runtime_execution_requested: bool = False
+    provider_call_requested: bool = False
+    schema_mutation_requested: bool = False
+    dependency_change_requested: bool = False
+    secret_consumption_requested: bool = False
+    botfather_action_requested: bool = False
+    endpoint_configuration_requested: bool = False
+    worker_service_creation_requested: bool = False
+    deployment_requested: bool = False
+    direct_account_mutation_authority: Literal[False] = False
+    direct_beacon_mutation_authority: Literal[False] = False
+    direct_notification_outbox_mutation_authority: Literal[False] = False
+    direct_egress_mutation_authority: Literal[False] = False
+    direct_entitlements_mutation_authority: Literal[False] = False
+
+    @field_validator(
+        "gate_references",
+        "correlation_reference_ids",
+        "causation_reference_ids",
+        "evidence_reference_ids",
+        mode="before",
+    )
+    @classmethod
+    def _validate_exact_tuples(cls, value: object, info: ValidationInfo) -> object:
+        if type(value) is not tuple:
+            raise ValueError(f"{info.field_name} must be an exact tuple")
+        if info.field_name == "gate_references" and any(
+            type(item) is not TelegramRuntimeGateReference for item in value
+        ):
+            raise ValueError("gate_references must contain exact gate references")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_request(self) -> "_TG15BoundaryRequest":
+        _tg15_text(
+            self.telegram_runtime_boundary_request_id, "telegram_runtime_boundary_request_id"
+        )
+        if type(self.metadata) is not ContractMetadata or type(self.gate_references) is not tuple:
+            raise ValueError("nested TG-15 types must be exact")
+        if any(type(ref) is not TelegramRuntimeGateReference for ref in self.gate_references):
+            raise ValueError("gate_references must contain exact gate references")
+        for name in (
+            "correlation_reference_ids",
+            "causation_reference_ids",
+            "evidence_reference_ids",
+        ):
+            _tg15_tuple(getattr(self, name), name)
+        scopes = (
+            self.requested_runtime_capability is not None,
+            self.requested_pre_gate_surface is not None,
+        )
+        if scopes not in ((True, False), (False, True)):
+            raise ValueError("exactly one TG-15 request scope is required")
+        if any(ref.metadata != self.metadata for ref in self.gate_references):
+            raise ValueError("gate reference metadata mismatch")
+        for name in _TG15_REQUEST_FLAGS:
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f"{name} must be exact bool")
+        if self.requested_pre_gate_surface is not None and any(
+            getattr(self, n) for n in _TG15_REQUEST_FLAGS
+        ):
+            raise ValueError("pre-gate surface cannot request execution or mutation")
+        return self
+
+
+TelegramRuntimeBoundaryRequest = _TG15BoundaryRequest
+
+
+class _TG15BoundaryOutcome(_TelegramContract):
+    telegram_runtime_boundary_outcome_id: str
+    metadata: ContractMetadata
+    request_id: str
+    requested_runtime_capability: TelegramRuntimeCapability | None
+    allowed_pre_gate_surface: TelegramPreGateAllowedSurface | None
+    state: TelegramRuntimeGateState
+    reason_codes: tuple[TelegramRuntimeGateReasonCode, ...]
+    required_gate_kinds: tuple[TelegramRuntimeGateKind, ...]
+    missing_gate_kinds: tuple[TelegramRuntimeGateKind, ...]
+    accepted_gate_reference_ids: tuple[str, ...]
+    safe_evidence_reference_ids: tuple[str, ...]
+    future_exact_task_required: bool
+    implementation_authority: Literal[False] = False
+    runtime_execution_authority: Literal[False] = False
+    provider_call_authority: Literal[False] = False
+    schema_mutation_authority: Literal[False] = False
+    dependency_change_authority: Literal[False] = False
+    secret_consumption_authority: Literal[False] = False
+    botfather_action_authority: Literal[False] = False
+    endpoint_configuration_authority: Literal[False] = False
+    worker_service_authority: Literal[False] = False
+    deployment_authority: Literal[False] = False
+    business_success_authority: Literal[False] = False
+
+    @classmethod
+    def from_request(
+        cls, request: TelegramRuntimeBoundaryRequest
+    ) -> "_TG15BoundaryOutcome":
+        if type(request) is not TelegramRuntimeBoundaryRequest:
+            raise TypeError("request must be an exact TelegramRuntimeBoundaryRequest")
+        if request.requested_pre_gate_surface is not None:
+            state = TelegramRuntimeGateState.PRE_GATE_SURFACE_ALLOWED
+            reasons = (TelegramRuntimeGateReasonCode.PRE_GATE_SURFACE_ALLOWED,)
+            required = missing = accepted = ()
+            future = False
+        else:
+            required = tuple(
+                sorted(
+                    _TG15_CAPABILITY_GATES[request.requested_runtime_capability],
+                    key=_TG15_GATE_ORDER.__getitem__,
+                )
+            )
+            by_kind: dict[TelegramRuntimeGateKind, TelegramRuntimeGateReference] = {}
+            ambiguous = False
+            for ref in request.gate_references:
+                if ref.gate_kind in by_kind:
+                    ambiguous = True
+                by_kind[ref.gate_kind] = ref
+            ordered = tuple(sorted(by_kind, key=_TG15_GATE_ORDER.__getitem__))
+            accepted_kinds = tuple(kind for kind in ordered if by_kind[kind].accepted)
+            missing = tuple(
+                kind for kind in required if kind not in by_kind or not by_kind[kind].accepted
+            )
+            accepted = tuple(
+                by_kind[kind].telegram_runtime_gate_reference_id for kind in accepted_kinds
+            )
+            if ambiguous:
+                state, reasons, future = (
+                    TelegramRuntimeGateState.AMBIGUOUS,
+                    (TelegramRuntimeGateReasonCode.AMBIGUOUS_GATE_EVIDENCE,),
+                    False,
+                )
+            elif missing:
+                state = TelegramRuntimeGateState.BLOCKED_PENDING_EXACT_GATES
+                reasons = tuple(_TG15_GATE_REASONS[kind] for kind in missing)
+                future = True
+            else:
+                state, reasons, future = (
+                    TelegramRuntimeGateState.GATES_SATISFIED_FUTURE_IMPLEMENTATION_TASK_REQUIRED,
+                    (TelegramRuntimeGateReasonCode.FUTURE_IMPLEMENTATION_TASK_REQUIRED,),
+                    True,
+                )
+        return cls(
+            telegram_runtime_boundary_outcome_id=f"{request.telegram_runtime_boundary_request_id}:outcome",
+            metadata=request.metadata,
+            request_id=request.telegram_runtime_boundary_request_id,
+            requested_runtime_capability=request.requested_runtime_capability,
+            allowed_pre_gate_surface=request.requested_pre_gate_surface,
+            state=state,
+            reason_codes=reasons,
+            required_gate_kinds=required,
+            missing_gate_kinds=missing,
+            accepted_gate_reference_ids=accepted,
+            safe_evidence_reference_ids=tuple(sorted(set(request.evidence_reference_ids))),
+            future_exact_task_required=future,
+        )
+
+    @model_validator(mode="after")
+    def _validate_outcome(self) -> "_TG15BoundaryOutcome":
+        for name in ("telegram_runtime_boundary_outcome_id", "request_id"):
+            _tg15_text(getattr(self, name), name)
+        if type(self.metadata) is not ContractMetadata:
+            raise ValueError("metadata must be exact ContractMetadata")
+        for name in (
+            "reason_codes",
+            "required_gate_kinds",
+            "missing_gate_kinds",
+            "accepted_gate_reference_ids",
+            "safe_evidence_reference_ids",
+        ):
+            value = getattr(self, name)
+            if type(value) is not tuple or len(value) != len(set(value)):
+                raise ValueError(f"{name} must be a unique exact tuple")
+        if (
+            self.allowed_pre_gate_surface is not None
+            and self.requested_runtime_capability is not None
+        ):
+            raise ValueError("outcome scopes conflict")
+        for name in (
+            "implementation_authority",
+            "runtime_execution_authority",
+            "provider_call_authority",
+            "schema_mutation_authority",
+            "dependency_change_authority",
+            "secret_consumption_authority",
+            "botfather_action_authority",
+            "endpoint_configuration_authority",
+            "worker_service_authority",
+            "deployment_authority",
+            "business_success_authority",
+        ):
+            _tg15_false(getattr(self, name), name)
+        return self
+
+
+TelegramRuntimeBoundaryOutcome = _TG15BoundaryOutcome
