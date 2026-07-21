@@ -10,7 +10,9 @@ from .builder_validation import *  # noqa: F401,F403
 from .builder_validation import __all__ as _builder_validation_all
 from .value_dependency_semantics import *  # noqa: F401,F403
 from .value_dependency_semantics import __all__ as _value_dependency_semantics_all
+from .beacon_override_candidate import *  # noqa: F401,F403
+from .beacon_override_candidate import __all__ as _beacon_override_candidate_all
 
 MODULE_ID = FILTER_CATALOG_AND_BUILDER_MODULE_ID
 
-__all__ = ("MODULE_ID", *_contracts_all, *_evidence_approval_all, *_builder_validation_all, *_value_dependency_semantics_all)
+__all__ = ("MODULE_ID", *_contracts_all, *_evidence_approval_all, *_builder_validation_all, *_value_dependency_semantics_all, *_beacon_override_candidate_all)
