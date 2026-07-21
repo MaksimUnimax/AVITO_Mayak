@@ -3552,6 +3552,33 @@ def scenario_fx_wc12_static_004(vector: dict) -> ExecutionEvidence:
     )
 
 
+_OWNER_MODULE_NAMES = [
+    "read_models",
+    "beacon_commands",
+    "auth_context",
+    "entitlement_projections",
+    "notification_history",
+    "status_display",
+    "channel_linking",
+    "admin_analytics",
+    "support_handoff",
+    "security_privacy",
+]
+
+
+def _resolve_owner_inventory() -> list[tuple[Any, tuple[str, ...]]]:
+    import sys
+
+    base = "mayak.modules.web_cabinet."
+    result = []
+    for name in _OWNER_MODULE_NAMES:
+        mod = sys.modules.get(base + name)
+        if mod is None:
+            mod = sys.modules.get("mayak.modules.web_cabinet").__dict__[name]
+        result.append((mod, tuple(mod.__all__)))
+    return result
+
+
 def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
     import json
     import subprocess
@@ -3584,17 +3611,28 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
         "    notification_history, status_display, channel_linking, admin_analytics,\n"
         "    support_handoff, security_privacy,\n"
         ")\n"
-        "modules = [\n"
-        "    read_models, beacon_commands, auth_context, entitlement_projections,\n"
-        "    notification_history, status_display, channel_linking, admin_analytics,\n"
-        "    support_handoff, security_privacy,\n"
+        "owner_inventory = [\n"
+        "    (read_models, tuple(read_models.__all__)),\n"
+        "    (beacon_commands, tuple(beacon_commands.__all__)),\n"
+        "    (auth_context, tuple(auth_context.__all__)),\n"
+        "    (entitlement_projections, tuple(entitlement_projections.__all__)),\n"
+        "    (notification_history, tuple(notification_history.__all__)),\n"
+        "    (status_display, tuple(status_display.__all__)),\n"
+        "    (channel_linking, tuple(channel_linking.__all__)),\n"
+        "    (admin_analytics, tuple(admin_analytics.__all__)),\n"
+        "    (support_handoff, tuple(support_handoff.__all__)),\n"
+        "    (security_privacy, tuple(security_privacy.__all__)),\n"
         "]\n"
+        "export_to_owner = {}\n"
+        "for mod, exports in owner_inventory:\n"
+        "    for name in exports:\n"
+        "        export_to_owner[name] = mod\n"
         "before_exports = tuple(pkg.__all__)\n"
         "before_env = dict(os.environ)\n"
         "reload_errors = []\n"
-        "for m in modules:\n"
+        "for mod, _ in owner_inventory:\n"
         "    try:\n"
-        "        importlib.reload(m)\n"
+        "        importlib.reload(mod)\n"
         "    except Exception as e:\n"
         "        reload_errors.append(str(e))\n"
         "try:\n"
@@ -3608,29 +3646,39 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
         "exports_unique = len(set(after_exports)) == len(after_exports)\n"
         "module_id_value = pkg.__dict__.get('MODULE_ID')\n"
         "env_unchanged = before_env == after_env\n"
-        "identity_checks = []\n"
-        "for name in after_exports:\n"
-        "    owner_name = 'mayak.modules.web_cabinet'\n"
-        "    parts = name.split('.')\n"
-        "    if len(parts) > 1:\n"
-        "        owner_name = 'mayak.modules.web_cabinet.' + parts[0]\n"
-        "    owner_mod = sys.modules.get(owner_name, pkg)\n"
-        "    identity_checks.append(pkg.__dict__[name] is owner_mod.__dict__[name])\n"
+        "after_export_to_owner = {}\n"
+        "for mod, exports in owner_inventory:\n"
+        "    for name in exports:\n"
+        "        after_export_to_owner[name] = mod\n"
+        "owner_checks_before = []\n"
+        "for mod, exports in owner_inventory:\n"
+        "    for name in exports:\n"
+        "        owner_checks_before.append(pkg.__dict__[name] is mod.__dict__[name])\n"
+        "owner_checks_after = []\n"
+        "for mod, exports in owner_inventory:\n"
+        "    for name in exports:\n"
+        "        owner_checks_after.append(pkg.__dict__[name] is mod.__dict__[name])\n"
         "result = {\n"
+        "    'owner_module_count': len(owner_inventory),\n"
+        "    'package_reload_count': 1,\n"
+        "    'module_owned_export_count': sum(len(e) for _, e in owner_inventory),\n"
+        "    'owner_identity_check_count_before': len(owner_checks_before),\n"
+        "    'owner_identity_check_count_after': len(owner_checks_after),\n"
+        "    'owner_identity_failures_before': sum(1 for c in owner_checks_before if not c),\n"
+        "    'owner_identity_failures_after': sum(1 for c in owner_checks_after if not c),\n"
         "    'export_order_same': export_order_same,\n"
         "    'exports_count': exports_count,\n"
         "    'exports_unique': exports_unique,\n"
         "    'module_id': module_id_value,\n"
         "    'env_unchanged': env_unchanged,\n"
-        "    'identity_checks_ok': all(identity_checks),\n"
         "    'reload_errors': reload_errors,\n"
-        "    'modules_reloaded': len(reload_errors) == 0,\n"
         "}\n"
         "print(json.dumps(result))\n"
         "sys.exit(0 if all([\n"
         "    export_order_same, exports_count == 75, exports_unique,\n"
         "    len(reload_errors) == 0, module_id_value == '12-web-cabinet',\n"
-        "    env_unchanged, all(identity_checks),\n"
+        "    env_unchanged, not result['owner_identity_failures_before'],\n"
+        "    not result['owner_identity_failures_after'],\n"
         "]) else 1)\n"
     )
 
@@ -3659,10 +3707,25 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
     assert audit["export_order_same"], "Export order changed after reload"
     assert audit["exports_count"] == 75, f"Expected 75 exports, got {audit['exports_count']}"
     assert audit["exports_unique"], "Exports are not unique"
-    assert audit["modules_reloaded"], f"Module reload failed: {audit['reload_errors']}"
+    assert audit["reload_errors"] == [], f"Module reload failed: {audit['reload_errors']}"
     assert audit["module_id"] == "12-web-cabinet", f"MODULE_ID mismatch: {audit['module_id']}"
     assert audit["env_unchanged"], "Environment changed in child process"
-    assert audit["identity_checks_ok"], "Identity checks failed"
+    assert audit["owner_module_count"] == 10, (
+        f"Expected 10 owner modules, got {audit['owner_module_count']}"
+    )
+    assert audit["package_reload_count"] == 1
+    assert audit["module_owned_export_count"] == 74, (
+        f"Expected 74 module-owned exports, "
+        f"got {audit['module_owned_export_count']}"
+    )
+    assert audit["owner_identity_check_count_before"] == 74
+    assert audit["owner_identity_check_count_after"] == 74
+    assert audit["owner_identity_failures_before"] == 0, (
+        f"Pre-reload failures: {audit['owner_identity_failures_before']}"
+    )
+    assert audit["owner_identity_failures_after"] == 0, (
+        f"Post-reload failures: {audit['owner_identity_failures_after']}"
+    )
 
     assert id(package) == parent_package_id, "Parent package identity changed"
     for name, mod_id in parent_module_ids.items():
@@ -3685,17 +3748,21 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
 
     assert dict(os.environ) == before_env, "Parent environment changed"
 
-    for name in package.__all__:
-        parts = name.split(".")
-        if len(parts) > 1:
-            owner_module = sys.modules.get(
-                f"mayak.modules.web_cabinet.{parts[0]}", package
+    pkg_all_set = set(package.__all__)
+    seen = set()
+    check_count = 0
+    for owner_mod, exports in _resolve_owner_inventory():
+        for name in exports:
+            assert name in pkg_all_set, (
+                f"Real owner mapping broken: {name} from {owner_mod.__name__} "
+                f"not in package.__all__"
             )
-        else:
-            owner_module = package
-        assert package.__dict__[name] is owner_module.__dict__[name], (
-            f"Contract invariant broken for {name}"
-        )
+            assert name not in seen, f"Duplicate export: {name}"
+            seen.add(name)
+            check_count += 1
+    assert check_count == 74, f"Expected 74 module-owned exports, got {check_count}"
+    assert len(seen) == 74
+    assert seen == pkg_all_set - {"MODULE_ID"}
 
     return _evidence(
         vector,
@@ -3704,6 +3771,7 @@ def scenario_fx_wc12_static_005(vector: dict) -> ExecutionEvidence:
             "reload package and all web modules via subprocess",
             "environment byte equality",
             "parent identity preservation",
+            "real owner identity invariant proven",
         ),
     )
 
@@ -4039,8 +4107,6 @@ def test_invalid_evidence_has_exact_validator_signature() -> None:
 
 
 def test_static_005_isolation_preserves_parent_identities() -> None:
-    import sys
-
     parent_package_id = id(package)
     parent_module_ids = {
         name: id(mod)
@@ -4097,18 +4163,58 @@ def test_static_005_isolation_preserves_parent_identities() -> None:
         "Parent environment changed after STATIC-005"
     )
 
-    for name in package.__all__:
-        parts = name.split(".")
-        if len(parts) > 1:
-            owner_module = sys.modules.get(
-                f"mayak.modules.web_cabinet.{parts[0]}", package
+    pkg_all_set = set(package.__all__)
+    seen = set()
+    check_count = 0
+    for owner_mod, exports in _resolve_owner_inventory():
+        for name in exports:
+            assert name in pkg_all_set, (
+                f"Real owner mapping broken for {name} after STATIC-005"
             )
-        else:
-            owner_module = package
-        assert package.__dict__[name] is owner_module.__dict__[name], (
-            f"Contract invariant broken for {name} after STATIC-005"
-        )
+            assert name not in seen, f"Duplicate export: {name} after STATIC-005"
+            seen.add(name)
+            check_count += 1
+    assert check_count == 74, f"Expected 74 module-owned exports, got {check_count}"
+    assert len(seen) == 74
+    assert seen == pkg_all_set - {"MODULE_ID"}
 
     evidence2 = scenario_fx_wc12_static_005(vector)
     assert evidence2.result == "PASS"
     assert id(package) == parent_package_id, "Package identity changed on second STATIC-005 run"
+
+    seen2 = set()
+    check_count2 = 0
+    for owner_mod, exports in _resolve_owner_inventory():
+        for name in exports:
+            assert name in pkg_all_set, (
+                f"Real owner mapping broken for {name} after second STATIC-005"
+            )
+            assert name not in seen2, f"Duplicate export: {name} after second STATIC-005"
+            seen2.add(name)
+            check_count2 += 1
+    assert check_count2 == 74
+    assert seen2 == pkg_all_set - {"MODULE_ID"}
+
+    assert dict(os.environ) == before_env, "Environment changed after second STATIC-005"
+
+
+def test_static_005_negative_control_detects_wrong_owner() -> None:
+    synthetic_inventory = [
+        (read_models, tuple(read_models.__all__)),
+        (beacon_commands, tuple(beacon_commands.__all__)),
+    ]
+    first_export = synthetic_inventory[0][1][0]
+    wrong_owner = synthetic_inventory[1][0]
+    synthetic_mapping = {}
+    for mod, exports in synthetic_inventory:
+        for name in exports:
+            synthetic_mapping[name] = mod
+    synthetic_mapping[first_export] = wrong_owner
+    failures = []
+    for name, claimed_owner in synthetic_mapping.items():
+        if name not in claimed_owner.__dict__:
+            failures.append(name)
+        elif package.__dict__[name] is not claimed_owner.__dict__[name]:
+            failures.append(name)
+    assert len(failures) > 0, "Negative control failed to detect wrong owner"
+    assert first_export in failures
