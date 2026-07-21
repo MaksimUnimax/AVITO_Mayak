@@ -379,8 +379,6 @@ class CatalogReadModel(_FilterCatalogContract):
             _unique(tuple(getattr(record, id_field) for record in records), id_field)
         for records in (
             self.filter_definitions,
-            self.filter_range_definitions,
-            self.filter_dependency_rules,
             self.filter_capability_profiles,
             self.builder_field_definitions,
         ):
