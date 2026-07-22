@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -100,12 +101,12 @@ def handle_fc08_catalog_001(vector_input: dict, vector_expected: dict) -> None:
         "filter_catalog_version_id": result.filter_catalog_version_id,
         "publication_state": result.publication_state.value,
     }
-def handle_fc08_catalog_002(vector_input: dict, vector_expected: dict) -> None:
+def handle_fc08_catalog_002(vector_input: dict, vector_expected: dict) -> dict:
     from mayak.modules.filter_catalog.contracts import (
         CatalogPublicationState,
         FilterCatalogVersion,
     )
-    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError) as exc_info:
         FilterCatalogVersion(
             filter_catalog_version_id=vector_input["filter_catalog_version_id"],
             publication_state=CatalogPublicationState(vector_input["publication_state"]),
@@ -114,11 +115,26 @@ def handle_fc08_catalog_002(vector_input: dict, vector_expected: dict) -> None:
             evidence_reference_ids=tuple(vector_input["evidence_reference_ids"]),
         )
 
-
-    return {"valid": False}
-def handle_fc08_catalog_003(vector_input: dict, vector_expected: dict) -> None:
+    errors = exc_info.value.errors()
+    assert errors
+    assert any(
+        vector_expected["error_fragment"].lower() in error["msg"].lower()
+        for error in errors
+    )
+    return {
+        "valid": False,
+        "errors": tuple(
+            (
+                tuple(error["loc"]),
+                error["type"],
+                error["msg"],
+            )
+            for error in errors
+        ),
+    }
+def handle_fc08_catalog_003(vector_input: dict, vector_expected: dict) -> dict:
     from mayak.modules.filter_catalog.contracts import FilterOptionDefinition, FilterDefinitionState
-    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError) as exc_info:
         FilterOptionDefinition(
             filter_option_id=vector_input["filter_option_id"],
             filter_definition_id=vector_input["filter_definition_id"],
@@ -128,15 +144,30 @@ def handle_fc08_catalog_003(vector_input: dict, vector_expected: dict) -> None:
             evidence_reference_ids=tuple(vector_input["evidence_reference_ids"]),
         )
 
-
-    return {"valid": False}
-def handle_fc08_catalog_004(vector_input: dict, vector_expected: dict) -> None:
+    errors = exc_info.value.errors()
+    assert errors
+    assert any(
+        vector_expected["error_fragment"].lower() in error["msg"].lower()
+        for error in errors
+    )
+    return {
+        "valid": False,
+        "errors": tuple(
+            (
+                tuple(error["loc"]),
+                error["type"],
+                error["msg"],
+            )
+            for error in errors
+        ),
+    }
+def handle_fc08_catalog_004(vector_input: dict, vector_expected: dict) -> dict:
     from mayak.modules.filter_catalog.contracts import (
         FilterDefinition,
         FilterDefinitionState,
         FilterValueKind,
     )
-    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError) as exc_info:
         FilterDefinition(
             filter_definition_id=vector_input["filter_definition_id"],
             filter_catalog_version_id=vector_input["filter_catalog_version_id"],
@@ -148,8 +179,23 @@ def handle_fc08_catalog_004(vector_input: dict, vector_expected: dict) -> None:
             capability_profile_ids=tuple(vector_input["capability_profile_ids"]),
         )
 
-
-    return {"valid": False}
+    errors = exc_info.value.errors()
+    assert errors
+    assert any(
+        vector_expected["error_fragment"].lower() in error["msg"].lower()
+        for error in errors
+    )
+    return {
+        "valid": False,
+        "errors": tuple(
+            (
+                tuple(error["loc"]),
+                error["type"],
+                error["msg"],
+            )
+            for error in errors
+        ),
+    }
 def handle_fc08_catalog_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -168,12 +214,12 @@ def handle_fc08_catalog_005(vector_input: dict, vector_expected: dict) -> None:
     return {
         "capability_state": result.capability_state.value,
     }
-def handle_fc08_catalog_006(vector_input: dict, vector_expected: dict) -> None:
+def handle_fc08_catalog_006(vector_input: dict, vector_expected: dict) -> dict:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
         FilterCapabilityState,
     )
-    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError) as exc_info:
         FilterCapabilityProfile(
             filter_capability_profile_id=vector_input["filter_capability_profile_id"],
             filter_catalog_version_id=vector_input["filter_catalog_version_id"],
@@ -182,8 +228,23 @@ def handle_fc08_catalog_006(vector_input: dict, vector_expected: dict) -> None:
             evidence_reference_ids=tuple(vector_input["evidence_reference_ids"]),
         )
 
-
-    return {"valid": False}
+    errors = exc_info.value.errors()
+    assert errors
+    assert any(
+        vector_expected["error_fragment"].lower() in error["msg"].lower()
+        for error in errors
+    )
+    return {
+        "valid": False,
+        "errors": tuple(
+            (
+                tuple(error["loc"]),
+                error["type"],
+                error["msg"],
+            )
+            for error in errors
+        ),
+    }
 def handle_fc08_catalog_007(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         CatalogPublicationState,
@@ -2075,15 +2136,12 @@ def handle_fc08_safe_read_012(vector_input: dict, vector_expected: dict) -> dict
     }
 
 
-def handle_fc08_static_001(vector_input: dict, vector_expected: dict) -> None:
-    import importlib
-    mod = importlib.import_module("mayak.modules.filter_catalog")
-    all_names = list(mod.__all__)
+def handle_fc08_static_001(vector_input: dict, vector_expected: dict) -> dict:
+    from mayak.modules.filter_catalog import __all__ as pkg_all
+    all_names = list(pkg_all)
     for sym in vector_input["expected_symbols"]:
         assert sym in all_names, f"{sym} not in package __all__"
     assert vector_expected["all_symbols_present"]
-
-
     return {
         "all_symbols_present": vector_expected["all_symbols_present"],
         "symbol_count": len(vector_input["expected_symbols"]),
@@ -2115,581 +2173,589 @@ def handle_fc08_static_003(vector_input: dict, vector_expected: dict) -> None:
     return {
         "all_blobs_match": True,
     }
-def handle_fc08_static_004(vector_input: dict, vector_expected: dict) -> None:
+def handle_fc08_static_004(vector_input: dict, vector_expected: dict) -> dict:
     assert vector_expected["od009_open"]
     assert vector_expected["no_real_provider_data"]
     decisions_path = REPO_ROOT / "docs" / "00-governance" / "OPEN_DECISIONS.md"
     content = decisions_path.read_text(encoding="utf-8")
     assert "OD-009" in content
+    return {
+        "od009_open": vector_expected["od009_open"],
+        "no_real_provider_data": vector_expected["no_real_provider_data"],
+    }
 
 
 # ---------------------------------------------------------------------------
 # 56 Explicit Vector-Specific Test Functions
 # ---------------------------------------------------------------------------
 
-    return {
-        "od009_open": vector_expected["od009_open"],
-        "no_real_provider_data": vector_expected["no_real_provider_data"],
-    }
-def test_fc08_catalog_001() -> None:
-    v = _get_vector("FC08-CATALOG-001")
-    assert v["handler"] == "handle_fc08_catalog_001"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_001(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_001, v["input"], v["expected"])
-
-
-def test_fc08_catalog_002() -> None:
-    v = _get_vector("FC08-CATALOG-002")
-    assert v["handler"] == "handle_fc08_catalog_002"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_002(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_002, v["input"], v["expected"])
-
-
-def test_fc08_catalog_003() -> None:
-    v = _get_vector("FC08-CATALOG-003")
-    assert v["handler"] == "handle_fc08_catalog_003"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_003(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_003, v["input"], v["expected"])
-
-
-def test_fc08_catalog_004() -> None:
-    v = _get_vector("FC08-CATALOG-004")
-    assert v["handler"] == "handle_fc08_catalog_004"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_004(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_004, v["input"], v["expected"])
-
-
-def test_fc08_catalog_005() -> None:
-    v = _get_vector("FC08-CATALOG-005")
-    assert v["handler"] == "handle_fc08_catalog_005"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_005(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_005, v["input"], v["expected"])
-
-
-def test_fc08_catalog_006() -> None:
-    v = _get_vector("FC08-CATALOG-006")
-    assert v["handler"] == "handle_fc08_catalog_006"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_006(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_006, v["input"], v["expected"])
-
-
-def test_fc08_catalog_007() -> None:
-    v = _get_vector("FC08-CATALOG-007")
-    assert v["handler"] == "handle_fc08_catalog_007"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_007(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_007, v["input"], v["expected"])
-
-
-def test_fc08_catalog_008() -> None:
-    v = _get_vector("FC08-CATALOG-008")
-    assert v["handler"] == "handle_fc08_catalog_008"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_catalog_008(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_catalog_008, v["input"], v["expected"])
-
-
-def test_fc08_evidence_001() -> None:
-    v = _get_vector("FC08-EVIDENCE-001")
-    assert v["handler"] == "handle_fc08_evidence_001"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_001(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_001, v["input"], v["expected"])
-
-
-def test_fc08_evidence_002() -> None:
-    v = _get_vector("FC08-EVIDENCE-002")
-    assert v["handler"] == "handle_fc08_evidence_002"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_002(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_002, v["input"], v["expected"])
-
-
-def test_fc08_evidence_003() -> None:
-    v = _get_vector("FC08-EVIDENCE-003")
-    assert v["handler"] == "handle_fc08_evidence_003"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_003(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_003, v["input"], v["expected"])
-
-
-def test_fc08_evidence_004() -> None:
-    v = _get_vector("FC08-EVIDENCE-004")
-    assert v["handler"] == "handle_fc08_evidence_004"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_004(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_004, v["input"], v["expected"])
-
-
-def test_fc08_evidence_005() -> None:
-    v = _get_vector("FC08-EVIDENCE-005")
-    assert v["handler"] == "handle_fc08_evidence_005"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_005(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_005, v["input"], v["expected"])
-
-
-def test_fc08_evidence_006() -> None:
-    v = _get_vector("FC08-EVIDENCE-006")
-    assert v["handler"] == "handle_fc08_evidence_006"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_006(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_006, v["input"], v["expected"])
-
-
-def test_fc08_evidence_007() -> None:
-    v = _get_vector("FC08-EVIDENCE-007")
-    assert v["handler"] == "handle_fc08_evidence_007"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_007(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_007, v["input"], v["expected"])
-
-
-def test_fc08_evidence_008() -> None:
-    v = _get_vector("FC08-EVIDENCE-008")
-    assert v["handler"] == "handle_fc08_evidence_008"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_evidence_008(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_evidence_008, v["input"], v["expected"])
-
-
-def test_fc08_builder_001() -> None:
-    v = _get_vector("FC08-BUILDER-001")
-    assert v["handler"] == "handle_fc08_builder_001"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_001(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_001, v["input"], v["expected"])
-
-
-def test_fc08_builder_002() -> None:
-    v = _get_vector("FC08-BUILDER-002")
-    assert v["handler"] == "handle_fc08_builder_002"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_002(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_002, v["input"], v["expected"])
-
-
-def test_fc08_builder_003() -> None:
-    v = _get_vector("FC08-BUILDER-003")
-    assert v["handler"] == "handle_fc08_builder_003"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_003(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_003, v["input"], v["expected"])
-
-
-def test_fc08_builder_004() -> None:
-    v = _get_vector("FC08-BUILDER-004")
-    assert v["handler"] == "handle_fc08_builder_004"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_004(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_004, v["input"], v["expected"])
-
-
-def test_fc08_builder_005() -> None:
-    v = _get_vector("FC08-BUILDER-005")
-    assert v["handler"] == "handle_fc08_builder_005"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_005(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_005, v["input"], v["expected"])
-
-
-def test_fc08_builder_006() -> None:
-    v = _get_vector("FC08-BUILDER-006")
-    assert v["handler"] == "handle_fc08_builder_006"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_006(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_006, v["input"], v["expected"])
-
-
-def test_fc08_builder_007() -> None:
-    v = _get_vector("FC08-BUILDER-007")
-    assert v["handler"] == "handle_fc08_builder_007"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_007(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_007, v["input"], v["expected"])
-
-
-def test_fc08_builder_008() -> None:
-    v = _get_vector("FC08-BUILDER-008")
-    assert v["handler"] == "handle_fc08_builder_008"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_builder_008(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_builder_008, v["input"], v["expected"])
-
-
-def test_fc08_value_001() -> None:
-    v = _get_vector("FC08-VALUE-001")
-    assert v["handler"] == "handle_fc08_value_001"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_001(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_001, v["input"], v["expected"])
-
-
-def test_fc08_value_002() -> None:
-    v = _get_vector("FC08-VALUE-002")
-    assert v["handler"] == "handle_fc08_value_002"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_002(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_002, v["input"], v["expected"])
-
-
-def test_fc08_value_003() -> None:
-    v = _get_vector("FC08-VALUE-003")
-    assert v["handler"] == "handle_fc08_value_003"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_003(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_003, v["input"], v["expected"])
-
-
-def test_fc08_value_004() -> None:
-    v = _get_vector("FC08-VALUE-004")
-    assert v["handler"] == "handle_fc08_value_004"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_004(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_004, v["input"], v["expected"])
-
-
-def test_fc08_value_005() -> None:
-    v = _get_vector("FC08-VALUE-005")
-    assert v["handler"] == "handle_fc08_value_005"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_005(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_005, v["input"], v["expected"])
-
-
-def test_fc08_value_006() -> None:
-    v = _get_vector("FC08-VALUE-006")
-    assert v["handler"] == "handle_fc08_value_006"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_006(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_006, v["input"], v["expected"])
-
-
-def test_fc08_value_007() -> None:
-    v = _get_vector("FC08-VALUE-007")
-    assert v["handler"] == "handle_fc08_value_007"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_007(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_007, v["input"], v["expected"])
-
-
-def test_fc08_value_008() -> None:
-    v = _get_vector("FC08-VALUE-008")
-    assert v["handler"] == "handle_fc08_value_008"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_value_008(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_value_008, v["input"], v["expected"])
-
-
 def test_fc08_beacon_001() -> None:
-    v = _get_vector("FC08-BEACON-001")
-    assert v["handler"] == "handle_fc08_beacon_001"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_001(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_001, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-BEACON-001")
+    assert vector["handler"] == "handle_fc08_beacon_001"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_001,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_beacon_002() -> None:
-    v = _get_vector("FC08-BEACON-002")
-    assert v["handler"] == "handle_fc08_beacon_002"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_002(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_002, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-BEACON-002")
+    assert vector["handler"] == "handle_fc08_beacon_002"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_002,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_beacon_003() -> None:
-    v = _get_vector("FC08-BEACON-003")
-    assert v["handler"] == "handle_fc08_beacon_003"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_003(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_003, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-BEACON-003")
+    assert vector["handler"] == "handle_fc08_beacon_003"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_003,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_beacon_004() -> None:
-    v = _get_vector("FC08-BEACON-004")
-    assert v["handler"] == "handle_fc08_beacon_004"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_004(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_004, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-BEACON-004")
+    assert vector["handler"] == "handle_fc08_beacon_004"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_004,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_beacon_005() -> None:
-    v = _get_vector("FC08-BEACON-005")
-    assert v["handler"] == "handle_fc08_beacon_005"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_005(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_005, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-BEACON-005")
+    assert vector["handler"] == "handle_fc08_beacon_005"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_005,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_beacon_006() -> None:
-    v = _get_vector("FC08-BEACON-006")
-    assert v["handler"] == "handle_fc08_beacon_006"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_006(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_006, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-BEACON-006")
+    assert vector["handler"] == "handle_fc08_beacon_006"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_006,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_beacon_007() -> None:
-    v = _get_vector("FC08-BEACON-007")
-    assert v["handler"] == "handle_fc08_beacon_007"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_007(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_007, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-BEACON-007")
+    assert vector["handler"] == "handle_fc08_beacon_007"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_007,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_beacon_008() -> None:
-    v = _get_vector("FC08-BEACON-008")
-    assert v["handler"] == "handle_fc08_beacon_008"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_beacon_008(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_beacon_008, v["input"], v["expected"])
+    vector = _get_vector("FC08-BEACON-008")
+    assert vector["handler"] == "handle_fc08_beacon_008"
+    actual = _run_handler_twice(
+        handle_fc08_beacon_008,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
+def test_fc08_builder_001() -> None:
+    vector = _get_vector("FC08-BUILDER-001")
+    assert vector["handler"] == "handle_fc08_builder_001"
+    actual = _run_handler_twice(
+        handle_fc08_builder_001,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_builder_002() -> None:
+    vector = _get_vector("FC08-BUILDER-002")
+    assert vector["handler"] == "handle_fc08_builder_002"
+    actual = _run_handler_twice(
+        handle_fc08_builder_002,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_builder_003() -> None:
+    vector = _get_vector("FC08-BUILDER-003")
+    assert vector["handler"] == "handle_fc08_builder_003"
+    actual = _run_handler_twice(
+        handle_fc08_builder_003,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_builder_004() -> None:
+    vector = _get_vector("FC08-BUILDER-004")
+    assert vector["handler"] == "handle_fc08_builder_004"
+    actual = _run_handler_twice(
+        handle_fc08_builder_004,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_builder_005() -> None:
+    vector = _get_vector("FC08-BUILDER-005")
+    assert vector["handler"] == "handle_fc08_builder_005"
+    actual = _run_handler_twice(
+        handle_fc08_builder_005,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_builder_006() -> None:
+    vector = _get_vector("FC08-BUILDER-006")
+    assert vector["handler"] == "handle_fc08_builder_006"
+    actual = _run_handler_twice(
+        handle_fc08_builder_006,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_builder_007() -> None:
+    vector = _get_vector("FC08-BUILDER-007")
+    assert vector["handler"] == "handle_fc08_builder_007"
+    actual = _run_handler_twice(
+        handle_fc08_builder_007,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_builder_008() -> None:
+    vector = _get_vector("FC08-BUILDER-008")
+    assert vector["handler"] == "handle_fc08_builder_008"
+    actual = _run_handler_twice(
+        handle_fc08_builder_008,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_catalog_001() -> None:
+    vector = _get_vector("FC08-CATALOG-001")
+    assert vector["handler"] == "handle_fc08_catalog_001"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_001,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_catalog_002() -> None:
+    vector = _get_vector("FC08-CATALOG-002")
+    assert vector["handler"] == "handle_fc08_catalog_002"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_002,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+    assert actual["valid"] is False
+    assert actual["errors"]
+
+def test_fc08_catalog_003() -> None:
+    vector = _get_vector("FC08-CATALOG-003")
+    assert vector["handler"] == "handle_fc08_catalog_003"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_003,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+    assert actual["valid"] is False
+    assert actual["errors"]
+
+def test_fc08_catalog_004() -> None:
+    vector = _get_vector("FC08-CATALOG-004")
+    assert vector["handler"] == "handle_fc08_catalog_004"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_004,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+    assert actual["valid"] is False
+    assert actual["errors"]
+
+def test_fc08_catalog_005() -> None:
+    vector = _get_vector("FC08-CATALOG-005")
+    assert vector["handler"] == "handle_fc08_catalog_005"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_005,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_catalog_006() -> None:
+    vector = _get_vector("FC08-CATALOG-006")
+    assert vector["handler"] == "handle_fc08_catalog_006"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_006,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+    assert actual["valid"] is False
+    assert actual["errors"]
+
+def test_fc08_catalog_007() -> None:
+    vector = _get_vector("FC08-CATALOG-007")
+    assert vector["handler"] == "handle_fc08_catalog_007"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_007,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_catalog_008() -> None:
+    vector = _get_vector("FC08-CATALOG-008")
+    assert vector["handler"] == "handle_fc08_catalog_008"
+    actual = _run_handler_twice(
+        handle_fc08_catalog_008,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_001() -> None:
+    vector = _get_vector("FC08-EVIDENCE-001")
+    assert vector["handler"] == "handle_fc08_evidence_001"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_001,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_002() -> None:
+    vector = _get_vector("FC08-EVIDENCE-002")
+    assert vector["handler"] == "handle_fc08_evidence_002"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_002,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_003() -> None:
+    vector = _get_vector("FC08-EVIDENCE-003")
+    assert vector["handler"] == "handle_fc08_evidence_003"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_003,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_004() -> None:
+    vector = _get_vector("FC08-EVIDENCE-004")
+    assert vector["handler"] == "handle_fc08_evidence_004"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_004,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_005() -> None:
+    vector = _get_vector("FC08-EVIDENCE-005")
+    assert vector["handler"] == "handle_fc08_evidence_005"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_005,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_006() -> None:
+    vector = _get_vector("FC08-EVIDENCE-006")
+    assert vector["handler"] == "handle_fc08_evidence_006"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_006,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_007() -> None:
+    vector = _get_vector("FC08-EVIDENCE-007")
+    assert vector["handler"] == "handle_fc08_evidence_007"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_007,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_evidence_008() -> None:
+    vector = _get_vector("FC08-EVIDENCE-008")
+    assert vector["handler"] == "handle_fc08_evidence_008"
+    actual = _run_handler_twice(
+        handle_fc08_evidence_008,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_001() -> None:
-    v = _get_vector("FC08-SAFE-READ-001")
-    assert v["handler"] == "handle_fc08_safe_read_001"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_001(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_001, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-001")
+    assert vector["handler"] == "handle_fc08_safe_read_001"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_001,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_002() -> None:
-    v = _get_vector("FC08-SAFE-READ-002")
-    assert v["handler"] == "handle_fc08_safe_read_002"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_002(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_002, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-002")
+    assert vector["handler"] == "handle_fc08_safe_read_002"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_002,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_003() -> None:
-    v = _get_vector("FC08-SAFE-READ-003")
-    assert v["handler"] == "handle_fc08_safe_read_003"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_003(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_003, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-003")
+    assert vector["handler"] == "handle_fc08_safe_read_003"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_003,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_004() -> None:
-    v = _get_vector("FC08-SAFE-READ-004")
-    assert v["handler"] == "handle_fc08_safe_read_004"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_004(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_004, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-004")
+    assert vector["handler"] == "handle_fc08_safe_read_004"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_004,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_005() -> None:
-    v = _get_vector("FC08-SAFE-READ-005")
-    assert v["handler"] == "handle_fc08_safe_read_005"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_005(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_005, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-005")
+    assert vector["handler"] == "handle_fc08_safe_read_005"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_005,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_006() -> None:
-    v = _get_vector("FC08-SAFE-READ-006")
-    assert v["handler"] == "handle_fc08_safe_read_006"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_006(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_006, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-006")
+    assert vector["handler"] == "handle_fc08_safe_read_006"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_006,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_007() -> None:
-    v = _get_vector("FC08-SAFE-READ-007")
-    assert v["handler"] == "handle_fc08_safe_read_007"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_007(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_007, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-007")
+    assert vector["handler"] == "handle_fc08_safe_read_007"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_007,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_008() -> None:
-    v = _get_vector("FC08-SAFE-READ-008")
-    assert v["handler"] == "handle_fc08_safe_read_008"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_008(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_008, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-008")
+    assert vector["handler"] == "handle_fc08_safe_read_008"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_008,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_009() -> None:
-    v = _get_vector("FC08-SAFE-READ-009")
-    assert v["handler"] == "handle_fc08_safe_read_009"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_009(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_009, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-009")
+    assert vector["handler"] == "handle_fc08_safe_read_009"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_009,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_010() -> None:
-    v = _get_vector("FC08-SAFE-READ-010")
-    assert v["handler"] == "handle_fc08_safe_read_010"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_010(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_010, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-010")
+    assert vector["handler"] == "handle_fc08_safe_read_010"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_010,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_011() -> None:
-    v = _get_vector("FC08-SAFE-READ-011")
-    assert v["handler"] == "handle_fc08_safe_read_011"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_011(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_011, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-011")
+    assert vector["handler"] == "handle_fc08_safe_read_011"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_011,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_safe_read_012() -> None:
-    v = _get_vector("FC08-SAFE-READ-012")
-    assert v["handler"] == "handle_fc08_safe_read_012"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_safe_read_012(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_safe_read_012, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-SAFE-READ-012")
+    assert vector["handler"] == "handle_fc08_safe_read_012"
+    actual = _run_handler_twice(
+        handle_fc08_safe_read_012,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_static_001() -> None:
-    v = _get_vector("FC08-STATIC-001")
-    assert v["handler"] == "handle_fc08_static_001"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_static_001(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_static_001, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-STATIC-001")
+    assert vector["handler"] == "handle_fc08_static_001"
+    actual = _run_handler_twice(
+        handle_fc08_static_001,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_static_002() -> None:
-    v = _get_vector("FC08-STATIC-002")
-    assert v["handler"] == "handle_fc08_static_002"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_static_002(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_static_002, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-STATIC-002")
+    assert vector["handler"] == "handle_fc08_static_002"
+    actual = _run_handler_twice(
+        handle_fc08_static_002,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_static_003() -> None:
-    v = _get_vector("FC08-STATIC-003")
-    assert v["handler"] == "handle_fc08_static_003"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_static_003(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_static_003, v["input"], v["expected"])
-
+    vector = _get_vector("FC08-STATIC-003")
+    assert vector["handler"] == "handle_fc08_static_003"
+    actual = _run_handler_twice(
+        handle_fc08_static_003,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 def test_fc08_static_004() -> None:
-    v = _get_vector("FC08-STATIC-004")
-    assert v["handler"] == "handle_fc08_static_004"
-    inp = copy.deepcopy(v["input"])
-    exp = copy.deepcopy(v["expected"])
-    handle_fc08_static_004(inp, exp)
-    assert inp == v["input"]
-    _run_handler_twice(handle_fc08_static_004, v["input"], v["expected"])
+    vector = _get_vector("FC08-STATIC-004")
+    assert vector["handler"] == "handle_fc08_static_004"
+    actual = _run_handler_twice(
+        handle_fc08_static_004,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
+def test_fc08_value_001() -> None:
+    vector = _get_vector("FC08-VALUE-001")
+    assert vector["handler"] == "handle_fc08_value_001"
+    actual = _run_handler_twice(
+        handle_fc08_value_001,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_value_002() -> None:
+    vector = _get_vector("FC08-VALUE-002")
+    assert vector["handler"] == "handle_fc08_value_002"
+    actual = _run_handler_twice(
+        handle_fc08_value_002,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_value_003() -> None:
+    vector = _get_vector("FC08-VALUE-003")
+    assert vector["handler"] == "handle_fc08_value_003"
+    actual = _run_handler_twice(
+        handle_fc08_value_003,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_value_004() -> None:
+    vector = _get_vector("FC08-VALUE-004")
+    assert vector["handler"] == "handle_fc08_value_004"
+    actual = _run_handler_twice(
+        handle_fc08_value_004,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_value_005() -> None:
+    vector = _get_vector("FC08-VALUE-005")
+    assert vector["handler"] == "handle_fc08_value_005"
+    actual = _run_handler_twice(
+        handle_fc08_value_005,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_value_006() -> None:
+    vector = _get_vector("FC08-VALUE-006")
+    assert vector["handler"] == "handle_fc08_value_006"
+    actual = _run_handler_twice(
+        handle_fc08_value_006,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_value_007() -> None:
+    vector = _get_vector("FC08-VALUE-007")
+    assert vector["handler"] == "handle_fc08_value_007"
+    actual = _run_handler_twice(
+        handle_fc08_value_007,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
+
+def test_fc08_value_008() -> None:
+    vector = _get_vector("FC08-VALUE-008")
+    assert vector["handler"] == "handle_fc08_value_008"
+    actual = _run_handler_twice(
+        handle_fc08_value_008,
+        vector["input"],
+        vector["expected"],
+    )
+    assert actual is not None
 
 # ---------------------------------------------------------------------------
 # 8 Fixed Invariant Tests

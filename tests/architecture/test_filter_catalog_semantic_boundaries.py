@@ -162,6 +162,7 @@ class TestFC08ArchitectureBoundaries:
 
     def test_no_generic_dispatcher_and_public_only_guard(self) -> None:
         source = UNIT_TEST_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
         assert not re.search(r"^HANDLER_MAP\s*=", source, re.MULTILINE), "Module-level HANDLER_MAP must not exist"
         assert not re.search(r"^def test_vector_handler\b", source, re.MULTILINE), "Generic test_vector_handler must not exist"
         assert not re.search(r"^@pytest\.mark\.parametrize", source, re.MULTILINE), "No parametrize decorators allowed"
@@ -173,16 +174,30 @@ class TestFC08ArchitectureBoundaries:
                 continue
             assert "pytest.raises(Exception" not in stripped, f"pytest.raises(Exception) found: {stripped}"
             assert "pytest.raises(BaseException" not in stripped, f"pytest.raises(BaseException) found: {stripped}"
-        tree = ast.parse(source)
         func_defs = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
         for v in _load_fixture()["vectors"]:
             test_name = f"test_{v['vector_id'].lower().replace('-', '_')}"
             assert test_name in func_defs, f"Explicit test {test_name} not found"
             assert f"def {v['handler']}" in source, f"Handler {v['handler']} not in source"
-
-    def test_safe_read_public_projection_guard(self) -> None:
-        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
-        tree = ast.parse(source)
+            test_func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == test_name)
+            test_src = ast.get_source_segment(source, test_func)
+            assert test_src is not None, f"Cannot extract source for {test_name}"
+            assert test_src.count("_run_handler_twice") == 1, f"{test_name} must call _run_handler_twice exactly once"
+            assert f"{v['handler']}(" not in test_src.replace("_run_handler_twice(", ""), (
+                f"{test_name} must not call {v['handler']} directly outside _run_handler_twice"
+            )
+            assert "actual = _run_handler_twice" in test_src, f"{test_name} must assign result to actual"
+            assert "assert actual" in test_src, f"{test_name} must assert on actual"
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_"):
+                has_return = any(
+                    isinstance(n, ast.Return) and n.value is not None
+                    for n in ast.walk(node)
+                )
+                assert has_return, f"{node.name} must return normalized result evidence"
+        assert "norm1 == norm2" in source, "Normalized result equality check must exist"
+        assert "original_input" in source, "Input immutability check must exist"
+        assert "original_expected" in source, "Expected immutability check must exist"
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_safe_read_"):
                 src_handler = ast.get_source_segment(source, node)
@@ -193,34 +208,24 @@ class TestFC08ArchitectureBoundaries:
                 assert "CatalogSafeFilterReadModel(" not in src_handler, (
                     f"{node.name} must not directly construct CatalogSafeFilterReadModel"
                 )
-
-    def test_explicit_vector_binding_guard(self) -> None:
-        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        func_defs = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
-        for v in _load_fixture()["vectors"]:
-            test_name = f"test_{v['vector_id'].lower().replace('-', '_')}"
-            assert test_name in func_defs, f"Explicit test {test_name} not found in AST"
-            handler_name = v["handler"]
-            assert f"def {handler_name}" in source, f"Handler {handler_name} not in source"
-            assert f"{handler_name}," in source or f"{handler_name})" in source, (
-                f"Explicit test {test_name} must statically reference {handler_name}"
-            )
-
-    def test_all_handlers_return_normalized_result(self) -> None:
-        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
-        tree = ast.parse(source)
+        private_import_pattern = re.compile(
+            r"from mayak\.modules\.filter_catalog\.\w+ import.*(?:"
+            r"CatalogSafeFilterReadModel|FilterCatalogVersion|"
+            r"CatalogPublicationState|FilterDefinitionState|FilterValueKind|"
+            r"FilterCapabilityState|FilterCapabilityProfile|"
+            r"BuilderDraftValidationResult|BuilderDraftValidationState|"
+            r"BeaconOverrideCandidateOutcome|BeaconOverrideCandidateState|"
+            r"BeaconOverrideCandidatePreparationResult|"
+            r"EvidenceAuthorityReference|FilterEvidenceApprovalRequest|"
+            r"MultivaluePreservationRequest|validate_range_value|"
+            r"evaluate_filter_semantic_exposure|evaluate_filter_evidence_approval|"
+            r"project_builder_field_definition|project_catalog_safe_filter_read|"
+            r"evaluate_multivalue_preservation)"
+        )
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_"):
-                has_return = any(
-                    isinstance(n, ast.Return) and n.value is not None
-                    for n in ast.walk(node)
-                )
-                assert has_return, f"{node.name} must return normalized result evidence"
-
-    def test_two_run_comparison_contract(self) -> None:
-        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
-        assert "_normalize_result" in source, "_normalize_result normalizer must exist"
-        assert "norm1 == norm2" in source, "Normalized result equality check must exist"
-        assert "original_input" in source, "Input immutability check must exist"
-        assert "original_expected" in source, "Expected immutability check must exist"
+            if isinstance(node, ast.ImportFrom) and node.module and node.module.startswith("mayak.modules.filter_catalog."):
+                for alias in node.names:
+                    if alias.name.startswith("CatalogSafeFilterRead") and alias.name != "CatalogSafeFilterReadRequest" and alias.name != "CatalogSafeFilterReadAccessContext" and alias.name != "CatalogSafeReadSurfaceState" and alias.name != "CatalogSafeReadAudience" and alias.name != "CatalogSafeExplanationCode" and alias.name != "project_catalog_safe_filter_read":
+                        assert False, f"Private production import {alias.name} found in {node.module}"
+        dynamic_reflection = len(re.findall(r"getattr\(|importlib\.", source))
+        assert dynamic_reflection == 0, f"Dynamic reflection/handler lookup found: {dynamic_reflection}"
