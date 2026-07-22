@@ -1,0 +1,1802 @@
+{
+  "schema_version": "1.0",
+  "module_id": "13-filter-catalog-and-builder",
+  "technical_id": "FC-08-PARALLEL-MAIN-REISSUE-20260722-028",
+  "canonical_references": [
+    {
+      "reference_id": "FC08-REF-001",
+      "reference_class": "CATALOG_VERSION",
+      "safe_label": "Synthetic reference 001"
+    },
+    {
+      "reference_id": "FC08-REF-002",
+      "reference_class": "CATALOG_VERSION",
+      "safe_label": "Synthetic reference 002"
+    },
+    {
+      "reference_id": "FC08-REF-003",
+      "reference_class": "FILTER_DEFINITION",
+      "safe_label": "Synthetic reference 003"
+    },
+    {
+      "reference_id": "FC08-REF-004",
+      "reference_class": "FILTER_DEFINITION",
+      "safe_label": "Synthetic reference 004"
+    },
+    {
+      "reference_id": "FC08-REF-005",
+      "reference_class": "CAPABILITY_PROFILE",
+      "safe_label": "Synthetic reference 005"
+    },
+    {
+      "reference_id": "FC08-REF-006",
+      "reference_class": "CAPABILITY_PROFILE",
+      "safe_label": "Synthetic reference 006"
+    },
+    {
+      "reference_id": "FC08-REF-007",
+      "reference_class": "EVIDENCE",
+      "safe_label": "Synthetic reference 007"
+    },
+    {
+      "reference_id": "FC08-REF-008",
+      "reference_class": "EVIDENCE",
+      "safe_label": "Synthetic reference 008"
+    },
+    {
+      "reference_id": "FC08-REF-009",
+      "reference_class": "WARNING",
+      "safe_label": "Synthetic reference 009"
+    },
+    {
+      "reference_id": "FC08-REF-010",
+      "reference_class": "WARNING",
+      "safe_label": "Synthetic reference 010"
+    },
+    {
+      "reference_id": "FC08-REF-011",
+      "reference_class": "BUILDER_FIELD",
+      "safe_label": "Synthetic reference 011"
+    },
+    {
+      "reference_id": "FC08-REF-012",
+      "reference_class": "BUILDER_FIELD",
+      "safe_label": "Synthetic reference 012"
+    },
+    {
+      "reference_id": "FC08-REF-013",
+      "reference_class": "DRAFT",
+      "safe_label": "Synthetic reference 013"
+    },
+    {
+      "reference_id": "FC08-REF-014",
+      "reference_class": "DEPENDENCY_RULE",
+      "safe_label": "Synthetic reference 014"
+    },
+    {
+      "reference_id": "FC08-REF-015",
+      "reference_class": "DEPENDENCY_RULE",
+      "safe_label": "Synthetic reference 015"
+    },
+    {
+      "reference_id": "FC08-REF-016",
+      "reference_class": "BEACON",
+      "safe_label": "Synthetic reference 016"
+    },
+    {
+      "reference_id": "FC08-REF-017",
+      "reference_class": "BEACON_REVISION",
+      "safe_label": "Synthetic reference 017"
+    },
+    {
+      "reference_id": "FC08-REF-018",
+      "reference_class": "BEACON_REVISION",
+      "safe_label": "Synthetic reference 018"
+    },
+    {
+      "reference_id": "FC08-REF-019",
+      "reference_class": "OVERRIDE_CANDIDATE",
+      "safe_label": "Synthetic reference 019"
+    },
+    {
+      "reference_id": "FC08-REF-020",
+      "reference_class": "ACCESS_DECISION",
+      "safe_label": "Synthetic reference 020"
+    },
+    {
+      "reference_id": "FC08-REF-021",
+      "reference_class": "SCOPE",
+      "safe_label": "Synthetic reference 021"
+    },
+    {
+      "reference_id": "FC08-REF-022",
+      "reference_class": "SCOPE",
+      "safe_label": "Synthetic reference 022"
+    },
+    {
+      "reference_id": "FC08-REF-023",
+      "reference_class": "PROVENANCE",
+      "safe_label": "Synthetic reference 023"
+    },
+    {
+      "reference_id": "FC08-REF-024",
+      "reference_class": "PROVENANCE",
+      "safe_label": "Synthetic reference 024"
+    },
+    {
+      "reference_id": "FC08-REF-025",
+      "reference_class": "FILTER_DEFINITION",
+      "safe_label": "Synthetic reference 025"
+    },
+    {
+      "reference_id": "FC08-REF-026",
+      "reference_class": "CAPABILITY_PROFILE",
+      "safe_label": "Synthetic reference 026"
+    },
+    {
+      "reference_id": "FC08-REF-027",
+      "reference_class": "EVIDENCE",
+      "safe_label": "Synthetic reference 027"
+    },
+    {
+      "reference_id": "FC08-REF-028",
+      "reference_class": "BEACON",
+      "safe_label": "Synthetic reference 028"
+    },
+    {
+      "reference_id": "FC08-REF-029",
+      "reference_class": "BEACON_REVISION",
+      "safe_label": "Synthetic reference 029"
+    },
+    {
+      "reference_id": "FC08-REF-030",
+      "reference_class": "OVERRIDE_CANDIDATE",
+      "safe_label": "Synthetic reference 030"
+    },
+    {
+      "reference_id": "FC08-REF-031",
+      "reference_class": "SCOPE",
+      "safe_label": "Synthetic reference 031"
+    },
+    {
+      "reference_id": "FC08-REF-032",
+      "reference_class": "SCOPE",
+      "safe_label": "Synthetic reference 032"
+    },
+    {
+      "reference_id": "FC08-REF-033",
+      "reference_class": "ACCESS_DECISION",
+      "safe_label": "Synthetic reference 033"
+    },
+    {
+      "reference_id": "FC08-REF-034",
+      "reference_class": "PROVENANCE",
+      "safe_label": "Synthetic reference 034"
+    },
+    {
+      "reference_id": "FC08-REF-035",
+      "reference_class": "WARNING",
+      "safe_label": "Synthetic reference 035"
+    },
+    {
+      "reference_id": "FC08-REF-036",
+      "reference_class": "DRAFT",
+      "safe_label": "Synthetic reference 036"
+    }
+  ],
+  "vectors": [
+    {
+      "vector_id": "FC08-CATALOG-001",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_001",
+      "purpose": "immutable synthetic catalog/version structure accepts published state with evidence",
+      "input": {
+        "filter_catalog_version_id": "FC08-REF-001",
+        "publication_state": "PUBLISHED",
+        "created_at": "2026-01-15T10:00:00Z",
+        "published_at": "2026-01-15T10:05:00Z",
+        "evidence_reference_ids": [
+          "FC08-REF-007"
+        ],
+        "filter_definition_ids": []
+      },
+      "expected": {
+        "valid": true,
+        "filter_catalog_version_id": "FC08-REF-001",
+        "publication_state": "PUBLISHED"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001",
+        "FC08-REF-007"
+      ]
+    },
+    {
+      "vector_id": "FC08-CATALOG-002",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_002",
+      "purpose": "publication/definition state validation rejects draft with published_at",
+      "input": {
+        "filter_catalog_version_id": "FC08-REF-002",
+        "publication_state": "DRAFT",
+        "created_at": "2026-01-15T10:00:00Z",
+        "published_at": "2026-01-15T10:05:00Z",
+        "evidence_reference_ids": [
+          "FC08-REF-008"
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "error_fragment": "draft versions must not have published_at"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-002",
+        "FC08-REF-008"
+      ]
+    },
+    {
+      "vector_id": "FC08-CATALOG-003",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_003",
+      "purpose": "duplicate opaque references in evidence_reference_ids rejected",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "filter_option_id": "FC08-REF-011",
+        "canonical_value_code": "SYNTH_OPT_A",
+        "safe_label": "Synthetic option A",
+        "definition_state": "APPROVED",
+        "evidence_reference_ids": [
+          "FC08-REF-007",
+          "FC08-REF-007"
+        ]
+      },
+      "expected": {
+        "valid": false,
+        "error_fragment": "unique"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-011",
+        "FC08-REF-007"
+      ]
+    },
+    {
+      "vector_id": "FC08-CATALOG-004",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_004",
+      "purpose": "mismatched catalog version in definition rejects non-range filter with range definition",
+      "input": {
+        "filter_definition_id": "FC08-REF-004",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "normalized_key": "SYNTH_RANGE_A",
+        "safe_label": "Synthetic range filter",
+        "value_kind": "RANGE",
+        "definition_state": "APPROVED",
+        "evidence_reference_ids": [
+          "FC08-REF-007"
+        ],
+        "capability_profile_ids": [
+          "FC08-REF-005"
+        ],
+        "filter_range_definition_id": null
+      },
+      "expected": {
+        "valid": false,
+        "error_fragment": "range filters require a range definition"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-004",
+        "FC08-REF-001",
+        "FC08-REF-007",
+        "FC08-REF-005"
+      ]
+    },
+    {
+      "vector_id": "FC08-CATALOG-005",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_005",
+      "purpose": "approved definition requirement enforced by capability profile linkage",
+      "input": {
+        "filter_capability_profile_id": "FC08-REF-005",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "provider_surface_reference_id": "FC08-REF-021",
+        "capability_state": "EDITABLE",
+        "evidence_reference_ids": [
+          "FC08-REF-007"
+        ]
+      },
+      "expected": {
+        "valid": true,
+        "capability_state": "EDITABLE"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-005",
+        "FC08-REF-001",
+        "FC08-REF-021",
+        "FC08-REF-007"
+      ]
+    },
+    {
+      "vector_id": "FC08-CATALOG-006",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_006",
+      "purpose": "capability profile linkage requirement rejects missing evidence",
+      "input": {
+        "filter_capability_profile_id": "FC08-REF-006",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "provider_surface_reference_id": "FC08-REF-021",
+        "capability_state": "UNSUPPORTED",
+        "evidence_reference_ids": []
+      },
+      "expected": {
+        "valid": false,
+        "error_fragment": "must not be empty"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-006",
+        "FC08-REF-001",
+        "FC08-REF-021",
+        "FC08-REF-010"
+      ]
+    },
+    {
+      "vector_id": "FC08-CATALOG-007",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_007",
+      "purpose": "supersession/version distinction without historical mutation",
+      "input": {
+        "filter_catalog_version_id": "FC08-REF-002",
+        "publication_state": "SUPERSEDED",
+        "created_at": "2026-01-15T10:00:00Z",
+        "published_at": "2026-01-15T10:05:00Z",
+        "supersedes_catalog_version_id": "FC08-REF-001",
+        "evidence_reference_ids": [
+          "FC08-REF-008"
+        ]
+      },
+      "expected": {
+        "valid": true,
+        "supersedes_catalog_version_id": "FC08-REF-001"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-002",
+        "FC08-REF-001",
+        "FC08-REF-008"
+      ]
+    },
+    {
+      "vector_id": "FC08-CATALOG-008",
+      "category": "CATALOG",
+      "handler": "handle_fc08_catalog_008",
+      "purpose": "unsupported/blocked state remains explicit and not editable",
+      "input": {
+        "filter_definition_id": "FC08-REF-025",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "normalized_key": "SYNTH_BLOCKED_A",
+        "safe_label": "Synthetic blocked filter",
+        "value_kind": "SCALAR",
+        "definition_state": "BLOCKED",
+        "evidence_reference_ids": [
+          "FC08-REF-007"
+        ],
+        "capability_profile_ids": [
+          "FC08-REF-006"
+        ]
+      },
+      "expected": {
+        "valid": true,
+        "definition_state": "BLOCKED"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-025",
+        "FC08-REF-001",
+        "FC08-REF-007",
+        "FC08-REF-006"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-001",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_001",
+      "purpose": "CURRENT evidence produces APPROVABLE outcome for propose transition",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-021"
+        ],
+        "evidence_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "evidence_state": "CURRENT",
+            "evidence_kind_code": "EVIDENCE_KIND_A",
+            "scope_reference_ids": [
+              "FC08-REF-021"
+            ],
+            "source_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "observed_at": "2026-01-15T10:00:00Z",
+            "refresh_required": false
+          }
+        ],
+        "authority_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "authority_class": "ACCEPTED_PRIMARY_REFERENCE",
+            "accepted_reference_policy_id": "FC08-REF-033"
+          }
+        ]
+      },
+      "expected": {
+        "decision": "PROPOSABLE",
+        "suggested_definition_state": "PROPOSED"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-021",
+        "FC08-REF-007",
+        "FC08-REF-033"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-002",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_002",
+      "purpose": "STALE evidence produces BLOCKED outcome",
+      "input": {
+        "filter_definition_id": "FC08-REF-004",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-022"
+        ],
+        "evidence_references": [
+          {
+            "evidence_reference_id": "FC08-REF-008",
+            "evidence_state": "STALE",
+            "evidence_kind_code": "EVIDENCE_KIND_B",
+            "scope_reference_ids": [
+              "FC08-REF-022"
+            ],
+            "source_fingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "observed_at": "2026-01-15T10:00:00Z",
+            "refresh_required": true
+          }
+        ],
+        "authority_references": [
+          {
+            "evidence_reference_id": "FC08-REF-008",
+            "authority_class": "ACCEPTED_PRIMARY_REFERENCE",
+            "accepted_reference_policy_id": "FC08-REF-033"
+          }
+        ]
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "suggested_definition_state": "BLOCKED"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-004",
+        "FC08-REF-022",
+        "FC08-REF-008",
+        "FC08-REF-033"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-003",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_003",
+      "purpose": "MISSING evidence produces BLOCKED outcome with EVIDENCE_MISSING reason",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-021"
+        ],
+        "evidence_references": [],
+        "authority_references": []
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "reason_contained": "EVIDENCE_MISSING"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-021"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-004",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_004",
+      "purpose": "CONTRADICTORY evidence produces BLOCKED outcome",
+      "input": {
+        "filter_definition_id": "FC08-REF-004",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-022"
+        ],
+        "evidence_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "evidence_state": "CONTRADICTORY",
+            "evidence_kind_code": "EVIDENCE_KIND_C",
+            "scope_reference_ids": [
+              "FC08-REF-022"
+            ],
+            "source_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "observed_at": "2026-01-15T10:00:00Z",
+            "refresh_required": false
+          }
+        ],
+        "authority_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "authority_class": "ACCEPTED_PRIMARY_REFERENCE",
+            "accepted_reference_policy_id": "FC08-REF-033"
+          }
+        ]
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "reason_contained": "EVIDENCE_CONTRADICTORY"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-004",
+        "FC08-REF-022",
+        "FC08-REF-007",
+        "FC08-REF-033"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-005",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_005",
+      "purpose": "UNSUPPORTED evidence produces BLOCKED outcome",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-021"
+        ],
+        "evidence_references": [
+          {
+            "evidence_reference_id": "FC08-REF-027",
+            "evidence_state": "UNSUPPORTED",
+            "evidence_kind_code": "EVIDENCE_KIND_D",
+            "scope_reference_ids": [
+              "FC08-REF-021"
+            ],
+            "source_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "observed_at": "2026-01-15T10:00:00Z",
+            "refresh_required": false
+          }
+        ],
+        "authority_references": [
+          {
+            "evidence_reference_id": "FC08-REF-027",
+            "authority_class": "ACCEPTED_PRIMARY_REFERENCE",
+            "accepted_reference_policy_id": "FC08-REF-033"
+          }
+        ]
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "reason_contained": "EVIDENCE_UNSUPPORTED"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-021",
+        "FC08-REF-027",
+        "FC08-REF-033"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-006",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_006",
+      "purpose": "AMBIGUOUS evidence produces BLOCKED outcome",
+      "input": {
+        "filter_definition_id": "FC08-REF-004",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-022"
+        ],
+        "evidence_references": [
+          {
+            "evidence_reference_id": "FC08-REF-008",
+            "evidence_state": "AMBIGUOUS",
+            "evidence_kind_code": "EVIDENCE_KIND_E",
+            "scope_reference_ids": [
+              "FC08-REF-022"
+            ],
+            "source_fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "observed_at": "2026-01-15T10:00:00Z",
+            "refresh_required": false
+          }
+        ],
+        "authority_references": [
+          {
+            "evidence_reference_id": "FC08-REF-008",
+            "authority_class": "ACCEPTED_PRIMARY_REFERENCE",
+            "accepted_reference_policy_id": "FC08-REF-033"
+          }
+        ]
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "reason_contained": "EVIDENCE_AMBIGUOUS"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-004",
+        "FC08-REF-022",
+        "FC08-REF-008",
+        "FC08-REF-033"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-007",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_007",
+      "purpose": "RESTRICTED evidence produces BLOCKED outcome",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-021"
+        ],
+        "evidence_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "evidence_state": "RESTRICTED",
+            "evidence_kind_code": "EVIDENCE_KIND_F",
+            "scope_reference_ids": [
+              "FC08-REF-021"
+            ],
+            "source_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "observed_at": "2026-01-15T10:00:00Z",
+            "refresh_required": false
+          }
+        ],
+        "authority_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "authority_class": "ACCEPTED_PRIMARY_REFERENCE",
+            "accepted_reference_policy_id": "FC08-REF-033"
+          }
+        ]
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "reason_contained": "EVIDENCE_RESTRICTED"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-021",
+        "FC08-REF-007",
+        "FC08-REF-033"
+      ]
+    },
+    {
+      "vector_id": "FC08-EVIDENCE-008",
+      "category": "EVIDENCE",
+      "handler": "handle_fc08_evidence_008",
+      "purpose": "exact evidence-reference coverage/uniqueness validated on outcome",
+      "input": {
+        "filter_definition_id": "FC08-REF-004",
+        "current_definition_state": "PROPOSED",
+        "requested_transition": "PROPOSE",
+        "required_scope_reference_ids": [
+          "FC08-REF-022"
+        ],
+        "evidence_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "evidence_state": "CURRENT",
+            "evidence_kind_code": "EVIDENCE_KIND_G",
+            "scope_reference_ids": [
+              "FC08-REF-022"
+            ],
+            "source_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "observed_at": "2026-01-15T10:00:00Z",
+            "refresh_required": false
+          }
+        ],
+        "authority_references": [
+          {
+            "evidence_reference_id": "FC08-REF-007",
+            "authority_class": "OFFICIAL_REFERENCE",
+            "accepted_reference_policy_id": "FC08-REF-033"
+          }
+        ]
+      },
+      "expected": {
+        "decision": "PROPOSABLE",
+        "evidence_count": 1
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-004",
+        "FC08-REF-022",
+        "FC08-REF-007",
+        "FC08-REF-033"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-001",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_001",
+      "purpose": "valid synthetic builder field/draft produces PRODUCED projection",
+      "input": {
+        "builder_field_projection_outcome_id": "FC08-REF-011",
+        "builder_field_id": "FC08-REF-012",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "filter_definition": {
+          "filter_definition_id": "FC08-REF-003",
+          "filter_catalog_version_id": "FC08-REF-001",
+          "normalized_key": "SYNTH_FIELD_A",
+          "safe_label": "Synthetic field A",
+          "value_kind": "SCALAR",
+          "definition_state": "APPROVED",
+          "evidence_reference_ids": [
+            "FC08-REF-007"
+          ],
+          "capability_profile_ids": [
+            "FC08-REF-005"
+          ]
+        },
+        "capability_profile": {
+          "filter_capability_profile_id": "FC08-REF-005",
+          "filter_catalog_version_id": "FC08-REF-001",
+          "provider_surface_reference_id": "FC08-REF-021",
+          "capability_state": "EDITABLE",
+          "evidence_reference_ids": [
+            "FC08-REF-007"
+          ]
+        },
+        "required": true
+      },
+      "expected": {
+        "decision": "PRODUCED",
+        "has_field": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-011",
+        "FC08-REF-012",
+        "FC08-REF-001",
+        "FC08-REF-003",
+        "FC08-REF-007",
+        "FC08-REF-005",
+        "FC08-REF-021"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-002",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_002",
+      "purpose": "unsupported field blocks builder projection",
+      "input": {
+        "builder_field_projection_outcome_id": "FC08-REF-012",
+        "builder_field_id": "FC08-REF-011",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "filter_definition": {
+          "filter_definition_id": "FC08-REF-025",
+          "filter_catalog_version_id": "FC08-REF-001",
+          "normalized_key": "SYNTH_UNSP_FIELD",
+          "safe_label": "Synthetic unsupported field",
+          "value_kind": "SCALAR",
+          "definition_state": "PROPOSED",
+          "evidence_reference_ids": [
+            "FC08-REF-007"
+          ],
+          "capability_profile_ids": [
+            "FC08-REF-006"
+          ]
+        },
+        "capability_profile": {
+          "filter_capability_profile_id": "FC08-REF-006",
+          "filter_catalog_version_id": "FC08-REF-001",
+          "provider_surface_reference_id": "FC08-REF-021",
+          "capability_state": "UNSUPPORTED",
+          "evidence_reference_ids": [
+            "FC08-REF-007"
+          ]
+        },
+        "required": false
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "has_field": false
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-012",
+        "FC08-REF-011",
+        "FC08-REF-001",
+        "FC08-REF-025",
+        "FC08-REF-007",
+        "FC08-REF-006",
+        "FC08-REF-021"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-003",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_003",
+      "purpose": "stale field/evidence blocks builder draft validation",
+      "input": {
+        "draft_validation": true,
+        "field_capability_state": "STALE",
+        "builder_field_id": "FC08-REF-011",
+        "filter_definition_id": "FC08-REF-003",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "beacon_revision_id": "FC08-REF-017",
+        "value_reference_ids": [
+          "FC08-REF-007"
+        ]
+      },
+      "expected": {
+        "validation_state": "STALE",
+        "field_stale_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-011",
+        "FC08-REF-003",
+        "FC08-REF-001",
+        "FC08-REF-017",
+        "FC08-REF-007",
+        "FC08-REF-035"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-004",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_004",
+      "purpose": "ambiguous field blocks builder draft validation",
+      "input": {
+        "draft_validation": true,
+        "field_capability_state": "AMBIGUOUS",
+        "builder_field_id": "FC08-REF-012",
+        "filter_definition_id": "FC08-REF-004",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "beacon_revision_id": "FC08-REF-017",
+        "value_reference_ids": [
+          "FC08-REF-008"
+        ]
+      },
+      "expected": {
+        "validation_state": "AMBIGUOUS",
+        "field_ambiguous_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-012",
+        "FC08-REF-004",
+        "FC08-REF-001",
+        "FC08-REF-017",
+        "FC08-REF-008"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-005",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_005",
+      "purpose": "category-incompatible field blocks builder projection",
+      "input": {
+        "draft_validation": true,
+        "field_capability_state": "CATEGORY_INCOMPATIBLE",
+        "builder_field_id": "FC08-REF-030",
+        "filter_definition_id": "FC08-REF-025",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "beacon_revision_id": "FC08-REF-017",
+        "value_reference_ids": [
+          "FC08-REF-027"
+        ]
+      },
+      "expected": {
+        "validation_state": "UNSUPPORTED",
+        "category_incompatible_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-030",
+        "FC08-REF-001",
+        "FC08-REF-025",
+        "FC08-REF-027",
+        "FC08-REF-026",
+        "FC08-REF-021",
+        "FC08-REF-031"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-006",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_006",
+      "purpose": "catalog version mismatch blocks builder draft validation with CONFLICT state",
+      "input": {
+        "draft_validation": true,
+        "version_conflict": true,
+        "builder_field_id": "FC08-REF-011",
+        "filter_definition_id": "FC08-REF-003",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "beacon_revision_id": "FC08-REF-017"
+      },
+      "expected": {
+        "validation_state": "CONFLICT",
+        "version_mismatch_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-011",
+        "FC08-REF-003",
+        "FC08-REF-001",
+        "FC08-REF-017"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-007",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_007",
+      "purpose": "warning/reference integrity maintained in draft validation outcome",
+      "input": {
+        "draft_validation": true,
+        "field_capability_state": "EDITABLE",
+        "builder_field_id": "FC08-REF-011",
+        "filter_definition_id": "FC08-REF-003",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "beacon_revision_id": "FC08-REF-017",
+        "value_reference_ids": [
+          "FC08-REF-007"
+        ],
+        "warning_ids": [
+          "FC08-REF-009"
+        ]
+      },
+      "expected": {
+        "validation_state": "VALID",
+        "warning_ids_present": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-011",
+        "FC08-REF-003",
+        "FC08-REF-001",
+        "FC08-REF-017",
+        "FC08-REF-007",
+        "FC08-REF-009",
+        "FC08-REF-036"
+      ]
+    },
+    {
+      "vector_id": "FC08-BUILDER-008",
+      "category": "BUILDER",
+      "handler": "handle_fc08_builder_008",
+      "purpose": "client-side/draft result is not authoritative Beacon mutation",
+      "input": {
+        "draft_validation": true,
+        "field_capability_state": "EDITABLE",
+        "builder_field_id": "FC08-REF-012",
+        "filter_definition_id": "FC08-REF-004",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "beacon_revision_id": "FC08-REF-017",
+        "value_reference_ids": [
+          "FC08-REF-008"
+        ],
+        "client_validation": "PASSED"
+      },
+      "expected": {
+        "is_authoritative_for_beacon": false,
+        "beacon_mutation_performed": false
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-012",
+        "FC08-REF-004",
+        "FC08-REF-001",
+        "FC08-REF-017",
+        "FC08-REF-008",
+        "FC08-REF-013"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-001",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_001",
+      "purpose": "multivalue preserves multiple values when source equals candidate",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "source_value_reference_ids": [
+          "FC08-REF-007",
+          "FC08-REF-008"
+        ],
+        "candidate_value_reference_ids": [
+          "FC08-REF-007",
+          "FC08-REF-008"
+        ]
+      },
+      "expected": {
+        "decision": "PRESERVED",
+        "candidate_changed": false
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-007",
+        "FC08-REF-008"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-002",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_002",
+      "purpose": "repeated values do not collapse silently when candidate differs",
+      "input": {
+        "filter_definition_id": "FC08-REF-004",
+        "source_value_reference_ids": [
+          "FC08-REF-007",
+          "FC08-REF-007"
+        ],
+        "candidate_value_reference_ids": [
+          "FC08-REF-007"
+        ]
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "collapse_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-004",
+        "FC08-REF-007"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-003",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_003",
+      "purpose": "range contains explicit bounds validated correctly",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "range_definition": {
+          "filter_range_definition_id": "FC08-REF-014",
+          "filter_definition_id": "FC08-REF-003",
+          "unit_code": "SYNTH_UNIT_A",
+          "lower_bound": "10",
+          "upper_bound": "100",
+          "lower_inclusive": true,
+          "upper_inclusive": true,
+          "step": "5"
+        },
+        "candidate_unit_code": "SYNTH_UNIT_A",
+        "lower_value": "10",
+        "upper_value": "100",
+        "lower_inclusive": true,
+        "upper_inclusive": true,
+        "step_origin": "0"
+      },
+      "expected": {
+        "decision": "VALID"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-014"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-004",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_004",
+      "purpose": "range unit/reference semantics use only synthetic type",
+      "input": {
+        "filter_definition_id": "FC08-REF-004",
+        "range_definition": {
+          "filter_range_definition_id": "FC08-REF-015",
+          "filter_definition_id": "FC08-REF-004",
+          "unit_code": "SYNTH_UNIT_B",
+          "lower_bound": "0",
+          "lower_inclusive": true,
+          "upper_inclusive": true
+        },
+        "candidate_unit_code": "WRONG_UNIT",
+        "lower_value": "5",
+        "lower_inclusive": true,
+        "upper_inclusive": true
+      },
+      "expected": {
+        "decision": "INVALID",
+        "unit_mismatch_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-004",
+        "FC08-REF-015"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-005",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_005",
+      "purpose": "inclusivity is distinguishable in range validation",
+      "input": {
+        "filter_definition_id": "FC08-REF-003",
+        "range_definition": {
+          "filter_range_definition_id": "FC08-REF-014",
+          "filter_definition_id": "FC08-REF-003",
+          "unit_code": "SYNTH_UNIT_A",
+          "lower_bound": "10",
+          "lower_inclusive": false,
+          "upper_bound": "100",
+          "upper_inclusive": true
+        },
+        "candidate_unit_code": "SYNTH_UNIT_A",
+        "lower_value": "10",
+        "lower_inclusive": true,
+        "upper_inclusive": true
+      },
+      "expected": {
+        "decision": "INVALID",
+        "inclusivity_incompatible_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-003",
+        "FC08-REF-014"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-006",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_006",
+      "purpose": "REQUIRES dependency rule blocks exposure when not satisfied",
+      "input": {
+        "filter_catalog_version_id": "FC08-REF-001",
+        "filter_definition_id": "FC08-REF-003",
+        "capability_profile_id": "FC08-REF-005",
+        "dependency_rule_id": "FC08-REF-014",
+        "dependency_kind": "REQUIRES",
+        "source_filter": "FC08-REF-003",
+        "target_filter": "FC08-REF-004",
+        "evaluation_state": "BLOCKED"
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "dependency_blocked_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001",
+        "FC08-REF-003",
+        "FC08-REF-005",
+        "FC08-REF-014",
+        "FC08-REF-004"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-007",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_007",
+      "purpose": "EXCLUDES dependency rule blocks exposure",
+      "input": {
+        "filter_catalog_version_id": "FC08-REF-001",
+        "filter_definition_id": "FC08-REF-004",
+        "capability_profile_id": "FC08-REF-006",
+        "dependency_rule_id": "FC08-REF-015",
+        "dependency_kind": "EXCLUDES",
+        "source_filter": "FC08-REF-004",
+        "target_filter": "FC08-REF-003",
+        "evaluation_state": "BLOCKED"
+      },
+      "expected": {
+        "decision": "BLOCKED",
+        "dependency_blocked_detected": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001",
+        "FC08-REF-004",
+        "FC08-REF-006",
+        "FC08-REF-015",
+        "FC08-REF-003"
+      ]
+    },
+    {
+      "vector_id": "FC08-VALUE-008",
+      "category": "VALUE",
+      "handler": "handle_fc08_value_008",
+      "purpose": "CONSTRAINS and graph-linkage validation uses required linked IDs not truthiness of full rules collection",
+      "input": {
+        "filter_catalog_version_id": "FC08-REF-001",
+        "filter_definition_id": "FC08-REF-003",
+        "capability_profile_id": "FC08-REF-005",
+        "dependency_rule_ids": [
+          "FC08-REF-014"
+        ],
+        "evaluation_rule_ids": [
+          "FC08-REF-014"
+        ],
+        "evaluation_states": {
+          "FC08-REF-014": "SATISFIED"
+        }
+      },
+      "expected": {
+        "decision": "EXPOSED",
+        "all_evaluated": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001",
+        "FC08-REF-003",
+        "FC08-REF-005",
+        "FC08-REF-014"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-001",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_001",
+      "purpose": "valid result creates only prepared override candidate",
+      "input": {
+        "beacon_override_candidate_outcome_id": "FC08-REF-019",
+        "override_candidate_reference_id": "FC08-REF-030",
+        "beacon_id": "FC08-REF-016",
+        "beacon_revision_id": "FC08-REF-017",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "validation_valid": true,
+        "accepted_fields": [
+          "FC08-REF-011"
+        ]
+      },
+      "expected": {
+        "candidate_state": "PREPARED",
+        "beacon_acceptance_required": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-030",
+        "FC08-REF-016",
+        "FC08-REF-017",
+        "FC08-REF-001",
+        "FC08-REF-011"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-002",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_002",
+      "purpose": "Beacon acceptance is mandatory for prepared candidates",
+      "input": {
+        "candidate_state": "PREPARED",
+        "beacon_acceptance_required": true
+      },
+      "expected": {
+        "beacon_acceptance_required_must_be_true": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-016"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-003",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_003",
+      "purpose": "Filter Catalog does not perform Beacon acceptance",
+      "input": {
+        "beacon_acceptance_performed": false,
+        "beacon_mutation_performed": false
+      },
+      "expected": {
+        "beacon_acceptance_performed": false,
+        "beacon_mutation_performed": false
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-016",
+        "FC08-REF-017"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-004",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_004",
+      "purpose": "Filter Catalog does not change Beacon state/revision/lifecycle",
+      "input": {
+        "beacon_mutation_performed": false,
+        "beacon_revision_created": false,
+        "lifecycle_changed": false,
+        "historical_revision_rewritten": false
+      },
+      "expected": {
+        "beacon_mutation_performed": false,
+        "beacon_revision_created": false,
+        "lifecycle_changed": false,
+        "historical_revision_rewritten": false
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-016",
+        "FC08-REF-017",
+        "FC08-REF-018",
+        "FC08-REF-028"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-005",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_005",
+      "purpose": "blocked result does not create partial candidate",
+      "input": {
+        "beacon_override_candidate_outcome_id": "FC08-REF-019",
+        "override_candidate_reference_id": "FC08-REF-030",
+        "beacon_id": "FC08-REF-016",
+        "beacon_revision_id": "FC08-REF-017",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "validation_valid": false,
+        "validation_state": "BLOCKED"
+      },
+      "expected": {
+        "candidate_state": "BLOCKED",
+        "field_candidates_empty": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-030",
+        "FC08-REF-016",
+        "FC08-REF-017",
+        "FC08-REF-001"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-006",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_006",
+      "purpose": "conflict result does not create partial candidate",
+      "input": {
+        "beacon_override_candidate_outcome_id": "FC08-REF-019",
+        "override_candidate_reference_id": "FC08-REF-030",
+        "beacon_id": "FC08-REF-016",
+        "beacon_revision_id": "FC08-REF-017",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "validation_valid": false,
+        "validation_state": "CONFLICT"
+      },
+      "expected": {
+        "candidate_state": "CONFLICT",
+        "field_candidates_empty": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-030",
+        "FC08-REF-016",
+        "FC08-REF-017",
+        "FC08-REF-001"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-007",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_007",
+      "purpose": "stale/unsupported/ambiguous result does not create partial candidate",
+      "input": {
+        "beacon_override_candidate_outcome_id": "FC08-REF-019",
+        "override_candidate_reference_id": "FC08-REF-030",
+        "beacon_id": "FC08-REF-016",
+        "beacon_revision_id": "FC08-REF-017",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "validation_valid": false,
+        "validation_state": "STALE"
+      },
+      "expected": {
+        "candidate_state": "STALE",
+        "field_candidates_empty": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-030",
+        "FC08-REF-016",
+        "FC08-REF-017",
+        "FC08-REF-001"
+      ]
+    },
+    {
+      "vector_id": "FC08-BEACON-008",
+      "category": "BEACON",
+      "handler": "handle_fc08_beacon_008",
+      "purpose": "candidate references exact catalog version and validated builder fields",
+      "input": {
+        "beacon_override_candidate_outcome_id": "FC08-REF-019",
+        "override_candidate_reference_id": "FC08-REF-030",
+        "beacon_id": "FC08-REF-016",
+        "beacon_revision_id": "FC08-REF-017",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "validated_builder_field_ids": [
+          "FC08-REF-011",
+          "FC08-REF-012"
+        ],
+        "catalog_evidence_reference_ids": [
+          "FC08-REF-007",
+          "FC08-REF-008"
+        ]
+      },
+      "expected": {
+        "catalog_version_referenced": true,
+        "builder_fields_referenced": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-030",
+        "FC08-REF-016",
+        "FC08-REF-017",
+        "FC08-REF-001",
+        "FC08-REF-011",
+        "FC08-REF-012",
+        "FC08-REF-007",
+        "FC08-REF-008",
+        "FC08-REF-029"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-001",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_001",
+      "purpose": "Web customer available projection shows filter with redacted details",
+      "input": {
+        "audience": "WEB_CUSTOMER",
+        "surface_state": "AVAILABLE",
+        "access_decision_reference_id": "FC08-REF-020",
+        "scope_reference_id": "FC08-REF-021",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "filter_definition_id": "FC08-REF-003",
+        "capability_profile_id": "FC08-REF-005",
+        "capability_state": "EDITABLE",
+        "safe_label": "Synthetic customer label",
+        "evidence_reference_ids": [
+          "FC08-REF-007"
+        ],
+        "provenance_reference_ids": [
+          "FC08-REF-023"
+        ]
+      },
+      "expected": {
+        "surface_state": "AVAILABLE",
+        "details_redacted": true,
+        "warning_ids_empty": true,
+        "evidence_reference_ids_empty": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-020",
+        "FC08-REF-021",
+        "FC08-REF-001",
+        "FC08-REF-003",
+        "FC08-REF-005",
+        "FC08-REF-007",
+        "FC08-REF-023"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-002",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_002",
+      "purpose": "Web customer details are redacted and do not expose evidence/warnings",
+      "input": {
+        "audience": "WEB_CUSTOMER",
+        "surface_state": "AVAILABLE",
+        "details_redacted": true,
+        "warning_ids_empty": true,
+        "evidence_reference_ids_empty": true,
+        "beacon_override_candidate_outcome_reference_id": null
+      },
+      "expected": {
+        "details_redacted": true,
+        "warning_ids_count": 0,
+        "evidence_reference_ids_count": 0
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-020",
+        "FC08-REF-021"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-003",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_003",
+      "purpose": "authorized Admin safe opaque details are not redacted",
+      "input": {
+        "audience": "ADMIN_AUTHORIZED",
+        "surface_state": "AVAILABLE",
+        "access_decision_reference_id": "FC08-REF-033",
+        "scope_reference_id": "FC08-REF-032",
+        "filter_catalog_version_id": "FC08-REF-001",
+        "filter_definition_id": "FC08-REF-004",
+        "capability_profile_id": "FC08-REF-026",
+        "capability_state": "EDITABLE",
+        "safe_label": "Synthetic admin label",
+        "evidence_reference_ids": [
+          "FC08-REF-008"
+        ],
+        "provenance_reference_ids": [
+          "FC08-REF-024"
+        ]
+      },
+      "expected": {
+        "surface_state": "AVAILABLE",
+        "details_redacted": false
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-033",
+        "FC08-REF-032",
+        "FC08-REF-001",
+        "FC08-REF-004",
+        "FC08-REF-026",
+        "FC08-REF-008",
+        "FC08-REF-024",
+        "FC08-REF-034"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-004",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_004",
+      "purpose": "REDACTED non-available state returns single REDACTED explanation",
+      "input": {
+        "surface_state": "REDACTED",
+        "expected_explanation": "REDACTED"
+      },
+      "expected": {
+        "surface_state": "REDACTED",
+        "explanation_codes": [
+          "REDACTED"
+        ],
+        "freshness_state": "UNKNOWN",
+        "details_redacted": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-020",
+        "FC08-REF-021"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-005",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_005",
+      "purpose": "FORBIDDEN non-available state returns single FORBIDDEN explanation",
+      "input": {
+        "surface_state": "FORBIDDEN",
+        "expected_explanation": "FORBIDDEN"
+      },
+      "expected": {
+        "surface_state": "FORBIDDEN",
+        "explanation_codes": [
+          "FORBIDDEN"
+        ],
+        "freshness_state": "UNKNOWN",
+        "details_redacted": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-020",
+        "FC08-REF-032"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-006",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_006",
+      "purpose": "NOT_FOUND_SAFE state returns single NOT_FOUND_SAFE explanation",
+      "input": {
+        "surface_state": "NOT_FOUND_SAFE",
+        "expected_explanation": "NOT_FOUND_SAFE"
+      },
+      "expected": {
+        "surface_state": "NOT_FOUND_SAFE",
+        "explanation_codes": [
+          "NOT_FOUND_SAFE"
+        ],
+        "freshness_state": "UNKNOWN",
+        "details_redacted": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-020",
+        "FC08-REF-021"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-007",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_007",
+      "purpose": "CURRENT freshness derived from CURRENT evidence",
+      "input": {
+        "evidence_states": [
+          "CURRENT"
+        ]
+      },
+      "expected": {
+        "freshness_state": "CURRENT"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-007"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-008",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_008",
+      "purpose": "STALE freshness derived from STALE evidence",
+      "input": {
+        "evidence_states": [
+          "STALE"
+        ]
+      },
+      "expected": {
+        "freshness_state": "STALE"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-008"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-009",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_009",
+      "purpose": "UNKNOWN freshness derived from MISSING evidence",
+      "input": {
+        "evidence_states": [
+          "MISSING"
+        ]
+      },
+      "expected": {
+        "freshness_state": "UNKNOWN"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-007"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-010",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_010",
+      "purpose": "AMBIGUOUS freshness derived from AMBIGUOUS evidence",
+      "input": {
+        "evidence_states": [
+          "AMBIGUOUS"
+        ]
+      },
+      "expected": {
+        "freshness_state": "AMBIGUOUS"
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-008"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-011",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_011",
+      "purpose": "Beacon acceptance required explanation appended for prepared candidates",
+      "input": {
+        "candidate_present": true,
+        "capability_state": "EDITABLE"
+      },
+      "expected": {
+        "beacon_acceptance_required_in_explanations": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-019",
+        "FC08-REF-005"
+      ]
+    },
+    {
+      "vector_id": "FC08-SAFE-READ-012",
+      "category": "SAFE_READ",
+      "handler": "handle_fc08_safe_read_012",
+      "purpose": "invariants: no Identity authorization authority, no authoritative business state, no raw provider payload, no stack trace, no secret/PII/private admin notes, no runtime/persistence",
+      "input": {
+        "invariant_checks": [
+          "identity_authorization_performed_by_filter_catalog",
+          "authoritative_business_state",
+          "contains_raw_provider_payload",
+          "contains_stack_trace",
+          "contains_secret_or_personal_data",
+          "contains_admin_private_notes",
+          "runtime_or_persistence_performed"
+        ]
+      },
+      "expected": {
+        "all_invariants_false": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-020",
+        "FC08-REF-021"
+      ]
+    },
+    {
+      "vector_id": "FC08-STATIC-001",
+      "category": "STATIC",
+      "handler": "handle_fc08_static_001",
+      "purpose": "public package exports FC-02–FC-07 symbols",
+      "input": {
+        "expected_symbols": [
+          "FilterCatalogVersion",
+          "FilterDefinition",
+          "FilterEvidenceReference",
+          "evaluate_filter_evidence_approval",
+          "project_builder_field_definition",
+          "validate_builder_draft",
+          "evaluate_multivalue_preservation",
+          "validate_range_value",
+          "evaluate_filter_semantic_exposure",
+          "prepare_beacon_override_candidate",
+          "project_catalog_safe_filter_read"
+        ]
+      },
+      "expected": {
+        "all_symbols_present": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001",
+        "FC08-REF-003",
+        "FC08-REF-007",
+        "FC08-REF-005"
+      ]
+    },
+    {
+      "vector_id": "FC08-STATIC-002",
+      "category": "STATIC",
+      "handler": "handle_fc08_static_002",
+      "purpose": "Module 13 source does not import framework/provider/ORM/runtime internals",
+      "input": {
+        "forbidden_imports": [
+          "fastapi",
+          "sqlalchemy",
+          "alembic",
+          "httpx",
+          "respx",
+          "opentelemetry",
+          "aiogram",
+          "telethon",
+          "psycopg",
+          "psycopg2"
+        ]
+      },
+      "expected": {
+        "no_forbidden_imports": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001"
+      ]
+    },
+    {
+      "vector_id": "FC08-STATIC-003",
+      "category": "STATIC",
+      "handler": "handle_fc08_static_003",
+      "purpose": "protected production files match prerequisite blobs",
+      "input": {
+        "expected_blobs": {
+          "contracts.py": "30055bec462fd772d06f1dc12de1ea8fcba3da77",
+          "evidence_approval.py": "9491ee2a90aa4f6cd580c4a9bf511942c92f2f0a",
+          "builder_validation.py": "084ba9d7083b6ca6fab8b03c7be34e4d3f50c3fb",
+          "value_dependency_semantics.py": "9cb0f1648a359ae86c5e699250111bbe62825d27",
+          "beacon_override_candidate.py": "1a441afd4352fd56c295b6a656262c00f226b2c1",
+          "safe_read_models.py": "239d79ab54e03838da2967d24b2ca3ee60da65fe",
+          "__init__.py": "f880efde1ae75cb7357de15328e6685d8244d80d"
+        }
+      },
+      "expected": {
+        "all_blobs_match": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001",
+        "FC08-REF-003"
+      ]
+    },
+    {
+      "vector_id": "FC08-STATIC-004",
+      "category": "STATIC",
+      "handler": "handle_fc08_static_004",
+      "purpose": "OD-009 remains OPEN and fixture corpus contains no real provider facts",
+      "input": {
+        "od009_status": "OPEN",
+        "forbidden_real_data": [
+          "real_avito_category",
+          "real_city_name",
+          "real_provider_account"
+        ]
+      },
+      "expected": {
+        "od009_open": true,
+        "no_real_provider_data": true
+      },
+      "canonical_reference_ids": [
+        "FC08-REF-001"
+      ]
+    }
+  ]
+}
