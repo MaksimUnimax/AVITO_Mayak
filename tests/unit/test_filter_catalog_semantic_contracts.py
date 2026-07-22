@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 FIXTURE_PATH = Path("tests/fixtures/filter_catalog_semantic_vectors.json")
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +35,24 @@ def _ts(s: str = "2026-01-15T10:00:00Z") -> datetime:
 
 def _fp(ch: str = "a", n: int = 64) -> str:
     return ch * n
+
+
+def _get_vector(vector_id: str) -> dict:
+    for v in _load_vectors():
+        if v["vector_id"] == vector_id:
+            return v
+    raise KeyError(f"Vector {vector_id} not found")
+
+
+def _run_handler_twice(handler, vector_input: dict, vector_expected: dict):
+    input1 = copy.deepcopy(vector_input)
+    expected1 = copy.deepcopy(vector_expected)
+    handler(input1, expected1)
+    input2 = copy.deepcopy(vector_input)
+    expected2 = copy.deepcopy(vector_expected)
+    handler(input2, expected2)
+    assert input1 == input2, "Handler produced different input mutability across runs"
+    return input1, input2
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +81,7 @@ def handle_fc08_catalog_002(vector_input: dict, vector_expected: dict) -> None:
         CatalogPublicationState,
         FilterCatalogVersion,
     )
-    with pytest.raises(Exception, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
         FilterCatalogVersion(
             filter_catalog_version_id=vector_input["filter_catalog_version_id"],
             publication_state=CatalogPublicationState(vector_input["publication_state"]),
@@ -74,7 +93,7 @@ def handle_fc08_catalog_002(vector_input: dict, vector_expected: dict) -> None:
 
 def handle_fc08_catalog_003(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterOptionDefinition, FilterDefinitionState
-    with pytest.raises(Exception, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
         FilterOptionDefinition(
             filter_option_id=vector_input["filter_option_id"],
             filter_definition_id=vector_input["filter_definition_id"],
@@ -91,7 +110,7 @@ def handle_fc08_catalog_004(vector_input: dict, vector_expected: dict) -> None:
         FilterDefinitionState,
         FilterValueKind,
     )
-    with pytest.raises(Exception, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
         FilterDefinition(
             filter_definition_id=vector_input["filter_definition_id"],
             filter_catalog_version_id=vector_input["filter_catalog_version_id"],
@@ -124,7 +143,7 @@ def handle_fc08_catalog_006(vector_input: dict, vector_expected: dict) -> None:
         FilterCapabilityProfile,
         FilterCapabilityState,
     )
-    with pytest.raises(Exception, match=vector_expected["error_fragment"]):
+    with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
         FilterCapabilityProfile(
             filter_capability_profile_id=vector_input["filter_capability_profile_id"],
             filter_catalog_version_id=vector_input["filter_catalog_version_id"],
@@ -1346,71 +1365,100 @@ def handle_fc08_safe_read_003(vector_input: dict, vector_expected: dict) -> None
 
 def handle_fc08_safe_read_004(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.safe_read_models import (
-        CatalogSafeFilterReadModel,
+        CatalogSafeReadAccessContext,
         CatalogSafeReadAudience,
-        CatalogSafeReadFreshnessState,
         CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
     )
-    model = CatalogSafeFilterReadModel(
-        catalog_safe_filter_read_model_id="FC08-REF-019",
+    context = CatalogSafeReadAccessContext(
         audience=CatalogSafeReadAudience.WEB_CUSTOMER,
-        surface_state=CatalogSafeReadSurfaceState(vector_expected["surface_state"]),
-        freshness_state=CatalogSafeReadFreshnessState(vector_expected["freshness_state"]),
-        filter_catalog_version_id="FC08-REF-001",
-        explanation_codes=tuple(vector_expected["explanation_codes"]),
-        provenance_reference_ids=("FC08-REF-023",),
-        details_redacted=vector_expected["details_redacted"],
+        surface_state=CatalogSafeReadSurfaceState.REDACTED,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
     )
-    assert model.surface_state == CatalogSafeReadSurfaceState.REDACTED
-    assert model.explanation_codes == ("REDACTED",)
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert model.surface_state.value == vector_expected["surface_state"]
+    assert model.explanation_codes[0].value == "REDACTED"
+    assert model.details_redacted is True
 
 
 def handle_fc08_safe_read_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.safe_read_models import (
-        CatalogSafeFilterReadModel,
+        CatalogSafeReadAccessContext,
         CatalogSafeReadAudience,
-        CatalogSafeReadFreshnessState,
         CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
     )
-    model = CatalogSafeFilterReadModel(
-        catalog_safe_filter_read_model_id="FC08-REF-019",
+    context = CatalogSafeReadAccessContext(
         audience=CatalogSafeReadAudience.WEB_CUSTOMER,
-        surface_state=CatalogSafeReadSurfaceState(vector_expected["surface_state"]),
-        freshness_state=CatalogSafeReadFreshnessState(vector_expected["freshness_state"]),
-        filter_catalog_version_id="FC08-REF-001",
-        explanation_codes=tuple(vector_expected["explanation_codes"]),
-        provenance_reference_ids=("FC08-REF-034",),
-        details_redacted=vector_expected["details_redacted"],
+        surface_state=CatalogSafeReadSurfaceState.FORBIDDEN,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-032",
     )
-    assert model.surface_state == CatalogSafeReadSurfaceState.FORBIDDEN
-    assert model.explanation_codes == ("FORBIDDEN",)
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        provenance_reference_ids=("FC08-REF-034",),
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert model.surface_state.value == vector_expected["surface_state"]
+    assert model.explanation_codes[0].value == "FORBIDDEN"
+    assert model.details_redacted is True
 
 
 def handle_fc08_safe_read_006(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.safe_read_models import (
-        CatalogSafeFilterReadModel,
+        CatalogSafeReadAccessContext,
         CatalogSafeReadAudience,
-        CatalogSafeReadFreshnessState,
         CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
     )
-    model = CatalogSafeFilterReadModel(
-        catalog_safe_filter_read_model_id="FC08-REF-019",
+    context = CatalogSafeReadAccessContext(
         audience=CatalogSafeReadAudience.WEB_CUSTOMER,
-        surface_state=CatalogSafeReadSurfaceState(vector_expected["surface_state"]),
-        freshness_state=CatalogSafeReadFreshnessState(vector_expected["freshness_state"]),
-        filter_catalog_version_id="FC08-REF-001",
-        explanation_codes=tuple(vector_expected["explanation_codes"]),
-        provenance_reference_ids=("FC08-REF-023",),
-        details_redacted=vector_expected["details_redacted"],
+        surface_state=CatalogSafeReadSurfaceState.NOT_FOUND_SAFE,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
     )
-    assert model.surface_state == CatalogSafeReadSurfaceState.NOT_FOUND_SAFE
-    assert model.explanation_codes == ("NOT_FOUND_SAFE",)
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert model.surface_state.value == vector_expected["surface_state"]
+    assert model.explanation_codes[0].value == "NOT_FOUND_SAFE"
+    assert model.details_redacted is True
 
 
 def handle_fc08_safe_read_007(vector_input: dict, vector_expected: dict) -> None:
-    from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
-    from mayak.modules.filter_catalog.safe_read_models import _derive_freshness, CatalogSafeReadFreshnessState
-    evidence = tuple(
+    from mayak.modules.filter_catalog.contracts import (
+        FilterCapabilityProfile,
+        FilterCapabilityState,
+        FilterDefinition,
+        FilterDefinitionState,
+        FilterEvidenceReference,
+        FilterEvidenceState,
+        FilterValueKind,
+    )
+    from mayak.modules.filter_catalog.safe_read_models import (
+        CatalogSafeReadAccessContext,
+        CatalogSafeReadAudience,
+        CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
+    )
+    evidence_refs = tuple(
         FilterEvidenceReference(
             evidence_reference_id="FC08-REF-007",
             evidence_state=FilterEvidenceState(state),
@@ -1422,14 +1470,60 @@ def handle_fc08_safe_read_007(vector_input: dict, vector_expected: dict) -> None
         )
         for state in vector_input["evidence_states"]
     )
-    freshness = _derive_freshness(evidence)
-    assert freshness == CatalogSafeReadFreshnessState(vector_expected["freshness_state"])
+    definition = FilterDefinition(
+        filter_definition_id="FC08-REF-003",
+        filter_catalog_version_id="FC08-REF-001",
+        normalized_key="SYNTH_SAFE_FRESH",
+        safe_label="Synthetic freshness label",
+        value_kind=FilterValueKind.SCALAR,
+        definition_state=FilterDefinitionState.APPROVED,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+        capability_profile_ids=("FC08-REF-005",),
+    )
+    profile = FilterCapabilityProfile(
+        filter_capability_profile_id="FC08-REF-005",
+        filter_catalog_version_id="FC08-REF-001",
+        provider_surface_reference_id="FC08-REF-021",
+        capability_state=FilterCapabilityState.EDITABLE,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+    )
+    context = CatalogSafeReadAccessContext(
+        audience=CatalogSafeReadAudience.WEB_CUSTOMER,
+        surface_state=CatalogSafeReadSurfaceState.AVAILABLE,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
+    )
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        filter_definition=definition,
+        capability_profile=profile,
+        evidence_references=evidence_refs,
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
 def handle_fc08_safe_read_008(vector_input: dict, vector_expected: dict) -> None:
-    from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
-    from mayak.modules.filter_catalog.safe_read_models import _derive_freshness, CatalogSafeReadFreshnessState
-    evidence = tuple(
+    from mayak.modules.filter_catalog.contracts import (
+        FilterCapabilityProfile,
+        FilterCapabilityState,
+        FilterDefinition,
+        FilterDefinitionState,
+        FilterEvidenceReference,
+        FilterEvidenceState,
+        FilterValueKind,
+    )
+    from mayak.modules.filter_catalog.safe_read_models import (
+        CatalogSafeReadAccessContext,
+        CatalogSafeReadAudience,
+        CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
+    )
+    evidence_refs = tuple(
         FilterEvidenceReference(
             evidence_reference_id="FC08-REF-008",
             evidence_state=FilterEvidenceState(state),
@@ -1441,14 +1535,60 @@ def handle_fc08_safe_read_008(vector_input: dict, vector_expected: dict) -> None
         )
         for state in vector_input["evidence_states"]
     )
-    freshness = _derive_freshness(evidence)
-    assert freshness == CatalogSafeReadFreshnessState(vector_expected["freshness_state"])
+    definition = FilterDefinition(
+        filter_definition_id="FC08-REF-003",
+        filter_catalog_version_id="FC08-REF-001",
+        normalized_key="SYNTH_SAFE_FRESH",
+        safe_label="Synthetic freshness label",
+        value_kind=FilterValueKind.SCALAR,
+        definition_state=FilterDefinitionState.APPROVED,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+        capability_profile_ids=("FC08-REF-005",),
+    )
+    profile = FilterCapabilityProfile(
+        filter_capability_profile_id="FC08-REF-005",
+        filter_catalog_version_id="FC08-REF-001",
+        provider_surface_reference_id="FC08-REF-021",
+        capability_state=FilterCapabilityState.EDITABLE,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+    )
+    context = CatalogSafeReadAccessContext(
+        audience=CatalogSafeReadAudience.WEB_CUSTOMER,
+        surface_state=CatalogSafeReadSurfaceState.AVAILABLE,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
+    )
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        filter_definition=definition,
+        capability_profile=profile,
+        evidence_references=evidence_refs,
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
 def handle_fc08_safe_read_009(vector_input: dict, vector_expected: dict) -> None:
-    from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
-    from mayak.modules.filter_catalog.safe_read_models import _derive_freshness, CatalogSafeReadFreshnessState
-    evidence = tuple(
+    from mayak.modules.filter_catalog.contracts import (
+        FilterCapabilityProfile,
+        FilterCapabilityState,
+        FilterDefinition,
+        FilterDefinitionState,
+        FilterEvidenceReference,
+        FilterEvidenceState,
+        FilterValueKind,
+    )
+    from mayak.modules.filter_catalog.safe_read_models import (
+        CatalogSafeReadAccessContext,
+        CatalogSafeReadAudience,
+        CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
+    )
+    evidence_refs = tuple(
         FilterEvidenceReference(
             evidence_reference_id="FC08-REF-007",
             evidence_state=FilterEvidenceState(state),
@@ -1460,14 +1600,60 @@ def handle_fc08_safe_read_009(vector_input: dict, vector_expected: dict) -> None
         )
         for state in vector_input["evidence_states"]
     )
-    freshness = _derive_freshness(evidence)
-    assert freshness == CatalogSafeReadFreshnessState(vector_expected["freshness_state"])
+    definition = FilterDefinition(
+        filter_definition_id="FC08-REF-003",
+        filter_catalog_version_id="FC08-REF-001",
+        normalized_key="SYNTH_SAFE_FRESH",
+        safe_label="Synthetic freshness label",
+        value_kind=FilterValueKind.SCALAR,
+        definition_state=FilterDefinitionState.APPROVED,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+        capability_profile_ids=("FC08-REF-005",),
+    )
+    profile = FilterCapabilityProfile(
+        filter_capability_profile_id="FC08-REF-005",
+        filter_catalog_version_id="FC08-REF-001",
+        provider_surface_reference_id="FC08-REF-021",
+        capability_state=FilterCapabilityState.EDITABLE,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+    )
+    context = CatalogSafeReadAccessContext(
+        audience=CatalogSafeReadAudience.WEB_CUSTOMER,
+        surface_state=CatalogSafeReadSurfaceState.AVAILABLE,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
+    )
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        filter_definition=definition,
+        capability_profile=profile,
+        evidence_references=evidence_refs,
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
 def handle_fc08_safe_read_010(vector_input: dict, vector_expected: dict) -> None:
-    from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
-    from mayak.modules.filter_catalog.safe_read_models import _derive_freshness, CatalogSafeReadFreshnessState
-    evidence = tuple(
+    from mayak.modules.filter_catalog.contracts import (
+        FilterCapabilityProfile,
+        FilterCapabilityState,
+        FilterDefinition,
+        FilterDefinitionState,
+        FilterEvidenceReference,
+        FilterEvidenceState,
+        FilterValueKind,
+    )
+    from mayak.modules.filter_catalog.safe_read_models import (
+        CatalogSafeReadAccessContext,
+        CatalogSafeReadAudience,
+        CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
+    )
+    evidence_refs = tuple(
         FilterEvidenceReference(
             evidence_reference_id="FC08-REF-008",
             evidence_state=FilterEvidenceState(state),
@@ -1479,25 +1665,156 @@ def handle_fc08_safe_read_010(vector_input: dict, vector_expected: dict) -> None
         )
         for state in vector_input["evidence_states"]
     )
-    freshness = _derive_freshness(evidence)
-    assert freshness == CatalogSafeReadFreshnessState(vector_expected["freshness_state"])
+    definition = FilterDefinition(
+        filter_definition_id="FC08-REF-003",
+        filter_catalog_version_id="FC08-REF-001",
+        normalized_key="SYNTH_SAFE_FRESH",
+        safe_label="Synthetic freshness label",
+        value_kind=FilterValueKind.SCALAR,
+        definition_state=FilterDefinitionState.APPROVED,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+        capability_profile_ids=("FC08-REF-005",),
+    )
+    profile = FilterCapabilityProfile(
+        filter_capability_profile_id="FC08-REF-005",
+        filter_catalog_version_id="FC08-REF-001",
+        provider_surface_reference_id="FC08-REF-021",
+        capability_state=FilterCapabilityState.EDITABLE,
+        evidence_reference_ids=tuple(ref.evidence_reference_id for ref in evidence_refs),
+    )
+    context = CatalogSafeReadAccessContext(
+        audience=CatalogSafeReadAudience.WEB_CUSTOMER,
+        surface_state=CatalogSafeReadSurfaceState.AVAILABLE,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
+    )
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        filter_definition=definition,
+        capability_profile=profile,
+        evidence_references=evidence_refs,
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
 def handle_fc08_safe_read_011(vector_input: dict, vector_expected: dict) -> None:
-    from mayak.modules.filter_catalog.safe_read_models import CatalogSafeExplanationCode
-    assert vector_expected["beacon_acceptance_required_in_explanations"]
-    assert CatalogSafeExplanationCode.BEACON_ACCEPTANCE_REQUIRED.value == "BEACON_ACCEPTANCE_REQUIRED"
+    from mayak.modules.filter_catalog.contracts import (
+        BeaconOverrideCandidateOutcome,
+        BeaconOverrideCandidateState,
+        BuilderFieldDefinition,
+        FilterCapabilityProfile,
+        FilterCapabilityState,
+        FilterDefinition,
+        FilterDefinitionState,
+        FilterEvidenceReference,
+        FilterEvidenceState,
+        FilterValueKind,
+    )
+    from mayak.modules.filter_catalog.safe_read_models import (
+        CatalogSafeReadAccessContext,
+        CatalogSafeReadAudience,
+        CatalogSafeReadSurfaceState,
+        CatalogSafeExplanationCode,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
+    )
+    definition = FilterDefinition(
+        filter_definition_id="FC08-REF-003",
+        filter_catalog_version_id="FC08-REF-001",
+        normalized_key="SYNTH_SAFE_BEACON",
+        safe_label="Synthetic beacon label",
+        value_kind=FilterValueKind.SCALAR,
+        definition_state=FilterDefinitionState.APPROVED,
+        evidence_reference_ids=("FC08-REF-007",),
+        capability_profile_ids=("FC08-REF-005",),
+    )
+    profile = FilterCapabilityProfile(
+        filter_capability_profile_id="FC08-REF-005",
+        filter_catalog_version_id="FC08-REF-001",
+        provider_surface_reference_id="FC08-REF-021",
+        capability_state=FilterCapabilityState(vector_input["capability_state"]),
+        evidence_reference_ids=("FC08-REF-007",),
+    )
+    evidence_refs = (
+        FilterEvidenceReference(
+            evidence_reference_id="FC08-REF-007",
+            evidence_state=FilterEvidenceState.CURRENT,
+            evidence_kind_code="SYNTH_EVID",
+            scope_reference_ids=("FC08-REF-021",),
+            source_fingerprint=_fp("a"),
+            observed_at=_ts(),
+            refresh_required=False,
+        ),
+    )
+    builder = BuilderFieldDefinition(
+        builder_field_id="FC08-REF-011",
+        filter_catalog_version_id="FC08-REF-001",
+        filter_definition_id="FC08-REF-003",
+        filter_capability_profile_id="FC08-REF-005",
+        capability_state=FilterCapabilityState(vector_input["capability_state"]),
+        value_kind=FilterValueKind.SCALAR,
+        required=True,
+    )
+    candidate = BeaconOverrideCandidateOutcome(
+        beacon_override_candidate_outcome_id="FC08-REF-019",
+        override_candidate_reference_id="FC08-REF-030",
+        beacon_id="FC08-REF-016",
+        beacon_revision_id="FC08-REF-017",
+        filter_catalog_version_id="FC08-REF-001",
+        candidate_state=BeaconOverrideCandidateState.PREPARED,
+        validated_builder_field_ids=("FC08-REF-011",),
+    )
+    context = CatalogSafeReadAccessContext(
+        audience=CatalogSafeReadAudience.ADMIN_AUTHORIZED,
+        surface_state=CatalogSafeReadSurfaceState.AVAILABLE,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
+    )
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        filter_definition=definition,
+        capability_profile=profile,
+        builder_field_definition=builder,
+        evidence_references=evidence_refs,
+        provenance_reference_ids=("FC08-REF-023",),
+        beacon_override_candidate_outcome=candidate,
+    )
+    model = project_catalog_safe_filter_read(request)
+    assert CatalogSafeExplanationCode.BEACON_ACCEPTANCE_REQUIRED in model.explanation_codes
+    assert model.beacon_acceptance_required is True
 
 
 def handle_fc08_safe_read_012(vector_input: dict, vector_expected: dict) -> None:
-    from mayak.modules.filter_catalog.safe_read_models import CatalogSafeFilterReadModel
-    assert vector_expected["all_invariants_false"]
-    for field in vector_input["invariant_checks"]:
-        if hasattr(CatalogSafeFilterReadModel, field):
-            info = CatalogSafeFilterReadModel.model_fields.get(field)
-            if info is not None:
-                default = info.default
-                assert default is False, f"{field} default must be False, got {default}"
+    from mayak.modules.filter_catalog.safe_read_models import (
+        CatalogSafeFilterReadModel,
+        CatalogSafeReadAudience,
+        CatalogSafeReadFreshnessState,
+        CatalogSafeReadSurfaceState,
+        CatalogSafeExplanationCode,
+    )
+    model = CatalogSafeFilterReadModel(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        audience=CatalogSafeReadAudience.WEB_CUSTOMER,
+        surface_state=CatalogSafeReadSurfaceState.REDACTED,
+        freshness_state=CatalogSafeReadFreshnessState.UNKNOWN,
+        filter_catalog_version_id="FC08-REF-001",
+        explanation_codes=(CatalogSafeExplanationCode.REDACTED,),
+        provenance_reference_ids=("FC08-REF-023",),
+        details_redacted=True,
+    )
+    assert model.identity_authorization_performed_by_filter_catalog is False
+    assert model.authoritative_business_state is False
+    assert model.contains_raw_provider_payload is False
+    assert model.contains_stack_trace is False
+    assert model.contains_secret_or_personal_data is False
+    assert model.contains_admin_private_notes is False
+    assert model.runtime_or_persistence_performed is False
 
 
 def handle_fc08_static_001(vector_input: dict, vector_expected: dict) -> None:
@@ -1539,78 +1856,567 @@ def handle_fc08_static_004(vector_input: dict, vector_expected: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Mapping: vector_id -> handler
+# 56 Explicit Vector-Specific Test Functions
 # ---------------------------------------------------------------------------
-HANDLER_MAP = {
-    "FC08-CATALOG-001": handle_fc08_catalog_001,
-    "FC08-CATALOG-002": handle_fc08_catalog_002,
-    "FC08-CATALOG-003": handle_fc08_catalog_003,
-    "FC08-CATALOG-004": handle_fc08_catalog_004,
-    "FC08-CATALOG-005": handle_fc08_catalog_005,
-    "FC08-CATALOG-006": handle_fc08_catalog_006,
-    "FC08-CATALOG-007": handle_fc08_catalog_007,
-    "FC08-CATALOG-008": handle_fc08_catalog_008,
-    "FC08-EVIDENCE-001": handle_fc08_evidence_001,
-    "FC08-EVIDENCE-002": handle_fc08_evidence_002,
-    "FC08-EVIDENCE-003": handle_fc08_evidence_003,
-    "FC08-EVIDENCE-004": handle_fc08_evidence_004,
-    "FC08-EVIDENCE-005": handle_fc08_evidence_005,
-    "FC08-EVIDENCE-006": handle_fc08_evidence_006,
-    "FC08-EVIDENCE-007": handle_fc08_evidence_007,
-    "FC08-EVIDENCE-008": handle_fc08_evidence_008,
-    "FC08-BUILDER-001": handle_fc08_builder_001,
-    "FC08-BUILDER-002": handle_fc08_builder_002,
-    "FC08-BUILDER-003": handle_fc08_builder_003,
-    "FC08-BUILDER-004": handle_fc08_builder_004,
-    "FC08-BUILDER-005": handle_fc08_builder_005,
-    "FC08-BUILDER-006": handle_fc08_builder_006,
-    "FC08-BUILDER-007": handle_fc08_builder_007,
-    "FC08-BUILDER-008": handle_fc08_builder_008,
-    "FC08-VALUE-001": handle_fc08_value_001,
-    "FC08-VALUE-002": handle_fc08_value_002,
-    "FC08-VALUE-003": handle_fc08_value_003,
-    "FC08-VALUE-004": handle_fc08_value_004,
-    "FC08-VALUE-005": handle_fc08_value_005,
-    "FC08-VALUE-006": handle_fc08_value_006,
-    "FC08-VALUE-007": handle_fc08_value_007,
-    "FC08-VALUE-008": handle_fc08_value_008,
-    "FC08-BEACON-001": handle_fc08_beacon_001,
-    "FC08-BEACON-002": handle_fc08_beacon_002,
-    "FC08-BEACON-003": handle_fc08_beacon_003,
-    "FC08-BEACON-004": handle_fc08_beacon_004,
-    "FC08-BEACON-005": handle_fc08_beacon_005,
-    "FC08-BEACON-006": handle_fc08_beacon_006,
-    "FC08-BEACON-007": handle_fc08_beacon_007,
-    "FC08-BEACON-008": handle_fc08_beacon_008,
-    "FC08-SAFE-READ-001": handle_fc08_safe_read_001,
-    "FC08-SAFE-READ-002": handle_fc08_safe_read_002,
-    "FC08-SAFE-READ-003": handle_fc08_safe_read_003,
-    "FC08-SAFE-READ-004": handle_fc08_safe_read_004,
-    "FC08-SAFE-READ-005": handle_fc08_safe_read_005,
-    "FC08-SAFE-READ-006": handle_fc08_safe_read_006,
-    "FC08-SAFE-READ-007": handle_fc08_safe_read_007,
-    "FC08-SAFE-READ-008": handle_fc08_safe_read_008,
-    "FC08-SAFE-READ-009": handle_fc08_safe_read_009,
-    "FC08-SAFE-READ-010": handle_fc08_safe_read_010,
-    "FC08-SAFE-READ-011": handle_fc08_safe_read_011,
-    "FC08-SAFE-READ-012": handle_fc08_safe_read_012,
-    "FC08-STATIC-001": handle_fc08_static_001,
-    "FC08-STATIC-002": handle_fc08_static_002,
-    "FC08-STATIC-003": handle_fc08_static_003,
-    "FC08-STATIC-004": handle_fc08_static_004,
-}
 
-_vector_params = [(v["vector_id"], v) for v in _load_vectors()]
+def test_fc08_catalog_001() -> None:
+    v = _get_vector("FC08-CATALOG-001")
+    assert v["handler"] == "handle_fc08_catalog_001"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_001(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_001, v["input"], v["expected"])
 
 
-@pytest.mark.parametrize("vector_id,vector", _vector_params, ids=[v["vector_id"] for v in _load_vectors()])
-def test_vector_handler(vector_id: str, vector: dict) -> None:
-    handler = HANDLER_MAP[vector_id]
-    assert handler.__name__ == vector["handler"]
-    input_copy = copy.deepcopy(vector["input"])
-    expected_copy = copy.deepcopy(vector["expected"])
-    handler(input_copy, expected_copy)
-    assert input_copy == vector["input"], "Input was mutated"
+def test_fc08_catalog_002() -> None:
+    v = _get_vector("FC08-CATALOG-002")
+    assert v["handler"] == "handle_fc08_catalog_002"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_002(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_002, v["input"], v["expected"])
+
+
+def test_fc08_catalog_003() -> None:
+    v = _get_vector("FC08-CATALOG-003")
+    assert v["handler"] == "handle_fc08_catalog_003"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_003(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_003, v["input"], v["expected"])
+
+
+def test_fc08_catalog_004() -> None:
+    v = _get_vector("FC08-CATALOG-004")
+    assert v["handler"] == "handle_fc08_catalog_004"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_004(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_004, v["input"], v["expected"])
+
+
+def test_fc08_catalog_005() -> None:
+    v = _get_vector("FC08-CATALOG-005")
+    assert v["handler"] == "handle_fc08_catalog_005"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_005(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_005, v["input"], v["expected"])
+
+
+def test_fc08_catalog_006() -> None:
+    v = _get_vector("FC08-CATALOG-006")
+    assert v["handler"] == "handle_fc08_catalog_006"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_006(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_006, v["input"], v["expected"])
+
+
+def test_fc08_catalog_007() -> None:
+    v = _get_vector("FC08-CATALOG-007")
+    assert v["handler"] == "handle_fc08_catalog_007"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_007(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_007, v["input"], v["expected"])
+
+
+def test_fc08_catalog_008() -> None:
+    v = _get_vector("FC08-CATALOG-008")
+    assert v["handler"] == "handle_fc08_catalog_008"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_catalog_008(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_catalog_008, v["input"], v["expected"])
+
+
+def test_fc08_evidence_001() -> None:
+    v = _get_vector("FC08-EVIDENCE-001")
+    assert v["handler"] == "handle_fc08_evidence_001"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_001(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_001, v["input"], v["expected"])
+
+
+def test_fc08_evidence_002() -> None:
+    v = _get_vector("FC08-EVIDENCE-002")
+    assert v["handler"] == "handle_fc08_evidence_002"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_002(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_002, v["input"], v["expected"])
+
+
+def test_fc08_evidence_003() -> None:
+    v = _get_vector("FC08-EVIDENCE-003")
+    assert v["handler"] == "handle_fc08_evidence_003"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_003(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_003, v["input"], v["expected"])
+
+
+def test_fc08_evidence_004() -> None:
+    v = _get_vector("FC08-EVIDENCE-004")
+    assert v["handler"] == "handle_fc08_evidence_004"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_004(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_004, v["input"], v["expected"])
+
+
+def test_fc08_evidence_005() -> None:
+    v = _get_vector("FC08-EVIDENCE-005")
+    assert v["handler"] == "handle_fc08_evidence_005"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_005(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_005, v["input"], v["expected"])
+
+
+def test_fc08_evidence_006() -> None:
+    v = _get_vector("FC08-EVIDENCE-006")
+    assert v["handler"] == "handle_fc08_evidence_006"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_006(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_006, v["input"], v["expected"])
+
+
+def test_fc08_evidence_007() -> None:
+    v = _get_vector("FC08-EVIDENCE-007")
+    assert v["handler"] == "handle_fc08_evidence_007"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_007(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_007, v["input"], v["expected"])
+
+
+def test_fc08_evidence_008() -> None:
+    v = _get_vector("FC08-EVIDENCE-008")
+    assert v["handler"] == "handle_fc08_evidence_008"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_evidence_008(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_evidence_008, v["input"], v["expected"])
+
+
+def test_fc08_builder_001() -> None:
+    v = _get_vector("FC08-BUILDER-001")
+    assert v["handler"] == "handle_fc08_builder_001"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_001(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_001, v["input"], v["expected"])
+
+
+def test_fc08_builder_002() -> None:
+    v = _get_vector("FC08-BUILDER-002")
+    assert v["handler"] == "handle_fc08_builder_002"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_002(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_002, v["input"], v["expected"])
+
+
+def test_fc08_builder_003() -> None:
+    v = _get_vector("FC08-BUILDER-003")
+    assert v["handler"] == "handle_fc08_builder_003"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_003(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_003, v["input"], v["expected"])
+
+
+def test_fc08_builder_004() -> None:
+    v = _get_vector("FC08-BUILDER-004")
+    assert v["handler"] == "handle_fc08_builder_004"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_004(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_004, v["input"], v["expected"])
+
+
+def test_fc08_builder_005() -> None:
+    v = _get_vector("FC08-BUILDER-005")
+    assert v["handler"] == "handle_fc08_builder_005"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_005(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_005, v["input"], v["expected"])
+
+
+def test_fc08_builder_006() -> None:
+    v = _get_vector("FC08-BUILDER-006")
+    assert v["handler"] == "handle_fc08_builder_006"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_006(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_006, v["input"], v["expected"])
+
+
+def test_fc08_builder_007() -> None:
+    v = _get_vector("FC08-BUILDER-007")
+    assert v["handler"] == "handle_fc08_builder_007"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_007(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_007, v["input"], v["expected"])
+
+
+def test_fc08_builder_008() -> None:
+    v = _get_vector("FC08-BUILDER-008")
+    assert v["handler"] == "handle_fc08_builder_008"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_builder_008(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_builder_008, v["input"], v["expected"])
+
+
+def test_fc08_value_001() -> None:
+    v = _get_vector("FC08-VALUE-001")
+    assert v["handler"] == "handle_fc08_value_001"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_001(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_001, v["input"], v["expected"])
+
+
+def test_fc08_value_002() -> None:
+    v = _get_vector("FC08-VALUE-002")
+    assert v["handler"] == "handle_fc08_value_002"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_002(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_002, v["input"], v["expected"])
+
+
+def test_fc08_value_003() -> None:
+    v = _get_vector("FC08-VALUE-003")
+    assert v["handler"] == "handle_fc08_value_003"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_003(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_003, v["input"], v["expected"])
+
+
+def test_fc08_value_004() -> None:
+    v = _get_vector("FC08-VALUE-004")
+    assert v["handler"] == "handle_fc08_value_004"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_004(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_004, v["input"], v["expected"])
+
+
+def test_fc08_value_005() -> None:
+    v = _get_vector("FC08-VALUE-005")
+    assert v["handler"] == "handle_fc08_value_005"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_005(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_005, v["input"], v["expected"])
+
+
+def test_fc08_value_006() -> None:
+    v = _get_vector("FC08-VALUE-006")
+    assert v["handler"] == "handle_fc08_value_006"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_006(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_006, v["input"], v["expected"])
+
+
+def test_fc08_value_007() -> None:
+    v = _get_vector("FC08-VALUE-007")
+    assert v["handler"] == "handle_fc08_value_007"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_007(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_007, v["input"], v["expected"])
+
+
+def test_fc08_value_008() -> None:
+    v = _get_vector("FC08-VALUE-008")
+    assert v["handler"] == "handle_fc08_value_008"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_value_008(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_value_008, v["input"], v["expected"])
+
+
+def test_fc08_beacon_001() -> None:
+    v = _get_vector("FC08-BEACON-001")
+    assert v["handler"] == "handle_fc08_beacon_001"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_001(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_001, v["input"], v["expected"])
+
+
+def test_fc08_beacon_002() -> None:
+    v = _get_vector("FC08-BEACON-002")
+    assert v["handler"] == "handle_fc08_beacon_002"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_002(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_002, v["input"], v["expected"])
+
+
+def test_fc08_beacon_003() -> None:
+    v = _get_vector("FC08-BEACON-003")
+    assert v["handler"] == "handle_fc08_beacon_003"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_003(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_003, v["input"], v["expected"])
+
+
+def test_fc08_beacon_004() -> None:
+    v = _get_vector("FC08-BEACON-004")
+    assert v["handler"] == "handle_fc08_beacon_004"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_004(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_004, v["input"], v["expected"])
+
+
+def test_fc08_beacon_005() -> None:
+    v = _get_vector("FC08-BEACON-005")
+    assert v["handler"] == "handle_fc08_beacon_005"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_005(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_005, v["input"], v["expected"])
+
+
+def test_fc08_beacon_006() -> None:
+    v = _get_vector("FC08-BEACON-006")
+    assert v["handler"] == "handle_fc08_beacon_006"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_006(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_006, v["input"], v["expected"])
+
+
+def test_fc08_beacon_007() -> None:
+    v = _get_vector("FC08-BEACON-007")
+    assert v["handler"] == "handle_fc08_beacon_007"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_007(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_007, v["input"], v["expected"])
+
+
+def test_fc08_beacon_008() -> None:
+    v = _get_vector("FC08-BEACON-008")
+    assert v["handler"] == "handle_fc08_beacon_008"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_beacon_008(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_beacon_008, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_001() -> None:
+    v = _get_vector("FC08-SAFE-READ-001")
+    assert v["handler"] == "handle_fc08_safe_read_001"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_001(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_001, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_002() -> None:
+    v = _get_vector("FC08-SAFE-READ-002")
+    assert v["handler"] == "handle_fc08_safe_read_002"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_002(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_002, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_003() -> None:
+    v = _get_vector("FC08-SAFE-READ-003")
+    assert v["handler"] == "handle_fc08_safe_read_003"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_003(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_003, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_004() -> None:
+    v = _get_vector("FC08-SAFE-READ-004")
+    assert v["handler"] == "handle_fc08_safe_read_004"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_004(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_004, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_005() -> None:
+    v = _get_vector("FC08-SAFE-READ-005")
+    assert v["handler"] == "handle_fc08_safe_read_005"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_005(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_005, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_006() -> None:
+    v = _get_vector("FC08-SAFE-READ-006")
+    assert v["handler"] == "handle_fc08_safe_read_006"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_006(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_006, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_007() -> None:
+    v = _get_vector("FC08-SAFE-READ-007")
+    assert v["handler"] == "handle_fc08_safe_read_007"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_007(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_007, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_008() -> None:
+    v = _get_vector("FC08-SAFE-READ-008")
+    assert v["handler"] == "handle_fc08_safe_read_008"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_008(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_008, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_009() -> None:
+    v = _get_vector("FC08-SAFE-READ-009")
+    assert v["handler"] == "handle_fc08_safe_read_009"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_009(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_009, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_010() -> None:
+    v = _get_vector("FC08-SAFE-READ-010")
+    assert v["handler"] == "handle_fc08_safe_read_010"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_010(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_010, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_011() -> None:
+    v = _get_vector("FC08-SAFE-READ-011")
+    assert v["handler"] == "handle_fc08_safe_read_011"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_011(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_011, v["input"], v["expected"])
+
+
+def test_fc08_safe_read_012() -> None:
+    v = _get_vector("FC08-SAFE-READ-012")
+    assert v["handler"] == "handle_fc08_safe_read_012"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_safe_read_012(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_safe_read_012, v["input"], v["expected"])
+
+
+def test_fc08_static_001() -> None:
+    v = _get_vector("FC08-STATIC-001")
+    assert v["handler"] == "handle_fc08_static_001"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_static_001(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_static_001, v["input"], v["expected"])
+
+
+def test_fc08_static_002() -> None:
+    v = _get_vector("FC08-STATIC-002")
+    assert v["handler"] == "handle_fc08_static_002"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_static_002(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_static_002, v["input"], v["expected"])
+
+
+def test_fc08_static_003() -> None:
+    v = _get_vector("FC08-STATIC-003")
+    assert v["handler"] == "handle_fc08_static_003"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_static_003(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_static_003, v["input"], v["expected"])
+
+
+def test_fc08_static_004() -> None:
+    v = _get_vector("FC08-STATIC-004")
+    assert v["handler"] == "handle_fc08_static_004"
+    inp = copy.deepcopy(v["input"])
+    exp = copy.deepcopy(v["expected"])
+    handle_fc08_static_004(inp, exp)
+    assert inp == v["input"]
+    _run_handler_twice(handle_fc08_static_004, v["input"], v["expected"])
 
 
 # ---------------------------------------------------------------------------
@@ -1624,14 +2430,16 @@ class TestFC08FixedInvariants:
         assert len(ids) == 56
         assert len(set(ids)) == 56
 
-    def test_56_unique_explicit_handlers(self) -> None:
+    def test_56_unique_handler_names_and_explicit_tests(self) -> None:
         vectors = _load_vectors()
         handlers = [v["handler"] for v in vectors]
         assert len(handlers) == 56
         assert len(set(handlers)) == 56
+        source = Path(__file__).read_text(encoding="utf-8")
         for v in vectors:
-            assert v["vector_id"] in HANDLER_MAP, f"Vector {v['vector_id']} not in HANDLER_MAP"
-            assert HANDLER_MAP[v["vector_id"]].__name__ == v["handler"]
+            assert f"def {v['handler']}" in source, f"Handler {v['handler']} not found in source"
+            test_name = f"test_{v['vector_id'].lower().replace('-', '_')}"
+            assert f"def {test_name}" in source, f"Explicit test {test_name} not found in source"
 
     def test_36_canonical_references(self) -> None:
         refs = _load_refs()
@@ -1648,25 +2456,84 @@ class TestFC08FixedInvariants:
         for ref in refs:
             assert ref["reference_id"] in used_refs, f"{ref['reference_id']} not used by any vector"
 
-    def test_no_generic_dispatcher(self) -> None:
-        import inspect
-        for handler in HANDLER_MAP.values():
-            source = inspect.getsource(handler)
-            assert "getattr" not in source or "model_fields" in source
-            assert "dispatch" not in source.lower()
+    def test_no_generic_dispatcher_in_source(self) -> None:
+        source_path = Path(__file__)
+        content = source_path.read_text(encoding="utf-8")
+        import re
+        assert not re.search(r"^HANDLER_MAP\s*=", content, re.MULTILINE), "Module-level HANDLER_MAP must not exist"
+        assert not re.search(r"^def test_vector_handler\b", content, re.MULTILINE), "Generic parametrized test_vector_handler must not exist"
+        assert not re.search(r"^@pytest\.mark\.parametrize", content, re.MULTILINE), "No parametrize decorators allowed for vector execution"
 
     def test_deterministic_complete_run(self) -> None:
         vectors = _load_vectors()
+        handler_map = {
+            "FC08-CATALOG-001": handle_fc08_catalog_001,
+            "FC08-CATALOG-002": handle_fc08_catalog_002,
+            "FC08-CATALOG-003": handle_fc08_catalog_003,
+            "FC08-CATALOG-004": handle_fc08_catalog_004,
+            "FC08-CATALOG-005": handle_fc08_catalog_005,
+            "FC08-CATALOG-006": handle_fc08_catalog_006,
+            "FC08-CATALOG-007": handle_fc08_catalog_007,
+            "FC08-CATALOG-008": handle_fc08_catalog_008,
+            "FC08-EVIDENCE-001": handle_fc08_evidence_001,
+            "FC08-EVIDENCE-002": handle_fc08_evidence_002,
+            "FC08-EVIDENCE-003": handle_fc08_evidence_003,
+            "FC08-EVIDENCE-004": handle_fc08_evidence_004,
+            "FC08-EVIDENCE-005": handle_fc08_evidence_005,
+            "FC08-EVIDENCE-006": handle_fc08_evidence_006,
+            "FC08-EVIDENCE-007": handle_fc08_evidence_007,
+            "FC08-EVIDENCE-008": handle_fc08_evidence_008,
+            "FC08-BUILDER-001": handle_fc08_builder_001,
+            "FC08-BUILDER-002": handle_fc08_builder_002,
+            "FC08-BUILDER-003": handle_fc08_builder_003,
+            "FC08-BUILDER-004": handle_fc08_builder_004,
+            "FC08-BUILDER-005": handle_fc08_builder_005,
+            "FC08-BUILDER-006": handle_fc08_builder_006,
+            "FC08-BUILDER-007": handle_fc08_builder_007,
+            "FC08-BUILDER-008": handle_fc08_builder_008,
+            "FC08-VALUE-001": handle_fc08_value_001,
+            "FC08-VALUE-002": handle_fc08_value_002,
+            "FC08-VALUE-003": handle_fc08_value_003,
+            "FC08-VALUE-004": handle_fc08_value_004,
+            "FC08-VALUE-005": handle_fc08_value_005,
+            "FC08-VALUE-006": handle_fc08_value_006,
+            "FC08-VALUE-007": handle_fc08_value_007,
+            "FC08-VALUE-008": handle_fc08_value_008,
+            "FC08-BEACON-001": handle_fc08_beacon_001,
+            "FC08-BEACON-002": handle_fc08_beacon_002,
+            "FC08-BEACON-003": handle_fc08_beacon_003,
+            "FC08-BEACON-004": handle_fc08_beacon_004,
+            "FC08-BEACON-005": handle_fc08_beacon_005,
+            "FC08-BEACON-006": handle_fc08_beacon_006,
+            "FC08-BEACON-007": handle_fc08_beacon_007,
+            "FC08-BEACON-008": handle_fc08_beacon_008,
+            "FC08-SAFE-READ-001": handle_fc08_safe_read_001,
+            "FC08-SAFE-READ-002": handle_fc08_safe_read_002,
+            "FC08-SAFE-READ-003": handle_fc08_safe_read_003,
+            "FC08-SAFE-READ-004": handle_fc08_safe_read_004,
+            "FC08-SAFE-READ-005": handle_fc08_safe_read_005,
+            "FC08-SAFE-READ-006": handle_fc08_safe_read_006,
+            "FC08-SAFE-READ-007": handle_fc08_safe_read_007,
+            "FC08-SAFE-READ-008": handle_fc08_safe_read_008,
+            "FC08-SAFE-READ-009": handle_fc08_safe_read_009,
+            "FC08-SAFE-READ-010": handle_fc08_safe_read_010,
+            "FC08-SAFE-READ-011": handle_fc08_safe_read_011,
+            "FC08-SAFE-READ-012": handle_fc08_safe_read_012,
+            "FC08-STATIC-001": handle_fc08_static_001,
+            "FC08-STATIC-002": handle_fc08_static_002,
+            "FC08-STATIC-003": handle_fc08_static_003,
+            "FC08-STATIC-004": handle_fc08_static_004,
+        }
         results1 = []
         for v in vectors:
-            handler = HANDLER_MAP[v["vector_id"]]
+            handler = handler_map[v["vector_id"]]
             input_copy = copy.deepcopy(v["input"])
             expected_copy = copy.deepcopy(v["expected"])
             handler(input_copy, expected_copy)
             results1.append(v["vector_id"])
         results2 = []
         for v in vectors:
-            handler = HANDLER_MAP[v["vector_id"]]
+            handler = handler_map[v["vector_id"]]
             input_copy = copy.deepcopy(v["input"])
             expected_copy = copy.deepcopy(v["expected"])
             handler(input_copy, expected_copy)
@@ -1675,9 +2542,67 @@ class TestFC08FixedInvariants:
 
     def test_input_immutability(self) -> None:
         vectors = _load_vectors()
+        handler_map = {
+            "FC08-CATALOG-001": handle_fc08_catalog_001,
+            "FC08-CATALOG-002": handle_fc08_catalog_002,
+            "FC08-CATALOG-003": handle_fc08_catalog_003,
+            "FC08-CATALOG-004": handle_fc08_catalog_004,
+            "FC08-CATALOG-005": handle_fc08_catalog_005,
+            "FC08-CATALOG-006": handle_fc08_catalog_006,
+            "FC08-CATALOG-007": handle_fc08_catalog_007,
+            "FC08-CATALOG-008": handle_fc08_catalog_008,
+            "FC08-EVIDENCE-001": handle_fc08_evidence_001,
+            "FC08-EVIDENCE-002": handle_fc08_evidence_002,
+            "FC08-EVIDENCE-003": handle_fc08_evidence_003,
+            "FC08-EVIDENCE-004": handle_fc08_evidence_004,
+            "FC08-EVIDENCE-005": handle_fc08_evidence_005,
+            "FC08-EVIDENCE-006": handle_fc08_evidence_006,
+            "FC08-EVIDENCE-007": handle_fc08_evidence_007,
+            "FC08-EVIDENCE-008": handle_fc08_evidence_008,
+            "FC08-BUILDER-001": handle_fc08_builder_001,
+            "FC08-BUILDER-002": handle_fc08_builder_002,
+            "FC08-BUILDER-003": handle_fc08_builder_003,
+            "FC08-BUILDER-004": handle_fc08_builder_004,
+            "FC08-BUILDER-005": handle_fc08_builder_005,
+            "FC08-BUILDER-006": handle_fc08_builder_006,
+            "FC08-BUILDER-007": handle_fc08_builder_007,
+            "FC08-BUILDER-008": handle_fc08_builder_008,
+            "FC08-VALUE-001": handle_fc08_value_001,
+            "FC08-VALUE-002": handle_fc08_value_002,
+            "FC08-VALUE-003": handle_fc08_value_003,
+            "FC08-VALUE-004": handle_fc08_value_004,
+            "FC08-VALUE-005": handle_fc08_value_005,
+            "FC08-VALUE-006": handle_fc08_value_006,
+            "FC08-VALUE-007": handle_fc08_value_007,
+            "FC08-VALUE-008": handle_fc08_value_008,
+            "FC08-BEACON-001": handle_fc08_beacon_001,
+            "FC08-BEACON-002": handle_fc08_beacon_002,
+            "FC08-BEACON-003": handle_fc08_beacon_003,
+            "FC08-BEACON-004": handle_fc08_beacon_004,
+            "FC08-BEACON-005": handle_fc08_beacon_005,
+            "FC08-BEACON-006": handle_fc08_beacon_006,
+            "FC08-BEACON-007": handle_fc08_beacon_007,
+            "FC08-BEACON-008": handle_fc08_beacon_008,
+            "FC08-SAFE-READ-001": handle_fc08_safe_read_001,
+            "FC08-SAFE-READ-002": handle_fc08_safe_read_002,
+            "FC08-SAFE-READ-003": handle_fc08_safe_read_003,
+            "FC08-SAFE-READ-004": handle_fc08_safe_read_004,
+            "FC08-SAFE-READ-005": handle_fc08_safe_read_005,
+            "FC08-SAFE-READ-006": handle_fc08_safe_read_006,
+            "FC08-SAFE-READ-007": handle_fc08_safe_read_007,
+            "FC08-SAFE-READ-008": handle_fc08_safe_read_008,
+            "FC08-SAFE-READ-009": handle_fc08_safe_read_009,
+            "FC08-SAFE-READ-010": handle_fc08_safe_read_010,
+            "FC08-SAFE-READ-011": handle_fc08_safe_read_011,
+            "FC08-SAFE-READ-012": handle_fc08_safe_read_012,
+            "FC08-STATIC-001": handle_fc08_static_001,
+            "FC08-STATIC-002": handle_fc08_static_002,
+            "FC08-STATIC-003": handle_fc08_static_003,
+            "FC08-STATIC-004": handle_fc08_static_004,
+        }
         for v in vectors:
             input_copy = copy.deepcopy(v["input"])
-            handler = HANDLER_MAP[v["vector_id"]]
+            handler = handler_map[v["vector_id"]]
             expected_copy = copy.deepcopy(v["expected"])
             handler(input_copy, expected_copy)
             assert input_copy == v["input"], f"Input mutated for {v['vector_id']}"
@@ -1685,7 +2610,6 @@ class TestFC08FixedInvariants:
     def test_exact_total_category_handler_contract(self) -> None:
         vectors = _load_vectors()
         assert len(vectors) == 56
-        assert len(HANDLER_MAP) == 56
         categories = {}
         for v in vectors:
             cat = v["category"]
@@ -1694,6 +2618,3 @@ class TestFC08FixedInvariants:
             "CATALOG": 8, "EVIDENCE": 8, "BUILDER": 8,
             "VALUE": 8, "BEACON": 8, "SAFE_READ": 12, "STATIC": 4,
         }
-        for v in vectors:
-            assert v["vector_id"] in HANDLER_MAP
-            assert HANDLER_MAP[v["vector_id"]].__name__ == v["handler"]

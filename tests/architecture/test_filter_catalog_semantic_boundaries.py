@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -35,6 +38,13 @@ FORBIDDEN_IMPORTS = [
     "fastapi", "sqlalchemy", "alembic", "httpx", "respx",
     "opentelemetry", "aiogram", "telethon", "psycopg", "psycopg2",
 ]
+FC08_BASE_SHA = "e6c716c759e4c04c9ef7cebf6a8fac48fbd7b001"
+EXPECTED_FC08_PATHS = sorted([
+    "tests/architecture/test_filter_catalog_semantic_boundaries.py",
+    "tests/contract/test_filter_catalog_semantic_contract_exports.py",
+    "tests/fixtures/filter_catalog_semantic_vectors.json",
+    "tests/unit/test_filter_catalog_semantic_contracts.py",
+])
 
 
 def _load_fixture() -> dict:
@@ -42,9 +52,31 @@ def _load_fixture() -> dict:
 
 
 class TestFC08ArchitectureBoundaries:
-    def test_four_fc08_files_exist_and_production_not_patched(self) -> None:
+    def test_four_fc08_files_exist_and_cumulative_patch_boundary(self) -> None:
         for path in [FIXTURE_PATH, ARCH_TEST_PATH, CONTRACT_TEST_PATH, UNIT_TEST_PATH]:
             assert path.exists(), f"FC-08 file missing: {path}"
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{FC08_BASE_SHA}...HEAD"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+        committed_paths = sorted(result.stdout.strip().split("\n")) if result.stdout.strip() else []
+        result2 = subprocess.run(
+            ["git", "diff", "--name-only", "--cached"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+        result3 = subprocess.run(
+            ["git", "diff", "--name-only"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+        working_paths = result2.stdout.strip().split("\n") if result2.stdout.strip() else []
+        working_paths += result3.stdout.strip().split("\n") if result3.stdout.strip() else []
+        all_paths = sorted(set(committed_paths + [p for p in working_paths if p]))
+        assert all_paths == EXPECTED_FC08_PATHS, (
+            f"FC-08 path set mismatch: expected {EXPECTED_FC08_PATHS}, got {all_paths}"
+        )
+        for p in committed_paths:
+            assert not p.startswith("src/"), f"Production file in FC-08 diff: {p}"
+            assert not p.startswith("docs/"), f"Doc file in FC-08 diff: {p}"
 
     def test_fixture_top_level_schema_and_key_order(self) -> None:
         data = _load_fixture()
@@ -53,6 +85,9 @@ class TestFC08ArchitectureBoundaries:
         assert data["schema_version"] == "1.0"
         assert data["module_id"] == "13-filter-catalog-and-builder"
         assert data["technical_id"] == "FC-08-PARALLEL-MAIN-REISSUE-20260722-028"
+        data2 = _load_fixture()
+        assert data == data2
+        assert json.dumps(data, sort_keys=True) == json.dumps(data2, sort_keys=True)
 
     def test_category_counts_and_vector_order(self) -> None:
         data = _load_fixture()
@@ -78,12 +113,21 @@ class TestFC08ArchitectureBoundaries:
             + ["VALUE"] * 8 + ["BEACON"] * 8 + ["SAFE_READ"] * 12 + ["STATIC"] * 4
         )
 
-    def test_synthetic_only_corpus(self) -> None:
+    def test_synthetic_only_corpus_strict(self) -> None:
         data = _load_fixture()
-        vectors_raw = json.dumps(data["vectors"]).lower()
-        assert "http://" not in vectors_raw, "HTTP URLs found in vectors"
-        assert "https://" not in vectors_raw, "HTTPS URLs found in vectors"
-        assert "api.telegram.org" not in vectors_raw, "Telegram API found in vectors"
+        corpus = json.dumps(data)
+        corpus_lower = corpus.lower()
+        assert "http://" not in corpus_lower, "HTTP URLs found in vectors"
+        assert "https://" not in corpus_lower, "HTTPS URLs found in vectors"
+        assert "api.telegram.org" not in corpus_lower, "Telegram API found in vectors"
+        assert re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", corpus) is None, "IP addresses found"
+        assert re.search(r"\b\d{10,}\b", corpus) is None, "Phone numbers found"
+        assert "email" not in corpus_lower or "email" not in json.dumps(data["vectors"]), "Email found"
+        for ref in data["canonical_references"]:
+            assert ref["safe_label"].startswith("Synthetic"), f"Non-synthetic safe_label: {ref['safe_label']}"
+        for vec in data["vectors"]:
+            for rid in vec.get("canonical_reference_ids", []):
+                assert rid.startswith("FC08-"), f"Non-FC08 reference: {rid}"
 
     def test_forbidden_imports_absent(self) -> None:
         for prod_file in PRODUCTION_FILES:
@@ -94,8 +138,6 @@ class TestFC08ArchitectureBoundaries:
                 assert f"import {mod}" not in content, f"Forbidden import {mod} in {prod_file.name}"
 
     def test_protected_production_blobs_match(self) -> None:
-        import hashlib
-        import subprocess
         for filename, expected_blob in EXPECTED_BLOBS.items():
             result = subprocess.run(
                 ["git", "rev-parse", f"HEAD:src/mayak/modules/filter_catalog/{filename}"],
@@ -110,7 +152,6 @@ class TestFC08ArchitectureBoundaries:
         decisions_path = REPO_ROOT / "docs" / "00-governance" / "OPEN_DECISIONS.md"
         content = decisions_path.read_text(encoding="utf-8")
         assert "OD-009" in content
-        import re
         lines = content.split("\n")
         od009_active = False
         for line in lines:
@@ -119,9 +160,22 @@ class TestFC08ArchitectureBoundaries:
                 break
         assert od009_active, "OD-009 must remain OPEN"
 
-    def test_deterministic_reload_fixture_gives_identical_object(self) -> None:
-        import copy
-        data1 = _load_fixture()
-        data2 = _load_fixture()
-        assert data1 == data2
-        assert json.dumps(data1, sort_keys=True) == json.dumps(data2, sort_keys=True)
+    def test_no_generic_dispatcher_and_public_only_guard(self) -> None:
+        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
+        assert not re.search(r"^HANDLER_MAP\s*=", source, re.MULTILINE), "Module-level HANDLER_MAP must not exist"
+        assert not re.search(r"^def test_vector_handler\b", source, re.MULTILINE), "Generic test_vector_handler must not exist"
+        assert not re.search(r"^@pytest\.mark\.parametrize", source, re.MULTILINE), "No parametrize decorators allowed"
+        assert "_derive_freshness" not in source, "_derive_freshness must not be imported"
+        lines = source.split("\n")
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("#") or stripped.startswith('"'):
+                continue
+            assert "pytest.raises(Exception" not in stripped, f"pytest.raises(Exception) found: {stripped}"
+            assert "pytest.raises(BaseException" not in stripped, f"pytest.raises(BaseException) found: {stripped}"
+        tree = ast.parse(source)
+        func_defs = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+        for v in _load_fixture()["vectors"]:
+            test_name = f"test_{v['vector_id'].lower().replace('-', '_')}"
+            assert test_name in func_defs, f"Explicit test {test_name} not found"
+            assert f"def {v['handler']}" in source, f"Handler {v['handler']} not in source"
