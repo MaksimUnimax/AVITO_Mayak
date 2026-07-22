@@ -119,12 +119,21 @@ def _find_open_decision_status(content: str, decision_id: str) -> dict:
 
 EXPECTED_TOP_LEVEL_KEYS = ("schema_version", "module_id", "technical_id", "canonical_references", "vectors")
 EXPECTED_REF_IDS = tuple(f"FC08-REF-{index:03d}" for index in range(1, 37))
+EXPECTED_VECTOR_IDS = (
+    tuple(f"FC08-CATALOG-{index:03d}" for index in range(1, 9))
+    + tuple(f"FC08-EVIDENCE-{index:03d}" for index in range(1, 9))
+    + tuple(f"FC08-BUILDER-{index:03d}" for index in range(1, 9))
+    + tuple(f"FC08-VALUE-{index:03d}" for index in range(1, 9))
+    + tuple(f"FC08-BEACON-{index:03d}" for index in range(1, 9))
+    + tuple(f"FC08-SAFE-READ-{index:03d}" for index in range(1, 13))
+    + tuple(f"FC08-STATIC-{index:03d}" for index in range(1, 5))
+)
 EXPECTED_CATEGORY_COUNTS = {"CATALOG": 8, "EVIDENCE": 8, "BUILDER": 8, "VALUE": 8, "BEACON": 8, "SAFE_READ": 12, "STATIC": 4}
 _CATEGORY_PREFIXES = {"CATALOG": "catalog", "EVIDENCE": "evidence", "BUILDER": "builder", "VALUE": "value", "BEACON": "beacon", "SAFE_READ": "safe_read", "STATIC": "static"}
 
 
-def _evaluate_fc08_synthetic_fixture() -> dict:
-    data = _load_fixture()
+def _evaluate_fc08_synthetic_fixture(data: dict | None = None) -> dict:
+    data = _load_fixture() if data is None else data
     violations: list[str] = []
     if tuple(data) != EXPECTED_TOP_LEVEL_KEYS:
         violations.append("top_level_keys")
@@ -139,7 +148,9 @@ def _evaluate_fc08_synthetic_fixture() -> dict:
             violations.append("non_synthetic_safe_label")
     vectors = data.get("vectors", [])
     vector_ids = tuple(v.get("vector_id") for v in vectors)
-    if len(vector_ids) != 56 or len(set(vector_ids)) != 56:
+    if vector_ids != EXPECTED_VECTOR_IDS:
+        violations.append("vector_order")
+    if len(vector_ids) != len(set(vector_ids)):
         violations.append("vector_registry")
     category_counts: dict[str, int] = {}
     used_refs: set[str] = set()
@@ -158,16 +169,28 @@ def _evaluate_fc08_synthetic_fixture() -> dict:
     if used_refs != set(ref_ids):
         violations.append("unused_reference")
     url = re.compile(r"https?://", re.I)
+    email = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+    coordinates = re.compile(r"(-?\d+\.\d+)\s*[,;]\s*(-?\d+\.\d+)")
     hostname = re.compile(r"^[\w.-]+\.[A-Za-z]{2,}$", re.I)
     ip = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$|^(?=.*:)[0-9A-Fa-f:]{2,}$")
     phone = re.compile(r"^(?=(?:\D*\d){10,}\D*$)[\d\s()+./-]+$")
     sensitive = re.compile(r"(?:token|secret|cookie|password|session|credential)", re.I)
+    raw_payload_keys = {
+        "raw_provider_payload", "provider_payload", "raw_payload",
+        "provider_response_body", "provider_request_body",
+    }
+    def normalized_key(value: object) -> str:
+        return re.sub(r"[^a-z0-9]+", "_", str(value).casefold()).strip("_")
+    def nonempty(value: object) -> bool:
+        return value is not None and value is not False and value != "" and value != () and value != [] and value != {}
     def inspect(value: object, key: str = "") -> None:
         if isinstance(value, dict):
             for child_key, child_value in value.items():
+                if normalized_key(child_key) in raw_payload_keys and nonempty(child_value):
+                    violations.append(f"raw_payload:{child_key}")
                 inspect(child_key, "key")
                 inspect(child_value, str(child_key))
-        elif isinstance(value, list):
+        elif isinstance(value, (list, tuple)):
             for child in value:
                 inspect(child, key)
         elif isinstance(value, str):
@@ -175,12 +198,24 @@ def _evaluate_fc08_synthetic_fixture() -> dict:
             hostname_allowed = value.endswith((".py", ".md", ".json", ".toml", ".lock", ".txt")) or "/" in value
             domain_match = (bool(url.search(value)) or (bool(hostname.fullmatch(value)) and not hostname_allowed))
             iso_timestamp = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value))
-            if domain_match or ip.fullmatch(value) or (phone.fullmatch(value) and not iso_timestamp) or (sensitive.search(key) and value.casefold() not in {"false", "none", ""}):
+            coordinate_match = coordinates.search(value)
+            coordinate_pair = bool(coordinate_match and -90 <= float(coordinate_match.group(1)) <= 90 and -180 <= float(coordinate_match.group(2)) <= 180)
+            raw_payload = normalized_key(key) in raw_payload_keys and nonempty(value)
+            credential = sensitive.search(key) and nonempty(value) and lower not in {"false", "none"}
+            if email.search(value):
+                violations.append(f"email:{key}")
+            if coordinate_pair:
+                violations.append(f"coordinates:{key}")
+            if domain_match or ip.fullmatch(value) or (phone.fullmatch(value) and not iso_timestamp) or credential or raw_payload:
                 violations.append(f"unsafe:{key}")
+            if raw_payload:
+                violations.append(f"raw_payload:{key}")
             if key not in {"contains_secret_or_personal_data", "contains_raw_provider_payload"} and lower in {"true", "yes", "token", "password", "cookie", "credential", "raw_provider_payload"}:
                 violations.append(f"truthy:{key}")
         elif isinstance(value, bool) and value and key in {"contains_secret_or_personal_data", "contains_raw_provider_payload"}:
             violations.append(f"truthy:{key}")
+        elif normalized_key(key) in raw_payload_keys and nonempty(value):
+            violations.append(f"raw_payload:{key}")
     inspect(data)
     return {"valid": not violations, "violations": tuple(sorted(set(violations))), "reference_ids": ref_ids, "vector_ids": vector_ids, "category_counts": category_counts}
 
@@ -2282,9 +2317,10 @@ def handle_fc08_static_003(vector_input: dict, vector_expected: dict) -> dict:
             ["git", "rev-parse", f"HEAD:src/mayak/modules/filter_catalog/{filename}"],
             capture_output=True, text=True, cwd=str(REPO_ROOT), check=False,
         )
-        actual_blobs[filename] = result.stdout.strip() if result.returncode == 0 else ""
-        if result.returncode != 0 or actual_blobs[filename] != expected_blobs[filename]:
-            mismatches.append((filename, expected_blobs[filename], actual_blobs[filename], result.returncode))
+        assert result.returncode == 0, result.stderr
+        actual_blobs[filename] = result.stdout.strip()
+        if actual_blobs[filename] != expected_blobs[filename]:
+            mismatches.append((filename, expected_blobs[filename], actual_blobs[filename]))
     mismatches = tuple(mismatches)
     all_blobs_match = not mismatches
     return {
@@ -2953,10 +2989,50 @@ def test_fc08_value_008() -> None:
 
 class TestFC08FixedInvariants:
     def test_56_unique_vector_ids(self) -> None:
-        vectors = _load_vectors()
-        ids = [v["vector_id"] for v in vectors]
+        fixture = _load_fixture()
+        vectors = fixture["vectors"]
+        ids = tuple(v["vector_id"] for v in vectors)
         assert len(ids) == 56
         assert len(set(ids)) == 56
+        current = _evaluate_fc08_synthetic_fixture(fixture)
+        assert current["valid"] is True
+        assert current["violations"] == ()
+
+        swapped = copy.deepcopy(fixture)
+        swapped["vectors"][0], swapped["vectors"][1] = swapped["vectors"][1], swapped["vectors"][0]
+        swapped_result = _evaluate_fc08_synthetic_fixture(swapped)
+        assert swapped_result["valid"] is False
+        assert "vector_order" in swapped_result["violations"]
+
+        wrong_id = copy.deepcopy(fixture)
+        wrong_id["vectors"][0]["vector_id"] = "FC08-CATALOG-999"
+        wrong_id_result = _evaluate_fc08_synthetic_fixture(wrong_id)
+        assert wrong_id_result["valid"] is False
+        assert "vector_order" in wrong_id_result["violations"]
+
+        email_mutation = copy.deepcopy(fixture)
+        email_mutation["vectors"][0]["input"]["synthetic_note"] = "contact@example.test"
+        email_result = _evaluate_fc08_synthetic_fixture(email_mutation)
+        assert email_result["valid"] is False
+        assert any(v.startswith("email:") for v in email_result["violations"])
+
+        coordinate_mutation = copy.deepcopy(fixture)
+        coordinate_mutation["vectors"][0]["input"]["synthetic_note"] = "55.75, 37.62"
+        coordinate_result = _evaluate_fc08_synthetic_fixture(coordinate_mutation)
+        assert coordinate_result["valid"] is False
+        assert any(v.startswith("coordinates:") for v in coordinate_result["violations"])
+
+        tuple_mutation = copy.deepcopy(fixture)
+        tuple_mutation["vectors"][0]["input"]["synthetic_tuple"] = ("safe", "https://example.test")
+        tuple_result = _evaluate_fc08_synthetic_fixture(tuple_mutation)
+        assert tuple_result["valid"] is False
+        assert any(v.startswith("unsafe:") for v in tuple_result["violations"])
+
+        raw_payload_mutation = copy.deepcopy(fixture)
+        raw_payload_mutation["vectors"][0]["input"]["raw_provider_payload"] = {"body": "synthetic"}
+        raw_payload_result = _evaluate_fc08_synthetic_fixture(raw_payload_mutation)
+        assert raw_payload_result["valid"] is False
+        assert any(v.startswith("raw_payload:") for v in raw_payload_result["violations"])
 
     def test_56_unique_handler_names_and_explicit_tests(self) -> None:
         vectors = _load_vectors()

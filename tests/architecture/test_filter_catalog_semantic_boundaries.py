@@ -180,17 +180,23 @@ class TestFC08ArchitectureBoundaries:
             assert test_name in func_defs, f"Explicit test {test_name} not found"
             assert f"def {v['handler']}" in source, f"Handler {v['handler']} not in source"
             test_func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == test_name)
-            calls = [n for n in ast.walk(test_func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_run_handler_twice"]
-            assert len(calls) == 1, f"{test_name} must call _run_handler_twice exactly once"
-            call = calls[0]
-            assert call.args and isinstance(call.args[0], ast.Name) and call.args[0].id == v["handler"]
-            assignments = [n for n in ast.walk(test_func) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and n.value is call]
+            helper_calls = [n for n in ast.walk(test_func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_run_handler_twice"]
+            assert len(helper_calls) == 1, f"{test_name} must call _run_handler_twice exactly once"
+            helper_call = helper_calls[0]
+            assert helper_call.args and isinstance(helper_call.args[0], ast.Name) and helper_call.args[0].id == v["handler"]
+            assignments = [n for n in ast.walk(test_func) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and n.value is helper_call]
             assert len(assignments) == 1 and len(assignments[0].targets) == 1
             assert isinstance(assignments[0].targets[0], ast.Name) and assignments[0].targets[0].id == "actual"
             direct_calls = [n for n in ast.walk(test_func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == v["handler"]]
             assert not direct_calls, f"{test_name} must not call {v['handler']} directly"
-            literals = [n.value for n in ast.walk(test_func) if isinstance(n, ast.Constant)]
-            assert v["vector_id"] in literals, f"{test_name} must contain exact literal vector ID"
+            vector_calls = [n for n in ast.walk(test_func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_get_vector"]
+            assert len(vector_calls) == 1, f"{test_name} must call _get_vector exactly once"
+            vector_call = vector_calls[0]
+            assert len(vector_call.args) == 1 and not vector_call.keywords
+            assert isinstance(vector_call.args[0], ast.Constant) and vector_call.args[0].value == v["vector_id"]
+            vector_assignments = [n for n in ast.walk(test_func) if isinstance(n, ast.Assign) and n.value is vector_call]
+            assert len(vector_assignments) == 1 and len(vector_assignments[0].targets) == 1
+            assert isinstance(vector_assignments[0].targets[0], ast.Name) and vector_assignments[0].targets[0].id == "vector"
             def actual_content(node: ast.AST) -> bool:
                 if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == "actual":
                     return True
@@ -212,13 +218,48 @@ class TestFC08ArchitectureBoundaries:
                             f"{node.name} return value must not reference vector_expected"
                         )
         helper = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_run_handler_twice")
-        result_assignments = [n for n in ast.walk(helper) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name) and n.value.func.id == "handler"]
-        assert len(result_assignments) == 2
-        assert {n.targets[0].id for n in result_assignments if isinstance(n.targets[0], ast.Name)} == {"result1", "result2"}
-        names = {n.id for n in ast.walk(helper) if isinstance(n, ast.Name)}
-        assert {"norm1", "norm2", "original_input", "original_expected", "input1", "input2", "expected1", "expected2"}.issubset(names)
-        assert any(isinstance(n, ast.Assert) and isinstance(n.test, ast.Compare) and any(isinstance(x, ast.Name) and x.id == "norm1" for x in ast.walk(n.test)) and any(isinstance(x, ast.Name) and x.id == "norm2" for x in ast.walk(n.test)) for n in ast.walk(helper))
-        assert any(isinstance(n, ast.Return) and isinstance(n.value, ast.Name) and n.value.id == "norm1" for n in ast.walk(helper))
+        def assigned_call(name: str, call_name: str) -> list[ast.Assign]:
+            return [
+                n for n in ast.walk(helper)
+                if isinstance(n, ast.Assign)
+                and len(n.targets) == 1
+                and isinstance(n.targets[0], ast.Name)
+                and n.targets[0].id == name
+                and isinstance(n.value, ast.Call)
+                and isinstance(n.value.func, ast.Name)
+                and n.value.func.id == call_name
+            ]
+        result_assignments = assigned_call("result1", "handler") + assigned_call("result2", "handler")
+        assert len(result_assignments) == 2, "TWO_RUN_HANDLER_RESULT_ASSIGNMENT_COUNT must be 2"
+        assert {n.targets[0].id for n in result_assignments} == {"result1", "result2"}
+        for name, input_name, expected_name in (("result1", "input1", "expected1"), ("result2", "input2", "expected2")):
+            assignment = assigned_call(name, "handler")
+            assert len(assignment) == 1
+            call = assignment[0].value
+            assert len(call.args) == 2 and not call.keywords
+            assert all(isinstance(arg, ast.Name) for arg in call.args)
+            assert [arg.id for arg in call.args] == [input_name, expected_name]
+        normalize_assignments = assigned_call("norm1", "_normalize_result") + assigned_call("norm2", "_normalize_result")
+        assert len(normalize_assignments) == 2, "EXACT_NORMALIZE_ASSIGNMENT_COUNT must be 2"
+        assert [n.targets[0].id for n in normalize_assignments] == ["norm1", "norm2"]
+        assert all(len(n.value.args) == 1 and not n.value.keywords and isinstance(n.value.args[0], ast.Name) and n.value.args[0].id == n.targets[0].id.replace("norm", "result") for n in normalize_assignments)
+        def exact_assert(left: str, right: str) -> bool:
+            return any(
+                isinstance(n, ast.Assert)
+                and isinstance(n.test, ast.Compare)
+                and len(n.test.ops) == 1
+                and isinstance(n.test.ops[0], ast.Eq)
+                and len(n.test.comparators) == 1
+                and isinstance(n.test.left, ast.Name) and n.test.left.id == left
+                and isinstance(n.test.comparators[0], ast.Name) and n.test.comparators[0].id == right
+                for n in ast.walk(helper)
+            )
+        assert exact_assert("norm1", "norm2")
+        assert sum(exact_assert(*pair) for pair in (("input1", "original_input"), ("input2", "original_input"))) == 2
+        assert sum(exact_assert(*pair) for pair in (("expected1", "original_expected"), ("expected2", "original_expected"))) == 2
+        assert sum(exact_assert("norm1", "norm2") for _ in [0]) == 1
+        returns = [n for n in ast.walk(helper) if isinstance(n, ast.Return) and isinstance(n.value, ast.Name) and n.value.id == "norm1"]
+        assert len(returns) == 1
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_safe_read_"):
                 src_handler = ast.get_source_segment(source, node)
