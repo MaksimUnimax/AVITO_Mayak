@@ -40,6 +40,7 @@ FORBIDDEN_IMPORTS = [
     "opentelemetry", "aiogram", "telethon", "psycopg", "psycopg2",
 ]
 FC08_BASE_SHA = "e6c716c759e4c04c9ef7cebf6a8fac48fbd7b001"
+FC08_TERMINAL_SHA = "7d31c0e3d2a351df934f3797e02b3bc909d6ed34"
 EXPECTED_FC08_PATHS = sorted([
     "tests/architecture/test_filter_catalog_semantic_boundaries.py",
     "tests/contract/test_filter_catalog_semantic_contract_exports.py",
@@ -56,10 +57,25 @@ class TestFC08ArchitectureBoundaries:
     def test_four_fc08_files_exist_and_cumulative_patch_boundary(self) -> None:
         for path in [FIXTURE_PATH, ARCH_TEST_PATH, CONTRACT_TEST_PATH, UNIT_TEST_PATH]:
             assert path.exists(), f"FC-08 file missing: {path}"
-        result = subprocess.run(
-            ["git", "diff", "--name-only", f"{FC08_BASE_SHA}...HEAD"],
+        base_is_ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", FC08_BASE_SHA, FC08_TERMINAL_SHA],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
         )
+        assert base_is_ancestor.returncode == 0, (
+            f"FC08_BASE_SHA ({FC08_BASE_SHA}) must be ancestor of FC08_TERMINAL_SHA ({FC08_TERMINAL_SHA})"
+        )
+        terminal_is_ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", FC08_TERMINAL_SHA, "HEAD"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+        assert terminal_is_ancestor.returncode == 0, (
+            f"FC08_TERMINAL_SHA ({FC08_TERMINAL_SHA}) must be ancestor of HEAD"
+        )
+        result = subprocess.run(
+            ["git", "diff", "--name-only", f"{FC08_BASE_SHA}...{FC08_TERMINAL_SHA}"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+        assert result.returncode == 0, f"git diff failed: {result.stderr}"
         committed_paths = sorted(result.stdout.strip().split("\n")) if result.stdout.strip() else []
         result2 = subprocess.run(
             ["git", "diff", "--name-only", "--cached"],
