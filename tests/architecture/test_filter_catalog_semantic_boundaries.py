@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.unit.test_filter_catalog_semantic_contracts import _find_generic_fc08_dispatch_evidence
 
 FIXTURE_PATH = Path("tests/fixtures/filter_catalog_semantic_vectors.json")
 ARCH_TEST_PATH = Path("tests/architecture/test_filter_catalog_semantic_boundaries.py")
@@ -166,6 +167,31 @@ class TestFC08ArchitectureBoundaries:
         assert not re.search(r"^HANDLER_MAP\s*=", source, re.MULTILINE), "Module-level HANDLER_MAP must not exist"
         assert not re.search(r"^def test_vector_handler\b", source, re.MULTILINE), "Generic test_vector_handler must not exist"
         assert not re.search(r"^@pytest\.mark\.parametrize", source, re.MULTILINE), "No parametrize decorators allowed"
+        evidence = _find_generic_fc08_dispatch_evidence(tree)
+        assert evidence == {
+            "assignments": 0,
+            "dictionary_literals": 0,
+            "dictionary_entries": 0,
+            "vector_id_lookups": 0,
+            "selected_handler_assignments": 0,
+            "selected_handler_calls": 0,
+            "module_or_local_registries": 0,
+        }
+        mutation = ast.parse(
+            """
+handler_map = {\"FC08-CATALOG-001\": handle_fc08_catalog_001}
+for v in vectors:
+    handler = handler_map[v[\"vector_id\"]]
+    handler(v[\"input\"], v[\"expected\"])
+"""
+        )
+        mutation_evidence = _find_generic_fc08_dispatch_evidence(mutation)
+        assert mutation_evidence["assignments"] == 1
+        assert mutation_evidence["dictionary_literals"] == 1
+        assert mutation_evidence["dictionary_entries"] == 1
+        assert mutation_evidence["vector_id_lookups"] == 1
+        assert mutation_evidence["selected_handler_assignments"] == 1
+        assert mutation_evidence["selected_handler_calls"] == 1
         assert "_derive_freshness" not in source, "_derive_freshness must not be imported"
         lines = source.split("\n")
         for line in lines:
@@ -229,6 +255,11 @@ class TestFC08ArchitectureBoundaries:
                 and isinstance(n.value.func, ast.Name)
                 and n.value.func.id == call_name
             ]
+        handler_calls = [
+            n for n in ast.walk(helper)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "handler"
+        ]
+        assert len(handler_calls) == 2, "ALL_RUN_HELPER_HANDLER_CALL_COUNT must be 2"
         result_assignments = assigned_call("result1", "handler") + assigned_call("result2", "handler")
         assert len(result_assignments) == 2, "TWO_RUN_HANDLER_RESULT_ASSIGNMENT_COUNT must be 2"
         assert {n.targets[0].id for n in result_assignments} == {"result1", "result2"}
@@ -239,12 +270,18 @@ class TestFC08ArchitectureBoundaries:
             assert len(call.args) == 2 and not call.keywords
             assert all(isinstance(arg, ast.Name) for arg in call.args)
             assert [arg.id for arg in call.args] == [input_name, expected_name]
+        assert len(result_assignments) == len(handler_calls), "EXTRA_RUN_HELPER_HANDLER_CALL_COUNT must be 0"
         normalize_assignments = assigned_call("norm1", "_normalize_result") + assigned_call("norm2", "_normalize_result")
+        normalize_calls = [
+            n for n in ast.walk(helper)
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_normalize_result"
+        ]
+        assert len(normalize_calls) == 2, "ALL_NORMALIZE_RESULT_CALL_COUNT must be 2"
         assert len(normalize_assignments) == 2, "EXACT_NORMALIZE_ASSIGNMENT_COUNT must be 2"
         assert [n.targets[0].id for n in normalize_assignments] == ["norm1", "norm2"]
         assert all(len(n.value.args) == 1 and not n.value.keywords and isinstance(n.value.args[0], ast.Name) and n.value.args[0].id == n.targets[0].id.replace("norm", "result") for n in normalize_assignments)
-        def exact_assert(left: str, right: str) -> bool:
-            return any(
+        def exact_assert_count(left: str, right: str) -> int:
+            return sum(
                 isinstance(n, ast.Assert)
                 and isinstance(n.test, ast.Compare)
                 and len(n.test.ops) == 1
@@ -254,12 +291,14 @@ class TestFC08ArchitectureBoundaries:
                 and isinstance(n.test.comparators[0], ast.Name) and n.test.comparators[0].id == right
                 for n in ast.walk(helper)
             )
-        assert exact_assert("norm1", "norm2")
-        assert sum(exact_assert(*pair) for pair in (("input1", "original_input"), ("input2", "original_input"))) == 2
-        assert sum(exact_assert(*pair) for pair in (("expected1", "original_expected"), ("expected2", "original_expected"))) == 2
-        assert sum(exact_assert("norm1", "norm2") for _ in [0]) == 1
+        assert exact_assert_count("norm1", "norm2") == 1
+        assert exact_assert_count("input1", "original_input") == 1
+        assert exact_assert_count("input2", "original_input") == 1
+        assert exact_assert_count("expected1", "original_expected") == 1
+        assert exact_assert_count("expected2", "original_expected") == 1
         returns = [n for n in ast.walk(helper) if isinstance(n, ast.Return) and isinstance(n.value, ast.Name) and n.value.id == "norm1"]
         assert len(returns) == 1
+        assert sum(isinstance(n, ast.Return) for n in ast.walk(helper)) == 1
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_safe_read_"):
                 src_handler = ast.get_source_segment(source, node)

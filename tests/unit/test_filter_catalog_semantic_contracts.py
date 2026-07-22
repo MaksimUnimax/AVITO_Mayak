@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import ast
 import hashlib
 import json
 import re
@@ -55,6 +56,64 @@ def _normalize_result(result):
     if isinstance(result, dict):
         return {k: _normalize_result(v) for k, v in sorted(result.items())}
     return result
+
+
+def _find_generic_fc08_dispatch_evidence(tree: ast.AST) -> dict[str, int]:
+    """Find FC-08 handler registries and vector-ID dispatch in arbitrary AST."""
+    map_names: set[str] = set()
+    map_assignments = 0
+    handler_dict_count = 0
+    handler_dict_entries = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        targets = [target.id for target in node.targets if isinstance(target, ast.Name)]
+        if any(name == "handler_map" or name == "HANDLER_MAP" or name.endswith("_handler_map") for name in targets):
+            map_assignments += 1
+            map_names.update(targets)
+        if isinstance(node.value, ast.Dict):
+            entries = [value for value in node.value.values if any(
+                isinstance(child, ast.Name) and child.id.startswith("handle_fc08_")
+                for child in ast.walk(value)
+            )]
+            if entries:
+                handler_dict_count += 1
+                handler_dict_entries += len(entries)
+    vector_lookups = []
+    selected_assignments = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Subscript) or not isinstance(node.value, ast.Name):
+            continue
+        if node.value.id not in map_names:
+            continue
+        if any(
+            (isinstance(child, ast.Name) and child.id == "vector_id")
+            or (isinstance(child, ast.Constant) and child.value == "vector_id")
+            for child in ast.walk(node.slice)
+        ):
+            vector_lookups.append(node)
+            parent_assignments = [parent for parent in ast.walk(tree) if isinstance(parent, ast.Assign) and parent.value is node]
+            selected_assignments.extend(
+                assignment for assignment in parent_assignments
+                if any(isinstance(target, ast.Name) and target.id == "handler" for target in assignment.targets)
+            )
+    selected_handler_calls = 0
+    if selected_assignments:
+        selected_handler_calls = sum(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "handler"
+            for node in ast.walk(tree)
+        )
+    return {
+        "assignments": map_assignments,
+        "dictionary_literals": handler_dict_count,
+        "dictionary_entries": handler_dict_entries,
+        "vector_id_lookups": len(vector_lookups),
+        "selected_handler_assignments": len(selected_assignments),
+        "selected_handler_calls": selected_handler_calls,
+        "module_or_local_registries": map_assignments,
+    }
 
 
 def _run_handler_twice(handler, vector_input: dict, vector_expected: dict):
@@ -3061,155 +3120,56 @@ class TestFC08FixedInvariants:
             assert ref["reference_id"] in used_refs, f"{ref['reference_id']} not used by any vector"
 
     def test_no_generic_dispatcher_in_source(self) -> None:
-        source_path = Path(__file__)
-        content = source_path.read_text(encoding="utf-8")
-        import re
-        assert not re.search(r"^HANDLER_MAP\s*=", content, re.MULTILINE), "Module-level HANDLER_MAP must not exist"
+        content = Path(__file__).read_text(encoding="utf-8")
+        tree = ast.parse(content)
+        assert _find_generic_fc08_dispatch_evidence(tree) == {
+            "assignments": 0,
+            "dictionary_literals": 0,
+            "dictionary_entries": 0,
+            "vector_id_lookups": 0,
+            "selected_handler_assignments": 0,
+            "selected_handler_calls": 0,
+            "module_or_local_registries": 0,
+        }
         assert not re.search(r"^def test_vector_handler\b", content, re.MULTILINE), "Generic parametrized test_vector_handler must not exist"
         assert not re.search(r"^@pytest\.mark\.parametrize", content, re.MULTILINE), "No parametrize decorators allowed for vector execution"
 
     def test_deterministic_complete_run(self) -> None:
-        vectors = _load_vectors()
-        handler_map = {
-            "FC08-CATALOG-001": handle_fc08_catalog_001,
-            "FC08-CATALOG-002": handle_fc08_catalog_002,
-            "FC08-CATALOG-003": handle_fc08_catalog_003,
-            "FC08-CATALOG-004": handle_fc08_catalog_004,
-            "FC08-CATALOG-005": handle_fc08_catalog_005,
-            "FC08-CATALOG-006": handle_fc08_catalog_006,
-            "FC08-CATALOG-007": handle_fc08_catalog_007,
-            "FC08-CATALOG-008": handle_fc08_catalog_008,
-            "FC08-EVIDENCE-001": handle_fc08_evidence_001,
-            "FC08-EVIDENCE-002": handle_fc08_evidence_002,
-            "FC08-EVIDENCE-003": handle_fc08_evidence_003,
-            "FC08-EVIDENCE-004": handle_fc08_evidence_004,
-            "FC08-EVIDENCE-005": handle_fc08_evidence_005,
-            "FC08-EVIDENCE-006": handle_fc08_evidence_006,
-            "FC08-EVIDENCE-007": handle_fc08_evidence_007,
-            "FC08-EVIDENCE-008": handle_fc08_evidence_008,
-            "FC08-BUILDER-001": handle_fc08_builder_001,
-            "FC08-BUILDER-002": handle_fc08_builder_002,
-            "FC08-BUILDER-003": handle_fc08_builder_003,
-            "FC08-BUILDER-004": handle_fc08_builder_004,
-            "FC08-BUILDER-005": handle_fc08_builder_005,
-            "FC08-BUILDER-006": handle_fc08_builder_006,
-            "FC08-BUILDER-007": handle_fc08_builder_007,
-            "FC08-BUILDER-008": handle_fc08_builder_008,
-            "FC08-VALUE-001": handle_fc08_value_001,
-            "FC08-VALUE-002": handle_fc08_value_002,
-            "FC08-VALUE-003": handle_fc08_value_003,
-            "FC08-VALUE-004": handle_fc08_value_004,
-            "FC08-VALUE-005": handle_fc08_value_005,
-            "FC08-VALUE-006": handle_fc08_value_006,
-            "FC08-VALUE-007": handle_fc08_value_007,
-            "FC08-VALUE-008": handle_fc08_value_008,
-            "FC08-BEACON-001": handle_fc08_beacon_001,
-            "FC08-BEACON-002": handle_fc08_beacon_002,
-            "FC08-BEACON-003": handle_fc08_beacon_003,
-            "FC08-BEACON-004": handle_fc08_beacon_004,
-            "FC08-BEACON-005": handle_fc08_beacon_005,
-            "FC08-BEACON-006": handle_fc08_beacon_006,
-            "FC08-BEACON-007": handle_fc08_beacon_007,
-            "FC08-BEACON-008": handle_fc08_beacon_008,
-            "FC08-SAFE-READ-001": handle_fc08_safe_read_001,
-            "FC08-SAFE-READ-002": handle_fc08_safe_read_002,
-            "FC08-SAFE-READ-003": handle_fc08_safe_read_003,
-            "FC08-SAFE-READ-004": handle_fc08_safe_read_004,
-            "FC08-SAFE-READ-005": handle_fc08_safe_read_005,
-            "FC08-SAFE-READ-006": handle_fc08_safe_read_006,
-            "FC08-SAFE-READ-007": handle_fc08_safe_read_007,
-            "FC08-SAFE-READ-008": handle_fc08_safe_read_008,
-            "FC08-SAFE-READ-009": handle_fc08_safe_read_009,
-            "FC08-SAFE-READ-010": handle_fc08_safe_read_010,
-            "FC08-SAFE-READ-011": handle_fc08_safe_read_011,
-            "FC08-SAFE-READ-012": handle_fc08_safe_read_012,
-            "FC08-STATIC-001": handle_fc08_static_001,
-            "FC08-STATIC-002": handle_fc08_static_002,
-            "FC08-STATIC-003": handle_fc08_static_003,
-            "FC08-STATIC-004": handle_fc08_static_004,
+        source = Path(__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        vector_ids = tuple(v["vector_id"] for v in _load_vectors())
+        explicit_tests = {
+            node.name.removeprefix("test_").upper().replace("_", "-")
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_fc08_")
         }
-        results1 = []
-        for v in vectors:
-            handler = handler_map[v["vector_id"]]
-            input_copy = copy.deepcopy(v["input"])
-            expected_copy = copy.deepcopy(v["expected"])
-            handler(input_copy, expected_copy)
-            results1.append(v["vector_id"])
-        results2 = []
-        for v in vectors:
-            handler = handler_map[v["vector_id"]]
-            input_copy = copy.deepcopy(v["input"])
-            expected_copy = copy.deepcopy(v["expected"])
-            handler(input_copy, expected_copy)
-            results2.append(v["vector_id"])
-        assert results1 == results2
+        assert explicit_tests == set(vector_ids)
+        explicit_test_nodes = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_fc08_")
+        ]
+        assert sum(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "_run_handler_twice"
+            for function in explicit_test_nodes
+            for node in ast.walk(function)
+        ) == 56
+        assert _find_generic_fc08_dispatch_evidence(tree)["assignments"] == 0
 
     def test_input_immutability(self) -> None:
-        vectors = _load_vectors()
-        handler_map = {
-            "FC08-CATALOG-001": handle_fc08_catalog_001,
-            "FC08-CATALOG-002": handle_fc08_catalog_002,
-            "FC08-CATALOG-003": handle_fc08_catalog_003,
-            "FC08-CATALOG-004": handle_fc08_catalog_004,
-            "FC08-CATALOG-005": handle_fc08_catalog_005,
-            "FC08-CATALOG-006": handle_fc08_catalog_006,
-            "FC08-CATALOG-007": handle_fc08_catalog_007,
-            "FC08-CATALOG-008": handle_fc08_catalog_008,
-            "FC08-EVIDENCE-001": handle_fc08_evidence_001,
-            "FC08-EVIDENCE-002": handle_fc08_evidence_002,
-            "FC08-EVIDENCE-003": handle_fc08_evidence_003,
-            "FC08-EVIDENCE-004": handle_fc08_evidence_004,
-            "FC08-EVIDENCE-005": handle_fc08_evidence_005,
-            "FC08-EVIDENCE-006": handle_fc08_evidence_006,
-            "FC08-EVIDENCE-007": handle_fc08_evidence_007,
-            "FC08-EVIDENCE-008": handle_fc08_evidence_008,
-            "FC08-BUILDER-001": handle_fc08_builder_001,
-            "FC08-BUILDER-002": handle_fc08_builder_002,
-            "FC08-BUILDER-003": handle_fc08_builder_003,
-            "FC08-BUILDER-004": handle_fc08_builder_004,
-            "FC08-BUILDER-005": handle_fc08_builder_005,
-            "FC08-BUILDER-006": handle_fc08_builder_006,
-            "FC08-BUILDER-007": handle_fc08_builder_007,
-            "FC08-BUILDER-008": handle_fc08_builder_008,
-            "FC08-VALUE-001": handle_fc08_value_001,
-            "FC08-VALUE-002": handle_fc08_value_002,
-            "FC08-VALUE-003": handle_fc08_value_003,
-            "FC08-VALUE-004": handle_fc08_value_004,
-            "FC08-VALUE-005": handle_fc08_value_005,
-            "FC08-VALUE-006": handle_fc08_value_006,
-            "FC08-VALUE-007": handle_fc08_value_007,
-            "FC08-VALUE-008": handle_fc08_value_008,
-            "FC08-BEACON-001": handle_fc08_beacon_001,
-            "FC08-BEACON-002": handle_fc08_beacon_002,
-            "FC08-BEACON-003": handle_fc08_beacon_003,
-            "FC08-BEACON-004": handle_fc08_beacon_004,
-            "FC08-BEACON-005": handle_fc08_beacon_005,
-            "FC08-BEACON-006": handle_fc08_beacon_006,
-            "FC08-BEACON-007": handle_fc08_beacon_007,
-            "FC08-BEACON-008": handle_fc08_beacon_008,
-            "FC08-SAFE-READ-001": handle_fc08_safe_read_001,
-            "FC08-SAFE-READ-002": handle_fc08_safe_read_002,
-            "FC08-SAFE-READ-003": handle_fc08_safe_read_003,
-            "FC08-SAFE-READ-004": handle_fc08_safe_read_004,
-            "FC08-SAFE-READ-005": handle_fc08_safe_read_005,
-            "FC08-SAFE-READ-006": handle_fc08_safe_read_006,
-            "FC08-SAFE-READ-007": handle_fc08_safe_read_007,
-            "FC08-SAFE-READ-008": handle_fc08_safe_read_008,
-            "FC08-SAFE-READ-009": handle_fc08_safe_read_009,
-            "FC08-SAFE-READ-010": handle_fc08_safe_read_010,
-            "FC08-SAFE-READ-011": handle_fc08_safe_read_011,
-            "FC08-SAFE-READ-012": handle_fc08_safe_read_012,
-            "FC08-STATIC-001": handle_fc08_static_001,
-            "FC08-STATIC-002": handle_fc08_static_002,
-            "FC08-STATIC-003": handle_fc08_static_003,
-            "FC08-STATIC-004": handle_fc08_static_004,
-        }
-        for v in vectors:
-            input_copy = copy.deepcopy(v["input"])
-            handler = handler_map[v["vector_id"]]
-            expected_copy = copy.deepcopy(v["expected"])
-            handler(input_copy, expected_copy)
-            assert input_copy == v["input"], f"Input mutated for {v['vector_id']}"
+        probe_input = {"nested": {"values": [1, 2]}, "label": "probe"}
+        probe_expected = {"nested": {"ok": True}}
+        original_input = copy.deepcopy(probe_input)
+        original_expected = copy.deepcopy(probe_expected)
+
+        def probe_handler(vector_input: dict, vector_expected: dict) -> dict:
+            return {"actual": copy.deepcopy(vector_input["nested"]), "expected": vector_expected["nested"]["ok"]}
+
+        actual = _run_handler_twice(probe_handler, probe_input, probe_expected)
+        assert probe_input == original_input
+        assert probe_expected == original_expected
+        assert actual == {"actual": {"values": [1, 2]}, "expected": True}
 
     def test_exact_total_category_handler_contract(self) -> None:
         vectors = _load_vectors()
