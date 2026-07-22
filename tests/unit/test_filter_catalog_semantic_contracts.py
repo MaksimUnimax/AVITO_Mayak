@@ -76,6 +76,115 @@ def _run_handler_twice(handler, vector_input: dict, vector_expected: dict):
     return norm1
 
 
+def _find_open_decision_status(content: str, decision_id: str) -> dict:
+    """Read one exact decision row from Markdown pipe tables only."""
+    normalized_headers = {"id", "decision", "decision_id"}
+    matching_rows: list[tuple[str, ...]] = []
+    matched_statuses: list[str] = []
+    all_lines = content.splitlines()
+    for index in range(len(all_lines) - 1):
+        header_line, separator_line = all_lines[index:index + 2]
+        if not (header_line.strip().startswith("|") and header_line.strip().endswith("|")):
+            continue
+        if not (separator_line.strip().startswith("|") and separator_line.strip().endswith("|")):
+            continue
+        headers = tuple(cell.strip() for cell in header_line.strip()[1:-1].split("|"))
+        separators = tuple(cell.strip() for cell in separator_line.strip()[1:-1].split("|"))
+        if len(headers) != len(separators) or not all(re.fullmatch(r":?-{3,}:?", cell) for cell in separators):
+            continue
+        def normalize_header(value: str) -> str:
+            return re.sub(r"[^a-z0-9]+", "_", value.casefold()).strip("_")
+        id_index = next((i for i, h in enumerate(headers) if normalize_header(h) in normalized_headers), None)
+        status_index = next((i for i, h in enumerate(headers) if "status" in normalize_header(h)), None)
+        if id_index is None or status_index is None:
+            continue
+        row_index = index + 2
+        while row_index < len(all_lines):
+            row_line = all_lines[row_index].strip()
+            if not (row_line.startswith("|") and row_line.endswith("|")):
+                break
+            row_cells = tuple(cell.strip() for cell in row_line[1:-1].split("|"))
+            if len(row_cells) == len(headers) and row_cells[id_index] == decision_id:
+                matching_rows.append(row_cells)
+                matched_statuses.append(row_cells[status_index])
+            row_index += 1
+    unique_statuses = tuple(sorted(set(matched_statuses)))
+    return {
+        "status": matched_statuses[0] if len(unique_statuses) == 1 and matched_statuses else None,
+        "row_cells": matching_rows[0] if matching_rows else (),
+        "matching_row_count": len(matching_rows),
+        "conflicting_statuses": unique_statuses if len(unique_statuses) > 1 else (),
+    }
+
+
+EXPECTED_TOP_LEVEL_KEYS = ("schema_version", "module_id", "technical_id", "canonical_references", "vectors")
+EXPECTED_REF_IDS = tuple(f"FC08-REF-{index:03d}" for index in range(1, 37))
+EXPECTED_CATEGORY_COUNTS = {"CATALOG": 8, "EVIDENCE": 8, "BUILDER": 8, "VALUE": 8, "BEACON": 8, "SAFE_READ": 12, "STATIC": 4}
+_CATEGORY_PREFIXES = {"CATALOG": "catalog", "EVIDENCE": "evidence", "BUILDER": "builder", "VALUE": "value", "BEACON": "beacon", "SAFE_READ": "safe_read", "STATIC": "static"}
+
+
+def _evaluate_fc08_synthetic_fixture() -> dict:
+    data = _load_fixture()
+    violations: list[str] = []
+    if tuple(data) != EXPECTED_TOP_LEVEL_KEYS:
+        violations.append("top_level_keys")
+    if data.get("schema_version") != "1.0" or data.get("module_id") != "13-filter-catalog-and-builder" or data.get("technical_id") != "FC-08-PARALLEL-MAIN-REISSUE-20260722-028":
+        violations.append("identity")
+    refs = data.get("canonical_references", [])
+    ref_ids = tuple(ref.get("reference_id") for ref in refs)
+    if ref_ids != EXPECTED_REF_IDS or len(set(ref_ids)) != len(ref_ids):
+        violations.append("reference_registry")
+    for ref in refs:
+        if not isinstance(ref.get("safe_label"), str) or not ref["safe_label"].startswith("Synthetic"):
+            violations.append("non_synthetic_safe_label")
+    vectors = data.get("vectors", [])
+    vector_ids = tuple(v.get("vector_id") for v in vectors)
+    if len(vector_ids) != 56 or len(set(vector_ids)) != 56:
+        violations.append("vector_registry")
+    category_counts: dict[str, int] = {}
+    used_refs: set[str] = set()
+    for vector in vectors:
+        category = vector.get("category")
+        category_counts[category] = category_counts.get(category, 0) + 1
+        used_refs.update(vector.get("canonical_reference_ids", []))
+        expected_prefix = _CATEGORY_PREFIXES.get(category)
+        suffix = vector.get("vector_id", "").rsplit("-", 1)[-1]
+        if expected_prefix is None or vector.get("handler") != f"handle_fc08_{expected_prefix}_{suffix}":
+            violations.append(f"handler:{vector.get('vector_id')}")
+        if not set(vector.get("canonical_reference_ids", [])).issubset(set(ref_ids)):
+            violations.append(f"unknown_reference:{vector.get('vector_id')}")
+    if category_counts != EXPECTED_CATEGORY_COUNTS:
+        violations.append("category_counts")
+    if used_refs != set(ref_ids):
+        violations.append("unused_reference")
+    url = re.compile(r"https?://", re.I)
+    hostname = re.compile(r"^[\w.-]+\.[A-Za-z]{2,}$", re.I)
+    ip = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$|^(?=.*:)[0-9A-Fa-f:]{2,}$")
+    phone = re.compile(r"^(?=(?:\D*\d){10,}\D*$)[\d\s()+./-]+$")
+    sensitive = re.compile(r"(?:token|secret|cookie|password|session|credential)", re.I)
+    def inspect(value: object, key: str = "") -> None:
+        if isinstance(value, dict):
+            for child_key, child_value in value.items():
+                inspect(child_key, "key")
+                inspect(child_value, str(child_key))
+        elif isinstance(value, list):
+            for child in value:
+                inspect(child, key)
+        elif isinstance(value, str):
+            lower = value.casefold()
+            hostname_allowed = value.endswith((".py", ".md", ".json", ".toml", ".lock", ".txt")) or "/" in value
+            domain_match = (bool(url.search(value)) or (bool(hostname.fullmatch(value)) and not hostname_allowed))
+            iso_timestamp = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value))
+            if domain_match or ip.fullmatch(value) or (phone.fullmatch(value) and not iso_timestamp) or (sensitive.search(key) and value.casefold() not in {"false", "none", ""}):
+                violations.append(f"unsafe:{key}")
+            if key not in {"contains_secret_or_personal_data", "contains_raw_provider_payload"} and lower in {"true", "yes", "token", "password", "cookie", "credential", "raw_provider_payload"}:
+                violations.append(f"truthy:{key}")
+        elif isinstance(value, bool) and value and key in {"contains_secret_or_personal_data", "contains_raw_provider_payload"}:
+            violations.append(f"truthy:{key}")
+    inspect(data)
+    return {"valid": not violations, "violations": tuple(sorted(set(violations))), "reference_ids": ref_ids, "vector_ids": vector_ids, "category_counts": category_counts}
+
+
 # ---------------------------------------------------------------------------
 # 56 Explicit Handler Functions
 # ---------------------------------------------------------------------------
@@ -2163,49 +2272,45 @@ def handle_fc08_static_002(vector_input: dict, vector_expected: dict) -> None:
     return {
         "forbidden_imports_absent": result.stdout.strip() == "",
     }
-def handle_fc08_static_003(vector_input: dict, vector_expected: dict) -> None:
+def handle_fc08_static_003(vector_input: dict, vector_expected: dict) -> dict:
     import subprocess
-    for filename, expected_blob in vector_input["expected_blobs"].items():
+    expected_blobs = dict(vector_input["expected_blobs"])
+    actual_blobs = {}
+    mismatches = []
+    for filename in sorted(expected_blobs):
         result = subprocess.run(
             ["git", "rev-parse", f"HEAD:src/mayak/modules/filter_catalog/{filename}"],
-            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            capture_output=True, text=True, cwd=str(REPO_ROOT), check=False,
         )
-        actual = result.stdout.strip()
-        assert actual == expected_blob, f"Blob mismatch for {filename}"
-
-
+        actual_blobs[filename] = result.stdout.strip() if result.returncode == 0 else ""
+        if result.returncode != 0 or actual_blobs[filename] != expected_blobs[filename]:
+            mismatches.append((filename, expected_blobs[filename], actual_blobs[filename], result.returncode))
+    mismatches = tuple(mismatches)
+    all_blobs_match = not mismatches
     return {
-        "all_blobs_match": True,
+        "actual_blobs": dict(sorted(actual_blobs.items())),
+        "expected_blobs": dict(sorted(expected_blobs.items())),
+        "mismatches": mismatches,
+        "all_blobs_match": all_blobs_match,
     }
 def handle_fc08_static_004(vector_input: dict, vector_expected: dict) -> dict:
-    import re as _re
     decisions_path = REPO_ROOT / "docs" / "00-governance" / "OPEN_DECISIONS.md"
     content = decisions_path.read_text(encoding="utf-8")
-    assert "OD-009" in content
-    od009_lines = [
-        line for line in content.split("\n")
-        if "OD-009" in line and "OPEN" in line.upper()
-    ]
-    od009_open_actual = len(od009_lines) > 0
-    fixture_data = _load_fixture()
-    corpus = json.dumps(fixture_data)
-    corpus_lower = corpus.lower()
-    no_real_provider_data_actual = True
-    if "http://" in corpus_lower or "https://" in corpus_lower:
-        no_real_provider_data_actual = False
-    if "api.telegram.org" in corpus_lower:
-        no_real_provider_data_actual = False
-    if _re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", corpus):
-        no_real_provider_data_actual = False
-    if _re.search(r"\b\d{10,}\b", corpus):
-        no_real_provider_data_actual = False
-    for ref in fixture_data.get("canonical_references", []):
-        if not ref.get("safe_label", "").startswith("Synthetic"):
-            no_real_provider_data_actual = False
-            break
+    decision_result = _find_open_decision_status(content, "OD-009")
+    synthetic_result = _evaluate_fc08_synthetic_fixture()
+    od009_status = decision_result["status"]
+    od009_open_actual = od009_status == "OPEN"
+    assert od009_open_actual
+    assert decision_result["matching_row_count"] == 1
+    assert decision_result["conflicting_statuses"] == ()
+    assert synthetic_result["valid"]
     return {
         "od009_open": od009_open_actual,
-        "no_real_provider_data": no_real_provider_data_actual,
+        "od009_status": od009_status,
+        "od009_row_cells": decision_result["row_cells"],
+        "od009_matching_row_count": decision_result["matching_row_count"],
+        "no_real_provider_data": synthetic_result["valid"],
+        "synthetic_violations": synthetic_result["violations"],
     }
 
 
@@ -2737,6 +2842,9 @@ def test_fc08_static_003() -> None:
         vector["expected"],
     )
     assert actual["all_blobs_match"] is vector["expected"]["all_blobs_match"]
+    assert actual["all_blobs_match"] is True
+    assert actual["mismatches"] == ()
+    assert actual["actual_blobs"] == actual["expected_blobs"]
 
 def test_fc08_static_004() -> None:
     vector = _get_vector("FC08-STATIC-004")
@@ -2748,6 +2856,11 @@ def test_fc08_static_004() -> None:
     )
     assert actual["od009_open"] is vector["expected"]["od009_open"]
     assert actual["no_real_provider_data"] is vector["expected"]["no_real_provider_data"]
+    assert actual["od009_open"] is True
+    assert actual["od009_status"] == "OPEN"
+    assert actual["od009_matching_row_count"] == 1
+    assert actual["no_real_provider_data"] is True
+    assert actual["synthetic_violations"] == ()
 
 def test_fc08_value_001() -> None:
     vector = _get_vector("FC08-VALUE-001")

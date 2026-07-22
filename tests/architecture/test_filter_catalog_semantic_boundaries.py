@@ -180,37 +180,25 @@ class TestFC08ArchitectureBoundaries:
             assert test_name in func_defs, f"Explicit test {test_name} not found"
             assert f"def {v['handler']}" in source, f"Handler {v['handler']} not in source"
             test_func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == test_name)
-            test_src = ast.get_source_segment(source, test_func)
-            assert test_src is not None, f"Cannot extract source for {test_name}"
-            assert f'"{v["vector_id"]}"' in test_src or f"'{v['vector_id']}'" in test_src, (
-                f"{test_name} must contain exact literal vector ID {v['vector_id']}"
-            )
-            assert test_src.count("_run_handler_twice") == 1, f"{test_name} must call _run_handler_twice exactly once"
-            assert f"{v['handler']}(" not in test_src.replace("_run_handler_twice(", ""), (
-                f"{test_name} must not call {v['handler']} directly outside _run_handler_twice"
-            )
-            assert "actual = _run_handler_twice" in test_src, f"{test_name} must assign result to actual"
-            test_lines = test_src.split("\n")
-            assert_lines = []
-            for l in test_lines:
-                s = l.strip()
-                if s.startswith("assert ") and "norm1" not in s and "original_" not in s:
-                    assert_lines.append(s)
-            semantic_assertions = [
-                l for l in assert_lines
-                if ("actual[" in l or "actual." in l)
-                and "actual is not None" not in l
-                and l.strip() != "assert actual"
-            ]
-            non_trivial_assertions = [
-                l for l in assert_lines
-                if "is not None" not in l
-                and l.strip() != "assert actual"
-            ]
-            assert len(semantic_assertions) > 0 or len(non_trivial_assertions) > 0, (
-                f"{test_name} must have at least one semantic assertion on actual; "
-                f"found only existence/type assertions"
-            )
+            calls = [n for n in ast.walk(test_func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "_run_handler_twice"]
+            assert len(calls) == 1, f"{test_name} must call _run_handler_twice exactly once"
+            call = calls[0]
+            assert call.args and isinstance(call.args[0], ast.Name) and call.args[0].id == v["handler"]
+            assignments = [n for n in ast.walk(test_func) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and n.value is call]
+            assert len(assignments) == 1 and len(assignments[0].targets) == 1
+            assert isinstance(assignments[0].targets[0], ast.Name) and assignments[0].targets[0].id == "actual"
+            direct_calls = [n for n in ast.walk(test_func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == v["handler"]]
+            assert not direct_calls, f"{test_name} must not call {v['handler']} directly"
+            literals = [n.value for n in ast.walk(test_func) if isinstance(n, ast.Constant)]
+            assert v["vector_id"] in literals, f"{test_name} must contain exact literal vector ID"
+            def actual_content(node: ast.AST) -> bool:
+                if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == "actual":
+                    return True
+                if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "actual":
+                    return True
+                return any(actual_content(child) for child in ast.iter_child_nodes(node))
+            semantic_assertions = [n for n in ast.walk(test_func) if isinstance(n, ast.Assert) and actual_content(n.test)]
+            assert semantic_assertions, f"{test_name} must assert actual content"
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_"):
                 has_return = any(
@@ -218,21 +206,19 @@ class TestFC08ArchitectureBoundaries:
                     for n in ast.walk(node)
                 )
                 assert has_return, f"{node.name} must return normalized result evidence"
-                handler_src = ast.get_source_segment(source, node)
-                assert handler_src is not None, f"Cannot extract source for {node.name}"
                 for child in ast.walk(node):
                     if isinstance(child, ast.Return) and child.value is not None:
-                        ret_src = ast.get_source_segment(source, child)
-                        assert ret_src is not None or "vector_expected" not in handler_src.split("return")[1] if "return" in handler_src else True, (
-                            f"{node.name} return must not reference vector_expected"
+                        assert not any(isinstance(name, ast.Name) and name.id == "vector_expected" for name in ast.walk(child.value)), (
+                            f"{node.name} return value must not reference vector_expected"
                         )
-                return_section = handler_src[handler_src.rfind("return"):]
-                assert "vector_expected" not in return_section, (
-                    f"{node.name} return value must not reference vector_expected"
-                )
-        assert "norm1 == norm2" in source, "Normalized result equality check must exist"
-        assert "original_input" in source, "Input immutability check must exist"
-        assert "original_expected" in source, "Expected immutability check must exist"
+        helper = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_run_handler_twice")
+        result_assignments = [n for n in ast.walk(helper) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name) and n.value.func.id == "handler"]
+        assert len(result_assignments) == 2
+        assert {n.targets[0].id for n in result_assignments if isinstance(n.targets[0], ast.Name)} == {"result1", "result2"}
+        names = {n.id for n in ast.walk(helper) if isinstance(n, ast.Name)}
+        assert {"norm1", "norm2", "original_input", "original_expected", "input1", "input2", "expected1", "expected2"}.issubset(names)
+        assert any(isinstance(n, ast.Assert) and isinstance(n.test, ast.Compare) and any(isinstance(x, ast.Name) and x.id == "norm1" for x in ast.walk(n.test)) and any(isinstance(x, ast.Name) and x.id == "norm2" for x in ast.walk(n.test)) for n in ast.walk(helper))
+        assert any(isinstance(n, ast.Return) and isinstance(n.value, ast.Name) and n.value.id == "norm1" for n in ast.walk(helper))
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_safe_read_"):
                 src_handler = ast.get_source_segment(source, node)
