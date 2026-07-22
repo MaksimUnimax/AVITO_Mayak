@@ -179,3 +179,48 @@ class TestFC08ArchitectureBoundaries:
             test_name = f"test_{v['vector_id'].lower().replace('-', '_')}"
             assert test_name in func_defs, f"Explicit test {test_name} not found"
             assert f"def {v['handler']}" in source, f"Handler {v['handler']} not in source"
+
+    def test_safe_read_public_projection_guard(self) -> None:
+        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_safe_read_"):
+                src_handler = ast.get_source_segment(source, node)
+                assert src_handler is not None, f"Cannot extract source for {node.name}"
+                assert "project_catalog_safe_filter_read" in src_handler, (
+                    f"{node.name} must call project_catalog_safe_filter_read"
+                )
+                assert "CatalogSafeFilterReadModel(" not in src_handler, (
+                    f"{node.name} must not directly construct CatalogSafeFilterReadModel"
+                )
+
+    def test_explicit_vector_binding_guard(self) -> None:
+        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        func_defs = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+        for v in _load_fixture()["vectors"]:
+            test_name = f"test_{v['vector_id'].lower().replace('-', '_')}"
+            assert test_name in func_defs, f"Explicit test {test_name} not found in AST"
+            handler_name = v["handler"]
+            assert f"def {handler_name}" in source, f"Handler {handler_name} not in source"
+            assert f"{handler_name}," in source or f"{handler_name})" in source, (
+                f"Explicit test {test_name} must statically reference {handler_name}"
+            )
+
+    def test_all_handlers_return_normalized_result(self) -> None:
+        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_"):
+                has_return = any(
+                    isinstance(n, ast.Return) and n.value is not None
+                    for n in ast.walk(node)
+                )
+                assert has_return, f"{node.name} must return normalized result evidence"
+
+    def test_two_run_comparison_contract(self) -> None:
+        source = UNIT_TEST_PATH.read_text(encoding="utf-8")
+        assert "_normalize_result" in source, "_normalize_result normalizer must exist"
+        assert "norm1 == norm2" in source, "Normalized result equality check must exist"
+        assert "original_input" in source, "Input immutability check must exist"
+        assert "original_expected" in source, "Expected immutability check must exist"

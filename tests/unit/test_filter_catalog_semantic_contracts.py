@@ -44,15 +44,35 @@ def _get_vector(vector_id: str) -> dict:
     raise KeyError(f"Vector {vector_id} not found")
 
 
+def _normalize_result(result):
+    if result is None:
+        return None
+    if isinstance(result, (str, int, bool)):
+        return result
+    if isinstance(result, tuple):
+        return tuple(_normalize_result(item) for item in result)
+    if isinstance(result, dict):
+        return {k: _normalize_result(v) for k, v in sorted(result.items())}
+    return result
+
+
 def _run_handler_twice(handler, vector_input: dict, vector_expected: dict):
+    original_input = copy.deepcopy(vector_input)
+    original_expected = copy.deepcopy(vector_expected)
     input1 = copy.deepcopy(vector_input)
     expected1 = copy.deepcopy(vector_expected)
-    handler(input1, expected1)
+    result1 = handler(input1, expected1)
     input2 = copy.deepcopy(vector_input)
     expected2 = copy.deepcopy(vector_expected)
-    handler(input2, expected2)
-    assert input1 == input2, "Handler produced different input mutability across runs"
-    return input1, input2
+    result2 = handler(input2, expected2)
+    norm1 = _normalize_result(result1)
+    norm2 = _normalize_result(result2)
+    assert norm1 == norm2, f"Handler produced different normalized results across runs: {norm1!r} vs {norm2!r}"
+    assert input1 == original_input, "Handler mutated input copy on first run"
+    assert input2 == original_input, "Handler mutated input copy on second run"
+    assert expected1 == original_expected, "Handler mutated expected copy on first run"
+    assert expected2 == original_expected, "Handler mutated expected copy on second run"
+    return norm1
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +96,10 @@ def handle_fc08_catalog_001(vector_input: dict, vector_expected: dict) -> None:
     assert result.publication_state == CatalogPublicationState(vector_expected["publication_state"])
 
 
+    return {
+        "filter_catalog_version_id": result.filter_catalog_version_id,
+        "publication_state": result.publication_state.value,
+    }
 def handle_fc08_catalog_002(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         CatalogPublicationState,
@@ -91,6 +115,7 @@ def handle_fc08_catalog_002(vector_input: dict, vector_expected: dict) -> None:
         )
 
 
+    return {"valid": False}
 def handle_fc08_catalog_003(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterOptionDefinition, FilterDefinitionState
     with pytest.raises(ValidationError, match=vector_expected["error_fragment"]):
@@ -104,6 +129,7 @@ def handle_fc08_catalog_003(vector_input: dict, vector_expected: dict) -> None:
         )
 
 
+    return {"valid": False}
 def handle_fc08_catalog_004(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterDefinition,
@@ -123,6 +149,7 @@ def handle_fc08_catalog_004(vector_input: dict, vector_expected: dict) -> None:
         )
 
 
+    return {"valid": False}
 def handle_fc08_catalog_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -138,6 +165,9 @@ def handle_fc08_catalog_005(vector_input: dict, vector_expected: dict) -> None:
     assert result.capability_state == FilterCapabilityState(vector_expected["capability_state"])
 
 
+    return {
+        "capability_state": result.capability_state.value,
+    }
 def handle_fc08_catalog_006(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -153,6 +183,7 @@ def handle_fc08_catalog_006(vector_input: dict, vector_expected: dict) -> None:
         )
 
 
+    return {"valid": False}
 def handle_fc08_catalog_007(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         CatalogPublicationState,
@@ -169,6 +200,9 @@ def handle_fc08_catalog_007(vector_input: dict, vector_expected: dict) -> None:
     assert result.supersedes_catalog_version_id == vector_expected["supersedes_catalog_version_id"]
 
 
+    return {
+        "supersedes_catalog_version_id": result.supersedes_catalog_version_id,
+    }
 def handle_fc08_catalog_008(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterDefinition,
@@ -188,6 +222,9 @@ def handle_fc08_catalog_008(vector_input: dict, vector_expected: dict) -> None:
     assert result.definition_state == FilterDefinitionState(vector_expected["definition_state"])
 
 
+    return {
+        "definition_state": result.definition_state.value,
+    }
 def handle_fc08_evidence_001(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
     from mayak.modules.filter_catalog.evidence_approval import (
@@ -229,6 +266,10 @@ def handle_fc08_evidence_001(vector_input: dict, vector_expected: dict) -> None:
     assert outcome.suggested_definition_state.value == vector_expected["suggested_definition_state"]
 
 
+    return {
+        "decision": outcome.decision.value,
+        "suggested_definition_state": outcome.suggested_definition_state.value,
+    }
 def handle_fc08_evidence_002(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
     from mayak.modules.filter_catalog.evidence_approval import (
@@ -270,6 +311,10 @@ def handle_fc08_evidence_002(vector_input: dict, vector_expected: dict) -> None:
     assert outcome.suggested_definition_state.value == vector_expected["suggested_definition_state"]
 
 
+    return {
+        "decision": outcome.decision.value,
+        "suggested_definition_state": outcome.suggested_definition_state.value,
+    }
 def handle_fc08_evidence_003(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.evidence_approval import (
         FilterEvidenceApprovalRequest,
@@ -287,6 +332,10 @@ def handle_fc08_evidence_003(vector_input: dict, vector_expected: dict) -> None:
     assert any(vector_expected["reason_contained"] in r.value for r in outcome.reason_codes)
 
 
+    return {
+        "decision": outcome.decision.value,
+        "reason_codes": tuple(r.value for r in outcome.reason_codes),
+    }
 def handle_fc08_evidence_004(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
     from mayak.modules.filter_catalog.evidence_approval import (
@@ -328,6 +377,10 @@ def handle_fc08_evidence_004(vector_input: dict, vector_expected: dict) -> None:
     assert any(vector_expected["reason_contained"] in r.value for r in outcome.reason_codes)
 
 
+    return {
+        "decision": outcome.decision.value,
+        "reason_codes": tuple(r.value for r in outcome.reason_codes),
+    }
 def handle_fc08_evidence_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
     from mayak.modules.filter_catalog.evidence_approval import (
@@ -369,6 +422,10 @@ def handle_fc08_evidence_005(vector_input: dict, vector_expected: dict) -> None:
     assert any(vector_expected["reason_contained"] in r.value for r in outcome.reason_codes)
 
 
+    return {
+        "decision": outcome.decision.value,
+        "reason_codes": tuple(r.value for r in outcome.reason_codes),
+    }
 def handle_fc08_evidence_006(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
     from mayak.modules.filter_catalog.evidence_approval import (
@@ -410,6 +467,10 @@ def handle_fc08_evidence_006(vector_input: dict, vector_expected: dict) -> None:
     assert any(vector_expected["reason_contained"] in r.value for r in outcome.reason_codes)
 
 
+    return {
+        "decision": outcome.decision.value,
+        "reason_codes": tuple(r.value for r in outcome.reason_codes),
+    }
 def handle_fc08_evidence_007(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
     from mayak.modules.filter_catalog.evidence_approval import (
@@ -451,6 +512,10 @@ def handle_fc08_evidence_007(vector_input: dict, vector_expected: dict) -> None:
     assert any(vector_expected["reason_contained"] in r.value for r in outcome.reason_codes)
 
 
+    return {
+        "decision": outcome.decision.value,
+        "reason_codes": tuple(r.value for r in outcome.reason_codes),
+    }
 def handle_fc08_evidence_008(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterEvidenceReference, FilterEvidenceState
     from mayak.modules.filter_catalog.evidence_approval import (
@@ -492,6 +557,10 @@ def handle_fc08_evidence_008(vector_input: dict, vector_expected: dict) -> None:
     assert len(outcome.evidence_reference_ids) == vector_expected["evidence_count"]
 
 
+    return {
+        "decision": outcome.decision.value,
+        "evidence_count": len(outcome.evidence_reference_ids),
+    }
 def handle_fc08_builder_001(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -539,6 +608,10 @@ def handle_fc08_builder_001(vector_input: dict, vector_expected: dict) -> None:
         assert outcome.field_definition is None
 
 
+    return {
+        "decision": outcome.decision.value,
+        "has_field": outcome.field_definition is not None,
+    }
 def handle_fc08_builder_002(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -583,6 +656,10 @@ def handle_fc08_builder_002(vector_input: dict, vector_expected: dict) -> None:
     assert outcome.field_definition is None
 
 
+    return {
+        "decision": outcome.decision.value,
+        "has_field": outcome.field_definition is not None,
+    }
 def handle_fc08_builder_003(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BuilderDraftValidationResult,
@@ -602,6 +679,9 @@ def handle_fc08_builder_003(vector_input: dict, vector_expected: dict) -> None:
     assert result.validation_state == BuilderDraftValidationState(vector_expected["validation_state"])
 
 
+    return {
+        "validation_state": result.validation_state.value,
+    }
 def handle_fc08_builder_004(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BuilderDraftValidationResult,
@@ -618,6 +698,9 @@ def handle_fc08_builder_004(vector_input: dict, vector_expected: dict) -> None:
     assert result.validation_state == BuilderDraftValidationState(vector_expected["validation_state"])
 
 
+    return {
+        "validation_state": result.validation_state.value,
+    }
 def handle_fc08_builder_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BuilderDraftValidationResult,
@@ -634,6 +717,9 @@ def handle_fc08_builder_005(vector_input: dict, vector_expected: dict) -> None:
     assert result.validation_state == BuilderDraftValidationState(vector_expected["validation_state"])
 
 
+    return {
+        "validation_state": result.validation_state.value,
+    }
 def handle_fc08_builder_006(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BuilderDraftValidationResult,
@@ -650,6 +736,9 @@ def handle_fc08_builder_006(vector_input: dict, vector_expected: dict) -> None:
     assert result.validation_state == BuilderDraftValidationState(vector_expected["validation_state"])
 
 
+    return {
+        "validation_state": result.validation_state.value,
+    }
 def handle_fc08_builder_007(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BuilderDraftValidationResult,
@@ -667,6 +756,10 @@ def handle_fc08_builder_007(vector_input: dict, vector_expected: dict) -> None:
     assert isinstance(result.warning_ids, tuple)
 
 
+    return {
+        "validation_state": result.validation_state.value,
+        "warning_ids_present": isinstance(result.warning_ids, tuple) and len(result.warning_ids) > 0,
+    }
 def handle_fc08_builder_008(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BuilderDraftValidationResult,
@@ -683,6 +776,9 @@ def handle_fc08_builder_008(vector_input: dict, vector_expected: dict) -> None:
     assert result.is_authoritative_for_beacon is False
 
 
+    return {
+        "is_authoritative_for_beacon": result.is_authoritative_for_beacon,
+    }
 def handle_fc08_value_001(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.value_dependency_semantics import (
         MultivaluePreservationRequest,
@@ -698,6 +794,10 @@ def handle_fc08_value_001(vector_input: dict, vector_expected: dict) -> None:
     assert outcome.candidate_changed == vector_expected["candidate_changed"]
 
 
+    return {
+        "decision": outcome.decision.value,
+        "candidate_changed": outcome.candidate_changed,
+    }
 def handle_fc08_value_002(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.value_dependency_semantics import (
         MultivaluePreservationRequest,
@@ -715,6 +815,10 @@ def handle_fc08_value_002(vector_input: dict, vector_expected: dict) -> None:
     assert MultivaluePreservationReason.REPEATED_VALUE_COLLAPSE_DETECTED in outcome.reason_codes
 
 
+    return {
+        "decision": outcome.decision.value,
+        "collapse_detected": MultivaluePreservationReason.REPEATED_VALUE_COLLAPSE_DETECTED in outcome.reason_codes,
+    }
 def handle_fc08_value_003(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterRangeDefinition
     from mayak.modules.filter_catalog.value_dependency_semantics import (
@@ -747,6 +851,9 @@ def handle_fc08_value_003(vector_input: dict, vector_expected: dict) -> None:
     assert outcome.decision.value == vector_expected["decision"]
 
 
+    return {
+        "decision": outcome.decision.value,
+    }
 def handle_fc08_value_004(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterRangeDefinition
     from mayak.modules.filter_catalog.value_dependency_semantics import (
@@ -778,6 +885,10 @@ def handle_fc08_value_004(vector_input: dict, vector_expected: dict) -> None:
     assert RangeValueValidationReason.UNIT_MISMATCH in outcome.reason_codes
 
 
+    return {
+        "decision": outcome.decision.value,
+        "unit_mismatch_detected": RangeValueValidationReason.UNIT_MISMATCH in outcome.reason_codes,
+    }
 def handle_fc08_value_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import FilterRangeDefinition
     from mayak.modules.filter_catalog.value_dependency_semantics import (
@@ -811,6 +922,10 @@ def handle_fc08_value_005(vector_input: dict, vector_expected: dict) -> None:
     assert RangeValueValidationReason.LOWER_INCLUSIVITY_INCOMPATIBLE in outcome.reason_codes
 
 
+    return {
+        "decision": outcome.decision.value,
+        "inclusivity_incompatible_detected": RangeValueValidationReason.LOWER_INCLUSIVITY_INCOMPATIBLE in outcome.reason_codes,
+    }
 def handle_fc08_value_006(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -873,6 +988,9 @@ def handle_fc08_value_006(vector_input: dict, vector_expected: dict) -> None:
     assert vector_expected["dependency_blocked_detected"]
 
 
+    return {
+        "decision": outcome.decision.value,
+    }
 def handle_fc08_value_007(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -935,6 +1053,9 @@ def handle_fc08_value_007(vector_input: dict, vector_expected: dict) -> None:
     assert vector_expected["dependency_blocked_detected"]
 
 
+    return {
+        "decision": outcome.decision.value,
+    }
 def handle_fc08_value_008(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -1007,6 +1128,10 @@ def handle_fc08_value_008(vector_input: dict, vector_expected: dict) -> None:
     assert vector_expected["all_evaluated"]
 
 
+    return {
+        "decision": outcome.decision.value,
+        "all_evaluated": vector_expected["all_evaluated"],
+    }
 def handle_fc08_beacon_001(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BeaconOverrideCandidateOutcome,
@@ -1034,6 +1159,10 @@ def handle_fc08_beacon_001(vector_input: dict, vector_expected: dict) -> None:
     assert outcome.beacon_acceptance_required is True
 
 
+    return {
+        "candidate_state": outcome.candidate_state.value,
+        "beacon_acceptance_required": outcome.beacon_acceptance_required,
+    }
 def handle_fc08_beacon_002(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BeaconOverrideCandidateOutcome,
@@ -1050,6 +1179,9 @@ def handle_fc08_beacon_002(vector_input: dict, vector_expected: dict) -> None:
     assert outcome.beacon_acceptance_required is vector_expected["beacon_acceptance_required_must_be_true"]
 
 
+    return {
+        "beacon_acceptance_required": outcome.beacon_acceptance_required,
+    }
 def handle_fc08_beacon_003(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.beacon_override_candidate import (
         BeaconOverrideCandidatePreparationResult,
@@ -1076,6 +1208,10 @@ def handle_fc08_beacon_003(vector_input: dict, vector_expected: dict) -> None:
     assert result.beacon_mutation_performed is vector_expected["beacon_mutation_performed"]
 
 
+    return {
+        "beacon_acceptance_performed": result.beacon_acceptance_performed,
+        "beacon_mutation_performed": result.beacon_mutation_performed,
+    }
 def handle_fc08_beacon_004(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.beacon_override_candidate import (
         BeaconOverrideCandidatePreparationResult,
@@ -1104,6 +1240,12 @@ def handle_fc08_beacon_004(vector_input: dict, vector_expected: dict) -> None:
     assert result.historical_revision_rewritten is False
 
 
+    return {
+        "beacon_mutation_performed": result.beacon_mutation_performed,
+        "beacon_revision_created": result.beacon_revision_created,
+        "lifecycle_changed": result.lifecycle_changed,
+        "historical_revision_rewritten": result.historical_revision_rewritten,
+    }
 def handle_fc08_beacon_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.beacon_override_candidate import (
         BeaconOverrideCandidatePreparationResult,
@@ -1130,6 +1272,10 @@ def handle_fc08_beacon_005(vector_input: dict, vector_expected: dict) -> None:
     assert result.candidate_outcome.validated_builder_field_ids == ()
 
 
+    return {
+        "field_candidates_empty": result.field_candidates == (),
+        "validated_builder_field_ids_empty": result.candidate_outcome.validated_builder_field_ids == (),
+    }
 def handle_fc08_beacon_006(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.beacon_override_candidate import (
         BeaconOverrideCandidatePreparationResult,
@@ -1156,6 +1302,10 @@ def handle_fc08_beacon_006(vector_input: dict, vector_expected: dict) -> None:
     assert result.candidate_outcome.validated_builder_field_ids == ()
 
 
+    return {
+        "field_candidates_empty": result.field_candidates == (),
+        "validated_builder_field_ids_empty": result.candidate_outcome.validated_builder_field_ids == (),
+    }
 def handle_fc08_beacon_007(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.beacon_override_candidate import (
         BeaconOverrideCandidatePreparationResult,
@@ -1182,6 +1332,10 @@ def handle_fc08_beacon_007(vector_input: dict, vector_expected: dict) -> None:
     assert result.candidate_outcome.validated_builder_field_ids == ()
 
 
+    return {
+        "field_candidates_empty": result.field_candidates == (),
+        "validated_builder_field_ids_empty": result.candidate_outcome.validated_builder_field_ids == (),
+    }
 def handle_fc08_beacon_008(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BeaconOverrideCandidateOutcome,
@@ -1200,6 +1354,10 @@ def handle_fc08_beacon_008(vector_input: dict, vector_expected: dict) -> None:
     assert len(outcome.validated_builder_field_ids) == len(vector_input["validated_builder_field_ids"])
 
 
+    return {
+        "filter_catalog_version_id": outcome.filter_catalog_version_id,
+        "validated_builder_field_ids_count": len(outcome.validated_builder_field_ids),
+    }
 def handle_fc08_safe_read_001(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -1270,31 +1428,83 @@ def handle_fc08_safe_read_001(vector_input: dict, vector_expected: dict) -> None
         assert model.evidence_reference_ids == ()
 
 
-def handle_fc08_safe_read_002(vector_input: dict, vector_expected: dict) -> None:
-    from mayak.modules.filter_catalog.safe_read_models import (
-        CatalogSafeFilterReadModel,
-        CatalogSafeReadAudience,
-        CatalogSafeReadFreshnessState,
-        CatalogSafeReadSurfaceState,
+    return {
+        "surface_state": model.surface_state.value,
+        "details_redacted": model.details_redacted,
+        "warning_ids_empty": model.warning_ids == (),
+        "evidence_reference_ids_empty": model.evidence_reference_ids == (),
+    }
+def handle_fc08_safe_read_002(vector_input: dict, vector_expected: dict) -> dict:
+    from mayak.modules.filter_catalog.contracts import (
+        FilterCapabilityProfile,
+        FilterCapabilityState,
+        FilterDefinition,
+        FilterDefinitionState,
+        FilterEvidenceReference,
+        FilterEvidenceState,
+        FilterValueKind,
     )
-    model = CatalogSafeFilterReadModel(
-        catalog_safe_filter_read_model_id="FC08-REF-019",
+    from mayak.modules.filter_catalog.safe_read_models import (
+        CatalogSafeReadAccessContext,
+        CatalogSafeReadAudience,
+        CatalogSafeReadSurfaceState,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
+    )
+    definition = FilterDefinition(
+        filter_definition_id="FC08-REF-003",
+        filter_catalog_version_id="FC08-REF-001",
+        normalized_key="SYNTH_SAFE_B",
+        safe_label="Synthetic safe label",
+        value_kind=FilterValueKind.SCALAR,
+        definition_state=FilterDefinitionState.APPROVED,
+        evidence_reference_ids=("FC08-REF-007",),
+        capability_profile_ids=("FC08-REF-005",),
+    )
+    profile = FilterCapabilityProfile(
+        filter_capability_profile_id="FC08-REF-005",
+        filter_catalog_version_id="FC08-REF-001",
+        provider_surface_reference_id="FC08-REF-021",
+        capability_state=FilterCapabilityState.EDITABLE,
+        evidence_reference_ids=("FC08-REF-007",),
+    )
+    evidence_refs = (
+        FilterEvidenceReference(
+            evidence_reference_id="FC08-REF-007",
+            evidence_state=FilterEvidenceState.CURRENT,
+            evidence_kind_code="SYNTH_EVID",
+            scope_reference_ids=("FC08-REF-021",),
+            source_fingerprint=_fp("a"),
+            observed_at=_ts(),
+            refresh_required=False,
+        ),
+    )
+    context = CatalogSafeReadAccessContext(
         audience=CatalogSafeReadAudience.WEB_CUSTOMER,
         surface_state=CatalogSafeReadSurfaceState.AVAILABLE,
-        freshness_state=CatalogSafeReadFreshnessState.CURRENT,
-        filter_catalog_version_id="FC08-REF-001",
-        filter_definition_id="FC08-REF-003",
-        filter_capability_profile_id="FC08-REF-005",
-        safe_label="Synthetic safe label",
-        capability_state="EDITABLE",
-        explanation_codes=("EDITABLE",),
-        provenance_reference_ids=("FC08-REF-023",),
-        details_redacted=True,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
     )
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        filter_definition=definition,
+        capability_profile=profile,
+        evidence_references=evidence_refs,
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
     assert model.details_redacted is True
     assert model.warning_ids == ()
     assert model.evidence_reference_ids == ()
     assert model.beacon_override_candidate_outcome_reference_id is None
+    return {
+        "details_redacted": model.details_redacted,
+        "warning_ids_empty": model.warning_ids == (),
+        "evidence_reference_ids_empty": model.evidence_reference_ids == (),
+        "beacon_override_candidate_outcome_reference_id": model.beacon_override_candidate_outcome_reference_id,
+    }
 
 
 def handle_fc08_safe_read_003(vector_input: dict, vector_expected: dict) -> None:
@@ -1363,6 +1573,10 @@ def handle_fc08_safe_read_003(vector_input: dict, vector_expected: dict) -> None
     assert model.details_redacted is vector_expected["details_redacted"]
 
 
+    return {
+        "surface_state": model.surface_state.value,
+        "details_redacted": model.details_redacted,
+    }
 def handle_fc08_safe_read_004(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.safe_read_models import (
         CatalogSafeReadAccessContext,
@@ -1389,6 +1603,11 @@ def handle_fc08_safe_read_004(vector_input: dict, vector_expected: dict) -> None
     assert model.details_redacted is True
 
 
+    return {
+        "surface_state": model.surface_state.value,
+        "explanation_code": model.explanation_codes[0].value,
+        "details_redacted": model.details_redacted,
+    }
 def handle_fc08_safe_read_005(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.safe_read_models import (
         CatalogSafeReadAccessContext,
@@ -1415,6 +1634,11 @@ def handle_fc08_safe_read_005(vector_input: dict, vector_expected: dict) -> None
     assert model.details_redacted is True
 
 
+    return {
+        "surface_state": model.surface_state.value,
+        "explanation_code": model.explanation_codes[0].value,
+        "details_redacted": model.details_redacted,
+    }
 def handle_fc08_safe_read_006(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.safe_read_models import (
         CatalogSafeReadAccessContext,
@@ -1441,6 +1665,11 @@ def handle_fc08_safe_read_006(vector_input: dict, vector_expected: dict) -> None
     assert model.details_redacted is True
 
 
+    return {
+        "surface_state": model.surface_state.value,
+        "explanation_code": model.explanation_codes[0].value,
+        "details_redacted": model.details_redacted,
+    }
 def handle_fc08_safe_read_007(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -1506,6 +1735,9 @@ def handle_fc08_safe_read_007(vector_input: dict, vector_expected: dict) -> None
     assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
+    return {
+        "freshness_state": model.freshness_state.value,
+    }
 def handle_fc08_safe_read_008(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -1571,6 +1803,9 @@ def handle_fc08_safe_read_008(vector_input: dict, vector_expected: dict) -> None
     assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
+    return {
+        "freshness_state": model.freshness_state.value,
+    }
 def handle_fc08_safe_read_009(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -1636,6 +1871,9 @@ def handle_fc08_safe_read_009(vector_input: dict, vector_expected: dict) -> None
     assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
+    return {
+        "freshness_state": model.freshness_state.value,
+    }
 def handle_fc08_safe_read_010(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         FilterCapabilityProfile,
@@ -1701,6 +1939,9 @@ def handle_fc08_safe_read_010(vector_input: dict, vector_expected: dict) -> None
     assert model.freshness_state.value == vector_expected["freshness_state"]
 
 
+    return {
+        "freshness_state": model.freshness_state.value,
+    }
 def handle_fc08_safe_read_011(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
         BeaconOverrideCandidateOutcome,
@@ -1790,24 +2031,31 @@ def handle_fc08_safe_read_011(vector_input: dict, vector_expected: dict) -> None
     assert model.beacon_acceptance_required is True
 
 
-def handle_fc08_safe_read_012(vector_input: dict, vector_expected: dict) -> None:
+    return {
+        "beacon_acceptance_required_in_explanations": CatalogSafeExplanationCode.BEACON_ACCEPTANCE_REQUIRED in model.explanation_codes,
+        "beacon_acceptance_required": model.beacon_acceptance_required,
+    }
+def handle_fc08_safe_read_012(vector_input: dict, vector_expected: dict) -> dict:
     from mayak.modules.filter_catalog.safe_read_models import (
-        CatalogSafeFilterReadModel,
+        CatalogSafeReadAccessContext,
         CatalogSafeReadAudience,
-        CatalogSafeReadFreshnessState,
         CatalogSafeReadSurfaceState,
-        CatalogSafeExplanationCode,
+        CatalogSafeFilterReadRequest,
+        project_catalog_safe_filter_read,
     )
-    model = CatalogSafeFilterReadModel(
-        catalog_safe_filter_read_model_id="FC08-REF-019",
+    context = CatalogSafeReadAccessContext(
         audience=CatalogSafeReadAudience.WEB_CUSTOMER,
         surface_state=CatalogSafeReadSurfaceState.REDACTED,
-        freshness_state=CatalogSafeReadFreshnessState.UNKNOWN,
-        filter_catalog_version_id="FC08-REF-001",
-        explanation_codes=(CatalogSafeExplanationCode.REDACTED,),
-        provenance_reference_ids=("FC08-REF-023",),
-        details_redacted=True,
+        access_decision_reference_id="FC08-REF-020",
+        scope_reference_id="FC08-REF-021",
     )
+    request = CatalogSafeFilterReadRequest(
+        catalog_safe_filter_read_model_id="FC08-REF-019",
+        access_context=context,
+        filter_catalog_version_id="FC08-REF-001",
+        provenance_reference_ids=("FC08-REF-023",),
+    )
+    model = project_catalog_safe_filter_read(request)
     assert model.identity_authorization_performed_by_filter_catalog is False
     assert model.authoritative_business_state is False
     assert model.contains_raw_provider_payload is False
@@ -1815,6 +2063,16 @@ def handle_fc08_safe_read_012(vector_input: dict, vector_expected: dict) -> None
     assert model.contains_secret_or_personal_data is False
     assert model.contains_admin_private_notes is False
     assert model.runtime_or_persistence_performed is False
+    return {
+        "identity_authorization_performed_by_filter_catalog": model.identity_authorization_performed_by_filter_catalog,
+        "authoritative_business_state": model.authoritative_business_state,
+        "contains_raw_provider_payload": model.contains_raw_provider_payload,
+        "contains_stack_trace": model.contains_stack_trace,
+        "contains_secret_or_personal_data": model.contains_secret_or_personal_data,
+        "contains_admin_private_notes": model.contains_admin_private_notes,
+        "runtime_or_persistence_performed": model.runtime_or_persistence_performed,
+        "surface_state": model.surface_state.value,
+    }
 
 
 def handle_fc08_static_001(vector_input: dict, vector_expected: dict) -> None:
@@ -1826,6 +2084,10 @@ def handle_fc08_static_001(vector_input: dict, vector_expected: dict) -> None:
     assert vector_expected["all_symbols_present"]
 
 
+    return {
+        "all_symbols_present": vector_expected["all_symbols_present"],
+        "symbol_count": len(vector_input["expected_symbols"]),
+    }
 def handle_fc08_static_002(vector_input: dict, vector_expected: dict) -> None:
     import subprocess
     result = subprocess.run(
@@ -1836,6 +2098,9 @@ def handle_fc08_static_002(vector_input: dict, vector_expected: dict) -> None:
     assert result.stdout.strip() == "", f"Forbidden imports found: {result.stdout}"
 
 
+    return {
+        "forbidden_imports_absent": result.stdout.strip() == "",
+    }
 def handle_fc08_static_003(vector_input: dict, vector_expected: dict) -> None:
     import subprocess
     for filename, expected_blob in vector_input["expected_blobs"].items():
@@ -1847,6 +2112,9 @@ def handle_fc08_static_003(vector_input: dict, vector_expected: dict) -> None:
         assert actual == expected_blob, f"Blob mismatch for {filename}"
 
 
+    return {
+        "all_blobs_match": True,
+    }
 def handle_fc08_static_004(vector_input: dict, vector_expected: dict) -> None:
     assert vector_expected["od009_open"]
     assert vector_expected["no_real_provider_data"]
@@ -1859,6 +2127,10 @@ def handle_fc08_static_004(vector_input: dict, vector_expected: dict) -> None:
 # 56 Explicit Vector-Specific Test Functions
 # ---------------------------------------------------------------------------
 
+    return {
+        "od009_open": vector_expected["od009_open"],
+        "no_real_provider_data": vector_expected["no_real_provider_data"],
+    }
 def test_fc08_catalog_001() -> None:
     v = _get_vector("FC08-CATALOG-001")
     assert v["handler"] == "handle_fc08_catalog_001"
