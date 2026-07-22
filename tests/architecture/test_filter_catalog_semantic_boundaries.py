@@ -182,12 +182,35 @@ class TestFC08ArchitectureBoundaries:
             test_func = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == test_name)
             test_src = ast.get_source_segment(source, test_func)
             assert test_src is not None, f"Cannot extract source for {test_name}"
+            assert f'"{v["vector_id"]}"' in test_src or f"'{v['vector_id']}'" in test_src, (
+                f"{test_name} must contain exact literal vector ID {v['vector_id']}"
+            )
             assert test_src.count("_run_handler_twice") == 1, f"{test_name} must call _run_handler_twice exactly once"
             assert f"{v['handler']}(" not in test_src.replace("_run_handler_twice(", ""), (
                 f"{test_name} must not call {v['handler']} directly outside _run_handler_twice"
             )
             assert "actual = _run_handler_twice" in test_src, f"{test_name} must assign result to actual"
-            assert "assert actual" in test_src, f"{test_name} must assert on actual"
+            test_lines = test_src.split("\n")
+            assert_lines = []
+            for l in test_lines:
+                s = l.strip()
+                if s.startswith("assert ") and "norm1" not in s and "original_" not in s:
+                    assert_lines.append(s)
+            semantic_assertions = [
+                l for l in assert_lines
+                if ("actual[" in l or "actual." in l)
+                and "actual is not None" not in l
+                and l.strip() != "assert actual"
+            ]
+            non_trivial_assertions = [
+                l for l in assert_lines
+                if "is not None" not in l
+                and l.strip() != "assert actual"
+            ]
+            assert len(semantic_assertions) > 0 or len(non_trivial_assertions) > 0, (
+                f"{test_name} must have at least one semantic assertion on actual; "
+                f"found only existence/type assertions"
+            )
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_fc08_"):
                 has_return = any(
@@ -195,6 +218,18 @@ class TestFC08ArchitectureBoundaries:
                     for n in ast.walk(node)
                 )
                 assert has_return, f"{node.name} must return normalized result evidence"
+                handler_src = ast.get_source_segment(source, node)
+                assert handler_src is not None, f"Cannot extract source for {node.name}"
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Return) and child.value is not None:
+                        ret_src = ast.get_source_segment(source, child)
+                        assert ret_src is not None or "vector_expected" not in handler_src.split("return")[1] if "return" in handler_src else True, (
+                            f"{node.name} return must not reference vector_expected"
+                        )
+                return_section = handler_src[handler_src.rfind("return"):]
+                assert "vector_expected" not in return_section, (
+                    f"{node.name} return value must not reference vector_expected"
+                )
         assert "norm1 == norm2" in source, "Normalized result equality check must exist"
         assert "original_input" in source, "Input immutability check must exist"
         assert "original_expected" in source, "Expected immutability check must exist"

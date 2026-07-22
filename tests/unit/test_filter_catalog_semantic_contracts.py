@@ -1191,7 +1191,7 @@ def handle_fc08_value_008(vector_input: dict, vector_expected: dict) -> None:
 
     return {
         "decision": outcome.decision.value,
-        "all_evaluated": vector_expected["all_evaluated"],
+        "all_evaluated": len(outcome.evaluated_dependency_rule_ids) == len(outcome.dependency_rule_ids),
     }
 def handle_fc08_beacon_001(vector_input: dict, vector_expected: dict) -> None:
     from mayak.modules.filter_catalog.contracts import (
@@ -2141,10 +2141,14 @@ def handle_fc08_static_001(vector_input: dict, vector_expected: dict) -> dict:
     all_names = list(pkg_all)
     for sym in vector_input["expected_symbols"]:
         assert sym in all_names, f"{sym} not in package __all__"
-    assert vector_expected["all_symbols_present"]
+    missing_symbols = tuple(
+        symbol for symbol in vector_input["expected_symbols"]
+        if symbol not in all_names
+    )
+    assert not missing_symbols
     return {
-        "all_symbols_present": vector_expected["all_symbols_present"],
-        "symbol_count": len(vector_input["expected_symbols"]),
+        "all_symbols_present": not missing_symbols,
+        "checked_symbol_count": len(vector_input["expected_symbols"]),
     }
 def handle_fc08_static_002(vector_input: dict, vector_expected: dict) -> None:
     import subprocess
@@ -2174,14 +2178,34 @@ def handle_fc08_static_003(vector_input: dict, vector_expected: dict) -> None:
         "all_blobs_match": True,
     }
 def handle_fc08_static_004(vector_input: dict, vector_expected: dict) -> dict:
-    assert vector_expected["od009_open"]
-    assert vector_expected["no_real_provider_data"]
+    import re as _re
     decisions_path = REPO_ROOT / "docs" / "00-governance" / "OPEN_DECISIONS.md"
     content = decisions_path.read_text(encoding="utf-8")
     assert "OD-009" in content
+    od009_lines = [
+        line for line in content.split("\n")
+        if "OD-009" in line and "OPEN" in line.upper()
+    ]
+    od009_open_actual = len(od009_lines) > 0
+    fixture_data = _load_fixture()
+    corpus = json.dumps(fixture_data)
+    corpus_lower = corpus.lower()
+    no_real_provider_data_actual = True
+    if "http://" in corpus_lower or "https://" in corpus_lower:
+        no_real_provider_data_actual = False
+    if "api.telegram.org" in corpus_lower:
+        no_real_provider_data_actual = False
+    if _re.search(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b", corpus):
+        no_real_provider_data_actual = False
+    if _re.search(r"\b\d{10,}\b", corpus):
+        no_real_provider_data_actual = False
+    for ref in fixture_data.get("canonical_references", []):
+        if not ref.get("safe_label", "").startswith("Synthetic"):
+            no_real_provider_data_actual = False
+            break
     return {
-        "od009_open": vector_expected["od009_open"],
-        "no_real_provider_data": vector_expected["no_real_provider_data"],
+        "od009_open": od009_open_actual,
+        "no_real_provider_data": no_real_provider_data_actual,
     }
 
 
@@ -2197,7 +2221,8 @@ def test_fc08_beacon_001() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["candidate_state"] == vector["expected"]["candidate_state"]
+    assert actual["beacon_acceptance_required"] is vector["expected"]["beacon_acceptance_required"]
 
 def test_fc08_beacon_002() -> None:
     vector = _get_vector("FC08-BEACON-002")
@@ -2207,7 +2232,7 @@ def test_fc08_beacon_002() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["beacon_acceptance_required"] is vector["expected"]["beacon_acceptance_required_must_be_true"]
 
 def test_fc08_beacon_003() -> None:
     vector = _get_vector("FC08-BEACON-003")
@@ -2217,7 +2242,8 @@ def test_fc08_beacon_003() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["beacon_acceptance_performed"] is vector["expected"]["beacon_acceptance_performed"]
+    assert actual["beacon_mutation_performed"] is vector["expected"]["beacon_mutation_performed"]
 
 def test_fc08_beacon_004() -> None:
     vector = _get_vector("FC08-BEACON-004")
@@ -2227,7 +2253,10 @@ def test_fc08_beacon_004() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["beacon_mutation_performed"] is vector["expected"]["beacon_mutation_performed"]
+    assert actual["beacon_revision_created"] is vector["expected"]["beacon_revision_created"]
+    assert actual["lifecycle_changed"] is vector["expected"]["lifecycle_changed"]
+    assert actual["historical_revision_rewritten"] is vector["expected"]["historical_revision_rewritten"]
 
 def test_fc08_beacon_005() -> None:
     vector = _get_vector("FC08-BEACON-005")
@@ -2237,7 +2266,7 @@ def test_fc08_beacon_005() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["field_candidates_empty"] is vector["expected"]["field_candidates_empty"]
 
 def test_fc08_beacon_006() -> None:
     vector = _get_vector("FC08-BEACON-006")
@@ -2247,7 +2276,7 @@ def test_fc08_beacon_006() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["field_candidates_empty"] is vector["expected"]["field_candidates_empty"]
 
 def test_fc08_beacon_007() -> None:
     vector = _get_vector("FC08-BEACON-007")
@@ -2257,7 +2286,7 @@ def test_fc08_beacon_007() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["field_candidates_empty"] is vector["expected"]["field_candidates_empty"]
 
 def test_fc08_beacon_008() -> None:
     vector = _get_vector("FC08-BEACON-008")
@@ -2267,7 +2296,8 @@ def test_fc08_beacon_008() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["filter_catalog_version_id"] == vector["input"]["filter_catalog_version_id"]
+    assert actual["validated_builder_field_ids_count"] == len(vector["input"]["validated_builder_field_ids"])
 
 def test_fc08_builder_001() -> None:
     vector = _get_vector("FC08-BUILDER-001")
@@ -2277,7 +2307,8 @@ def test_fc08_builder_001() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["has_field"] == vector["expected"]["has_field"]
 
 def test_fc08_builder_002() -> None:
     vector = _get_vector("FC08-BUILDER-002")
@@ -2287,7 +2318,8 @@ def test_fc08_builder_002() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["has_field"] == vector["expected"]["has_field"]
 
 def test_fc08_builder_003() -> None:
     vector = _get_vector("FC08-BUILDER-003")
@@ -2297,7 +2329,7 @@ def test_fc08_builder_003() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["validation_state"] == vector["expected"]["validation_state"]
 
 def test_fc08_builder_004() -> None:
     vector = _get_vector("FC08-BUILDER-004")
@@ -2307,7 +2339,7 @@ def test_fc08_builder_004() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["validation_state"] == vector["expected"]["validation_state"]
 
 def test_fc08_builder_005() -> None:
     vector = _get_vector("FC08-BUILDER-005")
@@ -2317,7 +2349,7 @@ def test_fc08_builder_005() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["validation_state"] == vector["expected"]["validation_state"]
 
 def test_fc08_builder_006() -> None:
     vector = _get_vector("FC08-BUILDER-006")
@@ -2327,7 +2359,7 @@ def test_fc08_builder_006() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["validation_state"] == vector["expected"]["validation_state"]
 
 def test_fc08_builder_007() -> None:
     vector = _get_vector("FC08-BUILDER-007")
@@ -2337,7 +2369,8 @@ def test_fc08_builder_007() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["validation_state"] == vector["expected"]["validation_state"]
+    assert actual["warning_ids_present"] == vector["expected"]["warning_ids_present"]
 
 def test_fc08_builder_008() -> None:
     vector = _get_vector("FC08-BUILDER-008")
@@ -2347,7 +2380,7 @@ def test_fc08_builder_008() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["is_authoritative_for_beacon"] is vector["expected"]["is_authoritative_for_beacon"]
 
 def test_fc08_catalog_001() -> None:
     vector = _get_vector("FC08-CATALOG-001")
@@ -2357,7 +2390,8 @@ def test_fc08_catalog_001() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["filter_catalog_version_id"] == vector["expected"]["filter_catalog_version_id"]
+    assert actual["publication_state"] == vector["expected"]["publication_state"]
 
 def test_fc08_catalog_002() -> None:
     vector = _get_vector("FC08-CATALOG-002")
@@ -2367,9 +2401,12 @@ def test_fc08_catalog_002() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
     assert actual["valid"] is False
     assert actual["errors"]
+    assert any(
+        vector["expected"]["error_fragment"].lower() in error_message.lower()
+        for _, _, error_message in actual["errors"]
+    )
 
 def test_fc08_catalog_003() -> None:
     vector = _get_vector("FC08-CATALOG-003")
@@ -2379,9 +2416,12 @@ def test_fc08_catalog_003() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
     assert actual["valid"] is False
     assert actual["errors"]
+    assert any(
+        vector["expected"]["error_fragment"].lower() in error_message.lower()
+        for _, _, error_message in actual["errors"]
+    )
 
 def test_fc08_catalog_004() -> None:
     vector = _get_vector("FC08-CATALOG-004")
@@ -2391,9 +2431,12 @@ def test_fc08_catalog_004() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
     assert actual["valid"] is False
     assert actual["errors"]
+    assert any(
+        vector["expected"]["error_fragment"].lower() in error_message.lower()
+        for _, _, error_message in actual["errors"]
+    )
 
 def test_fc08_catalog_005() -> None:
     vector = _get_vector("FC08-CATALOG-005")
@@ -2403,7 +2446,7 @@ def test_fc08_catalog_005() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["capability_state"] == vector["expected"]["capability_state"]
 
 def test_fc08_catalog_006() -> None:
     vector = _get_vector("FC08-CATALOG-006")
@@ -2413,9 +2456,12 @@ def test_fc08_catalog_006() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
     assert actual["valid"] is False
     assert actual["errors"]
+    assert any(
+        vector["expected"]["error_fragment"].lower() in error_message.lower()
+        for _, _, error_message in actual["errors"]
+    )
 
 def test_fc08_catalog_007() -> None:
     vector = _get_vector("FC08-CATALOG-007")
@@ -2425,7 +2471,7 @@ def test_fc08_catalog_007() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["supersedes_catalog_version_id"] == vector["expected"]["supersedes_catalog_version_id"]
 
 def test_fc08_catalog_008() -> None:
     vector = _get_vector("FC08-CATALOG-008")
@@ -2435,7 +2481,7 @@ def test_fc08_catalog_008() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["definition_state"] == vector["expected"]["definition_state"]
 
 def test_fc08_evidence_001() -> None:
     vector = _get_vector("FC08-EVIDENCE-001")
@@ -2445,7 +2491,8 @@ def test_fc08_evidence_001() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["suggested_definition_state"] == vector["expected"]["suggested_definition_state"]
 
 def test_fc08_evidence_002() -> None:
     vector = _get_vector("FC08-EVIDENCE-002")
@@ -2455,7 +2502,8 @@ def test_fc08_evidence_002() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["suggested_definition_state"] == vector["expected"]["suggested_definition_state"]
 
 def test_fc08_evidence_003() -> None:
     vector = _get_vector("FC08-EVIDENCE-003")
@@ -2465,7 +2513,8 @@ def test_fc08_evidence_003() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert any(vector["expected"]["reason_contained"] in r for r in actual["reason_codes"])
 
 def test_fc08_evidence_004() -> None:
     vector = _get_vector("FC08-EVIDENCE-004")
@@ -2475,7 +2524,8 @@ def test_fc08_evidence_004() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert any(vector["expected"]["reason_contained"] in r for r in actual["reason_codes"])
 
 def test_fc08_evidence_005() -> None:
     vector = _get_vector("FC08-EVIDENCE-005")
@@ -2485,7 +2535,8 @@ def test_fc08_evidence_005() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert any(vector["expected"]["reason_contained"] in r for r in actual["reason_codes"])
 
 def test_fc08_evidence_006() -> None:
     vector = _get_vector("FC08-EVIDENCE-006")
@@ -2495,7 +2546,8 @@ def test_fc08_evidence_006() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert any(vector["expected"]["reason_contained"] in r for r in actual["reason_codes"])
 
 def test_fc08_evidence_007() -> None:
     vector = _get_vector("FC08-EVIDENCE-007")
@@ -2505,7 +2557,8 @@ def test_fc08_evidence_007() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert any(vector["expected"]["reason_contained"] in r for r in actual["reason_codes"])
 
 def test_fc08_evidence_008() -> None:
     vector = _get_vector("FC08-EVIDENCE-008")
@@ -2515,7 +2568,8 @@ def test_fc08_evidence_008() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["evidence_count"] == vector["expected"]["evidence_count"]
 
 def test_fc08_safe_read_001() -> None:
     vector = _get_vector("FC08-SAFE-READ-001")
@@ -2525,7 +2579,8 @@ def test_fc08_safe_read_001() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["surface_state"] == vector["expected"]["surface_state"]
+    assert actual["details_redacted"] is vector["expected"]["details_redacted"]
 
 def test_fc08_safe_read_002() -> None:
     vector = _get_vector("FC08-SAFE-READ-002")
@@ -2535,7 +2590,9 @@ def test_fc08_safe_read_002() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["details_redacted"] is vector["expected"]["details_redacted"]
+    assert actual["warning_ids_empty"] is (vector["expected"].get("warning_ids_count", 0) == 0)
+    assert actual["evidence_reference_ids_empty"] is (vector["expected"].get("evidence_reference_ids_count", 0) == 0)
 
 def test_fc08_safe_read_003() -> None:
     vector = _get_vector("FC08-SAFE-READ-003")
@@ -2545,7 +2602,8 @@ def test_fc08_safe_read_003() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["surface_state"] == vector["expected"]["surface_state"]
+    assert actual["details_redacted"] is vector["expected"]["details_redacted"]
 
 def test_fc08_safe_read_004() -> None:
     vector = _get_vector("FC08-SAFE-READ-004")
@@ -2555,7 +2613,9 @@ def test_fc08_safe_read_004() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["surface_state"] == vector["expected"]["surface_state"]
+    assert actual["explanation_code"] == vector["expected"]["explanation_codes"][0]
+    assert actual["details_redacted"] is vector["expected"]["details_redacted"]
 
 def test_fc08_safe_read_005() -> None:
     vector = _get_vector("FC08-SAFE-READ-005")
@@ -2565,7 +2625,9 @@ def test_fc08_safe_read_005() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["surface_state"] == vector["expected"]["surface_state"]
+    assert actual["explanation_code"] == vector["expected"]["explanation_codes"][0]
+    assert actual["details_redacted"] is vector["expected"]["details_redacted"]
 
 def test_fc08_safe_read_006() -> None:
     vector = _get_vector("FC08-SAFE-READ-006")
@@ -2575,7 +2637,9 @@ def test_fc08_safe_read_006() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["surface_state"] == vector["expected"]["surface_state"]
+    assert actual["explanation_code"] == vector["expected"]["explanation_codes"][0]
+    assert actual["details_redacted"] is vector["expected"]["details_redacted"]
 
 def test_fc08_safe_read_007() -> None:
     vector = _get_vector("FC08-SAFE-READ-007")
@@ -2585,7 +2649,7 @@ def test_fc08_safe_read_007() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["freshness_state"] == vector["expected"]["freshness_state"]
 
 def test_fc08_safe_read_008() -> None:
     vector = _get_vector("FC08-SAFE-READ-008")
@@ -2595,7 +2659,7 @@ def test_fc08_safe_read_008() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["freshness_state"] == vector["expected"]["freshness_state"]
 
 def test_fc08_safe_read_009() -> None:
     vector = _get_vector("FC08-SAFE-READ-009")
@@ -2605,7 +2669,7 @@ def test_fc08_safe_read_009() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["freshness_state"] == vector["expected"]["freshness_state"]
 
 def test_fc08_safe_read_010() -> None:
     vector = _get_vector("FC08-SAFE-READ-010")
@@ -2615,7 +2679,7 @@ def test_fc08_safe_read_010() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["freshness_state"] == vector["expected"]["freshness_state"]
 
 def test_fc08_safe_read_011() -> None:
     vector = _get_vector("FC08-SAFE-READ-011")
@@ -2625,7 +2689,7 @@ def test_fc08_safe_read_011() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["beacon_acceptance_required_in_explanations"] is vector["expected"]["beacon_acceptance_required_in_explanations"]
 
 def test_fc08_safe_read_012() -> None:
     vector = _get_vector("FC08-SAFE-READ-012")
@@ -2635,7 +2699,13 @@ def test_fc08_safe_read_012() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["identity_authorization_performed_by_filter_catalog"] is False
+    assert actual["authoritative_business_state"] is False
+    assert actual["contains_raw_provider_payload"] is False
+    assert actual["contains_stack_trace"] is False
+    assert actual["contains_secret_or_personal_data"] is False
+    assert actual["contains_admin_private_notes"] is False
+    assert actual["runtime_or_persistence_performed"] is False
 
 def test_fc08_static_001() -> None:
     vector = _get_vector("FC08-STATIC-001")
@@ -2645,7 +2715,8 @@ def test_fc08_static_001() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["all_symbols_present"] is vector["expected"]["all_symbols_present"]
+    assert actual["checked_symbol_count"] == len(vector["input"]["expected_symbols"])
 
 def test_fc08_static_002() -> None:
     vector = _get_vector("FC08-STATIC-002")
@@ -2655,7 +2726,7 @@ def test_fc08_static_002() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["forbidden_imports_absent"] is vector["expected"]["no_forbidden_imports"]
 
 def test_fc08_static_003() -> None:
     vector = _get_vector("FC08-STATIC-003")
@@ -2665,7 +2736,7 @@ def test_fc08_static_003() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["all_blobs_match"] is vector["expected"]["all_blobs_match"]
 
 def test_fc08_static_004() -> None:
     vector = _get_vector("FC08-STATIC-004")
@@ -2675,7 +2746,8 @@ def test_fc08_static_004() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["od009_open"] is vector["expected"]["od009_open"]
+    assert actual["no_real_provider_data"] is vector["expected"]["no_real_provider_data"]
 
 def test_fc08_value_001() -> None:
     vector = _get_vector("FC08-VALUE-001")
@@ -2685,7 +2757,8 @@ def test_fc08_value_001() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["candidate_changed"] == vector["expected"]["candidate_changed"]
 
 def test_fc08_value_002() -> None:
     vector = _get_vector("FC08-VALUE-002")
@@ -2695,7 +2768,8 @@ def test_fc08_value_002() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["collapse_detected"] is vector["expected"]["collapse_detected"]
 
 def test_fc08_value_003() -> None:
     vector = _get_vector("FC08-VALUE-003")
@@ -2705,7 +2779,7 @@ def test_fc08_value_003() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
 
 def test_fc08_value_004() -> None:
     vector = _get_vector("FC08-VALUE-004")
@@ -2715,7 +2789,8 @@ def test_fc08_value_004() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["unit_mismatch_detected"] is vector["expected"]["unit_mismatch_detected"]
 
 def test_fc08_value_005() -> None:
     vector = _get_vector("FC08-VALUE-005")
@@ -2725,7 +2800,8 @@ def test_fc08_value_005() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["inclusivity_incompatible_detected"] is vector["expected"]["inclusivity_incompatible_detected"]
 
 def test_fc08_value_006() -> None:
     vector = _get_vector("FC08-VALUE-006")
@@ -2735,7 +2811,7 @@ def test_fc08_value_006() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
 
 def test_fc08_value_007() -> None:
     vector = _get_vector("FC08-VALUE-007")
@@ -2745,7 +2821,7 @@ def test_fc08_value_007() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
 
 def test_fc08_value_008() -> None:
     vector = _get_vector("FC08-VALUE-008")
@@ -2755,7 +2831,8 @@ def test_fc08_value_008() -> None:
         vector["input"],
         vector["expected"],
     )
-    assert actual is not None
+    assert actual["decision"] == vector["expected"]["decision"]
+    assert actual["all_evaluated"] is vector["expected"]["all_evaluated"]
 
 # ---------------------------------------------------------------------------
 # 8 Fixed Invariant Tests
