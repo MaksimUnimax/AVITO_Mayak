@@ -80,7 +80,7 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 - `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
-- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; cross-cutting integration module; RF-01 active.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; cross-cutting integration module; RF-01 governance complete; RF-02 next.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 
 ### Final governance
@@ -97,7 +97,7 @@ The final documentation acceptance remains the historical baseline for modules 0
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
 | `03-contracts` | common contracts | APPROVED documentation baseline |
-| `04-modules` | 13 accepted domain playbooks plus module 14 cross-cutting integration governance | modules 01–13 accepted; module 14 RF-01 active |
+| `04-modules` | 13 accepted domain playbooks plus module 14 cross-cutting integration governance | modules 01–13 accepted; module 14 RF-01 governance complete; RF-02 next |
 | `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
 | `06-reports` | evidence reports and handoffs | final documentation acceptance published; no product-code report |
 | `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |

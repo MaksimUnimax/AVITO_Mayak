@@ -347,9 +347,9 @@ CLI does not choose the next roadmap step.
 
 RF-00 is accepted at baseline `315d8c63bccc870a8c55bac0cd3896a687597177` with 4511 passing tests.
 
-RF-01 is active.
+RF-01 governance capture is complete. RF-02 is the next permitted roadmap step after independent acceptance of this closure commit.
 
-Until RF-01 is fully accepted, runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, service, port and secret mutations remain unauthorized.
+RF-01 remains documentation-only. Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
 
 Module 14 completes only after all applicable RF-00–RF-30 and corrective steps are independently accepted, deployed acceptance evidence passes, operator pack exists and final verdict is `READY_FOR_OPERATOR_ACCEPTANCE`.
 

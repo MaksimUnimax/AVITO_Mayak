@@ -481,3 +481,20 @@ Run 12 GitHub publication is not fully accepted until `/opt/avito-mayak` is sync
 **Следующий безопасный шаг:**
 
 Publish and independently verify the complete Run 12 change set, then issue one server-sync-only CLI packet for the exact published SHA. After acceptance, continue to Run 13 — Identity & Access Module Playbook.
+
+## 2026-07-23 — RF-01 Governance capture and module 14 playbook
+
+- **Result:** `PASS`
+- **Baseline:** `315d8c63bccc870a8c55bac0cd3896a687597177`
+- **Published governance foundation:** `569fe019700cd979a683e21816352007a63aecf8`
+- **Published module registration:** `379225e6771c8ffb5839484db798f56b0bc9ae85`
+- **Created:** `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`
+- **Created:** `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`
+- **Updated:** `docs/MANIFEST.md`
+- **Updated:** `docs/04-modules/README.md`
+- **Corrective history:** whitespace-safe literal capture, explicit OD-014 capture and committed-tree FC-08/full-suite ordering.
+- **Owner-decision coverage:** existing server, Docker Compose, PostgreSQL 18, API/worker/scheduler, no broker, local-only network, file-backed secrets, GitHub Actions, identity, billing, filters, cadence, channels, Web/Admin, retention, observability, recovery, no-new-owner-question policy and `READY_FOR_OPERATOR_ACCEPTANCE`.
+- **Verification:** lock-compatible Python 3.14 environment; 4511 tests passed; no runtime mutation.
+- **Security:** no credentials, private keys, populated `.env`, production personal data or raw provider payloads added.
+- **Foreign-resource impact:** none.
+- **Roadmap:** RF-01 governance capture complete; RF-02 is the next roadmap step after independent acceptance of this closure commit.

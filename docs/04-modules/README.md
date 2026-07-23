@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE — modules 01–13 are accepted; module 14 RF-01 is active.
+**Статус:** MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE — modules 01–13 are accepted; module 14 RF-01 governance is complete and RF-02 is next.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -22,11 +22,11 @@ Accepted domain modules:
 
 Active cross-cutting integration module:
 
-- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-01 active.
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-01 governance complete; RF-02 next.
 - `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 
 All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 is the active cross-cutting implementation and integration module. Its approved playbook and owner decisions authorize work only through exact RF tasks and do not by themselves prove runtime implementation, deployment or production readiness.
 
 Every playbook includes purpose/boundaries, data owner, confirmed and open decisions, public inputs/outputs, allowed/forbidden changes, immutable common contracts, dependencies/fakes, fixtures/test vectors, acceptance criteria, roadmap, report/handoff and append-only history.
 
-Playbooks for modules 01–13 remain semantic and ownership prerequisites. Module 14 may authorize later code, dependency, database, migration, infrastructure and deployment work only when its approved owner decisions, current roadmap prerequisite and one exact gated task all permit that mutation. RF-01 remains documentation-only, and runtime mutation is forbidden until RF-01 is fully accepted.
+Playbooks for modules 01–13 remain semantic and ownership prerequisites. Module 14 may authorize later code, dependency, database, migration, infrastructure and deployment work only when its approved owner decisions, current roadmap prerequisite and one exact gated task all permit that mutation. RF-01 is documentation-only and does not authorize runtime mutation.

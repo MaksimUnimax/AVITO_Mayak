@@ -1237,3 +1237,17 @@ WC-01 is complete only after independent verification and acceptance by ChatGPT.
 **Blocked gates:** no exact catalog, parser implementation/probe, Avito live/provider call, frontend/UI/routes/API, database/ORM/schema/migration/persistence, runtime/service/worker/scheduler, Docker, CI/CD, deploy, credentials, secrets or foreign authoritative-state mutation is authorized. This capture does not authorize FC-02 or product implementation before independent acceptance and a fresh GitHub gate.
 
 This ADR creates no product code, tests, fixtures, runtime, provider behavior or implementation authorization.
+
+## 2026-07-23 — RF-01 Module 14 governance boundary accepted
+
+- **Status:** `ACCEPTED`
+- **Technical scope:** `RF-01`
+- **Module:** `14-runtime-foundation-and-autonomous-integration`
+- **Decision:** Module 14 is the active cross-cutting implementation and integration module under `AUTONOMOUS_RUNTIME_COMPLETION`, targeting `SYNTHETIC_AND_OPERATOR_ACCEPTANCE_RUNTIME` and completing only at `READY_FOR_OPERATOR_ACCEPTANCE`.
+- **Authority:** Current GitHub `main`, accepted append-only decisions, the module 14 playbook, owner decisions and accepted module 01–13 handoffs govern subsequent exact RF tasks.
+- **Existing server:** The existing project server is the authorized runtime host. A separate server is neither required nor authorized.
+- **Precedence:** Historical documentation-only or no-runtime conclusions are superseded only inside exact governed module 14 tasks. Public production launch remains blocked.
+- **Ownership:** Module 14 assembles runtime without taking ownership of domain state from modules 01–13 and without direct foreign-module writes.
+- **Runtime mutation in RF-01:** none.
+- **Accepted predecessor evidence:** `315d8c63bccc870a8c55bac0cd3896a687597177`, `569fe019700cd979a683e21816352007a63aecf8`, `379225e6771c8ffb5839484db798f56b0bc9ae85`.
+- **Next gate:** `RF-02 — Current-main governance reconciliation`.
