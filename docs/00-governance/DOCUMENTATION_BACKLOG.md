@@ -99,7 +99,9 @@ Artifact:
 
 ### RF-03-B — Cross-module runtime gap matrix — PUBLISHED FOR INDEPENDENT ACCEPTANCE
 
-### RF-03-C — Cross-module consistency audit — PENDING
+### RF-03-C — Cross-module consistency audit — PUBLISHED FOR INDEPENDENT ACCEPTANCE
+
+`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`; runtime mutation none; production remains blocked.
 
 ### RF-03-D — Closure evidence and status transition — PENDING
 

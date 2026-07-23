@@ -37,12 +37,12 @@ The recorded RF-02 audit baseline is evidence only and does not replace a fresh 
 - RF-02 documentation indexes reconciliation: accepted at `34db47cbbffd7f31a918963b181e3048229307be`.
 - RF-02 module registry and playbook gate reconciliation: accepted at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`.
 - RF-02 closure evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`; accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- RF-03 — active; RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 matrix is published for independent acceptance.
+- RF-03 — active; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is published for independent acceptance.
 - RF-04–RF-30: not accepted.
 
 RF-02 closure commit `c92e9299e5c0bd11ea18362673a8ac342b835483` is independently accepted.
 
-RF-03 is active. RF-03-03 and RF-03 closure remain pending. RF-04 remains not started and prohibited until RF-03 closure is independently accepted. Runtime mutation remains none; `PRODUCTION_READY` is not claimed.
+RF-03 is active. RF-03-03 is published for independent acceptance; RF-03 closure remains pending. RF-04 remains not started and prohibited until RF-03 closure is independently accepted. Runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
 
 ## Current repository contour
 

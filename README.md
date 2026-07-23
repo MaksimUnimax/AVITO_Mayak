@@ -65,7 +65,7 @@ This does not prove that the complete acceptance runtime is assembled or deploye
 - RF-00: accepted.
 - RF-01: accepted.
 - RF-02: independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- RF-03: active; RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 matrix is published for independent acceptance; RF-03-03 and RF-03 closure remain pending; RF-04 is not started.
+- RF-03: active; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is published for independent acceptance; RF-03 closure remains pending; RF-04 is not started; runtime mutation is none and production remains blocked.
 - RF-04–RF-30: not accepted and may begin only through their exact prerequisites and one exact task.
 
 Historical Final Documentation Acceptance remains evidence for the earlier documentation cycle. It is not the current roadmap endpoint.

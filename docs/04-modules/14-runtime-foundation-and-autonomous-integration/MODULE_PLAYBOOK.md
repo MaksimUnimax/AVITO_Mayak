@@ -369,15 +369,15 @@ RF-03-01 was originally published at `c366f1dd6331902fc1a08f54225026f17c1ef4fa` 
 
 `THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
 
-and RF-03-02 publishes the cross-module runtime gap matrix for independent acceptance.
+and RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`.
 
 Remaining RF-03 artifacts are:
 
-- `CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`;
-- `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`;
+- `CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` — independently accepted through expected base;
+- `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — published for independent acceptance;
 - RF-03 closure evidence and status transition.
 
-RF-03-03 and RF-03 closure remain pending. RF-04 remains not started and must not start before all RF-03 artifacts and RF-03 closure are independently accepted. Runtime mutation remains none; `PRODUCTION_READY` is not claimed.
+RF-03-03 is published for independent acceptance; RF-03 closure remains pending. RF-04 remains not started and must not start before all RF-03 artifacts and RF-03 closure are independently accepted. Runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
 
 Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
 
