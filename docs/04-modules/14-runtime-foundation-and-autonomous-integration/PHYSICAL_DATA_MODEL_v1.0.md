@@ -1,16 +1,16 @@
 # Physical Data Model
 
-Version: `1.0`  
-Status: `RF-04_ACTIVE_FIRST_ARTIFACT_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`  
-Date: `2026-07-23`  
-Module: `14-runtime-foundation-and-autonomous-integration`  
-Roadmap step: `RF-04`  
-Technical-ID: `RF-04-01-PHYSICAL-DATA-MODEL-20260723`  
-Source branch: `main`  
-Source base SHA: `32712e1fbf56272e17cf0b5687f1a9a3b6a94c0a`  
-RF-03 accepted chain head: `32712e1fbf56272e17cf0b5687f1a9a3b6a94c0a`  
-Runtime mutation: `none`  
-Production verdict: `NOT_CLAIMED`  
+Version: `1.0`
+Status: `RF-04_ACTIVE_FIRST_ARTIFACT_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
+Date: `2026-07-23`
+Module: `14-runtime-foundation-and-autonomous-integration`
+Roadmap step: `RF-04`
+Technical-ID: `RF-04-01-PHYSICAL-DATA-MODEL-20260723`
+Source branch: `main`
+Source base SHA: `32712e1fbf56272e17cf0b5687f1a9a3b6a94c0a`
+RF-03 accepted chain head: `32712e1fbf56272e17cf0b5687f1a9a3b6a94c0a`
+Runtime mutation: `none`
+Production verdict: `NOT_CLAIMED`
 Final target: `READY_FOR_OPERATOR_ACCEPTANCE`
 
 ## Authority and scope
