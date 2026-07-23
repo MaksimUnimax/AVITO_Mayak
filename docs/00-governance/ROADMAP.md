@@ -41,16 +41,21 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[c] RF-03-02` Cross-module runtime gap matrix — repository-content complete and independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`.
   - `[c] RF-03-03` Cross-module consistency audit — repository-content complete and independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
   - `[c] RF-03-04` Closure evidence and status transition — repository-content complete; published for independent acceptance.
-- `[c] RF-04` Runtime architecture and physical data model — repository-content complete; closure published for independent acceptance.
+- `[x] RF-04` Runtime architecture and physical data model — accepted through `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`.
   - `[x] RF-04-01` Physical data model — accepted through `2edfbb96c7438dae6bb6f3890cfe007d4467b6ca`.
   - `[x] RF-04-02` Transaction and outbox boundaries — accepted through `710f965a66488f99b4c3cc9cf9f44bef54c7434a`.
   - `[x] RF-04-03` Runtime process and package model — accepted at `37785e2cde19b80ba69edd23d07d6b38949dc0cb`.
   - `[x] RF-04-04` Migration and schema evolution plan — accepted at `39f65b3f2de9668be188aec6f16b777d04f23135`.
   - `[x] RF-04-05` Runtime topology candidate — accepted through `9062d613d64ded16c9758ea33ae7cfe04c267990`.
   - `[x] RF-04-06` Configuration and secrets boundary — accepted at `0d0efe27018fa01e1248e8939a026a3e590d622b`.
-  - `[c] RF-04-07` Closure and status transition — published for independent acceptance.
-- `[ ] RF-05` Existing-server environment record — next but not started; gated by independent acceptance of RF-04 closure.
-- `[ ] RF-06` Toolchain and dependency proof.
+  - `[x] RF-04-07` Closure and status transition — accepted through `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`.
+- `[c] RF-05` Existing-server environment record — repository-content complete; closure published for independent acceptance; `NOT_PRODUCTION_READY`.
+  - `[x] RF-05-01` Read-only host and allocation baseline.
+  - `[x] RF-05-02` Service identity and isolation evidence.
+  - `[x] RF-05-03` Filesystem boundaries and permissions evidence.
+  - `[x] RF-05-04` Environment allocation record validation.
+  - `[c] RF-05-05` Repository evidence and closure — published for independent acceptance; `NOT_PRODUCTION_READY`.
+- `[ ] RF-06` Toolchain and dependency proof — blocked pending independent acceptance of RF-05 closure.
 - `[ ] RF-07` CI quality gates.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.

@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** `MODULE_14_RF04_COMPLETE_RF05_NEXT` — modules 01–13 remain accepted semantic/ownership foundations; RF-02 remains independently accepted; RF-04 is repository-content complete and closure is published for independent acceptance; RF-05 is next but not started.
+**Статус:** `MODULE_14_RF05_CLOSURE_PUBLISHED_RF06_BLOCKED_PENDING_ACCEPTANCE` — RF-04 is accepted through current base; RF-05 repository content and closure are published for independent acceptance; environment is `RUNTIME_ELIGIBLE`; runtime is not implemented or started; `NOT_PRODUCTION_READY`.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -22,7 +22,7 @@ Each module has one canonical `MODULE_PLAYBOOK.md`.
 
 ## Active cross-cutting integration module
 
-- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-00–RF-03 accepted at their recorded boundaries; RF-04 repository-content complete and closure published for independent acceptance; RF-05 next/not started.
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-04 accepted through current base; RF-05 repository content and closure published for independent acceptance; RF-06 blocked pending acceptance.
 - `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — accepted RF-02 audit input.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
@@ -41,9 +41,9 @@ RF-02 evidence chain:
 - `14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — RF-03-03 independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
 - `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md` — RF-03-04 original closure evidence was published at `a6c5277fcb5596d3c53a59fbcdaec5c06e3456ff`; its corrective index-state chain is published for independent acceptance.
 
-RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete. RF-04 is repository-content complete and closure is published for independent acceptance; RF-05 is next but not started. Runtime mutation remains none, runtime remains unaccepted, production remains blocked, and no `PRODUCTION_READY` claim is made.
+RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete. RF-04 is accepted through current base. RF-05 is repository-content complete and its closure is published for independent acceptance; RF-06 is not started and blocked pending that acceptance. Runtime implementation/startup remains absent, runtime mutation beyond RF-05 allocations is none, and `NOT_PRODUCTION_READY` remains current.
 
-Current RF-04 artifacts: `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`.
+Current RF-04 artifacts: `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`. Current RF-05 artifacts: `EXISTING_SERVER_ENVIRONMENT_RECORD_v1.0.md` and `EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md`.
 
 All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 remains the active cross-cutting implementation and integration module.
 
