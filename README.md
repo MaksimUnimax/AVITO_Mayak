@@ -1,6 +1,6 @@
 # Маяк Авито
 
-**Статус репозитория:** `MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE` — RF-02 is accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`; RF-03 integration inventory is active.
+**Статус репозитория:** `MODULE_14_RF03_COMPLETE_RF04_NEXT` — RF-03 is complete at repository-content level and its closure is published for independent acceptance; RF-04 is next only after independent acceptance of the RF-03 closure commit.
 
 «Маяк Авито» — сервис мониторинга поисковой выдачи Avito. Пользователь создаёт отдельный Маяк из ссылки поиска, а принятая текущая семантика уведомляет только о вновь наблюдаемых объявлениях. Первый baseline уведомление не создаёт. Изменение цены само по себе не является notification event текущего scope.
 
@@ -18,7 +18,9 @@
 8. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md)
 9. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md)
 10. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md)
-11. affected module playbooks, contracts, handoffs and append-only decisions.
+11. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md)
+12. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md)
+13. affected module playbooks, contracts, handoffs and append-only decisions.
 
 Exact current GitHub `main` SHA must be fetched before every task. SHA values recorded in governance documents are evidence baselines, not permission to skip a fresh check.
 
@@ -65,7 +67,7 @@ This does not prove that the complete acceptance runtime is assembled or deploye
 - RF-00: accepted.
 - RF-01: accepted.
 - RF-02: independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- RF-03: active; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is published for independent acceptance; RF-03 closure remains pending; RF-04 is not started; runtime mutation is none and production remains blocked.
+- RF-03: complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance; RF-04 is next but not started and may begin only after independent closure acceptance; runtime mutation is none and production remains blocked.
 - RF-04–RF-30: not accepted and may begin only through their exact prerequisites and one exact task.
 
 Historical Final Documentation Acceptance remains evidence for the earlier documentation cycle. It is not the current roadmap endpoint.

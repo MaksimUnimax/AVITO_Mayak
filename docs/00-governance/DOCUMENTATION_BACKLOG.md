@@ -1,7 +1,7 @@
 # Маяк Авито — backlog документации
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF03_ACTIVE`
+**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
 **Дата:** 2026-07-23
 
 ## Historical documentation backlog
@@ -103,9 +103,13 @@ Artifact:
 
 `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`; runtime mutation none; production remains blocked.
 
-### RF-03-D — Closure evidence and status transition — PENDING
+### RF-03-D — Closure evidence and status transition — COMPLETE AT REPOSITORY-CONTENT LEVEL; PUBLISHED FOR INDEPENDENT ACCEPTANCE
 
-RF-04 must not start before RF-03 closure is independently accepted.
+Closure evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md`.
+
+RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
+
+RF-04 is next but not started and must not start before RF-03 closure is independently accepted. Runtime remains unaccepted; production remains blocked.
 
 ## Later documentation roadmap
 

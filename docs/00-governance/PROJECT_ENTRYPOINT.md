@@ -1,7 +1,7 @@
 # Маяк Авито — точка входа в проект
 
 **Версия:** 2.0
-**Статус:** `MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE`
+**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
 **Дата:** 2026-07-23
 
 ## 1. Source-of-truth order
@@ -19,9 +19,10 @@ Before every task ChatGPT independently reads current public GitHub `main`, reco
 9. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`;
 10. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`;
 11. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`;
-12. append-only decisions and worklog;
-13. `docs/00-governance/OPEN_DECISIONS.md`;
-14. affected architecture, contracts, module playbooks, handoffs, quality and operations evidence.
+12. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md`;
+13. append-only decisions and worklog;
+14. `docs/00-governance/OPEN_DECISIONS.md`;
+15. affected architecture, contracts, module playbooks, handoffs, quality and operations evidence.
 
 Current GitHub `main` has precedence over stale summaries.
 
@@ -41,7 +42,7 @@ The completion boundary is:
 
 `READY_FOR_OPERATOR_ACCEPTANCE`
 
-RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is published for independent acceptance; RF-03 remains active, RF-03-03 and RF-03 closure remain pending, and RF-04 remains not started. Runtime mutation remains none. `PRODUCTION_READY` is not an allowed Module 14 verdict.
+RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 is complete at repository-content level and closure is published for independent acceptance. RF-04 is next but not started and may begin only after independent acceptance of the closure commit. Runtime mutation remains none. `PRODUCTION_READY` is not an allowed Module 14 verdict.
 
 ## 3. Current repository facts
 

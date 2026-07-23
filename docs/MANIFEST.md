@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF03_ACTIVE`
+**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
 **Дата актуализации:** 2026-07-23
 
 ## Порядок входа
@@ -20,10 +20,11 @@
 10. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
 11. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`
 12. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`
-13. `docs/00-governance/OPEN_DECISIONS.md`
-14. relevant append-only decision and worklog entries
-15. affected architecture, contract, module, quality, operations and reference documents
-16. affected module evidence handoffs
+13. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md`
+14. `docs/00-governance/OPEN_DECISIONS.md`
+15. relevant append-only decision and worklog entries
+16. affected architecture, contract, module, quality, operations and reference documents
+17. affected module evidence handoffs
 
 `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md` remains historical evidence for the earlier documentation cycle. It is not the current roadmap endpoint and must not precede the active Module 14 governance when determining current work.
 
@@ -73,10 +74,10 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 - RF-02 applicable documentation indexes reconciliation — accepted.
 - RF-02 module registry and playbook gate reconciliation — accepted.
 - RF-02 closure evidence — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- RF-03 — active; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is published for independent acceptance.
-- RF-03 closure remains pending; RF-04–RF-30 are not started/not accepted; runtime mutation is none and production remains blocked.
+- RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; closure is published for independent acceptance.
+- RF-04 is next but not started and may begin only after independent acceptance of the RF-03 closure commit; RF-05–RF-30 are not started/not accepted; runtime mutation is none and production remains blocked.
 
-RF-03-03 is published for independent acceptance; RF-03 closure remains pending. RF-04 remains not started and must not start before RF-03 closure acceptance. Runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
+RF-03 is complete at repository-content level and closure is published for independent acceptance. RF-04 is next but not started and must not start before RF-03 closure acceptance. Runtime remains unaccepted; runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
 
 ## Current approved foundation documents
 
@@ -211,16 +212,16 @@ The historical no-runtime conclusion is superseded only inside exact governed Mo
 
 | Каталог | Назначение | Current status |
 |---|---|---|
-| `00-governance` | rules, current state, roadmap, decisions and worklog | RF-02 accepted; RF-03 active |
+| `00-governance` | rules, current state, roadmap, decisions and worklog | RF-03 repository-content complete; closure published; RF-04 next/not started |
 | `01-product` | historical product target and product context | v0.1 draft retained; current Module 14 decisions governed separately |
-| `02-architecture` | architecture, technical, security, data and compatibility | semantic foundations accepted; RF-04 physical runtime design pending |
+| `02-architecture` | architecture, technical, security, data and compatibility | RF-03 repository-content complete; closure published; RF-04 next/not started; runtime unaccepted |
 | `03-contracts` | common and public module contracts | accepted semantic foundation |
-| `04-modules` | modules 01–13 plus cross-cutting Module 14 | modules 01–13 accepted; Module 14 active; RF-03 integration inventory active |
+| `04-modules` | modules 01–13 plus cross-cutting Module 14 | RF-03 repository-content complete; closure published; RF-04 next/not started; runtime unaccepted |
 | `05-tasks` | historical literal execution packets | historical task evidence; current roadmap authority remains governance and GitHub main |
-| `06-reports` | accepted reports and module handoffs | modules 01–13 evidence accepted; Module 14 final handoff pending |
-| `07-quality` | strategy, fixtures, acceptance and regression | executable tests and synthetic fixtures exist; CI/deployed runtime gates pending |
-| `08-operations` | isolation, environments, observability, recovery, release and Windows egress | design boundaries accepted; project runtime deployment pending |
-| `09-references` | external evidence and provider policies | evidence accepted within scope; live providers disabled by default |
+| `06-reports` | accepted reports and module handoffs | RF-03 repository-content complete; closure published; RF-04 next/not started; runtime unaccepted |
+| `07-quality` | strategy, fixtures, acceptance and regression | RF-03 repository-content complete; closure published; RF-04 next/not started; runtime unaccepted |
+| `08-operations` | isolation, environments, observability, recovery, release and Windows egress | RF-03 repository-content complete; closure published; RF-04 next/not started; runtime unaccepted |
+| `09-references` | external evidence and provider policies | RF-03 repository-content complete; closure published; RF-04 next/not started; runtime unaccepted |
 
 ## Non-negotiable current boundaries
 

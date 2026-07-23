@@ -45,3 +45,6 @@ The existing project server is authorized only through exact Module 14 tasks. Fo
 GitHub Actions CI, Docker Compose, PostgreSQL 18 persistence, migrations from zero, API/worker/scheduler entry points, deployed Web Cabinet/Admin, deployed E2E, backup/restore, server deployment, operator pack and final handoff are not yet accepted.
 
 Module 14 targets `READY_FOR_OPERATOR_ACCEPTANCE` and must not claim `PRODUCTION_READY`.
+## Current Module 14 governance
+
+RF-03 is complete at repository-content level and closure evidence is published for independent acceptance. RF-04 is next but not started and may begin only after independent acceptance of the RF-03 closure commit. Runtime remains unaccepted, runtime mutation is none, and production remains blocked.

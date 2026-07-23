@@ -363,7 +363,7 @@ The accepted RF-02 evidence chain is:
 - module registry gate `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`;
 - RF-02 closure `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 
-RF-03 thirteen-module integration inventory is active.
+RF-03 thirteen-module integration inventory is complete at repository-content level; closure evidence is published for independent acceptance.
 
 RF-03-01 was originally published at `c366f1dd6331902fc1a08f54225026f17c1ef4fa` and is independently accepted through corrective chain head `23e73707b14b220da98beade93ee2d13021ba1b9`:
 
@@ -374,10 +374,10 @@ and RF-03-02 is independently accepted through corrective chain head `061757c4cf
 Remaining RF-03 artifacts are:
 
 - `CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` — independently accepted through expected base;
-- `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — published for independent acceptance;
-- RF-03 closure evidence and status transition.
+- `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`;
+- `THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md` — published for independent acceptance.
 
-RF-03-03 is published for independent acceptance; RF-03 closure remains pending. RF-04 remains not started and must not start before all RF-03 artifacts and RF-03 closure are independently accepted. Runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
+RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance. RF-04 is next but not started and must not start before independent acceptance of the closure commit. Runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
 
 Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
 

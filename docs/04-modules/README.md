@@ -53,3 +53,6 @@ Modules 01–13 remain semantic and ownership prerequisites. Module 14 may autho
 The current Module 14 target is `READY_FOR_OPERATOR_ACCEPTANCE`.
 
 Module 14 must not claim `PRODUCTION_READY`.
+## Current Module 14 governance
+
+RF-03 is complete at repository-content level and closure evidence is published for independent acceptance. RF-04 is next but not started and may begin only after independent acceptance of the RF-03 closure commit. Runtime remains unaccepted, runtime mutation is none, and production remains blocked.
