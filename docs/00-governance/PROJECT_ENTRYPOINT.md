@@ -1,7 +1,7 @@
 # Маяк Авито — точка входа в проект
 
 **Версия:** 2.0
-**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
+**Статус:** `MODULE_14_RF04_COMPLETE_RF05_NEXT`
 **Дата:** 2026-07-23
 
 ## 1. Source-of-truth order
@@ -42,7 +42,9 @@ The completion boundary is:
 
 `READY_FOR_OPERATOR_ACCEPTANCE`
 
-RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 is complete at repository-content level and closure is published for independent acceptance. RF-04 is next but not started and may begin only after independent acceptance of the closure commit. Runtime mutation remains none. `PRODUCTION_READY` is not an allowed Module 14 verdict.
+RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-04 repository content is complete and closure is published for independent acceptance. RF-05 is next but not started and may begin only after independent acceptance of the RF-04 closure commit. Runtime mutation remains none. `PRODUCTION_READY` is not an allowed Module 14 verdict.
+
+Current RF-04 evidence is the six design artifacts plus [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](../04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md).
 
 ## 3. Current repository facts
 

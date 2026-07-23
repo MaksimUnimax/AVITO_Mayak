@@ -377,7 +377,9 @@ Remaining RF-03 artifacts are:
 - `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`;
 - `THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md` — published for independent acceptance.
 
-RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance. RF-04 is next but not started and must not start before independent acceptance of the closure commit. Runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
+RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance. RF-04 repository content is complete and its closure is published for independent acceptance. RF-05 is next but not started and must not start before independent acceptance of the RF-04 closure commit. Runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
+
+Current RF-04 evidence comprises `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`.
 
 Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
 

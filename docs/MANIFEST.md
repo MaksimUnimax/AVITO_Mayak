@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
+**Статус:** `MODULE_14_RF04_COMPLETE_RF05_NEXT`
 **Дата актуализации:** 2026-07-23
 
 ## Порядок входа
@@ -75,9 +75,9 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 - RF-02 module registry and playbook gate reconciliation — accepted.
 - RF-02 closure evidence — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; closure is published for independent acceptance.
-- RF-04 is next but not started and may begin only after independent acceptance of the RF-03 closure commit; RF-05–RF-30 are not started/not accepted; runtime mutation is none and production remains blocked.
+- RF-04 repository content is complete; closure is published for independent acceptance. RF-05 is next but not started and is gated by independent RF-04 closure acceptance; RF-06–RF-30 are not started/not accepted; runtime mutation is none and production remains blocked.
 
-RF-03 is complete at repository-content level and closure is published for independent acceptance. RF-04 is next but not started and must not start before RF-03 closure acceptance. Runtime remains unaccepted; runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
+RF-04 evidence is [`PHYSICAL_DATA_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/PHYSICAL_DATA_MODEL_v1.0.md), [`TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md), [`RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md), [`MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md), [`RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md), [`CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md), and [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md). RF-04 is repository-content complete and published for independent acceptance; RF-05 is next but not started. Runtime remains unaccepted; runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
 
 ## Current approved foundation documents
 

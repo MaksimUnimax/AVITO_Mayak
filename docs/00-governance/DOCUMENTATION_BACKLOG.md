@@ -1,7 +1,7 @@
 # Маяк Авито — backlog документации
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
+**Статус:** `MODULE_14_RF04_COMPLETE_RF05_NEXT`
 **Дата:** 2026-07-23
 
 ## Historical documentation backlog
@@ -109,7 +109,11 @@ Closure evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integrat
 
 RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
 
-RF-04 is next but not started and must not start before RF-03 closure is independently accepted. Runtime remains unaccepted; production remains blocked.
+RF-04 repository content is complete and closure is published for independent acceptance. RF-05 is next but not started and must not start before independent acceptance of the RF-04 closure. Runtime remains unaccepted; production remains blocked.
+
+## RF-04 runtime architecture closure
+
+The six accepted design artifacts and [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](../04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md) are the current RF-04 evidence set. RF-05 remains not started until independent closure acceptance.
 
 ## Later documentation roadmap
 

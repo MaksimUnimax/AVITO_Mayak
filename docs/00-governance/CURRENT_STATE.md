@@ -1,7 +1,7 @@
 # Маяк Авито — текущее состояние проекта
 
 **Версия снимка:** 3.0
-**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
+**Статус:** `MODULE_14_RF04_COMPLETE_RF05_NEXT`
 **Дата:** 2026-07-23
 **RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
@@ -38,11 +38,11 @@ The recorded RF-02 audit baseline is evidence only and does not replace a fresh 
 - RF-02 module registry and playbook gate reconciliation: accepted at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`.
 - RF-02 closure evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`; accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance.
-- RF-04–RF-30: not accepted.
+- RF-04 — repository-content complete; closure published for independent acceptance. RF-05–RF-30: not accepted.
 
 RF-02 closure commit `c92e9299e5c0bd11ea18362673a8ac342b835483` is independently accepted.
 
-RF-03 is complete at repository-content level and its closure is published for independent acceptance. RF-04 is next but not started and prohibited until RF-03 closure is independently accepted. Runtime remains unaccepted; runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
+RF-04 repository content is complete and its closure is published for independent acceptance. RF-05 is next but not started and prohibited until RF-04 closure is independently accepted. Runtime remains unaccepted; runtime mutation remains none; production remains blocked; `PRODUCTION_READY` is not claimed.
 
 ## Current repository contour
 
@@ -168,6 +168,6 @@ Until an exact applicable later RF task authorizes them, the following remain pr
 
 ## Next safe work
 
-RF-03 repository-content closure is published for independent acceptance. RF-04 is the next permitted step only after independent acceptance of this closure commit; it is not started.
+RF-04 closure evidence is published for independent acceptance. RF-05 is the next permitted step only after independent acceptance of this RF-04 closure commit; it is not started.
 
 RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden until their applicable prerequisites and exact tasks.

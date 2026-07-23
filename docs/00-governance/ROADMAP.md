@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT`
+**Статус:** `MODULE_14_RF04_COMPLETE_RF05_NEXT`
 **Дата:** 2026-07-23
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -41,7 +41,15 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[c] RF-03-02` Cross-module runtime gap matrix — repository-content complete and independently accepted through `061757c4cfd9c5c4ea466539c4a92499e5b269d5`.
   - `[c] RF-03-03` Cross-module consistency audit — repository-content complete and independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
   - `[c] RF-03-04` Closure evidence and status transition — repository-content complete; published for independent acceptance.
-- `[ ] RF-04` Runtime architecture and physical data model — next but not started; permitted only after independent acceptance of the RF-03 closure commit.
+- `[c] RF-04` Runtime architecture and physical data model — repository-content complete; closure published for independent acceptance.
+  - `[x] RF-04-01` Physical data model — accepted through `2edfbb96c7438dae6bb6f3890cfe007d4467b6ca`.
+  - `[x] RF-04-02` Transaction and outbox boundaries — accepted through `710f965a66488f99b4c3cc9cf9f44bef54c7434a`.
+  - `[x] RF-04-03` Runtime process and package model — accepted at `37785e2cde19b80ba69edd23d07d6b38949dc0cb`.
+  - `[x] RF-04-04` Migration and schema evolution plan — accepted at `39f65b3f2de9668be188aec6f16b777d04f23135`.
+  - `[x] RF-04-05` Runtime topology candidate — accepted through `9062d613d64ded16c9758ea33ae7cfe04c267990`.
+  - `[x] RF-04-06` Configuration and secrets boundary — accepted at `0d0efe27018fa01e1248e8939a026a3e590d622b`.
+  - `[c] RF-04-07` Closure and status transition — published for independent acceptance.
+- `[ ] RF-05` Existing-server environment record — next but not started; gated by independent acceptance of RF-04 closure.
 - `[ ] RF-05` Existing-server environment record.
 - `[ ] RF-06` Toolchain and dependency proof.
 - `[ ] RF-07` CI quality gates.
