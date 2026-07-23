@@ -1,14 +1,47 @@
 # Quality documentation
 
-**Статус:** APPROVED documentation baseline.
+**Статус:** `MODULE_14_RF02_ACTIVE`
+**Дата актуализации:** 2026-07-23
 
-Current documents:
+## Current documents
 
 - `TEST_STRATEGY_v1.0.md`;
 - `FIXTURE_REGISTRY_v1.0.md`;
 - `ACCEPTANCE_MATRIX_v1.1.md`;
 - `REFERENCE_REGRESSION_POLICY_v1.0.md`.
 
-Это semantic/acceptance documentation. В репозитории нет executable fixture files, test suite, coverage result или CI. Provider policy acceptance опирается на current official/primary evidence; fixture не является production-доказательством.
+Historical revision retained:
 
-Смотри `docs/00-governance/DOCUMENTATION_BACKLOG.md`, DB-04.
+- `ACCEPTANCE_MATRIX_v1.0.md`.
+
+These documents remain accepted quality, fixture, acceptance and regression foundations.
+
+## Current executable quality contour
+
+The repository contains:
+
+- source under `src/mayak`;
+- executable unit, contract and architecture tests;
+- synthetic fixture files;
+- `pyproject.toml`;
+- `uv.lock`.
+
+The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
+
+This baseline does not prove future GitHub Actions CI, isolated dependency synchronization, PostgreSQL integration, Alembic migration, Docker, deployed E2E, security, backup/restore, recovery or deployed failure-drill gates.
+
+## Current roadmap state
+
+- RF-00 — accepted.
+- RF-01 — accepted.
+- RF-02 — active and not complete.
+- RF-03 — not started.
+- RF-07, RF-09, RF-24, RF-25, RF-26 and RF-28 — not accepted.
+
+Modules 01–13 have accepted semantic, contract, ownership, test and evidence foundations. Those foundations do not prove DB-backed or deployed runtime completion.
+
+The existing project server is authorized only through exact Module 14 tasks. Foreign resources remain protected. Live provider profiles remain disabled by default, and missing optional provider credentials do not block core automatic work.
+
+GitHub Actions CI, Docker Compose, PostgreSQL 18 persistence, migrations from zero, API/worker/scheduler entry points, deployed Web Cabinet/Admin, deployed E2E, backup/restore, server deployment, operator pack and final handoff are not yet accepted.
+
+Module 14 targets `READY_FOR_OPERATOR_ACCEPTANCE` and must not claim `PRODUCTION_READY`.

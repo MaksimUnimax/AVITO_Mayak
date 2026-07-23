@@ -1,29 +1,30 @@
-# Contracts documentation
+# Product documentation
 
 **Статус:** `MODULE_14_RF02_ACTIVE`
 **Дата актуализации:** 2026-07-23
 
-## Canonical documents
+## Historical product input
 
-- `CONTRACT_PACKAGE_v1.0.md`;
-- `ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
-- `CONTRACT_CHANGE_POLICY_v1.0.md`.
+- `MAYAK_AVITO_TARGET_MODEL_v0.1.md` remains the retained historical product target and context according to its own document status.
+- Historical product text remains traceability evidence and is not silently rewritten by this index.
 
-These documents remain the accepted transport-neutral semantic, ownership, error, idempotency and change-control foundation.
+## Current authority
 
-## Current ownership boundary
+Current MVP scope and owner decisions are governed by:
 
-Modules 01–13 retain ownership of their domain state.
+- current GitHub `main`;
+- accepted append-only decisions;
+- `docs/00-governance/OPEN_DECISIONS.md`;
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`;
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`.
 
-Runtime assembly must use public contracts. Direct foreign-module table writes and private implementation imports replacing public contracts are forbidden.
-
-Transport DTOs, UI state and provider payloads do not become domain authority or internal contracts.
-
-Provider acceptance is not proof of human reading. Ambiguous external effects are reconcile-first.
+Deferred production expansion, live-provider evidence and operator acceptance do not create a new unanswered owner product question inside Module 14.
 
 ## Current repository and roadmap state
 
 The repository contains source under `src/mayak`, executable tests, synthetic fixtures, `pyproject.toml` and `uv.lock`.
+
+Modules 01–13 have accepted semantic, contract, ownership, test and evidence foundations. Those foundations do not by themselves prove DB-backed or deployed runtime completion.
 
 The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
 
@@ -32,10 +33,10 @@ The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
 - RF-02 — active and not complete.
 - RF-03 — not started.
 
-Runtime persistence adapters, PostgreSQL-backed contract behavior and cross-module HTTP/command wiring remain later Module 14 work.
-
 GitHub Actions CI, Docker Compose, PostgreSQL 18 persistence, SQLAlchemy, Psycopg, Alembic, migrations from zero, API/worker/scheduler entry points, deployed Web Cabinet/Admin, deployed E2E, backup/restore, server deployment, operator pack and final handoff are not yet accepted.
 
 The existing project server is authorized only through exact Module 14 tasks. Foreign resources remain protected. Live provider profiles remain disabled by default, and missing optional provider credentials do not block core automatic work.
+
+Product documentation does not itself prove runtime deployment.
 
 Module 14 targets `READY_FOR_OPERATOR_ACCEPTANCE` and must not claim `PRODUCTION_READY`.

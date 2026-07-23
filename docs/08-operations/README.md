@@ -1,9 +1,45 @@
 # Operations documentation
 
-**Статус:** APPROVED documentation baseline; runtime/deploy absent.
+**Статус:** `MODULE_14_RF02_ACTIVE`
+**Дата актуализации:** 2026-07-23
 
-Current documents cover environment isolation/matrix, observability, backup/recovery, deployment/release boundaries and Windows Egress Agent boundaries.
+## Accepted operations foundations
 
-Они не создают project service, container, port, ingress, TLS, backup, scheduler, queue, credential или production infrastructure. Foreign/shared-host resources не принадлежат проекту и не могут быть переиспользованы без отдельного approved ownership decision and implementation task.
+Current operations documents define accepted boundaries for:
 
-Смотри `docs/00-governance/DOCUMENTATION_BACKLOG.md`, DB-05 and DB-06.
+- environment isolation;
+- environment matrix;
+- observability;
+- backup and recovery;
+- deployment and release;
+- Windows Egress Agent behavior.
+
+`WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md` remains an accepted operations foundation.
+
+These documents do not prove that the complete project runtime is already deployed.
+
+## Current repository and roadmap state
+
+The repository contains source under `src/mayak`, executable tests, synthetic fixtures, `pyproject.toml` and `uv.lock`.
+
+Modules 01–13 have accepted semantic, contract, ownership, test and evidence foundations.
+
+The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
+
+- RF-00 — accepted.
+- RF-01 — accepted.
+- RF-02 — active and not complete.
+- RF-03 — not started.
+- RF-27 deployment — not accepted.
+
+The existing project server is the authorized Module 14 runtime host, but project-owned deployment may occur only through exact gated tasks.
+
+Acceptance runtime must be local-only. PostgreSQL must not be host-published.
+
+Foreign containers, networks, volumes, databases, Nginx, listeners and services must not be altered or reused. Firewall, DNS, TLS and public ingress remain outside current authorization.
+
+GitHub Actions CI, Docker Compose, PostgreSQL 18 persistence, SQLAlchemy, Psycopg, Alembic, migrations from zero, API/worker/scheduler entry points, deployed Web Cabinet/Admin, deployed E2E, backup/restore, server deployment, operator pack and final handoff are not yet accepted.
+
+Live provider profiles remain disabled by default, and missing optional provider credentials do not block core automatic work.
+
+Module 14 targets `READY_FOR_OPERATOR_ACCEPTANCE` and must not claim `PRODUCTION_READY`.
