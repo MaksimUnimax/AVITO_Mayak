@@ -345,12 +345,26 @@ CLI does not choose the next roadmap step.
 
 ## 19. Current gate
 
-RF-00 is accepted at baseline `315d8c63bccc870a8c55bac0cd3896a687597177` with 4511 passing tests.
+RF-00 current-state, GitHub and server verification is accepted at baseline `315d8c63bccc870a8c55bac0cd3896a687597177` with 4511 passing tests.
 
-RF-01 governance capture is complete. RF-02 is the next permitted roadmap step after independent acceptance of this closure commit.
+RF-01 governance capture and Module 14 registration are accepted.
 
-RF-01 remains documentation-only. Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
+RF-02 current-main governance reconciliation is active and not yet closed.
 
-Module 14 completes only after all applicable RF-00–RF-30 and corrective steps are independently accepted, deployed acceptance evidence passes, operator pack exists and final verdict is `READY_FOR_OPERATOR_ACCEPTANCE`.
+Published and independently accepted RF-02 prerequisite surfaces are:
+
+- reconciliation audit at `59f86084bbc17386070dde34485aba6c1706712c`;
+- primary governance reconciliation at `63de1f4c62e1b72626f20278dbba9eef190b6a99`;
+- current decision register reconciliation at `f7733447f5f10cc3f3702c8f863accb4d9403c05`;
+- documentation manifest reconciliation at `8d3ff83198d90f062906925d6f4becf66c81ed9a`;
+- applicable documentation indexes reconciliation at `34db47cbbffd7f31a918963b181e3048229307be`.
+
+The remaining RF-02 prerequisite is an exact closure-evidence and status-transition task after all reconciliation surfaces are verified together.
+
+RF-03 must not start before RF-02 is independently closed.
+
+Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
+
+Module 14 completes only after all applicable RF-00–RF-30 and corrective steps are independently accepted, deployed acceptance evidence passes, the operator pack exists and the final verdict is `READY_FOR_OPERATOR_ACCEPTANCE`.
 
 The module must not claim `PRODUCTION_READY`.
