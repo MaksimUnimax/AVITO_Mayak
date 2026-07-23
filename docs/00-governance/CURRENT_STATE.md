@@ -1,7 +1,7 @@
 # Маяк Авито — текущее состояние проекта
 
 **Версия снимка:** 3.0
-**Статус:** `MODULE_14_RF05_CLOSURE_PUBLISHED_RF06_BLOCKED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF05_ACCEPTED_RF06_BASELINE_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата:** 2026-07-23
 **RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
@@ -39,12 +39,12 @@ The recorded RF-02 audit baseline is evidence only and does not replace a fresh 
 - RF-02 closure evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`; accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance.
 - RF-04 — independently accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`.
-- RF-05 — server allocations verified; repository content complete; closure published for independent acceptance. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; verdict is `NOT_PRODUCTION_READY`.
-- RF-06 — not started and blocked pending independent acceptance of the RF-05 closure. RF-07–RF-30 remain not started/not accepted.
+- RF-05 — independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations verified; repository content and closure complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; verdict is `NOT_PRODUCTION_READY`.
+- RF-06 — active at repository-evidence level; RF-06-01 toolchain and dependency baseline is published for independent acceptance. CPython 3.14 and uv are not installed, dependencies are unchanged, and runtime is not started. RF-07–RF-30 remain not started/not accepted; RF-07 is blocked.
 
 RF-02 closure commit `c92e9299e5c0bd11ea18362673a8ac342b835483` is independently accepted.
 
-RF-04 is accepted through the current base. RF-05 repository content and closure are published for independent acceptance. The environment is `RUNTIME_ELIGIBLE`, but runtime implementation/startup is absent and runtime mutation beyond RF-05 allocations is none. `NOT_PRODUCTION_READY` remains the production verdict; `PRODUCTION_READY` is not claimed. RF-06 is not started and remains blocked pending independent RF-05 closure acceptance.
+RF-04 is accepted through the current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. The environment is `RUNTIME_ELIGIBLE`, but runtime implementation/startup is absent and runtime mutation beyond RF-05 allocations is none. RF-06 is active at repository-evidence level; CPython 3.14 and uv are not installed and dependencies are unchanged. `NOT_PRODUCTION_READY` remains the production verdict; `PRODUCTION_READY` is not claimed. RF-07 is blocked.
 
 ## Current repository contour
 
@@ -170,6 +170,6 @@ Until an exact applicable later RF task authorizes them, the following remain pr
 
 ## Next safe work
 
-RF-05 closure evidence is published for independent acceptance. RF-06 is the next gated step only after independent acceptance of the RF-05 closure; it is not started and remains blocked.
+RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06-01 baseline evidence is published for independent acceptance; CPython 3.14 and uv remain uninstalled, dependencies remain unchanged, and runtime is not started. RF-07 is blocked.
 
 RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden until their applicable prerequisites and exact tasks.

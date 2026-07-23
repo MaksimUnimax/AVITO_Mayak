@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF04_COMPLETE_RF05_NEXT`
+**Статус:** `MODULE_14_RF05_ACCEPTED_RF06_BASELINE_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата:** 2026-07-23
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -49,13 +49,14 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-04-05` Runtime topology candidate — accepted through `9062d613d64ded16c9758ea33ae7cfe04c267990`.
   - `[x] RF-04-06` Configuration and secrets boundary — accepted at `0d0efe27018fa01e1248e8939a026a3e590d622b`.
   - `[x] RF-04-07` Closure and status transition — accepted through `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`.
-- `[c] RF-05` Existing-server environment record — repository-content complete; closure published for independent acceptance; `NOT_PRODUCTION_READY`.
+- `[x] RF-05` Existing-server environment record — independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; repository-content complete; `NOT_PRODUCTION_READY`.
   - `[x] RF-05-01` Read-only host and allocation baseline.
   - `[x] RF-05-02` Service identity and isolation evidence.
   - `[x] RF-05-03` Filesystem boundaries and permissions evidence.
   - `[x] RF-05-04` Environment allocation record validation.
-  - `[c] RF-05-05` Repository evidence and closure — published for independent acceptance; `NOT_PRODUCTION_READY`.
-- `[ ] RF-06` Toolchain and dependency proof — blocked pending independent acceptance of RF-05 closure.
+  - `[x] RF-05-05` Repository evidence and closure — accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; `NOT_PRODUCTION_READY`.
+- `[~] RF-06` Toolchain and dependency proof — RF-06-01 baseline published for independent acceptance; CPython 3.14/uv are not installed, dependencies are unchanged, and runtime is not deployed. Next action is independent acceptance, then the separately gated RF-06 bootstrap.
+  - `[c] RF-06-01` Toolchain and dependency baseline — published for independent acceptance.
 - `[ ] RF-07` CI quality gates.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.

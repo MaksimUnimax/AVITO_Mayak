@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF05_CLOSURE_PUBLISHED_RF06_BLOCKED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF05_ACCEPTED_RF06_BASELINE_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата актуализации:** 2026-07-23
 
 ## Порядок входа
@@ -76,8 +76,8 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 - RF-02 closure evidence — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; closure is published for independent acceptance.
 - RF-04 is accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`; RF-04-07 is accepted through the same base.
-- RF-05 server allocations are verified; repository content is complete and closure is published for independent acceptance. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; `NOT_PRODUCTION_READY` remains current.
-- RF-06 is not started and blocked pending independent acceptance of the RF-05 closure; RF-07–RF-30 remain not started/not accepted.
+- RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations are verified; repository content and closure are complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; `NOT_PRODUCTION_READY` remains current.
+- RF-06 is active at repository-evidence level; RF-06-01 baseline is published for independent acceptance. CPython 3.14 and uv are not installed, dependencies are unchanged, runtime is not deployed, and RF-07 is blocked; RF-08–RF-30 remain not started/not accepted.
 
 RF-04 evidence is [`PHYSICAL_DATA_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/PHYSICAL_DATA_MODEL_v1.0.md), [`TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md), [`RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md), [`MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md), [`RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md), [`CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md), and [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md). RF-04 is accepted through current base; RF-05 is repository-content complete and its closure is published for independent acceptance. Runtime remains unimplemented and unstarted; `RUNTIME_ELIGIBLE` applies to the environment allocation only; `NOT_PRODUCTION_READY` remains current; RF-06 is blocked pending independent RF-05 acceptance.
 
@@ -186,7 +186,8 @@ Modules 01–13 are accepted semantic, contract, ownership, test and evidence pr
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` — RF-03-02 independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — RF-03-03 third integration-inventory artifact published for independent acceptance.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/EXISTING_SERVER_ENVIRONMENT_RECORD_v1.0.md` — RF-05 sanitized server allocation evidence.
-- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md` — RF-05 closure published for independent acceptance.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md` — RF-05 closure evidence accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_BASELINE_v1.0.md` — RF-06-01 baseline published for independent acceptance; toolchain not installed; dependencies unchanged; `NOT_PRODUCTION_READY`.
 
 Module 14 is active.
 
@@ -216,16 +217,16 @@ The historical no-runtime conclusion is superseded only inside exact governed Mo
 
 | Каталог | Назначение | Current status |
 |---|---|---|
-| `00-governance` | rules, current state, roadmap, decisions and worklog | RF-05 closure published; RF-06 blocked pending independent acceptance; `NOT_PRODUCTION_READY` |
+| `00-governance` | rules, current state, roadmap, decisions and worklog | RF-05 accepted; RF-06-01 baseline published pending independent acceptance; `NOT_PRODUCTION_READY` |
 | `01-product` | historical product target and product context | v0.1 draft retained; current Module 14 decisions governed separately |
-| `02-architecture` | architecture, technical, security, data and compatibility | RF-04 accepted; RF-05 closure published; RF-06 blocked; runtime unaccepted; `NOT_PRODUCTION_READY` |
+| `02-architecture` | architecture, technical, security, data and compatibility | RF-04/RF-05 accepted; RF-06-01 baseline published; runtime unaccepted; `NOT_PRODUCTION_READY` |
 | `03-contracts` | common and public module contracts | accepted semantic foundation |
-| `04-modules` | modules 01–13 plus cross-cutting Module 14 | RF-05 closure published; RF-06 blocked; runtime unaccepted; `NOT_PRODUCTION_READY` |
+| `04-modules` | modules 01–13 plus cross-cutting Module 14 | RF-05 accepted; RF-06-01 baseline published pending independent acceptance; runtime unaccepted; `NOT_PRODUCTION_READY` |
 | `05-tasks` | historical literal execution packets | historical task evidence; current roadmap authority remains governance and GitHub main |
-| `06-reports` | accepted reports and module handoffs | RF-05 closure published; RF-06 blocked; runtime unaccepted; `NOT_PRODUCTION_READY` |
-| `07-quality` | strategy, fixtures, acceptance and regression | RF-05 closure published; RF-06 blocked; runtime unaccepted; `NOT_PRODUCTION_READY` |
-| `08-operations` | isolation, environments, observability, recovery, release and Windows egress | RF-05 closure published; RF-06 blocked; runtime unaccepted; `NOT_PRODUCTION_READY` |
-| `09-references` | external evidence and provider policies | RF-05 closure published; RF-06 blocked; runtime unaccepted; `NOT_PRODUCTION_READY` |
+| `06-reports` | accepted reports and module handoffs | RF-05 accepted; RF-06-01 baseline published pending independent acceptance; runtime unaccepted; `NOT_PRODUCTION_READY` |
+| `07-quality` | strategy, fixtures, acceptance and regression | RF-05 accepted; RF-06-01 baseline published pending independent acceptance; runtime unaccepted; `NOT_PRODUCTION_READY` |
+| `08-operations` | isolation, environments, observability, recovery, release and Windows egress | RF-05 accepted; RF-06-01 baseline published pending independent acceptance; runtime unaccepted; `NOT_PRODUCTION_READY` |
+| `09-references` | external evidence and provider policies | RF-05 accepted; RF-06-01 baseline published pending independent acceptance; runtime unaccepted; `NOT_PRODUCTION_READY` |
 
 ## Non-negotiable current boundaries
 
