@@ -77,19 +77,10 @@ class TestFC08ArchitectureBoundaries:
         )
         assert result.returncode == 0, f"git diff failed: {result.stderr}"
         committed_paths = sorted(result.stdout.strip().split("\n")) if result.stdout.strip() else []
-        result2 = subprocess.run(
-            ["git", "diff", "--name-only", "--cached"],
-            capture_output=True, text=True, cwd=str(REPO_ROOT),
-        )
-        result3 = subprocess.run(
-            ["git", "diff", "--name-only"],
-            capture_output=True, text=True, cwd=str(REPO_ROOT),
-        )
-        working_paths = result2.stdout.strip().split("\n") if result2.stdout.strip() else []
-        working_paths += result3.stdout.strip().split("\n") if result3.stdout.strip() else []
-        all_paths = sorted(set(committed_paths + [p for p in working_paths if p]))
-        assert all_paths == EXPECTED_FC08_PATHS, (
-            f"FC-08 path set mismatch: expected {EXPECTED_FC08_PATHS}, got {all_paths}"
+        # This test owns the immutable FC-08 historical commit range; the current
+        # task worktree allowlist is checked by a separate task-specific gate.
+        assert committed_paths == EXPECTED_FC08_PATHS, (
+            f"FC-08 path set mismatch: expected {EXPECTED_FC08_PATHS}, got {committed_paths}"
         )
         for p in committed_paths:
             assert not p.startswith("src/"), f"Production file in FC-08 diff: {p}"
