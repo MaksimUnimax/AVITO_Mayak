@@ -1,77 +1,111 @@
 # Маяк Авито
 
-**Статус репозитория:** Final Documentation Acceptance published. Код продукта ещё не создан.
+**Статус репозитория:** `MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE` — RF-02 current-main governance reconciliation is in progress.
 
-«Маяк Авито» — сервис мониторинга поисковой выдачи Avito. Клиент создаёт отдельный Маяк из готовой ссылки поиска и получает уведомления о новых объявлениях и новых для этого Маяка парах `listing_id + price`.
+«Маяк Авито» — сервис мониторинга поисковой выдачи Avito. Пользователь создаёт отдельный Маяк из ссылки поиска, а принятая текущая семантика уведомляет только о вновь наблюдаемых объявлениях. Первый baseline уведомление не создаёт. Изменение цены само по себе не является notification event текущего scope.
 
 ## Точка входа
 
-Перед любой работой читать:
+Перед любой работой читать в указанном порядке:
 
 1. [`docs/00-governance/PROJECT_ENTRYPOINT.md`](docs/00-governance/PROJECT_ENTRYPOINT.md)
 2. [`docs/00-governance/CURRENT_STATE.md`](docs/00-governance/CURRENT_STATE.md)
 3. [`docs/00-governance/ROADMAP.md`](docs/00-governance/ROADMAP.md)
 4. [`docs/MANIFEST.md`](docs/MANIFEST.md)
-5. [`docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md`](docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md)
-6. [`docs/02-architecture/TECHNICAL_BASELINE_v1.0.md`](docs/02-architecture/TECHNICAL_BASELINE_v1.0.md)
+5. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md)
+6. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md)
+7. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md)
+8. affected module playbooks, contracts, handoffs and append-only decisions.
+
+Exact current GitHub `main` SHA must be fetched before every task. SHA values recorded in governance documents are evidence baselines, not permission to skip a fresh check.
 
 ## Неподвижные правила
 
-- Владелец продукта задаёт цели, ограничения и принимает продуктовые решения.
-- ChatGPT является разработчиком, архитектором и руководителем проекта.
-- Codex/CLI используется только как ограниченный технический исполнитель; для текущего документационного цикла — только как server-sync executor после публикации GitHub.
-- Public GitHub `main` — источник истины для документов.
-- Код и документация не создаются по догадке.
-- Shared-host resources не принадлежат проекту только потому, что они видимы.
-- External behavior требует current official/primary evidence.
+- Public GitHub `main` — единственный repository source of truth.
+- Владелец задаёт product goals and fixed owner decisions.
+- ChatGPT является developer, architect, roadmap lead, release manager and independent reviewer.
+- Codex/CLI выполняет только один literal atomic task и не выбирает следующий roadmap step.
+- Modules 01–13 retain ownership of their domain state.
+- Module 14 assembles the runtime only through public module boundaries.
+- Direct foreign-module table writes are forbidden.
+- Provider payloads do not become internal contracts or business authority.
+- Provider acceptance is not proof of human reading.
+- Ambiguous external effects are reconcile-first and are never blindly retried.
+- Secrets, credentials, private keys, populated `.env` files and production personal data must not enter Git or reports.
+- Foreign server resources must not be altered, deleted or reused.
+- Public production launch remains blocked.
 
-Полные правила: [`docs/00-governance/CHATGPT_PROJECT_LEADERSHIP_RULES_v1.1.md`](docs/00-governance/CHATGPT_PROJECT_LEADERSHIP_RULES_v1.1.md).
+Полные правила Module 14:
+[`docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md).
 
-## Current approved foundations
+## Current accepted repository contour
 
-- Architecture Baseline v1.1
-- Technical Baseline v1.0
-- Common Contract Foundation
-- Data and Compatibility Foundation
-- Quality Foundation with Acceptance Matrix v1.1
-- Operations/Environment boundaries
-- Avito Reference Foundation
-- Telegram Reference Policy v1.0
-- MAX Reference Policy v1.0
-- Platform & Contracts Module Playbook v1.0
-- Identity & Access Module Playbook v1.0
-- Entitlements & Billing Module Playbook v1.0
-- Beacon Management Module Playbook v1.0
-- Avito Parser Adapter Module Playbook v1.0
-- Scan Orchestration & Listing State Module Playbook v1.0
-- Egress Routing Module Playbook v1.0
-- Notification Delivery Module Playbook v1.0
-- Telegram Adapter Module Playbook v1.0
-- MAX Adapter Module Playbook v1.0
-- Admin & Support Module Playbook v1.0
-- Web Cabinet Module Playbook v1.0
-- Filter Catalog & Builder Module Playbook v1.0
-- Final Documentation Acceptance v1.0
+The repository contains:
 
-Core stack выбран документально: Python 3.14, uv, FastAPI/Pydantic, HTTPX, PostgreSQL 18, SQLAlchemy/Psycopg/Alembic и утверждённые quality/telemetry tools.
+- Python source under `src/mayak`;
+- executable unit, contract and architecture tests;
+- synthetic fixture data;
+- committed `pyproject.toml`;
+- committed `uv.lock`;
+- accepted semantic implementations and evidence handoffs for modules 01–13;
+- approved Module 14 governance;
+- a lock-compatible Python 3.14 suite with 4511 passing tests at the accepted RF-02 audit baseline.
 
-Это не означает, что packages установлены, lockfile создан, база provisioned или product-code разрешён.
+The semantic implementation contour exists and must not be described as absent.
 
-## Product documents
+This does not prove that the complete acceptance runtime is assembled or deployed.
 
-- Target model: [`docs/01-product/MAYAK_AVITO_TARGET_MODEL_v0.1.md`](docs/01-product/MAYAK_AVITO_TARGET_MODEL_v0.1.md)
-- Architecture map: [`docs/02-architecture/MAYAK_AVITO_ARCHITECTURE_MODULE_MAP_v0.1.md`](docs/02-architecture/MAYAK_AVITO_ARCHITECTURE_MODULE_MAP_v0.1.md)
-- Open decisions: [`docs/00-governance/OPEN_DECISIONS.md`](docs/00-governance/OPEN_DECISIONS.md)
+## Current module state
 
-## Запрет до отдельного решения владельца
+- Modules 01–13: accepted semantic, contract, ownership, test and evidence prerequisites.
+- Module 14: active cross-cutting implementation and integration module.
+- RF-00: accepted.
+- RF-01: accepted.
+- RF-02: active.
+- RF-03–RF-30: not accepted and may begin only through their exact prerequisites and one exact task.
 
-До отдельного решения владельца о начале product-code запрещены:
+Historical Final Documentation Acceptance remains evidence for the earlier documentation cycle. It is not the current roadmap endpoint.
 
-- product-code;
-- `pyproject.toml`, `uv.lock` и dependency installation;
-- physical schema, migrations and database provisioning;
-- bots, parser and external calls;
-- Docker, CI/CD and deploy;
-- services, ports, credentials, secrets and production infrastructure.
+## Runtime target
 
-Final governance acceptance опубликован как documentation-only record. Финальная приёмка завершается только после синхронизации сервера `/opt/avito-mayak` с точным финальным GitHub SHA и независимой проверки этого отчёта. Product-code не начат.
+The accepted Module 14 target is:
+
+- existing project server;
+- Docker Engine and Docker Compose;
+- project-owned Compose namespace;
+- PostgreSQL 18;
+- SQLAlchemy 2, Psycopg 3 and Alembic;
+- separate FastAPI API, worker and scheduler entry points;
+- PostgreSQL-backed durable work, leases, idempotency and outbox;
+- localhost-only API;
+- no host-published PostgreSQL port;
+- provider-disabled-by-default profiles;
+- synthetic and operator-acceptance environment;
+- Web Cabinet and Admin through owning module services;
+- backup, restore, recovery and observability evidence.
+
+These runtime components are roadmap targets, not current completion claims.
+
+## Current runtime gaps
+
+The following remain future exact RF steps:
+
+- GitHub Actions quality gates;
+- Docker/Compose foundation;
+- PostgreSQL/Alembic physical persistence;
+- API/worker/scheduler runtime assembly;
+- DB-backed module runtimes;
+- cross-module HTTP and command wiring;
+- synthetic E2E;
+- security and recovery proof;
+- deployment on the existing server;
+- operator acceptance pack;
+- final evidence handoff.
+
+## Production boundary
+
+Module 14 completes only with the final verdict `READY_FOR_OPERATOR_ACCEPTANCE`.
+
+The repository must not claim `PRODUCTION_READY` before separate operator acceptance and a future production launch gate.
+
+No public ingress, DNS, TLS, firewall or production-provider activation is authorized by this README.

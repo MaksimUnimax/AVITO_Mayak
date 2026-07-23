@@ -1,119 +1,115 @@
 # Маяк Авито — backlog документации
 
-**Версия:** 3.0
-**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED
+**Версия:** 4.0
+**Статус:** `MODULE_14_RF02_ACTIVE`
+**Дата:** 2026-07-23
 
-## DB-00 — evidence and supervision — ACCEPTED
+## Historical documentation backlog
 
-TASK-001, REPORT-001/errata, remote supervision, ADR-0006 and append-only worklog. No code/deploy permission.
+The earlier documentation backlog is preserved as accepted history:
 
-## DB-01 — Architecture Foundation — ACCEPTED
+- `DB-00` Evidence and supervision — accepted.
+- `DB-01` Architecture Foundation — accepted.
+- `DB-02` Common Contract Foundation — accepted.
+- `DB-03` Data and Compatibility — accepted.
+- `DB-04` Quality Foundation — accepted.
+- `DB-05` Operations and Avito references — accepted.
+- `DB-06` Technical Baseline — accepted.
+- `DB-07` Telegram and MAX references — accepted.
+- `DB-08` Module playbooks 01–13 — accepted.
+- `DB-09` Final historical documentation audit — accepted.
 
-Historical architecture v1.0, security/privacy and environment isolation boundaries. Current authority: `ARCHITECTURE_BASELINE_v1.1.md`.
+The historical final documentation report remains evidence for that cycle.
 
-## DB-02 — Common Contract Foundation — ACCEPTED
+It is not the current project endpoint and does not describe the present repository as code-free.
 
-- `CONTRACT_PACKAGE_v1.0.md`;
-- `ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
-- `CONTRACT_CHANGE_POLICY_v1.0.md`.
+## Current Module 14 governance artifacts
 
-## DB-03 — Data and Compatibility — ACCEPTED
+Accepted:
 
-- `DATA_MODEL_v1.0.md`;
-- `MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`;
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`;
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`;
+- RF-01 append-only governance closure;
+- Module 14 registration in the module registry and manifest.
 
-## DB-04 — Quality — ACCEPTED
+The current repository already contains semantic source, executable tests, synthetic fixtures, `pyproject.toml` and `uv.lock`.
 
-- `TEST_STRATEGY_v1.0.md`;
-- `FIXTURE_REGISTRY_v1.0.md`;
-- `ACCEPTANCE_MATRIX_v1.1.md`;
-- `REFERENCE_REGRESSION_POLICY_v1.0.md`.
+The complete physical runtime, persistence, deployment and production launch are not accepted.
 
-## DB-05 — Operations and Avito references — ACCEPTED
+## RF-02 reconciliation backlog
 
-Runs 6–9 delivered Environment/Observability, Backup/Recovery, Deployment/Release, Windows Egress and Avito reference documents.
+### RF-02-A — Current-main audit — ACCEPTED
 
-## DB-06 — Technical Baseline — RUN 10 ACCEPTED
+The reconciliation audit was published and independently accepted at:
 
-Technical Baseline package and exact server synchronization accepted.
+`59f86084bbc17386070dde34485aba6c1706712c`
 
-## DB-07 — Telegram and MAX references — RUN 11 ACCEPTED
+It proves that stale documentation-only claims contradict the current repository tree.
 
-Reference Registry v1.1, Telegram Reference Policy v1.0 and MAX Reference Policy v1.0 were accepted at `642655a523af3591b1a024c39efa6978a064b2b8`. No provider runtime or sensitive access material was created.
+### RF-02-B — Primary governance reconciliation — ACTIVE
 
-## DB-08 — Module playbooks — RUNS 12–24 ACCEPTED
+Current atomic scope:
 
-### Run 12 — Platform & Contracts — ACCEPTED
+- root README;
+- project entrypoint;
+- current state;
+- roadmap;
+- documentation backlog.
 
-- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `728b9062126fd7c2e816dde3a1a3ed9d42431cf2`.
+This scope must state the existing semantic contour without claiming runtime completion.
 
-### Run 13 — Identity & Access — ACCEPTED
+### RF-02-C — Current decisions and manifest reconciliation — NOT STARTED
 
-- `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `bcc33aa7120d60f977819319195000ab3a27a2c7`.
+Future exact tasks must reconcile:
 
-### Run 14 — Entitlements & Billing — ACCEPTED
+- `OPEN_DECISIONS.md`;
+- `docs/MANIFEST.md`;
+- only exact proven stale indexes.
 
-- `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `2346ccbbeaa8f1be18281fdf16fbec75cdb5052e`.
+Historical decision rows and accepted documentation records must remain traceable.
 
-### Run 15 — Beacon Management — ACCEPTED
+### RF-02-D — RF-02 closure evidence — NOT STARTED
 
-- `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `2a73078c42cb03ef89d62b6161752f2069d35129`.
+RF-02 may close only after:
 
-### Run 16 — Avito Parser Adapter — ACCEPTED
+- primary governance matches current `main`;
+- current decision statuses are unambiguous;
+- manifest and applicable indexes agree;
+- module ownership remains unchanged;
+- runtime gaps remain explicit;
+- production launch remains blocked;
+- full suite remains passing;
+- no secrets or foreign resources are affected.
 
-- `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `9907b22d2192e60680bcdd9e4e98f6bb104cb18f`.
+## Later documentation roadmap
 
-### Run 17 — Scan Orchestration & Listing State — ACCEPTED
+Later RF steps will create or update documentation only when required by their exact implementation and evidence scope, including:
 
-- `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `7dc5eb6c26c7cbe82a5db42dfeffaff521f01d90`.
+- thirteen-module integration matrices;
+- physical runtime architecture;
+- data ownership and migration plans;
+- existing-server environment record;
+- dependency and CI evidence;
+- Docker/Compose and database runbooks;
+- API, worker and scheduler evidence;
+- module runtime handoffs;
+- E2E and security reports;
+- backup and recovery evidence;
+- deployment record;
+- operator acceptance pack;
+- final Module 14 handoff.
 
-### Run 18 — Egress Routing — ACCEPTED
+These later artifacts must be driven by actual accepted implementation evidence rather than prediction.
 
-- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `fb55ec29708cb0f4de745504393fb02afb62ce3a`.
+## Completion boundary
 
-### Run 19 — Notification Delivery — ACCEPTED
+The current roadmap target is:
 
-- `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `c1fd2f78883880a58e337753a5013d81a65e50d7`.
+`READY_FOR_OPERATOR_ACCEPTANCE`
 
-### Run 20 — Telegram Adapter — ACCEPTED
+The project must not claim:
 
-- `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `6fcc1b9a77a48b7f02cc5aba640f20a3ff23a461`.
+`PRODUCTION_READY`
 
-### Run 21 — MAX Adapter — ACCEPTED
-
-- `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `c114818a23a400e97ee6d83c8ab54e419fa401df`.
-
-### Run 22 — Admin & Support — ACCEPTED
-
-- `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `1668a01a65abf7c816c85ea062741bcfcb086645`.
-
-### Run 23 — Web Cabinet — ACCEPTED
-
-- `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `1f86b8c131b8ac7d456184e4ed2ba7c1ddad8b05`.
-
-### Run 24 — Filter Catalog & Builder — ACCEPTED
-
-- `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md`.
-- Exact server synchronization accepted at `75bb64e2c3ac1fc8dfec27672cb548f7c362e251`.
-
-The module playbook route is complete. All 13 module playbooks exist and are accepted. None authorizes implementation by itself.
-
-## DB-09 — Final audit — PUBLISHED
-
-- `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md`.
-
-Final independent documentation audit passed and final governance acceptance is published. Exact final server synchronization to the final governance SHA is pending before the cycle can stop.
-
-Product-code remains not started. A separate owner decision is required before any product-code planning or implementation task.
+before separate operator acceptance and a future production launch gate.

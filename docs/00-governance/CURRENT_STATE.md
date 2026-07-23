@@ -1,88 +1,164 @@
 # Маяк Авито — текущее состояние проекта
 
-**Версия снимка:** 2.0
-**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED
-**Дата:** 2026-07-08
+**Версия снимка:** 3.0
+**Статус:** `MODULE_14_RF02_ACTIVE`
+**Дата:** 2026-07-23
+**RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
 ## Фаза
 
-`A0.16 — Final documentation acceptance published; final server synchronization required before cycle stop`
+`AUTONOMOUS_RUNTIME_COMPLETION`
 
-Public repository: `MaksimUnimax/AVITO_Mayak`, branch `main`.
+Target:
 
-Run 24 Filter Catalog & Builder was independently accepted on the server at GitHub SHA `75bb64e2c3ac1fc8dfec27672cb548f7c362e251`: branch `main`, local and remote SHA equal, ahead/behind `0/0`, clean worktree, exact nine-commit publication range, nine-path set, Filter Catalog evidence/catalog/builder/Beacon/Web/Parser/OD-009/redaction markers confirmed, no GitHub/configuration mutation.
+`SYNTHETIC_AND_OPERATOR_ACCEPTANCE_RUNTIME`
 
-Final independent documentation audit passed and is published as `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md`.
+Completion boundary:
 
-Final acceptance is not complete until `/opt/avito-mayak` is synchronized to the exact final governance SHA and that final sync report is independently verified.
+`READY_FOR_OPERATOR_ACCEPTANCE`
 
-## Final accepted documentation contour
+Public repository:
 
-### Architecture and Technical
+- repository: `MaksimUnimax/AVITO_Mayak`;
+- branch: `main`;
+- exact current SHA must be fetched before every task.
 
-- `docs/02-architecture/ARCHITECTURE_BASELINE_v1.1.md`;
-- `docs/02-architecture/TECHNOLOGY_SELECTION_METHOD_v1.0.md`;
-- `docs/02-architecture/TECHNICAL_BASELINE_EVIDENCE_v1.0.md`;
-- `docs/02-architecture/TECHNICAL_BASELINE_v1.0.md`;
-- `docs/02-architecture/SECURITY_AND_PRIVACY_MODEL_v1.0.md`;
-- `docs/08-operations/ENVIRONMENT_ISOLATION_POLICY_v1.0.md`.
+The recorded RF-02 audit baseline is evidence only and does not replace a fresh GitHub check.
 
-### Contracts, data and quality
+## Accepted roadmap state
 
-- `docs/03-contracts/CONTRACT_PACKAGE_v1.0.md`;
-- `docs/03-contracts/ERROR_AND_IDEMPOTENCY_POLICY_v1.0.md`;
-- `docs/03-contracts/CONTRACT_CHANGE_POLICY_v1.0.md`;
-- `docs/02-architecture/DATA_MODEL_v1.0.md`;
-- `docs/02-architecture/MIGRATION_AND_COMPATIBILITY_POLICY_v1.0.md`;
-- `docs/07-quality/TEST_STRATEGY_v1.0.md`;
-- `docs/07-quality/FIXTURE_REGISTRY_v1.0.md`;
-- `docs/07-quality/ACCEPTANCE_MATRIX_v1.1.md`;
-- `docs/07-quality/REFERENCE_REGRESSION_POLICY_v1.0.md`.
+- RF-00 — current state, GitHub and server verification: accepted.
+- RF-01 — governance capture and Module 14 playbook: accepted.
+- RF-02 — current-main governance reconciliation: active.
+- RF-02 reconciliation audit: accepted at `59f86084bbc17386070dde34485aba6c1706712c`.
+- RF-03–RF-30: not accepted.
 
-### Operations and references
+RF-02 is not complete until primary governance, current decision status, manifest and applicable indexes no longer contradict the repository tree and Module 14 governance.
 
-- current operations documents listed by `docs/MANIFEST.md`;
-- `docs/08-operations/WINDOWS_EGRESS_AGENT_RUNBOOK_v1.0.md`;
-- `docs/09-references/REFERENCE_REGISTRY_v1.1.md`;
-- `docs/09-references/AVITO_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/AVITO_REFERENCE_EVIDENCE_v1.0.md`;
-- `docs/09-references/TELEGRAM_REFERENCE_POLICY_v1.0.md`;
-- `docs/09-references/MAX_REFERENCE_POLICY_v1.0.md`.
+## Current repository contour
 
-### Module playbooks
+The current repository contains:
 
-- `docs/04-modules/01-platform-and-contracts/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/02-identity-and-access/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/03-entitlements-and-billing/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/04-beacon-management/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/05-avito-parser-adapter/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/06-scan-orchestration-and-listing-state/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/07-egress-routing/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/08-notification-delivery/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/09-telegram-adapter/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/10-max-adapter/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — accepted;
-- `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — accepted.
+- `src/mayak`;
+- executable unit, contract and architecture tests;
+- synthetic fixtures;
+- `pyproject.toml`;
+- `uv.lock`;
+- accepted semantic implementation and handoff evidence for modules 01–13;
+- approved Module 14 playbook and owner decisions;
+- a lock-compatible Python 3.14 suite with 4511 passing tests at the accepted RF-02 audit baseline.
 
-## Final audit conclusions
+Claims that source, tests, fixtures, `pyproject.toml` or `uv.lock` do not exist are stale.
 
-- Runs 1–24 are completed and accepted after GitHub and server-sync verification.
-- All 13 module playbooks exist and are compatible with the module registry.
-- Manifest, roadmap, backlog, module registry and final acceptance report are aligned.
-- Avito, Telegram and MAX evidence exists and remains scoped to its documented authority and limitations.
-- OD-001–OD-014 remain unresolved and are not closed by the documentation cycle.
-- Final documentation is sufficient for a separate owner decision about whether to begin product-code planning.
-- Product-code is not authorized or started.
+The repository is not an empty documentation-only tree.
+
+## Module state
+
+Modules 01–13 remain accepted semantic, contract, ownership, fixture, test and handoff prerequisites:
+
+1. Platform & Contracts;
+2. Identity & Access;
+3. Entitlements & Billing;
+4. Beacon Management;
+5. Avito Parser Adapter;
+6. Scan Orchestration & Listing State;
+7. Egress Routing;
+8. Notification Delivery;
+9. Telegram Adapter;
+10. MAX Adapter;
+11. Admin & Support;
+12. Web Cabinet;
+13. Filter Catalog & Builder.
+
+Module 14 Runtime Foundation & Autonomous Integration is active.
+
+Module 14 assembles runtime across public boundaries and does not take ownership of domain state from modules 01–13.
+
+## Current decision state
+
+For the current Module 14 and MVP scope:
+
+- OD-001–OD-004 are closed by ADR-0009.
+- OD-005 is governed by ADR-0009 and accepted Module 14 billing scope.
+- OD-006 is closed for MVP: no standalone phone/password flow.
+- OD-007 is closed for MVP: phone is not mandatory.
+- OD-008 is closed for MVP: automatic account merge is disabled.
+- OD-009 is governed for current scope by evidence-backed editable filters; no invented complete catalog.
+- OD-010 is governed for current scope: country-wide search is unsupported by default.
+- OD-011 is governed for current scope by accepted tariff intervals; live Avito safety proof remains a future operator/evidence gate.
+- OD-012 is governed for current scope: Telegram primary, Web Cabinet first-party, MAX secondary/future, other channels deferred.
+- OD-013 is governed for the acceptance environment; future production legal/privacy retention remains separately gated.
+- OD-014 is closed for MVP by the accepted Web Cabinet, Admin & Support and Admin analytics v1 scope.
+
+Historical decision rows remain traceability evidence and must not be deleted.
+
+## Runtime status
+
+The complete Module 14 acceptance runtime is not yet implemented or deployed.
+
+Current future gaps include:
+
+- deterministic toolchain proof for the expanded runtime dependency set;
+- GitHub Actions CI;
+- Docker and Compose foundation;
+- PostgreSQL 18 provisioning;
+- SQLAlchemy/Psycopg/Alembic physical persistence;
+- migration from zero;
+- API, worker and scheduler assembly;
+- DB-backed runtime for modules 01–13;
+- Web Cabinet and Admin runtime;
+- provider-disabled-by-default external adapters;
+- cross-module API and command wiring;
+- synthetic E2E;
+- security and supply-chain evidence;
+- observability, backup and recovery;
+- deployment on the existing server;
+- final regression;
+- operator acceptance pack;
+- final evidence handoff.
+
+Absence of optional provider credentials is not a blocker for this roadmap.
+
+## Existing-server boundary
+
+The existing project server is the authorized runtime host.
+
+Accepted project boundaries:
+
+- source: `/opt/avito-mayak`;
+- worktrees: `/opt/avito-mayak-worktrees`;
+- future runtime: `/opt/avito-mayak-runtime`;
+- future configuration: `/etc/avito-mayak`;
+- future data: project-owned Docker volumes or `/var/lib/avito-mayak`;
+- future backups: `/var/backups/avito-mayak`.
+
+Project-owned runtime resources may be created only by exact later RF tasks.
+
+Foreign resources must not be altered or reused.
 
 ## Current prohibitions
 
-No product code, `pyproject.toml`, `uv.lock`, executable tests, fixture data files, frontend, pages, API routes, UI components, analytics, payment UI, CI/CD, migrations, database, dependency installation, auth/session implementation, account merge, phone requirement, filter catalog implementation, exact supported-filter list, parser probe, provider call, Windows/server agent, service, scheduled task, queue, worker, notification outbox implementation, provider adapter implementation, admin UI, support CRM, role implementation, audit store, bot, webhook, Mini App, token, route, lease, tunnel, VPN, proxy, port, listener, firewall/DNS/certificate/trust-store change, parser/provider request, notification delivery execution, credential, secret, deployment or runtime configuration has been created.
+Until an exact applicable later RF task authorizes them, the following remain prohibited:
 
-OD-001–OD-014 remain unresolved.
+- runtime service mutation;
+- Docker or Compose resource creation;
+- PostgreSQL provisioning;
+- physical schema and migrations;
+- API, worker or scheduler start;
+- public ingress;
+- host-published PostgreSQL;
+- Nginx, firewall, DNS or certificate mutation;
+- live Avito, Telegram, MAX or payment calls;
+- production personal data;
+- secrets in Git or reports;
+- foreign-resource mutation;
+- direct foreign-module state writes;
+- blind retry of ambiguous external effects;
+- claims of deployed runtime;
+- claims of `PRODUCTION_READY`.
 
-## Next safe step
+## Next safe work
 
-1. Synchronize `/opt/avito-mayak` to the exact final governance SHA.
-2. Verify local SHA, remote SHA, clean worktree, final acceptance report, all 13 module playbooks and no prohibited mutation.
-3. If accepted, stop the documentation cycle. Do not start product-code without a new explicit owner decision.
+Continue RF-02 through one exact documentation task at a time.
+
+After all RF-02 reconciliation surfaces agree with current `main`, accepted decisions and the Module 14 playbook, ChatGPT independently closes RF-02 and automatically begins the first atomic RF-03 task.
