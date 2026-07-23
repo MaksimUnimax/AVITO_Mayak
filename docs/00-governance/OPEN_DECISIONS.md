@@ -1,10 +1,11 @@
 # Маяк Авито — открытые решения
 
-**Версия:** 1.0  
-**Статус:** APPROVED register of unresolved decisions  
-**Источник:** `docs/01-product/MAYAK_AVITO_TARGET_MODEL_v0.1.md`, раздел 21.
+**Версия:** 2.0
+**Статус:** `CURRENT_SCOPE_DECISIONS_RECONCILED`
+**Дата актуализации:** 2026-07-23
+**Исторический источник:** `docs/01-product/MAYAK_AVITO_TARGET_MODEL_v0.1.md`, раздел 21.
 
-Ни один пункт ниже нельзя заполнять предположением в коде, документации, тарифах, UI или тесте. Решение принимается отдельной записью в `DECISION_LOG_APPEND_ONLY.md` и затем переносится в затронутые документы.
+Первоначальная таблица и датированные governance-capture sections ниже сохранены как историческая traceability evidence. Их прежние `OPEN` или `BLOCKED` статусы описывают gate на дату соответствующей записи и не отменяют актуальный current-state section в конце файла.
 
 | ID | Открытый вопрос | Блокирует/затрагивает |
 |---|---|---|
@@ -328,3 +329,30 @@ It does not authorize source code, tests, real provider fixtures, BotFather chan
 | `TG-02` | ALLOWED_ONLY_AFTER_ACCEPTANCE_AND_EXACT_TASK | Requires fresh GitHub/parallel-main/playbook/dependency verification. |
 
 No numbered open decision is closed by assumption.
+
+---
+
+## Current Module 14 decision state — 2026-07-23
+
+Current precedence: accepted append-only decisions, Module 14 playbook, `OWNER_DECISIONS_v1.0.md` and current GitHub `main`.
+
+| Decision | Current Module 14 state |
+|---|---|
+| `OD-001` | `CLOSED_BY_ADR_0009` — Basic 990 RUB period is one month. |
+| `OD-002` | `CLOSED_BY_ADR_0009` — current tariffs are Free and Basic. |
+| `OD-003` | `CLOSED_BY_ADR_0009` — Basic minimum/step is 5 minutes; Free minimum/step is 3 hours with one active Beacon. |
+| `OD-004` | `CLOSED_BY_ADR_0009` — paid expiry freezes Beacons; no automatic Free Beacon selection. |
+| `OD-005` | `CLOSED_BY_ADR_0009_AND_MODULE14_SCOPE` — manual renewal/refund scope; YooKassa sandbox-ready first adapter; recurring billing disabled. |
+| `OD-006` | `CLOSED_FOR_MVP_BY_MODULE14_OWNER_DECISIONS` — no standalone phone/password flow. |
+| `OD-007` | `CLOSED_FOR_MVP_BY_MODULE14_OWNER_DECISIONS` — phone is not mandatory. |
+| `OD-008` | `CLOSED_FOR_MVP_BY_MODULE14_OWNER_DECISIONS` — automatic merge is disabled; future merge requires audited separate acceptance. |
+| `OD-009` | `GOVERNED_FOR_CURRENT_SCOPE` — no invented full catalog; only evidence-backed editable fields; unsupported, stale or ambiguous fields remain blocked. |
+| `OD-010` | `GOVERNED_FOR_CURRENT_SCOPE` — country-wide search is unsupported by default and requires exact later evidence. |
+| `OD-011` | `GOVERNED_FOR_CURRENT_SCOPE` — scheduler enforces accepted tariff intervals; live Avito proof remains separately gated. |
+| `OD-012` | `GOVERNED_FOR_CURRENT_SCOPE` — Telegram primary, Web Cabinet first-party, MAX secondary/future, other channels deferred. |
+| `OD-013` | `GOVERNED_FOR_ACCEPTANCE_SCOPE` — acceptance retention values are fixed; production legal/privacy retention remains separately gated. |
+| `OD-014` | `CLOSED_FOR_MVP_BY_MODULE14_OWNER_DECISIONS` — Web Cabinet, Admin & Support and Admin analytics v1 scope is fixed. |
+
+No current Module 14 product or technical owner question remains open merely because future production expansion, live-provider evidence or operator acceptance is deferred.
+
+This file name is retained for historical compatibility. Current-scope statuses in this section supersede conflicting earlier status summaries without deleting historical evidence.
