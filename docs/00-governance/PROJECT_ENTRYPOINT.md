@@ -17,8 +17,9 @@ Before every task ChatGPT independently reads current public GitHub `main`, reco
 7. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`;
 8. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`;
 9. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`;
-10. append-only decisions and worklog;
-11. `docs/00-governance/OPEN_DECISIONS.md`;
+10. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`;
+11. append-only decisions and worklog;
+12. `docs/00-governance/OPEN_DECISIONS.md`;
 12. affected architecture, contracts, module playbooks, handoffs, quality and operations evidence.
 
 Current GitHub `main` has precedence over stale summaries.
@@ -39,7 +40,7 @@ The completion boundary is:
 
 `READY_FOR_OPERATOR_ACCEPTANCE`
 
-`PRODUCTION_READY` is not an allowed Module 14 verdict.
+RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is published for independent acceptance; RF-03 remains active, RF-03-03 and RF-03 closure remain pending, and RF-04 remains not started. Runtime mutation remains none. `PRODUCTION_READY` is not an allowed Module 14 verdict.
 
 ## 3. Current repository facts
 

@@ -37,8 +37,9 @@ RF-02 evidence chain:
 - module registry and playbook gate at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`;
 - closure evidence accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md` — RF-03-01 first artifact published for independent acceptance.
+- `14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` — RF-03-02 second artifact published for independent acceptance.
 
-RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is active; RF-03-02, RF-03-03 and RF-03 closure remain pending.
+RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is active; RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is published for independent acceptance; RF-03-03 and RF-03 closure remain pending; RF-04 is not started. Runtime mutation remains none.
 
 All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 remains the active cross-cutting implementation and integration module.
 

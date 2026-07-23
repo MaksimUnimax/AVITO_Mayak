@@ -95,11 +95,13 @@ Artifact:
 
 `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
 
-### RF-03-B — Cross-module runtime gap matrix — NOT STARTED
+`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`
 
-### RF-03-C — Cross-module consistency audit — NOT STARTED
+### RF-03-B — Cross-module runtime gap matrix — PUBLISHED FOR INDEPENDENT ACCEPTANCE
 
-### RF-03-D — Closure evidence and status transition — NOT STARTED
+### RF-03-C — Cross-module consistency audit — PENDING
+
+### RF-03-D — Closure evidence and status transition — PENDING
 
 RF-04 must not start before RF-03 closure is independently accepted.
 

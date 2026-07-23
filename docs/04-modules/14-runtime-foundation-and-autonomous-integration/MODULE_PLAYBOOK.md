@@ -365,11 +365,11 @@ The accepted RF-02 evidence chain is:
 
 RF-03 thirteen-module integration inventory is active.
 
-RF-03-01 publishes:
+RF-03-01 was originally published at `c366f1dd6331902fc1a08f54225026f17c1ef4fa` and is independently accepted through corrective chain head `23e73707b14b220da98beade93ee2d13021ba1b9`:
 
 `THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
 
-for independent acceptance.
+and RF-03-02 publishes the cross-module runtime gap matrix for independent acceptance.
 
 Remaining RF-03 artifacts are:
 
@@ -377,7 +377,7 @@ Remaining RF-03 artifacts are:
 - `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`;
 - RF-03 closure evidence and status transition.
 
-RF-04 must not start before all RF-03 artifacts and RF-03 closure are independently accepted.
+RF-03-03 and RF-03 closure remain pending. RF-04 remains not started and must not start before all RF-03 artifacts and RF-03 closure are independently accepted. Runtime mutation remains none; `PRODUCTION_READY` is not claimed.
 
 Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
 

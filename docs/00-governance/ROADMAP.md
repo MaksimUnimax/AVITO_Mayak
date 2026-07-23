@@ -37,11 +37,11 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-02-06` Module registry and playbook gate reconciliation accepted at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`.
   - `[x] RF-02-07` Closure evidence and status transition independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - `[~] RF-03` Thirteen-module integration inventory — active.
-  - `[~] RF-03-01` Thirteen-module completion matrix published for independent acceptance.
-  - `[ ] RF-03-02` Cross-module runtime gap matrix.
-  - `[ ] RF-03-03` Cross-module consistency audit.
-  - `[ ] RF-03 closure` Evidence and status transition.
-- `[ ] RF-04` Runtime architecture and physical data model.
+  - `[x] RF-03-01` Thirteen-module completion matrix independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`.
+  - `[~] RF-03-02` Cross-module runtime gap matrix published for independent acceptance: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`.
+  - `[ ] RF-03-03` Cross-module consistency audit — pending.
+  - `[ ] RF-03 closure` Evidence and status transition — pending.
+- `[ ] RF-04` Runtime architecture and physical data model — not started; prohibited until RF-03 closure is independently accepted.
 - `[ ] RF-05` Existing-server environment record.
 - `[ ] RF-06` Toolchain and dependency proof.
 - `[ ] RF-07` CI quality gates.

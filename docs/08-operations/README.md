@@ -29,7 +29,7 @@ The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
 - RF-00 — accepted.
 - RF-01 — accepted.
 - RF-02 — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- RF-03 — active; RF-03-01 completion matrix is published for independent acceptance.
+- RF-03 — active; RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 matrix is published for independent acceptance; RF-03-03 and RF-03 closure remain pending; RF-04 is not started.
 - RF-27 deployment — not accepted.
 
 The existing project server is the authorized Module 14 runtime host, but project-owned deployment may occur only through exact gated tasks.

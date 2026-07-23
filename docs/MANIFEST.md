@@ -18,8 +18,9 @@
 8. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`
 9. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`
 10. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
-11. `docs/00-governance/OPEN_DECISIONS.md`
-12. relevant append-only decision and worklog entries
+11. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`
+12. `docs/00-governance/OPEN_DECISIONS.md`
+13. relevant append-only decision and worklog entries
 13. affected architecture, contract, module, quality, operations and reference documents
 14. affected module evidence handoffs
 
@@ -71,10 +72,10 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 - RF-02 applicable documentation indexes reconciliation — accepted.
 - RF-02 module registry and playbook gate reconciliation — accepted.
 - RF-02 closure evidence — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- RF-03 — active; RF-03-01 completion matrix is published for independent acceptance.
-- RF-03–RF-30 — not accepted.
+- RF-03 — active; RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 matrix is published for independent acceptance.
+- RF-03-03 and RF-03 closure remain pending; RF-04–RF-30 are not started/not accepted.
 
-RF-03-02, RF-03-03 and RF-03 closure remain pending. RF-04 must not start before RF-03 closure acceptance.
+RF-03-03 and RF-03 closure remain pending. RF-04 remains not started and must not start before RF-03 closure acceptance. Runtime mutation remains none; `PRODUCTION_READY` is not claimed.
 
 ## Current approved foundation documents
 
@@ -178,6 +179,7 @@ Modules 01–13 are accepted semantic, contract, ownership, test and evidence pr
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — RF-02 accepted audit input.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md` — RF-03-01 first integration-inventory artifact published for independent acceptance.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` — RF-03-02 second integration-inventory artifact published for independent acceptance.
 
 Module 14 is active.
 

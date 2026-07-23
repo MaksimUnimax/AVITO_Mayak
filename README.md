@@ -17,7 +17,8 @@
 7. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md)
 8. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md)
 9. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md)
-10. affected module playbooks, contracts, handoffs and append-only decisions.
+10. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md)
+11. affected module playbooks, contracts, handoffs and append-only decisions.
 
 Exact current GitHub `main` SHA must be fetched before every task. SHA values recorded in governance documents are evidence baselines, not permission to skip a fresh check.
 
@@ -64,7 +65,7 @@ This does not prove that the complete acceptance runtime is assembled or deploye
 - RF-00: accepted.
 - RF-01: accepted.
 - RF-02: independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- RF-03: active; RF-03-01 completion matrix is published for independent acceptance.
+- RF-03: active; RF-03-01 is independently accepted through corrective SHA `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 matrix is published for independent acceptance; RF-03-03 and RF-03 closure remain pending; RF-04 is not started.
 - RF-04–RF-30: not accepted and may begin only through their exact prerequisites and one exact task.
 
 Historical Final Documentation Acceptance remains evidence for the earlier documentation cycle. It is not the current roadmap endpoint.
