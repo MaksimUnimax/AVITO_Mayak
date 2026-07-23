@@ -55,17 +55,18 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-05-03` Filesystem boundaries and permissions evidence.
   - `[x] RF-05-04` Environment allocation record validation.
   - `[x] RF-05-05` Repository evidence and closure — accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; `NOT_PRODUCTION_READY`.
-- `[~] RF-06` Toolchain and dependency proof — RF-06-01 and RF-06-02 accepted; RF-06-03 corrective dependency expansion, lock and clean sync published pending independent acceptance; runtime stopped.
+- `[~] RF-06` Toolchain and dependency proof — RF-06-01 and RF-06-02 accepted; RF-06-03 implementation published and artifact-count correction pending acceptance; authoritative artifact breakdown is 48 sdists, 246 wheels and 294 total; runtime stopped.
   - `[x] RF-06-01` Toolchain and dependency baseline — accepted through corrective SHA `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`.
     - `[x] RF-06-01-C01` UV candidate freshness correction — accepted through the corrective chain.
   - `[x] RF-06-02` Bootstrap and executable verification — independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`.
-  - `[c] RF-06-03` Dependency expansion, lock and clean sync corrective chain published for independent acceptance.
+  - `[~] RF-06-03` Implementation published; artifact-count correction pending acceptance.
+    - `[c] RF-06-03-C06` Artifact-count semantics correction.
     - `[c]` OpenTelemetry coupled-prerelease correction.
     - `[c]` OpenTelemetry import-topology correction.
     - `[x]` Quality baseline and FC-08 classification.
     - `[c]` FC-08 historical-boundary correction and publication.
-  - `[!] RF-06-04` Closure blocked pending RF-06-03 acceptance.
-- `[ ] RF-07` CI quality gates — blocked pending RF-06-03 acceptance.
+  - `[!] RF-06-04` Closure blocked pending RF-06-03-C06 acceptance.
+- `[ ] RF-07` CI quality gates — blocked pending RF-06 closure.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.
 - `[ ] RF-10` Platform & Contracts runtime.

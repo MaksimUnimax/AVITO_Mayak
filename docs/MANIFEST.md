@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF06_DEPENDENCY_SYNC_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF06_ARTIFACT_COUNT_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата актуализации:** 2026-07-23
 
 ## Порядок входа
@@ -77,7 +77,7 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; closure is published for independent acceptance.
 - RF-04 is accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`; RF-04-07 is accepted through the same base.
 - RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations are verified; repository content and closure are complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; `NOT_PRODUCTION_READY` remains current.
-- RF-06-01 corrective chain is accepted at `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-03 corrective dependency proof is published pending independent acceptance. The graph is locked and synchronized, runtime is stopped, RF-06-04 and RF-07 are blocked; RF-08–RF-30 remain not started/not accepted.
+- RF-06-01 corrective chain is accepted at `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-03 artifact-count correction is published pending independent acceptance with authoritative counts of 48 sdists, 246 wheels, 294 total and 294 hashed. The graph is locked and synchronized, runtime is stopped, RF-06-04 and RF-07 are blocked; RF-08–RF-30 remain not started/not accepted.
 
 RF-04 evidence is [`PHYSICAL_DATA_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/PHYSICAL_DATA_MODEL_v1.0.md), [`TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md), [`RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md), [`MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md), [`RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md), [`CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md), and [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md). RF-04 is accepted through current base; RF-05 is repository-content complete and its closure is published for independent acceptance. Runtime remains unimplemented and unstarted; `RUNTIME_ELIGIBLE` applies to the environment allocation only; `NOT_PRODUCTION_READY` remains current; RF-06-03 is published pending independent acceptance.
 
@@ -190,7 +190,8 @@ Modules 01–13 are accepted semantic, contract, ownership, test and evidence pr
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_BASELINE_v1.0.md` — RF-06-01 baseline published for independent acceptance; toolchain not installed; dependencies unchanged; `NOT_PRODUCTION_READY`.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_BASELINE_CORRECTION_v1.0.md` — RF-06-01 corrective chain accepted at the exact base SHA.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_BOOTSTRAP_AND_EXECUTABLE_VERIFICATION_v1.0.md` — RF-06-02 exact pinned toolchain and executable verification, independently accepted; runtime stopped; `NOT_PRODUCTION_READY`.
-- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/DEPENDENCY_EXPANSION_LOCK_AND_CLEAN_SYNC_v1.0.md` — RF-06-03 corrective dependency expansion, lock, clean sync, differential quality, FC-08 boundary correction and publication, pending independent acceptance.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/DEPENDENCY_EXPANSION_LOCK_AND_CLEAN_SYNC_v1.0.md` — RF-06-03 implementation and corrected dependency evidence, pending independent acceptance.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/DEPENDENCY_ARTIFACT_COUNT_SEMANTICS_CORRECTION_v1.0.md` — RF-06-03-C06 authoritative correction for artifact-count semantics, pending independent acceptance.
 
 Module 14 is active.
 

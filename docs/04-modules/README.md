@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** `MODULE_14_RF06_DEPENDENCY_SYNC_PUBLISHED_PENDING_ACCEPTANCE` — RF-05, RF-06-01 and RF-06-02 are accepted; RF-06-03 corrective dependency proof is published pending independent acceptance; project-owned environment is synchronized; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
+**Статус:** `MODULE_14_RF06_ARTIFACT_COUNT_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE` — RF-06-03 implementation exists at `c0104df4fb356862beffc04abe8b0170498eaf3c`; artifact-count correction is pending independent acceptance; authoritative breakdown is 48 sdists, 246 wheels and 294 total; lock and environment packages are unchanged; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -22,7 +22,7 @@ Each module has one canonical `MODULE_PLAYBOOK.md`.
 
 ## Active cross-cutting integration module
 
-- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-06-02 accepted; RF-06-03 corrective publication pending acceptance with synchronized dependency environment, differential no-regression proof and full tests; runtime stopped; RF-06-04/RF-07 blocked.
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-06-02 accepted; RF-06-03 artifact-count correction pending acceptance with 48/246/294 authoritative breakdown and unchanged lock/environment; runtime stopped; RF-06-04/RF-07 blocked.
 - `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — accepted RF-02 audit input.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
@@ -45,7 +45,7 @@ RF-02 evidence chain:
 
 RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete. RF-04 is accepted through current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is active; RF-06-01 and RF-06-02 are accepted, and RF-06-03 corrective dependency publication is pending independent acceptance. CPython/uv and dependencies are project-owned, runtime is stopped, RF-06-04/RF-07 are blocked, and `NOT_PRODUCTION_READY` remains current.
 
-Current RF-04 artifacts: `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`. Current RF-05 artifacts: `EXISTING_SERVER_ENVIRONMENT_RECORD_v1.0.md` and `EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md`. Current RF-06 artifacts: `TOOLCHAIN_AND_DEPENDENCY_BASELINE_v1.0.md`, `TOOLCHAIN_AND_DEPENDENCY_BASELINE_CORRECTION_v1.0.md` (RF-06-01 corrective chain accepted), `TOOLCHAIN_BOOTSTRAP_AND_EXECUTABLE_VERIFICATION_v1.0.md` (RF-06-02 independently accepted), and `DEPENDENCY_EXPANSION_LOCK_AND_CLEAN_SYNC_v1.0.md` (RF-06-03 corrective publication pending independent acceptance).
+Current RF-04 artifacts: `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`. Current RF-05 artifacts: `EXISTING_SERVER_ENVIRONMENT_RECORD_v1.0.md` and `EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md`. Current RF-06 artifacts: `TOOLCHAIN_AND_DEPENDENCY_BASELINE_v1.0.md`, `TOOLCHAIN_AND_DEPENDENCY_BASELINE_CORRECTION_v1.0.md` (RF-06-01 corrective chain accepted), `TOOLCHAIN_BOOTSTRAP_AND_EXECUTABLE_VERIFICATION_v1.0.md` (RF-06-02 independently accepted), `DEPENDENCY_EXPANSION_LOCK_AND_CLEAN_SYNC_v1.0.md`, and `DEPENDENCY_ARTIFACT_COUNT_SEMANTICS_CORRECTION_v1.0.md` (RF-06-03-C06 correction pending independent acceptance).
 
 All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 remains the active cross-cutting implementation and integration module.
 
