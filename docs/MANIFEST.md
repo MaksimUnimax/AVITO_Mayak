@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
-**Версия манифеста:** 3.0
-**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED
+**Версия манифеста:** 3.1
+**Статус:** MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE
 
 ## Порядок входа
 
@@ -15,6 +15,8 @@
 8. relevant append-only decision/worklog entries
 9. `docs/00-governance/OPEN_DECISIONS.md`
 10. current architecture/technical/contracts/data/quality/operations/reference/module documents
+11. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`
+12. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`
 
 ## Current approved foundation documents
 
@@ -78,10 +80,14 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 - `docs/04-modules/11-admin-and-support/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/12-web-cabinet/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
 - `docs/04-modules/13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — v1.0 APPROVED and accepted.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; cross-cutting integration module; RF-01 active.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 
 ### Final governance
 
 - `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md` — FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED; exact final server synchronization pending.
+
+The final documentation acceptance remains the historical baseline for modules 01–13. Module 14 is now active under its approved playbook and owner decisions. This activation supersedes the historical no-runtime conclusion only inside exact governed module 14 tasks. Broader current-main governance reconciliation remains RF-02 scope.
 
 ## Каталоги
 
@@ -91,11 +97,11 @@ Historical revision retained: `docs/07-quality/ACCEPTANCE_MATRIX_v1.0.md`.
 | `01-product` | product model | v0.1 DRAFT |
 | `02-architecture` | architecture, technical, security, data and compatibility | current baselines approved |
 | `03-contracts` | common contracts | APPROVED documentation baseline |
-| `04-modules` | 13 playbooks | all 13 accepted |
+| `04-modules` | 13 accepted domain playbooks plus module 14 cross-cutting integration governance | modules 01–13 accepted; module 14 RF-01 active |
 | `05-tasks` | literal execution packets | TASK-001 historical/completed; no active implementation task |
 | `06-reports` | evidence reports and handoffs | final documentation acceptance published; no product-code report |
 | `07-quality` | strategy, fixtures, acceptance, reference regression | APPROVED documentation baseline |
 | `08-operations` | isolation, environments, observability, recovery, release, Windows egress | APPROVED documentation baseline; no runtime/deploy |
 | `09-references` | external evidence | Avito, Telegram and MAX documentation approved; provider implementation absent |
 
-Statuses: `DRAFT`, `CANDIDATE`, `RESERVED`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`, `FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED`. Final completion still requires exact server synchronization to the final governance SHA and independent verification.
+Statuses: `DRAFT`, `CANDIDATE`, `RESERVED`, `APPROVED`, `SUPERSEDED`, `ARCHIVED`, `FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED`, `MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE`. Modules 01–13 retain their accepted evidence. Module 14 is active and completes only with `READY_FOR_OPERATOR_ACCEPTANCE`; it must not claim `PRODUCTION_READY`.

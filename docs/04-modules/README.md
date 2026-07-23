@@ -1,10 +1,10 @@
 # Автономные module playbooks
 
-**Статус:** FINAL_GOVERNANCE_ACCEPTANCE_PUBLISHED — all 13 module playbooks are accepted; exact final server synchronization is pending.
+**Статус:** MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE — modules 01–13 are accepted; module 14 RF-01 is active.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
-Accepted:
+Accepted domain modules:
 
 - `01-platform-and-contracts/MODULE_PLAYBOOK.md` — Run 12; exact server synchronization accepted.
 - `02-identity-and-access/MODULE_PLAYBOOK.md` — Run 13; exact server synchronization accepted.
@@ -20,8 +20,13 @@ Accepted:
 - `12-web-cabinet/MODULE_PLAYBOOK.md` — Run 23; exact server synchronization accepted.
 - `13-filter-catalog-and-builder/MODULE_PLAYBOOK.md` — Run 24; exact server synchronization accepted.
 
-All 13 module playbooks are published and accepted. Final documentation acceptance is published in `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md` and remains pending only exact final server synchronization.
+Active cross-cutting integration module:
+
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-01 active.
+- `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
+
+All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 is the active cross-cutting implementation and integration module. Its approved playbook and owner decisions authorize work only through exact RF tasks and do not by themselves prove runtime implementation, deployment or production readiness.
 
 Every playbook includes purpose/boundaries, data owner, confirmed and open decisions, public inputs/outputs, allowed/forbidden changes, immutable common contracts, dependencies/fakes, fixtures/test vectors, acceptance criteria, roadmap, report/handoff and append-only history.
 
-A playbook is a prerequisite only. It does not authorize code, dependency installation, database, migrations, agents, routes, tunnels, ports, provider calls, notifications, services or deployment without a separate exact owner decision and gated task.
+Playbooks for modules 01–13 remain semantic and ownership prerequisites. Module 14 may authorize later code, dependency, database, migration, infrastructure and deployment work only when its approved owner decisions, current roadmap prerequisite and one exact gated task all permit that mutation. RF-01 remains documentation-only, and runtime mutation is forbidden until RF-01 is fully accepted.
