@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
+**Статус:** `MODULE_14_RF03_ACTIVE`
 **Дата:** 2026-07-23
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[!]` blocked.
@@ -28,15 +28,19 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
 
 - `[x] RF-00` Current state, GitHub and server verification.
 - `[x] RF-01` Governance capture and Module 14 playbook.
-- `[x] RF-02` Current-main governance reconciliation — complete at repository-content level; closure evidence published for independent acceptance.
+- `[x] RF-02` Current-main governance reconciliation — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
   - `[x] RF-02-01` Current-main reconciliation audit accepted at `59f86084bbc17386070dde34485aba6c1706712c`.
   - `[x] RF-02-02` Primary governance reconciliation accepted at `63de1f4c62e1b72626f20278dbba9eef190b6a99`.
   - `[x] RF-02-03` Current decision register reconciliation accepted at `f7733447f5f10cc3f3702c8f863accb4d9403c05`.
   - `[x] RF-02-04` Documentation manifest reconciliation accepted at `8d3ff83198d90f062906925d6f4becf66c81ed9a`.
   - `[x] RF-02-05` Applicable documentation indexes reconciliation accepted at `34db47cbbffd7f31a918963b181e3048229307be`.
   - `[x] RF-02-06` Module registry and playbook gate reconciliation accepted at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`.
-  - `[x] RF-02-07` Closure evidence and status transition published for independent acceptance.
-- `[ ] RF-03` Thirteen-module integration inventory — next permitted step after independent acceptance of the RF-02 closure commit.
+  - `[x] RF-02-07` Closure evidence and status transition independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
+- `[~] RF-03` Thirteen-module integration inventory — active.
+  - `[~] RF-03-01` Thirteen-module completion matrix published for independent acceptance.
+  - `[ ] RF-03-02` Cross-module runtime gap matrix.
+  - `[ ] RF-03-03` Cross-module consistency audit.
+  - `[ ] RF-03 closure` Evidence and status transition.
 - `[ ] RF-04` Runtime architecture and physical data model.
 - `[ ] RF-05` Existing-server environment record.
 - `[ ] RF-06` Toolchain and dependency proof.

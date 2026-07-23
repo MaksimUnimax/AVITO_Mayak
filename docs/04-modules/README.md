@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT` — modules 01–13 are accepted; RF-02 closure evidence is published for independent acceptance; RF-03 is next and not started.
+**Статус:** `MODULE_14_RF03_ACTIVE` — modules 01–13 are accepted; RF-02 is independently accepted; RF-03 integration inventory is active.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -22,7 +22,7 @@ Each module has one canonical `MODULE_PLAYBOOK.md`.
 
 ## Active cross-cutting integration module
 
-- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-00 and RF-01 accepted; RF-02 complete at repository-content level; RF-03 next.
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-00–RF-02 accepted; RF-03 active.
 - `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — accepted RF-02 audit input.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
@@ -35,9 +35,10 @@ RF-02 evidence chain:
 - documentation manifest at `8d3ff83198d90f062906925d6f4becf66c81ed9a`;
 - applicable documentation indexes at `34db47cbbffd7f31a918963b181e3048229307be`;
 - module registry and playbook gate at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`;
-- closure evidence in the current containing commit.
+- closure evidence accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
+- `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md` — RF-03-01 first artifact published for independent acceptance.
 
-RF-02 is complete at repository-content level. RF-03 may start only after independent ChatGPT acceptance of the closure commit.
+RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is active; RF-03-02, RF-03-03 and RF-03 closure remain pending.
 
 All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 remains the active cross-cutting implementation and integration module.
 

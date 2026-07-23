@@ -1,7 +1,7 @@
 # Маяк Авито — backlog документации
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
+**Статус:** `MODULE_14_RF03_ACTIVE`
 **Дата:** 2026-07-23
 
 ## Historical documentation backlog
@@ -75,17 +75,33 @@ Published and independently accepted at:
 
 `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`
 
-### RF-02-G — Closure evidence and status transition — PUBLISHED FOR INDEPENDENT ACCEPTANCE
+### RF-02-G — Closure evidence and status transition — ACCEPTED
 
 Closure evidence:
 
 `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`
 
-RF-02 is complete at repository-content level when the containing commit passes all required tests and publication gates.
+RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 
-RF-03 is the next permitted roadmap step only after independent ChatGPT acceptance of the closure commit.
+RF-03 is active.
 
 The closure does not claim runtime implementation, deployment, operator acceptance or `PRODUCTION_READY`.
+
+## RF-03 integration inventory backlog
+
+### RF-03-A — Thirteen-module completion matrix — PUBLISHED FOR INDEPENDENT ACCEPTANCE
+
+Artifact:
+
+`docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
+
+### RF-03-B — Cross-module runtime gap matrix — NOT STARTED
+
+### RF-03-C — Cross-module consistency audit — NOT STARTED
+
+### RF-03-D — Closure evidence and status transition — NOT STARTED
+
+RF-04 must not start before RF-03 closure is independently accepted.
 
 ## Later documentation roadmap
 

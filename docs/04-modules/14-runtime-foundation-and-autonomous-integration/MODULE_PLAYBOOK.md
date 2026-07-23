@@ -349,32 +349,35 @@ RF-00 current-state, GitHub and server verification is accepted at baseline `315
 
 RF-01 governance capture and Module 14 registration are accepted.
 
-RF-02 current-main governance reconciliation is complete at repository-content level.
+RF-02 current-main governance reconciliation is independently accepted at:
 
-The accepted RF-02 prerequisite evidence chain is:
+`c92e9299e5c0bd11ea18362673a8ac342b835483`
 
-- reconciliation audit at `59f86084bbc17386070dde34485aba6c1706712c`;
-- primary governance reconciliation at `63de1f4c62e1b72626f20278dbba9eef190b6a99`;
-- current decision register reconciliation at `f7733447f5f10cc3f3702c8f863accb4d9403c05`;
-- documentation manifest reconciliation at `8d3ff83198d90f062906925d6f4becf66c81ed9a`;
-- applicable documentation indexes reconciliation at `34db47cbbffd7f31a918963b181e3048229307be`;
-- module registry and playbook gate reconciliation at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`.
+The accepted RF-02 evidence chain is:
 
-RF-02 closure evidence is:
+- audit `59f86084bbc17386070dde34485aba6c1706712c`;
+- primary governance `63de1f4c62e1b72626f20278dbba9eef190b6a99`;
+- decision register `f7733447f5f10cc3f3702c8f863accb4d9403c05`;
+- manifest `8d3ff83198d90f062906925d6f4becf66c81ed9a`;
+- documentation indexes `34db47cbbffd7f31a918963b181e3048229307be`;
+- module registry gate `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`;
+- RF-02 closure `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 
-`CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`
+RF-03 thirteen-module integration inventory is active.
 
-The closure document and status transition are published by task:
+RF-03-01 publishes:
 
-`RF-02-07-CURRENT-MAIN-RECONCILIATION-CLOSURE-20260723`
+`THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
 
-from expected base:
+for independent acceptance.
 
-`ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`
+Remaining RF-03 artifacts are:
 
-RF-03 is the next permitted roadmap step after independent ChatGPT acceptance of the closure commit.
+- `CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`;
+- `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`;
+- RF-03 closure evidence and status transition.
 
-RF-03 remains not started until that acceptance.
+RF-04 must not start before all RF-03 artifacts and RF-03 closure are independently accepted.
 
 Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
 

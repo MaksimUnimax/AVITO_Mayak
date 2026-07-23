@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
+**Статус:** `MODULE_14_RF03_ACTIVE`
 **Дата актуализации:** 2026-07-23
 
 ## Порядок входа
@@ -17,10 +17,11 @@
 7. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`
 8. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`
 9. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`
-10. `docs/00-governance/OPEN_DECISIONS.md`
-11. relevant append-only decision and worklog entries
-12. affected architecture, contract, module, quality, operations and reference documents
-13. affected module evidence handoffs
+10. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md`
+11. `docs/00-governance/OPEN_DECISIONS.md`
+12. relevant append-only decision and worklog entries
+13. affected architecture, contract, module, quality, operations and reference documents
+14. affected module evidence handoffs
 
 `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md` remains historical evidence for the earlier documentation cycle. It is not the current roadmap endpoint and must not precede the active Module 14 governance when determining current work.
 
@@ -62,18 +63,18 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 
 - RF-00 — accepted.
 - RF-01 — accepted.
-- RF-02 — complete at repository-content level; closure evidence published for independent acceptance.
+- RF-02 — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - RF-02 reconciliation audit — accepted.
 - RF-02 primary governance reconciliation — accepted.
 - RF-02 current decision register reconciliation — accepted.
 - RF-02 documentation manifest reconciliation — accepted.
 - RF-02 applicable documentation indexes reconciliation — accepted.
 - RF-02 module registry and playbook gate reconciliation — accepted.
-- RF-02 closure evidence — present at `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`.
-- RF-03 — next permitted roadmap step after independent acceptance of the RF-02 closure commit.
+- RF-02 closure evidence — independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
+- RF-03 — active; RF-03-01 completion matrix is published for independent acceptance.
 - RF-03–RF-30 — not accepted.
 
-RF-03 must not start before independent acceptance of the RF-02 closure commit.
+RF-03-02, RF-03-03 and RF-03 closure remain pending. RF-04 must not start before RF-03 closure acceptance.
 
 ## Current approved foundation documents
 
@@ -176,6 +177,7 @@ Modules 01–13 are accepted semantic, contract, ownership, test and evidence pr
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — RF-02 accepted audit input.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md` — RF-03-01 first integration-inventory artifact published for independent acceptance.
 
 Module 14 is active.
 
@@ -205,11 +207,11 @@ The historical no-runtime conclusion is superseded only inside exact governed Mo
 
 | Каталог | Назначение | Current status |
 |---|---|---|
-| `00-governance` | rules, current state, roadmap, decisions and worklog | RF-02 reconciled; RF-03 next after closure acceptance |
+| `00-governance` | rules, current state, roadmap, decisions and worklog | RF-02 accepted; RF-03 active |
 | `01-product` | historical product target and product context | v0.1 draft retained; current Module 14 decisions governed separately |
 | `02-architecture` | architecture, technical, security, data and compatibility | semantic foundations accepted; RF-04 physical runtime design pending |
 | `03-contracts` | common and public module contracts | accepted semantic foundation |
-| `04-modules` | modules 01–13 plus cross-cutting Module 14 | modules 01–13 accepted; Module 14 active; RF-02 complete; RF-03 next |
+| `04-modules` | modules 01–13 plus cross-cutting Module 14 | modules 01–13 accepted; Module 14 active; RF-03 integration inventory active |
 | `05-tasks` | historical literal execution packets | historical task evidence; current roadmap authority remains governance and GitHub main |
 | `06-reports` | accepted reports and module handoffs | modules 01–13 evidence accepted; Module 14 final handoff pending |
 | `07-quality` | strategy, fixtures, acceptance and regression | executable tests and synthetic fixtures exist; CI/deployed runtime gates pending |
