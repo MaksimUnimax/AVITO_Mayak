@@ -15,9 +15,10 @@ Before every task ChatGPT independently reads current public GitHub `main`, reco
 5. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`;
 6. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`;
 7. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`;
-8. append-only decisions and worklog;
-9. `docs/00-governance/OPEN_DECISIONS.md`;
-10. affected architecture, contracts, module playbooks, handoffs, quality and operations evidence.
+8. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`;
+9. append-only decisions and worklog;
+10. `docs/00-governance/OPEN_DECISIONS.md`;
+11. affected architecture, contracts, module playbooks, handoffs, quality and operations evidence.
 
 Current GitHub `main` has precedence over stale summaries.
 

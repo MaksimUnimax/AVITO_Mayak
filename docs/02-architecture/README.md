@@ -1,6 +1,6 @@
 # Architecture documentation
 
-**Статус:** `MODULE_14_RF02_ACTIVE`
+**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
 **Дата актуализации:** 2026-07-23
 
 ## Accepted semantic and design foundations
@@ -29,8 +29,8 @@ The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
 
 - RF-00 — accepted.
 - RF-01 — accepted.
-- RF-02 — active and not complete.
-- RF-03 — not started.
+- RF-02 — complete at repository-content level; closure evidence published for independent acceptance.
+- RF-03 — next permitted roadmap step after independent acceptance of the RF-02 closure commit.
 
 Exact physical PostgreSQL tables, keys, indexes, constraints, transaction/outbox boundaries, work leases, read projections, process model, migration plan, runtime topology, configuration schema and secrets boundary remain RF-04 scope.
 

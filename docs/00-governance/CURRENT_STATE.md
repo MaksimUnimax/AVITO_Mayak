@@ -1,7 +1,7 @@
 # Маяк Авито — текущее состояние проекта
 
 **Версия снимка:** 3.0
-**Статус:** `MODULE_14_RF02_ACTIVE`
+**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
 **Дата:** 2026-07-23
 **RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
@@ -29,11 +29,20 @@ The recorded RF-02 audit baseline is evidence only and does not replace a fresh 
 
 - RF-00 — current state, GitHub and server verification: accepted.
 - RF-01 — governance capture and Module 14 playbook: accepted.
-- RF-02 — current-main governance reconciliation: active.
+- RF-02 — current-main governance reconciliation: complete at repository-content level; closure evidence published for independent acceptance.
 - RF-02 reconciliation audit: accepted at `59f86084bbc17386070dde34485aba6c1706712c`.
-- RF-03–RF-30: not accepted.
+- RF-02 primary governance reconciliation: accepted at `63de1f4c62e1b72626f20278dbba9eef190b6a99`.
+- RF-02 current decision register reconciliation: accepted at `f7733447f5f10cc3f3702c8f863accb4d9403c05`.
+- RF-02 documentation manifest reconciliation: accepted at `8d3ff83198d90f062906925d6f4becf66c81ed9a`.
+- RF-02 documentation indexes reconciliation: accepted at `34db47cbbffd7f31a918963b181e3048229307be`.
+- RF-02 module registry and playbook gate reconciliation: accepted at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`.
+- RF-02 closure evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`.
+- RF-03 — next permitted roadmap step after independent acceptance of the RF-02 closure commit.
+- RF-04–RF-30: not accepted.
 
-RF-02 is not complete until primary governance, current decision status, manifest and applicable indexes no longer contradict the repository tree and Module 14 governance.
+RF-02 is complete at repository-content level only when the containing closure commit passes all exact tests, is published without parallel-main conflict and is independently accepted by ChatGPT.
+
+RF-03 remains not started until that independent acceptance.
 
 ## Current repository contour
 
@@ -159,6 +168,6 @@ Until an exact applicable later RF task authorizes them, the following remain pr
 
 ## Next safe work
 
-Continue RF-02 through one exact documentation task at a time.
+After independent acceptance of the RF-02 closure commit, begin RF-03 through one exact documentation-only integration-inventory task.
 
-After all RF-02 reconciliation surfaces agree with current `main`, accepted decisions and the Module 14 playbook, ChatGPT independently closes RF-02 and automatically begins the first atomic RF-03 task.
+RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden until their applicable prerequisites and exact tasks.

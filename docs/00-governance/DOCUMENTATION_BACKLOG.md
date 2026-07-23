@@ -1,7 +1,7 @@
 # Маяк Авито — backlog документации
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF02_ACTIVE`
+**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
 **Дата:** 2026-07-23
 
 ## Historical documentation backlog
@@ -41,46 +41,51 @@ The complete physical runtime, persistence, deployment and production launch are
 
 ### RF-02-A — Current-main audit — ACCEPTED
 
-The reconciliation audit was published and independently accepted at:
+Published and independently accepted at:
 
 `59f86084bbc17386070dde34485aba6c1706712c`
 
-It proves that stale documentation-only claims contradict the current repository tree.
+### RF-02-B — Primary governance reconciliation — ACCEPTED
 
-### RF-02-B — Primary governance reconciliation — ACTIVE
+Published and independently accepted at:
 
-Current atomic scope:
+`63de1f4c62e1b72626f20278dbba9eef190b6a99`
 
-- root README;
-- project entrypoint;
-- current state;
-- roadmap;
-- documentation backlog.
+### RF-02-C — Current decisions reconciliation — ACCEPTED
 
-This scope must state the existing semantic contour without claiming runtime completion.
+Published and independently accepted at:
 
-### RF-02-C — Current decisions and manifest reconciliation — NOT STARTED
+`f7733447f5f10cc3f3702c8f863accb4d9403c05`
 
-Future exact tasks must reconcile:
+### RF-02-D — Documentation manifest reconciliation — ACCEPTED
 
-- `OPEN_DECISIONS.md`;
-- `docs/MANIFEST.md`;
-- only exact proven stale indexes.
+Published and independently accepted at:
 
-Historical decision rows and accepted documentation records must remain traceable.
+`8d3ff83198d90f062906925d6f4becf66c81ed9a`
 
-### RF-02-D — RF-02 closure evidence — NOT STARTED
+### RF-02-E — Applicable documentation indexes reconciliation — ACCEPTED
 
-RF-02 may close only after:
+Published and independently accepted at:
 
-- primary governance matches current `main`;
-- current decision statuses are unambiguous;
-- manifest and applicable indexes agree;
-- module ownership remains unchanged;
-- runtime gaps remain explicit;
-- production launch remains blocked;
-- full suite remains passing;
-- no secrets or foreign resources are affected.
+`34db47cbbffd7f31a918963b181e3048229307be`
+
+### RF-02-F — Module registry and playbook gate reconciliation — ACCEPTED
+
+Published and independently accepted at:
+
+`ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`
+
+### RF-02-G — Closure evidence and status transition — PUBLISHED FOR INDEPENDENT ACCEPTANCE
+
+Closure evidence:
+
+`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`
+
+RF-02 is complete at repository-content level when the containing commit passes all required tests and publication gates.
+
+RF-03 is the next permitted roadmap step only after independent ChatGPT acceptance of the closure commit.
+
+The closure does not claim runtime implementation, deployment, operator acceptance or `PRODUCTION_READY`.
 
 ## Later documentation roadmap
 

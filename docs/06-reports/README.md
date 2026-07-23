@@ -1,6 +1,6 @@
 # Reports and handoffs
 
-**Статус:** `MODULE_14_RF02_ACTIVE`
+**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
 **Дата актуализации:** 2026-07-23
 
 ## Report lifecycle
@@ -33,8 +33,8 @@ The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
 
 - RF-00 — accepted.
 - RF-01 — accepted.
-- RF-02 — active and not complete.
-- RF-03 — not started.
+- RF-02 — complete at repository-content level; closure evidence published for independent acceptance.
+- RF-03 — next permitted roadmap step after independent acceptance of the RF-02 closure commit.
 
 GitHub Actions CI, Docker Compose, PostgreSQL 18 persistence, SQLAlchemy, Psycopg, Alembic, migrations from zero, API/worker/scheduler entry points, deployed Web Cabinet/Admin, deployed E2E, backup/restore, server deployment and operator acceptance are not yet accepted.
 

@@ -1,6 +1,6 @@
 # Operations documentation
 
-**Статус:** `MODULE_14_RF02_ACTIVE`
+**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
 **Дата актуализации:** 2026-07-23
 
 ## Accepted operations foundations
@@ -28,8 +28,8 @@ The accepted RF-02 baseline records 4511 passing tests on Python 3.14.
 
 - RF-00 — accepted.
 - RF-01 — accepted.
-- RF-02 — active and not complete.
-- RF-03 — not started.
+- RF-02 — complete at repository-content level; closure evidence published for independent acceptance.
+- RF-03 — next permitted roadmap step after independent acceptance of the RF-02 closure commit.
 - RF-27 deployment — not accepted.
 
 The existing project server is the authorized Module 14 runtime host, but project-owned deployment may occur only through exact gated tasks.

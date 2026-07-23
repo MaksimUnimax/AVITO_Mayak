@@ -1,6 +1,6 @@
 # Quality documentation
 
-**Статус:** `MODULE_14_RF02_ACTIVE`
+**Статус:** `MODULE_14_RF02_COMPLETE_RF03_NEXT`
 **Дата актуализации:** 2026-07-23
 
 ## Current documents
@@ -34,8 +34,8 @@ This baseline does not prove future GitHub Actions CI, isolated dependency synch
 
 - RF-00 — accepted.
 - RF-01 — accepted.
-- RF-02 — active and not complete.
-- RF-03 — not started.
+- RF-02 — complete at repository-content level; closure evidence published for independent acceptance.
+- RF-03 — next permitted roadmap step after independent acceptance of the RF-02 closure commit.
 - RF-07, RF-09, RF-24, RF-25, RF-26 and RF-28 — not accepted.
 
 Modules 01–13 have accepted semantic, contract, ownership, test and evidence foundations. Those foundations do not prove DB-backed or deployed runtime completion.

@@ -1,6 +1,6 @@
 # Маяк Авито
 
-**Статус репозитория:** `MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE` — RF-02 current-main governance reconciliation is in progress.
+**Статус репозитория:** `MODULE_14_AUTONOMOUS_RUNTIME_COMPLETION_ACTIVE` — RF-02 reconciliation is complete at repository-content level; RF-03 is next after independent acceptance of the RF-02 closure commit.
 
 «Маяк Авито» — сервис мониторинга поисковой выдачи Avito. Пользователь создаёт отдельный Маяк из ссылки поиска, а принятая текущая семантика уведомляет только о вновь наблюдаемых объявлениях. Первый baseline уведомление не создаёт. Изменение цены само по себе не является notification event текущего scope.
 
@@ -15,7 +15,8 @@
 5. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md)
 6. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md)
 7. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md)
-8. affected module playbooks, contracts, handoffs and append-only decisions.
+8. [`docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md)
+9. affected module playbooks, contracts, handoffs and append-only decisions.
 
 Exact current GitHub `main` SHA must be fetched before every task. SHA values recorded in governance documents are evidence baselines, not permission to skip a fresh check.
 
@@ -61,8 +62,9 @@ This does not prove that the complete acceptance runtime is assembled or deploye
 - Module 14: active cross-cutting implementation and integration module.
 - RF-00: accepted.
 - RF-01: accepted.
-- RF-02: active.
-- RF-03–RF-30: not accepted and may begin only through their exact prerequisites and one exact task.
+- RF-02: complete at repository-content level; closure evidence published for independent acceptance.
+- RF-03: next permitted roadmap step after independent acceptance of the RF-02 closure commit.
+- RF-04–RF-30: not accepted and may begin only through their exact prerequisites and one exact task.
 
 Historical Final Documentation Acceptance remains evidence for the earlier documentation cycle. It is not the current roadmap endpoint.
 
