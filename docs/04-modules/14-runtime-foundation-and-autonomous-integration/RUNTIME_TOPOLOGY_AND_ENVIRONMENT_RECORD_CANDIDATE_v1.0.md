@@ -195,7 +195,7 @@ This candidate does not allocate resources. The future deployed SHA replaces the
 
 | # | scenario | detection | authoritative/candidate state | readiness/deploy effect | corrective/reconciliation action | rollback action | safe evidence | forbidden response | future RF proof owner |
 |---:|---|---|---|---|---|---|---|---|---|
-| 1 | expected Git base changed | fetch/compare | base mismatch | reject deployment | stop and rebase task decision externally | none | SHAs only | publish stale base | RF-05/RF-27 |
+| 1 | expected Git base changed | fetch/compare | base mismatch | reject deployment | stop; ChatGPT rereads current GitHub main and reissues the task on the verified base | none | SHAs only | publish stale base | RF-05/RF-27 |
 | 2 | preferred source/runtime/config path is foreign | ownership metadata | blocked candidate | deployment blocked | select safe project-owned alternative | preserve foreign path | redacted path ownership | reuse or delete | RF-05 |
 | 3 | preferred secret path is foreign | ownership metadata | blocked candidate | not ready | select project-owned secret boundary | keep foreign secrets | modes/owner class only | read or reuse values | RF-05/RF-25 |
 | 4 | preferred data path is foreign | volume/path labels | blocked candidate | not ready | isolate project data | no DB mutation | ownership metadata | bind foreign DB | RF-05/RF-09 |
