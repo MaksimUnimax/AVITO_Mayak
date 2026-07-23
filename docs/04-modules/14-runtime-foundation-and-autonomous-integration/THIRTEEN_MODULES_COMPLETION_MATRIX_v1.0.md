@@ -255,7 +255,7 @@ For each module, the terminal handoff is the latest tracked final evidence file.
 
 ## 7. Evidence limitations
 
-This artifact inventories accepted semantics, contracts, current source/tests and future runtime gaps. It does not prove PostgreSQL persistence, API/worker/scheduler assembly, deployment, no live-provider operation or production readiness. `CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` is pending RF-03-02. `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` is pending RF-03-03. RF-03 is not complete. RF-04 must not start before RF-03 closure and independent acceptance.
+This artifact inventories accepted semantics, contracts, current source/tests and future runtime gaps. It does not prove PostgreSQL persistence, API/worker/scheduler assembly, deployment, live-provider operation or production readiness. `CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` is pending RF-03-02. `CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` is pending RF-03-03. RF-03 is not complete. RF-04 must not start before RF-03 closure and independent acceptance.
 
 ## 8. Remaining RF-03 artifacts
 
