@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF06_BASELINE_CORRECTIVE_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF06_TOOLCHAIN_BOOTSTRAP_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата:** 2026-07-23
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -55,11 +55,12 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-05-03` Filesystem boundaries and permissions evidence.
   - `[x] RF-05-04` Environment allocation record validation.
   - `[x] RF-05-05` Repository evidence and closure — accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; `NOT_PRODUCTION_READY`.
-- `[~] RF-06` Toolchain and dependency proof — original RF-06-01 publication rejected due stale uv candidate; corrective chain is repository-content complete/published for independent acceptance. CPython 3.14/uv are not installed, dependencies are unchanged, and runtime is not deployed.
-  - `[c] RF-06-01` Toolchain and dependency baseline — original publication rejected; corrected chain published for independent acceptance.
-    - `[c] RF-06-01-C01` UV candidate freshness correction — published for independent acceptance.
-- `[!] RF-06-02` Bootstrap and executable verification — blocked pending independent acceptance.
-- `[ ] RF-07` CI quality gates.
+- `[~] RF-06` Toolchain and dependency proof — RF-06-01 corrective chain accepted; RF-06-02 published pending independent acceptance; dependencies absent and runtime stopped.
+  - `[x] RF-06-01` Toolchain and dependency baseline — accepted through corrective SHA `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`.
+    - `[x] RF-06-01-C01` UV candidate freshness correction — accepted through the corrective chain.
+  - `[c] RF-06-02` Bootstrap and executable verification — exact toolchain installed and evidence published for independent acceptance.
+  - `[!] RF-06-03` Project dependency installation — blocked pending RF-06-02 acceptance.
+- `[ ] RF-07` CI quality gates — blocked pending RF-06-02 acceptance.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.
 - `[ ] RF-10` Platform & Contracts runtime.
