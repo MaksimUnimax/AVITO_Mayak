@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** `MODULE_14_RF03_ACTIVE` — modules 01–13 are accepted; RF-02 is independently accepted; RF-03 integration inventory is active.
+**Статус:** `MODULE_14_RF03_COMPLETE_RF04_NEXT` — modules 01–13 remain accepted semantic/ownership foundations; RF-02 remains independently accepted; RF-03 is repository-content complete with corrective acceptance pending; RF-04 is next but not started.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -22,7 +22,7 @@ Each module has one canonical `MODULE_PLAYBOOK.md`.
 
 ## Active cross-cutting integration module
 
-- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-00–RF-02 accepted; RF-03 active.
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-00–RF-02 accepted; RF-03 repository-content complete; RF-03 closure corrective chain published for independent acceptance; RF-04 next/not started.
 - `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — accepted RF-02 audit input.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
@@ -36,11 +36,12 @@ RF-02 evidence chain:
 - applicable documentation indexes at `34db47cbbffd7f31a918963b181e3048229307be`;
 - module registry and playbook gate at `ae4181ab06fd0cae45ef5d7d8be55d796b8f7ac5`;
 - closure evidence accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
-- `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md` — RF-03-01 first artifact published for independent acceptance.
+- `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_COMPLETION_MATRIX_v1.0.md` — RF-03-01 independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`.
 - `14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md` — RF-03-02 independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`.
-- `14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — RF-03-03 third artifact published for independent acceptance.
+- `14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — RF-03-03 independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
+- `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md` — RF-03-04 original closure evidence was published at `a6c5277fcb5596d3c53a59fbcdaec5c06e3456ff`; its corrective index-state chain is published for independent acceptance.
 
-RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is active; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is published for independent acceptance; RF-03 closure remains pending; RF-04 is not started. Runtime mutation remains none and production remains blocked.
+RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete; its current corrective chain is pending independent acceptance. RF-04 is next but not started. Runtime mutation remains none, runtime remains unaccepted, production remains blocked, and no `PRODUCTION_READY` claim is made.
 
 All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 remains the active cross-cutting implementation and integration module.
 
@@ -53,6 +54,3 @@ Modules 01–13 remain semantic and ownership prerequisites. Module 14 may autho
 The current Module 14 target is `READY_FOR_OPERATOR_ACCEPTANCE`.
 
 Module 14 must not claim `PRODUCTION_READY`.
-## Current Module 14 governance
-
-RF-03 is complete at repository-content level and closure evidence is published for independent acceptance. RF-04 is next but not started and may begin only after independent acceptance of the RF-03 closure commit. Runtime remains unaccepted, runtime mutation is none, and production remains blocked.
