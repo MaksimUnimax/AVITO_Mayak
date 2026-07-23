@@ -1,6 +1,6 @@
 # Автономные module playbooks
 
-**Статус:** `MODULE_14_RF05_ACCEPTED_RF06_BASELINE_PUBLISHED_PENDING_ACCEPTANCE` — RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; RF-06-01 baseline is published for independent acceptance; environment is `RUNTIME_ELIGIBLE`; CPython 3.14/uv are not installed; dependencies and runtime are unchanged; `NOT_PRODUCTION_READY`.
+**Статус:** `MODULE_14_RF06_BASELINE_CORRECTIVE_PUBLISHED_PENDING_ACCEPTANCE` — RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; original RF-06-01 publication is rejected for stale uv candidate and the corrective chain is published for independent acceptance; environment is `RUNTIME_ELIGIBLE`; CPython/uv are not installed; dependencies and runtime are unchanged; `NOT_PRODUCTION_READY`.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -22,10 +22,12 @@ Each module has one canonical `MODULE_PLAYBOOK.md`.
 
 ## Active cross-cutting integration module
 
-- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-05 accepted; RF-06 active; RF-06-01 baseline published for independent acceptance; RF-07 blocked.
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-05 accepted; RF-06 active; original RF-06-01 candidate rejected; corrective chain published pending independent acceptance; RF-06-02/RF-07 blocked.
 - `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — accepted RF-02 audit input.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
+
+RF-06-01 corrective chain status: original publication rejected for stale uv candidate; correction published for independent acceptance; RF-06-02 and RF-07 remain blocked.
 
 RF-02 evidence chain:
 
@@ -41,9 +43,9 @@ RF-02 evidence chain:
 - `14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — RF-03-03 independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
 - `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md` — RF-03-04 original closure evidence was published at `a6c5277fcb5596d3c53a59fbcdaec5c06e3456ff`; its corrective index-state chain is published for independent acceptance.
 
-RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete. RF-04 is accepted through current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is active at repository-evidence level; RF-06-01 is published for independent acceptance. CPython 3.14/uv are not installed, dependencies and runtime are unchanged, RF-07 is blocked, and `NOT_PRODUCTION_READY` remains current.
+RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete. RF-04 is accepted through current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is active; original RF-06-01 publication is rejected for stale uv candidate and the corrective chain is published for independent acceptance. CPython/uv are not installed, dependencies and runtime are unchanged, RF-06-02/RF-07 are blocked, and `NOT_PRODUCTION_READY` remains current.
 
-Current RF-04 artifacts: `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`. Current RF-05 artifacts: `EXISTING_SERVER_ENVIRONMENT_RECORD_v1.0.md` and `EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md`. Current RF-06 artifact: `TOOLCHAIN_AND_DEPENDENCY_BASELINE_v1.0.md` — published for independent acceptance.
+Current RF-04 artifacts: `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`. Current RF-05 artifacts: `EXISTING_SERVER_ENVIRONMENT_RECORD_v1.0.md` and `EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md`. Current RF-06 artifacts: `TOOLCHAIN_AND_DEPENDENCY_BASELINE_v1.0.md` (historical baseline retained with correction notice) and `TOOLCHAIN_AND_DEPENDENCY_BASELINE_CORRECTION_v1.0.md` (corrective chain published for independent acceptance).
 
 All 13 domain module playbooks remain published and accepted. Their final documentation acceptance remains historical evidence. Module 14 remains the active cross-cutting implementation and integration module.
 

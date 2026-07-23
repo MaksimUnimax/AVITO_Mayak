@@ -11,6 +11,16 @@
 - Exact source SHA: `8d502c9baaad5008f79ebc916f9efc3f3378d985`
 - Evidence timestamp UTC: `2026-07-23T13:41:08Z`
 
+## Correction notice
+
+- Original publication SHA: `85f520a179d6399337c94cb3a8a4e5bd46c1c664`.
+- Original candidate: `uv 0.11.8`.
+- Verdict: `REJECTED_STALE_CANDIDATE`.
+- Corrective Technical ID: `RF-06-01-CORRECTIVE-01-UV-CANDIDATE-FRESHNESS-20260723`.
+- Corrective evidence: [`TOOLCHAIN_AND_DEPENDENCY_BASELINE_CORRECTION_v1.0.md`](TOOLCHAIN_AND_DEPENDENCY_BASELINE_CORRECTION_v1.0.md).
+- The authoritative uv candidate is taken from the corrective artifact, not from the historical value below.
+- RF-06-01 remains pending independent acceptance; installation of CPython, uv or packages is not permitted.
+
 ## Purpose and non-goals
 
 This document is a read-only baseline of the current Python host toolchain, committed project metadata, lock surface, Module 14 dependency gap, and official candidates for a later deterministic RF-06 bootstrap.
@@ -114,20 +124,21 @@ Candidate: CPython `3.14.6`, stable standard-GIL Linux x86_64 build, release dat
 
 Python.org does not publish a Linux x86_64 installer for this release; the official source candidate is the gzipped source tarball. Future RF-06 execution must obtain the exact source artifact, verify SHA-256 and Sigstore evidence, build inside `/opt/avito-mayak-runtime/toolchain`, and prove standard-GIL metadata before use. No source or executable artifact was downloaded in RF-06-01.
 
-## uv exact candidate
+## uv exact candidate (historical publication retained)
 
-Candidate: uv `0.11.8`, stable non-draft release published `2026-04-27`. Official Linux x86_64 artifact: `uv-x86_64-unknown-linux-gnu.tar.gz`. The artifact is a standalone GNU/Linux x86_64 binary archive and is compatible with the selected CPython candidate as the project/package manager; it does not replace CPython. Future installation path: `/opt/avito-mayak-runtime/toolchain/uv/0.11.8/bin/uv`, exposed only through task-local/project-owned environment configuration.
+Historical candidate: ~~uv `0.11.8`~~ — superseded and rejected as stale by the corrective chain. Its historical release date was `2026-04-27`; it must not be installed. Corrected authoritative candidate: uv `0.11.31`, as proven by the corrective artifact. Official Linux x86_64 artifact family remains `uv-x86_64-unknown-linux-gnu.tar.gz`; the artifact is a standalone GNU/Linux x86_64 binary archive and does not replace CPython.
 
 ## Official source/checksum evidence
 
 - CPython release: <https://www.python.org/downloads/release/python-3146/>. The official page identifies 3.14.6 as the sixth maintenance release, stable, dated 2026-06-10, and publishes source artifact SHA-256 and Sigstore links. Gzipped source SHA-256: `74d0d71d0600e477651a077101d6e62d1e2e69b8e992ba18c993dd643b7ba222`.
-- uv release: <https://github.com/astral-sh/uv/releases/tag/0.11.8>. The official release is immutable and dated 2026-04-27; its x86_64 GNU/Linux artifact and checksum link are published.
+- uv historical release: <https://github.com/astral-sh/uv/releases/tag/0.11.8>. It remains historical evidence only and is rejected as stale.
+- uv authoritative corrective release: <https://github.com/astral-sh/uv/releases/tag/0.11.31>; exact release/API, asset digest, checksum and attestation evidence are in the corrective artifact.
 
 ## Proposed project-owned installation boundaries
 
 - Toolchain root: `/opt/avito-mayak-runtime/toolchain`.
 - Exact CPython prefix: `/opt/avito-mayak-runtime/toolchain/cpython/3.14.6`.
-- Exact uv prefix: `/opt/avito-mayak-runtime/toolchain/uv/0.11.8`.
+- Exact uv prefix for a later separately authorized task: `/opt/avito-mayak-runtime/toolchain/uv/0.11.31`.
 - Project cache/data: project-owned paths under `/var/lib/avito-mayak` or a separately approved project-owned cache path; never a foreign home/cache.
 - Source and lock verification: dedicated repository worktree only; no source or lock writes.
 - Project virtual environment: a later task may create an exact project-owned environment under `/opt/avito-mayak-runtime`, separate from the tool binaries. No environment is created here.
@@ -135,7 +146,7 @@ Candidate: uv `0.11.8`, stable non-draft release published `2026-04-27`. Officia
 ## Proposed deterministic bootstrap sequence
 
 1. Re-fetch `origin/main` and require the exact accepted base and a clean dedicated worktree.
-2. Obtain only the pinned CPython 3.14.6 source and uv 0.11.8 x86_64 GNU/Linux artifact from the official sources; verify SHA-256 and the published Sigstore/attestation mechanism before execution.
+2. Obtain only the pinned CPython 3.14.6 source and corrected uv 0.11.31 x86_64 GNU/Linux artifact from the official sources; verify SHA-256 and the published Sigstore/attestation mechanism before execution.
 3. Build/install CPython under the project-owned prefix with standard GIL, without changing `/usr/bin/python3`, system Python, global shell profiles or foreign caches.
 4. Install uv at the exact pinned project-owned path, verify its version and checksum provenance, and bind it to the exact CPython executable.
 5. Prove `sys.implementation`, `SOABI`, empty `sys.abiflags`, standard-GIL classification, SSL, platform tags and project-owned write boundary.
@@ -152,7 +163,7 @@ No curl-to-shell, unpinned installer, package install, executable download or ex
 
 ## Evidence still requiring executable verification
 
-The following remain later executable gates: CPython 3.14.6 standard-GIL build proof; uv 0.11.8 version and artifact proof; clean-room `uv` lock verification; package installation and import checks for all later-added runtime dependencies; wheel selection on this host; static/architecture/test/coverage checks; and project-owned write/rollback proof. RF-06-01 does not claim any of these.
+The following remain later executable gates: CPython 3.14.6 standard-GIL build proof; corrected uv 0.11.31 version and artifact proof; clean-room `uv` lock verification; package installation and import checks for all later-added runtime dependencies; wheel selection on this host; static/architecture/test/coverage checks; and project-owned write/rollback proof. RF-06-01 does not claim any of these.
 
 ## Current verdict
 
