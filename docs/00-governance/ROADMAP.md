@@ -50,7 +50,6 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-04-06` Configuration and secrets boundary — accepted at `0d0efe27018fa01e1248e8939a026a3e590d622b`.
   - `[c] RF-04-07` Closure and status transition — published for independent acceptance.
 - `[ ] RF-05` Existing-server environment record — next but not started; gated by independent acceptance of RF-04 closure.
-- `[ ] RF-05` Existing-server environment record.
 - `[ ] RF-06` Toolchain and dependency proof.
 - `[ ] RF-07` CI quality gates.
 - `[ ] RF-08` Container and Compose foundation.
