@@ -1,8 +1,8 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF06_TOOLCHAIN_BOOTSTRAP_PUBLISHED_PENDING_ACCEPTANCE`
-**Дата:** 2026-07-23
+**Статус:** `MODULE_14_RF06_MYPY_COUNT_SUPERSESSION_PUBLISHED_PENDING_ACCEPTANCE`
+**Дата:** 2026-07-26
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
 
@@ -55,17 +55,18 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-05-03` Filesystem boundaries and permissions evidence.
   - `[x] RF-05-04` Environment allocation record validation.
   - `[x] RF-05-05` Repository evidence and closure — accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; `NOT_PRODUCTION_READY`.
-- `[~] RF-06` Toolchain and dependency proof — RF-06-01 and RF-06-02 accepted; RF-06-03 implementation published and artifact-count correction pending acceptance; authoritative artifact breakdown is 48 sdists, 246 wheels and 294 total; runtime stopped.
+- `[~] RF-06` Toolchain and dependency proof — RF-06-01, RF-06-02 and RF-06-03-C06 independently accepted; RF-06-04 corrective publication is pending acceptance; authoritative artifact breakdown is 48 sdists, 246 wheels and 294 total; authoritative current mypy count is 249; runtime stopped.
   - `[x] RF-06-01` Toolchain and dependency baseline — accepted through corrective SHA `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`.
     - `[x] RF-06-01-C01` UV candidate freshness correction — accepted through the corrective chain.
   - `[x] RF-06-02` Bootstrap and executable verification — independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`.
-  - `[~] RF-06-03` Implementation published; artifact-count correction pending acceptance.
-    - `[c] RF-06-03-C06` Artifact-count semantics correction.
+  - `[~] RF-06-03` Implementation published; artifact-count correction independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`.
     - `[c]` OpenTelemetry coupled-prerelease correction.
     - `[c]` OpenTelemetry import-topology correction.
     - `[x]` Quality baseline and FC-08 classification.
     - `[c]` FC-08 historical-boundary correction and publication.
-  - `[!] RF-06-04` Closure blocked pending RF-06-03-C06 acceptance.
+- `[x] RF-06-03-C06` Artifact-count semantics correction; independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d` with 48/246/294 and 294/294 hashed.
+- `[c] RF-06-04-C07` Authoritative mypy count and historical evidence exhaustion correction; current count 249.
+- `[!] RF-06-04` Remains blocked pending independent acceptance of RF-06-04-C07.
 - `[ ] RF-07` CI quality gates — blocked pending RF-06 closure.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.
