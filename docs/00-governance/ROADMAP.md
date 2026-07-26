@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF07_CI_SECURITY_SUPPLY_CHAIN_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF07_CI_SECURITY_SUPPLY_CHAIN_CLOSURE_INDEPENDENTLY_ACCEPTED_RF08_READY_TO_START`
 **Дата:** 2026-07-26
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -70,11 +70,11 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
 - `[~] RF-07` active.
   - `[x] RF-07-01` independently accepted through `01752323937aef4e247b22b5d79676d5e8f61e46`.
   - `[x] RF-07-02-C01` independently accepted through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`.
-  - `[c] RF-07-02` implementation chain independently accepted; closure published pending independent acceptance.
+  - `[x] RF-07-02` implementation and closure independently accepted through `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`.
   - `[!] RF-07-02-C02` corrective-required historical.
   - `[x] RF-07-02-C03` independently accepted through `1e911fc4680296a2a81c634e56cd57ed6b333fd5`.
-  - `[c] RF-07-02 closure` published pending independent acceptance.
-- `[ ] RF-08` Container and Compose foundation.
+  - `[x] RF-07-02 closure` independently accepted through corrective chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`.
+- `[ ] RF-08` Container and Compose foundation — next authorized implementation gate; prerequisites satisfied; not started by this acceptance transition.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.
 - `[ ] RF-10` Platform & Contracts runtime.
 - `[ ] RF-11` Identity & Access runtime.

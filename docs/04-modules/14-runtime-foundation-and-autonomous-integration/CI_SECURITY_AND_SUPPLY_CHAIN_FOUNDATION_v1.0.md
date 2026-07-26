@@ -12,8 +12,8 @@ RF-07-02-C02: `CORRECTIVE_REQUIRED_HISTORICAL`
 RF-07-02-C03: `INDEPENDENTLY_ACCEPTED` at `1e911fc4680296a2a81c634e56cd57ed6b333fd5`
 RF-07: `ACTIVE`
 RF-07-02: `IMPLEMENTATION_CHAIN_INDEPENDENTLY_ACCEPTED`
-RF-07-02 closure: `PUBLISHED_PENDING_ACCEPTANCE`
-RF-08: `NOT_STARTED`
+RF-07-02 closure: `INDEPENDENTLY_ACCEPTED` through `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`
+RF-08: `READY_TO_START_NOT_STARTED`
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
 Production: `NOT_PRODUCTION_READY`
@@ -30,7 +30,7 @@ Tracked-file evidence now records the normalized classification stream and `clas
 
 ## Accepted correction prerequisite
 
-The pytest correction is independently accepted through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`, run `30200967700`, with downloaded integrity and quality evidence PASS. The accepted lock contains pytest 9.0.3 and pytest-asyncio 1.4.0; RF-07-02 remains blocked pending C03 acceptance.
+The pytest correction is independently accepted through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`, run `30200967700`, with downloaded integrity and quality evidence PASS. The accepted lock contains pytest 9.0.3 and pytest-asyncio 1.4.0. C03 is independently accepted; the implementation chain is independently accepted; closure is independently accepted through `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; remaining runtime-dependent RF-07 gates remain open; RF-08 is next and not started.
 
 ## Workflow triggers and permissions
 
@@ -90,7 +90,7 @@ The task-owned backup contains all eight preimages, one absent marker, identity 
 
 ## Deferred RF-07 gates
 
-This task does not yet provide PostgreSQL integration CI, migration from-zero CI, migration current-head CI, Docker build, Compose validation, synthetic E2E or deployment. These remain later exact RF-07 tasks; RF-08 is not started.
+This task does not yet provide PostgreSQL integration CI, migration from-zero CI, migration current-head CI, Docker build, Compose validation, synthetic E2E or deployment. These remain later exact RF-07 tasks; RF-08 is the next authorized implementation gate and is not started by this documentation task.
 
 ## Limitations
 
@@ -98,4 +98,4 @@ Metadata inventory is not a legal policy and zero current findings do not prove 
 
 ## Verdict
 
-`RF07_CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
+`RF07_CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_INDEPENDENTLY_ACCEPTED`

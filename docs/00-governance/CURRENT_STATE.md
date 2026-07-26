@@ -1,14 +1,14 @@
 # Маяк Авито — текущее состояние проекта
 
 **Версия снимка:** 3.0
-**Статус:** `MODULE_14_RF07_CI_SECURITY_SUPPLY_CHAIN_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF07_CI_SECURITY_SUPPLY_CHAIN_CLOSURE_INDEPENDENTLY_ACCEPTED_RF08_READY_TO_START`
 **Дата:** 2026-07-26
 
 ## RF-06-04 closure current gate
 
 - RF-06-03-C06 is accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; authoritative artifact count is 48/246/294.
 - Authoritative current mypy count is 249; historical 248 cause is not proven and its closure expectation is superseded.
-- RF-06 is independently accepted; RF-07 is active; RF-07-01 and RF-07-02-C01 are independently accepted; RF-07-02-C02 is corrective-required historical; RF-07-02-C03 is independently accepted through `1e911fc4680296a2a81c634e56cd57ed6b333fd5`; RF-07-02 implementation chain is independently accepted; RF-07-02 closure was published at `eced513d44cefd6e21519dcb0205e8b1e8092740`; its manifest ordinal correction is independently accepted at `ebdc3efc37202ec9d78f6568a72ffe4fab0eda7a`; the RF-07-02 closure remains published pending independent acceptance of the current-state corrective chain; remaining RF-07 runtime-dependent CI gates remain open; RF-08 is not started; dependencies, source, tests, workflows and verifiers are unchanged; runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
+- RF-06 is independently accepted; RF-07 is active; RF-07-01 and RF-07-02-C01 are independently accepted; RF-07-02-C02 is corrective-required historical; RF-07-02-C03 is independently accepted at `1e911fc4680296a2a81c634e56cd57ed6b333fd5`; RF-07-02 implementation chain is independently accepted; RF-07-02 closure is independently accepted through corrective-chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; closure publication is `eced513d44cefd6e21519dcb0205e8b1e8092740`; manifest correction is `ebdc3efc37202ec9d78f6568a72ffe4fab0eda7a`; current-state correction is `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; remaining runtime-dependent RF-07 gates remain open; RF-08 is the next authorized implementation step and is not started by this task; dependencies, source, tests, workflows and verifiers are unchanged; runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
 - Runtime is stopped; eligibility is `RUNTIME_ELIGIBLE`; production verdict is `NOT_PRODUCTION_READY`.
 **RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
@@ -47,11 +47,11 @@ The recorded RF-02 audit baseline is evidence only and does not replace a fresh 
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance.
 - RF-04 — independently accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`.
 - RF-05 — independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations verified; repository content and closure complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; verdict is `NOT_PRODUCTION_READY`.
-- RF-06 is independently accepted; RF-07 is active; RF-07-01 is independently accepted; RF-07-02-C01 is independently accepted; RF-07-02-C02 is corrective-required historical; RF-07-02-C03 is independently accepted through `1e911fc4680296a2a81c634e56cd57ed6b333fd5`; RF-07-02 implementation chain is independently accepted; RF-07-02 closure is published pending independent acceptance; remaining RF-07 runtime-dependent CI gates remain open; RF-08 is not started; dependencies/source/tests are unchanged; runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
+- RF-06 is independently accepted; RF-07 is active; RF-07-01 is independently accepted; RF-07-02-C01 is independently accepted; RF-07-02-C02 is corrective-required historical; RF-07-02-C03 is independently accepted through `1e911fc4680296a2a81c634e56cd57ed6b333fd5`; RF-07-02 implementation chain is independently accepted; RF-07-02 closure is independently accepted through corrective-chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; closure publication is `eced513d44cefd6e21519dcb0205e8b1e8092740`; manifest correction is `ebdc3efc37202ec9d78f6568a72ffe4fab0eda7a`; current-state correction is `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; remaining runtime-dependent RF-07 gates remain open; RF-08 is the next authorized implementation step and is not started by this task; dependencies/source/tests are unchanged; runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
 
 RF-02 closure commit `c92e9299e5c0bd11ea18362673a8ac342b835483` is independently accepted.
 
-RF-04 is accepted through the current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is independently accepted; RF-07-01 and RF-07-02-C01 are independently accepted; RF-07-02 implementation chain is independently accepted and closure is published pending independent acceptance; RF-07 remains active. The dependency graph is synchronized and runtime remains stopped. `RUNTIME_ELIGIBLE` applies to the environment allocation; `NOT_PRODUCTION_READY` remains the production verdict; `PRODUCTION_READY` is not claimed.
+RF-04 is accepted through the current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is independently accepted; RF-07-01 and RF-07-02-C01 are independently accepted; RF-07-02 implementation chain and closure are independently accepted through `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; RF-07 remains active because runtime-dependent gates remain open. The dependency graph is synchronized and runtime remains stopped. `RUNTIME_ELIGIBLE` applies to the environment allocation; `NOT_PRODUCTION_READY` remains the production verdict; `PRODUCTION_READY` is not claimed.
 
 ## Current repository contour
 
@@ -177,6 +177,6 @@ Until an exact applicable later RF task authorizes them, the following remain pr
 
 ## Next safe work
 
-RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07-01 is published pending independent acceptance and RF-07 remains active. Exact CPython/uv and dependencies are project-owned, and runtime is not started.
+RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07-01 and RF-07-02 closure are independently accepted through the current corrective-chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`, while RF-07 remains active for deferred runtime-dependent gates. RF-08 is the next authorized implementation step, prerequisites are satisfied, and it is not started. Exact CPython/uv and dependencies are project-owned, and runtime is not started.
 
-RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden until their applicable prerequisites and exact tasks.
+RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden until their applicable prerequisites and exact tasks. RF-08 is the next authorized implementation step; its prerequisites are satisfied, but it is not started by this documentation-only task.

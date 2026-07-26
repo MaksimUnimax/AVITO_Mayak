@@ -1,7 +1,7 @@
 # CI Security and Supply Chain Closure
 
 Version: 1.0
-Status: `PUBLISHED_PENDING_ACCEPTANCE`
+Status: `INDEPENDENTLY_ACCEPTED`
 Date: 2026-07-26
 Technical ID: `RF-07-02-CLOSURE-CI-SECURITY-AND-SUPPLY-CHAIN-20260726`
 Base: `1e911fc4680296a2a81c634e56cd57ed6b333fd5`
@@ -11,9 +11,13 @@ RF-07-02-C01: `INDEPENDENTLY_ACCEPTED`
 RF-07-02-C02: `CORRECTIVE_REQUIRED_HISTORICAL`
 RF-07-02-C03: `INDEPENDENTLY_ACCEPTED`
 RF-07-02: `IMPLEMENTATION_CHAIN_INDEPENDENTLY_ACCEPTED`
-RF-07-02 closure: `PUBLISHED_PENDING_ACCEPTANCE`
+Closure publication: `eced513d44cefd6e21519dcb0205e8b1e8092740`
+Manifest corrective: `ebdc3efc37202ec9d78f6568a72ffe4fab0eda7a`
+Current-state corrective: `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`
+Closure corrective-chain head: `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`
+RF-07-02 closure: `INDEPENDENTLY_ACCEPTED`
 RF-07: `ACTIVE`
-RF-08: `NOT_STARTED`
+RF-08: `READY_TO_START_NOT_STARTED`
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
 Production: `NOT_PRODUCTION_READY`
@@ -41,6 +45,14 @@ C02 is `CORRECTIVE_REQUIRED_HISTORICAL`. Its first bad object was `scripts/ci/ve
 ## C03 workflow rejection-matrix correction
 
 C03 is independently accepted at `1e911fc4680296a2a81c634e56cd57ed6b333fd5`. It proves 13/13 rejection subcases and safe detail `WORKFLOW_REJECTION_MATRIX_PASS_13_OF_13` with the unchanged workflow.
+
+## Independent closure acceptance and corrective chain
+
+The original closure publication is `eced513d44cefd6e21519dcb0205e8b1e8092740`, subject `docs(rf07): close security supply chain foundation`, parent `1e911fc4680296a2a81c634e56cd57ed6b333fd5`. The manifest correction is `ebdc3efc37202ec9d78f6568a72ffe4fab0eda7a`, subject `docs(rf07): fix closure manifest ordinal`, parent `eced513d44cefd6e21519dcb0205e8b1e8092740`. The current-state correction is `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`, subject `docs(rf07): correct closure current state gate`, parent `ebdc3efc37202ec9d78f6568a72ffe4fab0eda7a`.
+
+The exact corrective parent chain is `1e911fc4680296a2a81c634e56cd57ed6b333fd5` → `eced513d44cefd6e21519dcb0205e8b1e8092740` → `ebdc3efc37202ec9d78f6568a72ffe4fab0eda7a` → `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`. The manifest correction was one path, 4/4; the current-state correction was one path, 1/1. Both corrective commits were independently accepted. Quality workflow run `30209559298` and security workflow run `30209559293` on `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782` were successful, including integrity-lock job `89813390992`, quality-suite job `89813410783` and security job `89813391120`.
+
+Security artifact ID `8634055942`; name `ci-security-supply-chain-ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; digest `sha256:1aff35a393b5e777e67db796e86bc80a1d2b23891fa0073364256ee5647a4ac7`; expired `false`; head SHA `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`. Artifact ZIP re-download was not required for the one-line documentation correction. No secret, source, dependency, workflow, verifier, test or runtime mutation occurred. Final closure acceptance is through `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`.
 
 ## Exact independent GitHub commit verification
 
@@ -106,7 +118,7 @@ No Docker, database, listener, service, provider, foreign resource, credential, 
 
 ## Remaining RF-07 gates
 
-RF-07 remains active because PostgreSQL integration, migration, Docker/Compose and synthetic E2E CI gates require later runtime artifacts. RF-08 is not started by this closure task.
+RF-07 remains active because PostgreSQL integration, migration, Docker/Compose and synthetic E2E CI gates require later runtime artifacts. RF-08 is the next authorized implementation gate, its prerequisites are satisfied, and it is not started by this documentation task.
 
 ## Rollback
 
@@ -118,4 +130,4 @@ No local quality suite was rerun: `NOT_RERUN_DOCUMENTATION_ONLY; accepted remote
 
 ## Verdict
 
-`RF07_CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
+`RF07_CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_INDEPENDENTLY_ACCEPTED`
