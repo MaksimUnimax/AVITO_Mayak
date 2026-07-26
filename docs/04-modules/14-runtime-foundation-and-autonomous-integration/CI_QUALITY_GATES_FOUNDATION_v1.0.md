@@ -10,7 +10,7 @@ RF-06: `INDEPENDENTLY_ACCEPTED`
 RF-07: `ACTIVE`
 Accepted through: `01752323937aef4e247b22b5d79676d5e8f61e46`
 Accepted run: `30199035445`
-Correction note: accepted quality behavior remains authoritative while dependency-byte identity is superseded by the pending pytest vulnerability correction.
+Correction note: the pytest vulnerability and compatibility correction is independently accepted through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`; accepted quality behavior and counts remain authoritative.
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
 Production: `NOT_PRODUCTION_READY`
@@ -78,6 +78,10 @@ The original RF-07-01 backup remains historical evidence. The pytest correction 
 ## Limitations
 
 This is a quality foundation only. Accepted Ruff and mypy debt remains, and runtime is stopped. RF08_NOT_STARTED. RF-07 remains active; RF-08 and later capabilities are not started.
+
+## RF-07-02 security foundation
+
+The deterministic security and supply-chain foundation is published pending independent acceptance in [`CI_SECURITY_AND_SUPPLY_CHAIN_FOUNDATION_v1.0.md`](CI_SECURITY_AND_SUPPLY_CHAIN_FOUNDATION_v1.0.md).
 
 ## Verdict
 
