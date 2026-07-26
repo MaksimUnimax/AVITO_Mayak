@@ -38,6 +38,8 @@ jobs:
         with:
           version: 0.11.31
           python-version: 3.14.6
+          activate-environment: true
+          venv-path: .venv
           enable-cache: false
       - name: Verify interpreter and uv identity
         run: |
@@ -82,6 +84,8 @@ jobs:
         with:
           version: 0.11.31
           python-version: 3.14.6
+          activate-environment: true
+          venv-path: .venv
           enable-cache: false
       - name: Sync isolated frozen environment
         run: uv sync --frozen --all-groups --python 3.14.6
