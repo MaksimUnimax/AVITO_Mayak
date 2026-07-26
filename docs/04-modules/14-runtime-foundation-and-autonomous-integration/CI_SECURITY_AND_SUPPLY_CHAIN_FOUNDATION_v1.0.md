@@ -1,15 +1,18 @@
 # CI Security and Supply Chain Foundation
 
 Version: 1.0
-Status: `PUBLISHED_PENDING_ACCEPTANCE`
+Status: `IMPLEMENTATION_CHAIN_INDEPENDENTLY_ACCEPTED`
 Date: 2026-07-26
 Technical ID: `RF-07-02-CI-SECURITY-AND-SUPPLY-CHAIN-FOUNDATION-20260726`
 Base: `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`
 RF-06: `INDEPENDENTLY_ACCEPTED`
 RF-07-01: `INDEPENDENTLY_ACCEPTED`
 RF-07-02-C01: `INDEPENDENTLY_ACCEPTED`
+RF-07-02-C02: `CORRECTIVE_REQUIRED_HISTORICAL`
+RF-07-02-C03: `INDEPENDENTLY_ACCEPTED` at `1e911fc4680296a2a81c634e56cd57ed6b333fd5`
 RF-07: `ACTIVE`
-RF-07-02: `BLOCKED_PENDING_C03_ACCEPTANCE`
+RF-07-02: `IMPLEMENTATION_CHAIN_INDEPENDENTLY_ACCEPTED`
+RF-07-02 closure: `PUBLISHED_PENDING_ACCEPTANCE`
 RF-08: `NOT_STARTED`
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
@@ -21,9 +24,9 @@ This foundation provides one immutable-pinned, least-privilege workflow and a st
 
 ## Independent review and corrective authority
 
-Independent review: `CORRECTIVE_REQUIRED`. The C02 artifact was independently downloaded and content-verified: 17/17 self-test, classification `454/454/0/0`, zero secret and vulnerability findings and final `PASS`; artifact download unavailability is cleared. The first bad object is `scripts/ci/verify_security_supply_chain.py::self_test::ST17_WORKFLOW_PIN_PERMISSION_AND_FORBIDDEN_CHECKS`. C02 ST17 proves only one positive assertion, while `workflow_check()` fails open for missing actions and additional write permissions. The original C02 correction document is preserved at [CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md](CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md), now marked corrective-required. C03 is published in [CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md](CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md).
+Independent review: `INDEPENDENTLY_ACCEPTED` for C03 and the implementation chain. Artifact content was independently downloaded and verified by ChatGPT through an authenticated GitHub connector. C02 remains corrective-required historical evidence; its first bad object and primary cause are preserved in [CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md](CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md). C03 is independently accepted at `1e911fc4680296a2a81c634e56cd57ed6b333fd5` in [CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md](CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md). Closure: [CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_v1.0.md](CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_v1.0.md).
 
-Tracked-file evidence now records the normalized classification stream and `classification_inventory_sha256`; text, binary and safe-symlink counts must sum to the tracked count. The historical published evidence remains preserved: zero secret findings and zero vulnerability findings. RF-07-02 is not independently accepted; deferred RF-07 gates remain required and production remains `NOT_PRODUCTION_READY`.
+Tracked-file evidence now records the normalized classification stream and `classification_inventory_sha256`; text, binary and safe-symlink counts must sum to the tracked count. The historical published evidence remains preserved: zero secret findings and zero vulnerability findings. RF-07-02 implementation and corrective chain is independently accepted; deferred RF-07 gates remain required and production remains `NOT_PRODUCTION_READY`.
 
 ## Accepted correction prerequisite
 
@@ -83,7 +86,7 @@ Evidence JSON uses schema version 1, stable sorted keys, UTF-8/LF atomic writes 
 
 ## Rollback
 
-The task-owned backup contains all seven preimages, one absent marker, identity records and an aggregate digest. Before push, restore preimages, remove new files and task residue, then remove the disposable worktree and branch. The source checkout and promoted inputs remain unchanged.
+The task-owned backup contains all eight preimages, one absent marker, identity records and an aggregate digest. Before push, restore preimages, remove new files and task residue, then remove the disposable worktree and branch. The source checkout and promoted inputs remain unchanged.
 
 ## Deferred RF-07 gates
 
@@ -95,4 +98,4 @@ Metadata inventory is not a legal policy and zero current findings do not prove 
 
 ## Verdict
 
-`RF07_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`
+`RF07_CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`

@@ -1,13 +1,13 @@
 # CI Security Supply-Chain Verifier Self-Test Correction
 
 Version: 1.0
-Status: `CORRECTIVE_REQUIRED`
+Status: `CORRECTIVE_REQUIRED_HISTORICAL`
 Date: 2026-07-26
 Technical ID: `RF-07-02-CORRECTIVE-02-SECURITY-VERIFIER-SELF-TEST-AND-CLASSIFICATION-DETERMINISM-20260726`
 Base: `7814cf7fa8553f75fdbe53c51fd03428e87f4738`
 RF-07: `ACTIVE`
-RF-07-02-C02: `CORRECTIVE_REQUIRED`
-RF-07-02: `BLOCKED_PENDING_CORRECTION_ACCEPTANCE`
+RF-07-02-C02: `CORRECTIVE_REQUIRED_HISTORICAL`
+RF-07-02: `IMPLEMENTATION_CHAIN_INDEPENDENTLY_ACCEPTED`
 RF-08: `NOT_STARTED`
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
@@ -53,7 +53,7 @@ The missing contracts were PEM keys, populated assignments, finding schema, bina
 
 ## C03 corrective artifact
 
-The corrective implementation and evidence authority are published in [CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md](CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md). It retains the exact accepted current workflow, rejects missing, mutable, duplicate, unexpected and incorrectly pinned actions, and rejects every explicit write permission. RF-07-02 remains blocked pending C03 acceptance.
+The corrective implementation and evidence authority are independently accepted in [CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md](CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md) at `1e911fc4680296a2a81c634e56cd57ed6b333fd5`. C03 supersedes the defective ST17/helper portion. The closure is recorded in [CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_v1.0.md](CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_v1.0.md); C02 is not rewritten as accepted.
 
 ## Local-versus-remote classification discrepancy
 
@@ -85,7 +85,7 @@ The unchanged quality workflow/verifier remains authoritative: Ruff 648/648, myp
 
 ## Rollback
 
-The task backup retains seven preimages, the absent new-file marker, identity metadata, rollback instructions and a deterministic aggregate digest. Restore those preimages, remove the correction file and task residue, then remove the disposable worktree and task branch before push if rollback is required.
+The task backup retains eight preimages, the absent new-file marker, identity metadata, rollback instructions and a deterministic aggregate digest. Restore those preimages, remove the correction file and task residue, then remove the disposable worktree and task branch before push if rollback is required.
 
 ## Limitations
 

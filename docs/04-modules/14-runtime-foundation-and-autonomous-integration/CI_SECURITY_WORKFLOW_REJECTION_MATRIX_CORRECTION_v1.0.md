@@ -1,14 +1,14 @@
 # CI Security Workflow Rejection Matrix Correction
 
 Version: 1.0
-Status: `PUBLISHED_PENDING_ACCEPTANCE`
+Status: `INDEPENDENTLY_ACCEPTED`
 Date: 2026-07-26
 Technical ID: `RF-07-02-CORRECTIVE-03-WORKFLOW-SECURITY-REJECTION-MATRIX-20260726`
 Base: `1ca9b56860d72e13bb21cd437684f95f1a39aa90`
 RF-07: `ACTIVE`
-RF-07-02-C02: `CORRECTIVE_REQUIRED`
-RF-07-02-C03: `PUBLISHED_PENDING_ACCEPTANCE`
-RF-07-02: `BLOCKED_PENDING_C03_ACCEPTANCE`
+RF-07-02-C02: `CORRECTIVE_REQUIRED_HISTORICAL`
+RF-07-02-C03: `INDEPENDENTLY_ACCEPTED`
+RF-07-02: `IMPLEMENTATION_CHAIN_INDEPENDENTLY_ACCEPTED`
 RF-08: `NOT_STARTED`
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
@@ -20,7 +20,7 @@ This atomic correction changes only the RF-07-02 workflow-security helper, ST17 
 
 ## Independent artifact verification clearing the C02 download blocker
 
-C02 run `30203557863`, job `89797607207` and artifact `8632382718` were independently downloaded and verified. Artifact name: `ci-security-supply-chain-1ca9b56860d72e13bb21cd437684f95f1a39aa90`; digest: `sha256:d708d25fea7a493848cf7c49b0be7aa2fad39d537ee4358e8fc6d2bf56817e71`; source SHA: `1ca9b56860d72e13bb21cd437684f95f1a39aa90`. The ZIP digest matched, all nine evidence files were present, self-test was 17/17, classification was `454/454/0/0`, secret and vulnerability findings were zero and final status was `PASS`. `STOP_REMOTE_ARTIFACT_CONTENT_UNAVAILABLE` is cleared.
+The accepted artifact is ID `8632808900`, digest `sha256:41e602b2a67aac18c444a9fb8f1084de10bf8bfa77287ba7ec15e22fc0cb03d2`, source SHA `1e911fc4680296a2a81c634e56cd57ed6b333fd5`, and independent artifact-content verification is `PASS`. Artifact content was independently downloaded and verified by ChatGPT through an authenticated GitHub connector before this closure task; the CLI did not download it.
 
 ## Independent rejection trigger
 
@@ -94,7 +94,7 @@ The existing quality workflow and verifier remain unchanged and authoritative: R
 
 ## Rollback
 
-The task backup retains seven preimages, an absent marker for this file, identity records, safe evidence summaries and a deterministic aggregate digest. Before push, restoring preimages, removing this file and task residue, and deleting the disposable worktree and branch is feasible without touching the source checkout or promoted environments.
+The task backup retains eight preimages, an absent marker for this file, identity records, safe evidence summaries and a deterministic aggregate digest. Before push, restoring preimages, removing this file and task residue, and deleting the disposable worktree and branch is feasible without touching the source checkout or promoted environments.
 
 ## Limitations
 
@@ -102,4 +102,4 @@ This correction proves workflow-verifier behavior and evidence authority only. L
 
 ## Verdict
 
-`RF07_WORKFLOW_SECURITY_REJECTION_MATRIX_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`
+`RF07_WORKFLOW_SECURITY_REJECTION_MATRIX_CORRECTION_INDEPENDENTLY_ACCEPTED`
