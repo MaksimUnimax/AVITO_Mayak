@@ -23,7 +23,7 @@
 
 ## Toolchain identity
 
-- CPython `3.14.6`, standard GIL enabled: Py_GIL_DISABLED=0 and `sys._is_gil_enabled()`=true.
+- CPython `3.14.6`, standard GIL enabled: `Py_GIL_DISABLED=0` and `sys._is_gil_enabled()=true`.
 - uv `0.11.31` at `/opt/avito-mayak-runtime/toolchain/bin/uv`.
 - Toolchain manifest SHA-256: `a5c2fa436d3721f1fbb0a05c9c335486455e5292835b5ac87dc6720cfb0091a2`.
 - Promoted Python: `/opt/avito-mayak-runtime/venvs/rf06-dependencies-v1/bin/python`.
