@@ -9,7 +9,7 @@ RF-06: `INDEPENDENTLY_ACCEPTED`
 RF-07-01: `INDEPENDENTLY_ACCEPTED`
 RF-07-02-C01: `INDEPENDENTLY_ACCEPTED`
 RF-07: `ACTIVE`
-RF-07-02: `PUBLISHED_PENDING_ACCEPTANCE`
+RF-07-02: `BLOCKED_PENDING_CORRECTION_ACCEPTANCE`
 RF-08: `NOT_STARTED`
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
@@ -18,6 +18,12 @@ Production: `NOT_PRODUCTION_READY`
 ## Scope
 
 This foundation provides one immutable-pinned, least-privilege workflow and a standard-library-only deterministic verifier for tracked secret scanning, frozen-lock vulnerability auditing, dependency/artifact inventory, installed-distribution reconciliation and license metadata inventory. It does not alter dependencies, source, tests or runtime.
+
+## Independent review and corrective authority
+
+Independent review: `CORRECTIVE_REQUIRED`. The first bad object is `scripts/ci/verify_security_supply_chain.py::self_test`; the original smoke-only self-test did not prove the required behavior classes. Correction `RF-07-02-CORRECTIVE-02` is published pending independent acceptance at [CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md](CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md). The correction defines exactly 17 executable case IDs, writes machine-readable `self-test-evidence.json`, and requires exact 17/17 PASS evidence before full mode.
+
+Tracked-file evidence now records the normalized classification stream and `classification_inventory_sha256`; text, binary and safe-symlink counts must sum to the tracked count. The historical published evidence remains preserved: zero secret findings and zero vulnerability findings. RF-07-02 is not independently accepted; deferred RF-07 gates remain required and production remains `NOT_PRODUCTION_READY`.
 
 ## Accepted correction prerequisite
 
@@ -77,7 +83,7 @@ Evidence JSON uses schema version 1, stable sorted keys, UTF-8/LF atomic writes 
 
 ## Rollback
 
-The task-owned backup contains all six preimages, three absent markers, identity records and an aggregate digest. Before push, restore preimages, remove new files and task residue, then remove the disposable worktree and branch. The source checkout and promoted inputs remain unchanged.
+The task-owned backup contains all seven preimages, one absent marker, identity records and an aggregate digest. Before push, restore preimages, remove new files and task residue, then remove the disposable worktree and branch. The source checkout and promoted inputs remain unchanged.
 
 ## Deferred RF-07 gates
 
@@ -89,4 +95,4 @@ Metadata inventory is not a legal policy and zero current findings do not prove 
 
 ## Verdict
 
-`RF07_CI_SECURITY_SUPPLY_CHAIN_FOUNDATION_PUBLISHED_PENDING_ACCEPTANCE`
+`RF07_SECURITY_VERIFIER_SELF_TEST_AND_CLASSIFICATION_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`

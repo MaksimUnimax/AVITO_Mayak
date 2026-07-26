@@ -61,7 +61,7 @@ jobs:
       - name: Check installed environment
         run: uv pip check
       - name: Verifier self-test
-        run: python scripts/ci/verify_security_supply_chain.py --self-test
+        run: python scripts/ci/verify_security_supply_chain.py --self-test --evidence-dir ci-evidence/security-supply-chain
       - name: Run complete security verifier
         run: python scripts/ci/verify_security_supply_chain.py --mode all --evidence-dir ci-evidence/security-supply-chain --venv .venv
       - name: Publish safe summary
@@ -70,7 +70,7 @@ jobs:
       - name: Verify evidence files exist
         if: always()
         run: |
-          for f in security-supply-chain-evidence.json secret-scan.json vulnerability-audit.json dependency-inventory.json license-inventory.json license-inventory.tsv summary.txt; do test -s "ci-evidence/security-supply-chain/$f"; done
+          for f in self-test-evidence.json security-supply-chain-evidence.json secret-scan.json vulnerability-audit.json dependency-inventory.json installed-distribution-inventory.json license-inventory.json license-inventory.tsv summary.txt; do test -s "ci-evidence/security-supply-chain/$f"; done
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

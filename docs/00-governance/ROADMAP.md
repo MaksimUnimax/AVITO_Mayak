@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF07_CI_SECURITY_SUPPLY_CHAIN_FOUNDATION_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF07_SECURITY_VERIFIER_SELF_TEST_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата:** 2026-07-26
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -70,7 +70,8 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
 - `[~] RF-07` active.
   - `[x] RF-07-01` independently accepted through `01752323937aef4e247b22b5d79676d5e8f61e46`.
   - `[x] RF-07-02-C01` independently accepted through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`.
-  - `[c] RF-07-02` security/supply-chain foundation published pending independent acceptance.
+  - `[!] RF-07-02` blocked pending verifier correction acceptance.
+  - `[c] RF-07-02-C02` verifier self-test/classification correction published pending independent acceptance.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.
 - `[ ] RF-10` Platform & Contracts runtime.
