@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF06_MYPY_COUNT_SUPERSESSION_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF06_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата:** 2026-07-26
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -55,7 +55,7 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-05-03` Filesystem boundaries and permissions evidence.
   - `[x] RF-05-04` Environment allocation record validation.
   - `[x] RF-05-05` Repository evidence and closure — accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; `NOT_PRODUCTION_READY`.
-- `[~] RF-06` Toolchain and dependency proof — RF-06-01, RF-06-02 and RF-06-03-C06 independently accepted; RF-06-04 corrective publication is pending acceptance; authoritative artifact breakdown is 48 sdists, 246 wheels and 294 total; authoritative current mypy count is 249; runtime stopped.
+- `[c] RF-06` Toolchain and dependency proof — repository-content complete; closure published pending independent acceptance; authoritative artifact breakdown is 48 sdists, 246 wheels and 294 total; authoritative current mypy count is 249; runtime stopped.
   - `[x] RF-06-01` Toolchain and dependency baseline — accepted through corrective SHA `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`.
     - `[x] RF-06-01-C01` UV candidate freshness correction — accepted through the corrective chain.
   - `[x] RF-06-02` Bootstrap and executable verification — independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`.
@@ -65,8 +65,8 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
     - `[x]` Quality baseline and FC-08 classification.
     - `[c]` FC-08 historical-boundary correction and publication.
 - `[x] RF-06-03-C06` Artifact-count semantics correction; independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d` with 48/246/294 and 294/294 hashed.
-- `[c] RF-06-04-C07` Authoritative mypy count and historical evidence exhaustion correction; current count 249.
-- `[!] RF-06-04` Remains blocked pending independent acceptance of RF-06-04-C07.
+- `[x] RF-06-04-C07/C08` Authoritative mypy count and RF-02 SHA corrections independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`.
+- `[c] RF-06-04` Closure published pending independent acceptance.
 - `[ ] RF-07` CI quality gates — blocked pending RF-06 closure.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.

@@ -1,14 +1,14 @@
 # Маяк Авито — текущее состояние проекта
 
 **Версия снимка:** 3.0
-**Статус:** `MODULE_14_RF06_MYPY_COUNT_SUPERSESSION_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF06_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата:** 2026-07-26
 
-## RF-06-04-C07 current gate
+## RF-06-04 closure current gate
 
 - RF-06-03-C06 is accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; authoritative artifact count is 48/246/294.
 - Authoritative current mypy count is 249; historical 248 cause is not proven and its closure expectation is superseded.
-- RF-06-04 is blocked pending acceptance of this correction; RF-07 is blocked.
+- RF-06-04-C07/C08 are independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`; RF-06 closure is published pending independent acceptance; RF-07 is blocked pending closure acceptance.
 - Runtime is stopped; eligibility is `RUNTIME_ELIGIBLE`; production verdict is `NOT_PRODUCTION_READY`.
 **RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
@@ -47,11 +47,11 @@ The recorded RF-02 audit baseline is evidence only and does not replace a fresh 
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance.
 - RF-04 — independently accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`.
 - RF-05 — independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations verified; repository content and closure complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; verdict is `NOT_PRODUCTION_READY`.
-- RF-06-01 corrected chain is independently accepted at `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`. RF-06-03 implementation commit `c0104df4fb356862beffc04abe8b0170498eaf3c` is published, and its artifact-count evidence correction is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`: 48 sdists, 246 wheels, 294 total artifacts, 294 hashed; lock bytes and environment packages are unchanged. Current mypy authority is 249; runtime is not started; RF-06-04 and RF-07 are blocked. `RUNTIME_ELIGIBLE` remains the environment eligibility state and `NOT_PRODUCTION_READY` remains the production verdict.
+- RF-06-01 corrected chain is independently accepted at `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`. RF-06-03 implementation commit `c0104df4fb356862beffc04abe8b0170498eaf3c` is published, and its artifact-count evidence correction is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`: 48 sdists, 246 wheels, 294 total artifacts, 294 hashed; lock bytes and environment packages are unchanged. RF-06-04-C07/C08 are independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`; RF-06 closure is published pending independent acceptance; current mypy authority is 249; runtime is not started; RF-07 is blocked pending closure acceptance. `RUNTIME_ELIGIBLE` remains the environment eligibility state and `NOT_PRODUCTION_READY` remains the production verdict.
 
 RF-02 closure commit `c92e9299e5c0bd11ea18362673a8ac342b835483` is independently accepted.
 
-RF-04 is accepted through the current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06-01 is accepted through the corrective SHA above; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`. The RF-06-03 dependency graph is synchronized and runtime remains stopped. `RUNTIME_ELIGIBLE` applies to the environment allocation; `NOT_PRODUCTION_READY` remains the production verdict; `PRODUCTION_READY` is not claimed. RF-06-04 and RF-07 are blocked.
+RF-04 is accepted through the current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06-01 is accepted through the corrective SHA above; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-04-C07/C08 are independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`. The RF-06-03 dependency graph is synchronized and runtime remains stopped. RF-06 closure is published pending independent acceptance; `RUNTIME_ELIGIBLE` applies to the environment allocation; `NOT_PRODUCTION_READY` remains the production verdict; `PRODUCTION_READY` is not claimed. RF-07 is blocked pending closure acceptance.
 
 ## Current repository contour
 
@@ -177,6 +177,6 @@ Until an exact applicable later RF task authorizes them, the following remain pr
 
 ## Next safe work
 
-RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06-01 is accepted through the corrective SHA; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-03-C06 corrective dependency evidence is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`. Exact CPython/uv and dependencies are project-owned, and runtime is not started. RF-06-04-C07 is published pending acceptance; RF-06-04 and RF-07 are blocked.
+RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06-01 is accepted through the corrective SHA; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-03-C06 corrective dependency evidence is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; RF-06-04-C07/C08 are independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`. Exact CPython/uv and dependencies are project-owned, and runtime is not started. RF-06 closure is published pending independent acceptance; RF-07 is blocked pending closure acceptance.
 
 RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden until their applicable prerequisites and exact tasks.

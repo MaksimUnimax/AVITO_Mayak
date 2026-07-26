@@ -2,9 +2,10 @@
 
 ## Module 14 evidence
 
+- `14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — RF-06-04-CORRECTIVE-09; `PUBLISHED_PENDING_ACCEPTANCE`; toolchain, dependency, static-quality and semantic-suite proof; RF-06 closure pending independent acceptance; RF-07 blocked; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
 - `14-runtime-foundation-and-autonomous-integration/MYPY_DIAGNOSTIC_COUNT_AUTHORITY_AND_HISTORICAL_EVIDENCE_EXHAUSTION_v1.0.md` — RF-06-04-C07; authoritative current mypy count 249; historical 248 cause not proven; PUBLISHED_PENDING_ACCEPTANCE; NOT_PRODUCTION_READY.
 
-**Статус:** `MODULE_14_RF06_MYPY_COUNT_SUPERSESSION_PUBLISHED_PENDING_ACCEPTANCE` — RF-06-03-C06 is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; authoritative breakdown is 48 sdists, 246 wheels and 294 total; authoritative current mypy count is 249; lock and environment packages are unchanged; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
+**Статус:** `MODULE_14_RF06_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE` — RF-06-03-C06 is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; RF-06-04-C07/C08 are independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`; authoritative breakdown is 48 sdists, 246 wheels and 294 total; authoritative current mypy count is 249; closure is published pending independent acceptance; RF-07 is blocked; lock and environment packages are unchanged; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 
@@ -26,12 +27,12 @@ Each module has one canonical `MODULE_PLAYBOOK.md`.
 
 ## Active cross-cutting integration module
 
-- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-06-02 accepted; RF-06-03-C06 independently accepted with 48/246/294 authoritative breakdown and unchanged lock/environment; RF-06-04-C07 published pending acceptance with authoritative current mypy count 249; runtime stopped; RF-06-04/RF-07 blocked.
+- `14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md` — v1.0 APPROVED; RF-06-02 accepted; RF-06-03-C06 independently accepted with 48/246/294 authoritative breakdown and unchanged lock/environment; RF-06-04-C07/C08 independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`; closure published pending acceptance with authoritative current mypy count 249; runtime stopped; RF-07 blocked pending closure acceptance.
 - `14-runtime-foundation-and-autonomous-integration/OWNER_DECISIONS_v1.0.md` — v1.0 APPROVED; owner decisions for RF-01–RF-30.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_AUDIT_v1.0.md` — accepted RF-02 audit input.
 - `14-runtime-foundation-and-autonomous-integration/CURRENT_MAIN_RECONCILIATION_CLOSURE_v1.0.md` — RF-02 closure evidence published for independent acceptance.
 
-RF-06-01 corrective chain is accepted through `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-03-C06 is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; RF-06-04-C07 is published pending independent acceptance with authoritative current mypy count 249; RF-06-04 and RF-07 remain blocked.
+RF-06-01 corrective chain is accepted through `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-03-C06 is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; RF-06-04-C07/C08 are independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`; RF-06 closure is published pending independent acceptance with authoritative current mypy count 249; RF-07 remains blocked pending closure acceptance.
 
 RF-02 evidence chain:
 
@@ -47,7 +48,7 @@ RF-02 evidence chain:
 - `14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md` — RF-03-03 independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`.
 - `14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md` — RF-03-04 original closure evidence was published at `a6c5277fcb5596d3c53a59fbcdaec5c06e3456ff`; its corrective index-state chain is published for independent acceptance.
 
-RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete. RF-04 is accepted through current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is active; RF-06-01, RF-06-02 and RF-06-03-C06 are accepted, and RF-06-04-C07 is published pending independent acceptance. CPython/uv and dependencies are project-owned, runtime is stopped, RF-06-04/RF-07 are blocked, and `NOT_PRODUCTION_READY` remains current.
+RF-02 is independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`. RF-03 is repository-content complete. RF-04 is accepted through current base. RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is repository-content complete pending independent acceptance; RF-06-01, RF-06-02, RF-06-03-C06 and RF-06-04-C07/C08 are accepted, with C07/C08 through `f896cbe5efd5690e590913c15e24b988f80dc56a`. CPython/uv and dependencies are project-owned, runtime is stopped, RF-06 closure is published pending acceptance, RF-07 is blocked pending closure acceptance, and `NOT_PRODUCTION_READY` remains current.
 
 Current RF-04 artifacts: `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`, `RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`, `MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`, `RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`, `CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`, and `RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`. Current RF-05 artifacts: `EXISTING_SERVER_ENVIRONMENT_RECORD_v1.0.md` and `EXISTING_SERVER_ENVIRONMENT_RECORD_CLOSURE_v1.0.md`. Current RF-06 artifacts include `TOOLCHAIN_AND_DEPENDENCY_BASELINE_v1.0.md`, `TOOLCHAIN_AND_DEPENDENCY_BASELINE_CORRECTION_v1.0.md` (RF-06-01 corrective chain accepted), `TOOLCHAIN_BOOTSTRAP_AND_EXECUTABLE_VERIFICATION_v1.0.md` (RF-06-02 independently accepted), `DEPENDENCY_EXPANSION_LOCK_AND_CLEAN_SYNC_v1.0.md`, `DEPENDENCY_ARTIFACT_COUNT_SEMANTICS_CORRECTION_v1.0.md` (RF-06-03-C06 independently accepted), and the RF-06-04-C07 mypy authority correction (published pending acceptance; current count 249).
 
