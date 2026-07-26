@@ -28,10 +28,10 @@
 18. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md` — RF-07-02-C02; `CORRECTIVE_REQUIRED_HISTORICAL`.
 19. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md` — RF-07-02-C03; `INDEPENDENTLY_ACCEPTED`.
 20. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_v1.0.md` — RF-07-02 closure; `PUBLISHED_PENDING_ACCEPTANCE`.
-20. `docs/00-governance/OPEN_DECISIONS.md`
-21. relevant append-only decision and worklog entries
-22. affected architecture, contract, module, quality, operations and reference documents
-23. affected module evidence handoffs
+21. `docs/00-governance/OPEN_DECISIONS.md`
+22. relevant append-only decision and worklog entries
+23. affected architecture, contract, module, quality, operations and reference documents
+24. affected module evidence handoffs
 
 `docs/06-reports/accepted/FINAL_DOCUMENTATION_ACCEPTANCE_v1.0.md` remains historical evidence for the earlier documentation cycle. It is not the current roadmap endpoint and must not precede the active Module 14 governance when determining current work.
 
