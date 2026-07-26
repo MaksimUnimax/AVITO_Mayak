@@ -23,7 +23,7 @@
 
 ## Toolchain identity
 
-- CPython `3.14.6`, standard GIL enabled (`sys._is_gil_enabled()` is false for the free-threaded state).
+- CPython `3.14.6`, standard GIL enabled: Py_GIL_DISABLED=0 and `sys._is_gil_enabled()`=true.
 - uv `0.11.31` at `/opt/avito-mayak-runtime/toolchain/bin/uv`.
 - Toolchain manifest SHA-256: `a5c2fa436d3721f1fbb0a05c9c335486455e5292835b5ac87dc6720cfb0091a2`.
 - Promoted Python: `/opt/avito-mayak-runtime/venvs/rf06-dependencies-v1/bin/python`.
@@ -68,7 +68,7 @@ HISTORICAL_248_CLOSURE_EXPECTATION_STATUS: SUPERSEDED
 ## Full semantic suite
 
 - Command: `/opt/avito-mayak-runtime/venvs/rf06-dependencies-v1/bin/coverage run --branch -m pytest`, followed by `coverage report`.
-- Expected current-suite result: 4511 collected, 4511 passed, 0 failed, 0 errors; coverage total 85%; both exits 0.
+- Observed current-suite result: 4511 collected, 4511 passed, 0 failed, 0 errors; coverage total 85%; both exits 0.
 - Coverage data was task-owned and no tests were changed or skipped to obtain the result.
 
 ## Security and isolation
