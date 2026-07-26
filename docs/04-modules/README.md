@@ -3,10 +3,11 @@
 ## Module 14 evidence
 
 - `14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — RF-06-04-CORRECTIVE-09; independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07 active; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
-- `14-runtime-foundation-and-autonomous-integration/CI_QUALITY_GATES_FOUNDATION_v1.0.md` — RF-07-01; `PUBLISHED_PENDING_ACCEPTANCE`; deterministic GitHub Actions quality foundation.
+- `14-runtime-foundation-and-autonomous-integration/CI_QUALITY_GATES_FOUNDATION_v1.0.md` — RF-07-01; `INDEPENDENTLY_ACCEPTED` through `01752323937aef4e247b22b5d79676d5e8f61e46`; dependency-byte identity superseded by the pending correction.
+- `14-runtime-foundation-and-autonomous-integration/PYTEST_VULNERABILITY_AND_COMPATIBILITY_CORRECTION_v1.0.md` — RF-07-02-CORRECTIVE-01; `PUBLISHED_PENDING_ACCEPTANCE`; pytest 9.0.3 and pytest-asyncio 1.4.0 with zero vulnerability findings.
 - `14-runtime-foundation-and-autonomous-integration/MYPY_DIAGNOSTIC_COUNT_AUTHORITY_AND_HISTORICAL_EVIDENCE_EXHAUSTION_v1.0.md` — RF-06-04-C07; authoritative current mypy count 249; historical 248 cause not proven; PUBLISHED_PENDING_ACCEPTANCE; NOT_PRODUCTION_READY.
 
-**Статус:** `MODULE_14_RF07_CI_QUALITY_FOUNDATION_PUBLISHED_PENDING_ACCEPTANCE` — RF-06 is independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07 is active; RF-07-01 is published pending independent acceptance; authoritative current mypy count is 249; lock and environment packages are unchanged; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
+**Статус:** `MODULE_14_RF07_PYTEST_VULNERABILITY_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE` — RF-06 is independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07 is active; RF-07-01 is independently accepted; RF-07-02-CORRECTIVE-01 is published pending independent acceptance; RF-07-02 is blocked pending correction acceptance; authoritative current mypy count is 249; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
 
 Each module has one canonical `MODULE_PLAYBOOK.md`.
 

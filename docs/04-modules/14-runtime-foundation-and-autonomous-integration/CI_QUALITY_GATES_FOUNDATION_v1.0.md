@@ -1,13 +1,16 @@
 # CI Quality Gates Foundation
 
 Version: 1.0
-Status: `PUBLISHED_PENDING_ACCEPTANCE`
+Status: `INDEPENDENTLY_ACCEPTED`
 Date: 2026-07-26
 Technical ID: `RF-07-01-CI-QUALITY-FOUNDATION-20260726`
 RF step: RF-07-01
 Base: `f03e97ec433e9278247a15dafcb1d96387132eba`
 RF-06: `INDEPENDENTLY_ACCEPTED`
 RF-07: `ACTIVE`
+Accepted through: `01752323937aef4e247b22b5d79676d5e8f61e46`
+Accepted run: `30199035445`
+Correction note: accepted quality behavior remains authoritative while dependency-byte identity is superseded by the pending pytest vulnerability correction.
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
 Production: `NOT_PRODUCTION_READY`
@@ -18,7 +21,7 @@ This task publishes a deterministic GitHub Actions quality foundation for reposi
 
 ## Accepted RF-06 prerequisite
 
-RF06_INDEPENDENTLY_ACCEPTED_THROUGH_F03E97EC433E9278247A15DAFCB1D96387132EBA. The locked baseline is 48 sdists, 246 wheels, 294 artifacts, 294/294 hashed, mypy 249 and the current suite 4511/4511 with 85% coverage.
+RF06_INDEPENDENTLY_ACCEPTED_THROUGH_F03E97EC433E9278247A15DAFCB1D96387132EBA. The locked baseline is 48 sdists, 246 wheels, 294 artifacts, 294/294 hashed, mypy 249 and the current suite 4511/4511 with 85% coverage. The corrective lock identity is pyproject `5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7d`, uv.lock `e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6`, with pytest 9.0.3 and pytest-asyncio 1.4.0.
 
 ## Workflow triggers and permissions
 
@@ -58,7 +61,7 @@ Each job emits deterministic UTF-8 JSON and plain-text summaries with schema ver
 
 ## Local equivalent evidence
 
-The same pinned toolchain, lock checks, task-owned isolated environment, verifier self-test, lock mode and quality mode pass locally. JSON status is `PASS`; source, tests, `pyproject.toml` and `uv.lock` remain byte-identical.
+The same pinned toolchain, lock checks, task-owned isolated environment, verifier self-test, lock mode and quality mode pass locally. JSON status is `PASS`; source and tests remain byte-identical. Dependency-byte identity is superseded by the correction artifact pending independent acceptance.
 
 ## Security boundary
 
@@ -70,7 +73,7 @@ This task does not implement PostgreSQL service; PostgreSQL integration tests; A
 
 ## Rollback
 
-The task-owned backup contains four governance preimages, absent markers, identities, action-pin evidence, hashes and rollback instructions. Before push, restore the four preimages, remove the three new files, remove task-owned local CI state, clean the disposable worktree and remove its branch; do not modify main checkout or promoted inputs.
+The original RF-07-01 backup remains historical evidence. The pytest correction has its own task-owned backup and rollback instructions; do not modify main checkout or promoted inputs.
 
 ## Limitations
 
@@ -82,4 +85,4 @@ RF07_LOCK_AND_ISOLATED_SYNC_GATE_IMPLEMENTED. RF07_01_PUBLISHED_PENDING_ACCEPTAN
 
 ## Next gate
 
-Independent acceptance of this exact published RF-07-01 commit is required. Later RF-07 tasks must add the deferred gates. RF07_REMAINS_ACTIVE.
+RF-07-01 is independently accepted through `01752323937aef4e247b22b5d79676d5e8f61e46`. Later RF-07 tasks must add the deferred gates. The correction artifact is published pending independent acceptance. RF07_REMAINS_ACTIVE.

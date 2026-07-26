@@ -53,8 +53,8 @@ jobs:
         run: uv lock --check
       - name: Prove dependency bytes unchanged
         run: |
-          test "$(sha256sum pyproject.toml | cut -d' ' -f1)" = c9c905db608ce2ccece5acfcdbff066a241f3c55a03d716d1e08864055b7ffdb
-          test "$(sha256sum uv.lock | cut -d' ' -f1)" = 9c9a87fb0c455d36162c3dbcfbdddc8c3f7d3e528157fb0f228678695263c020
+          test "$(sha256sum pyproject.toml | cut -d' ' -f1)" = 5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7d
+          test "$(sha256sum uv.lock | cut -d' ' -f1)" = e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
       - name: Verify lock evidence
         run: python scripts/ci/verify_quality_baseline.py --mode lock --evidence-dir ci-evidence/integrity-lock --venv .venv
       - name: Verify integrity evidence exists
@@ -91,8 +91,8 @@ jobs:
         run: uv sync --frozen --all-groups --python 3.14.6
       - name: Prove dependency bytes unchanged
         run: |
-          test "$(sha256sum pyproject.toml | cut -d' ' -f1)" = c9c905db608ce2ccece5acfcdbff066a241f3c55a03d716d1e08864055b7ffdb
-          test "$(sha256sum uv.lock | cut -d' ' -f1)" = 9c9a87fb0c455d36162c3dbcfbdddc8c3f7d3e528157fb0f228678695263c020
+          test "$(sha256sum pyproject.toml | cut -d' ' -f1)" = 5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7d
+          test "$(sha256sum uv.lock | cut -d' ' -f1)" = e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
       - name: Verifier parser self-test
         run: python scripts/ci/verify_quality_baseline.py --self-test
       - name: Run complete quality baseline
