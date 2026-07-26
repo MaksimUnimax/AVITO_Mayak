@@ -114,26 +114,21 @@ Historical decision rows remain traceability evidence and must not be deleted.
 
 The complete Module 14 acceptance runtime is not yet implemented or deployed.
 
-Current future gaps include:
+Current remaining gaps include:
 
-- deterministic toolchain proof for the expanded runtime dependency set;
-- GitHub Actions CI;
-- Docker and Compose foundation;
-- PostgreSQL 18 provisioning;
-- SQLAlchemy/Psycopg/Alembic physical persistence;
-- migration from zero;
-- API, worker and scheduler assembly;
-- DB-backed runtime for modules 01–13;
-- Web Cabinet and Admin runtime;
-- provider-disabled-by-default external adapters;
-- cross-module API and command wiring;
-- synthetic E2E;
-- security and supply-chain evidence;
-- observability, backup and recovery;
-- deployment on the existing server;
-- final regression;
-- operator acceptance pack;
-- final evidence handoff.
+- remaining RF-07 runtime-dependent CI gates: PostgreSQL integration, Alembic upgrade-from-zero and current-head verification, Docker build, Compose validation and synthetic E2E; these gates require later RF-08, RF-09 and RF-24 artifacts and remain open;
+- RF-08 Docker and Compose foundation;
+- RF-09 PostgreSQL 18, SQLAlchemy, Psycopg and Alembic authoritative persistence foundation;
+- migration from zero and migration current-head proof;
+- RF-10–RF-22 DB-backed runtime for modules 01–13, including API, worker, scheduler, Web Cabinet, Admin and provider-disabled-by-default adapters;
+- RF-23 cross-module API and command wiring;
+- RF-24 deterministic synthetic end-to-end vertical slices;
+- RF-25 remaining runtime security and privacy verification beyond the independently accepted RF-07-02 CI security and supply-chain foundation;
+- RF-26 observability, backup, restore and recovery proof;
+- RF-27 deployment on the existing project server;
+- RF-28 deployed regression and failure drills;
+- RF-29 operator acceptance pack;
+- RF-30 final evidence handoff.
 
 Absence of optional provider credentials is not a blocker for this roadmap.
 
