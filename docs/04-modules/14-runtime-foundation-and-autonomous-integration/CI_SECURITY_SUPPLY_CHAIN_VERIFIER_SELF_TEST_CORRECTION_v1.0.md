@@ -1,12 +1,12 @@
 # CI Security Supply-Chain Verifier Self-Test Correction
 
 Version: 1.0
-Status: `PUBLISHED_PENDING_ACCEPTANCE`
+Status: `CORRECTIVE_REQUIRED`
 Date: 2026-07-26
 Technical ID: `RF-07-02-CORRECTIVE-02-SECURITY-VERIFIER-SELF-TEST-AND-CLASSIFICATION-DETERMINISM-20260726`
 Base: `7814cf7fa8553f75fdbe53c51fd03428e87f4738`
 RF-07: `ACTIVE`
-RF-07-02-C02: `PUBLISHED_PENDING_ACCEPTANCE`
+RF-07-02-C02: `CORRECTIVE_REQUIRED`
 RF-07-02: `BLOCKED_PENDING_CORRECTION_ACCEPTANCE`
 RF-08: `NOT_STARTED`
 Runtime: `STOPPED`
@@ -19,23 +19,25 @@ This atomic correction changes only verifier self-test authority, deterministic 
 
 ## Independent rejection trigger
 
-The published RF-07-02 self-test emitted a single success marker while proving only smoke assertions. Independent source inspection found missing required behavior classes, and local and remote classification counts differed.
+The published RF-07-02 artifact was independently downloaded and verified: run `30203557863`, job `89797607207`, artifact `8632382718`, digest `sha256:d708d25fea7a493848cf7c49b0be7aa2fad39d537ee4358e8fc6d2bf56817e71`, source `1ca9b56860d72e13bb21cd437684f95f1a39aa90`, 17/17, classification `454/454/0/0`, zero secret and vulnerability findings, final `PASS`. Artifact unavailability is not a current blocker.
+
+Independent source inspection found the next first proven blocking defect: published ST17 proves only one positive workflow assertion and zero rejection cases.
 
 ## First bad object
 
-`scripts/ci/verify_security_supply_chain.py::self_test`
+`scripts/ci/verify_security_supply_chain.py::self_test::ST17_WORKFLOW_PIN_PERMISSION_AND_FORBIDDEN_CHECKS`
 
 ## Primary proven cause
 
-`SELF_TEST_IMPLEMENTED_AS_SMOKE_ASSERTIONS_WITHOUT_EXPLICIT_CASE_COVERAGE_AUTHORITY`
+`WORKFLOW_SECURITY_SELF_TEST_POSITIVE_ONLY_AND_HELPER_FAILS_OPEN_ON_MISSING_ACTIONS_OR_ADDITIONAL_WRITE_PERMISSIONS`
 
 ## Five-transition trace
 
-1. `TRANSITION_01_TASK_CONTRACT`: RF-07-02 required 17 explicit self-test behavior classes.
-2. `TRANSITION_02_PUBLISHED_IMPLEMENTATION`: published `self_test()` contained only narrow smoke assertions.
-3. `TRANSITION_03_LOCAL_REPORTED_PASS`: CLI reported `Security-Verifier-Self-Test: PASS` without case inventory or count proof.
-4. `TRANSITION_04_REMOTE_JOB_PASS`: Actions accepted the single `SELF_TEST_PASS` marker.
-5. `TRANSITION_05_INDEPENDENT_DIVERGENCE`: source inspection proved missing classes and classification counts differed.
+1. `TRANSITION_01_C02_CONTRACT`: C02 required ST17 to prove action-pin and permission rejection cases.
+2. `TRANSITION_02_PUBLISHED_ST17`: published ST17 contained one positive PASS assertion and zero negative assertions.
+3. `TRANSITION_03_FAIL_OPEN_HELPER`: published `workflow_check()` accepted an empty action list and did not reject all explicit write-permission forms.
+4. `TRANSITION_04_REMOTE_SELF_TEST_PASS`: remote CI emitted 17/17 PASS because positive-only ST17 did not exercise rejection behavior.
+5. `TRANSITION_05_INDEPENDENT_SOURCE_REVIEW`: source inspection proved the missing negative matrix and fail-open helper conditions despite successful artifact evidence.
 
 ## Missing published self-test coverage
 
@@ -47,7 +49,11 @@ The missing contracts were PEM keys, populated assignments, finding schema, bina
 
 ## Machine-readable self-test evidence
 
-`--self-test --evidence-dir PATH` executes production helpers against synthetic temporary data, fails closed on the first failed case, and writes `self-test-evidence.json` with schema version 1, source SHA, exact case IDs, executed/passed/failed counts and safe detail codes. Success requires 17/17 and stdout exactly ends with `SELF_TEST_PASS cases=17/17`. Full mode validates the same evidence before writing final evidence.
+`--self-test --evidence-dir PATH` executes production helpers against synthetic temporary data, fails closed on the first failed case, and writes exact 17-case evidence. ST17 now executes exactly 13 subcases (`WF00`–`WF12`), records their IDs and expected failed named checks, and requires safe detail code `WORKFLOW_REJECTION_MATRIX_PASS_13_OF_13`. The 16 other top-level cases and their order remain preserved. Success requires 17/17 and stdout exactly ends with `SELF_TEST_PASS cases=17/17`; full mode rejects any other ST17 detail code.
+
+## C03 corrective artifact
+
+The corrective implementation and evidence authority are published in [CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md](CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md). It retains the exact accepted current workflow, rejects missing, mutable, duplicate, unexpected and incorrectly pinned actions, and rejects every explicit write permission. RF-07-02 remains blocked pending C03 acceptance.
 
 ## Local-versus-remote classification discrepancy
 
@@ -87,4 +93,4 @@ This is verifier and evidence correction only. It does not establish production 
 
 ## Verdict
 
-`RF07_SECURITY_VERIFIER_SELF_TEST_AND_CLASSIFICATION_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`
+`RF07_SECURITY_VERIFIER_SELF_TEST_AND_CLASSIFICATION_CORRECTION_CORRECTIVE_REQUIRED`

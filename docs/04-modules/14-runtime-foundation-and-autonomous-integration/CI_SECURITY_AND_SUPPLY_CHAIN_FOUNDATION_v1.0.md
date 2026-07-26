@@ -9,7 +9,7 @@ RF-06: `INDEPENDENTLY_ACCEPTED`
 RF-07-01: `INDEPENDENTLY_ACCEPTED`
 RF-07-02-C01: `INDEPENDENTLY_ACCEPTED`
 RF-07: `ACTIVE`
-RF-07-02: `BLOCKED_PENDING_CORRECTION_ACCEPTANCE`
+RF-07-02: `BLOCKED_PENDING_C03_ACCEPTANCE`
 RF-08: `NOT_STARTED`
 Runtime: `STOPPED`
 Environment: `RUNTIME_ELIGIBLE`
@@ -21,13 +21,13 @@ This foundation provides one immutable-pinned, least-privilege workflow and a st
 
 ## Independent review and corrective authority
 
-Independent review: `CORRECTIVE_REQUIRED`. The first bad object is `scripts/ci/verify_security_supply_chain.py::self_test`; the original smoke-only self-test did not prove the required behavior classes. Correction `RF-07-02-CORRECTIVE-02` is published pending independent acceptance at [CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md](CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md). The correction defines exactly 17 executable case IDs, writes machine-readable `self-test-evidence.json`, and requires exact 17/17 PASS evidence before full mode.
+Independent review: `CORRECTIVE_REQUIRED`. The C02 artifact was independently downloaded and content-verified: 17/17 self-test, classification `454/454/0/0`, zero secret and vulnerability findings and final `PASS`; artifact download unavailability is cleared. The first bad object is `scripts/ci/verify_security_supply_chain.py::self_test::ST17_WORKFLOW_PIN_PERMISSION_AND_FORBIDDEN_CHECKS`. C02 ST17 proves only one positive assertion, while `workflow_check()` fails open for missing actions and additional write permissions. The original C02 correction document is preserved at [CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md](CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md), now marked corrective-required. C03 is published in [CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md](CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md).
 
 Tracked-file evidence now records the normalized classification stream and `classification_inventory_sha256`; text, binary and safe-symlink counts must sum to the tracked count. The historical published evidence remains preserved: zero secret findings and zero vulnerability findings. RF-07-02 is not independently accepted; deferred RF-07 gates remain required and production remains `NOT_PRODUCTION_READY`.
 
 ## Accepted correction prerequisite
 
-The pytest correction is independently accepted through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`, run `30200967700`, with downloaded integrity and quality evidence PASS. The accepted lock contains pytest 9.0.3 and pytest-asyncio 1.4.0; RF-07-02 is therefore unblocked.
+The pytest correction is independently accepted through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`, run `30200967700`, with downloaded integrity and quality evidence PASS. The accepted lock contains pytest 9.0.3 and pytest-asyncio 1.4.0; RF-07-02 remains blocked pending C03 acceptance.
 
 ## Workflow triggers and permissions
 
@@ -63,7 +63,7 @@ Each installed distribution receives exactly one metadata classification: SPDX e
 
 ## Workflow supply-chain checks
 
-The verifier checks exact permissions, immutable action pins, absence of secrets context, no write permissions, no mutable tags, no credential persistence, no dynamic shell or deployment/provider/database/Docker operation and exact artifact retention.
+The verifier checks exact action sequence and immutable pins, exact top-level `contents: read`, absence of every explicit write permission, secrets context, persisted credentials, `pull_request_target`, forbidden commands, `continue-on-error` and exact single 30-day artifact retention. C03 ST17 proves the 13-subcase rejection matrix.
 
 ## Local equivalent evidence
 
@@ -95,4 +95,4 @@ Metadata inventory is not a legal policy and zero current findings do not prove 
 
 ## Verdict
 
-`RF07_SECURITY_VERIFIER_SELF_TEST_AND_CLASSIFICATION_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`
+`RF07_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_PUBLISHED_PENDING_ACCEPTANCE`

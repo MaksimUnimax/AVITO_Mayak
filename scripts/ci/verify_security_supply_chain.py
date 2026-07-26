@@ -23,6 +23,9 @@ PLACEHOLDER = re.compile(r"^(?:|none|null|false|example|placeholder|changeme|sec
 ASSIGNMENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*(?:secret|token|password|passwd|api_key|apikey|private_key|client_secret)[A-Za-z0-9_]*)\s*=\s*([^#\s,;]+)", re.I)
 RULES = (("PEM_PRIVATE_KEY", re.compile(r"BEGIN [A-Z0-9 _-]*PRIVATE KEY")), ("GITHUB_TOKEN", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+")), ("AWS_ACCESS_KEY", re.compile(r"\bAKIA[0-9A-Z]{16}\b")), ("SLACK_TOKEN", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]+\b")), ("TELEGRAM_BOT_TOKEN", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")), ("URL_USERINFO_PASSWORD", re.compile(r"https?://[^/\s:@]+:[^/\s@]+@")))
 CASE_IDS = ("ST01_PEM_PRIVATE_KEY_DETECTION", "ST02_KNOWN_TOKEN_FORMAT_DETECTION", "ST03_POPULATED_SECRET_ASSIGNMENT_DETECTION", "ST04_PLACEHOLDER_ASSIGNMENT_NOT_FLAGGED", "ST05_URL_USERINFO_REDACTION", "ST06_RAW_SECRET_VALUE_NOT_STORED", "ST07_FINDING_SCHEMA_MINIMAL_FIELDS", "ST08_BINARY_FILE_CLASSIFICATION", "ST09_UNSAFE_SYMLINK_REJECTION", "ST10_DETERMINISTIC_FINDING_SORT", "ST11_DUPLICATE_FINDING_ELIMINATION", "ST12_ZERO_VULNERABILITY_AUDIT_PARSE", "ST13_NONZERO_VULNERABILITY_AUDIT_PARSE", "ST14_LICENSE_METADATA_CLASSIFICATION", "ST15_LOCK_INVENTORY_PARSE", "ST16_INSTALLED_DISTRIBUTION_RECONCILIATION", "ST17_WORKFLOW_PIN_PERMISSION_AND_FORBIDDEN_CHECKS")
+EXPECTED_ACTIONS = ("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b", "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a")
+WORKFLOW_CHECK_NAMES = ("exact_action_sequence", "nonempty_action_sequence", "immutable_action_pins", "top_level_permissions_exact", "no_write_permissions", "no_secrets_context", "persist_credentials_false_exactly_once", "no_pull_request_target", "no_continue_on_error", "no_forbidden_commands", "retention_30_exactly_once")
+WORKFLOW_SUBCASES = ("WF00_CURRENT_WORKFLOW_PASS", "WF01_EMPTY_ACTION_LIST_REJECTED", "WF02_MISSING_EXPECTED_ACTION_REJECTED", "WF03_DUPLICATE_ACTION_REJECTED", "WF04_MUTABLE_OR_WRONG_PIN_REJECTED", "WF05_UNEXPECTED_ACTION_REJECTED", "WF06_CONTENTS_WRITE_REJECTED", "WF07_ADDITIONAL_WRITE_PERMISSION_REJECTED", "WF08_SECRETS_CONTEXT_REJECTED", "WF09_PERSISTED_CREDENTIALS_REJECTED", "WF10_PULL_REQUEST_TARGET_REJECTED", "WF11_FORBIDDEN_OR_CONTINUE_COMMAND_REJECTED", "WF12_INVALID_RETENTION_REJECTED")
 
 
 def stable(value: object) -> object:
@@ -222,9 +225,36 @@ def licenses(rows: list[dict], distributions: list[metadata.Distribution]) -> tu
 
 def workflow_check(workflow_text: str | None = None) -> dict[str, object]:
     text = workflow_text if workflow_text is not None else (ROOT / ".github/workflows/ci-security-supply-chain.yml").read_text(encoding="utf-8")
-    uses = re.findall(r"^\s*- uses:\s*([^\s#]+)", text, re.M); pin = all("@" in x and HEX40.fullmatch(x.rsplit("@", 1)[1]) for x in uses)
-    checks = {"no_pull_request_target": "pull_request_target" not in text, "permissions": bool(re.search(r"permissions:\n\s+contents: read\n", text)) and "write-all" not in text, "secrets_context": "${{ secrets." not in text, "immutable_pins": pin, "persist_credentials_false": text.count("persist-credentials: false") == 1, "no_forbidden_commands": not re.search(r"\bsudo\b|\beval\b|curl\s*\|\s*sh|wget\s*\|\s*sh|docker|psql|alembic", text, re.I), "no_continue": "continue-on-error" not in text, "retention": "retention-days: 30" in text}
-    return {"checks": checks, "status": "PASS" if all(checks.values()) else "FAIL", "actions": uses}
+    uses = re.findall(r"^[ \t]*(?:-[ \t]*)?uses:\s*([^\s#]+)", text, re.M)
+    action_refs = [x.rsplit("@", 1)[1] for x in uses if "@" in x]
+    immutable = bool(uses) and len(action_refs) == len(uses) and all(HEX40.fullmatch(ref) for ref in action_refs)
+    permission_lines: list[str] = []
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line == "permissions:":
+            for candidate in lines[index + 1:]:
+                if candidate and not candidate.startswith((" ", "\t")): break
+                if candidate.strip(): permission_lines.append(candidate.strip())
+            break
+    permission_pairs = [re.match(r"^([^:#]+):\s*([^#\s]+)\s*$", line) for line in permission_lines]
+    permission_pairs = [match.groups() for match in permission_pairs if match]
+    writes = bool(re.search(r"(?:^|\s)permissions:\s*write-all\b|^\s*[A-Za-z0-9_-]+:\s*write\b", text, re.M | re.I)) or any(value.lower() == "write" for _, value in permission_pairs)
+    credentials = re.findall(r"^\s*persist-credentials:\s*(true|false)\s*$", text, re.M | re.I)
+    retention = re.findall(r"^\s*retention-days:\s*([^\s#]+)", text, re.M | re.I)
+    checks = {
+        "exact_action_sequence": tuple(uses) == EXPECTED_ACTIONS,
+        "nonempty_action_sequence": bool(uses),
+        "immutable_action_pins": immutable and tuple(uses) == EXPECTED_ACTIONS,
+        "top_level_permissions_exact": permission_pairs == [("contents", "read")],
+        "no_write_permissions": not writes,
+        "no_secrets_context": not re.search(r"\bsecrets\s*(?:\.|\[)", text),
+        "persist_credentials_false_exactly_once": credentials.count("false") == 1 and credentials.count("true") == 0 and text.lower().count("persist-credentials:") == 1,
+        "no_pull_request_target": "pull_request_target" not in text,
+        "no_continue_on_error": "continue-on-error" not in text,
+        "no_forbidden_commands": not re.search(r"\bsudo\b|\beval\b|curl\s*\|\s*sh|wget\s*\|\s*sh|\bdocker\b|\bcompose\b|\bpsql\b|\balembic\b", text, re.I),
+        "retention_30_exactly_once": len(retention) == 1 and retention[0] == "30",
+    }
+    return {"checks": checks, "status": "PASS" if all(checks.get(name, False) for name in WORKFLOW_CHECK_NAMES) else "FAIL", "actions": uses}
 
 
 def valid_self_test_evidence(path: Path) -> bool:
@@ -232,13 +262,14 @@ def valid_self_test_evidence(path: Path) -> bool:
     try: data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError): return False
     cases = data.get("cases", [])
-    return data.get("schema_version") == 1 and data.get("required_case_count") == 17 and data.get("executed_case_count") == 17 and data.get("passed_case_count") == 17 and data.get("failed_case_count") == 0 and data.get("status") == "PASS" and [x.get("case_id") for x in cases] == list(CASE_IDS) and all(x.get("status") == "PASS" and set(x) == {"case_id", "status", "safe_detail_code"} for x in cases)
+    matrix = data.get("workflow_rejection_matrix", {})
+    return data.get("schema_version") == 1 and data.get("required_case_count") == 17 and data.get("executed_case_count") == 17 and data.get("passed_case_count") == 17 and data.get("failed_case_count") == 0 and data.get("status") == "PASS" and [x.get("case_id") for x in cases] == list(CASE_IDS) and all(x.get("status") == "PASS" and set(x) == {"case_id", "status", "safe_detail_code"} for x in cases) and cases[-1].get("safe_detail_code") == "WORKFLOW_REJECTION_MATRIX_PASS_13_OF_13" and matrix == {"required_subcase_count": 13, "executed_subcase_count": 13, "passed_subcase_count": 13, "failed_subcase_count": 0, "unexpected_pass_count": 0, "unexpected_check_count": 0, "case_ids": list(WORKFLOW_SUBCASES), "expected_failed_checks": ["PASS", "nonempty_action_sequence", "exact_action_sequence", "exact_action_sequence", "immutable_action_pins", "exact_action_sequence", "no_write_permissions", "no_write_permissions", "no_secrets_context", "persist_credentials_false_exactly_once", "no_pull_request_target", "no_continue_on_error", "retention_30_exactly_once"]}
 
 
 def self_test(evidence: Path) -> None:
     results = []
-    def case(case_id: str, fn) -> None:
-        try: fn(); results.append({"case_id": case_id, "status": "PASS", "safe_detail_code": "ASSERTIONS_PASSED"})
+    def case(case_id: str, fn, detail: str = "ASSERTIONS_PASSED") -> None:
+        try: fn(); results.append({"case_id": case_id, "status": "PASS", "safe_detail_code": detail})
         except Exception as exc:
             results.append({"case_id": case_id, "status": "FAIL", "safe_detail_code": type(exc).__name__.upper()})
             write_json(evidence / "self-test-evidence.json", {"schema_version": 1, "source_sha": source_sha(), "required_case_count": 17, "executed_case_count": len(results), "passed_case_count": sum(x["status"] == "PASS" for x in results), "failed_case_count": 1, "cases": results, "status": "FAIL"})
@@ -267,9 +298,29 @@ def self_test(evidence: Path) -> None:
         lock = {"package": [{"name": "x", "version": "1", "sdist": {"url": "u", "hash": "h"}}]}
         case(CASE_IDS[14], lambda: assert_true(lock_inventory(pyproject, lock)[1]["package_records"] == 1))
         case(CASE_IDS[15], lambda: assert_true(reconcile_distributions([{ "name": "x", "version": "1"}], {"x": {"version": "1"}})[1]["version_mismatches"] == 0))
-        good_workflow = "permissions:\n  contents: read\n- uses: actions/checkout@" + "a" * 40 + "\n        persist-credentials: false\nretention-days: 30\n"
-        case(CASE_IDS[16], lambda: assert_true(workflow_check(good_workflow)["status"] == "PASS"))
-    evidence_data = {"schema_version": 1, "source_sha": source_sha(), "required_case_count": 17, "executed_case_count": 17, "passed_case_count": 17, "failed_case_count": 0, "cases": results, "status": "PASS"}
+        good_workflow = (ROOT / ".github/workflows/ci-security-supply-chain.yml").read_text(encoding="utf-8")
+        matrix_checks = ["PASS"]
+        def rejected(case_text: str, check_name: str) -> None:
+            result = workflow_check(case_text)
+            assert_true(result["status"] == "FAIL")
+            assert_true(result["checks"].get(check_name) is False)
+            matrix_checks.append(check_name)
+        def workflow_matrix() -> None:
+            assert_true(workflow_check(good_workflow)["status"] == "PASS")
+            rejected(re.sub(r"^[ \t]*(?:-[ \t]*)?uses:.*\n", "", good_workflow, flags=re.M), "nonempty_action_sequence")
+            rejected(re.sub(r"^[ \t]*uses: astral-sh/setup-uv@[^\n]+\n", "", good_workflow, count=1, flags=re.M), "exact_action_sequence")
+            rejected(good_workflow.replace("        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n", "        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n", 1), "exact_action_sequence")
+            rejected(good_workflow.replace("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "actions/checkout@" + "a" * 40, 1), "immutable_action_pins")
+            rejected(good_workflow.replace("          retention-days: 30", "      - name: Unexpected\n        uses: example/unexpected@" + "b" * 40 + "\n          retention-days: 30", 1), "exact_action_sequence")
+            rejected(good_workflow.replace("  contents: read", "  contents: write", 1), "no_write_permissions")
+            rejected(good_workflow.replace("  contents: read", "  contents: read\n  actions: write", 1), "no_write_permissions")
+            rejected(good_workflow.replace("  PYTHONNOUSERSITE: \"1\"", "  LEAK: ${{ secrets.TEST }}\n  PYTHONNOUSERSITE: \"1\"", 1), "no_secrets_context")
+            rejected(good_workflow.replace("persist-credentials: false", "persist-credentials: true", 1), "persist_credentials_false_exactly_once")
+            rejected(good_workflow.replace("  pull_request:\n", "  pull_request_target:\n", 1), "no_pull_request_target")
+            rejected(good_workflow.replace("        run: |", "        continue-on-error: true\n        run: |", 1), "no_continue_on_error")
+            rejected(good_workflow.replace("retention-days: 30", "retention-days: 31", 1), "retention_30_exactly_once")
+        case(CASE_IDS[16], workflow_matrix, "WORKFLOW_REJECTION_MATRIX_PASS_13_OF_13")
+    evidence_data = {"schema_version": 1, "source_sha": source_sha(), "required_case_count": 17, "executed_case_count": 17, "passed_case_count": 17, "failed_case_count": 0, "cases": results, "workflow_rejection_matrix": {"required_subcase_count": 13, "executed_subcase_count": len(matrix_checks), "passed_subcase_count": sum(check != "FAIL" for check in matrix_checks), "failed_subcase_count": sum(check == "FAIL" for check in matrix_checks), "unexpected_pass_count": 0, "unexpected_check_count": 0, "case_ids": list(WORKFLOW_SUBCASES), "expected_failed_checks": matrix_checks}, "status": "PASS"}
     write_json(evidence / "self-test-evidence.json", evidence_data)
     print("SELF_TEST_PASS cases=17/17")
 
