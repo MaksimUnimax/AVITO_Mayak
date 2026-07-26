@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF06_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF07_CI_QUALITY_FOUNDATION_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата актуализации:** 2026-07-26
 
 ## Порядок входа
@@ -22,6 +22,7 @@
 12. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`
 13. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md`
 14. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — RF-06-04-CORRECTIVE-09-TOOLCHAIN-AND-DEPENDENCY-PROOF-CLOSURE-20260726; `PUBLISHED_PENDING_ACCEPTANCE`.
+15. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_QUALITY_GATES_FOUNDATION_v1.0.md` — RF-07-01-CI-QUALITY-FOUNDATION-20260726; `PUBLISHED_PENDING_ACCEPTANCE`.
 15. `docs/00-governance/OPEN_DECISIONS.md`
 16. relevant append-only decision and worklog entries
 16. affected architecture, contract, module, quality, operations and reference documents
@@ -78,7 +79,7 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; closure is published for independent acceptance.
 - RF-04 is accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`; RF-04-07 is accepted through the same base.
 - RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations are verified; repository content and closure are complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; `NOT_PRODUCTION_READY` remains current.
-- RF-06-01 corrective chain is accepted at `f77a1d85d7c8b8fd1f2e60694729d1b7c3a1598c`; RF-06-02 is independently accepted at `4c28354bceaf8325084d8ffd99a31e662c518a71`; RF-06-03-C06 artifact-count correction is independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d` with authoritative counts of 48 sdists, 246 wheels, 294 total and 294 hashed. RF-06-04-C07/C08 are independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`; RF-06 closure is published pending independent acceptance with authoritative current mypy count 249; the graph is locked and synchronized, runtime is stopped, RF-07 is blocked pending closure acceptance; RF-08–RF-30 remain not started/not accepted.
+- RF-06 is independently accepted through current chain head `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07 is active and RF-07-01 quality foundation is published pending independent acceptance. The graph is locked and synchronized, runtime is stopped; RF-08–RF-30 remain not started/not accepted.
 
 RF-04 evidence is [`PHYSICAL_DATA_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/PHYSICAL_DATA_MODEL_v1.0.md), [`TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md), [`RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md), [`MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md), [`RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md), [`CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md), and [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md). RF-04 is accepted through current base; RF-05 is repository-content complete and its closure is published for independent acceptance. Runtime remains unimplemented and unstarted; `RUNTIME_ELIGIBLE` applies to the environment allocation only; `NOT_PRODUCTION_READY` remains current; RF-06-03-C06 is accepted and RF-06-04-C07 is pending acceptance.
 
@@ -160,7 +161,8 @@ Missing optional provider credentials are not a core Module 14 blocker.
 ## Module playbooks
 
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MYPY_DIAGNOSTIC_COUNT_AUTHORITY_AND_HISTORICAL_EVIDENCE_EXHAUSTION_v1.0.md` — version 1.0; PUBLISHED_PENDING_ACCEPTANCE; RF-06-04-CORRECTIVE-07-AUTHORITATIVE-MYPY-COUNT-SUPERSESSION-20260726.
-- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — version 1.0; PUBLISHED_PENDING_ACCEPTANCE; RF-06-04-CORRECTIVE-09-TOOLCHAIN-AND-DEPENDENCY-PROOF-CLOSURE-20260726.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — version 1.0; independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_QUALITY_GATES_FOUNDATION_v1.0.md` — version 1.0; RF-07-01; PUBLISHED_PENDING_ACCEPTANCE; Technical ID `RF-07-01-CI-QUALITY-FOUNDATION-20260726`.
 
 ### Accepted domain modules
 

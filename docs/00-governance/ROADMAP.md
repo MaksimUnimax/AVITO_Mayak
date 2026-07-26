@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF06_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF07_CI_QUALITY_FOUNDATION_PUBLISHED_PENDING_ACCEPTANCE`
 **Дата:** 2026-07-26
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -67,7 +67,8 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
 - `[x] RF-06-03-C06` Artifact-count semantics correction; independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d` with 48/246/294 and 294/294 hashed.
 - `[x] RF-06-04-C07/C08` Authoritative mypy count and RF-02 SHA corrections independently accepted through `f896cbe5efd5690e590913c15e24b988f80dc56a`.
 - `[c] RF-06-04` Closure published pending independent acceptance.
-- `[ ] RF-07` CI quality gates — blocked pending RF-06 closure.
+- `[~] RF-07` CI quality gates — active; RF-07-01 published pending independent acceptance; future substeps remain not started.
+  - `[c] RF-07-01` Deterministic GitHub Actions quality foundation — published pending independent acceptance.
 - `[ ] RF-08` Container and Compose foundation.
 - `[ ] RF-09` PostgreSQL and Alembic foundation.
 - `[ ] RF-10` Platform & Contracts runtime.
