@@ -15,8 +15,10 @@ DATABASE_HOST: Final = "mayak-postgres"
 DATABASE_PORT: Final = 5432
 DATABASE_APPLICATION_USER: Final = "mayak_application"
 DATABASE_MIGRATION_USER: Final = "mayak_migration"
+DATABASE_BOOTSTRAP_USER: Final = "mayak"
 APPLICATION_SECRET_PATH: Final = Path("/run/secrets/mayak_database_application_password")
 MIGRATION_SECRET_PATH: Final = Path("/run/secrets/mayak_database_migration_password")
+BOOTSTRAP_SECRET_PATH: Final = Path("/run/secrets/mayak_postgres_bootstrap_password")
 DRIVER_NAME: Final = "postgresql+psycopg"
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]*$", re.ASCII)
 
@@ -86,6 +88,26 @@ class MigrationDatabaseSettings:
         _validate_identifier(self.user, "user")
 
 
+@dataclass(frozen=True, slots=True)
+class BootstrapDatabaseSettings:
+    endpoint: DatabaseEndpoint = DatabaseEndpoint()
+    user: str = DATABASE_BOOTSTRAP_USER
+    secret_path: Path = BOOTSTRAP_SECRET_PATH
+    connect_timeout: int = 5
+    application_name: str = "mayak-rf09-bootstrap"
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.user, "user")
+        if (
+            not isinstance(self.connect_timeout, int)
+            or isinstance(self.connect_timeout, bool)
+            or not 1 <= self.connect_timeout <= 60
+        ):
+            raise ValueError("connect_timeout must be an integer between 1 and 60")
+        if not self.application_name or any(char.isspace() for char in self.application_name):
+            raise ValueError("application_name must be non-empty and contain no whitespace")
+
+
 def resolve_secret_file(path: Path) -> SecretValue:
     """Resolve one UTF-8 secret file without ever putting its value in errors."""
     path = Path(path)
@@ -103,6 +125,36 @@ def resolve_secret_file(path: Path) -> SecretValue:
     if not value or value.strip() == "" or "\n" in value or "\r" in value:
         raise ValueError(f"secret file contains an invalid value: {path}")
     return SecretValue(value)
+
+
+def build_bootstrap_connect_kwargs(
+    settings: BootstrapDatabaseSettings | None = None,
+    *,
+    endpoint: DatabaseEndpoint | None = None,
+    user: str | None = None,
+    secret_path: Path | None = None,
+    connect_timeout: int = 5,
+    application_name: str = "mayak-rf09-bootstrap",
+) -> dict[str, object]:
+    """Build psycopg.connect keyword arguments at the explicit secret boundary."""
+    if settings is None:
+        settings = BootstrapDatabaseSettings(
+            endpoint=endpoint or DatabaseEndpoint(),
+            user=user or DATABASE_BOOTSTRAP_USER,
+            secret_path=secret_path or BOOTSTRAP_SECRET_PATH,
+            connect_timeout=connect_timeout,
+            application_name=application_name,
+        )
+    secret = resolve_secret_file(settings.secret_path)
+    return {
+        "host": settings.endpoint.host,
+        "port": settings.endpoint.port,
+        "dbname": settings.endpoint.database,
+        "user": settings.user,
+        "password": secret.as_text(),
+        "connect_timeout": settings.connect_timeout,
+        "application_name": settings.application_name,
+    }
 
 
 def _url(

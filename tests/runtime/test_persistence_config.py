@@ -5,7 +5,9 @@ from sqlalchemy.engine import URL
 
 from mayak.persistence.config import (
     APPLICATION_SECRET_PATH,
+    BOOTSTRAP_SECRET_PATH,
     DATABASE_APPLICATION_USER,
+    DATABASE_BOOTSTRAP_USER,
     DATABASE_HOST,
     DATABASE_MIGRATION_USER,
     DATABASE_NAME,
@@ -13,9 +15,11 @@ from mayak.persistence.config import (
     DATABASE_SCHEMA,
     MIGRATION_SECRET_PATH,
     ApplicationDatabaseSettings,
+    BootstrapDatabaseSettings,
     DatabaseEndpoint,
     MigrationDatabaseSettings,
     build_application_url,
+    build_bootstrap_connect_kwargs,
     build_migration_url,
     resolve_secret_file,
 )
@@ -23,11 +27,52 @@ from mayak.persistence.config import (
 
 def test_constants_and_separate_roles() -> None:
     assert (DATABASE_NAME, DATABASE_SCHEMA, DATABASE_HOST, DATABASE_PORT) == (
-        "mayak", "mayak", "mayak-postgres", 5432
+        "mayak",
+        "mayak",
+        "mayak-postgres",
+        5432,
     )
     assert DATABASE_APPLICATION_USER != DATABASE_MIGRATION_USER
     assert APPLICATION_SECRET_PATH.is_absolute()
     assert MIGRATION_SECRET_PATH.is_absolute()
+    assert DATABASE_BOOTSTRAP_USER == "mayak"
+    assert BOOTSTRAP_SECRET_PATH == Path("/run/secrets/mayak_postgres_bootstrap_password")
+
+
+def test_bootstrap_settings_and_kwargs_are_safe_and_lazy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "bootstrap"
+    path.write_text("synthetic-bootstrap-only\n", encoding="utf-8")
+    settings = BootstrapDatabaseSettings(secret_path=path)
+    assert settings.user == DATABASE_BOOTSTRAP_USER
+    assert "synthetic-bootstrap-only" not in repr(settings)
+    monkeypatch.setattr(
+        "mayak.persistence.config.resolve_secret_file", lambda _: pytest.fail("eager")
+    )
+    with pytest.raises(pytest.fail.Exception):
+        build_bootstrap_connect_kwargs(settings)
+
+
+def test_bootstrap_kwargs_exact_keys_and_timeout_validation(tmp_path: Path) -> None:
+    path = tmp_path / "bootstrap"
+    path.write_text("synthetic-bootstrap-only\n", encoding="utf-8")
+    kwargs = build_bootstrap_connect_kwargs(BootstrapDatabaseSettings(secret_path=path))
+    assert set(kwargs) == {
+        "host",
+        "port",
+        "dbname",
+        "user",
+        "password",
+        "connect_timeout",
+        "application_name",
+    }
+    assert kwargs["connect_timeout"] == 5
+    assert kwargs["application_name"] == "mayak-rf09-bootstrap"
+    assert kwargs["password"] == "synthetic-bootstrap-only"
+    for timeout in (True, False, 0, -1, 61):
+        with pytest.raises(ValueError):
+            BootstrapDatabaseSettings(secret_path=path, connect_timeout=timeout)  # type: ignore[arg-type]
 
 
 def test_secret_file_rules(tmp_path: Path) -> None:
@@ -67,7 +112,10 @@ def test_urls_are_driver_correct_and_redacted(tmp_path: Path) -> None:
     assert isinstance(application, URL)
     assert application.drivername == "postgresql+psycopg"
     assert (application.host, application.port, application.database, application.username) == (
-        DATABASE_HOST, DATABASE_PORT, DATABASE_NAME, DATABASE_APPLICATION_USER
+        DATABASE_HOST,
+        DATABASE_PORT,
+        DATABASE_NAME,
+        DATABASE_APPLICATION_USER,
     )
     assert migration.username == DATABASE_MIGRATION_USER
     assert "synthetic" not in repr(application)

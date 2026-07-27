@@ -2,7 +2,9 @@
 
 from mayak.persistence.config import (
     APPLICATION_SECRET_PATH,
+    BOOTSTRAP_SECRET_PATH,
     DATABASE_APPLICATION_USER,
+    DATABASE_BOOTSTRAP_USER,
     DATABASE_HOST,
     DATABASE_MIGRATION_USER,
     DATABASE_NAME,
@@ -10,10 +12,12 @@ from mayak.persistence.config import (
     DATABASE_SCHEMA,
     MIGRATION_SECRET_PATH,
     ApplicationDatabaseSettings,
+    BootstrapDatabaseSettings,
     DatabaseEndpoint,
     MigrationDatabaseSettings,
     SecretValue,
     build_application_url,
+    build_bootstrap_connect_kwargs,
     build_migration_url,
     resolve_secret_file,
 )
@@ -27,7 +31,9 @@ from mayak.persistence.session import create_session_factory, session_scope
 
 __all__ = [
     "APPLICATION_SECRET_PATH",
+    "BOOTSTRAP_SECRET_PATH",
     "DATABASE_APPLICATION_USER",
+    "DATABASE_BOOTSTRAP_USER",
     "DATABASE_HOST",
     "DATABASE_MIGRATION_USER",
     "DATABASE_NAME",
@@ -35,11 +41,13 @@ __all__ = [
     "DATABASE_SCHEMA",
     "MIGRATION_SECRET_PATH",
     "ApplicationDatabaseSettings",
+    "BootstrapDatabaseSettings",
     "Base",
     "DatabaseEndpoint",
     "MigrationDatabaseSettings",
     "SecretValue",
     "build_application_url",
+    "build_bootstrap_connect_kwargs",
     "build_migration_url",
     "create_application_engine",
     "create_migration_engine",
