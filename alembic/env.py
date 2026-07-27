@@ -8,6 +8,7 @@ from alembic import context
 from mayak.persistence.config import build_migration_url
 from mayak.persistence.engine import create_migration_engine, dispose_engine
 from mayak.persistence.metadata import metadata
+from mayak.persistence.migration import serialized_migration
 
 config = context.config
 if config.config_file_name is not None:
@@ -24,7 +25,7 @@ def _configure_kwargs() -> dict[str, object]:
         "version_table_schema": "mayak",
         "compare_type": True,
         "compare_server_default": True,
-        "transaction_per_migration": False,
+        "transaction_per_migration": True,
     }
 
 
@@ -44,9 +45,10 @@ def run_migrations_online() -> None:
     engine = create_migration_engine()
     try:
         with engine.connect() as connection:
-            context.configure(connection=connection, **_configure_kwargs())
-            with context.begin_transaction():
-                context.run_migrations()
+            with serialized_migration(connection):
+                context.configure(connection=connection, **_configure_kwargs())
+                with context.begin_transaction():
+                    context.run_migrations()
     finally:
         dispose_engine(engine)
 
