@@ -10,8 +10,14 @@
 - Module 14 phase: `AUTONOMOUS_RUNTIME_COMPLETION`
 - Module 14 target: `SYNTHETIC_AND_OPERATOR_ACCEPTANCE_RUNTIME`
 - Boundary: `READY_FOR_OPERATOR_ACCEPTANCE`
-- Status: `PUBLISHED_PENDING_ACCEPTANCE`
+- Status: `INDEPENDENTLY_ACCEPTED`
 - Production: `NOT_PRODUCTION_READY`
+
+Closure publication: `b1db2e7eafa0f625bd45e44436a208857ff7d48a`
+Closure publication subject: `docs(rf08): close container compose foundation`
+Index correction: `104e9777f298c47428fa8bdb07af109c234c4630`
+Index correction subject: `docs(rf08): index closure evidence`
+Accepted corrective-chain head: `104e9777f298c47428fa8bdb07af109c234c4630`
 
 ## Authority and scope
 
@@ -57,6 +63,10 @@ The independently accepted RF-08-03 proof used application image tag `avito-maya
 ## Current server state after proof
 
 This task's read-only recheck reconfirmed no containers for Compose project `avito-mayak-acceptance`, no project network `avito-mayak-acceptance_mayak-internal`, no project volume `avito-mayak-acceptance_postgres-data`, and port `18085` free. Runtime is stopped. The cached application image may remain; a cached image is not deployment evidence.
+
+## Independent acceptance and closure chain
+
+ChatGPT independently verified exact GitHub `main`, the parent chain, changed paths, closure content, implementation identities, accepted server/bootstrap evidence, no foreign-resource impact and no secret exposure. The verified chain is `243849bbf724b7bd301b685573f9664290783605` → `b1db2e7eafa0f625bd45e44436a208857ff7d48a` → `104e9777f298c47428fa8bdb07af109c234c4630`.
 
 ## Tests and validation
 
@@ -106,8 +116,8 @@ Before publication, rollback is deleting the new closure file, restoring the fiv
 
 ## Closure verdict
 
-`RF08_REPOSITORY_AND_BOOTSTRAP_EVIDENCE_COMPLETE_CLOSURE_PUBLISHED_PENDING_ACCEPTANCE`
+`RF08_CONTAINER_COMPOSE_FOUNDATION_INDEPENDENTLY_ACCEPTED_THROUGH_104E9777`
 
 ## Next gate
 
-Independent ChatGPT verification is required. RF-09 is next but not started and remains blocked until independent acceptance of this RF-08 closure commit. The CLI does not choose or start RF-09.
+RF-09 is `READY_TO_START_NOT_STARTED`; its prerequisites are satisfied and it must receive a separate exact task. This acceptance transition does not start RF-09. The CLI does not choose or start RF-09.

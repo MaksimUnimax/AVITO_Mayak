@@ -1,7 +1,7 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF08_CONTAINER_COMPOSE_FOUNDATION_CLOSURE_PUBLISHED_RF09_BLOCKED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF08_CONTAINER_COMPOSE_FOUNDATION_INDEPENDENTLY_ACCEPTED_RF09_READY_TO_START`
 **Дата актуализации:** 2026-07-27
 
 ## Порядок входа
@@ -28,7 +28,7 @@
 18. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_SECURITY_SUPPLY_CHAIN_VERIFIER_SELF_TEST_CORRECTION_v1.0.md` — RF-07-02-C02; `CORRECTIVE_REQUIRED_HISTORICAL`.
 19. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_SECURITY_WORKFLOW_REJECTION_MATRIX_CORRECTION_v1.0.md` — RF-07-02-C03; `INDEPENDENTLY_ACCEPTED`.
 20. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_SECURITY_AND_SUPPLY_CHAIN_CLOSURE_v1.0.md` — RF-07-02 closure; `INDEPENDENTLY_ACCEPTED` through `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`.
-21. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md` — RF-08-04; `PUBLISHED_PENDING_ACCEPTANCE`.
+21. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md` — RF-08-04; `INDEPENDENTLY_ACCEPTED` through `104e9777f298c47428fa8bdb07af109c234c4630`.
 22. `docs/00-governance/OPEN_DECISIONS.md`
 23. relevant append-only decision and worklog entries
 24. affected architecture, contract, module, quality, operations and reference documents
@@ -56,8 +56,8 @@ The semantic implementation contour exists and must not be described as absent.
 The following acceptance-runtime capabilities are not yet accepted merely because source and semantic tests exist:
 
 - accepted CI quality and security foundations;
-- remaining runtime-dependent GitHub Actions gates: PostgreSQL integration, migration, Docker/Compose and synthetic E2E;
-- Docker and Docker Compose foundation;
+- remaining runtime-dependent GitHub Actions gates: PostgreSQL integration, migrations and synthetic E2E;
+- Docker and Docker Compose foundation is independently accepted through RF-08 evidence;
 - PostgreSQL 18 authoritative persistence;
 - SQLAlchemy, Psycopg and Alembic runtime integration;
 - migrations from zero;
@@ -86,7 +86,7 @@ The following acceptance-runtime capabilities are not yet accepted merely becaus
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; closure is published for independent acceptance.
 - RF-04 is accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`; RF-04-07 is accepted through the same base.
 - RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations are verified; repository content and closure are complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; `NOT_PRODUCTION_READY` remains current.
-- RF-06 is independently accepted; RF-07 remains active only for deferred runtime-dependent gates; RF-07-01 and C01 are independently accepted; C02 is corrective-required historical; C03 and the RF-07-02 implementation chain and closure are independently accepted through corrective-chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; remaining runtime-dependent GitHub Actions gates are PostgreSQL integration, migration and synthetic E2E; RF-08 implementation and bootstrap evidence are complete; closure is published pending independent acceptance; RF-09 is next, not started and blocked; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
+- RF-06 is independently accepted; RF-07 remains active only for deferred runtime-dependent gates; RF-07-01 and C01 are independently accepted; C02 is corrective-required historical; C03 and the RF-07-02 implementation chain and closure are independently accepted through corrective-chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`; remaining runtime-dependent GitHub Actions gates are PostgreSQL integration, migrations and synthetic E2E; RF-08 implementation, bootstrap and closure are independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 is ready to start and not started; runtime is stopped; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
 
 RF-04 evidence is [`PHYSICAL_DATA_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/PHYSICAL_DATA_MODEL_v1.0.md), [`TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md), [`RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md), [`MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md), [`RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md), [`CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md), and [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md). RF-04 is accepted through current base; RF-05 is repository-content complete and its closure is published for independent acceptance. Runtime remains unimplemented and unstarted; `RUNTIME_ELIGIBLE` applies to the environment allocation only; `NOT_PRODUCTION_READY` remains current; RF-06-03-C06 is accepted and RF-06-04-C07 is pending acceptance.
 
@@ -206,7 +206,7 @@ Modules 01–13 are accepted semantic, contract, ownership, test and evidence pr
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_BOOTSTRAP_AND_EXECUTABLE_VERIFICATION_v1.0.md` — RF-06-02 exact pinned toolchain and executable verification, independently accepted; runtime stopped; `NOT_PRODUCTION_READY`.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/DEPENDENCY_EXPANSION_LOCK_AND_CLEAN_SYNC_v1.0.md` — RF-06-03 implementation and corrected dependency evidence; RF-06-03-C06 is independently accepted.
 - `docs/04-modules/14-runtime-foundation-and-autonomous-integration/DEPENDENCY_ARTIFACT_COUNT_SEMANTICS_CORRECTION_v1.0.md` — RF-06-03-C06 authoritative correction for artifact-count semantics, independently accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`.
-- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md` — RF-08-04; `PUBLISHED_PENDING_ACCEPTANCE`; Dockerfile, `.dockerignore` and Compose foundation exist; RF-09 and later runtime capabilities remain unaccepted.
+- `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md` — RF-08-04; `INDEPENDENTLY_ACCEPTED` through `104e9777f298c47428fa8bdb07af109c234c4630`; Dockerfile, `.dockerignore` and Compose foundation are accepted; RF-09 and later runtime capabilities remain unaccepted.
 
 Module 14 is active.
 

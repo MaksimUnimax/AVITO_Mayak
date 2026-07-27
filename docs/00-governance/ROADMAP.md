@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF08_CONTAINER_COMPOSE_FOUNDATION_CLOSURE_PUBLISHED_RF09_BLOCKED_PENDING_ACCEPTANCE`
+**Статус:** `MODULE_14_RF08_CONTAINER_COMPOSE_FOUNDATION_INDEPENDENTLY_ACCEPTED_RF09_READY_TO_START`
 **Дата:** 2026-07-27
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -74,16 +74,16 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[!] RF-07-02-C02` corrective-required historical.
   - `[x] RF-07-02-C03` independently accepted through `1e911fc4680296a2a81c634e56cd57ed6b333fd5`.
   - `[x] RF-07-02 closure` independently accepted through corrective chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`.
-- `[c] RF-08` repository and bootstrap evidence complete; closure published pending independent acceptance.
+- `[x] RF-08 independently accepted through closure chain head 104e9777f298c47428fa8bdb07af109c234c4630`.
   - `[x] RF-08-01` read-only preflight accepted;
   - `[x] RF-08-02` image and Compose skeleton accepted through corrective chain head `243849bbf724b7bd301b685573f9664290783605`;
   - `[!] RF-08-02-CORRECTIVE-01` blocked historical stale shared validation environment;
   - `[x] RF-08-02-CORRECTIVE-02` isolated locked validation/publication accepted at `af90b77575b3c0a1d9dda4f8cbd3f7ad5e6a73f6`;
   - `[x] RF-08-02-CORRECTIVE-03` project-scoped resource names accepted at `243849bbf724b7bd301b685573f9664290783605`;
   - `[x] RF-08-03` ephemeral Compose bootstrap runtime proof accepted;
-  - `[c] RF-08-04` closure published pending independent acceptance.
+  - `[x] RF-08-04` independently accepted through closure chain head `104e9777f298c47428fa8bdb07af109c234c4630`.
   - Evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`.
-- `[ ] RF-09` PostgreSQL and Alembic foundation — next gated step; blocked pending independent acceptance of RF-08 closure.
+- `[ ] RF-09` PostgreSQL and Alembic foundation — next authorized implementation step; prerequisites satisfied; not started.
 - `[ ] RF-10` Platform & Contracts runtime.
 - `[ ] RF-11` Identity & Access runtime.
 - `[ ] RF-12` Entitlements & Billing runtime.
