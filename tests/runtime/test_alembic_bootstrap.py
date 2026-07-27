@@ -37,6 +37,13 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "billing_payment_records",
             "billing_payment_operations",
             "billing_reconciliations",
+            "filter_catalog_versions",
+            "filter_definitions",
+            "filter_options",
+            "filter_dependencies",
+            "filter_category_applicability",
+            "filter_evidence_references",
+            "filter_capability_profiles",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -45,11 +52,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260727_RF09_M01_platform_contracts.py",
         "20260727_RF09_M02_identity_and_access.py",
         "20260727_RF09_M03_entitlements_and_billing.py",
+        "20260727_RF09_M13_filter_catalog_and_builder.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 4
-    assert scripts.get_heads() == ["RF09_M03"]
+    assert len(revisions) == 5
+    assert scripts.get_heads() == ["RF09_M13"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -72,6 +80,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m03 = scripts.get_revision("RF09_M03")
     assert (
         m03 and m03.down_revision == "RF09_M02" and not m03.branch_labels and not m03.dependencies
+    )
+    m13 = scripts.get_revision("RF09_M13")
+    assert (
+        m13 and m13.down_revision == "RF09_M03" and not m13.branch_labels and not m13.dependencies
     )
 
 
@@ -196,6 +208,30 @@ def test_rf09_m03_revision_contract_and_downgrade() -> None:
         module.downgrade()
 
 
+def test_rf09_m13_revision_contract_and_downgrade() -> None:
+    import importlib.util
+
+    path = ROOT / "alembic" / "versions" / "20260727_RF09_M13_filter_catalog_and_builder.py"
+    text = path.read_text(encoding="utf-8")
+    assert "RF-09-09-M13-FILTER-CATALOG-SCHEMA-BATCH-20260727" in text
+    assert "Implementation owner: Module 14 / RF-09" in text
+    assert "Domain owner: Module 13" in text
+    assert "Domain tables created: 7" in text
+    assert "Deferred FK count: 0" in text
+    assert text.count("op.create_table") == 7
+    assert text.count("op.create_index") == 9
+    assert text.count("op.create_foreign_key") == 0
+    assert text.count("sa.ForeignKeyConstraint") == 11
+    assert "op.drop" not in text and "DROP" not in text.upper()
+    spec = importlib.util.spec_from_file_location("rf09_m13", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "RF09_M13" and module.down_revision == "RF09_M03"
+    with pytest.raises(RuntimeError, match="RF09_M13 is roll-forward only"):
+        module.downgrade()
+
+
 def test_database_independent_alembic_commands() -> None:
     for command in (
         "heads",
@@ -205,6 +241,7 @@ def test_database_independent_alembic_commands() -> None:
         "show RF09_M01",
         "show RF09_M02",
         "show RF09_M03",
+        "show RF09_M13",
     ):
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command.split()],
