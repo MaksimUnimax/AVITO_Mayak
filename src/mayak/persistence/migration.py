@@ -18,16 +18,22 @@ _ACQUIRE = text("SELECT pg_try_advisory_lock(:lock_key)")
 _RELEASE = text("SELECT pg_advisory_unlock(:lock_key)")
 
 
-def _scalar(result: Any) -> Any:
+def _single_value(result: Any, message: str) -> Any:
     try:
-        return result.scalar()
+        row = result.one()
+        if len(row) != 1:
+            raise ValueError("unexpected result width")
+        return row[0]
     except Exception:
-        raise MigrationSerializationError("migration serialization unavailable") from None
+        raise MigrationSerializationError(message) from None
 
 
 def _acquire(connection: Any) -> None:
     try:
-        acquired = _scalar(connection.execute(_ACQUIRE, {"lock_key": MIGRATION_LOCK_KEY}))
+        acquired = _single_value(
+            connection.execute(_ACQUIRE, {"lock_key": MIGRATION_LOCK_KEY}),
+            "migration serialization unavailable",
+        )
     except MigrationSerializationError:
         raise
     except Exception:
@@ -38,7 +44,10 @@ def _acquire(connection: Any) -> None:
 
 def _release(connection: Any) -> None:
     try:
-        released = _scalar(connection.execute(_RELEASE, {"lock_key": MIGRATION_LOCK_KEY}))
+        released = _single_value(
+            connection.execute(_RELEASE, {"lock_key": MIGRATION_LOCK_KEY}),
+            "migration serialization release failed",
+        )
     except Exception:
         raise MigrationSerializationError("migration serialization release failed") from None
     if released is not True:

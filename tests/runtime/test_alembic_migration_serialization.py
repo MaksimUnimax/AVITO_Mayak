@@ -17,27 +17,110 @@ from mayak.persistence.migration import (
 ROOT = Path(__file__).parents[2]
 
 
-class FakeResult:
-    def __init__(self, value: object) -> None:
-        self.value = value
+class FakeRowResult:
+    def __init__(self, rows: list[object], *, extraction_error: bool = False) -> None:
+        self.rows = rows
+        self.extraction_error = extraction_error
 
-    def scalar(self) -> object:
-        return self.value
+    def one(self) -> object:
+        if self.extraction_error:
+            raise RuntimeError("driver detail")
+        if len(self.rows) != 1:
+            raise RuntimeError("wrong row cardinality")
+        return self.rows[0]
+
+
+class MalformedRow:
+    def __len__(self) -> int:
+        raise TypeError("malformed row")
+
+
+class MalformedResult:
+    pass
 
 
 class FakeConnection:
-    def __init__(self, values: list[object]) -> None:
-        self.values = values
+    def __init__(self, results: list[object]) -> None:
+        self.results = results
         self.calls: list[tuple[str, dict[str, object]]] = []
 
-    def execute(self, statement: TextClause, params: dict[str, object]) -> FakeResult:
+    def execute(self, statement: TextClause, params: dict[str, object]) -> object:
         self.calls.append((str(statement), params))
-        return FakeResult(self.values.pop(0))
+        return self.results.pop(0)
+
+
+def result(*rows: object, extraction_error: bool = False) -> FakeRowResult:
+    return FakeRowResult(list(rows), extraction_error=extraction_error)
+
+
+ACQUISITION_FAILURES = [
+    pytest.param(result(), id="zero-rows"),
+    pytest.param(result((True,), (True,)), id="duplicate-true-rows"),
+    pytest.param(result((True,), (False,)), id="different-duplicate-rows"),
+    pytest.param(result(()), id="empty-row"),
+    pytest.param(result((True, "extra")), id="multi-column-row"),
+    pytest.param(result(MalformedRow()), id="malformed-row"),
+    pytest.param(MalformedResult(), id="missing-one-api"),
+    pytest.param(result(extraction_error=True), id="one-extraction-error"),
+    pytest.param(result((False,)), id="false"),
+    pytest.param(result((None,)), id="none"),
+    pytest.param(result((1,)), id="integer-one"),
+    pytest.param(result(("true",)), id="string-true"),
+    pytest.param(result((object(),)), id="arbitrary-object"),
+]
+
+
+@pytest.mark.parametrize("lock_result", ACQUISITION_FAILURES)
+def test_lock_acquisition_rejects_invalid_cardinality_shape_and_value(lock_result: object) -> None:
+    connection = FakeConnection([lock_result])
+    with pytest.raises(MigrationSerializationError) as caught:
+        with serialized_migration(connection):
+            raise AssertionError("body must not run")
+    assert str(caught.value) == "migration serialization unavailable"
+    assert len(connection.calls) == 1
+    assert connection.calls[0][0] == "SELECT pg_try_advisory_lock(:lock_key)"
+    assert connection.calls[0][1] == {"lock_key": MIGRATION_LOCK_KEY}
+
+
+@pytest.mark.parametrize(
+    "lock_result",
+    [
+        pytest.param(result(), id="zero-rows"),
+        pytest.param(result((True,), (True,)), id="duplicate-true-rows"),
+        pytest.param(result(()), id="empty-row"),
+        pytest.param(result((True, "extra")), id="multi-column-row"),
+        pytest.param(result(MalformedRow()), id="malformed-row"),
+        pytest.param(result(extraction_error=True), id="one-extraction-error"),
+        pytest.param(result((False,)), id="false"),
+        pytest.param(result((None,)), id="none"),
+        pytest.param(result((1,)), id="integer-one"),
+        pytest.param(result(("true",)), id="string-true"),
+    ],
+)
+def test_lock_release_rejects_invalid_cardinality_shape_and_value(lock_result: object) -> None:
+    connection = FakeConnection([result((True,)), lock_result])
+    with pytest.raises(MigrationSerializationError) as caught:
+        with serialized_migration(connection):
+            pass
+    assert str(caught.value) == "migration serialization release failed"
+    assert [call[0] for call in connection.calls] == [
+        "SELECT pg_try_advisory_lock(:lock_key)",
+        "SELECT pg_advisory_unlock(:lock_key)",
+    ]
+
+
+def test_release_failure_after_body_failure_does_not_mask_original_exception() -> None:
+    connection = FakeConnection([result((True,)), result((True,), (True,))])
+    original = ValueError("body")
+    with pytest.raises(ValueError) as caught:
+        with serialized_migration(connection):
+            raise original
+    assert caught.value is original
 
 
 @pytest.mark.parametrize("outcome", [False, None, "true", 1, object()])
 def test_lock_acquisition_is_fail_fast_for_non_literal_true(outcome: object) -> None:
-    connection = FakeConnection([outcome])
+    connection = FakeConnection([result((outcome,))])
     with pytest.raises(MigrationSerializationError, match="migration serialization unavailable"):
         with serialized_migration(connection):
             raise AssertionError("body must not run")
@@ -47,7 +130,7 @@ def test_lock_acquisition_is_fail_fast_for_non_literal_true(outcome: object) -> 
 
 
 def test_normal_execution_releases_once_with_bound_key() -> None:
-    connection = FakeConnection([True, True])
+    connection = FakeConnection([result((True,)), result((True,))])
     with serialized_migration(connection):
         pass
     assert [call[0] for call in connection.calls] == [
@@ -58,7 +141,7 @@ def test_normal_execution_releases_once_with_bound_key() -> None:
 
 
 def test_body_exception_is_unchanged_and_unlock_failure_does_not_mask() -> None:
-    connection = FakeConnection([True, False])
+    connection = FakeConnection([result((True,)), result((False,))])
     original = ValueError("body")
     with pytest.raises(ValueError) as caught:
         with serialized_migration(connection):
@@ -67,7 +150,7 @@ def test_body_exception_is_unchanged_and_unlock_failure_does_not_mask() -> None:
 
 
 def test_successful_body_with_unlock_failure_fails_safely() -> None:
-    connection = FakeConnection([True, None])
+    connection = FakeConnection([result((True,)), result((None,))])
     with pytest.raises(MigrationSerializationError, match="migration serialization release failed"):
         with serialized_migration(connection):
             pass
@@ -82,6 +165,9 @@ def test_static_lock_boundary_has_no_blocking_xact_retry_or_secret_behavior() ->
     assert "sleep" not in source.lower()
     assert "retry" not in source.lower()
     assert ":lock_key" in source
+    assert ".scalar(" not in source
+    assert ".scalar_one(" not in source
+    assert ".scalars(" not in source
     assert "password" not in source.lower()
     assert "secret" not in source.lower()
 
