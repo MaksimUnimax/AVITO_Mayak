@@ -139,12 +139,31 @@ def test_role_query_uses_bound_values_and_login_capability(tmp_path: Path) -> No
     assert '"mayak_migration"' not in query and '"mayak_application"' not in query
 
 
-@pytest.mark.parametrize("index", range(1, 8))
-def test_each_prohibited_role_capability_fails_safely(tmp_path: Path, index: int) -> None:
+ROLE_NAMES = {0: "migration", 1: "application"}
+CAPABILITY_NAMES = {
+    1: "login",
+    2: "superuser",
+    3: "createdb",
+    4: "createrole",
+    5: "inherit",
+    6: "replication",
+    7: "bypassrls",
+}
+
+
+@pytest.mark.parametrize("role_index", (0, 1), ids=lambda index: ROLE_NAMES[index])
+@pytest.mark.parametrize(
+    "capability_index",
+    range(1, 8),
+    ids=lambda index: CAPABILITY_NAMES[index],
+)
+def test_each_role_capability_fails_safely(
+    tmp_path: Path, role_index: int, capability_index: int
+) -> None:
     roles = valid_roles()
-    row = list(roles[0])
-    row[index] = False if index == 1 else True
-    roles[0] = tuple(row)
+    row = list(roles[role_index])
+    row[capability_index] = False if capability_index == 1 else True
+    roles[role_index] = tuple(row)
     connection = Connection(roles=roles)
     with pytest.raises(BootstrapInvariantError, match="^role capability invariant failed$"):
         run_bootstrap(tmp_path, connection)
@@ -154,14 +173,24 @@ def test_each_prohibited_role_capability_fails_safely(tmp_path: Path, index: int
 @pytest.mark.parametrize(
     "roles",
     [
-        [valid_roles()[1]],
-    [
-        valid_roles()[0],
-        valid_roles()[1],
-        ("unexpected", True, False, False, False, False, False, False),
-    ],
-        [valid_roles()[0], valid_roles()[0], valid_roles()[1]],
-        [(MIGRATION, True, False, False, False, False, False)],
+        pytest.param([valid_roles()[1]], id="missing-migration-role"),
+        pytest.param([valid_roles()[0]], id="missing-application-role"),
+        pytest.param(
+            [
+                valid_roles()[0],
+                valid_roles()[1],
+                ("unexpected", True, False, False, False, False, False, False),
+            ],
+            id="unexpected-role",
+        ),
+        pytest.param(
+            [valid_roles()[0], valid_roles()[0], valid_roles()[1]],
+            id="duplicate-role",
+        ),
+        pytest.param(
+            [(MIGRATION, True, False, False, False, False, False)],
+            id="wrong-width-role",
+        ),
     ],
 )
 def test_role_cardinality_identity_and_width_fail_safely(
