@@ -82,6 +82,7 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-08-02-CORRECTIVE-03` project-scoped resource names accepted at `243849bbf724b7bd301b685573f9664290783605`;
   - `[x] RF-08-03` ephemeral Compose bootstrap runtime proof accepted;
   - `[c] RF-08-04` closure published pending independent acceptance.
+  - Evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`.
 - `[ ] RF-09` PostgreSQL and Alembic foundation — next gated step; blocked pending independent acceptance of RF-08 closure.
 - `[ ] RF-10` Platform & Contracts runtime.
 - `[ ] RF-11` Identity & Access runtime.
