@@ -1,10 +1,10 @@
 import subprocess
+import sys
 from pathlib import Path
 
 from mayak.persistence.metadata import metadata
 
 ROOT = Path(__file__).parents[2]
-UV = "/opt/avito-mayak-runtime/toolchain/uv/0.11.31/uv"
 
 
 def test_alembic_ini_is_safe_and_canonical() -> None:
@@ -24,8 +24,12 @@ def test_metadata_and_script_directory_are_empty() -> None:
 
 def test_heads_and_history_need_no_database() -> None:
     for command in ("heads", "history"):
+        argv = [sys.executable, "-m", "alembic", "-c", "alembic.ini", command]
+        assert argv[0] == sys.executable
+        assert all(Path(argument).name != "uv" for argument in argv)
+        assert all(not Path(argument).is_absolute() for argument in argv[1:])
         result = subprocess.run(
-            [UV, "run", "--offline", "alembic", "-c", "alembic.ini", command],
+            argv,
             cwd=ROOT,
             check=True,
             capture_output=True,
