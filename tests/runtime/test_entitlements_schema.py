@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    Constraint,
     ForeignKeyConstraint,
     Index,
     MetaData,
@@ -332,24 +333,66 @@ def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
                 name,
                 id(table),
                 table.schema,
+                table.comment,
+                tuple(getattr(table, "prefixes", ())),
+                table.implicit_returning,
+                options(table.dialect_options),
                 repr(table.info),
                 tuple(
+                (
+                    id(column),
+                    column.name,
+                    repr(column.type),
                     (
-                        id(column),
-                        column.name,
-                        repr(column.type),
-                        column.nullable,
-                        column.primary_key,
-                        str(getattr(column.server_default, "arg", column.server_default))
-                        if column.server_default is not None
-                        else None,
-                    )
+                        type(column.type).__module__,
+                        type(column.type).__name__,
+                        str(column.type.compile(dialect=postgresql.dialect())),
+                        tuple(
+                            (name, str(getattr(column.type, name)))
+                            for name in (
+                                "length",
+                                "precision",
+                                "scale",
+                                "timezone",
+                                "as_uuid",
+                                "collation",
+                                "none_as_null",
+                                "hashable",
+                                "should_evaluate_none",
+                            )
+                            if hasattr(column.type, name)
+                        ),
+                    ),
+                    column.nullable,
+                    column.primary_key,
+                    str(getattr(column.server_default, "arg", column.server_default))
+                    if column.server_default is not None
+                    else None,
+                    str(getattr(column.default, "arg", column.default))
+                    if column.default is not None
+                    else None,
+                    str(getattr(column.onupdate, "arg", column.onupdate))
+                    if column.onupdate is not None
+                    else None,
+                    str(getattr(column.server_onupdate, "arg", column.server_onupdate))
+                    if column.server_onupdate is not None
+                    else None,
+                    column.autoincrement,
+                    column.unique,
+                    column.index,
+                    column.comment,
+                    column.system,
+                    repr(column.identity),
+                    repr(column.computed),
+                )
                     for column in table.columns
                 ),
                 tuple(
                     sorted(
                         (
                             id(constraint),
+                            type(constraint).__module__,
+                            type(constraint).__name__,
                             constraint.name,
                             tuple(
                                 column.name for column in getattr(constraint, "columns", ())
@@ -357,6 +400,12 @@ def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
                             str(constraint.sqltext)
                             if isinstance(constraint, CheckConstraint)
                             else None,
+                            getattr(constraint, "ondelete", None),
+                            getattr(constraint, "onupdate", None),
+                            getattr(constraint, "deferrable", None),
+                            getattr(constraint, "initially", None),
+                            getattr(constraint, "use_alter", None),
+                            getattr(constraint, "match", None),
                             options(constraint.dialect_options),
                         )
                         for constraint in table.constraints
@@ -366,10 +415,18 @@ def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
                     sorted(
                         (
                             id(foreign_key),
+                            type(foreign_key).__module__,
+                            type(foreign_key).__name__,
                             foreign_key.name,
                             tuple(element.parent.name for element in foreign_key.elements),
                             tuple(element.target_fullname for element in foreign_key.elements),
                             foreign_key.ondelete,
+                            foreign_key.onupdate,
+                            foreign_key.deferrable,
+                            foreign_key.initially,
+                            foreign_key.use_alter,
+                            foreign_key.match,
+                            options(foreign_key.dialect_options),
                         )
                         for foreign_key in table.foreign_key_constraints
                     )
@@ -378,6 +435,8 @@ def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
                     sorted(
                         (
                             id(index),
+                            type(index).__module__,
+                            type(index).__name__,
                             index.name,
                             tuple(
                                 getattr(column, "name", str(column))
@@ -412,6 +471,131 @@ def test_existing_wrong_column_type_is_rejected_without_mutation() -> None:
         lambda: setattr(
             isolated.tables["mayak.billing_payment_records"].c.amount_minor, "type", String(20)
         ),
+    )
+
+
+def test_existing_string_collation_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: setattr(
+            isolated.tables["mayak.billing_payment_records"].c.external_payment_id,
+            "type",
+            String(255, collation="C"),
+        ),
+    )
+
+
+def test_existing_jsonb_none_as_null_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: setattr(
+            isolated.tables["mayak.billing_payment_records"].c.safe_metadata,
+            "type",
+            postgresql.JSONB(none_as_null=True),
+        ),
+    )
+
+
+def test_existing_client_default_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: setattr(
+            isolated.tables["mayak.billing_payment_records"].c.provider_code,
+            "default",
+            text("'provider'"),
+        ),
+    )
+
+
+def test_existing_column_comment_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: setattr(
+            isolated.tables["mayak.billing_payment_records"].c.provider_code,
+            "comment",
+            "noncanonical",
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "attribute,value",
+    [
+        ("onupdate", "CASCADE"),
+        ("deferrable", True),
+        ("initially", "DEFERRED"),
+        ("use_alter", True),
+        ("match", "FULL"),
+    ],
+)
+def test_existing_foreign_key_extended_options_are_rejected_without_mutation(
+    attribute: str, value: object
+) -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    foreign_key = next(
+        iter(isolated.tables["mayak.entitlement_access_grants"].foreign_key_constraints)
+    )
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: setattr(foreign_key, attribute, value)
+    )
+
+
+def test_existing_unique_extended_options_are_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    unique = next(
+        c
+        for c in isolated.tables["mayak.billing_payment_records"].constraints
+        if isinstance(c, UniqueConstraint)
+    )
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: setattr(unique, "deferrable", True)
+    )
+
+
+def test_existing_check_extended_options_are_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    check = next(
+        c
+        for c in isolated.tables["mayak.billing_payment_operations"].constraints
+        if isinstance(c, CheckConstraint)
+    )
+    _assert_existing_rejected_without_mutation(isolated, lambda: setattr(check, "deferrable", True))
+
+
+def test_existing_unsupported_constraint_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_records"]
+    table.append_constraint(Constraint(name="unsupported_extra"))
+    before = _safe_snapshot(isolated)
+    with pytest.raises(RuntimeError, match="conflicting existing billing_payment_records"):
+        register_entitlement_tables(isolated)
+    assert _safe_snapshot(isolated) == before
+    assert any(c.name == "unsupported_extra" for c in table.constraints)
+
+
+def test_existing_index_dialect_option_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    index = next(
+        index
+        for index in isolated.tables["mayak.billing_payment_records"].indexes
+        if index.name is not None and index.name.endswith("account_observed_at")
+    )
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: index.dialect_options["postgresql"].update(include=["id"]),
     )
 
 

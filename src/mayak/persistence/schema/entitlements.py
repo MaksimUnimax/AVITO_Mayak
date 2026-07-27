@@ -18,6 +18,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import dialect as postgresql_dialect
 
 _TABLE_NAMES = (
     "entitlement_tariff_definitions",
@@ -27,6 +28,15 @@ _TABLE_NAMES = (
     "billing_payment_operations",
     "billing_reconciliations",
 )
+
+_NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+_POSTGRESQL_DIALECT = postgresql_dialect()
 
 
 def _key(metadata: MetaData, name: str) -> str:
@@ -53,19 +63,106 @@ def _normalized_sql(value: object) -> str:
     return result
 
 
+def _stable_value(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return tuple(_stable_value(item) for item in value)
+    if isinstance(value, dict):
+        return tuple(sorted((str(key), _stable_value(item)) for key, item in value.items()))
+    return _normalized_sql(value)
+
+
+def _compiled_type(column_type: Any) -> str:
+    return str(column_type.compile(dialect=_POSTGRESQL_DIALECT))
+
+
+def _type_options(column_type: object) -> tuple[tuple[str, object], ...]:
+    options: tuple[str, ...] = (
+        "length",
+        "precision",
+        "scale",
+        "timezone",
+        "as_uuid",
+        "collation",
+    )
+    if isinstance(column_type, JSONB):
+        options += ("none_as_null", "hashable", "should_evaluate_none", "astext_type")
+    values: list[tuple[str, object]] = []
+    for name in options:
+        if hasattr(column_type, name):
+            value = getattr(column_type, name)
+            if name == "astext_type" and value is not None:
+                value = (type(value).__module__, type(value).__name__, _compiled_type(value))
+            values.append((name, _stable_value(value)))
+    return tuple(values)
+
+
 def _type_signature(column: Column[object]) -> tuple[object, ...]:
     column_type = column.type
-    signature: list[object] = [type(column_type).__module__, type(column_type).__name__]
-    for attribute in ("length", "precision", "scale", "timezone", "as_uuid"):
-        if hasattr(column_type, attribute):
-            signature.append((attribute, getattr(column_type, attribute)))
-    return tuple(signature)
+    return (
+        type(column_type).__module__,
+        type(column_type).__name__,
+        _compiled_type(column_type),
+        _type_options(column_type),
+    )
 
 
 def _default_signature(column: Column[object]) -> str | None:
     if column.server_default is None:
         return None
     return _normalized_sql(getattr(column.server_default, "arg", column.server_default))
+
+
+def _value_signature(value: object) -> object:
+    if value is None:
+        return None
+    argument = getattr(value, "arg", value)
+    if callable(argument):
+        return (
+            "callable",
+            getattr(argument, "__module__", ""),
+            getattr(argument, "__qualname__", repr(argument)),
+        )
+    return _stable_value(argument)
+
+
+def _column_property_signature(column: Column[object]) -> tuple[object, ...]:
+    identity = column.identity
+    computed = column.computed
+    return (
+        column.name,
+        _type_signature(column),
+        column.nullable,
+        column.primary_key,
+        _default_signature(column),
+        _value_signature(column.default),
+        _value_signature(column.onupdate),
+        _value_signature(column.server_onupdate),
+        column.autoincrement,
+        column.unique,
+        column.index,
+        column.comment,
+        column.system,
+        tuple(
+            (name, _stable_value(getattr(identity, name, None)))
+            for name in (
+                "name",
+                "start",
+                "increment",
+                "minvalue",
+                "maxvalue",
+                "cycle",
+                "cache",
+                "order",
+            )
+        )
+        if identity is not None
+        else None,
+        (_normalized_sql(computed.sqltext), computed.persisted)
+        if computed is not None
+        else None,
+    )
 
 
 def _dialect_options_signature(options: object) -> tuple[tuple[str, object], ...]:
@@ -94,22 +191,33 @@ def _dialect_options_signature(options: object) -> tuple[tuple[str, object], ...
 def _constraint_signature(constraint: Any) -> tuple[object, ...]:
     columns = tuple(column.name for column in getattr(constraint, "columns", ()))
     return (
+        type(constraint).__module__,
         type(constraint).__name__,
         constraint.name,
         columns,
         _normalized_sql(getattr(constraint, "sqltext", ""))
         if isinstance(constraint, CheckConstraint)
         else "",
+        getattr(constraint, "deferrable", None),
+        getattr(constraint, "initially", None),
         _dialect_options_signature(getattr(constraint, "dialect_options", {})),
     )
 
 
 def _foreign_key_signature(constraint: ForeignKeyConstraint) -> tuple[object, ...]:
     return (
+        type(constraint).__module__,
+        type(constraint).__name__,
         constraint.name,
         tuple(element.parent.name for element in constraint.elements),
         tuple(element.target_fullname for element in constraint.elements),
         constraint.ondelete,
+        constraint.onupdate,
+        constraint.deferrable,
+        constraint.initially,
+        constraint.use_alter,
+        constraint.match,
+        _dialect_options_signature(constraint.dialect_options),
     )
 
 
@@ -117,6 +225,8 @@ def _index_signature(index: Index) -> tuple[object, ...]:
     postgresql_options: Any = index.dialect_options.get("postgresql", {})
     predicate = postgresql_options.get("where")
     return (
+        type(index).__module__,
+        type(index).__name__,
         index.name,
         tuple(getattr(column, "name", str(column)) for column in index.expressions),
         index.unique,
@@ -126,60 +236,31 @@ def _index_signature(index: Index) -> tuple[object, ...]:
 
 
 def _table_signature(table: Table) -> tuple[object, ...]:
-    primary_keys = tuple(
-        (constraint.name, tuple(column.name for column in constraint.columns))
-        for constraint in table.constraints
-        if constraint is table.primary_key
-    )
     return (
         table.name,
         table.schema,
-        tuple(
-            (
-                column.name,
-                _type_signature(column),
-                column.nullable,
-                column.primary_key,
-                _default_signature(column),
-            )
-            for column in table.columns
-        ),
-        primary_keys,
-        tuple(sorted(_foreign_key_signature(fk) for fk in table.foreign_key_constraints)),
+        table.comment,
+        tuple(getattr(table, "prefixes", ())),
+        table.implicit_returning,
+        _dialect_options_signature(table.dialect_options),
+        tuple(sorted((str(key), _stable_value(value)) for key, value in table.info.items())),
+        tuple(_column_property_signature(column) for column in table.columns),
         tuple(
             sorted(
-                _constraint_signature(c)
-                for c in table.constraints
-                if isinstance(c, UniqueConstraint)
-            )
-        ),
-        tuple(
-            sorted(
-                _constraint_signature(c)
-                for c in table.constraints
-                if isinstance(c, CheckConstraint)
+                _foreign_key_signature(constraint)
+                if isinstance(constraint, ForeignKeyConstraint)
+                else _constraint_signature(constraint)
+                for constraint in table.constraints
             )
         ),
         tuple(sorted(_index_signature(index) for index in table.indexes)),
-        tuple(
-            sorted(
-                (str(key), _normalized_sql(value)) for key, value in table.dialect_options.items()
-            )
-        ),
-        tuple(sorted((str(key), repr(value)) for key, value in table.info.items())),
     )
 
 
 def _canonical_model() -> tuple[Table, Table, Table, Table, Table, Table]:
     canonical = MetaData(
         schema="mayak",
-        naming_convention={
-            "ix": "ix_%(column_0_label)s",
-            "uq": "uq_%(table_name)s_%(column_0_name)s",
-            "ck": "ck_%(table_name)s_%(constraint_name)s",
-            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-            "pk": "pk_%(table_name)s",
-        },
+        naming_convention=_NAMING_CONVENTION,
     )
     Table("identity_accounts", canonical, Column("id", UUID(as_uuid=True), primary_key=True))
     return _register_canonical_tables(canonical)
