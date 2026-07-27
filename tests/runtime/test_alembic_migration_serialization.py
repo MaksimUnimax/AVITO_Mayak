@@ -195,16 +195,32 @@ def test_importing_migration_module_is_inert() -> None:
 
 def test_database_independent_alembic_topology() -> None:
     commands = [("heads",), ("history",), ("branches",), ("show", "RF09_BOOTSTRAP")]
-    for command in commands:
-        argv = [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command]
-        result = subprocess.run(argv, cwd=ROOT, check=True, capture_output=True, text=True)
+
+    def run_alembic(*command: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         output = result.stdout + result.stderr
         assert "mayak_database_migration_password" not in output
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", "alembic.ini", "heads"],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    assert "RF09_BOOTSTRAP" in result.stdout
+        return result
+
+    for command in commands:
+        run_alembic(*command)
+
+    heads = run_alembic("heads").stdout
+    head_lines = [line.strip() for line in heads.splitlines() if line.strip()]
+    assert len(head_lines) == 1
+    assert head_lines[0].endswith("(head)")
+    assert head_lines[0].split()[0]
+
+    history = run_alembic("history").stdout
+    assert "RF09_BOOTSTRAP" in history
+
+    shown = run_alembic("show", "RF09_BOOTSTRAP").stdout
+    assert "RF09_BOOTSTRAP" in shown
+
+    assert run_alembic("branches").stdout.strip() == ""
