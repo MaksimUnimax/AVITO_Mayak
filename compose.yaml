@@ -111,7 +111,6 @@ services:
       com.avito-mayak.process-kind: mayak-postgres
 networks:
   mayak-internal:
-    name: mayak-internal
     internal: true
     labels:
       com.avito-mayak.project-owned: "true"
@@ -119,7 +118,6 @@ networks:
       com.avito-mayak.compose-project: avito-mayak-acceptance
 volumes:
   postgres-data:
-    name: postgres-data
     labels:
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
