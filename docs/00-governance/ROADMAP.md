@@ -1,8 +1,8 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF07_CI_SECURITY_SUPPLY_CHAIN_CLOSURE_INDEPENDENTLY_ACCEPTED_RF08_READY_TO_START`
-**Дата:** 2026-07-26
+**Статус:** `MODULE_14_RF08_CONTAINER_COMPOSE_FOUNDATION_CLOSURE_PUBLISHED_RF09_BLOCKED_PENDING_ACCEPTANCE`
+**Дата:** 2026-07-27
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
 
@@ -74,8 +74,15 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[!] RF-07-02-C02` corrective-required historical.
   - `[x] RF-07-02-C03` independently accepted through `1e911fc4680296a2a81c634e56cd57ed6b333fd5`.
   - `[x] RF-07-02 closure` independently accepted through corrective chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`.
-- `[ ] RF-08` Container and Compose foundation — next authorized implementation gate; prerequisites satisfied; not started by this acceptance transition.
-- `[ ] RF-09` PostgreSQL and Alembic foundation.
+- `[c] RF-08` repository and bootstrap evidence complete; closure published pending independent acceptance.
+  - `[x] RF-08-01` read-only preflight accepted;
+  - `[x] RF-08-02` image and Compose skeleton accepted through corrective chain head `243849bbf724b7bd301b685573f9664290783605`;
+  - `[!] RF-08-02-CORRECTIVE-01` blocked historical stale shared validation environment;
+  - `[x] RF-08-02-CORRECTIVE-02` isolated locked validation/publication accepted at `af90b77575b3c0a1d9dda4f8cbd3f7ad5e6a73f6`;
+  - `[x] RF-08-02-CORRECTIVE-03` project-scoped resource names accepted at `243849bbf724b7bd301b685573f9664290783605`;
+  - `[x] RF-08-03` ephemeral Compose bootstrap runtime proof accepted;
+  - `[c] RF-08-04` closure published pending independent acceptance.
+- `[ ] RF-09` PostgreSQL and Alembic foundation — next gated step; blocked pending independent acceptance of RF-08 closure.
 - `[ ] RF-10` Platform & Contracts runtime.
 - `[ ] RF-11` Identity & Access runtime.
 - `[ ] RF-12` Entitlements & Billing runtime.
