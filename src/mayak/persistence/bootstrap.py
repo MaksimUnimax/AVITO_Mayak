@@ -77,21 +77,22 @@ def _verify_roles(cursor: Any) -> tuple[bool, bool]:
     _execute(
         cursor,
         sql.SQL(
-            "SELECT rolname, rolsuper, rolcreatedb, rolcreaterole, rolinherit, "
-            "rolreplication, rolbypassrls FROM pg_roles WHERE rolname IN ({}, {})"
-        ).format(_q(DATABASE_MIGRATION_USER), _q(DATABASE_APPLICATION_USER)),
+            "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
+            "rolinherit, rolreplication, rolbypassrls FROM pg_roles "
+            "WHERE rolname IN (%s, %s)"
+        ),
+        (DATABASE_MIGRATION_USER, DATABASE_APPLICATION_USER),
     )
     rows = cursor.fetchall()
-    expected = {
-        DATABASE_MIGRATION_USER: False,
-        DATABASE_APPLICATION_USER: False,
-    }
-    for row in rows:
-        if len(row) >= 7 and row[0] in expected:
-            expected[row[0]] = not any(row[1:7])
-    if not all(expected.values()):
+    if len(rows) != 2 or any(len(row) != 8 for row in rows):
         raise BootstrapInvariantError("role capability invariant failed")
-    return expected[DATABASE_MIGRATION_USER], expected[DATABASE_APPLICATION_USER]
+    expected_names = {DATABASE_MIGRATION_USER, DATABASE_APPLICATION_USER}
+    if {row[0] for row in rows} != expected_names:
+        raise BootstrapInvariantError("role capability invariant failed")
+    for row in rows:
+        if row[1:] != (True, False, False, False, False, False, False):
+            raise BootstrapInvariantError("role capability invariant failed")
+    return True, True
 
 
 def _verify_memberships(cursor: Any) -> None:
@@ -101,14 +102,9 @@ def _verify_memberships(cursor: Any) -> None:
             "SELECT 1 FROM pg_auth_members m "
             "JOIN pg_roles member ON member.oid = m.member "
             "JOIN pg_roles granted ON granted.oid = m.roleid "
-            "WHERE member.rolname IN ({}, {}) "
-            "AND granted.rolname IN ({}, {})"
-        ).format(
-            _q(DATABASE_MIGRATION_USER),
-            _q(DATABASE_APPLICATION_USER),
-            _q("mayak"),
-            _q(DATABASE_MIGRATION_USER),
+            "WHERE member.rolname IN (%s, %s)"
         ),
+        (DATABASE_MIGRATION_USER, DATABASE_APPLICATION_USER),
     )
     if cursor.fetchall():
         raise BootstrapInvariantError("role membership invariant failed")
@@ -230,7 +226,8 @@ def bootstrap_database(
                 "has_schema_privilege({application}, {schema}, 'CREATE'), "
                 "has_schema_privilege({migration}, {schema}, 'USAGE'), "
                 "has_schema_privilege({migration}, {schema}, 'CREATE'), "
-                "has_schema_privilege('public', {schema}, 'CREATE')"
+                "has_schema_privilege('public', {schema}, 'CREATE'), "
+                "has_schema_privilege('public', 'public', 'CREATE')"
             ).format(
                 application=sql.Literal(DATABASE_APPLICATION_USER),
                 migration=sql.Literal(DATABASE_MIGRATION_USER),
@@ -240,11 +237,13 @@ def bootstrap_database(
         privileges = cursor.fetchone()
         if (
             not privileges
+            or len(privileges) != 6
             or privileges[0] is not True
             or privileges[1] is not False
             or privileges[2] is not True
             or privileges[3] is not True
             or privileges[4] is not False
+            or privileges[5] is not False
         ):
             raise BootstrapInvariantError("schema privilege invariant failed")
         _execute(
