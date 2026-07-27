@@ -8,6 +8,8 @@ WORKDIR /opt/mayak
 RUN test -n "${SOURCE_SHA}" && test "$(printf '%s' "${SOURCE_SHA}" | tr -d '0-9a-f')" = "" && test "${#SOURCE_SHA}" = 40 && test -n "${LOCK_IDENTITY}" && test "$(printf '%s' "${LOCK_IDENTITY}" | tr -d '0-9a-f')" = "" && test "${#LOCK_IDENTITY}" = 64 && python -m pip install --no-cache-dir --disable-pip-version-check uv==0.11.31
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 RUN test "$(sha256sum uv.lock | cut -d' ' -f1)" = "${LOCK_IDENTITY}" \
     && test "$(uv --version | awk '{print $2}')" = "0.11.31"
 RUN uv sync --frozen --no-dev

@@ -19,6 +19,11 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
     restart: on-failure:5
+    depends_on:
+      mayak-postgres:
+        condition: service_healthy
+      mayak-migrate:
+        condition: service_completed_successfully
     ports: ["127.0.0.1:${MAYAK_API_HOST_PORT:-18085}:8000/tcp"]
     environment: &app-env
       MAYAK_ENVIRONMENT_ID: avito-mayak-acceptance-local-01
@@ -57,6 +62,11 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
     restart: on-failure:5
+    depends_on:
+      mayak-postgres:
+        condition: service_healthy
+      mayak-migrate:
+        condition: service_completed_successfully
     environment:
       <<: *app-env
       MAYAK_PROCESS_KIND: mayak-worker
@@ -78,6 +88,11 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
     restart: on-failure:5
+    depends_on:
+      mayak-postgres:
+        condition: service_healthy
+      mayak-migrate:
+        condition: service_completed_successfully
     environment:
       <<: *app-env
       MAYAK_PROCESS_KIND: mayak-scheduler
@@ -109,6 +124,59 @@ services:
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
       com.avito-mayak.compose-project: avito-mayak-acceptance
       com.avito-mayak.process-kind: mayak-postgres
+  mayak-db-bootstrap:
+    profiles: [runtime-foundation]
+    image: avito-mayak:${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+    build: *app-build
+    platform: linux/amd64
+    user: "10001:10001"
+    command: ["python", "-m", "mayak.persistence.bootstrap"]
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    restart: "no"
+    depends_on:
+      mayak-postgres:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+      MAYAK_PROCESS_KIND: mayak-db-bootstrap
+    secrets:
+      - mayak_postgres_bootstrap_password
+      - mayak_database_migration_password
+      - mayak_database_application_password
+    networks: [mayak-internal]
+    labels:
+      <<: *app-labels
+      com.avito-mayak.process-kind: mayak-db-bootstrap
+  mayak-migrate:
+    profiles: [runtime-foundation]
+    image: avito-mayak:${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+    build: *app-build
+    platform: linux/amd64
+    user: "10001:10001"
+    command: ["python", "-m", "alembic", "-c", "/opt/mayak/alembic.ini", "upgrade", "head"]
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    restart: "no"
+    depends_on:
+      mayak-postgres:
+        condition: service_healthy
+      mayak-db-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      <<: *app-env
+      MAYAK_PROCESS_KIND: mayak-migrate
+    secrets: [mayak_database_migration_password]
+    networks: [mayak-internal]
+    labels:
+      <<: *app-labels
+      com.avito-mayak.process-kind: mayak-migrate
 networks:
   mayak-internal:
     internal: true
@@ -129,3 +197,5 @@ secrets:
     file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_database_application_password
   mayak_session_signing_key:
     file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_session_signing_key
+  mayak_database_migration_password:
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_database_migration_password
