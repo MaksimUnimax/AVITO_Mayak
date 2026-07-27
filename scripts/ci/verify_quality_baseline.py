@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from typing import Final
 
 PYTHON = "3.14.6"
 UV = "0.11.31"
@@ -19,6 +20,8 @@ PYPROJECT_SHA = "5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7
 LOCK_SHA = "e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6"
 RUFF_SHA = "23094b89436ceb7894d9bbca81552f0e44e1cbd0f82a7a13073a1a87fe65e3b3"
 MYPY_SHA = "e98c07580466ceb8794c0761567c0449ef5da51eef9de3abcdc23aedf08d5e7a"
+MINIMUM_ACCEPTED_TEST_COUNT: Final = 4636
+MINIMUM_ACCEPTED_COVERAGE_PERCENT: Final = 85
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -84,6 +87,105 @@ def record(evidence: Path, name: str, cp: subprocess.CompletedProcess[str], extr
     )
     atomic(evidence / f"{name}.stdout.log", safe_text(cp.stdout))
     atomic(evidence / f"{name}.stderr.log", safe_text(cp.stderr))
+
+
+def parse_collection_count(text: str) -> int:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    matches = re.findall(
+        r"(?im)^\s*=*\s*(?:collected\s+(-?\d+)\s+items?|(-?\d+)\s+tests?\s+collected)(?:\s+in\s+[^\n=]+)?\s*=*\s*$",
+        normalized,
+    )
+    if not matches:
+        raise RuntimeError("missing collection summary")
+    counts: list[int] = []
+    for match in matches:
+        if isinstance(match, tuple):
+            value = next((item for item in match if item), "")
+        else:
+            value = match
+        try:
+            count = int(value)
+        except ValueError as exc:
+            raise RuntimeError("malformed collection summary") from exc
+        if count < 0:
+            raise RuntimeError("negative collection count")
+        counts.append(count)
+    if len(set(counts)) != 1:
+        raise RuntimeError("ambiguous collection summaries")
+    return counts[0]
+
+
+def parse_execution_summary(text: str) -> dict[str, int]:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    parse_collection_count(normalized)
+    candidates = [
+        line.strip()
+        for line in normalized.splitlines()
+        if re.search(r"\bin\s+(?:\d+(?:\.\d+)?|\d+\.\d+e[+-]?\d+)s\b", line, re.I)
+        and re.search(r"\b(?:passed|failed|errors?|skipped|xfailed|xpassed)\b", line, re.I)
+    ]
+    if len(candidates) != 1:
+        raise RuntimeError("missing or ambiguous execution summary")
+    summary = candidates[0]
+    values = {key: 0 for key in ("passed", "failed", "error", "skipped", "xfailed", "xpassed")}
+    for count, category in re.findall(
+        r"(?i)(\d+)\s+(passed|failed|errors?|skipped|xfailed|xpassed)\b", summary
+    ):
+        key = "error" if category.lower().startswith("error") else category.lower()
+        if values[key]:
+            raise RuntimeError("ambiguous execution outcome")
+        values[key] = int(count)
+    if "passed" not in summary.lower() and not values["failed"] and not values["error"]:
+        raise RuntimeError("incomplete execution summary")
+    return {
+        "executed_collected_count": parse_collection_count(normalized),
+        "passed_count": values["passed"],
+        "failed_count": values["failed"],
+        "error_count": values["error"],
+        "skipped_count": values["skipped"],
+        "xfailed_count": values["xfailed"],
+        "xpassed_count": values["xpassed"],
+    }
+
+
+def parse_coverage_percent(text: str) -> int:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line for line in normalized.splitlines() if re.match(r"^\s*TOTAL\b", line)]
+    if len(lines) != 1:
+        raise RuntimeError("missing or ambiguous TOTAL coverage")
+    match = re.fullmatch(r"\s*TOTAL\s+.*?([0-9]+)%\s*", lines[0], re.I)
+    if not match:
+        raise RuntimeError("malformed TOTAL coverage")
+    return int(match.group(1))
+
+
+def validate_suite_observations(
+    collection_run_1_count: int,
+    collection_run_2_count: int,
+    execution: dict[str, int],
+    observed_coverage_percent: int,
+) -> None:
+    if collection_run_1_count != collection_run_2_count:
+        raise RuntimeError("collection counts differ")
+    if collection_run_1_count < MINIMUM_ACCEPTED_TEST_COUNT:
+        raise RuntimeError("test count below accepted floor")
+    if execution["executed_collected_count"] != collection_run_1_count:
+        raise RuntimeError("execution count differs from collection")
+    if execution["passed_count"] != execution["executed_collected_count"]:
+        raise RuntimeError("passed count differs from execution")
+    if any(
+        execution[key] != 0
+        for key in (
+            "failed_count",
+            "error_count",
+            "skipped_count",
+            "xfailed_count",
+            "xpassed_count",
+        )
+    ):
+        raise RuntimeError("execution outcome mismatch")
+    if observed_coverage_percent < MINIMUM_ACCEPTED_COVERAGE_PERCENT:
+        raise RuntimeError("coverage below accepted floor")
 
 
 def lock_gate(evidence: Path) -> dict:
@@ -279,42 +381,98 @@ def quality_gate(evidence: Path, venv: Path) -> dict:
         or int(broken.group(1)) != 0
     ):
         raise RuntimeError("import-linter mismatch")
+    collection = []
+    for number in (1, 2):
+        collected = run(
+            [str(venv / "bin/pytest"), "--collect-only", "-q", "-p", "no:cacheprovider"],
+            env={"PYTHONPATH": str(ROOT / "src")},
+            timeout=2700,
+        )
+        count = parse_collection_count(collected.stdout + collected.stderr)
+        record(evidence, f"pytest-collection-{number}", collected, {"observed_count": count})
+        if collected.returncode != 0:
+            raise RuntimeError("collection command failed")
+        collection.append(count)
+    coverage_file = evidence / ".coverage"
     pytest = run(
-        [str(venv / "bin/coverage"), "run", "--branch", "-m", "pytest"],
-        env={"PYTHONPATH": str(ROOT / "src")},
+        [
+            str(venv / "bin/coverage"),
+            "run",
+            "--branch",
+            "-m",
+            "pytest",
+            "-p",
+            "no:cacheprovider",
+        ],
+        env={"PYTHONPATH": str(ROOT / "src"), "COVERAGE_FILE": str(coverage_file)},
         timeout=2700,
     )
-    record(evidence, "pytest", pytest, {})
-    report = run([str(venv / "bin/coverage"), "report"], timeout=300)
+    execution = parse_execution_summary(pytest.stdout + pytest.stderr)
+    record(evidence, "pytest", pytest, execution)
+    report = run(
+        [str(venv / "bin/coverage"), "report"],
+        env={"COVERAGE_FILE": str(coverage_file)},
+        timeout=300,
+    )
     record(evidence, "coverage", report, {})
-    found = re.search(r"collected (\d+) items", pytest.stdout + pytest.stderr)
-    passed = re.search(r"(\d+) passed", pytest.stdout + pytest.stderr)
-    failed = re.search(r"(\d+) failed", pytest.stdout + pytest.stderr)
-    errors = re.search(r"(\d+) errors?", pytest.stdout + pytest.stderr)
-    total = re.search(r"TOTAL\s+\d+\s+\d+\s+\d+\s+\d+\s+(\d+)%", report.stdout)
-    if (
-        pytest.returncode
-        or report.returncode
-        or not found
-        or int(found.group(1)) != 4636
-        or not passed
-        or int(passed.group(1)) != 4636
-        or failed
-        or errors
-        or not total
-        or int(total.group(1)) != 85
-    ):
+    coverage = parse_coverage_percent(report.stdout)
+    if pytest.returncode or report.returncode:
         raise RuntimeError("suite or coverage mismatch")
+    validate_suite_observations(collection[0], collection[1], execution, coverage)
     return {
         "ruff": ruff,
         "mypy": mypy,
         "import_linter": {"kept": 3, "broken": 0},
-        "pytest": {"collected": 4636, "passed": 4636, "failed": 0, "errors": 0},
-        "coverage": {"total": "85%"},
+        "pytest": {
+            "minimum_accepted_test_count": MINIMUM_ACCEPTED_TEST_COUNT,
+            "collection_run_1_count": collection[0],
+            "collection_run_2_count": collection[1],
+            **execution,
+            "suite_count_classification": "SUCCESSOR_SAFE_TEST_COUNT_NO_REGRESSION",
+        },
+        "coverage": {
+            "minimum_accepted_coverage_percent": MINIMUM_ACCEPTED_COVERAGE_PERCENT,
+            "observed_coverage_percent": coverage,
+            "coverage_classification": "SUCCESSOR_SAFE_COVERAGE_NO_REGRESSION",
+        },
     }
 
 
 def self_test() -> None:
+    collection_output = "collected 4636 items\n"
+    assert parse_collection_count(collection_output.replace("\n", "\r\n")) == 4636
+    assert parse_collection_count("4637 tests collected\n") == 4637
+    for invalid in ("", "collected 4635 items\ncollected 4636 items\n", "collected -1 items\n"):
+        try:
+            parse_collection_count(invalid)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("invalid collection summary was accepted")
+    execution = parse_execution_summary("collected 4637 items\n4637 passed in 1.00s\n")
+    validate_suite_observations(4637, 4637, execution, 86)
+    for bad_collection, bad_execution, bad_coverage in (
+        (4635, {**execution, "executed_collected_count": 4635, "passed_count": 4635}, 86),
+        (4637, {**execution, "executed_collected_count": 4636}, 86),
+        (4637, {**execution, "failed_count": 1}, 86),
+        (4637, execution, 84),
+    ):
+        try:
+            validate_suite_observations(4637, bad_collection, bad_execution, bad_coverage)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("unsafe suite observation was accepted")
+    assert MINIMUM_ACCEPTED_TEST_COUNT != execution["executed_collected_count"]
+    assert MINIMUM_ACCEPTED_COVERAGE_PERCENT != 86
+    assert parse_coverage_percent("TOTAL 10 2 86%\n") == 86
+    for invalid_coverage in ("", "TOTAL 10 2 84%\nTOTAL 10 2 86%\n"):
+        try:
+            parse_coverage_percent(invalid_coverage)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("invalid coverage summary was accepted")
     sample = (
         "src/b.py:2: error: second [E2]\nsrc/a.py:1: error: first [E1]\nFound 2 errors in 2 files\n"
     )
