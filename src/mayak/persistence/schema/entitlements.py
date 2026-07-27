@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import (
     CHAR,
     BigInteger,
@@ -31,115 +33,163 @@ def _key(metadata: MetaData, name: str) -> str:
     return f"{metadata.schema}.{name}" if metadata.schema else name
 
 
-def _validate_existing(metadata: MetaData, tables: list[Table]) -> None:
-    expected_columns = {
-        name: columns
-        for name, columns in zip(
-            _TABLE_NAMES,
-            (
-                (
-                    "id",
-                    "code",
-                    "version",
-                    "price_minor",
-                    "currency",
-                    "min_interval_seconds",
-                    "step_seconds",
-                    "active_from",
-                    "active_until",
-                    "created_at",
-                ),
-                (
-                    "id",
-                    "account_id",
-                    "tariff_id",
-                    "source_code",
-                    "valid_from",
-                    "valid_until",
-                    "state",
-                    "created_at",
-                    "updated_at",
-                    "row_version",
-                ),
-                (
-                    "id",
-                    "account_id",
-                    "counter_code",
-                    "window_start",
-                    "window_end",
-                    "consumed",
-                    "limit_value",
-                    "created_at",
-                    "updated_at",
-                    "row_version",
-                ),
-                (
-                    "id",
-                    "account_id",
-                    "provider_code",
-                    "external_payment_id",
-                    "amount_minor",
-                    "currency",
-                    "state",
-                    "observed_at",
-                    "safe_metadata",
-                    "created_at",
-                    "updated_at",
-                    "row_version",
-                ),
-                (
-                    "id",
-                    "payment_record_id",
-                    "operation_code",
-                    "idempotency_key",
-                    "request_fingerprint",
-                    "state",
-                    "attempt_count",
-                    "next_due_at",
-                    "created_at",
-                    "updated_at",
-                    "row_version",
-                ),
-                (
-                    "id",
-                    "payment_record_id",
-                    "operation_id",
-                    "state",
-                    "due_at",
-                    "resolved_at",
-                    "safe_metadata",
-                    "created_at",
-                    "row_version",
-                ),
+def _normalized_sql(value: object) -> str:
+    result = " ".join(str(value).split())
+    while result.startswith("(") and result.endswith(")"):
+        depth = 0
+        enclosed = True
+        for index, character in enumerate(result):
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0 and index != len(result) - 1:
+                    enclosed = False
+                    break
+        if enclosed:
+            result = result[1:-1].strip()
+        else:
+            break
+    return result
+
+
+def _type_signature(column: Column[object]) -> tuple[object, ...]:
+    column_type = column.type
+    signature: list[object] = [type(column_type).__module__, type(column_type).__name__]
+    for attribute in ("length", "precision", "scale", "timezone", "as_uuid"):
+        if hasattr(column_type, attribute):
+            signature.append((attribute, getattr(column_type, attribute)))
+    return tuple(signature)
+
+
+def _default_signature(column: Column[object]) -> str | None:
+    if column.server_default is None:
+        return None
+    return _normalized_sql(getattr(column.server_default, "arg", column.server_default))
+
+
+def _dialect_options_signature(options: object) -> tuple[tuple[str, object], ...]:
+    if not hasattr(options, "items"):
+        return ()
+
+    def is_default(value: object) -> bool:
+        return value is None or value is False or value == {} or value == ()
+
+    return tuple(
+        (
+            str(dialect),
+            tuple(
+                sorted(
+                    (str(key), _normalized_sql(value))
+                    for key, value in values.items()
+                    if not is_default(value)
+                )
             ),
         )
-    }
-    for table in tables:
-        if tuple(table.c) != tuple(table.c[name] for name in expected_columns[table.name]):
-            raise RuntimeError(f"conflicting existing {table.name} registration")
-    expected_fks = {
-        "entitlement_access_grants": {
-            "mayak.identity_accounts.id",
-            "mayak.entitlement_tariff_definitions.id",
+        for dialect, values in sorted(options.items())
+        if any(not is_default(value) for value in values.values())
+    )
+
+
+def _constraint_signature(constraint: Any) -> tuple[object, ...]:
+    columns = tuple(column.name for column in getattr(constraint, "columns", ()))
+    return (
+        type(constraint).__name__,
+        constraint.name,
+        columns,
+        _normalized_sql(getattr(constraint, "sqltext", ""))
+        if isinstance(constraint, CheckConstraint)
+        else "",
+        _dialect_options_signature(getattr(constraint, "dialect_options", {})),
+    )
+
+
+def _foreign_key_signature(constraint: ForeignKeyConstraint) -> tuple[object, ...]:
+    return (
+        constraint.name,
+        tuple(element.parent.name for element in constraint.elements),
+        tuple(element.target_fullname for element in constraint.elements),
+        constraint.ondelete,
+    )
+
+
+def _index_signature(index: Index) -> tuple[object, ...]:
+    postgresql_options: Any = index.dialect_options.get("postgresql", {})
+    predicate = postgresql_options.get("where")
+    return (
+        index.name,
+        tuple(getattr(column, "name", str(column)) for column in index.expressions),
+        index.unique,
+        _normalized_sql(predicate) if predicate is not None else None,
+        _dialect_options_signature(index.dialect_options),
+    )
+
+
+def _table_signature(table: Table) -> tuple[object, ...]:
+    primary_keys = tuple(
+        (constraint.name, tuple(column.name for column in constraint.columns))
+        for constraint in table.constraints
+        if constraint is table.primary_key
+    )
+    return (
+        table.name,
+        table.schema,
+        tuple(
+            (
+                column.name,
+                _type_signature(column),
+                column.nullable,
+                column.primary_key,
+                _default_signature(column),
+            )
+            for column in table.columns
+        ),
+        primary_keys,
+        tuple(sorted(_foreign_key_signature(fk) for fk in table.foreign_key_constraints)),
+        tuple(
+            sorted(
+                _constraint_signature(c)
+                for c in table.constraints
+                if isinstance(c, UniqueConstraint)
+            )
+        ),
+        tuple(
+            sorted(
+                _constraint_signature(c)
+                for c in table.constraints
+                if isinstance(c, CheckConstraint)
+            )
+        ),
+        tuple(sorted(_index_signature(index) for index in table.indexes)),
+        tuple(
+            sorted(
+                (str(key), _normalized_sql(value)) for key, value in table.dialect_options.items()
+            )
+        ),
+        tuple(sorted((str(key), repr(value)) for key, value in table.info.items())),
+    )
+
+
+def _canonical_model() -> tuple[Table, Table, Table, Table, Table, Table]:
+    canonical = MetaData(
+        schema="mayak",
+        naming_convention={
+            "ix": "ix_%(column_0_label)s",
+            "uq": "uq_%(table_name)s_%(column_0_name)s",
+            "ck": "ck_%(table_name)s_%(constraint_name)s",
+            "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+            "pk": "pk_%(table_name)s",
         },
-        "entitlement_usage_counters": {"mayak.identity_accounts.id"},
-        "billing_payment_records": {"mayak.identity_accounts.id"},
-        "billing_payment_operations": {"mayak.billing_payment_records.id"},
-        "billing_reconciliations": {
-            "mayak.billing_payment_records.id",
-            "mayak.billing_payment_operations.id",
-        },
-    }
-    for table in tables:
-        actual = {
-            element.target_fullname
-            for fk in table.foreign_key_constraints
-            for element in fk.elements
-        }
-        if actual != expected_fks.get(table.name, set()) or any(
-            fk.ondelete != "RESTRICT" for fk in table.foreign_key_constraints
-        ):
-            raise RuntimeError(f"conflicting existing {table.name} foreign keys")
+    )
+    Table("identity_accounts", canonical, Column("id", UUID(as_uuid=True), primary_key=True))
+    return _register_canonical_tables(canonical)
+
+
+def _validate_existing(tables: list[Table]) -> None:
+    expected = _canonical_model()
+    for actual, canonical in zip(tables, expected):
+        if _table_signature(actual) != _table_signature(canonical):
+            raise RuntimeError(f"conflicting existing {actual.name} registration")
 
 
 def register_entitlement_tables(
@@ -155,8 +205,16 @@ def register_entitlement_tables(
         raise RuntimeError("partial entitlement table registration is not supported")
     if all(present):
         tables = [target_metadata.tables[_key(target_metadata, name)] for name in _TABLE_NAMES]
-        _validate_existing(target_metadata, tables)
+        _validate_existing(tables)
         return tuple(tables)  # type: ignore[return-value]
+
+    return _register_canonical_tables(target_metadata)
+
+
+def _register_canonical_tables(
+    target_metadata: MetaData,
+) -> tuple[Table, Table, Table, Table, Table, Table]:
+    """Build the unchanged canonical Module 03 metadata registration."""
 
     tariffs = Table(
         "entitlement_tariff_definitions",

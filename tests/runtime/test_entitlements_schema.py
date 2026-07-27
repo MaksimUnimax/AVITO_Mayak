@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import importlib
+from typing import Any
 
 import pytest
-from sqlalchemy import BigInteger, ForeignKeyConstraint, MetaData, Table
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    ForeignKeyConstraint,
+    Index,
+    MetaData,
+    String,
+    Table,
+    text,
+)
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.schema import CheckConstraint, UniqueConstraint
+from sqlalchemy.schema import UniqueConstraint
 
 from mayak.persistence.metadata import NAMING_CONVENTION, metadata
 from mayak.persistence.schema.entitlements import register_entitlement_tables
@@ -299,6 +309,285 @@ def test_conflicting_existing_fk_fails_without_additional_mutation() -> None:
     with pytest.raises(RuntimeError, match="conflicting existing entitlement_access_grants"):
         register_entitlement_tables(isolated)
     assert tuple(isolated.tables) == before
+
+
+def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
+    def options(value: object) -> tuple[tuple[str, str], ...]:
+        if not hasattr(value, "items"):
+            return ()
+        return tuple(
+            sorted((str(key), str(option)) for key, option in value.items() if option is not None)
+        )
+
+    def predicate(index: Index) -> str | None:
+        postgresql_options: Any = index.dialect_options.get("postgresql", {})
+        value = postgresql_options.get("where")
+        return str(value) if value is not None else None
+
+    tables = []
+    for name in NAMES:
+        table = isolated.tables[f"mayak.{name}"]
+        tables.append(
+            (
+                name,
+                id(table),
+                table.schema,
+                repr(table.info),
+                tuple(
+                    (
+                        id(column),
+                        column.name,
+                        repr(column.type),
+                        column.nullable,
+                        column.primary_key,
+                        str(getattr(column.server_default, "arg", column.server_default))
+                        if column.server_default is not None
+                        else None,
+                    )
+                    for column in table.columns
+                ),
+                tuple(
+                    sorted(
+                        (
+                            id(constraint),
+                            constraint.name,
+                            tuple(
+                                column.name for column in getattr(constraint, "columns", ())
+                            ),
+                            str(constraint.sqltext)
+                            if isinstance(constraint, CheckConstraint)
+                            else None,
+                            options(constraint.dialect_options),
+                        )
+                        for constraint in table.constraints
+                    )
+                ),
+                tuple(
+                    sorted(
+                        (
+                            id(foreign_key),
+                            foreign_key.name,
+                            tuple(element.parent.name for element in foreign_key.elements),
+                            tuple(element.target_fullname for element in foreign_key.elements),
+                            foreign_key.ondelete,
+                        )
+                        for foreign_key in table.foreign_key_constraints
+                    )
+                ),
+                tuple(
+                    sorted(
+                        (
+                            id(index),
+                            index.name,
+                            tuple(
+                                getattr(column, "name", str(column))
+                                for column in index.expressions
+                            ),
+                            index.unique,
+                            predicate(index),
+                            options(index.dialect_options),
+                        )
+                        for index in table.indexes
+                    )
+                ),
+            )
+        )
+    return (tuple(isolated.tables), tuple(id(table) for table in isolated.tables.values()), *tables)
+
+
+def _assert_existing_rejected_without_mutation(isolated: MetaData, mutate: object) -> None:
+    assert callable(mutate)
+    mutate()
+    before = _safe_snapshot(isolated)
+    with pytest.raises(RuntimeError, match="conflicting existing"):
+        register_entitlement_tables(isolated)
+    assert _safe_snapshot(isolated) == before
+
+
+def test_existing_wrong_column_type_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: setattr(
+            isolated.tables["mayak.billing_payment_records"].c.amount_minor, "type", String(20)
+        ),
+    )
+
+
+def test_existing_wrong_nullability_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: setattr(
+            isolated.tables["mayak.entitlement_access_grants"].c.state, "nullable", True
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "table_name,column_name,default",
+    [
+        ("entitlement_access_grants", "row_version", None),
+        ("billing_payment_operations", "attempt_count", text("7")),
+        ("billing_payment_records", "id", text("gen_random_uuid()")),
+    ],
+)
+def test_existing_wrong_server_defaults_are_rejected_without_mutation(
+    table_name: str, column_name: str, default: object
+) -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    column = isolated.tables[f"mayak.{table_name}"].c[column_name]
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: setattr(column, "server_default", default)
+    )
+
+
+def test_existing_wrong_primary_key_is_rejected_without_mutation() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: setattr(
+            isolated.tables["mayak.billing_reconciliations"].c.id, "primary_key", False
+        ),
+    )
+
+
+def test_existing_unique_constraints_must_be_exact() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_records"]
+    canonical = next(c for c in table.constraints if isinstance(c, UniqueConstraint))
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: table.constraints.remove(canonical)
+    )
+
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_records"]
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: UniqueConstraint("state", name="speculative_unique")._set_parent(table)
+    )
+
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_records"]
+    _assert_existing_rejected_without_mutation(
+        isolated,
+        lambda: next(
+            c for c in table.constraints if isinstance(c, UniqueConstraint)
+        ).columns._collection.clear(),
+    )
+
+
+def test_reconciliation_nulls_not_distinct_is_required() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    unique = next(
+        c
+        for c in isolated.tables["mayak.billing_reconciliations"].constraints
+        if isinstance(c, UniqueConstraint)
+    )
+    unique.dialect_options["postgresql"]["nulls_not_distinct"] = False
+    _assert_existing_rejected_without_mutation(isolated, lambda: None)
+
+
+def test_existing_check_constraints_must_be_exact() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_operations"]
+    canonical = next(c for c in table.constraints if isinstance(c, CheckConstraint))
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: table.constraints.remove(canonical)
+    )
+
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_operations"]
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: CheckConstraint("1 = 1", name="speculative_check")._set_parent(table)
+    )
+
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_operations"]
+    canonical = next(c for c in table.constraints if isinstance(c, CheckConstraint))
+    canonical.sqltext = text("attempt_count > 100")
+    _assert_existing_rejected_without_mutation(isolated, lambda: None)
+
+
+def test_existing_indexes_must_be_exact() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_records"]
+    canonical = next(
+        index
+        for index in table.indexes
+        if index.name is not None and index.name.endswith("account_observed_at")
+    )
+    _assert_existing_rejected_without_mutation(isolated, lambda: table.indexes.remove(canonical))
+
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_records"]
+    _assert_existing_rejected_without_mutation(
+        isolated, lambda: Index("speculative_index", table.c.state)._set_parent(table)
+    )
+
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    table = isolated.tables["mayak.billing_payment_records"]
+    index = next(
+        index
+        for index in table.indexes
+        if index.name is not None and index.name.endswith("account_observed_at")
+    )
+    index.expressions.reverse()  # type: ignore[attr-defined]
+    _assert_existing_rejected_without_mutation(isolated, lambda: None)
+
+
+def test_existing_partial_index_predicate_must_be_exact() -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    index = next(
+        index
+        for index in isolated.tables["mayak.entitlement_access_grants"].indexes
+        if index.name is not None and index.name.endswith("_active")
+    )
+    index.dialect_options["postgresql"]["where"] = text("state = 'ENABLED'")
+    _assert_existing_rejected_without_mutation(isolated, lambda: None)
+
+
+@pytest.mark.parametrize("mutation", ["local", "name", "ondelete"])
+def test_existing_foreign_keys_must_be_exact(mutation: str) -> None:
+    isolated = _prerequisite_metadata()
+    register_entitlement_tables(isolated)
+    foreign_key = next(
+        iter(isolated.tables["mayak.entitlement_access_grants"].foreign_key_constraints)
+    )
+    if mutation == "local":
+        foreign_key.elements[0].parent = isolated.tables[
+            "mayak.entitlement_access_grants"
+        ].c.source_code
+    elif mutation == "name":
+        foreign_key.name = "wrong_foreign_key"
+    else:
+        foreign_key.ondelete = "CASCADE"
+    _assert_existing_rejected_without_mutation(isolated, lambda: None)
+
+
+def test_existing_canonical_registration_preserves_identities_on_three_calls() -> None:
+    isolated = _prerequisite_metadata()
+    first = register_entitlement_tables(isolated)
+    identities = tuple(id(table) for table in first)
+    snapshot = _safe_snapshot(isolated)
+    assert tuple(register_entitlement_tables(isolated)) == first
+    assert tuple(register_entitlement_tables(isolated)) == first
+    assert tuple(id(table) for table in first) == identities
+    assert _safe_snapshot(isolated) == snapshot
 
 
 def test_import_is_deterministic_and_schema_is_global() -> None:
