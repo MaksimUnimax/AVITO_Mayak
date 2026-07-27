@@ -27,34 +27,39 @@ _TABLE_NAMES = (
 )
 _AUDIT_TABLE = "platform_audit_entries"
 _AUDIT_FK_NAME = "fk_platform_audit_entries_actor_account_id_identity_accounts"
+_EXPECTED_AUDIT_FK_MARKER = {
+    "local_column": "actor_account_id",
+    "target": "{schema}.identity_accounts.id",
+    "on_delete": "RESTRICT",
+    "planned_revision": "RF09_M02",
+}
 
 
 def _key(metadata: MetaData, name: str) -> str:
     return f"{metadata.schema}.{name}" if metadata.schema else name
 
 
-def _resolve_audit_fk(metadata: MetaData, accounts: Table) -> None:
+def _validate_audit_fk(metadata: MetaData) -> bool:
     audit = metadata.tables[_key(metadata, _AUDIT_TABLE)]
     expected_target = f"{metadata.schema}.identity_accounts.id"
     deferred = audit.info.get("deferred_foreign_keys")
     expected_marker = {
-        "local_column": "actor_account_id",
-        "target": expected_target,
-        "on_delete": "RESTRICT",
-        "planned_revision": "RF09_M02",
+        key: value.format(schema=metadata.schema)
+        if isinstance(value, str)
+        else value
+        for key, value in _EXPECTED_AUDIT_FK_MARKER.items()
     }
+    if "actor_account_id" not in audit.c:
+        raise RuntimeError("platform audit actor_account_id column is missing")
     fks = list(audit.foreign_key_constraints)
+    if deferred is not None and fks:
+        raise RuntimeError("conflicting platform audit deferred FK and constraint")
     if not fks:
         if deferred != (expected_marker,):
             raise RuntimeError("conflicting platform audit deferred FK marker")
-        ForeignKeyConstraint(
-            [audit.c.actor_account_id],
-            [f"{accounts.fullname}.id"],
-            name=_AUDIT_FK_NAME,
-            ondelete="RESTRICT",
-        )._set_parent(audit)
-        audit.info.pop("deferred_foreign_keys", None)
-        return
+        return False
+    if deferred is not None:
+        raise RuntimeError("conflicting platform audit deferred FK and constraint")
     if len(fks) != 1:
         raise RuntimeError("conflicting platform audit foreign keys")
     fk = fks[0]
@@ -65,7 +70,20 @@ def _resolve_audit_fk(metadata: MetaData, accounts: Table) -> None:
         or fk.ondelete != "RESTRICT"
     ):
         raise RuntimeError("conflicting platform audit foreign key")
-    audit.info.pop("deferred_foreign_keys", None)
+    return True
+
+
+def _resolve_audit_fk(metadata: MetaData, accounts: Table) -> None:
+    audit = metadata.tables[_key(metadata, _AUDIT_TABLE)]
+    if not _validate_audit_fk(metadata):
+        ForeignKeyConstraint(
+            [audit.c.actor_account_id],
+            [f"{accounts.fullname}.id"],
+            name=_AUDIT_FK_NAME,
+            ondelete="RESTRICT",
+        )._set_parent(audit)
+        audit.info.pop("deferred_foreign_keys", None)
+        return
 
 
 def register_identity_tables(
@@ -93,10 +111,7 @@ def register_identity_tables(
     if any(present) and not all(present):
         raise RuntimeError("partial identity table registration is not supported")
 
-    audit = target_metadata.tables[_key(target_metadata, _AUDIT_TABLE)]
-    deferred = audit.info.get("deferred_foreign_keys")
-    if deferred is None and not list(audit.foreign_key_constraints):
-        raise RuntimeError("missing platform audit deferred FK marker")
+    _validate_audit_fk(target_metadata)
     if not present[0]:
         accounts = Table(
             "identity_accounts",

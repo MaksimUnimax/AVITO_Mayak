@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import importlib
+from copy import deepcopy
 
 import pytest
-from sqlalchemy import MetaData, Table
+from sqlalchemy import ForeignKeyConstraint, MetaData, Table
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
@@ -199,3 +200,113 @@ def test_role_assignments_are_append_style() -> None:
     table = metadata.tables["mayak.identity_role_assignments"]
     assert table.c.revoked_at.nullable is True
     assert table.c.created_at.nullable is False
+
+
+def _isolated_platform_metadata() -> MetaData:
+    isolated = MetaData(schema="mayak", naming_convention=NAMING_CONVENTION)
+    register_platform_tables(isolated)
+    return isolated
+
+
+def _metadata_snapshot(target_metadata: MetaData) -> dict[str, object]:
+    platform_tables = tuple(
+        target_metadata.tables[f"mayak.{name}"]
+        for name in (
+            "platform_idempotency_records",
+            "platform_audit_entries",
+            "platform_event_outbox",
+        )
+    )
+    audit = target_metadata.tables["mayak.platform_audit_entries"]
+    return {
+        "table_keys": tuple(target_metadata.tables),
+        "platform_table_ids": tuple(id(table) for table in platform_tables),
+        "audit_columns": tuple(column.name for column in audit.columns),
+        "constraint_ids": tuple(
+            (id(constraint), constraint.name)
+            for table in platform_tables
+            for constraint in table.constraints
+        ),
+        "index_ids": tuple(
+            (id(index), index.name)
+            for table in platform_tables
+            for index in table.indexes
+        ),
+        "foreign_key_ids": tuple(
+            (
+                id(foreign_key),
+                foreign_key.name,
+                tuple(element.target_fullname for element in foreign_key.elements),
+                foreign_key.ondelete,
+            )
+            for table in platform_tables
+            for foreign_key in table.foreign_key_constraints
+        ),
+        "audit_info": deepcopy(audit.info),
+    }
+
+
+def _assert_rejected_without_metadata_mutation(
+    target_metadata: MetaData, message: str
+) -> None:
+    before = _metadata_snapshot(target_metadata)
+    with pytest.raises(RuntimeError, match=message):
+        register_identity_tables(target_metadata)
+    assert _metadata_snapshot(target_metadata) == before
+    assert not any(
+        name.endswith(f".{identity_name}")
+        for name in target_metadata.tables
+        for identity_name in NAMES
+    )
+
+
+def test_conflicting_deferred_marker_rejects_before_identity_mutation() -> None:
+    isolated = _isolated_platform_metadata()
+    audit = isolated.tables["mayak.platform_audit_entries"]
+    audit.info["deferred_foreign_keys"] = (
+        {
+            "local_column": "actor_account_id",
+            "target": "mayak.other_accounts.id",
+            "on_delete": "RESTRICT",
+            "planned_revision": "RF09_M02",
+        },
+    )
+    _assert_rejected_without_metadata_mutation(
+        isolated, "conflicting platform audit deferred FK marker"
+    )
+    assert audit.info["deferred_foreign_keys"][0]["target"] == "mayak.other_accounts.id"
+
+
+def test_conflicting_existing_fk_rejects_before_identity_mutation() -> None:
+    isolated = _isolated_platform_metadata()
+    audit = isolated.tables["mayak.platform_audit_entries"]
+    del audit.info["deferred_foreign_keys"]
+    ForeignKeyConstraint(
+        [audit.c.actor_account_id],
+        ["mayak.platform_event_outbox.id"],
+        name="fk_conflicting_platform_audit",
+    )._set_parent(audit)
+    _assert_rejected_without_metadata_mutation(
+        isolated, "conflicting platform audit foreign key"
+    )
+
+
+def test_missing_marker_and_fk_rejects_before_identity_mutation() -> None:
+    isolated = _isolated_platform_metadata()
+    del isolated.tables["mayak.platform_audit_entries"].info["deferred_foreign_keys"]
+    _assert_rejected_without_metadata_mutation(
+        isolated, "conflicting platform audit deferred FK marker"
+    )
+
+
+def test_marker_plus_existing_fk_rejects_before_identity_mutation() -> None:
+    isolated = _isolated_platform_metadata()
+    audit = isolated.tables["mayak.platform_audit_entries"]
+    ForeignKeyConstraint(
+        [audit.c.actor_account_id],
+        ["mayak.platform_event_outbox.id"],
+        name="fk_conflicting_platform_audit",
+    )._set_parent(audit)
+    _assert_rejected_without_metadata_mutation(
+        isolated, "conflicting platform audit deferred FK and constraint"
+    )
