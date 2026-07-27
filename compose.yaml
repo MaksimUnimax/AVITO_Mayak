@@ -1,0 +1,133 @@
+name: avito-mayak-acceptance
+services:
+  mayak-api:
+    profiles: [runtime-foundation]
+    image: avito-mayak:${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+    build: &app-build
+      context: .
+      dockerfile: Dockerfile
+      platforms: [linux/amd64]
+      args:
+        SOURCE_SHA: ${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+        LOCK_IDENTITY: ${MAYAK_LOCK_IDENTITY:?MAYAK_LOCK_IDENTITY must be set}
+    platform: linux/amd64
+    user: "10001:10001"
+    command: ["python", "-m", "mayak.runtime.api"]
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    restart: on-failure:5
+    ports: ["127.0.0.1:${MAYAK_API_HOST_PORT:-18085}:8000/tcp"]
+    environment: &app-env
+      MAYAK_ENVIRONMENT_ID: avito-mayak-acceptance-local-01
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      MAYAK_SOURCE_SHA: ${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+      MAYAK_LOCK_IDENTITY: ${MAYAK_LOCK_IDENTITY:?MAYAK_LOCK_IDENTITY must be set}
+      MAYAK_IMAGE_DIGEST: ${MAYAK_IMAGE_DIGEST:?MAYAK_IMAGE_DIGEST must be set}
+      MAYAK_PROCESS_KIND: mayak-api
+      MAYAK_API_BIND_HOST: 127.0.0.1
+      MAYAK_API_INTERNAL_PORT: "8000"
+      MAYAK_DATABASE_HOST: mayak-postgres
+      MAYAK_DATABASE_PORT: "5432"
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_MAX_ENABLED: "false"
+      MAYAK_YOOKASSA_ENABLED: "false"
+      MAYAK_EGRESS_AGENT_ENABLED: "false"
+    secrets: [mayak_database_application_password, mayak_session_signing_key]
+    networks: [mayak-internal]
+    labels: &app-labels
+      com.avito-mayak.project-owned: "true"
+      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
+      com.avito-mayak.compose-project: avito-mayak-acceptance
+      com.avito-mayak.source-sha: ${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+      com.avito-mayak.process-kind: mayak-api
+  mayak-worker:
+    profiles: [runtime-foundation]
+    image: avito-mayak:${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+    build: *app-build
+    platform: linux/amd64
+    user: "10001:10001"
+    command: ["python", "-m", "mayak.runtime.worker"]
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    restart: on-failure:5
+    environment:
+      <<: *app-env
+      MAYAK_PROCESS_KIND: mayak-worker
+    secrets: [mayak_database_application_password]
+    networks: [mayak-internal]
+    labels:
+      <<: *app-labels
+      com.avito-mayak.process-kind: mayak-worker
+  mayak-scheduler:
+    profiles: [runtime-foundation]
+    image: avito-mayak:${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+    build: *app-build
+    platform: linux/amd64
+    user: "10001:10001"
+    command: ["python", "-m", "mayak.runtime.scheduler"]
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    restart: on-failure:5
+    environment:
+      <<: *app-env
+      MAYAK_PROCESS_KIND: mayak-scheduler
+    secrets: [mayak_database_application_password]
+    networks: [mayak-internal]
+    labels:
+      <<: *app-labels
+      com.avito-mayak.process-kind: mayak-scheduler
+  mayak-postgres:
+    profiles: [runtime-foundation]
+    image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+    platform: linux/amd64
+    restart: on-failure:5
+    environment:
+      POSTGRES_DB: mayak
+      POSTGRES_USER: mayak
+      POSTGRES_PASSWORD_FILE: /run/secrets/mayak_postgres_bootstrap_password
+    secrets: [mayak_postgres_bootstrap_password]
+    volumes: [postgres-data:/var/lib/postgresql]
+    networks: [mayak-internal]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      com.avito-mayak.project-owned: "true"
+      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
+      com.avito-mayak.compose-project: avito-mayak-acceptance
+      com.avito-mayak.process-kind: mayak-postgres
+networks:
+  mayak-internal:
+    name: mayak-internal
+    internal: true
+    labels:
+      com.avito-mayak.project-owned: "true"
+      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
+      com.avito-mayak.compose-project: avito-mayak-acceptance
+volumes:
+  postgres-data:
+    name: postgres-data
+    labels:
+      com.avito-mayak.project-owned: "true"
+      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
+      com.avito-mayak.compose-project: avito-mayak-acceptance
+secrets:
+  mayak_postgres_bootstrap_password:
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_postgres_bootstrap_password
+  mayak_database_application_password:
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_database_application_password
+  mayak_session_signing_key:
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_session_signing_key
