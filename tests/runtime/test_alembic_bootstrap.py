@@ -19,17 +19,38 @@ def test_alembic_ini_is_safe_and_canonical() -> None:
 
 def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     assert metadata.schema == "mayak"
-    assert not metadata.tables
+    assert set(metadata.tables) == {
+        f"mayak.{name}"
+        for name in (
+            "platform_idempotency_records",
+            "platform_audit_entries",
+            "platform_event_outbox",
+        )
+    }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
-    assert [path.name for path in versions] == ["20260727_RF09_BOOTSTRAP_migration_boundary.py"]
+    assert [path.name for path in versions] == [
+        "20260727_RF09_BOOTSTRAP_migration_boundary.py",
+        "20260727_RF09_M01_platform_contracts.py",
+    ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 1
-    assert revisions[0].revision == "RF09_BOOTSTRAP"
-    assert revisions[0].down_revision is None
-    assert not revisions[0].branch_labels
-    assert not revisions[0].dependencies
-    assert revisions[0].is_branch_point is False
+    assert len(revisions) == 2
+    assert scripts.get_heads() == ["RF09_M01"]
+    assert sum(script.is_branch_point for script in revisions) == 0
+    bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
+    m01 = scripts.get_revision("RF09_M01")
+    assert (
+        bootstrap
+        and bootstrap.down_revision is None
+        and not bootstrap.branch_labels
+        and not bootstrap.dependencies
+    )
+    assert (
+        m01
+        and m01.down_revision == "RF09_BOOTSTRAP"
+        and not m01.branch_labels
+        and not m01.dependencies
+    )
 
 
 def test_bootstrap_revision_is_a_nonempty_privilege_boundary() -> None:
@@ -77,6 +98,45 @@ def test_bootstrap_downgrade_fails_before_mutation() -> None:
         assert str(exc) == "RF09_BOOTSTRAP is roll-forward only"
     else:
         raise AssertionError("downgrade unexpectedly succeeded")
+
+
+def test_rf09_m01_revision_contract_and_downgrade() -> None:
+    import importlib.util
+
+    path = ROOT / "alembic" / "versions" / "20260727_RF09_M01_platform_contracts.py"
+    text = path.read_text(encoding="utf-8")
+    assert "RF-09-06-M01-PLATFORM-CONTRACTS-SCHEMA-BATCH-20260727" in text
+    assert "Domain owner: Module 01" in text
+    assert "Domain tables created: 3" in text
+    assert "Deferred FK count: 1" in text
+    assert text.count("op.create_table") == 3
+    assert text.count("op.create_index") == 7
+    assert "ForeignKey" not in text and "identity_accounts" not in text
+    assert "op.drop" not in text and "DROP" not in text.upper()
+    spec = importlib.util.spec_from_file_location("rf09_m01", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "RF09_M01"
+    assert module.down_revision == "RF09_BOOTSTRAP"
+    try:
+        module.downgrade()
+    except RuntimeError as exc:
+        assert str(exc) == "RF09_M01 is roll-forward only"
+    else:
+        raise AssertionError("downgrade unexpectedly succeeded")
+
+
+def test_database_independent_alembic_commands() -> None:
+    for command in ("heads", "history", "branches", "show RF09_BOOTSTRAP", "show RF09_M01"):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command.split()],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert "mayak_database_migration_password" not in result.stdout + result.stderr
 
 
 def test_heads_and_history_need_no_database() -> None:
