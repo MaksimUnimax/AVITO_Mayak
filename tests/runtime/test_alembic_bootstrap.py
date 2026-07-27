@@ -2,6 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
@@ -25,17 +26,25 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "platform_idempotency_records",
             "platform_audit_entries",
             "platform_event_outbox",
+            "identity_accounts",
+            "identity_provider_links",
+            "identity_role_assignments",
+            "identity_sessions",
+            "identity_link_challenges",
         )
     }
-    versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
+    versions = sorted(
+        path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file()
+    )
     assert [path.name for path in versions] == [
         "20260727_RF09_BOOTSTRAP_migration_boundary.py",
         "20260727_RF09_M01_platform_contracts.py",
+        "20260727_RF09_M02_identity_and_access.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 2
-    assert scripts.get_heads() == ["RF09_M01"]
+    assert len(revisions) == 3
+    assert scripts.get_heads() == ["RF09_M02"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -51,10 +60,19 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         and not m01.branch_labels
         and not m01.dependencies
     )
+    m02 = scripts.get_revision("RF09_M02")
+    assert (
+        m02
+        and m02.down_revision == "RF09_M01"
+        and not m02.branch_labels
+        and not m02.dependencies
+    )
 
 
 def test_bootstrap_revision_is_a_nonempty_privilege_boundary() -> None:
-    revision_path = ROOT / "alembic" / "versions" / "20260727_RF09_BOOTSTRAP_migration_boundary.py"
+    revision_path = (
+        ROOT / "alembic" / "versions" / "20260727_RF09_BOOTSTRAP_migration_boundary.py"
+    )
     text = revision_path.read_text(encoding="utf-8")
     upper = text.upper()
     technical_id = (
@@ -87,7 +105,9 @@ def test_bootstrap_revision_is_a_nonempty_privilege_boundary() -> None:
 def test_bootstrap_downgrade_fails_before_mutation() -> None:
     import importlib.util
 
-    path = ROOT / "alembic" / "versions" / "20260727_RF09_BOOTSTRAP_migration_boundary.py"
+    path = (
+        ROOT / "alembic" / "versions" / "20260727_RF09_BOOTSTRAP_migration_boundary.py"
+    )
     spec = importlib.util.spec_from_file_location("rf09_bootstrap", path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -127,8 +147,38 @@ def test_rf09_m01_revision_contract_and_downgrade() -> None:
         raise AssertionError("downgrade unexpectedly succeeded")
 
 
+def test_rf09_m02_revision_contract_and_downgrade() -> None:
+    import importlib.util
+
+    path = ROOT / "alembic" / "versions" / "20260727_RF09_M02_identity_and_access.py"
+    text = path.read_text(encoding="utf-8")
+    assert "RF-09-07-M02-IDENTITY-AND-ACCESS-SCHEMA-BATCH-20260727" in text
+    assert "Implementation owner: Module 14 / RF-09" in text
+    assert "Domain owner: Module 02" in text
+    assert "Domain tables created: 5" in text
+    assert "Deferred FK resolved: 1" in text
+    assert text.count("op.create_table") == 5
+    assert text.count("op.create_index") == 8
+    assert text.count("op.create_foreign_key") == 1
+    assert "op.drop" not in text and "DROP" not in text.upper()
+    spec = importlib.util.spec_from_file_location("rf09_m02", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "RF09_M02" and module.down_revision == "RF09_M01"
+    with pytest.raises(RuntimeError, match="RF09_M02 is roll-forward only"):
+        module.downgrade()
+
+
 def test_database_independent_alembic_commands() -> None:
-    for command in ("heads", "history", "branches", "show RF09_BOOTSTRAP", "show RF09_M01"):
+    for command in (
+        "heads",
+        "history",
+        "branches",
+        "show RF09_BOOTSTRAP",
+        "show RF09_M01",
+        "show RF09_M02",
+    ):
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command.split()],
             cwd=ROOT,

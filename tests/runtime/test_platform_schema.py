@@ -5,19 +5,28 @@ import importlib
 import pytest
 from sqlalchemy import MetaData, Table
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.schema import CheckConstraint, ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy.schema import CheckConstraint, UniqueConstraint
 
 from mayak.persistence.metadata import NAMING_CONVENTION, metadata
 from mayak.persistence.schema.platform import register_platform_tables
 
-NAMES = ("platform_idempotency_records", "platform_audit_entries", "platform_event_outbox")
+NAMES = (
+    "platform_idempotency_records",
+    "platform_audit_entries",
+    "platform_event_outbox",
+)
 
 
 def test_exact_metadata_shape() -> None:
     assert metadata.schema == "mayak"
-    assert set(metadata.tables) == {f"mayak.{name}" for name in NAMES}
-    assert len(metadata.tables) == 3
-    assert "identity_accounts" not in {table.name for table in metadata.tables.values()}
+    assert len(metadata.tables) == 8
+    assert {table.name for table in metadata.tables.values()} == set(NAMES) | {
+        "identity_accounts",
+        "identity_provider_links",
+        "identity_role_assignments",
+        "identity_sessions",
+        "identity_link_challenges",
+    }
     assert metadata.naming_convention == NAMING_CONVENTION
 
 
@@ -25,9 +34,8 @@ def test_registration_is_idempotent() -> None:
     first = register_platform_tables(metadata)
     second = register_platform_tables(metadata)
     assert first == second
-    assert len(metadata.tables) == 3
-    assert sum(len(table.constraints) for table in metadata.tables.values()) == 17
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 7
+    assert len(metadata.tables) == 8
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 15
 
 
 def test_partial_registration_fails_safely() -> None:
@@ -40,8 +48,12 @@ def test_partial_registration_fails_safely() -> None:
 
 def test_import_is_deterministic_and_inert(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
-    monkeypatch.setattr("sqlalchemy.create_engine", lambda *a, **k: calls.append("engine"))
-    monkeypatch.setattr("sqlalchemy.engine.Engine.connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(
+        "sqlalchemy.create_engine", lambda *a, **k: calls.append("engine")
+    )
+    monkeypatch.setattr(
+        "sqlalchemy.engine.Engine.connect", lambda *a, **k: calls.append("connect")
+    )
     for name in ("mayak.persistence.schema.platform", "mayak.persistence.schema"):
         assert importlib.import_module(name)
     assert calls == []
@@ -61,7 +73,10 @@ def test_idempotency_columns_constraints_and_indexes() -> None:
             "created_at",
         )
     ]
-    assert isinstance(table.c.id.type, postgresql.UUID) and table.c.id.server_default is None
+    assert (
+        isinstance(table.c.id.type, postgresql.UUID)
+        and table.c.id.server_default is None
+    )
     assert (
         table.c.id.nullable is False
         and table.c.idempotency_key.type.length == 200  # type: ignore[attr-defined]
@@ -96,17 +111,14 @@ def test_audit_columns_constraints_indexes_and_deferred_marker() -> None:
         "created_at",
     ]
     assert table.c.actor_account_id.nullable and table.c.target_id.nullable
-    assert not [c for c in table.constraints if isinstance(c, ForeignKeyConstraint)]
-    assert table.info == {
-        "deferred_foreign_keys": (
-            {
-                "local_column": "actor_account_id",
-                "target": "mayak.identity_accounts.id",
-                "on_delete": "RESTRICT",
-                "planned_revision": "RF09_M02",
-            },
-        )
-    }
+    fks = list(table.foreign_key_constraints)
+    assert len(fks) == 1
+    assert fks[0].name == "fk_platform_audit_entries_actor_account_id_identity_accounts"
+    assert fks[0].ondelete == "RESTRICT"
+    assert [e.target_fullname for e in fks[0].elements] == [
+        "mayak.identity_accounts.id"
+    ]
+    assert "deferred_foreign_keys" not in table.info
     assert {i.name for i in table.indexes} == {
         "ix_platform_audit_entries_created_at",
         "ix_platform_audit_entries_correlation_id",
@@ -136,32 +148,51 @@ def test_outbox_columns_defaults_constraints_and_partial_indexes() -> None:
     assert {c.name for c in table.constraints if isinstance(c, UniqueConstraint)} == {
         "uq_platform_event_outbox_event_fingerprint"
     }
-    checks = {str(c.sqltext) for c in table.constraints if isinstance(c, CheckConstraint)}
+    checks = {
+        str(c.sqltext) for c in table.constraints if isinstance(c, CheckConstraint)
+    }
     assert any("btrim(state)" in value for value in checks)
-    assert not any("PENDING" in value or "RETRY" in value or "CLAIMED" in value for value in checks)
+    assert not any(
+        "PENDING" in value or "RETRY" in value or "CLAIMED" in value for value in checks
+    )
     assert {i.name for i in table.indexes} == {
         "ix_platform_event_outbox_available",
         "ix_platform_event_outbox_expired_lease",
     }
     predicates = {
         i.name: str(
-            i.dialect_options["postgresql"]
+            i.dialect_options["postgresql"]  # type: ignore[union-attr]
             .get("where")
-            .compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})  # type: ignore[union-attr]
+            .compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
         )
         for i in table.indexes
     }
-    assert "state IN ('PENDING', 'RETRY')" in predicates["ix_platform_event_outbox_available"]  # type: ignore[index]
+    assert (
+        "state IN ('PENDING', 'RETRY')"
+        in predicates["ix_platform_event_outbox_available"]  # type: ignore[index]
+    )
     assert "state = 'CLAIMED'" in predicates["ix_platform_event_outbox_expired_lease"]  # type: ignore[index]
 
 
 def test_no_forbidden_columns_or_database_uuid_defaults() -> None:
-    forbidden = {"raw_payload", "provider_payload", "secret", "token", "cookie", "telegram", "max"}
+    forbidden = {
+        "raw_payload",
+        "provider_payload",
+        "secret",
+        "token",
+        "cookie",
+        "telegram",
+        "max",
+    }
     for table in metadata.tables.values():
-        assert not [c for c in table.constraints if isinstance(c, ForeignKeyConstraint)]
         for column in table.columns:
-            assert column.server_default is None or column.name in {"attempt_count", "row_version"}
-            assert column.name == "lease_token" or not any(
+            assert column.server_default is None or column.name in {
+                "attempt_count",
+                "row_version",
+            }
+            assert column.name in {"lease_token", "token_hash"} or not any(
                 word in column.name.lower() for word in forbidden
             )
 
@@ -170,8 +201,12 @@ def test_metadata_registration_does_not_connect_or_execute_sql(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
-    monkeypatch.setattr("sqlalchemy.create_engine", lambda *a, **k: calls.append("engine"))
-    monkeypatch.setattr("sqlalchemy.engine.Engine.connect", lambda *a, **k: calls.append("connect"))
+    monkeypatch.setattr(
+        "sqlalchemy.create_engine", lambda *a, **k: calls.append("engine")
+    )
+    monkeypatch.setattr(
+        "sqlalchemy.engine.Engine.connect", lambda *a, **k: calls.append("connect")
+    )
     register_platform_tables(metadata)
     assert calls == []
 
@@ -204,7 +239,15 @@ def test_all_tables_use_mayak_schema() -> None:
 
 
 def test_idempotency_has_no_actor_reference() -> None:
-    assert "actor_account_id" not in metadata.tables["mayak.platform_idempotency_records"].c
+    assert (
+        "actor_account_id"
+        not in metadata.tables["mayak.platform_idempotency_records"].c
+    )
+
+
+def test_platform_idempotency_and_outbox_have_no_foreign_keys() -> None:
+    for name in ("platform_idempotency_records", "platform_event_outbox"):
+        assert not list(metadata.tables[f"mayak.{name}"].foreign_key_constraints)
 
 
 def test_audit_and_outbox_have_expected_nullable_lease_fields() -> None:
