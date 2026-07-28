@@ -56,7 +56,7 @@ def test_exact_six_table_return_order() -> None:
 
 def test_global_counts() -> None:
     assert (
-        len(metadata.tables) == 35 and sum(len(t.indexes) for t in metadata.tables.values()) == 49
+        len(metadata.tables) == 36 and sum(len(t.indexes) for t in metadata.tables.values()) == 51
     )
 
 

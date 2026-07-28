@@ -58,6 +58,7 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "scan_listing_observations",
             "scan_beacon_listing_state",
             "scan_anchors",
+            "parser_outcomes",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -68,13 +69,14 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260727_RF09_M03_entitlements_and_billing.py",
         "20260727_RF09_M13_filter_catalog_and_builder.py",
         "20260728_RF09_M04_beacon_management.py",
+        "20260728_RF09_M05_avito_parser.py",
         "20260728_RF09_M06_scan_orchestration.py",
         "20260728_RF09_M07_egress_routing.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 8
-    assert scripts.get_heads() == ["RF09_M06"]
+    assert len(revisions) == 9
+    assert scripts.get_heads() == ["RF09_M05"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -113,6 +115,13 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m06 = scripts.get_revision("RF09_M06")
     assert (
         m06 and m06.down_revision == "RF09_M07" and not m06.branch_labels and not m06.dependencies
+    )
+    m05 = scripts.get_revision("RF09_M05")
+    assert (
+        m05
+        and m05.down_revision == "RF09_M06"
+        and not m05.branch_labels
+        and not m05.dependencies
     )
 
 
@@ -273,6 +282,7 @@ def test_database_independent_alembic_commands() -> None:
         "show RF09_M13",
         "show RF09_M04",
         "show RF09_M07",
+        "show RF09_M05",
     ):
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command.split()],
@@ -331,6 +341,25 @@ def test_rf09_m07_revision_contract_and_downgrade() -> None:
     assert module.revision == "RF09_M07" and module.down_revision == "RF09_M04"
     with pytest.raises(RuntimeError, match="RF09_M07 is roll-forward only"):
         module.downgrade()
+    m05_path = ROOT / "alembic" / "versions" / "20260728_RF09_M05_avito_parser.py"
+    m05_text = m05_path.read_text(encoding="utf-8")
+    assert "RF-09-13-M05-AVITO-PARSER-SCHEMA-BATCH-20260728" in m05_text
+    assert "Domain owner: Module 05" in m05_text
+    assert "Implementation owner: Module 14/RF-09" in m05_text
+    assert "reverse Scan FK remains deferred to RF09_FINALIZE" in m05_text
+    assert m05_text.count("op.create_table") == 1
+    assert m05_text.count("op.create_index") == 2
+    assert m05_text.count("sa.ForeignKeyConstraint") == 3
+    assert "op.execute" not in m05_text and "op.get_bind" not in m05_text
+    assert "postgresql_nulls_not_distinct=True" in m05_text
+    assert "scan_runs.parser_outcome_id" not in m05_text
+    spec = importlib.util.spec_from_file_location("rf09_m05", m05_path)
+    assert spec and spec.loader
+    m05 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m05)
+    assert m05.revision == "RF09_M05" and m05.down_revision == "RF09_M06"
+    with pytest.raises(RuntimeError, match="RF09_M05 is roll-forward only"):
+        m05.downgrade()
 
 
 def test_heads_and_history_need_no_database() -> None:
