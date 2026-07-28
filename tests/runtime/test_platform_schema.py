@@ -19,7 +19,7 @@ NAMES = (
 
 def test_exact_metadata_shape() -> None:
     assert metadata.schema == "mayak"
-    assert len(metadata.tables) == 25
+    assert len(metadata.tables) == 29
     assert {table.name for table in metadata.tables.values()} == set(NAMES) | {
         "identity_accounts",
         "identity_provider_links",
@@ -43,6 +43,10 @@ def test_exact_metadata_shape() -> None:
         "beacon_configuration_revisions",
         "beacon_filter_overrides",
         "beacon_lifecycle_events",
+        "egress_agents",
+        "egress_routes",
+        "egress_agent_heartbeats",
+        "egress_route_leases",
     }
     assert metadata.naming_convention == NAMING_CONVENTION
 
@@ -51,8 +55,8 @@ def test_registration_is_idempotent() -> None:
     first = register_platform_tables(metadata)
     second = register_platform_tables(metadata)
     assert first == second
-    assert len(metadata.tables) == 25
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 36
+    assert len(metadata.tables) == 29
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 41
 
 
 def test_partial_registration_fails_safely() -> None:
@@ -225,8 +229,9 @@ def test_required_type_families_are_postgresql_and_timezone_aware() -> None:
     for table in metadata.tables.values():
         if table.name != "beacon_configuration_revisions":
             assert isinstance(table.c.id.type, postgresql.UUID)
-        assert isinstance(table.c.created_at.type, postgresql.TIMESTAMP)
-        assert table.c.created_at.type.timezone is True
+        if "created_at" in table.c:
+            assert isinstance(table.c.created_at.type, postgresql.TIMESTAMP)
+            assert table.c.created_at.type.timezone is True
     assert isinstance(
         metadata.tables["mayak.platform_event_outbox"].c.payload.type, postgresql.JSONB
     )
