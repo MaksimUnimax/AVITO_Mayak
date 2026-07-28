@@ -253,7 +253,12 @@ def _canonical_model() -> tuple[Table, Table, Table, Table, Table, Table, Table]
     return _register_canonical_tables(canonical)
 
 
-def _validate_existing(tables: list[Table]) -> None:
+def _validate_existing(target_metadata: MetaData, tables: list[Table]) -> None:
+    canonical_metadata = MetaData(schema="mayak", naming_convention=_NAMING_CONVENTION)
+    if _stable_value(target_metadata.naming_convention) != _stable_value(
+        canonical_metadata.naming_convention
+    ) or _stable_value(target_metadata.info) != _stable_value(canonical_metadata.info):
+        raise RuntimeError("conflicting existing filter catalog metadata")
     for actual, expected in zip(tables, _canonical_model()):
         if _table_signature(actual) != _table_signature(expected):
             raise RuntimeError(f"conflicting existing {actual.name} registration")
@@ -270,7 +275,7 @@ def register_filter_catalog_tables(
         raise RuntimeError("partial filter catalog table registration is not supported")
     if all(present):
         tables = [target_metadata.tables[_key(target_metadata, name)] for name in _TABLE_NAMES]
-        _validate_existing(tables)
+        _validate_existing(target_metadata, tables)
         return tuple(tables)  # type: ignore[return-value]
     return _register_canonical_tables(target_metadata)
 
