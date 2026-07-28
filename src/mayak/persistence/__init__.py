@@ -27,7 +27,12 @@ from mayak.persistence.engine import (
     dispose_engine,
 )
 from mayak.persistence.metadata import Base, metadata
-from mayak.persistence.session import create_session_factory, session_scope
+from mayak.persistence.session import (
+    TransactionBoundaryError,
+    caller_owned_transaction,
+    create_session_factory,
+    session_scope,
+)
 
 __all__ = [
     "APPLICATION_SECRET_PATH",
@@ -49,6 +54,7 @@ __all__ = [
     "build_application_url",
     "build_bootstrap_connect_kwargs",
     "build_migration_url",
+    "caller_owned_transaction",
     "create_application_engine",
     "create_migration_engine",
     "create_session_factory",
@@ -56,4 +62,5 @@ __all__ = [
     "metadata",
     "resolve_secret_file",
     "session_scope",
+    "TransactionBoundaryError",
 ]
