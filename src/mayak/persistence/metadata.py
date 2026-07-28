@@ -9,6 +9,7 @@ from mayak.persistence.schema.entitlements import register_entitlement_tables
 from mayak.persistence.schema.filter_catalog import register_filter_catalog_tables
 from mayak.persistence.schema.identity import register_identity_tables
 from mayak.persistence.schema.platform import register_platform_tables
+from mayak.persistence.schema.scan import register_scan_tables
 
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
@@ -31,3 +32,4 @@ register_entitlement_tables(metadata)
 register_filter_catalog_tables(metadata)
 register_beacon_tables(metadata)
 register_egress_tables(metadata)
+register_scan_tables(metadata)

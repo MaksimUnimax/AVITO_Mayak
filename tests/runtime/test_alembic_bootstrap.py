@@ -52,6 +52,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "egress_routes",
             "egress_agent_heartbeats",
             "egress_route_leases",
+            "scan_schedules",
+            "scan_work_items",
+            "scan_runs",
+            "scan_listing_observations",
+            "scan_beacon_listing_state",
+            "scan_anchors",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -62,12 +68,13 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260727_RF09_M03_entitlements_and_billing.py",
         "20260727_RF09_M13_filter_catalog_and_builder.py",
         "20260728_RF09_M04_beacon_management.py",
+        "20260728_RF09_M06_scan_orchestration.py",
         "20260728_RF09_M07_egress_routing.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 7
-    assert scripts.get_heads() == ["RF09_M07"]
+    assert len(revisions) == 8
+    assert scripts.get_heads() == ["RF09_M06"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -102,6 +109,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m07 = scripts.get_revision("RF09_M07")
     assert (
         m07 and m07.down_revision == "RF09_M04" and not m07.branch_labels and not m07.dependencies
+    )
+    m06 = scripts.get_revision("RF09_M06")
+    assert (
+        m06 and m06.down_revision == "RF09_M07" and not m06.branch_labels and not m06.dependencies
     )
 
 
