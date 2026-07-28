@@ -1,5 +1,10 @@
 """Stable persistence primitives for the RF-09 runtime foundation."""
 
+from mayak.persistence.audit import (
+    AuditPersistenceError,
+    PersistedAuditEntry,
+    PostgresAuditRepository,
+)
 from mayak.persistence.config import (
     APPLICATION_SECRET_PATH,
     BOOTSTRAP_SECRET_PATH,
@@ -36,6 +41,7 @@ from mayak.persistence.session import (
 
 __all__ = [
     "APPLICATION_SECRET_PATH",
+    "AuditPersistenceError",
     "BOOTSTRAP_SECRET_PATH",
     "DATABASE_APPLICATION_USER",
     "DATABASE_BOOTSTRAP_USER",
@@ -51,6 +57,8 @@ __all__ = [
     "DatabaseEndpoint",
     "MigrationDatabaseSettings",
     "SecretValue",
+    "PersistedAuditEntry",
+    "PostgresAuditRepository",
     "build_application_url",
     "build_bootstrap_connect_kwargs",
     "build_migration_url",
