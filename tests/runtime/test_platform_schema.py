@@ -19,7 +19,7 @@ NAMES = (
 
 def test_exact_metadata_shape() -> None:
     assert metadata.schema == "mayak"
-    assert len(metadata.tables) == 48
+    assert len(metadata.tables) == 51
     assert {table.name for table in metadata.tables.values()} == set(NAMES) | {
         "identity_accounts",
         "identity_provider_links",
@@ -66,6 +66,9 @@ def test_exact_metadata_shape() -> None:
         "max_identity_mappings",
         "max_delivery_mappings",
         "max_miniapp_nonces",
+        "support_cases",
+        "support_case_notes",
+        "support_case_events",
     }
     assert metadata.naming_convention == NAMING_CONVENTION
 
@@ -74,8 +77,10 @@ def test_registration_is_idempotent() -> None:
     first = register_platform_tables(metadata)
     second = register_platform_tables(metadata)
     assert first == second
-    assert len(metadata.tables) == 48
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 67
+    assert len(metadata.tables) == 51
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 72
+    names = tuple(table.name for table in metadata.tables.values())
+    assert names[-3:] == ("support_cases", "support_case_notes", "support_case_events")
 
 
 def test_partial_registration_fails_safely() -> None:

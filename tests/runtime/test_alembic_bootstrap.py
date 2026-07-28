@@ -73,6 +73,9 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "max_identity_mappings",
             "max_delivery_mappings",
             "max_miniapp_nonces",
+            "support_cases",
+            "support_case_notes",
+            "support_case_events",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -89,11 +92,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260728_RF09_M08_notification_delivery.py",
         "20260728_RF09_M09_telegram_adapter.py",
         "20260728_RF09_M10_max_adapter.py",
+        "20260728_RF09_M11_admin_support.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 12
-    assert scripts.get_heads() == ["RF09_M10"]
+    assert len(revisions) == 13
+    assert scripts.get_heads() == ["RF09_M11"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -148,6 +152,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m10 = scripts.get_revision("RF09_M10")
     assert (
         m10 and m10.down_revision == "RF09_M09" and not m10.branch_labels and not m10.dependencies
+    )
+    m11 = scripts.get_revision("RF09_M11")
+    assert (
+        m11 and m11.down_revision == "RF09_M10" and not m11.branch_labels and not m11.dependencies
     )
 
 
@@ -544,4 +552,79 @@ def test_heads_and_history_need_no_database() -> None:
             for _, args, _ in operations_m10[:4]
         )
         == 5
+    )
+
+    # RF09_M11 contract and operation spy
+    path = ROOT / "alembic" / "versions" / "20260728_RF09_M11_admin_support.py"
+    text = path.read_text(encoding="utf-8")
+    assert "RF-09-17-M11-ADMIN-SUPPORT-SCHEMA-BATCH-20260728" in text
+    assert "Domain owner: Module 11 Admin & Support" in text
+    assert "Implementation owner: Module 14/RF-09" in text
+    assert "Identity remains account/actor/authorization authority" in text
+    assert "Foreign modules retain business-state authority" in text
+    assert "internal notes are never customer-visible" in text
+    assert "Foreign actions remain owning-module public commands" in text
+    assert "No new deferred FK" in text
+    assert text.count("op.create_table") == 3 and text.count("op.create_index") == 5
+    assert text.count("sa.ForeignKeyConstraint") == 7
+    assert all(
+        item not in text
+        for item in (
+            "op.execute",
+            "op.bulk_insert",
+            "op.get_bind",
+            "op.create_foreign_key",
+            "alembic.operations",
+            "getattr(op",
+        )
+    )
+    spec = importlib.util.spec_from_file_location("rf09_m11", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "RF09_M11" and module.down_revision == "RF09_M10"
+    with pytest.raises(RuntimeError, match="RF09_M11 is roll-forward only"):
+        module.downgrade()
+    operations_m11: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    class SpyM11:
+        def create_table(self, *args: object, **kwargs: object) -> None:
+            operations_m11.append(("create_table", args, kwargs))
+
+        def create_index(self, *args: object, **kwargs: object) -> None:
+            operations_m11.append(("create_index", args, kwargs))
+
+    setattr(module, "op", SpyM11())
+    module.upgrade()
+    assert [item[0] for item in operations_m11] == ["create_table"] * 3 + ["create_index"] * 5
+    assert [str(item[1][0]) for item in operations_m11] == [
+        "support_cases",
+        "support_case_notes",
+        "support_case_events",
+        "ix_support_cases_open_pending_updated_at",
+        "ix_support_cases_account_updated_at",
+        "ix_support_case_notes_case_created_at",
+        "ix_support_case_events_case_created_at",
+        "ix_support_case_events_actor_created_at",
+    ]
+    assert (
+        sum(
+            len([item for item in args if isinstance(item, sa.ForeignKeyConstraint)])
+            for _, args, _ in operations_m11[:3]
+        )
+        == 7
+    )
+    assert (
+        sum(
+            len([item for item in args if isinstance(item, sa.UniqueConstraint)])
+            for _, args, _ in operations_m11[:3]
+        )
+        == 0
+    )
+    assert (
+        sum(
+            kwargs.get("postgresql_where") is not None and not bool(kwargs.get("unique"))
+            for _, _, kwargs in operations_m11[3:]
+        )
+        == 1
     )

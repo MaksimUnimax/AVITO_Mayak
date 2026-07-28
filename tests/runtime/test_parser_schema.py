@@ -207,8 +207,8 @@ def test_index_order_and_options() -> None:
 def test_global_metadata_totals_and_parser_counts() -> None:
     parser = metadata.tables["mayak.parser_outcomes"]
     assert (
-        len(metadata.tables) == 48
-        and sum(len(item.indexes) for item in metadata.tables.values()) == 67
+        len(metadata.tables) == 51
+        and sum(len(item.indexes) for item in metadata.tables.values()) == 72
     )
     assert len(parser.indexes) == 2 and len(fks(parser)) == 3
 
