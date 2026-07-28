@@ -51,7 +51,7 @@ def test_migration_url_uses_public_then_domain_search_path(tmp_path: Path) -> No
     url = build_migration_url(
         MigrationDatabaseSettings(secret_path=_secret_path(tmp_path)), require_secret=False
     )
-    assert url.query["options"] == "-csearch_path=public,mayak"
+    assert url.query["options"] == "-csearch_path=public"
 
 
 def test_custom_migration_schema_and_public_are_not_duplicated(tmp_path: Path) -> None:
@@ -67,8 +67,50 @@ def test_custom_migration_schema_and_public_are_not_duplicated(tmp_path: Path) -
         ),
         require_secret=False,
     )
-    assert custom.query["options"] == "-csearch_path=public,tenant"
+    assert custom.query["options"] == "-csearch_path=public"
     assert public.query["options"] == "-csearch_path=public"
+
+
+def test_corrective_09_migration_search_path_is_exactly_public(tmp_path: Path) -> None:
+    for schema in ("mayak", "tenant"):
+        url = build_migration_url(
+            MigrationDatabaseSettings(
+                endpoint=DatabaseEndpoint(schema=schema), secret_path=_secret_path(tmp_path)
+            ),
+            require_secret=False,
+        )
+        assert url.query == {"options": "-csearch_path=public"}
+        assert schema not in url.query["options"]
+
+
+def test_corrective_09_application_and_migration_search_paths_are_separate(
+    tmp_path: Path,
+) -> None:
+    application = build_application_url(
+        ApplicationDatabaseSettings(
+            endpoint=DatabaseEndpoint(schema="tenant"), secret_path=_secret_path(tmp_path)
+        )
+    )
+    migration = build_migration_url(
+        MigrationDatabaseSettings(
+            endpoint=DatabaseEndpoint(schema="tenant"), secret_path=_secret_path(tmp_path)
+        ),
+        require_secret=False,
+    )
+    assert application.query["options"] == "-csearch_path=tenant"
+    assert migration.query["options"] == "-csearch_path=public"
+    assert "public,tenant" not in migration.query["options"]
+
+
+def test_corrective_09_schema_qualified_alembic_contract_remains_explicit() -> None:
+    text = (ROOT / "alembic/env.py").read_text(encoding="utf-8")
+    assert '"include_schemas": True' in text
+    assert '"version_table_schema": "mayak"' in text
+    assert "include_object" not in text
+    assert "include_name" not in text
+    assert 'search_path="public"' in (
+        (ROOT / "src/mayak/persistence/config.py").read_text(encoding="utf-8")
+    )
 
 
 def test_application_and_migration_urls_differ_only_by_search_path_policy(

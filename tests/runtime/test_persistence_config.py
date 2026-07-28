@@ -119,6 +119,6 @@ def test_urls_are_driver_correct_and_redacted(tmp_path: Path) -> None:
     )
     assert migration.username == DATABASE_MIGRATION_USER
     assert application.query["options"] == "-csearch_path=mayak"
-    assert migration.query["options"] == "-csearch_path=public,mayak"
+    assert migration.query["options"] == "-csearch_path=public"
     assert "synthetic" not in repr(application)
     assert "synthetic" not in str(application)

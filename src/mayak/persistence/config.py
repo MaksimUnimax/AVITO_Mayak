@@ -196,6 +196,4 @@ def build_migration_url(
     settings = settings or MigrationDatabaseSettings(
         secret_path=secret_path or MIGRATION_SECRET_PATH
     )
-    schema = settings.endpoint.schema
-    search_path = "public" if schema == "public" else f"public,{schema}"
-    return _url(settings, search_path=search_path, require_secret=require_secret)
+    return _url(settings, search_path="public", require_secret=require_secret)
