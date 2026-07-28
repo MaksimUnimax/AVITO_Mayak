@@ -310,6 +310,8 @@ def register_egress_tables(target_metadata: MetaData) -> tuple[Table, Table, Tab
         raise RuntimeError("egress tables require mayak schema")
     if _stable(target_metadata.info) != _stable({}):
         raise RuntimeError("conflicting existing egress metadata")
+    if _stable(target_metadata.naming_convention) != _stable(_NAMING_CONVENTION):
+        raise RuntimeError("conflicting existing egress metadata")
     present = [_key(target_metadata, name) in target_metadata.tables for name in _TABLE_NAMES]
     if any(present) and not all(present):
         raise RuntimeError("partial egress table registration is not supported")

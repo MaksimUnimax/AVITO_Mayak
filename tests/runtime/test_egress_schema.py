@@ -4,7 +4,7 @@ import importlib
 from typing import Any
 
 import pytest
-from sqlalchemy import CheckConstraint, Column, MetaData, String, Table, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Index, MetaData, String, Table, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 
 from mayak.persistence.metadata import NAMING_CONVENTION, metadata
@@ -39,6 +39,19 @@ def predicate(index: Any) -> str:
             where.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
         ).split()
     )
+
+
+def metadata_snapshot(target: MetaData) -> tuple[Any, ...]:
+    tables = tuple(target.tables.items())
+    objects = tuple(
+        (
+            id(table),
+            tuple((id(constraint), constraint.name) for constraint in table.constraints),
+            tuple((id(index), index.name) for index in table.indexes),
+        )
+        for _, table in tables
+    )
+    return target.schema, dict(target.naming_convention), dict(target.info), tables, objects
 
 
 def test_canonical_order_columns_types_and_counts() -> None:
@@ -250,6 +263,67 @@ def test_metadata_conflicts_and_index_mutation_are_rejected() -> None:
     bad = MetaData(schema="other", naming_convention=NAMING_CONVENTION)
     with pytest.raises(RuntimeError):
         register_egress_tables(bad)
+
+
+def test_first_registration_naming_conflict_is_rejected_without_mutation() -> None:
+    conflicting = {"ix": "ix_%(column_0_label)s", "pk": "wrong_%(table_name)s"}
+    target = MetaData(schema="mayak", naming_convention=conflicting)
+    unrelated = Table(
+        "unrelated",
+        target,
+        Column("id", String(1), primary_key=True),
+        UniqueConstraint("id", name="uq_unrelated_id"),
+    )
+    index = Index("ix_unrelated_id", unrelated.c.id)
+    before = metadata_snapshot(target)
+    with pytest.raises(RuntimeError):
+        register_egress_tables(target)
+    assert metadata_snapshot(target) == before
+    assert not any(key.rsplit(".", 1)[-1] in NAMES for key in target.tables)
+    assert tuple(unrelated.indexes) == (index,)
+    with pytest.raises(RuntimeError):
+        register_egress_tables(target)
+    assert metadata_snapshot(target) == before
+
+
+def test_first_registration_metadata_info_conflict_is_rejected_without_mutation() -> None:
+    target = isolated()
+    target.info["unexpected"] = True
+    before = metadata_snapshot(target)
+    with pytest.raises(RuntimeError):
+        register_egress_tables(target)
+    assert metadata_snapshot(target) == before
+    assert not target.tables
+
+
+def test_first_registration_accepts_semantically_equal_convention_copy() -> None:
+    target = MetaData(schema="mayak", naming_convention=dict(NAMING_CONVENTION))
+    first = register_egress_tables(target)
+    second = register_egress_tables(target)
+    assert tuple(table.name for table in first) == NAMES
+    assert len(target.tables) == 4
+    assert sum(len(table.indexes) for table in target.tables.values()) == 5
+    assert all(left is right for left, right in zip(first, second))
+
+
+def test_first_registration_accepts_convention_in_different_insertion_order() -> None:
+    reordered = {key: NAMING_CONVENTION[key] for key in reversed(tuple(NAMING_CONVENTION))}
+    target = MetaData(schema="mayak", naming_convention=reordered)
+    tables = register_egress_tables(target)
+    assert tuple(table.name for table in tables) == NAMES
+    assert {constraint.name for table in tables for constraint in table.constraints} >= {
+        "pk_egress_agents",
+        "pk_egress_routes",
+        "pk_egress_agent_heartbeats",
+        "pk_egress_route_leases",
+    }
+    assert {index.name for table in tables for index in table.indexes} == {
+        "ix_egress_agents_state_agent_code",
+        "ix_egress_routes_state_agent",
+        "ix_egress_agent_heartbeats_agent_observed_at",
+        "uq_egress_route_leases_active_route_work_item",
+        "ix_egress_route_leases_active_expires_at",
+    }
 
 
 def test_forbidden_fields_and_uninvented_policy_are_absent() -> None:
