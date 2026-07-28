@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import importlib
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from sqlalchemy import ForeignKeyConstraint, MetaData, Table
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.schema import CheckConstraint, UniqueConstraint
+from sqlalchemy.schema import CheckConstraint, CreateTable, UniqueConstraint
 
 from mayak.persistence.metadata import NAMING_CONVENTION, metadata
 from mayak.persistence.schema.identity import register_identity_tables
@@ -124,6 +125,35 @@ def test_identity_constraints_foreign_keys_indexes_and_checks() -> None:
         and next(iter(links.foreign_key_constraints)).ondelete == "RESTRICT"
     )
     assert len(roles.foreign_key_constraints) == 2
+    assigned_by_fk = next(
+        fk
+        for fk in roles.foreign_key_constraints
+        if fk.elements[0].parent.name == "assigned_by_account_id"
+    )
+    logical_name = (
+        "fk_identity_role_assignments_assigned_by_account_id_identity_accounts"
+    )
+    physical_name = "fk_identity_role_assignments_assigned_by_account_id_ide_a4f6"
+    assert assigned_by_fk.name == logical_name
+    assert dict(metadata.naming_convention) == dict(NAMING_CONVENTION)
+    assert [element.target_fullname for element in assigned_by_fk.elements] == [
+        "mayak.identity_accounts.id"
+    ]
+    assert assigned_by_fk.ondelete == "RESTRICT"
+    compiled = str(CreateTable(roles).compile(dialect=postgresql.dialect()))
+    assert f"CONSTRAINT {physical_name}" in compiled
+    assert logical_name not in compiled
+    migration_text = (
+        Path(__file__).parents[2]
+        / "alembic"
+        / "versions"
+        / "20260727_RF09_M02_identity_and_access.py"
+    ).read_text(encoding="utf-8")
+    assert migration_text.count(physical_name) == 1
+    assert logical_name not in migration_text
+    assert len(physical_name.encode("utf-8")) == 60
+    assert len(physical_name.encode("utf-8")) <= 63
+    assert physical_name in compiled
     assert (
         len(sessions.foreign_key_constraints) == 1
         and next(iter(sessions.foreign_key_constraints)).ondelete == "RESTRICT"

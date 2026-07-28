@@ -134,7 +134,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["assigned_by_account_id"],
             ["mayak.identity_accounts.id"],
-            name="fk_identity_role_assignments_assigned_by_account_id_identity_accounts",
+            name="fk_identity_role_assignments_assigned_by_account_id_ide_a4f6",
             ondelete="RESTRICT",
         ),
         sa.UniqueConstraint(
