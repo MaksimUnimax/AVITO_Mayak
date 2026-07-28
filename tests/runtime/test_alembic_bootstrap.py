@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
@@ -65,6 +66,9 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "notification_outbox",
             "notification_delivery_attempts",
             "notification_delivery_reconciliations",
+            "telegram_inbound_updates",
+            "telegram_identity_mappings",
+            "telegram_delivery_mappings",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -79,11 +83,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260728_RF09_M06_scan_orchestration.py",
         "20260728_RF09_M07_egress_routing.py",
         "20260728_RF09_M08_notification_delivery.py",
+        "20260728_RF09_M09_telegram_adapter.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 10
-    assert scripts.get_heads() == ["RF09_M08"]
+    assert len(revisions) == 11
+    assert scripts.get_heads() == ["RF09_M09"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -130,6 +135,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m08 = scripts.get_revision("RF09_M08")
     assert (
         m08 and m08.down_revision == "RF09_M05" and not m08.branch_labels and not m08.dependencies
+    )
+    m09 = scripts.get_revision("RF09_M09")
+    assert (
+        m09 and m09.down_revision == "RF09_M08" and not m09.branch_labels and not m09.dependencies
     )
 
 
@@ -292,6 +301,7 @@ def test_database_independent_alembic_commands() -> None:
         "show RF09_M07",
         "show RF09_M05",
         "show RF09_M08",
+        "show RF09_M09",
     ):
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command.split()],
@@ -405,3 +415,58 @@ def test_heads_and_history_need_no_database() -> None:
     assert module.revision == "RF09_M08" and module.down_revision == "RF09_M05"
     with pytest.raises(RuntimeError, match="RF09_M08 is roll-forward only"):
         module.downgrade()
+    m09_path = ROOT / "alembic" / "versions" / "20260728_RF09_M09_telegram_adapter.py"
+    m09_text = m09_path.read_text(encoding="utf-8")
+    assert "RF-09-15-M09-TELEGRAM-ADAPTER-SCHEMA-BATCH-20260728" in m09_text
+    assert "Domain owner: Module 09 Telegram Adapter" in m09_text
+    assert "Implementation owner: Module 14/RF-09" in m09_text
+    assert "Identity remains account/link authority" in m09_text
+    assert "Notification remains generic delivery authority" in m09_text
+    assert "Provider acceptance is not human read" in m09_text
+    assert "No new deferred FK" in m09_text
+    assert m09_text.count("op.create_table") == 3
+    assert m09_text.count("op.create_index") == 4
+    assert m09_text.count("sa.ForeignKeyConstraint") == 2
+    assert all(
+        item not in m09_text
+        for item in ("op.execute", "op.bulk_insert", "op.get_bind", "op.create_foreign_key")
+    )
+    assert "telegram_message_ref IS NOT NULL" in m09_text
+    spec = importlib.util.spec_from_file_location("rf09_m09", m09_path)
+    assert spec and spec.loader
+    m09 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m09)
+    assert m09.revision == "RF09_M09" and m09.down_revision == "RF09_M08"
+    with pytest.raises(RuntimeError, match="RF09_M09 is roll-forward only"):
+        m09.downgrade()
+
+    operations: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    class Spy:
+        def create_table(self, *args: object, **kwargs: object) -> None:
+            operations.append(("create_table", args, kwargs))
+
+        def create_index(self, *args: object, **kwargs: object) -> None:
+            operations.append(("create_index", args, kwargs))
+
+    setattr(m09, "op", Spy())
+    m09.upgrade()
+    assert [item[0] for item in operations] == ["create_table"] * 3 + ["create_index"] * 4
+    assert [str(item[1][0]) for item in operations[:3]] == [
+        "telegram_inbound_updates",
+        "telegram_identity_mappings",
+        "telegram_delivery_mappings",
+    ]
+    assert [str(item[1][0]) for item in operations[3:]] == [
+        "ix_telegram_inbound_updates_provider_update_id",
+        "ix_telegram_inbound_updates_received_at",
+        "ix_telegram_identity_mappings_provider_link_id",
+        "ux_telegram_delivery_mappings_message_ref",
+    ]
+    assert (
+        sum(
+            len([item for item in args if isinstance(item, sa.ForeignKeyConstraint)])
+            for _, args, _ in operations[:3]
+        )
+        == 2
+    )

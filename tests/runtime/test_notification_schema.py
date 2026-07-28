@@ -100,8 +100,8 @@ def test_exact_isolated_totals() -> None:
 
 
 def test_global_totals() -> None:
-    assert len(metadata.tables) == 41
-    assert sum(len(item.indexes) for item in metadata.tables.values()) == 58
+    assert len(metadata.tables) == 44
+    assert sum(len(item.indexes) for item in metadata.tables.values()) == 62
 
 
 def test_endpoint_columns() -> None:

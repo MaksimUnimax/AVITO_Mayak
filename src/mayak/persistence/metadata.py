@@ -12,6 +12,7 @@ from mayak.persistence.schema.notification import register_notification_tables
 from mayak.persistence.schema.parser import register_parser_tables
 from mayak.persistence.schema.platform import register_platform_tables
 from mayak.persistence.schema.scan import register_scan_tables
+from mayak.persistence.schema.telegram import register_telegram_tables
 
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
@@ -37,3 +38,4 @@ register_egress_tables(metadata)
 register_scan_tables(metadata)
 register_parser_tables(metadata)
 register_notification_tables(metadata)
+register_telegram_tables(metadata)

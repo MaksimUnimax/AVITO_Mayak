@@ -9,6 +9,7 @@ from mayak.persistence.schema.notification import register_notification_tables
 from mayak.persistence.schema.parser import register_parser_tables
 from mayak.persistence.schema.platform import register_platform_tables
 from mayak.persistence.schema.scan import register_scan_tables
+from mayak.persistence.schema.telegram import register_telegram_tables
 
 __all__ = [
     "register_platform_tables",
@@ -20,4 +21,5 @@ __all__ = [
     "register_scan_tables",
     "register_parser_tables",
     "register_notification_tables",
+    "register_telegram_tables",
 ]
