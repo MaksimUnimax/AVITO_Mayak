@@ -65,19 +65,40 @@ def _transaction_state(connection: Any, message: str) -> bool:
 
 
 def _best_effort_cleanup(connection: Any) -> None:
-    rollback_failed = False
+    body_transaction_clean = False
     try:
-        if connection.in_transaction() is True:
+        body_transaction_active = _transaction_state(
+            connection, "migration serialization release failed"
+        )
+    except BaseException:
+        body_transaction_active = None
+    if body_transaction_active is False:
+        body_transaction_clean = True
+    elif body_transaction_active is True:
+        try:
             connection.rollback()
-    except Exception:
-        rollback_failed = True
-    if rollback_failed:
-        return
+        except BaseException:
+            pass
+        else:
+            try:
+                body_transaction_clean = not _transaction_state(
+                    connection, "migration serialization release failed"
+                )
+            except BaseException:
+                pass
+
+    unlock_succeeded = False
     try:
         _release(connection)
-        connection.commit()
-    except Exception:
+        unlock_succeeded = True
+    except BaseException:
         pass
+    if body_transaction_clean and unlock_succeeded:
+        try:
+            if _transaction_state(connection, "migration serialization release failed"):
+                connection.commit()
+        except BaseException:
+            pass
 
 
 @contextmanager

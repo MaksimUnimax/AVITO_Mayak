@@ -453,6 +453,95 @@ def test_failed_body_rollback_failure_does_not_mask_original() -> None:
     assert caught.value is original
 
 
+def test_failed_body_rollback_failure_still_attempts_unlock() -> None:
+    connection = lifecycle_connection()
+    connection.fail_rollback = True
+    original = RuntimeError("original")
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise original
+    assert caught.value is original
+    assert connection.events[-2:] == [
+        "rollback",
+        "SELECT pg_advisory_unlock(:lock_key)",
+    ]
+
+
+def test_failed_body_rollback_failure_unlock_is_attempted_once_without_commit() -> None:
+    connection = lifecycle_connection()
+    connection.fail_rollback = True
+    original = RuntimeError("original")
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise original
+    assert caught.value is original
+    assert [event for event in connection.events if "pg_advisory_unlock" in event] == [
+        "SELECT pg_advisory_unlock(:lock_key)"
+    ]
+    assert connection.commits == 1
+
+
+def test_failed_body_rollback_failure_never_commits_failed_transaction() -> None:
+    connection = lifecycle_connection()
+    connection.fail_rollback = True
+    original = RuntimeError("failed migration")
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise original
+    assert caught.value is original
+    assert connection.commits == 1
+    assert connection.transaction is True
+
+
+def test_failed_body_rollback_and_unlock_failures_preserve_exception_identity() -> None:
+    connection = LifecycleConnection([result((True,)), result((False,))])
+    connection.fail_rollback = True
+    original = RuntimeError("original")
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise original
+    assert caught.value is original
+    assert connection.events[-2:] == [
+        "rollback",
+        "SELECT pg_advisory_unlock(:lock_key)",
+    ]
+
+
+def test_failed_body_rollback_failure_and_final_state_inspection_failure_preserve_identity(
+) -> None:
+    connection = lifecycle_connection()
+    connection.fail_rollback = True
+    original = RuntimeError("original")
+
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            connection.fail_state = True
+            raise original
+
+    assert caught.value is original
+    assert "SELECT pg_advisory_unlock(:lock_key)" in connection.events
+
+
+def test_base_exception_identity_survives_rollback_failure() -> None:
+    connection = lifecycle_connection()
+    connection.fail_rollback = True
+    original = KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise original
+    assert caught.value is original
+    assert connection.events[-2:] == [
+        "rollback",
+        "SELECT pg_advisory_unlock(:lock_key)",
+    ]
+
+
 def test_failed_body_unlock_failure_does_not_mask_original() -> None:
     connection = LifecycleConnection([result((True,)), result((False,))])
     original = RuntimeError("original")
@@ -493,7 +582,7 @@ def test_keyboard_interrupt_is_preserved() -> None:
 
 def test_source_has_transaction_boundary_safety_invariants() -> None:
     source = (ROOT / "src/mayak/persistence/migration.py").read_text(encoding="utf-8")
-    assert source.count("in_transaction()") >= 2
+    assert source.count("_transaction_state(") >= 2
     assert source.count("connection.commit()") >= 2
     assert source.count("connection.rollback()") >= 1
     assert "AUTOCOMMIT" not in source
