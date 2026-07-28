@@ -13,6 +13,12 @@ from mayak.contracts.configuration import (
     ConfigurationValidationOutcome,
     ConfigurationValidationStatus,
 )
+from mayak.contracts.error_mapping import (
+    ExceptionMapping,
+    ExceptionNormalizationError,
+    ExceptionNormalizer,
+    build_platform_exception_normalizer,
+)
 from mayak.contracts.errors import CommonErrorOutcome, ErrorCategory, RetryClass
 from mayak.contracts.idempotency import (
     IdempotencyDecision,
@@ -109,6 +115,9 @@ __all__ = [
     "decode_contract_json",
     "ContractMetadata",
     "ErrorCategory",
+    "ExceptionMapping",
+    "ExceptionNormalizationError",
+    "ExceptionNormalizer",
     "MessageId",
     "IdempotencyDecision",
     "IdempotencyDecisionOutcome",
@@ -126,4 +135,5 @@ __all__ = [
     "RetryClass",
     "RunId",
     "WorkId",
+    "build_platform_exception_normalizer",
 ]
