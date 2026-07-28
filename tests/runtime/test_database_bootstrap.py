@@ -12,6 +12,7 @@ from mayak.persistence.config import BootstrapDatabaseSettings
 
 MIGRATION = "mayak_migration"
 APPLICATION = "mayak_application"
+_NO_PARAMS = object()
 
 
 def valid_roles() -> list[tuple[object, ...]]:
@@ -34,11 +35,15 @@ class Cursor:
         self.memberships = [] if memberships is None else memberships
         self.privileges = privileges
         self.wrong_owner = wrong_owner
-        self.executed: list[tuple[str, tuple[object, ...]]] = []
+        self.executed: list[tuple[str, object]] = []
         self.closed = False
 
-    def execute(self, query: object, params: tuple[object, ...] = ()) -> None:
+    def execute(self, query: object, params: object = _NO_PARAMS) -> None:
         rendered = query.as_string(None) if hasattr(query, "as_string") else str(query)
+        if "ALTER ROLE %I PASSWORD %L" in rendered and params == ():
+            raise RuntimeError(
+                "only '%s', '%b', '%t' are allowed as placeholders, got '%I'"
+            )
         self.executed.append((rendered, params))
 
     def fetchone(self) -> tuple[object, ...] | None:
@@ -121,8 +126,32 @@ def test_synthetic_success_is_transactional_and_secret_safe(tmp_path: Path) -> N
     assert connection.commits == 1 and connection.rollbacks == 0
     assert connection.cursor_obj.closed and connection.closed
     assert connection.cursor_obj.executed[0][1] == (BOOTSTRAP_LOCK_KEY,)
+    role_queries = [
+        (query, params)
+        for query, params in connection.cursor_obj.executed
+        if "ALTER ROLE %I PASSWORD %L" in query
+    ]
+    assert len(role_queries) == 2
+    assert all(params is _NO_PARAMS for _, params in role_queries)
+    assert any(
+        "set_config(%s, %s, true)" in query
+        and params
+        == ("mayak.bootstrap.migration_password", "synthetic-migration-only")
+        for query, params in connection.cursor_obj.executed
+    )
+    assert any(
+        "set_config(%s, %s, true)" in query
+        and params
+        == ("mayak.bootstrap.application_password", "synthetic-application-only")
+        for query, params in connection.cursor_obj.executed
+    )
     all_text = " ".join(query for query, _ in connection.cursor_obj.executed)
-    all_params = [value for _, params in connection.cursor_obj.executed for value in params]
+    all_params = [
+        value
+        for _, params in connection.cursor_obj.executed
+        if isinstance(params, tuple)
+        for value in params
+    ]
     assert "synthetic-migration-only" not in all_text
     assert "synthetic-application-only" not in all_text
     assert "synthetic-migration-only" in all_params

@@ -48,7 +48,10 @@ def _q(value: str) -> sql.Identifier:
 
 
 def _execute(cursor: Any, statement: sql.Composable, params: tuple[Any, ...] = ()) -> None:
-    cursor.execute(statement, params)
+    if params:
+        cursor.execute(statement, params)
+    else:
+        cursor.execute(statement)
 
 
 def _role_sql(role: str, setting: str) -> sql.Composed:
