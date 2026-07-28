@@ -26,6 +26,12 @@ from mayak.platform.correlation import (
     RunId,
     WorkId,
 )
+from mayak.platform.correlation_context import (
+    CorrelationContextError,
+    correlation_context_scope,
+    current_correlation_context,
+    require_correlation_context,
+)
 from mayak.platform.idempotency import (
     IdempotencyFingerprint,
     IdempotencyKey,
@@ -46,11 +52,15 @@ __all__ = [
     "ConfigurationSchemaVersion",
     "ConfigurationSourceCategory",
     "CorrelationContext",
+    "CorrelationContextError",
     "CorrelationId",
     "MessageId",
     "RequestId",
     "RunId",
     "WorkId",
+    "correlation_context_scope",
+    "current_correlation_context",
+    "require_correlation_context",
     "AuditActorCategory",
     "AuditContext",
     "AuditModuleIdentifier",
