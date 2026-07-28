@@ -26,6 +26,13 @@ from mayak.contracts.readiness import (
     ProcessReadinessOutcome,
     ProcessReadinessStatus,
 )
+from mayak.contracts.registry import (
+    ContractRegistration,
+    ContractRegistry,
+    ContractRegistryError,
+    ContractValidationOutcome,
+    ContractValidationStatus,
+)
 from mayak.contracts.results import CommonOutcome, Result, ResultOutcome
 from mayak.contracts.serialization import (
     ContractSerializationError,
@@ -78,6 +85,11 @@ __all__ = [
     "CommonErrorOutcome",
     "CommonOutcome",
     "ContractSerializationError",
+    "ContractRegistration",
+    "ContractRegistry",
+    "ContractRegistryError",
+    "ContractValidationOutcome",
+    "ContractValidationStatus",
     "ConfigurationComponent",
     "ConfigurationEnvironment",
     "ConfigurationMetadata",
