@@ -34,14 +34,6 @@ _NAMING_CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 _DIALECT = postgresql_dialect()
-_MARKER = {
-    "local_columns": ("work_item_id",),
-    "target_columns": ("mayak.scan_work_items.id",),
-    "on_delete": "RESTRICT",
-    "planned_revision": "RF09_FINALIZE",
-}
-
-
 def _key(metadata: MetaData, name: str) -> str:
     return f"{metadata.schema}.{name}" if metadata.schema else name
 
@@ -284,10 +276,16 @@ def _canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]:
         Column("lease_expires_at", TIMESTAMP(timezone=True), nullable=False),
         Column("state", String(64), nullable=False),
         ForeignKeyConstraint(["route_id"], ["mayak.egress_routes.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["work_item_id"],
+            ["mayak.scan_work_items.id"],
+            name="fk_egress_route_leases_work_item_id_scan_work_items",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
         UniqueConstraint("lease_token", name="uq_egress_route_leases_lease_token"),
         CheckConstraint("lease_expires_at > lease_started_at", name="lease_window"),
         CheckConstraint("btrim(state) <> ''", name="state_nonempty"),
-        info={"deferred_foreign_keys": (_MARKER,)},
     )
     Index(
         "uq_egress_route_leases_active_route_work_item",

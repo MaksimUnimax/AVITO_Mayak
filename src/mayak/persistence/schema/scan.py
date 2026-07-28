@@ -37,14 +37,6 @@ _CONVENTION = {
     "pk": "pk_%(table_name)s",
 }
 _DIALECT = postgresql_dialect()
-_MARKER = {
-    "local_columns": ("parser_outcome_id",),
-    "target_columns": ("mayak.parser_outcomes.id",),
-    "on_delete": "RESTRICT",
-    "planned_revision": "RF09_FINALIZE",
-}
-
-
 def _key(m: MetaData, n: str) -> str:
     return f"{m.schema}.{n}" if m.schema else n
 
@@ -290,6 +282,13 @@ def _canonical(m: MetaData) -> tuple[Table, Table, Table, Table, Table, Table]:
             ],
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["parser_outcome_id"],
+            ["mayak.parser_outcomes.id"],
+            name="fk_scan_runs_parser_outcome_id_parser_outcomes",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
         ForeignKeyConstraint(["route_id"], ["mayak.egress_routes.id"], ondelete="RESTRICT"),
         UniqueConstraint("work_item_id", name="uq_scan_runs_work_item_id"),
         CheckConstraint("revision_no > 0", name="revision_positive"),
@@ -298,7 +297,6 @@ def _canonical(m: MetaData) -> tuple[Table, Table, Table, Table, Table, Table]:
             "completed_at IS NULL OR completed_at >= started_at", name="completion_order"
         ),
         CheckConstraint("row_version > 0", name="row_version_positive"),
-        info={"deferred_foreign_keys": (_MARKER,)},
     )
     Index("ix_scan_runs_beacon_started_at", runs.c.beacon_id, runs.c.started_at)
     Index(

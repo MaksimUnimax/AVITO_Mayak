@@ -209,8 +209,11 @@ def test_types_defaults_nullability_and_no_current_revision_fk() -> None:
     assert not any(
         "current_revision_id" in str(fk.elements) for fk in beacons.foreign_key_constraints
     )
-    assert not any(
-        "current_revision_no" in str(fk.elements) for fk in beacons.foreign_key_constraints
+    assert any(
+        fk.name == "fk_beacon_beacons_id_beacon_configuration_revisions"
+        and tuple(e.parent.name for e in fk.elements) == ("id", "current_revision_no")
+        and fk.use_alter is True
+        for fk in beacons.foreign_key_constraints
     )
     assert events.c.from_state.nullable and events.c.actor_account_id.nullable
     override_row_version_default = overrides.c.row_version.server_default
@@ -221,8 +224,8 @@ def test_types_defaults_nullability_and_no_current_revision_fk() -> None:
 
 def test_immediate_fks_and_checks() -> None:
     tables = register_beacon_tables(fresh())
-    assert sum(len(table.foreign_key_constraints) for table in tables) == 7
-    assert [len(table.foreign_key_constraints) for table in tables] == [1, 3, 1, 2]
+    assert sum(len(table.foreign_key_constraints) for table in tables) == 8
+    assert [len(table.foreign_key_constraints) for table in tables] == [2, 3, 1, 2]
     assert all(
         fk.ondelete == "RESTRICT" for table in tables for fk in table.foreign_key_constraints
     )
@@ -247,18 +250,19 @@ def test_immediate_fks_and_checks() -> None:
 
 def test_deferred_marker_is_deterministic_and_only_marker() -> None:
     table = register_beacon_tables(fresh())[0]
-    marker = table.info["deferred_foreign_keys"][0]
-    assert marker == {
-        "local_columns": ("id", "current_revision_no"),
-        "target_columns": (
-            "mayak.beacon_configuration_revisions.beacon_id",
-            "mayak.beacon_configuration_revisions.revision_no",
-        ),
-        "on_delete": "RESTRICT",
-        "planned_revision": "RF09_FINALIZE",
-    }
-    assert len(table.foreign_key_constraints) == 1
-    assert marker is not register_beacon_tables(fresh())[0].info["deferred_foreign_keys"][0]
+    fk = next(
+        fk
+        for fk in table.foreign_key_constraints
+        if fk.name == "fk_beacon_beacons_id_beacon_configuration_revisions"
+    )
+    assert fk.name == "fk_beacon_beacons_id_beacon_configuration_revisions"
+    assert tuple(e.parent.name for e in fk.elements) == ("id", "current_revision_no")
+    assert tuple(e.target_fullname for e in fk.elements) == (
+        "mayak.beacon_configuration_revisions.beacon_id",
+        "mayak.beacon_configuration_revisions.revision_no",
+    )
+    assert fk.ondelete == "RESTRICT" and fk.use_alter is True
+    assert table.info == {}
 
 
 def test_repeated_registration_preserves_identity_and_objects() -> None:

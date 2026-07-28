@@ -225,7 +225,7 @@ def test_anchor_checks() -> None:
 
 
 def test_immediate_fk_count() -> None:
-    assert sum(len(t.foreign_key_constraints) for t in tables()) == 12
+    assert sum(len(t.foreign_key_constraints) for t in tables()) == 13
 
 
 def test_all_fks_restrict() -> None:
@@ -247,15 +247,16 @@ def test_route_fk_immediate_and_nullable() -> None:
 
 
 def test_parser_fk_is_absent() -> None:
-    assert not any(
-        "parser_outcomes" in e.target_fullname
+    assert any(
+        f.name == "fk_scan_runs_parser_outcome_id_parser_outcomes"
+        and f.use_alter is True
+        and f.elements[0].target_fullname == "mayak.parser_outcomes.id"
         for f in tables()[2].foreign_key_constraints
-        for e in f.elements
     )
 
 
 def test_deferred_parser_marker_exact() -> None:
-    assert tables()[2].info == {"deferred_foreign_keys": (MARKER,)}
+    assert tables()[2].info == {}
 
 
 def test_no_cascades() -> None:

@@ -247,18 +247,6 @@ def _table_signature(table: Table) -> tuple[object, ...]:
     )
 
 
-def _marker() -> dict[str, object]:
-    return {
-        "local_columns": ("id", "current_revision_no"),
-        "target_columns": (
-            "mayak.beacon_configuration_revisions.beacon_id",
-            "mayak.beacon_configuration_revisions.revision_no",
-        ),
-        "on_delete": "RESTRICT",
-        "planned_revision": "RF09_FINALIZE",
-    }
-
-
 def _validate_prerequisites(metadata: MetaData) -> None:
     for name in ("identity_accounts", "filter_catalog_versions"):
         key = _key(metadata, name)
@@ -284,12 +272,21 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         Column("updated_at", TIMESTAMP(timezone=True), nullable=False),
         Column("row_version", BigInteger, nullable=False, server_default=text("1")),
         ForeignKeyConstraint(["account_id"], ["mayak.identity_accounts.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["id", "current_revision_no"],
+            [
+                "mayak.beacon_configuration_revisions.beacon_id",
+                "mayak.beacon_configuration_revisions.revision_no",
+            ],
+            name="fk_beacon_beacons_id_beacon_configuration_revisions",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
         UniqueConstraint("id", "current_revision_no", name="uq_beacon_beacons_id_current_revision"),
         CheckConstraint("btrim(name) <> ''", name="name_nonempty"),
         CheckConstraint("current_revision_no > 0", name="revision_positive"),
         CheckConstraint("btrim(state) <> ''", name="state_nonempty"),
         CheckConstraint("row_version > 0", name="row_version_positive"),
-        info={"deferred_foreign_keys": (_marker(),)},
     )
     Index("ix_beacon_beacons_account_state", beacons.c.account_id, beacons.c.state)
 

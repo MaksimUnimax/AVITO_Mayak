@@ -407,8 +407,8 @@ def test_outbox_has_only_generic_ownership_fks() -> None:
 
 
 def test_scan_and_egress_deferred_markers_survive() -> None:
-    assert metadata.tables["mayak.scan_runs"].info["deferred_foreign_keys"]
-    assert metadata.tables["mayak.egress_route_leases"].info["deferred_foreign_keys"]
+    assert metadata.tables["mayak.scan_runs"].info == {}
+    assert metadata.tables["mayak.egress_route_leases"].info == {}
 
 
 def test_no_notification_deferred_marker() -> None:

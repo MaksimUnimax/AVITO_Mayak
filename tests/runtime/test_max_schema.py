@@ -475,11 +475,11 @@ def test_global_order_after_telegram() -> None:
 
 
 def test_scan_deferred_marker_unchanged() -> None:
-    assert metadata.tables["mayak.scan_runs"].info["deferred_foreign_keys"]
+    assert metadata.tables["mayak.scan_runs"].info == {}
 
 
 def test_egress_deferred_marker_unchanged() -> None:
-    assert metadata.tables["mayak.egress_route_leases"].info["deferred_foreign_keys"]
+    assert metadata.tables["mayak.egress_route_leases"].info == {}
 
 
 def test_no_max_deferred_marker_global() -> None:

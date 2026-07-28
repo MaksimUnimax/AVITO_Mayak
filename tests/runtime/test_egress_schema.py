@@ -151,20 +151,24 @@ def test_exact_constraints_checks_and_restrict_fks() -> None:
     }
     assert checks(heartbeats) == {"btrim(state) <> ''", "octet_length(safe_metadata::text) <= 8192"}
     assert checks(leases) == {"lease_expires_at > lease_started_at", "btrim(state) <> ''"}
-    assert sum(len(t.foreign_key_constraints) for t in (agents, routes, heartbeats, leases)) == 3
+    assert sum(len(t.foreign_key_constraints) for t in (agents, routes, heartbeats, leases)) == 4
     expected = (
         (routes, "agent_id", "mayak.egress_agents.id"),
         (heartbeats, "agent_id", "mayak.egress_agents.id"),
         (leases, "route_id", "mayak.egress_routes.id"),
     )
     for table, local, target in expected:
-        fk: Any = next(iter(table.foreign_key_constraints))
+        fk: Any = next(
+            fk
+            for fk in table.foreign_key_constraints
+            if fk.elements[0].parent.name == local
+        )
         assert [e.parent.name for e in fk.elements] == [local]
         assert [e.target_fullname for e in fk.elements] == [target] and fk.ondelete == "RESTRICT"
-    assert not any(
-        element.parent.name == "work_item_id"
+    assert any(
+        constraint.name == "fk_egress_route_leases_work_item_id_scan_work_items"
+        and constraint.use_alter is True
         for constraint in leases.foreign_key_constraints
-        for element in constraint.elements
     )
     assert not any(
         " IN (" in str(c) for t in (agents, routes, heartbeats, leases) for c in t.constraints
@@ -173,11 +177,12 @@ def test_exact_constraints_checks_and_restrict_fks() -> None:
 
 def test_deferred_marker_and_no_physical_work_item_fk() -> None:
     leases = metadata.tables["mayak.egress_route_leases"]
-    assert leases.info == {"deferred_foreign_keys": (MARKER,)}
-    assert not any(
-        "scan_work_items" in element.target_fullname
+    assert leases.info == {}
+    assert any(
+        constraint.name == "fk_egress_route_leases_work_item_id_scan_work_items"
+        and [element.target_fullname for element in constraint.elements]
+        == ["mayak.scan_work_items.id"]
         for constraint in leases.foreign_key_constraints
-        for element in constraint.elements
     )
     target = isolated()
     register_egress_tables(target)

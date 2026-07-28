@@ -85,6 +85,7 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260727_RF09_M02_identity_and_access.py",
         "20260727_RF09_M03_entitlements_and_billing.py",
         "20260727_RF09_M13_filter_catalog_and_builder.py",
+        "20260728_RF09_FINALIZE_deferred_constraints.py",
         "20260728_RF09_M04_beacon_management.py",
         "20260728_RF09_M05_avito_parser.py",
         "20260728_RF09_M06_scan_orchestration.py",
@@ -96,8 +97,8 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 13
-    assert scripts.get_heads() == ["RF09_M11"]
+    assert len(revisions) == 14
+    assert scripts.get_heads() == ["RF09_FINALIZE"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -156,6 +157,13 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m11 = scripts.get_revision("RF09_M11")
     assert (
         m11 and m11.down_revision == "RF09_M10" and not m11.branch_labels and not m11.dependencies
+    )
+    finalize = scripts.get_revision("RF09_FINALIZE")
+    assert (
+        finalize
+        and finalize.down_revision == "RF09_M11"
+        and not finalize.branch_labels
+        and not finalize.dependencies
     )
 
 

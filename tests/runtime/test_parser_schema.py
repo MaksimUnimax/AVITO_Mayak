@@ -228,28 +228,21 @@ def test_global_registration_order() -> None:
 
 def test_scan_reverse_fk_is_absent() -> None:
     run = metadata.tables["mayak.scan_runs"]
-    assert not any(
-        e.target_fullname == "mayak.parser_outcomes.id"
+    assert any(
+        fk.name == "fk_scan_runs_parser_outcome_id_parser_outcomes"
+        and fk.use_alter is True
+        and e.target_fullname == "mayak.parser_outcomes.id"
         for fk in run.foreign_key_constraints
         for e in fk.elements
     )
 
 
 def test_scan_deferred_marker_is_exact() -> None:
-    assert metadata.tables["mayak.scan_runs"].info == {
-        "deferred_foreign_keys": (
-            {
-                "local_columns": ("parser_outcome_id",),
-                "target_columns": ("mayak.parser_outcomes.id",),
-                "on_delete": "RESTRICT",
-                "planned_revision": "RF09_FINALIZE",
-            },
-        )
-    }
+    assert metadata.tables["mayak.scan_runs"].info == {}
 
 
 def test_egress_deferred_marker_is_present_and_parser_has_none() -> None:
-    assert metadata.tables["mayak.egress_route_leases"].info["deferred_foreign_keys"]
+    assert metadata.tables["mayak.egress_route_leases"].info == {}
     assert table().info == {}
 
 

@@ -409,16 +409,8 @@ def test_global_registration_order() -> None:
 
 
 def test_existing_deferred_markers_unchanged() -> None:
-    assert (
-        metadata.tables["mayak.scan_runs"].info["deferred_foreign_keys"][0]["planned_revision"]
-        == "RF09_FINALIZE"
-    )
-    assert (
-        metadata.tables["mayak.egress_route_leases"].info["deferred_foreign_keys"][0][
-            "planned_revision"
-        ]
-        == "RF09_FINALIZE"
-    )
+    assert metadata.tables["mayak.scan_runs"].info == {}
+    assert metadata.tables["mayak.egress_route_leases"].info == {}
 
 
 def test_import_is_database_inert(monkeypatch: pytest.MonkeyPatch) -> None:
