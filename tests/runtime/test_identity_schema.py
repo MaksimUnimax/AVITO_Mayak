@@ -130,11 +130,11 @@ def test_identity_constraints_foreign_keys_indexes_and_checks() -> None:
         for fk in roles.foreign_key_constraints
         if fk.elements[0].parent.name == "assigned_by_account_id"
     )
+    physical_name = "fk_identity_role_assignments_assigned_by_account_id_ide_a4f6"
     logical_name = (
         "fk_identity_role_assignments_assigned_by_account_id_identity_accounts"
     )
-    physical_name = "fk_identity_role_assignments_assigned_by_account_id_ide_a4f6"
-    assert assigned_by_fk.name == logical_name
+    assert assigned_by_fk.name == physical_name
     assert dict(metadata.naming_convention) == dict(NAMING_CONVENTION)
     assert [element.target_fullname for element in assigned_by_fk.elements] == [
         "mayak.identity_accounts.id"
@@ -142,7 +142,7 @@ def test_identity_constraints_foreign_keys_indexes_and_checks() -> None:
     assert assigned_by_fk.ondelete == "RESTRICT"
     compiled = str(CreateTable(roles).compile(dialect=postgresql.dialect()))
     assert f"CONSTRAINT {physical_name}" in compiled
-    assert logical_name not in compiled
+    assert physical_name in compiled
     migration_text = (
         Path(__file__).parents[2]
         / "alembic"

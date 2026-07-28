@@ -160,6 +160,7 @@ def build_bootstrap_connect_kwargs(
 def _url(
     settings: ApplicationDatabaseSettings | MigrationDatabaseSettings,
     *,
+    search_path: str,
     require_secret: bool = True,
 ) -> URL:
     password = resolve_secret_file(settings.secret_path).as_text() if require_secret else None
@@ -171,7 +172,7 @@ def _url(
         host=endpoint.host,
         port=endpoint.port,
         database=endpoint.database,
-        query={"options": f"-csearch_path={endpoint.schema}"},
+        query={"options": f"-csearch_path={search_path}"},
     )
 
 
@@ -183,7 +184,7 @@ def build_application_url(
     settings = settings or ApplicationDatabaseSettings(
         secret_path=secret_path or APPLICATION_SECRET_PATH
     )
-    return _url(settings)
+    return _url(settings, search_path=settings.endpoint.schema)
 
 
 def build_migration_url(
@@ -195,4 +196,6 @@ def build_migration_url(
     settings = settings or MigrationDatabaseSettings(
         secret_path=secret_path or MIGRATION_SECRET_PATH
     )
-    return _url(settings, require_secret=require_secret)
+    schema = settings.endpoint.schema
+    search_path = "public" if schema == "public" else f"public,{schema}"
+    return _url(settings, search_path=search_path, require_secret=require_secret)
