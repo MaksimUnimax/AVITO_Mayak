@@ -19,7 +19,7 @@ NAMES = (
 
 def test_exact_metadata_shape() -> None:
     assert metadata.schema == "mayak"
-    assert len(metadata.tables) == 21
+    assert len(metadata.tables) == 25
     assert {table.name for table in metadata.tables.values()} == set(NAMES) | {
         "identity_accounts",
         "identity_provider_links",
@@ -39,6 +39,10 @@ def test_exact_metadata_shape() -> None:
         "filter_category_applicability",
         "filter_evidence_references",
         "filter_capability_profiles",
+        "beacon_beacons",
+        "beacon_configuration_revisions",
+        "beacon_filter_overrides",
+        "beacon_lifecycle_events",
     }
     assert metadata.naming_convention == NAMING_CONVENTION
 
@@ -47,8 +51,8 @@ def test_registration_is_idempotent() -> None:
     first = register_platform_tables(metadata)
     second = register_platform_tables(metadata)
     assert first == second
-    assert len(metadata.tables) == 21
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 32
+    assert len(metadata.tables) == 25
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 36
 
 
 def test_partial_registration_fails_safely() -> None:
@@ -207,13 +211,20 @@ def test_metadata_registration_does_not_connect_or_execute_sql(
 
 def test_primary_keys_are_exactly_single_id_columns() -> None:
     for table in metadata.tables.values():
-        assert [column.name for column in table.primary_key.columns] == ["id"]
-        assert table.primary_key.columns.id.nullable is False
+        if table.name == "beacon_configuration_revisions":
+            assert [column.name for column in table.primary_key.columns] == [
+                "beacon_id",
+                "revision_no",
+            ]
+        else:
+            assert [column.name for column in table.primary_key.columns] == ["id"]
+            assert table.primary_key.columns.id.nullable is False
 
 
 def test_required_type_families_are_postgresql_and_timezone_aware() -> None:
     for table in metadata.tables.values():
-        assert isinstance(table.c.id.type, postgresql.UUID)
+        if table.name != "beacon_configuration_revisions":
+            assert isinstance(table.c.id.type, postgresql.UUID)
         assert isinstance(table.c.created_at.type, postgresql.TIMESTAMP)
         assert table.c.created_at.type.timezone is True
     assert isinstance(

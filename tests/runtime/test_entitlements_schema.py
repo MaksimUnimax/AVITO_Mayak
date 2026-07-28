@@ -128,7 +128,15 @@ def test_exact_tables_and_columns() -> None:
 
 def test_types_defaults_and_immutable_shapes() -> None:
     for table in metadata.tables.values():
+        for column in table.columns:
+            if isinstance(column.type, postgresql.UUID):
+                assert column.type.as_uuid is True
+                assert column.server_default is None
+    for name in NAMES:
+        table = _table(name)
+        assert [column.name for column in table.primary_key.columns] == ["id"]
         assert isinstance(table.c.id.type, postgresql.UUID)
+        assert table.c.id.type.as_uuid is True
         assert table.c.id.server_default is None
     for name in NAMES:
         table = _table(name)

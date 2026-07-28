@@ -82,11 +82,18 @@ def test_exact_identity_table_order_and_columns() -> None:
 
 def test_types_defaults_nullable_and_no_database_uuid() -> None:
     for table in metadata.tables.values():
-        assert isinstance(table.c.id.type, postgresql.UUID)
-        assert table.c.id.server_default is None
-        assert isinstance(table.c.created_at.type, postgresql.TIMESTAMP)
-        assert table.c.created_at.type.timezone is True
+        for column in table.columns:
+            if isinstance(column.type, postgresql.UUID):
+                assert column.type.as_uuid is True
+                assert column.server_default is None
+            if column.name == "created_at":
+                assert isinstance(column.type, postgresql.TIMESTAMP)
+                assert column.type.timezone is True
     accounts = metadata.tables["mayak.identity_accounts"]
+    assert [column.name for column in accounts.primary_key.columns] == ["id"]
+    assert isinstance(accounts.c.id.type, postgresql.UUID)
+    assert accounts.c.id.type.as_uuid is True
+    assert accounts.c.id.server_default is None
     assert accounts.c.phone.nullable is True
     assert accounts.c.row_version.server_default.arg.text == "1"  # type: ignore[union-attr]
     assert not any(

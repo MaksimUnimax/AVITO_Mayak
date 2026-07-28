@@ -44,6 +44,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "filter_category_applicability",
             "filter_evidence_references",
             "filter_capability_profiles",
+            "beacon_beacons",
+            "beacon_configuration_revisions",
+            "beacon_filter_overrides",
+            "beacon_lifecycle_events",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -53,11 +57,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260727_RF09_M02_identity_and_access.py",
         "20260727_RF09_M03_entitlements_and_billing.py",
         "20260727_RF09_M13_filter_catalog_and_builder.py",
+        "20260728_RF09_M04_beacon_management.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 5
-    assert scripts.get_heads() == ["RF09_M13"]
+    assert len(revisions) == 6
+    assert scripts.get_heads() == ["RF09_M04"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -84,6 +89,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m13 = scripts.get_revision("RF09_M13")
     assert (
         m13 and m13.down_revision == "RF09_M03" and not m13.branch_labels and not m13.dependencies
+    )
+    m04 = scripts.get_revision("RF09_M04")
+    assert (
+        m04 and m04.down_revision == "RF09_M13" and not m04.branch_labels and not m04.dependencies
     )
 
 
@@ -242,6 +251,7 @@ def test_database_independent_alembic_commands() -> None:
         "show RF09_M02",
         "show RF09_M03",
         "show RF09_M13",
+        "show RF09_M04",
     ):
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command.split()],
@@ -251,6 +261,30 @@ def test_database_independent_alembic_commands() -> None:
             text=True,
         )
         assert "mayak_database_migration_password" not in result.stdout + result.stderr
+
+
+def test_rf09_m04_revision_contract_and_downgrade() -> None:
+    import importlib.util
+
+    path = ROOT / "alembic" / "versions" / "20260728_RF09_M04_beacon_management.py"
+    text = path.read_text(encoding="utf-8")
+    assert "RF-09-10-M04-BEACON-MANAGEMENT-SCHEMA-BATCH-20260728" in text
+    assert "Implementation owner: Module 14 / RF-09" in text
+    assert "Domain owner: Module 04" in text
+    assert "Domain tables created: 4" in text
+    assert "Deferred FK count: 1" in text
+    assert text.count("op.create_table") == 4
+    assert text.count("op.create_index") == 4
+    assert text.count("op.create_foreign_key") == 0
+    assert text.count("sa.ForeignKeyConstraint") == 7
+    assert "op.drop" not in text and "DROP" not in text.upper()
+    spec = importlib.util.spec_from_file_location("rf09_m04", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "RF09_M04" and module.down_revision == "RF09_M13"
+    with pytest.raises(RuntimeError, match="RF09_M04 is roll-forward only"):
+        module.downgrade()
 
 
 def test_heads_and_history_need_no_database() -> None:

@@ -1,5 +1,6 @@
 """Deterministic SQLAlchemy registrations for persistence schemas."""
 
+from mayak.persistence.schema.beacon import register_beacon_tables
 from mayak.persistence.schema.entitlements import register_entitlement_tables
 from mayak.persistence.schema.filter_catalog import register_filter_catalog_tables
 from mayak.persistence.schema.identity import register_identity_tables
@@ -10,4 +11,5 @@ __all__ = [
     "register_identity_tables",
     "register_entitlement_tables",
     "register_filter_catalog_tables",
+    "register_beacon_tables",
 ]
