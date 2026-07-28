@@ -259,16 +259,33 @@ def test_import_and_registration_do_not_perform_db_io(
     monkeypatch.setattr("sqlalchemy.engine.Engine.connect", lambda *a, **k: calls.append("connect"))
     if case_id == "import":
         module_name = "mayak.persistence.schema.filter_catalog"
+        parent_name = "mayak.persistence.schema"
         cached_module = sys.modules[module_name]
-        sys.modules.pop(module_name)
+        parent_package = sys.modules[parent_name]
+        parent_attribute_exists = hasattr(parent_package, "filter_catalog")
+        assert parent_attribute_exists
+        assert getattr(parent_package, "filter_catalog") is cached_module
         try:
-            fresh_module = importlib.import_module(module_name)
-            assert fresh_module is not cached_module
-            assert fresh_module.register_filter_catalog_tables.__module__ == module_name
-            assert fresh_module.__dict__["_TABLE_NAMES"] == NAMES
+            sys.modules.pop(module_name)
+            try:
+                fresh_module = importlib.import_module(module_name)
+                assert fresh_module is not cached_module
+                assert sys.modules[module_name] is fresh_module
+                assert getattr(parent_package, "filter_catalog") is fresh_module
+                assert fresh_module.register_filter_catalog_tables.__module__ == module_name
+                assert fresh_module.__dict__["_TABLE_NAMES"] == NAMES
+            finally:
+                sys.modules.pop(module_name, None)
+                sys.modules[module_name] = cached_module
+                if parent_attribute_exists:
+                    setattr(parent_package, "filter_catalog", cached_module)
+                else:
+                    delattr(parent_package, "filter_catalog")
         finally:
-            sys.modules.pop(module_name, None)
-            sys.modules[module_name] = cached_module
+            assert sys.modules[module_name] is cached_module
+            assert getattr(parent_package, "filter_catalog") is cached_module
+        assert importlib.import_module(module_name) is cached_module
+        assert getattr(importlib.import_module(parent_name), "filter_catalog") is cached_module
     else:
         register_filter_catalog_tables(_new_metadata())
     assert calls == []
