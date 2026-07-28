@@ -207,8 +207,8 @@ def test_index_order_and_options() -> None:
 def test_global_metadata_totals_and_parser_counts() -> None:
     parser = metadata.tables["mayak.parser_outcomes"]
     assert (
-        len(metadata.tables) == 36
-        and sum(len(item.indexes) for item in metadata.tables.values()) == 51
+        len(metadata.tables) == 41
+        and sum(len(item.indexes) for item in metadata.tables.values()) == 58
     )
     assert len(parser.indexes) == 2 and len(fks(parser)) == 3
 
@@ -220,6 +220,7 @@ def test_global_registration_order() -> None:
         < names.index("egress_routes")
         < names.index("scan_runs")
         < names.index("parser_outcomes")
+        < names.index("notification_endpoints")
     )
 
 

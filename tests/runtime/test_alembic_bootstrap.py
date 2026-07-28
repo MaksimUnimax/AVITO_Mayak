@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -59,6 +60,11 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "scan_beacon_listing_state",
             "scan_anchors",
             "parser_outcomes",
+            "notification_endpoints",
+            "notification_events",
+            "notification_outbox",
+            "notification_delivery_attempts",
+            "notification_delivery_reconciliations",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -72,11 +78,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260728_RF09_M05_avito_parser.py",
         "20260728_RF09_M06_scan_orchestration.py",
         "20260728_RF09_M07_egress_routing.py",
+        "20260728_RF09_M08_notification_delivery.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 9
-    assert scripts.get_heads() == ["RF09_M05"]
+    assert len(revisions) == 10
+    assert scripts.get_heads() == ["RF09_M08"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -118,10 +125,11 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     )
     m05 = scripts.get_revision("RF09_M05")
     assert (
-        m05
-        and m05.down_revision == "RF09_M06"
-        and not m05.branch_labels
-        and not m05.dependencies
+        m05 and m05.down_revision == "RF09_M06" and not m05.branch_labels and not m05.dependencies
+    )
+    m08 = scripts.get_revision("RF09_M08")
+    assert (
+        m08 and m08.down_revision == "RF09_M05" and not m08.branch_labels and not m08.dependencies
     )
 
 
@@ -283,6 +291,7 @@ def test_database_independent_alembic_commands() -> None:
         "show RF09_M04",
         "show RF09_M07",
         "show RF09_M05",
+        "show RF09_M08",
     ):
         result = subprocess.run(
             [sys.executable, "-m", "alembic", "-c", "alembic.ini", *command.split()],
@@ -376,3 +385,23 @@ def test_heads_and_history_need_no_database() -> None:
             text=True,
         )
         assert "mayak_database_migration_password" not in result.stdout + result.stderr
+    path = ROOT / "alembic" / "versions" / "20260728_RF09_M08_notification_delivery.py"
+    text = path.read_text(encoding="utf-8")
+    assert "RF-09-14-M08-NOTIFICATION-DELIVERY-SCHEMA-BATCH-20260728" in text
+    assert "Domain owner: Module 08 Notification Delivery" in text
+    assert "Platform and Notification outboxes are distinct" in text
+    assert "No new deferred foreign key" in text
+    assert text.count("op.create_table") == 5
+    assert text.count("op.create_index") == 7
+    assert text.count("sa.ForeignKeyConstraint") == 8
+    assert all(
+        item not in text
+        for item in ("op.execute", "op.bulk_insert", "op.get_bind", "op.create_foreign_key")
+    )
+    spec = importlib.util.spec_from_file_location("rf09_m08", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "RF09_M08" and module.down_revision == "RF09_M05"
+    with pytest.raises(RuntimeError, match="RF09_M08 is roll-forward only"):
+        module.downgrade()

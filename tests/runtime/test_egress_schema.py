@@ -99,8 +99,8 @@ def test_canonical_order_columns_types_and_counts() -> None:
                 assert column.type.as_uuid is True and column.server_default is None
             if isinstance(column.type, postgresql.TIMESTAMP):
                 assert column.type.timezone is True
-    assert len(metadata.tables) == 36
-    assert sum(len(t.indexes) for t in metadata.tables.values()) == 51
+    assert len(metadata.tables) == 41
+    assert sum(len(t.indexes) for t in metadata.tables.values()) == 58
 
 
 def test_exact_column_options_and_defaults() -> None:

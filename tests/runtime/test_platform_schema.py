@@ -19,7 +19,7 @@ NAMES = (
 
 def test_exact_metadata_shape() -> None:
     assert metadata.schema == "mayak"
-    assert len(metadata.tables) == 36
+    assert len(metadata.tables) == 41
     assert {table.name for table in metadata.tables.values()} == set(NAMES) | {
         "identity_accounts",
         "identity_provider_links",
@@ -54,6 +54,11 @@ def test_exact_metadata_shape() -> None:
         "scan_beacon_listing_state",
         "scan_anchors",
         "parser_outcomes",
+        "notification_endpoints",
+        "notification_events",
+        "notification_outbox",
+        "notification_delivery_attempts",
+        "notification_delivery_reconciliations",
     }
     assert metadata.naming_convention == NAMING_CONVENTION
 
@@ -62,8 +67,8 @@ def test_registration_is_idempotent() -> None:
     first = register_platform_tables(metadata)
     second = register_platform_tables(metadata)
     assert first == second
-    assert len(metadata.tables) == 36
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 51
+    assert len(metadata.tables) == 41
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 58
 
 
 def test_partial_registration_fails_safely() -> None:
