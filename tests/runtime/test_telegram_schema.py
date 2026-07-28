@@ -93,8 +93,8 @@ def test_exact_three_table_return_order() -> None:
 
 
 def test_exact_global_totals() -> None:
-    assert len(metadata.tables) == 44
-    assert sum(len(t.indexes) for t in metadata.tables.values()) == 62
+    assert len(metadata.tables) == 48
+    assert sum(len(t.indexes) for t in metadata.tables.values()) == 67
 
 
 def test_isolated_totals() -> None:

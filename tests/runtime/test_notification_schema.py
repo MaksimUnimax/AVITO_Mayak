@@ -100,8 +100,8 @@ def test_exact_isolated_totals() -> None:
 
 
 def test_global_totals() -> None:
-    assert len(metadata.tables) == 44
-    assert sum(len(item.indexes) for item in metadata.tables.values()) == 62
+    assert len(metadata.tables) == 48
+    assert sum(len(item.indexes) for item in metadata.tables.values()) == 67
 
 
 def test_endpoint_columns() -> None:
@@ -700,6 +700,7 @@ def test_no_channel_policy() -> None:
 def test_metadata_registration_order() -> None:
     names = [key.rsplit(".", 1)[1] for key in metadata.tables]
     assert names.index("parser_outcomes") < names.index("notification_endpoints")
+    assert names.index("telegram_delivery_mappings") < names.index("max_inbound_events")
 
 
 def test_all_required_prerequisites_exist_globally() -> None:

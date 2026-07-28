@@ -207,8 +207,8 @@ def test_index_order_and_options() -> None:
 def test_global_metadata_totals_and_parser_counts() -> None:
     parser = metadata.tables["mayak.parser_outcomes"]
     assert (
-        len(metadata.tables) == 44
-        and sum(len(item.indexes) for item in metadata.tables.values()) == 62
+        len(metadata.tables) == 48
+        and sum(len(item.indexes) for item in metadata.tables.values()) == 67
     )
     assert len(parser.indexes) == 2 and len(fks(parser)) == 3
 
@@ -223,6 +223,7 @@ def test_global_registration_order() -> None:
         < names.index("notification_endpoints")
     )
     assert names.index("notification_endpoints") < names.index("telegram_inbound_updates")
+    assert names.index("telegram_delivery_mappings") < names.index("max_inbound_events")
 
 
 def test_scan_reverse_fk_is_absent() -> None:

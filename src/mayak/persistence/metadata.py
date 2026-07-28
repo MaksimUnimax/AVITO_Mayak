@@ -8,6 +8,7 @@ from mayak.persistence.schema.egress import register_egress_tables
 from mayak.persistence.schema.entitlements import register_entitlement_tables
 from mayak.persistence.schema.filter_catalog import register_filter_catalog_tables
 from mayak.persistence.schema.identity import register_identity_tables
+from mayak.persistence.schema.max import register_max_tables
 from mayak.persistence.schema.notification import register_notification_tables
 from mayak.persistence.schema.parser import register_parser_tables
 from mayak.persistence.schema.platform import register_platform_tables
@@ -39,3 +40,4 @@ register_scan_tables(metadata)
 register_parser_tables(metadata)
 register_notification_tables(metadata)
 register_telegram_tables(metadata)
+register_max_tables(metadata)

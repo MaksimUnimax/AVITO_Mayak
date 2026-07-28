@@ -19,7 +19,7 @@ NAMES = (
 
 def test_exact_metadata_shape() -> None:
     assert metadata.schema == "mayak"
-    assert len(metadata.tables) == 44
+    assert len(metadata.tables) == 48
     assert {table.name for table in metadata.tables.values()} == set(NAMES) | {
         "identity_accounts",
         "identity_provider_links",
@@ -62,6 +62,10 @@ def test_exact_metadata_shape() -> None:
         "telegram_inbound_updates",
         "telegram_identity_mappings",
         "telegram_delivery_mappings",
+        "max_inbound_events",
+        "max_identity_mappings",
+        "max_delivery_mappings",
+        "max_miniapp_nonces",
     }
     assert metadata.naming_convention == NAMING_CONVENTION
 
@@ -70,8 +74,8 @@ def test_registration_is_idempotent() -> None:
     first = register_platform_tables(metadata)
     second = register_platform_tables(metadata)
     assert first == second
-    assert len(metadata.tables) == 44
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 62
+    assert len(metadata.tables) == 48
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 67
 
 
 def test_partial_registration_fails_safely() -> None:
@@ -219,6 +223,9 @@ def test_no_forbidden_columns_or_database_uuid_defaults() -> None:
                 "telegram_user_ref",
                 "telegram_message_ref",
                 "provider_update_id",
+                "provider_event_id",
+                "max_user_ref",
+                "max_message_ref",
             } or not any(word in column.name.lower() for word in forbidden)
 
 

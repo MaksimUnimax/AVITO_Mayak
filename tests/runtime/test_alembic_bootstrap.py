@@ -69,6 +69,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
             "telegram_inbound_updates",
             "telegram_identity_mappings",
             "telegram_delivery_mappings",
+            "max_inbound_events",
+            "max_identity_mappings",
+            "max_delivery_mappings",
+            "max_miniapp_nonces",
         )
     }
     versions = sorted(path for path in (ROOT / "alembic" / "versions").iterdir() if path.is_file())
@@ -84,11 +88,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260728_RF09_M07_egress_routing.py",
         "20260728_RF09_M08_notification_delivery.py",
         "20260728_RF09_M09_telegram_adapter.py",
+        "20260728_RF09_M10_max_adapter.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 11
-    assert scripts.get_heads() == ["RF09_M09"]
+    assert len(revisions) == 12
+    assert scripts.get_heads() == ["RF09_M10"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")
@@ -139,6 +144,10 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
     m09 = scripts.get_revision("RF09_M09")
     assert (
         m09 and m09.down_revision == "RF09_M08" and not m09.branch_labels and not m09.dependencies
+    )
+    m10 = scripts.get_revision("RF09_M10")
+    assert (
+        m10 and m10.down_revision == "RF09_M09" and not m10.branch_labels and not m10.dependencies
     )
 
 
@@ -469,4 +478,70 @@ def test_heads_and_history_need_no_database() -> None:
             for _, args, _ in operations[:3]
         )
         == 2
+    )
+
+    # RF09_M10 contract and operation spy
+    path = ROOT / "alembic" / "versions" / "20260728_RF09_M10_max_adapter.py"
+    text = path.read_text(encoding="utf-8")
+    assert "RF-09-16-M10-MAX-ADAPTER-SCHEMA-BATCH-20260728" in text
+    assert "Domain owner: Module 10 MAX Adapter" in text
+    assert "Implementation owner: Module 14/RF-09" in text
+    assert "Production is webhook-first" in text and "polling is development/test-only" in text
+    assert text.count("op.create_table") == 4 and text.count("op.create_index") == 5
+    assert text.count("sa.ForeignKeyConstraint") == 3
+    assert all(
+        item not in text
+        for item in (
+            "op.execute",
+            "op.bulk_insert",
+            "op.get_bind",
+            "op.create_foreign_key",
+            "alembic.operations",
+        )
+    )
+    spec = importlib.util.spec_from_file_location("rf09_m10", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.revision == "RF09_M10" and module.down_revision == "RF09_M09"
+    with pytest.raises(RuntimeError, match="RF09_M10 is roll-forward only"):
+        module.downgrade()
+    operations_m10: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
+
+    class SpyM10:
+        def create_table(self, *args: object, **kwargs: object) -> None:
+            operations_m10.append(("create_table", args, kwargs))
+
+        def create_index(self, *args: object, **kwargs: object) -> None:
+            operations_m10.append(("create_index", args, kwargs))
+
+    setattr(module, "op", SpyM10())
+    module.upgrade()
+    assert [item[0] for item in operations_m10] == ["create_table"] * 4 + ["create_index"] * 5
+    assert [str(item[1][0]) for item in operations_m10[:4]] == [
+        "max_inbound_events",
+        "max_identity_mappings",
+        "max_delivery_mappings",
+        "max_miniapp_nonces",
+    ]
+    assert [str(item[1][0]) for item in operations_m10[4:]] == [
+        "ix_max_inbound_events_provider_event_id",
+        "ix_max_inbound_events_received_at",
+        "ix_max_identity_mappings_provider_link_id",
+        "ux_max_delivery_mappings_message_ref",
+        "ix_max_miniapp_nonces_expires_at",
+    ]
+    assert (
+        sum(
+            len([item for item in args if isinstance(item, sa.ForeignKeyConstraint)])
+            for _, args, _ in operations_m10[:4]
+        )
+        == 3
+    )
+    assert (
+        sum(
+            len([item for item in args if isinstance(item, sa.UniqueConstraint)])
+            for _, args, _ in operations_m10[:4]
+        )
+        == 5
     )
