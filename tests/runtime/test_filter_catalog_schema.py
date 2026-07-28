@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -257,7 +258,17 @@ def test_import_and_registration_do_not_perform_db_io(
     monkeypatch.setattr("sqlalchemy.create_engine", lambda *a, **k: calls.append("engine"))
     monkeypatch.setattr("sqlalchemy.engine.Engine.connect", lambda *a, **k: calls.append("connect"))
     if case_id == "import":
-        importlib.import_module("mayak.persistence.schema.filter_catalog")
+        module_name = "mayak.persistence.schema.filter_catalog"
+        cached_module = sys.modules[module_name]
+        sys.modules.pop(module_name)
+        try:
+            fresh_module = importlib.import_module(module_name)
+            assert fresh_module is not cached_module
+            assert fresh_module.register_filter_catalog_tables.__module__ == module_name
+            assert fresh_module.__dict__["_TABLE_NAMES"] == NAMES
+        finally:
+            sys.modules.pop(module_name, None)
+            sys.modules[module_name] = cached_module
     else:
         register_filter_catalog_tables(_new_metadata())
     assert calls == []
@@ -390,6 +401,205 @@ def _constraint(target: MetaData, name: str, kind: type[Constraint]) -> Constrai
     )
 
 
+def _filter_options(target: MetaData) -> Table:
+    return target.tables["mayak.filter_options"]
+
+
+def _replace_unique_columns(target: MetaData, columns: tuple[str, ...]) -> None:
+    table = _filter_options(target)
+    canonical = _constraint(
+        target, "uq_filter_options_definition_option", UniqueConstraint
+    )
+    assert isinstance(canonical, UniqueConstraint)
+    unrelated_before = {
+        id(constraint): _constraint_signature(constraint)
+        for constraint in table.constraints
+        if constraint is not canonical
+    }
+    table.constraints.remove(canonical)
+    replacement = UniqueConstraint(
+        *columns,
+        name=canonical.name,
+        deferrable=canonical.deferrable,
+        initially=canonical.initially,
+        comment=canonical.comment,
+        info=dict(canonical.info),
+    )
+    replacement._set_parent(table)
+    corresponding = [
+        constraint
+        for constraint in table.constraints
+        if isinstance(constraint, UniqueConstraint)
+        and constraint.name == "uq_filter_options_definition_option"
+    ]
+    assert len(corresponding) == 1
+    assert corresponding[0] is replacement
+    assert tuple(column.name for column in replacement.columns) == columns
+    assert tuple(column.name for column in replacement.columns) != (
+        "definition_id",
+        "option_code",
+    )
+    assert {
+        id(constraint): _constraint_signature(constraint)
+        for constraint in table.constraints
+        if constraint is not replacement
+    } == unrelated_before
+
+
+def _replace_filter_option_fk(target: MetaData, local_column: str) -> None:
+    table = _filter_options(target)
+    foreign_keys = tuple(table.foreign_key_constraints)
+    assert len(foreign_keys) == 1
+    canonical = foreign_keys[0]
+    assert canonical.name == "fk_filter_options_definition_id_filter_definitions"
+    element = canonical.elements[0]
+    preserved = (
+        element.target_fullname,
+        canonical.ondelete,
+        canonical.onupdate,
+        canonical.deferrable,
+        canonical.initially,
+        canonical.use_alter,
+        canonical.match,
+        _options(canonical.dialect_options),
+    )
+    table.constraints.remove(canonical)
+    for element in canonical.elements:
+        table.foreign_keys.remove(element)
+        element.parent.foreign_keys.remove(element)
+    replacement = ForeignKeyConstraint(
+        [local_column],
+        [element.target_fullname],
+        name=canonical.name,
+        ondelete=canonical.ondelete,
+        onupdate=canonical.onupdate,
+        deferrable=canonical.deferrable,
+        initially=canonical.initially,
+        use_alter=canonical.use_alter,
+        match=canonical.match,
+        info=dict(canonical.info),
+        comment=canonical.comment,
+    )
+    replacement._set_parent(table)
+    relevant = tuple(table.foreign_key_constraints)
+    assert len(relevant) == 1
+    assert relevant[0] is replacement
+    assert replacement.name == canonical.name
+    assert tuple(element.parent.name for element in replacement.elements) == (local_column,)
+    assert (
+        replacement.elements[0].target_fullname,
+        replacement.ondelete,
+        replacement.onupdate,
+        replacement.deferrable,
+        replacement.initially,
+        replacement.use_alter,
+        replacement.match,
+        _options(replacement.dialect_options),
+    ) == preserved
+    assert local_column != "definition_id"
+
+
+def _mutate_live_fk_dialect_option(target: MetaData) -> None:
+    table = _filter_options(target)
+    foreign_keys = tuple(table.foreign_key_constraints)
+    assert len(foreign_keys) == 1
+    foreign_key = foreign_keys[0]
+    identity = id(foreign_key)
+    before = (
+        foreign_key.name,
+        tuple(element.parent.name for element in foreign_key.elements),
+        tuple(element.target_fullname for element in foreign_key.elements),
+        foreign_key.ondelete,
+        foreign_key.onupdate,
+        foreign_key.deferrable,
+        foreign_key.initially,
+        foreign_key.use_alter,
+        foreign_key.match,
+    )
+    foreign_key.dialect_options["postgresql"]["not_valid"] = True
+    assert id(foreign_key) == identity
+    assert foreign_key in table.foreign_key_constraints
+    assert len(table.foreign_key_constraints) == 1
+    assert foreign_key.dialect_options["postgresql"]["not_valid"] is True
+    assert (
+        foreign_key.name,
+        tuple(element.parent.name for element in foreign_key.elements),
+        tuple(element.target_fullname for element in foreign_key.elements),
+        foreign_key.ondelete,
+        foreign_key.onupdate,
+        foreign_key.deferrable,
+        foreign_key.initially,
+        foreign_key.use_alter,
+        foreign_key.match,
+    ) == before
+
+
+def _canonical_applicability_index(target: MetaData) -> Index:
+    table = target.tables["mayak.filter_category_applicability"]
+    indexes = tuple(
+        index
+        for index in table.indexes
+        if index.name == "ix_filter_category_applicability_catalog_category"
+    )
+    assert len(indexes) == 1
+    return indexes[0]
+
+
+def _index_expression_name(expression: object) -> str:
+    return str(getattr(expression, "name", expression))
+
+
+def _replace_applicability_index(target: MetaData, expressions: tuple[str, ...]) -> None:
+    table = target.tables["mayak.filter_category_applicability"]
+    canonical = _canonical_applicability_index(target)
+    old_names = tuple(_index_expression_name(expression) for expression in canonical.expressions)
+    assert len(old_names) == len(expressions)
+    table.indexes.remove(canonical)
+    replacement = Index(
+        canonical.name,
+        *(getattr(table.c, name) for name in expressions),
+        unique=canonical.unique,
+        info=dict(canonical.info),
+    )
+    replacement._set_parent(table)
+    relevant = tuple(
+        index for index in table.indexes if index.name == canonical.name
+    )
+    assert len(relevant) == 1
+    assert relevant[0] is replacement
+    replacement_names = tuple(
+        _index_expression_name(expression) for expression in replacement.expressions
+    )
+    assert replacement_names == expressions
+    assert replacement_names != old_names
+    assert replacement.unique == canonical.unique
+
+
+def _mutate_live_index_dialect_option(target: MetaData) -> None:
+    table = _filter_options(target)
+    indexes = tuple(table.indexes)
+    assert len(indexes) == 1
+    index = indexes[0]
+    identity = id(index)
+    before = (
+        index.name,
+        tuple(_index_expression_name(expression) for expression in index.expressions),
+        index.unique,
+        _normal(index.info),
+    )
+    index.dialect_options["postgresql"]["where"] = text("label IS NOT NULL")
+    assert id(index) == identity
+    assert index in table.indexes
+    assert len(table.indexes) == 1
+    assert index.dialect_options["postgresql"]["where"] is not None
+    assert (
+        index.name,
+        tuple(_index_expression_name(expression) for expression in index.expressions),
+        index.unique,
+        _normal(index.info),
+    ) == before
+
+
 def _check_with_rule(target: MetaData) -> CheckConstraint:
     return next(
         c
@@ -415,15 +625,11 @@ def _check_with_rule(target: MetaData) -> CheckConstraint:
         ),
         (
             "unique_columns",
-            lambda m: UniqueConstraint("label", name="wrong_unique")._set_parent(
-                m.tables["mayak.filter_options"]
-            ),
+            lambda m: _replace_unique_columns(m, ("definition_id", "label")),
         ),
         (
             "unique_order",
-            lambda m: UniqueConstraint(
-                "option_code", "definition_id", name="wrong_order"
-            )._set_parent(m.tables["mayak.filter_options"]),
+            lambda m: _replace_unique_columns(m, ("option_code", "definition_id")),
         ),
         (
             "unique_name",
@@ -471,11 +677,7 @@ def test_existing_unique_conflicts_fail_closed(
         ),
         (
             "fk_local_column",
-            lambda m: ForeignKeyConstraint(
-                [m.tables["mayak.filter_options"].c.label],
-                ["mayak.filter_definitions.id"],
-                name="wrong_local",
-            )._set_parent(m.tables["mayak.filter_options"]),
+            lambda m: _replace_filter_option_fk(m, "label"),
         ),
         (
             "fk_target",
@@ -535,12 +737,7 @@ def test_existing_unique_conflicts_fail_closed(
         ),
         (
             "fk_dialect_options",
-            lambda m: (
-                m.tables["mayak.filter_options"]
-                .foreign_key_constraints.pop()
-                .dialect_options["postgresql"]
-                .update(not_valid=True)
-            ),
+            _mutate_live_fk_dialect_option,
         ),
     ],
     ids=lambda value: value if isinstance(value, str) else None,
@@ -584,18 +781,8 @@ def test_existing_check_and_unsupported_conflicts_fail_closed(
 
 
 def _replace_index(target: MetaData, mutate: Callable[[Index], None]) -> None:
-    table = target.tables["mayak.filter_category_applicability"]
-    old = next(
-        index
-        for index in table.indexes
-        if index.name == "ix_filter_category_applicability_catalog_category"
-    )
-    table.indexes.remove(old)
-    replacement = Index(
-        old.name, table.c.category_code, table.c.catalog_version_id, unique=old.unique
-    )
-    replacement._set_parent(table)
-    mutate(replacement)
+    index = _canonical_applicability_index(target)
+    mutate(index)
 
 
 @pytest.mark.parametrize(
@@ -613,8 +800,14 @@ def _replace_index(target: MetaData, mutate: Callable[[Index], None]) -> None:
                 m.tables["mayak.filter_options"]
             ),
         ),
-        ("index_columns", lambda m: _replace_index(m, lambda i: None)),
-        ("index_order", lambda m: _replace_index(m, lambda i: None)),
+        (
+            "index_columns",
+            lambda m: _replace_applicability_index(m, ("catalog_version_id", "definition_id")),
+        ),
+        (
+            "index_order",
+            lambda m: _replace_applicability_index(m, ("category_code", "catalog_version_id")),
+        ),
         (
             "index_name",
             lambda m: setattr(
@@ -627,12 +820,7 @@ def _replace_index(target: MetaData, mutate: Callable[[Index], None]) -> None:
         ),
         (
             "index_postgresql_option",
-            lambda m: (
-                m.tables["mayak.filter_options"]
-                .indexes.pop()
-                .dialect_options["postgresql"]
-                .update(where=text("label IS NOT NULL"))
-            ),
+            _mutate_live_index_dialect_option,
         ),
     ],
     ids=lambda value: value if isinstance(value, str) else None,
@@ -683,7 +871,7 @@ def test_existing_metadata_and_table_conflicts_fail_closed(
         ("last", (6,)),
         ("noncontiguous", (0, 2, 5)),
         ("all_but_one", (0, 1, 2, 3, 4, 5)),
-        ("incompatible_partial", (0, 1, 2, 3, 4, 5, 6)),
+        ("incompatible_partial", (0, 1, 2, 3, 4, 5)),
         ("with_foreign_table", (0, 1)),
     ],
     ids=lambda value: value if isinstance(value, str) else None,
@@ -695,7 +883,14 @@ def test_partial_registration_masks_fail_closed(case_id: str, existing: tuple[in
     if case_id == "with_foreign_table":
         Table("unrelated", target)
     elif case_id == "incompatible_partial":
-        target.tables["mayak.filter_capability_profiles"].append_column(Column("wrong", String(1)))
+        incompatible = target.tables["mayak.filter_options"]
+        incompatible.append_column(Column("wrong", String(1)))
+        assert len(existing) < len(NAMES)
+        assert "mayak.filter_capability_profiles" not in target.tables
+        assert "wrong" in incompatible.c
+        assert tuple(target.tables) != EXPECTED_TABLE_KEYS
+        assert isinstance(incompatible.c.wrong.type, String)
+        assert incompatible.c.wrong.type.length == 1
     before = _snapshot(target)
     with pytest.raises(RuntimeError, match="partial filter catalog|conflicting existing"):
         register_filter_catalog_tables(target)
