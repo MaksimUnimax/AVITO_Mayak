@@ -4,6 +4,7 @@ import importlib
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy.sql.elements import TextClause
@@ -43,10 +44,69 @@ class FakeConnection:
     def __init__(self, results: list[object]) -> None:
         self.results = results
         self.calls: list[tuple[str, dict[str, object]]] = []
+        self.transaction = False
+        self.commits = 0
+        self.rollbacks = 0
 
     def execute(self, statement: TextClause, params: dict[str, object]) -> object:
         self.calls.append((str(statement), params))
+        self.transaction = True
         return self.results.pop(0)
+
+    def in_transaction(self) -> bool:
+        return self.transaction
+
+    def commit(self) -> None:
+        self.commits += 1
+        self.transaction = False
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+        self.transaction = False
+
+
+class LifecycleConnection(FakeConnection):
+    def __init__(self, results: list[object]) -> None:
+        super().__init__(results)
+        self.events: list[str] = []
+        self.fail_commit = False
+        self.fail_rollback = False
+        self.fail_state = False
+        self.state_after_commit = False
+        self.lock_held = False
+
+    def execute(self, statement: TextClause, params: dict[str, object]) -> object:
+        self.events.append(str(statement))
+        self.transaction = True
+        if "pg_try_advisory_lock" in str(statement):
+            candidate = self.results[0]
+            self.lock_held = isinstance(candidate, FakeRowResult) and candidate.rows == [(True,)]
+        elif "pg_advisory_unlock" in str(statement):
+            self.lock_held = False
+        return super().execute(statement, params)
+
+    def in_transaction(self) -> bool:
+        if self.fail_state:
+            raise RuntimeError("driver detail")
+        return self.transaction
+
+    def commit(self) -> None:
+        self.events.append("commit")
+        self.commits += 1
+        if self.fail_commit:
+            raise RuntimeError("driver detail")
+        self.transaction = self.state_after_commit
+
+    def rollback(self) -> None:
+        self.events.append("rollback")
+        self.rollbacks += 1
+        if self.fail_rollback:
+            raise RuntimeError("driver detail")
+        self.transaction = False
+
+
+def lifecycle_connection() -> LifecycleConnection:
+    return LifecycleConnection([result((True,)), result((True,))])
 
 
 def result(*rows: object, extraction_error: bool = False) -> FakeRowResult:
@@ -189,7 +249,7 @@ def test_environment_uses_one_transaction_per_revision_and_serialized_online_run
 
 
 def test_importing_migration_module_is_inert() -> None:
-    module = importlib.reload(sys.modules["mayak.persistence.migration"])
+    module = importlib.import_module("mayak.persistence.migration")
     assert module.MIGRATION_LOCK_KEY == 7342190310
 
 
@@ -224,3 +284,218 @@ def test_database_independent_alembic_topology() -> None:
     assert "RF09_BOOTSTRAP" in shown
 
     assert run_alembic("branches").stdout.strip() == ""
+
+
+def test_clean_entry_state_is_required() -> None:
+    connection = lifecycle_connection()
+    entered = False
+    with serialized_migration(connection):
+        entered = True
+    assert entered
+    assert connection.events[:2] == ["SELECT pg_try_advisory_lock(:lock_key)", "commit"]
+
+
+def test_pre_existing_transaction_is_rejected_before_lock_sql() -> None:
+    connection = lifecycle_connection()
+    connection.transaction = True
+    with pytest.raises(MigrationSerializationError, match="migration serialization unavailable"):
+        with serialized_migration(connection):
+            raise AssertionError("body must not run")
+    assert connection.calls == []
+    assert connection.rollbacks == 0
+
+
+def test_entry_state_inspection_failure_is_redacted_and_body_does_not_run() -> None:
+    connection = lifecycle_connection()
+    connection.fail_state = True
+    with pytest.raises(MigrationSerializationError, match="migration serialization unavailable"):
+        with serialized_migration(connection):
+            raise AssertionError("body must not run")
+    assert connection.calls == []
+
+
+def test_non_boolean_entry_state_is_rejected() -> None:
+    class NonBooleanState(LifecycleConnection):
+        def in_transaction(self) -> Any:
+            return 0
+
+    connection = NonBooleanState([])
+    with pytest.raises(MigrationSerializationError, match="migration serialization unavailable"):
+        with serialized_migration(connection):
+            raise AssertionError("body must not run")
+    assert connection.calls == []
+
+
+def test_acquisition_commit_precedes_body_and_body_is_clean() -> None:
+    connection = lifecycle_connection()
+    with serialized_migration(connection):
+        assert connection.in_transaction() is False
+        assert connection.lock_held
+    assert connection.events == [
+        "SELECT pg_try_advisory_lock(:lock_key)",
+        "commit",
+        "SELECT pg_advisory_unlock(:lock_key)",
+        "commit",
+    ]
+    assert connection.rollbacks == 0
+
+
+def test_acquisition_commit_failure_is_redacted_and_body_is_not_entered() -> None:
+    connection = lifecycle_connection()
+    connection.fail_commit = True
+    with pytest.raises(MigrationSerializationError, match="migration serialization unavailable"):
+        with serialized_migration(connection):
+            raise AssertionError("body must not run")
+    assert connection.calls[0] == (
+        "SELECT pg_try_advisory_lock(:lock_key)",
+        {"lock_key": MIGRATION_LOCK_KEY},
+    )
+    assert connection.events[1] == "commit"
+
+
+def test_active_state_after_acquisition_commit_fails_closed() -> None:
+    connection = lifecycle_connection()
+    connection.state_after_commit = True
+    with pytest.raises(MigrationSerializationError, match="migration serialization unavailable"):
+        with serialized_migration(connection):
+            raise AssertionError("body must not run")
+    assert connection.rollbacks >= 1
+
+
+def test_successful_body_rolls_back_unexpected_transaction_before_unlock() -> None:
+    connection = lifecycle_connection()
+    with serialized_migration(connection):
+        connection.transaction = True
+    assert connection.events == [
+        "SELECT pg_try_advisory_lock(:lock_key)",
+        "commit",
+        "rollback",
+        "SELECT pg_advisory_unlock(:lock_key)",
+        "commit",
+    ]
+    assert connection.commits == 2
+
+
+def test_unexpected_successful_body_transaction_is_never_committed() -> None:
+    connection = lifecycle_connection()
+    with serialized_migration(connection):
+        connection.transaction = True
+    assert connection.events.index("rollback") < connection.events.index(
+        "SELECT pg_advisory_unlock(:lock_key)"
+    )
+
+
+def test_unlock_commit_failure_is_redacted() -> None:
+    connection = lifecycle_connection()
+    original_commit = connection.commit
+    calls = 0
+
+    def fail_second_commit() -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("driver detail")
+        original_commit()
+
+    connection.commit = fail_second_commit  # type: ignore[method-assign]
+    with pytest.raises(MigrationSerializationError, match="migration serialization release failed"):
+        with serialized_migration(connection):
+            pass
+
+
+def test_final_active_state_after_unlock_commit_fails_closed() -> None:
+    connection = lifecycle_connection()
+    commits = 0
+    original_commit = connection.commit
+
+    def active_after_unlock_commit() -> None:
+        nonlocal commits
+        commits += 1
+        original_commit()
+        if commits == 2:
+            connection.transaction = True
+
+    connection.commit = active_after_unlock_commit  # type: ignore[method-assign]
+    with pytest.raises(MigrationSerializationError, match="migration serialization release failed"):
+        with serialized_migration(connection):
+            pass
+
+
+def test_failed_body_rolls_back_active_transaction_and_preserves_identity() -> None:
+    connection = lifecycle_connection()
+    original = ValueError("body")
+    with pytest.raises(ValueError) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise original
+    assert caught.value is original
+    assert connection.events[-3:] == ["rollback", "SELECT pg_advisory_unlock(:lock_key)", "commit"]
+
+
+def test_failed_body_never_commits_failed_work() -> None:
+    connection = lifecycle_connection()
+    with pytest.raises(ValueError):
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise ValueError("failed migration")
+    assert connection.commits == 2
+    assert connection.rollbacks == 1
+
+
+def test_failed_body_rollback_failure_does_not_mask_original() -> None:
+    connection = lifecycle_connection()
+    connection.fail_rollback = True
+    original = RuntimeError("original")
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            connection.transaction = True
+            raise original
+    assert caught.value is original
+
+
+def test_failed_body_unlock_failure_does_not_mask_original() -> None:
+    connection = LifecycleConnection([result((True,)), result((False,))])
+    original = RuntimeError("original")
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            raise original
+    assert caught.value is original
+
+
+def test_failed_body_unlock_commit_failure_does_not_mask_original() -> None:
+    connection = lifecycle_connection()
+    commits = 0
+    original_commit = connection.commit
+
+    def fail_unlock_commit() -> None:
+        nonlocal commits
+        commits += 1
+        if commits == 2:
+            raise RuntimeError("driver detail")
+        original_commit()
+
+    connection.commit = fail_unlock_commit  # type: ignore[method-assign]
+    original = RuntimeError("original")
+    with pytest.raises(RuntimeError) as caught:
+        with serialized_migration(connection):
+            raise original
+    assert caught.value is original
+
+
+def test_keyboard_interrupt_is_preserved() -> None:
+    connection = lifecycle_connection()
+    original = KeyboardInterrupt()
+    with pytest.raises(KeyboardInterrupt) as caught:
+        with serialized_migration(connection):
+            raise original
+    assert caught.value is original
+
+
+def test_source_has_transaction_boundary_safety_invariants() -> None:
+    source = (ROOT / "src/mayak/persistence/migration.py").read_text(encoding="utf-8")
+    assert source.count("in_transaction()") >= 2
+    assert source.count("connection.commit()") >= 2
+    assert source.count("connection.rollback()") >= 1
+    assert "AUTOCOMMIT" not in source
+    assert "begin_nested" not in source
+    assert "DBAPI" not in source

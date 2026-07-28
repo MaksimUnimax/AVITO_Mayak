@@ -54,17 +54,62 @@ def _release(connection: Any) -> None:
         raise MigrationSerializationError("migration serialization release failed")
 
 
+def _transaction_state(connection: Any, message: str) -> bool:
+    try:
+        state = connection.in_transaction()
+    except Exception:
+        raise MigrationSerializationError(message) from None
+    if type(state) is not bool:
+        raise MigrationSerializationError(message)
+    return state
+
+
+def _best_effort_cleanup(connection: Any) -> None:
+    rollback_failed = False
+    try:
+        if connection.in_transaction() is True:
+            connection.rollback()
+    except Exception:
+        rollback_failed = True
+    if rollback_failed:
+        return
+    try:
+        _release(connection)
+        connection.commit()
+    except Exception:
+        pass
+
+
 @contextmanager
 def serialized_migration(connection: Any) -> Iterator[None]:
     """Hold one session-level lock over configuration and all migrations."""
+    if _transaction_state(connection, "migration serialization unavailable"):
+        raise MigrationSerializationError("migration serialization unavailable")
     _acquire(connection)
+    try:
+        connection.commit()
+        if _transaction_state(connection, "migration serialization unavailable"):
+            raise MigrationSerializationError("migration serialization unavailable")
+    except MigrationSerializationError:
+        _best_effort_cleanup(connection)
+        raise
+    except Exception:
+        _best_effort_cleanup(connection)
+        raise MigrationSerializationError("migration serialization unavailable") from None
     try:
         yield
     except BaseException:
-        try:
-            _release(connection)
-        except MigrationSerializationError:
-            pass
+        _best_effort_cleanup(connection)
         raise
     else:
-        _release(connection)
+        try:
+            if _transaction_state(connection, "migration serialization release failed"):
+                connection.rollback()
+            _release(connection)
+            connection.commit()
+            if _transaction_state(connection, "migration serialization release failed"):
+                raise MigrationSerializationError("migration serialization release failed")
+        except MigrationSerializationError:
+            raise
+        except Exception:
+            raise MigrationSerializationError("migration serialization release failed") from None
