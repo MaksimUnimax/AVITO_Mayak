@@ -27,6 +27,13 @@ from mayak.contracts.readiness import (
     ProcessReadinessStatus,
 )
 from mayak.contracts.results import CommonOutcome, Result, ResultOutcome
+from mayak.contracts.serialization import (
+    ContractSerializationError,
+    canonical_contract_bytes,
+    canonical_contract_sha256,
+    canonical_contract_text,
+    decode_contract_json,
+)
 from mayak.platform.audit import (
     AuditModuleIdentifier,
     AuditOperation,
@@ -70,6 +77,7 @@ __all__ = [
     "AuditTargetScope",
     "CommonErrorOutcome",
     "CommonOutcome",
+    "ContractSerializationError",
     "ConfigurationComponent",
     "ConfigurationEnvironment",
     "ConfigurationMetadata",
@@ -79,10 +87,14 @@ __all__ = [
     "ConfigurationSourceCategory",
     "ConfigurationValidationOutcome",
     "ConfigurationValidationStatus",
+    "canonical_contract_bytes",
+    "canonical_contract_sha256",
+    "canonical_contract_text",
     "CorrelationContext",
     "CorrelationId",
     "DependencyReadiness",
     "DependencyReadinessStatus",
+    "decode_contract_json",
     "ContractMetadata",
     "ErrorCategory",
     "MessageId",
