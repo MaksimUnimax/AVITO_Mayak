@@ -530,3 +530,18 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Evidence:** focused contracts `117 passed`; PostgreSQL 18 transaction/idempotency/audit proof `46 passed`; shared suite excluding separately executed DB files `5588 passed`; Ruff, mypy and import-linter passed.
 - **Governance:** RF-09 independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; RF-10 published for independent acceptance; RF-11 not started; runtime `RUNTIME_ELIGIBLE`; production `NOT_PRODUCTION_READY`.
 - **Security/resources:** no migration/schema/dependency change; no provider call, credential exposure, production data or foreign-resource impact; exact task-owned PostgreSQL resources cleaned.
+
+## 2026-07-29 — RF-10 corrective health invariants and governance consistency
+
+- **Technical ID:** `RF-10-CORRECTIVE-HEALTH-INVARIANTS-AND-GOVERNANCE-CONSISTENCY-20260729-02`.
+- **Expected base:** `f7441ce7cf002e63062a544f711ee31fc7426032`.
+- **Root cause:** factory-only health/build testing did not enforce cross-field invariants at the public Pydantic model boundary.
+- **Public-contract defects corrected:** complete PROVEN proof triplet enforcement; empty UNPROVEN proof triplet enforcement; partial-proof rejection; canonical safe diagnostic identifiers; rejection of UNPROVEN plus READY health snapshots; direct-construction and factory regression coverage; readiness/liveness semantics preserved.
+- **Governance contradictions corrected:** stale RF-04/RF-05 current-state wording; RF-09 pending-review wording; RF-10 partial/incorrect current-gate wording; directly affected README, manifest, roadmap, module index and Module 14 playbook state.
+- **Tests/static checks:** focused health/readiness tests, affected public-contract tests, Ruff, mypy, import-linter, architecture checks and shared/public suite are required and recorded in the terminal report.
+- **Reused PostgreSQL evidence:** accepted 46-test RF-10 PostgreSQL persistence proof reused because persistence, migrations/schema, dependencies and lock are unchanged.
+- **Dependency/migration change:** none; `uv.lock` unchanged; migration head remains `RF09_FINALIZE`.
+- **Foreign-resource impact:** none; no runtime, database, provider or persistent data mutation.
+- **Security:** no credential exposure, secret, DSN, token, private key, populated environment mapping or production data added.
+- **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
+- **CHATGPT_REVIEW_REQUIRED:** `YES`.

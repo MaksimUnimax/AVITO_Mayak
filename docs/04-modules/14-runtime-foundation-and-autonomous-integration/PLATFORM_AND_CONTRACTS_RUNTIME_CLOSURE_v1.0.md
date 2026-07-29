@@ -68,3 +68,25 @@ Limitations are the independent ChatGPT review, later API/worker/scheduler deplo
 Exact status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 
 CHATGPT_REVIEW_REQUIRED: YES
+
+## Independent review corrective — public health invariants and governance consistency
+
+- Corrective Technical ID: `RF-10-CORRECTIVE-HEALTH-INVARIANTS-AND-GOVERNANCE-CONSISTENCY-20260729-02`.
+- Expected base: `f7441ce7cf002e63062a544f711ee31fc7426032` (`feat(rf10): complete Platform Contracts runtime`).
+- Independent-review verdict: `CORRECTIVE_REQUIRED`.
+- Invalid public states discovered: `PROVEN` identity without the complete proof triplet; `UNPROVEN` identity with any proof value; partial proof sets; unsafe diagnostic identifiers; and `UNPROVEN` identity combined with overall `READY` health.
+- Root cause: factory-only testing without model-boundary invariants allowed contradictory direct Pydantic construction.
+- Implementation correction: model-level source-proof and health/readiness validators were added; diagnostic identifiers now use the local canonical runtime identifier boundary `^[a-z0-9][a-z0-9_.-]{0,127}$`; existing factories, immutability, aliases, SHA/digest checks and readiness composer semantics were preserved.
+- Compatibility verdict: `BuildVersionIdentity` and `BuildVersionInfo` remain public and compatible; no transport, framework, ORM, provider or persistence type was added.
+- Focused test commands and counts: `pytest tests/unit/test_health_and_readiness_completion.py -q` — `36 passed`; `pytest tests/unit/test_health_and_readiness_completion.py tests/unit/test_contract_serialization.py tests/architecture -q` — `265 passed`.
+- Shared/public suite result: `pytest tests/unit tests/contract tests/architecture -q --ignore=tests/unit/test_runtime_settings.py` — `4616 passed`, `3 failed` only because `pytest-asyncio` is unavailable for three pre-existing async correlation tests; the non-async public/shared tests passed. The complete default collection is additionally blocked by unavailable `pydantic-settings` in `test_runtime_settings.py`; DB-backed RF-10 persistence evidence remains reused, not rerun.
+- Ruff/mypy/import-linter/architecture evidence: Ruff changed paths passed; mypy passed with no issues on `src/mayak/contracts/health.py`, `src/mayak/contracts/readiness.py` and the focused test; import-linter passed (`3 kept, 0 broken`); architecture tests are included in the `265 passed` focused applicable result.
+- PostgreSQL evidence reused: accepted 46-test RF-10 PostgreSQL persistence proof remains valid because persistence source, migrations/schema, dependencies and lockfile are unchanged; this corrective changes health/readiness contracts only.
+- Dependency/lock/migration identity: dependency versions and `uv.lock` unchanged; migration head remains `RF09_FINALIZE`; migration change `NONE`.
+- Governance contradictions corrected: README current module state now records RF-04/RF-05 acceptance, RF-06 acceptance, RF-07 deferred gates, RF-08/RF-09 independent acceptance, RF-10 corrective review, RF-11 not started, incomplete runtime/deployment and `NOT_PRODUCTION_READY`; `CURRENT_STATE.md` removes stale RF-09 review gap and partial RF-10 wording, creates the RF-10 current-gate subsection and starts remaining gaps with RF-10 review/corrective acceptance; directly affected manifest, roadmap, module index and playbook statements were reconciled without rewriting historical evidence.
+- Changed-path inventory: `src/mayak/contracts/health.py`; `tests/unit/test_health_and_readiness_completion.py`; `README.md`; `docs/MANIFEST.md`; `docs/00-governance/CURRENT_STATE.md`; `docs/00-governance/ROADMAP.md`; `docs/00-governance/WORKLOG_APPEND_ONLY.md`; `docs/04-modules/README.md`; `docs/04-modules/14-runtime-foundation-and-autonomous-integration/MODULE_PLAYBOOK.md`; this closure artifact.
+- Security/redaction result: no credentials, DSN, token, private key, populated environment mapping, provider payload or production data added; validation diagnostics use field/reason concepts and do not intentionally echo invalid identifiers.
+- Foreign-resource impact: none; no server runtime, database, container, provider or persistent project data was mutated.
+- Limitations: independent ChatGPT acceptance remains required; runtime/deployment, provider/live-call, RF-11–RF-30 and production gates remain outside this corrective.
+- Status: `CORRECTIVE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
+- `CHATGPT_REVIEW_REQUIRED: YES`.

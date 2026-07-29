@@ -84,7 +84,7 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-08-04` independently accepted through closure chain head `104e9777f298c47428fa8bdb07af109c234c4630`.
   - Evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`.
 - `[x] RF-09` PostgreSQL and Alembic foundation — independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; runtime/deployment not complete.
-- `[c] RF-10` Platform & Contracts runtime — implementation and closure published for independent acceptance; not independently accepted.
+- `[c] RF-10` Platform & Contracts runtime — corrective published for independent review; independent acceptance remains pending.
 - `[ ] RF-11` Identity & Access runtime.
 - `[ ] RF-12` Entitlements & Billing runtime.
 - `[ ] RF-13` Beacon Management runtime.
