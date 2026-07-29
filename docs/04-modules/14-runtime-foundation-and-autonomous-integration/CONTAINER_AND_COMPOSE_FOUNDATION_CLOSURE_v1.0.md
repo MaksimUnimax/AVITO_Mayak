@@ -137,10 +137,12 @@ Before publication, rollback is deleting the new closure file, restoring the fiv
 - The earlier corrective represented by `f0423111ddd0ce74892f85b36e35828f9825905d` is rejected for flat-file, non-crash-consistent activation: lazy snapshots, destructive rollback, lost ownership, no on-disk manifest validation and no bootstrap-copy comparison.
 - The current implementation uses immutable complete generations under `sets/<generation-id>/`, a managed relative `active` pointer, safe on-disk manifest validation, constant-time bootstrap-copy comparison, temporary-sibling plus `os.replace` activation, fsync, recovery, retired-generation cleanup and acceptance-only failpoints. No active-generation file is replaced in place.
 - The orchestrator owns stage transitions and quarantines child output in private mode-0600 files; it emits one allowlisted JSON record and cannot report caller-asserted success.
-- Focused evidence: `28 passed`; Ruff and mypy affected-path checks passed; Compose config, task-only PostgreSQL 18 bootstrap, one-shot secret probes, migration head `RF09_FINALIZE`, application-role connection, persistence restart, failed activation rollback, abrupt recovery, exact cleanup and foreign non-impact passed. The pre-existing `apm-postgres` remained untouched.
+- The application image is resolved before any Compose service creation. Exact base inputs were unchanged; the expected image was explicitly built/reused only after source, revision, lock identity, platform, non-root user, safe environment and dependency-import provenance checks. Subsequent service creation uses supported `--no-build` semantics; Compose 2.30.0 one-shot `run` has no such option and is permitted only after the image gate.
+- The authoritative A/B/C/D protocol passed with parsed migration head `RF09_FINALIZE`, real candidate-B authentication failure, rollback and from-zero C proof, abrupt child exit `70`, recovery, zero task resources and unchanged foreign snapshots. No raw build output or observable secret was exported.
+- Focused evidence for the rejected publication is historical only. The current corrective must derive these fields from executed commands and validated local state; it does not inherit the earlier hardcoded evidence.
 - Limitation: the expected-base application image lacks `mayak.runtime.api`, `mayak.runtime.worker` and `mayak.runtime.scheduler`. Those entrypoints are an RF-23 boundary and were not added here; no future process readiness or full runtime deployment is required or claimed. No independent acceptance, operator acceptance or production-readiness claim is made.
 - Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; RF-11 and RF-12 remain unchanged.
 
-## Next gate
+## Historical next gate
 
-RF-09 is `READY_TO_START_NOT_STARTED`; its prerequisites are satisfied and it must receive a separate exact task. This acceptance transition does not start RF-09. The CLI does not choose or start RF-09.
+RF-09 was the historical next gate at the time of the prior closure. This corrective does not start RF-11, RF-12 or RF-23 and does not alter their implementation boundaries.

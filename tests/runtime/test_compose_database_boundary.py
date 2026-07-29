@@ -133,7 +133,8 @@ def test_application_services_have_migration_gate_and_no_elevated_secrets() -> N
 
 def test_project_isolation_and_exposure_boundaries_remain_closed() -> None:
     text = _compose()
-    assert text.startswith("name: avito-mayak-rf08-secret-delivery\n")
+    assert text.startswith("name: avito-mayak-acceptance\n")
+    assert "avito-mayak-rf08-secret-delivery" not in text
     assert text.count("profiles: [runtime-foundation]") == 6
     assert "mayak-postgres" in _compose()
     postgres = _section("mayak-postgres")

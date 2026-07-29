@@ -635,3 +635,25 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Task runtime: Compose config, isolation, PostgreSQL 18 health, one-shot intended-readability/unintended-denial probes, from-zero bootstrap, migration head `RF09_FINALIZE`, application-role connection, persistence restart, failed activation rollback and abrupt recovery passed. API/worker/scheduler entrypoints are absent and deferred to RF-23; no future process readiness or full runtime deployment is claimed.
 - Exact task containers, network, volume, acceptance generations and temporary output were cleaned; foreign impact none; `apm-postgres` preserved; RF-11 worktree untouched; RF-12 unchanged.
 - **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready.
+
+## WL-RF08-20260729-03 — 2026-07-29 — authoritative secret-lifecycle proof corrective
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `MAKE_CRASH_SAFE_SECRET_PROOF_AUTHORITATIVE_AND_RESTORE_CANONICAL_COMPOSE_IDENTITY`
+**Base:** `63dc73662c5d3c78106d4163e509136579ae9fec`
+
+- The publication at `63dc736...` is rejected for task-specific canonical Compose identity, stripped `MAYAK_SECRETS_ROOT`, hardcoded evidence, and non-executable candidate-failure/recovery stages. Historical RF-08 acceptance and the rejection of `f0423111...` are preserved.
+- The corrective restores canonical `avito-mayak-acceptance` identity, selects task isolation only with `-p`, uses an explicit environment allowlist and typed private command results, and requires narrow parsers for image, identity, migration, health and cleanup evidence.
+- Immutable generations, exact failpoint expectations, real child termination/recovery, executable B rollback proof, acceptance-only C rotation, secret-output scanning and foreign before/after verification remain within RF-08. Persistence-only application-role proof is not blocked by RF-11; API/worker/scheduler entrypoints remain RF-23.
+- **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready. RF-11/RF-12 are unchanged; no duplicate entry is allowed on replay.
+
+## WL-RF08-20260729-04 — 2026-07-29 — explicit application image gate and authoritative lifecycle proof
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `DIAGNOSE_AND_RESOLVE_EXPLICIT_APPLICATION_IMAGE_GATE_THEN_PUBLISH_AUTHORITATIVE_RF08_PROOF`
+**Base:** `63dc73662c5d3c78106d4163e509136579ae9fec`
+
+- The unpublished build-gate run did not create roadmap progress. Application build inputs were unchanged from base; the exact pinned application image was explicitly built once with `--pull=false`, then inspected by immutable ID, repository source, revision, lock identity, project-owned label, `linux/amd64`, user `10001:10001`, safe environment and import probes.
+- Root cause and resolution: the old lifecycle collapsed image/build handling into `POSTGRES_A_CREATE`; the corrective now resolves the exact image before service creation and prevents implicit build. Compose 2.30.0 does not support `run --no-build`; one-shot `run` commands therefore carry no build option and are gated by the prior exact image proof, while service creation uses supported `--no-build`.
+- Authoritative protocol passed: canonical identity, task isolation, A/readiness/bootstrap/migration/application query, restart A, real B authentication failure, rollback A health persistence proof, C volume recreation/bootstrap/migration/application query, abrupt D exit `70`, recovery, exact cleanup and foreign before/after equality. Final task resources were zero and no observable secret or raw build output was exported.
+- RF-11 remains preserved and out of scope; RF-12 and RF-23 entrypoint paths remain unchanged. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready. Replay must not append this entry again.

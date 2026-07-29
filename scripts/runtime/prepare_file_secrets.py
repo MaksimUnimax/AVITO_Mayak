@@ -361,7 +361,13 @@ def recover(root: Path, *, postgres_uid: int, postgres_gid: int) -> str | None:
     valid: list[tuple[int, str]] = []
     sets = root / "sets"
     if sets.is_dir() and not sets.is_symlink():
-        for candidate in sets.iterdir():
+        # Only generation-shaped directories are candidates.  Quarantines,
+        # temporary entries and arbitrary files are never promoted by recovery.
+        candidates = sorted(
+            (candidate for candidate in sets.iterdir() if GENERATION_RE.fullmatch(candidate.name)),
+            key=lambda candidate: candidate.name,
+        )
+        for candidate in candidates:
             try:
                 validate_generation(
                     root, candidate.name, postgres_uid=postgres_uid, postgres_gid=postgres_gid
