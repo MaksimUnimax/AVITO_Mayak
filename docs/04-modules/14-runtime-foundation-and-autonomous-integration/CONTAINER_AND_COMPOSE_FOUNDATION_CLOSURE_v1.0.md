@@ -10,7 +10,7 @@
 - Module 14 phase: `AUTONOMOUS_RUNTIME_COMPLETION`
 - Module 14 target: `SYNTHETIC_AND_OPERATOR_ACCEPTANCE_RUNTIME`
 - Boundary: `READY_FOR_OPERATOR_ACCEPTANCE`
-- Status: `INDEPENDENTLY_ACCEPTED`
+- Status: `PUBLISHED_FOR_CHATGPT_REVIEW`
 - Production: `NOT_PRODUCTION_READY`
 
 Closure publication: `b1db2e7eafa0f625bd45e44436a208857ff7d48a`
@@ -117,6 +117,19 @@ Before publication, rollback is deleting the new closure file, restoring the fiv
 ## Closure verdict
 
 `RF08_CONTAINER_COMPOSE_FOUNDATION_INDEPENDENTLY_ACCEPTED_THROUGH_104E9777`
+
+## RF-08 corrective: non-root file-backed secret delivery
+
+- Technical-ID: `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`.
+- Execution mode: `REPAIR_SHARED_COMPOSE_SECRET_OWNERSHIP_AND_PROVE_NONROOT_BOOTSTRAP`.
+- The previous single-source bootstrap assumption failed because PostgreSQL uses the pinned-image process identity `999:999`, while the Mayak bootstrap, migration and application consumers use `10001:10001`. A single `0400` host file cannot serve both owners.
+- The corrective model uses separate physical files for the same logical PostgreSQL bootstrap credential: `mayak_postgres_bootstrap_password_postgres` for `999:999` and `mayak_postgres_bootstrap_password_runtime` for `10001:10001`. Application, migration and session files are runtime-owned `10001:10001` files. Secret files are `0400`; the secret root is `0700`; the production documentation boundary remains `/etc/avito-mayak/secrets/` and no production credential placement was performed.
+- Preparation utility: `scripts/runtime/prepare_file_secrets.py`. It generates the logical bootstrap copies in one staged operation, writes with CSPRNG material, validates ownership/mode, rejects symlinks and unsafe roots, preserves unrelated files, supports explicit rotation, and exports no values, digests or traceback.
+- Compose uses distinct file-backed sources with stable in-container targets. Runtime consumers remain `10001:10001`, PostgreSQL remains the pinned PostgreSQL 18 image, the network remains internal, and PostgreSQL remains unpublished to the host.
+- Safe protocol helper: `scripts/runtime/safe_compose_bootstrap.py`; its allowlisted stages and classifications emit schema-limited JSON only. Runtime proof used task root `/opt/avito-mayak-runtime/rf08-secret-delivery/RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01/secrets`, exact Compose project `avito-mayak-rf08-secret-delivery`, and synthetic credentials only.
+- Runtime evidence: Compose config passed; PostgreSQL image process identity `999:999` read only its target; intended runtime consumers read their targets as `10001:10001`; cross-consumer denial passed; PostgreSQL became healthy; bootstrap passed; migration current head was `RF09_FINALIZE`; authenticated application connection passed; restart bootstrap/migration remained idempotent; task-only rotation recreated the task volume, replaced the complete physical set, and passed bootstrap, migration and application connection again.
+- Cleanup is required after review and covers only the exact task project resources and acceptance secret root. RF-11 remains blocked pending restoration onto corrected main; RF-12 and RF-11 files are outside this change.
+- Status: `PUBLISHED_FOR_CHATGPT_REVIEW`. This corrective evidence is not an acceptance, operator-acceptance or production-readiness claim.
 
 ## Next gate
 

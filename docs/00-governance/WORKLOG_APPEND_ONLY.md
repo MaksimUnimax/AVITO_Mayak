@@ -612,3 +612,14 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Savepoint/redaction:** provider resolution, link completion and recovery savepoint paths are exercised; failing subprocess captures argv/stdout/stderr/exit/report without secret emission; task-generated secrets were mode `0600` and removed.
 - **Static:** Ruff pass; mypy affected paths pass; import-linter `3 kept, 0 broken`; migration `NONE`; head `RF09_FINALIZE`; no production source, schema, dependency or RF-12 path changed.
 - **Governance status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; `CHATGPT_REVIEW_REQUIRED: YES`; `NOT_PRODUCTION_READY`; no duplicate closure entry on replay.
+## WL-RF08-20260729-01 — 2026-07-29 — non-root file-backed secret delivery corrective
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`
+
+- Root cause: one file-backed PostgreSQL bootstrap source was mounted to consumers with different non-root numeric identities (`999:999` for the pinned PostgreSQL 18 process and `10001:10001` for Mayak runtime processes); the required `0400` ownership model therefore denied one intended consumer.
+- Corrective ownership model: consumer-specific physical files, one logical bootstrap value copied to PostgreSQL-owned and runtime-owned files; runtime application, migration and session files are separately generated and owned by `10001:10001`. Files are `0400`; the acceptance root is `0700`.
+- Source of truth and utility: `compose.yaml` and `scripts/runtime/prepare_file_secrets.py`; safe diagnostics: `scripts/runtime/safe_compose_bootstrap.py`.
+- Evidence path: `/opt/avito-mayak-runtime/rf08-secret-delivery/RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01/secrets`; production path documented only as `/etc/avito-mayak/secrets/`; no production credential was placed.
+- Safe task-only evidence: Compose config passed; intended readability and unintended denial passed; PostgreSQL 18 from-zero health and bootstrap passed; migration head `RF09_FINALIZE`; authenticated application connection passed; restart and rotation proofs passed; exact task resources were cleaned; no foreign impact was observed.
+- RF-11 remains blocked and its dirty worktree remains task-owned and untouched. RF-12 was not changed. No secret value, digest, DSN, raw output, traceback, provider payload or personal data was recorded.

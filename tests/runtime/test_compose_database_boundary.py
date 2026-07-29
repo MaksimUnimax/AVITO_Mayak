@@ -36,11 +36,11 @@ def test_dockerfile_copies_only_accepted_alembic_assets() -> None:
 def test_migration_secret_is_single_file_backed_declaration() -> None:
     text = _compose()
     declaration = (
-        "  mayak_database_migration_password:\n"
+        "  mayak_database_migration_password_runtime:\n"
         "    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/"
         "mayak_database_migration_password"
     )
-    assert text.count("mayak_database_migration_password:") == 1
+    assert text.count("mayak_database_migration_password_runtime:") == 1
     assert declaration in text
     assert "MAYAK_DATABASE_MIGRATION_PASSWORD=" not in text
 
@@ -56,9 +56,12 @@ def test_bootstrap_service_has_exact_boundary() -> None:
     assert 'tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]' in body
     assert "networks: [mayak-internal]" in body
     assert re.search(
-        r"(?ms)    secrets:\n      - mayak_postgres_bootstrap_password\n"
-        r"      - mayak_database_migration_password\n"
-        r"      - mayak_database_application_password\n",
+        r"(?ms)    secrets:\n      - source: mayak_postgres_bootstrap_password_runtime\n"
+        r"        target: mayak_postgres_bootstrap_password\n"
+        r"      - source: mayak_database_migration_password_runtime\n"
+        r"        target: mayak_database_migration_password\n"
+        r"      - source: mayak_database_application_password_runtime\n"
+        r"        target: mayak_database_application_password\n",
         body,
     )
     assert "mayak_session_signing_key" not in body
@@ -78,7 +81,8 @@ def test_migration_service_has_exact_boundary() -> None:
     assert "security_opt: [no-new-privileges:true]" in body
     assert 'tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]' in body
     assert "networks: [mayak-internal]" in body
-    assert "secrets: [mayak_database_migration_password]" in body
+    assert "source: mayak_database_migration_password_runtime" in body
+    assert "target: mayak_database_migration_password" in body
     assert "mayak_postgres_bootstrap_password" not in body
     assert "mayak_database_application_password" not in body
     assert "mayak_session_signing_key" not in body
@@ -107,14 +111,14 @@ def test_migration_waits_for_postgres_and_bootstrap_completion() -> None:
 def test_application_services_have_migration_gate_and_no_elevated_secrets() -> None:
     text = _compose()
     for name, secret in (
-        ("mayak-api", "mayak_database_application_password, mayak_session_signing_key"),
-        ("mayak-worker", "mayak_database_application_password"),
-        ("mayak-scheduler", "mayak_database_application_password"),
+        ("mayak-api", "mayak_database_application_password_runtime"),
+        ("mayak-worker", "mayak_database_application_password_runtime"),
+        ("mayak-scheduler", "mayak_database_application_password_runtime"),
     ):
         body = _section(name)
         assert "mayak-postgres:\n        condition: service_healthy" in body
         assert "mayak-migrate:\n        condition: service_completed_successfully" in body
-        assert f"secrets: [{secret}]" in body
+        assert f"source: {secret}" in body
         assert "mayak_database_migration_password" not in body
         assert "mayak_postgres_bootstrap_password" not in body
         assert "mayak-db-bootstrap" not in body.split("depends_on:", 1)[-1].split("ports:", 1)[0]
