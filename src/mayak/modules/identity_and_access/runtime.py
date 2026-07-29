@@ -473,6 +473,20 @@ class IdentityRuntime:
             return None
         return _AuthenticatedSession(validation.account_id, validation.metadata.session_id)
 
+    def _persisted_session(
+        self, session: Session, token: _RawSecret, expected_session: UUID | None = None
+    ) -> _AuthenticatedSession | None:
+        """Resolve replay ownership without granting active-session authority."""
+        statement = select(_SESSIONS.c.account_id, _SESSIONS.c.id).where(
+            _SESSIONS.c.token_hash == _hash(token.reveal())
+        )
+        if expected_session is not None:
+            statement = statement.where(_SESSIONS.c.id == expected_session)
+        row = session.execute(statement).mappings().one_or_none()
+        if row is None:
+            return None
+        return _AuthenticatedSession(row["account_id"], row["id"])
+
     def _actor(
         self, session: Session, token: _RawSecret, expected_session: UUID | None = None
     ) -> UUID | None:
@@ -487,16 +501,19 @@ class IdentityRuntime:
         idempotency_key: Any,
         correlation: CorrelationContext,
     ) -> AuthSessionState:
-        authority = self._authenticated_session(session, token)
-        if authority is None:
+        persisted = self._persisted_session(session, token)
+        if persisted is None:
             return AuthSessionState.INVALID
-        actor = authority.account_id
-        fingerprint = _fingerprint(("self-revoke", str(actor), str(authority.session_id)))
+        actor = persisted.account_id
+        fingerprint = _fingerprint(("self-revoke", str(actor), str(persisted.session_id)))
         decision, previous = self._begin_command(session, idempotency_key, fingerprint)
         if decision is IdempotencyDecision.MISMATCH:
             return AuthSessionState.CONFLICT
         if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return AuthSessionState.REVOKED
+        authority = self._authenticated_session(session, token)
+        if authority is None:
+            return AuthSessionState.INVALID
         session.execute(
             update(_SESSIONS)
             .where(
@@ -519,19 +536,15 @@ class IdentityRuntime:
         *,
         revoke: bool = False,
     ) -> RoleAssignmentState:
-        authority = self._authenticated_session(session, token, request.session_id)
-        actor = authority.account_id if authority is not None else None
-        if (
-            actor is None
-            or request.role_code not in {"SUPPORT", "ADMIN"}
-            or "ADMIN" not in _roles(session, actor)
-        ):
+        persisted = self._persisted_session(session, token, request.session_id)
+        if persisted is None:
             return RoleAssignmentState.REJECTED
+        actor = persisted.account_id
         fingerprint = _fingerprint(
             (
                 "ROLE_REVOKE" if revoke else "ROLE_ASSIGN",
                 str(actor),
-                str(authority.session_id) if authority is not None else "",
+                str(persisted.session_id),
                 str(request.target_account_id), request.role_code, request.reason, revoke,
             )
         )
@@ -540,6 +553,13 @@ class IdentityRuntime:
             return RoleAssignmentState.CONFLICT
         if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return RoleAssignmentState(previous.details[0])
+        authority = self._authenticated_session(session, token, request.session_id)
+        if (
+            authority is None
+            or request.role_code not in {"SUPPORT", "ADMIN"}
+            or "ADMIN" not in _roles(session, actor)
+        ):
+            return RoleAssignmentState.REJECTED
         if (
             session.execute(
                 select(_ACCOUNTS.c.id).where(
@@ -594,17 +614,17 @@ class IdentityRuntime:
     def start_link_challenge(
         self, session: Session, request: IdentityLinkChallengeRequest, token: _RawSecret
     ) -> tuple[IdentityLinkChallengeOutcome, _RawSecret | None]:
-        authority = self._authenticated_session(session, token, request.session_id)
-        if authority is None:
+        persisted = self._persisted_session(session, token, request.session_id)
+        if persisted is None:
             return IdentityLinkChallengeOutcome(
                 state=IdentityLinkChallengeState.REJECTED, target_provider=request.target_provider
             ), None
-        actor = authority.account_id
+        actor = persisted.account_id
         fingerprint = _fingerprint(
             (
                 "LINK_CHALLENGE_START",
                 str(actor),
-                str(authority.session_id),
+                str(persisted.session_id),
                 request.target_provider.value,
             )
         )
@@ -620,6 +640,11 @@ class IdentityRuntime:
                 challenge_id=UUID(previous.details[0]),
                 account_id=actor,
                 target_provider=request.target_provider,
+            ), None
+        authority = self._authenticated_session(session, token, request.session_id)
+        if authority is None:
+            return IdentityLinkChallengeOutcome(
+                state=IdentityLinkChallengeState.REJECTED, target_provider=request.target_provider
             ), None
         raw = secrets.token_urlsafe(32)
         now = _now()
@@ -762,10 +787,27 @@ class IdentityRuntime:
             or not self.settings.session.admin_bootstrap_enabled
         ):
             return RoleAssignmentState.REJECTED
+        persisted = self._persisted_session(session, token)
+        if persisted is None:
+            return RoleAssignmentState.REJECTED
+        self._lock_scope(session, _BOOTSTRAP_SCOPE)
+        fingerprint = _fingerprint(
+            (
+                "SYNTHETIC_ACCEPTANCE",
+                "ADMIN_BOOTSTRAP",
+                str(persisted.account_id),
+                str(persisted.session_id),
+            )
+        )
+        decision, previous = self._begin_command(session, idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
+            return RoleAssignmentState.CONFLICT
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
+            return RoleAssignmentState(previous.details[0])
         authority = self._authenticated_session(session, token)
-        actor = authority.account_id if authority is not None else None
+        actor = persisted.account_id
         if (
-            actor is None
+            authority is None
             or session.execute(
                 select(_LINKS.c.provider_subject).where(
                     _LINKS.c.account_id == actor, _LINKS.c.provider_code == "SYNTHETIC_ACCEPTANCE"
@@ -774,17 +816,6 @@ class IdentityRuntime:
             is None
         ):
             return RoleAssignmentState.REJECTED
-        if authority is None:
-            return RoleAssignmentState.REJECTED
-        self._lock_scope(session, _BOOTSTRAP_SCOPE)
-        fingerprint = _fingerprint(
-            ("SYNTHETIC_ACCEPTANCE", "ADMIN_BOOTSTRAP", str(actor), str(authority.session_id))
-        )
-        decision, previous = self._begin_command(session, idempotency_key, fingerprint)
-        if decision is IdempotencyDecision.MISMATCH:
-            return RoleAssignmentState.CONFLICT
-        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
-            return RoleAssignmentState(previous.details[0])
         existing_admin = session.execute(
             select(_ROLES.c.account_id)
             .where(_ROLES.c.role_code == "ADMIN", _ROLES.c.revoked_at.is_(None))
@@ -824,18 +855,16 @@ class IdentityRuntime:
         self, session: Session, request: TargetSessionRevocationRequest, token: _RawSecret
     ) -> AuthSessionState:
         """Admin-only target-session revocation command; actor comes from ``token``."""
-        authority = self._authenticated_session(session, token, request.session_id)
-        if authority is None:
+        persisted = self._persisted_session(session, token, request.session_id)
+        if persisted is None:
             return AuthSessionState.INVALID
-        actor = authority.account_id
-        if "ADMIN" not in _roles(session, actor):
-            return AuthSessionState.INVALID
+        actor = persisted.account_id
         target = request.target_account_id
         fingerprint = _fingerprint(
             (
                 "TARGET_SESSION_REVOKE",
                 str(actor),
-                str(authority.session_id),
+                str(persisted.session_id),
                 str(target),
                 request.reason,
             )
@@ -845,6 +874,9 @@ class IdentityRuntime:
             return AuthSessionState.CONFLICT
         if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return AuthSessionState.REVOKED
+        authority = self._authenticated_session(session, token, request.session_id)
+        if authority is None or "ADMIN" not in _roles(session, actor):
+            return AuthSessionState.INVALID
         session.execute(
             update(_SESSIONS)
             .where(_SESSIONS.c.account_id == target, _SESSIONS.c.revoked_at.is_(None))
@@ -863,18 +895,16 @@ class IdentityRuntime:
     def admin_recovery(
         self, session: Session, request: AdminRecoveryRequest, token: _RawSecret
     ) -> AdminRecoveryState:
-        authority = self._authenticated_session(session, token, request.session_id)
-        if authority is None:
+        persisted = self._persisted_session(session, token, request.session_id)
+        if persisted is None:
             return AdminRecoveryState.REJECTED
-        actor = authority.account_id
-        if "ADMIN" not in _roles(session, actor):
-            return AdminRecoveryState.REJECTED
+        actor = persisted.account_id
         verified = self._verified(request.identity)
         if verified.status != "VERIFIED" or verified.provider is None or verified.subject is None:
             return AdminRecoveryState.REJECTED
         fingerprint = _fingerprint(
             (
-                "ADMIN_RECOVERY", str(actor), str(authority.session_id),
+                "ADMIN_RECOVERY", str(actor), str(persisted.session_id),
                 str(request.target_account_id),
                 verified.provider.value,
                 verified.subject,
@@ -888,6 +918,9 @@ class IdentityRuntime:
             return AdminRecoveryState.CONFLICT
         if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return AdminRecoveryState.REPLAYED
+        authority = self._authenticated_session(session, token, request.session_id)
+        if authority is None or "ADMIN" not in _roles(session, actor):
+            return AdminRecoveryState.REJECTED
         if (
             session.execute(
                 select(_ACCOUNTS.c.id).where(

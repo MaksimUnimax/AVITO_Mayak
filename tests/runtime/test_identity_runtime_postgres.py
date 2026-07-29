@@ -561,7 +561,7 @@ def test_link_completion_postgres_concurrency_is_atomic_and_expiry_is_durable(
         session.commit()
     barrier = __import__("threading").Barrier(6)
 
-    def complete(index: int) -> IdentityLinkChallengeState:
+    def complete(_: int) -> IdentityLinkChallengeState:
         with Session(engine) as session:
             barrier.wait()
             result = runtime.complete_link_challenge(
@@ -570,7 +570,7 @@ def test_link_completion_postgres_concurrency_is_atomic_and_expiry_is_durable(
                 ProviderIdentityClaim(
                     provider=IdentityProvider.MAX, provider_subject="pg-six-linked"
                 ),
-                idempotency_key=IdempotencyKey(value=f"pg-six-link-complete-{index}"),
+                idempotency_key=IdempotencyKey(value="pg-six-link-complete"),
                 correlation=_correlation(),
             )
             session.commit()
@@ -638,3 +638,100 @@ def test_link_completion_postgres_concurrency_is_atomic_and_expiry_is_durable(
             )
             is IdentityLinkChallengeState.EXPIRED
         )
+
+
+def test_self_revoke_exact_replay_precedes_active_authorization(engine: Engine) -> None:
+    runtime = IdentityRuntime(
+        settings=_acceptance_settings(), verifier=FakeProviderIdentityVerifier()
+    )
+    with Session(engine) as session:
+        _, issued = runtime.synthetic_login(
+            session, _synthetic("pg-self-replay", "pg-self-replay-login")
+        )
+        assert issued is not None
+        session.commit()
+    with Session(engine) as session:
+        first = runtime.revoke_my_session(
+            session,
+            issued.token,
+            idempotency_key=IdempotencyKey(value="pg-self-revoke"),
+            correlation=_correlation(),
+        )
+        session.commit()
+    with Session(engine) as session:
+        replay = runtime.revoke_my_session(
+            session,
+            issued.token,
+            idempotency_key=IdempotencyKey(value="pg-self-revoke"),
+            correlation=_correlation(),
+        )
+        new_key = runtime.revoke_my_session(
+            session,
+            issued.token,
+            idempotency_key=IdempotencyKey(value="pg-self-revoke-new"),
+            correlation=_correlation(),
+        )
+    assert first is AuthSessionState.REVOKED
+    assert replay is AuthSessionState.REVOKED
+    assert new_key is AuthSessionState.INVALID
+
+
+def test_role_loss_keeps_actor_bound_exact_replay_but_rejects_new_key(engine: Engine) -> None:
+    runtime = IdentityRuntime(
+        settings=_acceptance_settings(), verifier=FakeProviderIdentityVerifier()
+    )
+    with Session(engine) as session:
+        admin, admin_session = runtime.synthetic_login(
+            session, _synthetic("pg-role-loss-admin", "pg-role-loss-admin-login")
+        )
+        target, _ = runtime.synthetic_login(
+            session, _synthetic("pg-role-loss-target", "pg-role-loss-target-login")
+        )
+        assert admin.account_id is not None and admin_session is not None
+        assert target.account_id is not None
+        session.execute(
+            text(
+                "DELETE FROM mayak.identity_role_assignments "
+                "WHERE role_code='ADMIN' AND revoked_at IS NULL"
+            )
+        )
+        assert (
+            runtime.bootstrap_admin(
+                session,
+                admin_session.token,
+                idempotency_key=IdempotencyKey(value="pg-role-loss-bootstrap"),
+                correlation=_correlation(),
+            )
+            is RoleAssignmentState.ASSIGNED
+        )
+        request = _role(
+            admin_session.metadata.session_id,
+            target.account_id,
+            "pg-role-loss-role",
+        )
+        assert (
+            runtime.mutate_role(session, request, admin_session.token)
+            is RoleAssignmentState.ASSIGNED
+        )
+        session.commit()
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE mayak.identity_role_assignments SET revoked_at=now() "
+                "WHERE account_id=:account_id AND role_code='ADMIN' AND revoked_at IS NULL"
+            ),
+            {"account_id": admin.account_id},
+        )
+    with Session(engine) as session:
+        replay = runtime.mutate_role(session, request, admin_session.token)
+        new_key = runtime.mutate_role(
+            session,
+            _role(
+                admin_session.metadata.session_id,
+                target.account_id,
+                "pg-role-loss-new",
+            ),
+            admin_session.token,
+        )
+    assert replay is RoleAssignmentState.ASSIGNED
+    assert new_key is RoleAssignmentState.REJECTED

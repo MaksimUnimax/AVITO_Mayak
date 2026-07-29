@@ -79,3 +79,14 @@ Status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - Governance/limitations: RF-11 corrective published for ChatGPT review; RF-11 not accepted yet; RF-12 not started; environment `RUNTIME_ELIGIBLE`; runtime/deployment incomplete; `NOT_PRODUCTION_READY`; no API, deployment, provider transport or production claim.
 - Status: `CORRECTIVE_PUBLISHED_FOR_CHATGPT_REVIEW`.
 - `CHATGPT_REVIEW_REQUIRED: YES`.
+
+## Replay-safe executable command matrix — 2026-07-29
+
+- Technical ID: `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02`.
+- Base: `0dac50d326920c48a36c87d8e958a0f34217ca11`; migration decision remains `NONE`; migration head remains `RF09_FINALIZE`.
+- Production model: Phase A resolves trusted persisted command ownership and evaluates the exact terminal key/fingerprint under one transaction-scoped advisory lock. Exact replay returns the stored result before active-session, role or account mutation authorization. Phase B authorizes active persisted session state, performs domain mutation, audit and terminal persistence in the caller-owned transaction.
+- Executable manifest: `tests/runtime/test_identity_command_matrix.py` contains exactly ten code rows: provider resolution, synthetic login, self-session revocation, Admin target-session revocation, role assignment, role revocation, Admin bootstrap, link challenge start, link challenge completion and Admin recovery. Each row carries setup, invoke, authority, actor/target, material fingerprint fields, shared key, replay, mismatch, effect/audit/terminal counts, rollback, invalidation, savepoint and authorization fields.
+- Corrective runtime: revoked/expired/role-losing sessions can receive only their exact actor-bound terminal replay; new keys and mismatches remain rejected. `_persisted_session` is replay ownership lookup only and never grants active authority.
+- Evidence: focused executable/unit/contract/architecture/schema suite `60 passed`; committed PostgreSQL 18 internal-network suite `12 passed`, including same-key link completion concurrency, self-revoke replay after revocation, role-loss replay/new-key rejection, provider and recovery savepoint paths, rollback and redaction assertions; broad unit/contract/architecture suite `4658 passed`; affected Ruff, mypy and import-linter passed (`3 kept, 0 broken`).
+- Security: no raw secret, DSN, provider payload, credential, private key or personal data was emitted or persisted; PostgreSQL had no host-published port; only task-owned acceptance resources were used.
+- Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; `CHATGPT_REVIEW_REQUIRED: YES`; `NOT_PRODUCTION_READY`; RF-12 unchanged and not started.
