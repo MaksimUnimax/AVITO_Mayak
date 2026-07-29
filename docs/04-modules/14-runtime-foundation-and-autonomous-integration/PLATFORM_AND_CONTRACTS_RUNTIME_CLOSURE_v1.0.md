@@ -8,6 +8,8 @@ Technical-ID: `RF-10-PLATFORM-CONTRACTS-RUNTIME-COMPLETION-AND-CLOSURE-20260729-
 - RF-09 prerequisite: independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; the RF-09 closure now records that acceptance.
 - RF-10 status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - `CHATGPT_REVIEW_REQUIRED: YES`.
+
+
 - No RF-11 work was started; no production-ready claim is made.
 
 ## Complete RF-10 chain and inventory
@@ -88,5 +90,29 @@ CHATGPT_REVIEW_REQUIRED: YES
 - Security/redaction result: no credentials, DSN, token, private key, populated environment mapping, provider payload or production data added; validation diagnostics use field/reason concepts and do not intentionally echo invalid identifiers.
 - Foreign-resource impact: none; no server runtime, database, container, provider or persistent project data was mutated.
 - Limitations: independent ChatGPT acceptance remains required; runtime/deployment, provider/live-call, RF-11–RF-30 and production gates remain outside this corrective.
+- Status: `CORRECTIVE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
+- `CHATGPT_REVIEW_REQUIRED: YES`.
+
+## Corrective recovery — accepted toolchain, copy safety and complete gates
+
+- Technical ID: `RF-10-CORRECTIVE-ACCEPTANCE-GATE-COMPLETION-20260729-03`.
+- Expected base: `c6401f02443d6db958719694039fdbb1c249e286` (`fix(rf10): enforce health identity invariants`); preserved RF-10 parents are `f7441ce7cf002e63062a544f711ee31fc7426032` and `c6401f02443d6db958719694039fdbb1c249e286`.
+- Prior incomplete result: `4616 passed`, `3 failed`; runtime-settings collection was blocked by missing `pydantic-settings`, and three async correlation tests were blocked by missing `pytest-asyncio`.
+- Root cause: acceptance was attempted through an incomplete environment despite both packages being declared and locked project dependencies; the public Pydantic `model_copy(update=...)` path also bypassed cross-field validation.
+- Accepted toolchain: `/opt/avito-mayak-runtime/venvs/rf06-dependencies-v1/bin/python`, CPython `3.14.6` standard GIL, and `/opt/avito-mayak-runtime/toolchain/bin/uv`, uv `0.11.31`; both are project-owned. Lock identity: `sha256:9c9a87fb0c455d36162c3dbcfbdddc8c3f7d3e528157fb0f228678695263c020`.
+- Dependency environment identity: reused project-owned `rf06-dependencies-v1`; `pytest 8.4.2`, `pytest-asyncio 0.26.0`, `pydantic 2.13.4`, `pydantic-settings 2.14.2` and all current runtime/static dependencies imported; `uv pip check` passed.
+- Collection: `python -m pytest --collect-only -q` — `5669 tests collected`, exit `0`, zero collection errors, including runtime-settings and async tests.
+- Focused copy/update proof: before correction, identity and snapshot `model_copy(update=...)` bypassed validation; after correction, `BuildVersionIdentity` and `HealthSnapshot` revalidate merged content, reject invalid proof changes and nested identity replacement, preserve valid liveness/deep updates and exact model types. Focused gate: `114 passed`; runtime-settings: `32 passed`; async correlation: `18 passed`.
+- Source correction: added validated `model_copy` overrides to `src/mayak/contracts/health.py` and regression coverage in `tests/unit/test_health_and_readiness_completion.py`.
+- Trusted-bypass inventory: repository `model_construct` uses remain in unrelated fixtures/tests; no health, build, readiness or runtime contract construction uses `model_construct`, and it is classified as an unsafe trusted-data escape hatch outside untrusted/public input handling.
+- Complete shared/public result: `pytest tests/unit tests/contract tests/architecture -q` — `4653 passed`, `28 warnings`, `0 failed`; async tests executed, runtime-settings tests executed, public exports and architecture tests included.
+- DB-backed files excluded and evidence reused: `tests/runtime/test_persistence_session.py`, `tests/runtime/test_persistence_transaction.py`, `tests/runtime/test_platform_audit_repository.py`, `tests/runtime/test_platform_idempotency_repository_postgres.py`; these are the exact PostgreSQL-dependent paths from the accepted RF-10 46-test evidence identity `RF-10-PLATFORM-CONTRACTS-RUNTIME-COMPLETION-AND-CLOSURE-20260729-01` at `f7441ce7cf002e63062a544f711ee31fc7426032`. Persistence, migrations, dependencies and lock are unchanged.
+- Static gates: compile/import passed; Ruff changed paths passed; affected-surface mypy passed with no errors; import-linter passed (`3 kept, 0 broken`); architecture tests passed; `git diff --check` passed.
+- Governance structural corrections: README current contour consolidated; `CURRENT_STATE.md` now has scoped RF-08/RF-09/RF-10 current gates with RF-09 accepted and RF-10 pending; stale partial/next/review claims and the RF-10–RF-22 current contradiction were removed; roadmap, manifest and module index state were reconciled.
+- Changed paths: `src/mayak/contracts/health.py`; `tests/unit/test_health_and_readiness_completion.py`; `README.md`; `docs/MANIFEST.md`; `docs/00-governance/CURRENT_STATE.md`; `docs/00-governance/ROADMAP.md`; `docs/00-governance/WORKLOG_APPEND_ONLY.md`; `docs/04-modules/README.md`; this closure artifact.
+- Dependency/migration verdict: no `pyproject.toml`, dependency, `uv.lock`, schema or migration change; migration head remains `RF09_FINALIZE`.
+- Security verdict: no secrets, DSNs, tokens, private keys, populated environment values, provider payloads or production data added; invalid opaque values are not echoed by validation errors.
+- Foreign-resource impact: none; no database, container, provider, server runtime or foreign resource was mutated.
+- Limitations: independent ChatGPT review, RF-11–RF-30 runtime/operator gates and production launch remain outside this corrective; RF-10 is not independently accepted.
 - Status: `CORRECTIVE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - `CHATGPT_REVIEW_REQUIRED: YES`.

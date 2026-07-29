@@ -545,3 +545,17 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Security:** no credential exposure, secret, DSN, token, private key, populated environment mapping or production data added.
 - **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - **CHATGPT_REVIEW_REQUIRED:** `YES`.
+
+## 2026-07-29 — RF-10 corrective acceptance-gate completion
+
+- **Technical ID:** `RF-10-CORRECTIVE-ACCEPTANCE-GATE-COMPLETION-20260729-03`.
+- **Base:** `c6401f02443d6db958719694039fdbb1c249e286`.
+- **Cycle/root cause:** repeated incomplete acceptance used an environment missing declared locked `pydantic-settings` and `pytest-asyncio`; Pydantic `model_copy(update=...)` also bypassed health identity validation.
+- **Accepted toolchain:** reused project-owned CPython 3.14.6 and uv 0.11.31 with `rf06-dependencies-v1`; no dependency, lock or migration change.
+- **Evidence:** import proof passed; collection `5669` with zero errors; focused `114 passed`; shared/public `4653 passed`, `0 failed`; async correlation `18 passed`; runtime-settings `32 passed`.
+- **Copy/update invariant:** validated model-copy paths now reject unsafe identity proof changes and nested invalid snapshot replacement while preserving valid updates; no normal health/build/readiness path uses trusted `model_construct`.
+- **Governance:** README and current governance were structurally normalized; RF-08/RF-09/RF-10 current sections are correctly scoped; stale partial/next/review contradictions were removed.
+- **PostgreSQL:** exact accepted RF-10 46-test PostgreSQL evidence was reused; no database or container mutation occurred.
+- **Security/resources:** no foreign impact, credentials, secrets, DSNs, tokens, private keys, populated environment values or production data exposed.
+- **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
+- **CHATGPT_REVIEW_REQUIRED:** `YES`.

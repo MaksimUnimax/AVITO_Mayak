@@ -114,17 +114,15 @@ Historical decision rows remain traceability evidence and must not be deleted.
 
 - RF-09 independent acceptance is recorded in the closure artifact through `54300eb672a883cc052c131bf788501ed4b4a918`; verdict `INDEPENDENTLY_ACCEPTED`; no `PRODUCTION_READY` claim.
 
-- RF-09 implementation/corrective chain is present through the current base `1c81e534611330a9e066afa25af06f72d9407300`; closure artifact is published for independent acceptance at `docs/04-modules/14-runtime-foundation-and-autonomous-integration/POSTGRESQL_AND_ALEMBIC_FOUNDATION_CLOSURE_v1.0.md`.
-- PostgreSQL 18/Alembic zero-to-head, idempotent replay, current-head, drift, role, lock contention/release and second clean rebuild evidence is recorded; no production-ready claim is made.
+- RF-09 implementation/corrective chain is present through the independently accepted head `54300eb672a883cc052c131bf788501ed4b4a918`; the closure artifact is `docs/04-modules/14-runtime-foundation-and-autonomous-integration/POSTGRESQL_AND_ALEMBIC_FOUNDATION_CLOSURE_v1.0.md`.
+- PostgreSQL 18/Alembic zero-to-head, idempotent replay, current-head, drift, role, lock contention/release and second clean rebuild evidence is recorded; RF-09 is independently accepted and no production-ready claim is made.
 - RF-30 remains the only route to `READY_FOR_OPERATOR_ACCEPTANCE`.
 
 ## RF-10 closure current gate
 
-- RF-10 package closure: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/PLATFORM_AND_CONTRACTS_RUNTIME_CLOSURE_v1.0.md`; corrective is published for independent review and acceptance remains pending; `CHATGPT_REVIEW_REQUIRED: YES`.
-
-- RF-08 implementation commits are `af90b77575b3c0a1d9dda4f8cbd3f7ad5e6a73f6` and `243849bbf724b7bd301b685573f9664290783605`; RF-08-03 accepted the ephemeral bootstrap proof.
-- Closure artifact: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`; status `INDEPENDENTLY_ACCEPTED` through `104e9777f298c47428fa8bdb07af109c234c4630`; primary closure `b1db2e7eafa0f625bd45e44436a208857ff7d48a`.
-- RF-09 implementation and closure are published for independent acceptance; RF-10 remains active/not accepted. Runtime is stopped after scoped acceptance cleanup; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
+- RF-10 implementation chain is preserved through the expected base `c6401f02443d6db958719694039fdbb1c249e286`; corrective closure is `docs/04-modules/14-runtime-foundation-and-autonomous-integration/PLATFORM_AND_CONTRACTS_RUNTIME_CLOSURE_v1.0.md`.
+- The RF-10 corrective is published for independent acceptance; acceptance remains pending and `CHATGPT_REVIEW_REQUIRED: YES`.
+- Runtime/deployment is incomplete; runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
 
 ## Runtime status
 
@@ -134,7 +132,7 @@ Current remaining gaps include:
 
   - remaining RF-07 runtime-dependent gates are genuinely deferred; synthetic E2E remains owned by RF-24; Docker build and Compose configuration validation foundation are satisfied by RF-08/RF-09 evidence;
   - RF-10 independent review/corrective acceptance;
-- RF-11–RF-22 DB-backed runtime for modules 01–13, including API, worker, scheduler, Web Cabinet, Admin and provider-disabled-by-default adapters;
+- RF-11–RF-22 runtime for modules 01–13, including API, worker, scheduler, Web Cabinet, Admin and provider-disabled-by-default adapters;
 - RF-23 cross-module API and command wiring;
 - RF-24 deterministic synthetic end-to-end vertical slices;
 - RF-25 remaining runtime security and privacy verification beyond the independently accepted RF-07-02 CI security and supply-chain foundation;

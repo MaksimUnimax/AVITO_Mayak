@@ -23,7 +23,7 @@ Current RF-10 closure: `docs/04-modules/14-runtime-foundation-and-autonomous-int
 11. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_RUNTIME_GAP_MATRIX_v1.0.md`
 12. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CROSS_MODULE_CONSISTENCY_AUDIT_v1.0.md`
 13. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/THIRTEEN_MODULES_INTEGRATION_INVENTORY_CLOSURE_v1.0.md`
-14. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — RF-06-04-CORRECTIVE-09-TOOLCHAIN-AND-DEPENDENCY-PROOF-CLOSURE-20260726; `PUBLISHED_PENDING_ACCEPTANCE`.
+14. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — RF-06-04-CORRECTIVE-09-TOOLCHAIN-AND-DEPENDENCY-PROOF-CLOSURE-20260726; independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`.
 15. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_QUALITY_GATES_FOUNDATION_v1.0.md` — RF-07-01-CI-QUALITY-FOUNDATION-20260726; `INDEPENDENTLY_ACCEPTED`.
 16. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/PYTEST_VULNERABILITY_AND_COMPATIBILITY_CORRECTION_v1.0.md` — RF-07-02-CORRECTIVE-01; `INDEPENDENTLY_ACCEPTED` through `7c594e49db75cce8a6f411fa0c8ceea59d8b0518`.
 17. `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CI_SECURITY_AND_SUPPLY_CHAIN_FOUNDATION_v1.0.md` — RF-07-02; `IMPLEMENTATION_CHAIN_INDEPENDENTLY_ACCEPTED`.

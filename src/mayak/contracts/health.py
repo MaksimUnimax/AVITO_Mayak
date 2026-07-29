@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from enum import StrEnum
+from typing import Any, Mapping, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -47,6 +48,15 @@ class BuildVersionIdentity(BaseModel):
     runtime_profile: str = Field(min_length=1)
     migration_revision: str | None = None
     source_status: SourceIdentityStatus
+
+    def model_copy(
+        self, *, update: Mapping[str, Any] | None = None, deep: bool = False
+    ) -> Self:
+        """Copy through the schema so cross-field identity invariants remain enforced."""
+        values = self.model_dump(mode="python", round_trip=True)
+        if update:
+            values.update(update)
+        return type(self).model_validate(values)
 
     @field_validator("environment_id", "runtime_profile", mode="before")
     @classmethod
@@ -173,6 +183,15 @@ class HealthSnapshot(BaseModel):
     identity: BuildVersionIdentity
     liveness: LivenessOutcome
     readiness: ProcessReadinessOutcome
+
+    def model_copy(
+        self, *, update: Mapping[str, Any] | None = None, deep: bool = False
+    ) -> Self:
+        """Copy through the schema so nested identity/readiness invariants remain enforced."""
+        values = self.model_dump(mode="python", round_trip=True)
+        if update:
+            values.update(update)
+        return type(self).model_validate(values)
 
     @model_validator(mode="after")
     def _validate_identity_readiness_consistency(self) -> "HealthSnapshot":

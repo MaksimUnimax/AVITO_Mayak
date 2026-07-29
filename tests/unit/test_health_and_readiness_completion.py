@@ -288,6 +288,36 @@ def test_health_snapshot_rejects_unproven_ready_but_liveness_is_independent() ->
     assert alive.readiness_status is not_alive.readiness_status is ProcessReadinessStatus.NOT_READY
 
 
+def test_model_copy_revalidates_health_identity_and_snapshot_updates() -> None:
+    proven = _identity(SourceIdentityStatus.PROVEN)
+    unproven = _identity(SourceIdentityStatus.UNPROVEN)
+    with pytest.raises(ValidationError, match="source identity|proof triplet"):
+        proven.model_copy(update={"source_sha": None})
+    with pytest.raises(ValidationError, match="source identity|proof triplet"):
+        unproven.model_copy(update={"source_sha": "a" * 40})
+
+    snapshot = HealthSnapshot(
+        identity=proven,
+        liveness=LivenessOutcome.alive(),
+        readiness=_readiness(ProcessReadinessStatus.NOT_READY),
+    )
+    with pytest.raises(ValidationError, match="source identity|proof triplet"):
+        snapshot.model_copy(update={"identity": {**unproven.model_dump(), "source_sha": "a" * 40}})
+    copied = snapshot.model_copy(update={"liveness": LivenessOutcome.not_alive()})
+    assert copied.liveness.status is LivenessStatus.NOT_ALIVE
+
+
+def test_model_copy_preserves_valid_nested_health_updates() -> None:
+    snapshot = HealthSnapshot(
+        identity=_identity(SourceIdentityStatus.PROVEN),
+        liveness=LivenessOutcome.alive(),
+        readiness=_readiness(ProcessReadinessStatus.NOT_READY),
+    )
+    copied = snapshot.model_copy(deep=True, update={"liveness": LivenessOutcome.not_alive()})
+    assert type(copied) is HealthSnapshot
+    assert copied.readiness_status is ProcessReadinessStatus.NOT_READY
+
+
 def test_readiness_precedence_duplicate_types_and_safe_public_exports() -> None:
     blocked = compose_process_readiness(
         role=ProcessRole.API,
