@@ -1,7 +1,7 @@
 # Маяк Авито — дорожная карта
 
 **Версия:** 4.0
-**Статус:** `MODULE_14_RF09_CLOSURE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
+**Статус:** `MODULE_14_RF10_PLATFORM_CONTRACTS_RUNTIME_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 **Дата:** 2026-07-29
 
 `[x]` independently accepted; `[~]` active; `[ ]` not started; `[c]` repository-content complete/published for independent acceptance; `[!]` blocked.
@@ -83,8 +83,8 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-08-03` ephemeral Compose bootstrap runtime proof accepted;
   - `[x] RF-08-04` independently accepted through closure chain head `104e9777f298c47428fa8bdb07af109c234c4630`.
   - Evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`.
-- `[c] RF-09` PostgreSQL and Alembic foundation — implementation/corrective chain exists; closure published for independent acceptance; runtime/deployment not complete.
-- `[~] RF-10` Platform & Contracts runtime — partially published; active/not accepted.
+- `[x] RF-09` PostgreSQL and Alembic foundation — independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; runtime/deployment not complete.
+- `[c] RF-10` Platform & Contracts runtime — implementation and closure published for independent acceptance; not independently accepted.
 - `[ ] RF-11` Identity & Access runtime.
 - `[ ] RF-12` Entitlements & Billing runtime.
 - `[ ] RF-13` Beacon Management runtime.

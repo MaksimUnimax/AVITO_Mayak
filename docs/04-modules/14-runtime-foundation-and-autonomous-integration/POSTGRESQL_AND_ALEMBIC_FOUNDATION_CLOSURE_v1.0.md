@@ -82,3 +82,14 @@ CHATGPT_REVIEW_REQUIRED: `YES`
 
 Status: `CORRECTIVE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 CHATGPT_REVIEW_REQUIRED: `YES`
+
+## Independent acceptance
+
+- Accepted chain head: `54300eb672a883cc052c131bf788501ed4b4a918` (`fix(rf09): reconcile closure cleanup evidence`).
+- Accepted base/parent chain: RF-09 corrective chain is contiguous through `54300eb672a883cc052c131bf788501ed4b4a918`, with the published RF-09 closure and cleanup corrective preserved.
+- GitHub changed-path verification: the accepted head was fetched from `origin/main`; its RF-09 corrective changed only the documented governance/closure paths recorded above.
+- Cleanup corrective verification: the exact RF-09 runtime root was empty and exact Compose resources, process references and mounts were absent; no deletion was required.
+- Source/runtime evidence reused: PostgreSQL 18 image identity, RF09_FINALIZE migration head, zero-to-head/replay/drift/role/lock/second-rebuild evidence and the 958-test focused gate above.
+- Verdict: `INDEPENDENTLY_ACCEPTED`.
+- Acceptance date: `2026-07-29`.
+- This acceptance does not claim `PRODUCTION_READY`.

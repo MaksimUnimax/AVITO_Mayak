@@ -20,6 +20,14 @@ from mayak.contracts.error_mapping import (
     build_platform_exception_normalizer,
 )
 from mayak.contracts.errors import CommonErrorOutcome, ErrorCategory, RetryClass
+from mayak.contracts.health import (
+    BuildVersionIdentity,
+    BuildVersionInfo,
+    HealthSnapshot,
+    LivenessOutcome,
+    LivenessStatus,
+    SourceIdentityStatus,
+)
 from mayak.contracts.idempotency import (
     IdempotencyDecision,
     IdempotencyDecisionOutcome,
@@ -31,6 +39,8 @@ from mayak.contracts.metadata import ContractMetadata
 from mayak.contracts.readiness import (
     ProcessReadinessOutcome,
     ProcessReadinessStatus,
+    compose_process_readiness,
+    compose_readiness,
 )
 from mayak.contracts.registry import (
     ContractRegistration,
@@ -89,6 +99,8 @@ __all__ = [
     "AuditResultReference",
     "AuditTargetScope",
     "CommonErrorOutcome",
+    "BuildVersionIdentity",
+    "BuildVersionInfo",
     "CommonOutcome",
     "ContractSerializationError",
     "ContractRegistration",
@@ -128,6 +140,12 @@ __all__ = [
     "ProcessCompositionMetadata",
     "ProcessReadinessOutcome",
     "ProcessReadinessStatus",
+    "HealthSnapshot",
+    "LivenessOutcome",
+    "LivenessStatus",
+    "SourceIdentityStatus",
+    "compose_process_readiness",
+    "compose_readiness",
     "ProcessRole",
     "RequestId",
     "Result",

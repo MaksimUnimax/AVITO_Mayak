@@ -1,5 +1,7 @@
 # Автономные module playbooks
 
+Current Module 14 state: RF-09 is independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; RF-10 Platform & Contracts runtime is published for independent acceptance at `PLATFORM_AND_CONTRACTS_RUNTIME_CLOSURE_v1.0.md`; RF-11 is not started; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
+
 ## Module 14 evidence
 
 - `14-runtime-foundation-and-autonomous-integration/TOOLCHAIN_AND_DEPENDENCY_PROOF_CLOSURE_v1.0.md` — RF-06-04-CORRECTIVE-09; independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07 active; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.

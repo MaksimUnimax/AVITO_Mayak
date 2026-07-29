@@ -1,10 +1,12 @@
 # Маяк Авито — манифест документации
 
 **Версия манифеста:** 4.0
-**Статус:** `MODULE_14_RF08_CONTAINER_COMPOSE_FOUNDATION_INDEPENDENTLY_ACCEPTED_RF09_READY_TO_START`
+**Статус:** `MODULE_14_RF10_PLATFORM_CONTRACTS_RUNTIME_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 **Дата актуализации:** 2026-07-27
 
 ## Порядок входа
+
+Current RF-10 closure: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/PLATFORM_AND_CONTRACTS_RUNTIME_CLOSURE_v1.0.md` — published for independent acceptance; RF-09 independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; RF-11 not started; runtime remains `RUNTIME_ELIGIBLE` and `NOT_PRODUCTION_READY`.
 
 Перед любой новой задачей читать в следующем порядке:
 

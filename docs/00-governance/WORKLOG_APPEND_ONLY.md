@@ -520,3 +520,13 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Secret-content read:** no; no secret contents or derived hashes were read or exposed.
 - **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 - **CHATGPT_REVIEW_REQUIRED:** `YES`
+
+## 2026-07-29 — RF-10 Platform & Contracts runtime completion and closure
+
+- **Technical ID:** `RF-10-PLATFORM-CONTRACTS-RUNTIME-COMPLETION-AND-CLOSURE-20260729-01`
+- **Base:** `54300eb672a883cc052c131bf788501ed4b4a918`.
+- **Result:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`; closure artifact created once; `CHATGPT_REVIEW_REQUIRED: YES`.
+- **Scope:** completed public health/build/version contracts and deterministic readiness composition; preserved existing RF-10 serialization, registry, result/error, idempotency, transaction, audit, correlation and settings implementation.
+- **Evidence:** focused contracts `117 passed`; PostgreSQL 18 transaction/idempotency/audit proof `46 passed`; shared suite excluding separately executed DB files `5588 passed`; Ruff, mypy and import-linter passed.
+- **Governance:** RF-09 independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; RF-10 published for independent acceptance; RF-11 not started; runtime `RUNTIME_ELIGIBLE`; production `NOT_PRODUCTION_READY`.
+- **Security/resources:** no migration/schema/dependency change; no provider call, credential exposure, production data or foreign-resource impact; exact task-owned PostgreSQL resources cleaned.

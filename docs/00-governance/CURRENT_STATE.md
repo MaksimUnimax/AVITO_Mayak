@@ -1,14 +1,14 @@
 # Маяк Авито — текущее состояние проекта
 
 **Версия снимка:** 3.0
-**Статус:** `MODULE_14_RF09_CLOSURE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
+**Статус:** `MODULE_14_RF10_PLATFORM_CONTRACTS_RUNTIME_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 **Дата:** 2026-07-29
 
 ## RF-06-04 closure current gate
 
 - RF-06-03-C06 is accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; authoritative artifact count is 48/246/294.
 - Authoritative current mypy count is 249; historical 248 cause is not proven and its closure expectation is superseded.
-- RF-06 is accepted; RF-07 remains active only for genuinely deferred runtime-dependent gates; RF-08 is independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 implementation and closure are published for independent acceptance; RF-10 is active/not accepted; complete runtime/deployment is not reached; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
+- RF-06 is accepted; RF-07 remains active only for genuinely deferred runtime-dependent gates; RF-08 is independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 is independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; RF-10 implementation and closure are published for independent acceptance; RF-11 is not started; complete runtime/deployment is not reached; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
 - Runtime is stopped; eligibility is `RUNTIME_ELIGIBLE`; production verdict is `NOT_PRODUCTION_READY`.
 **RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
@@ -112,11 +112,15 @@ Historical decision rows remain traceability evidence and must not be deleted.
 
 ## RF-09 closure current gate
 
+- RF-09 independent acceptance is recorded in the closure artifact through `54300eb672a883cc052c131bf788501ed4b4a918`; verdict `INDEPENDENTLY_ACCEPTED`; no `PRODUCTION_READY` claim.
+
 - RF-09 implementation/corrective chain is present through the current base `1c81e534611330a9e066afa25af06f72d9407300`; closure artifact is published for independent acceptance at `docs/04-modules/14-runtime-foundation-and-autonomous-integration/POSTGRESQL_AND_ALEMBIC_FOUNDATION_CLOSURE_v1.0.md`.
 - PostgreSQL 18/Alembic zero-to-head, idempotent replay, current-head, drift, role, lock contention/release and second clean rebuild evidence is recorded; no production-ready claim is made.
 - RF-10 remains partially published and active/not accepted; RF-30 remains the only route to `READY_FOR_OPERATOR_ACCEPTANCE`.
 
 ## RF-08 closure current gate
+
+- RF-10 package closure: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/PLATFORM_AND_CONTRACTS_RUNTIME_CLOSURE_v1.0.md`; status `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`; `CHATGPT_REVIEW_REQUIRED: YES`.
 
 - RF-08 implementation commits are `af90b77575b3c0a1d9dda4f8cbd3f7ad5e6a73f6` and `243849bbf724b7bd301b685573f9664290783605`; RF-08-03 accepted the ephemeral bootstrap proof.
 - Closure artifact: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`; status `INDEPENDENTLY_ACCEPTED` through `104e9777f298c47428fa8bdb07af109c234c4630`; primary closure `b1db2e7eafa0f625bd45e44436a208857ff7d48a`.

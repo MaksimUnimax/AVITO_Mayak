@@ -1,6 +1,6 @@
 # Маяк Авито
 
-**Статус репозитория:** `MODULE_14_RF04_COMPLETE_RF05_NEXT` — RF-04 repository content is complete and closure is published for independent acceptance; RF-05 is next but not started and is gated by independent RF-04 closure acceptance.
+**Статус репозитория:** `MODULE_14_RF10_PLATFORM_CONTRACTS_RUNTIME_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE` — RF-09 is independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; RF-10 is published for independent acceptance; RF-11 is not started.
 
 «Маяк Авито» — сервис мониторинга поисковой выдачи Avito. Пользователь создаёт отдельный Маяк из ссылки поиска, а принятая текущая семантика уведомляет только о вновь наблюдаемых объявлениях. Первый baseline уведомление не создаёт. Изменение цены само по себе не является notification event текущего scope.
 
@@ -69,7 +69,7 @@ This does not prove that the complete acceptance runtime is assembled or deploye
 - RF-02: independently accepted at `c92e9299e5c0bd11ea18362673a8ac342b835483`.
 - RF-03: complete at repository-content level and independently accepted at its recorded chain heads.
 - RF-04: repository-content complete; closure published for independent acceptance. RF-05 is next but not started and may begin only after independent RF-04 closure acceptance; runtime mutation is none and production remains blocked.
-- RF-06–RF-30: not accepted and may begin only through their exact prerequisites and one exact task.
+- RF-06 remains accepted with RF-07 open only for genuinely deferred runtime gates; RF-08 is independently accepted; RF-09 is independently accepted through the stated head; RF-10 is published for independent acceptance; RF-11–RF-30 remain gated by exact prerequisites and tasks.
 
 Current RF-04 evidence: [`PHYSICAL_DATA_MODEL_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/PHYSICAL_DATA_MODEL_v1.0.md), [`TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/TRANSACTION_AND_OUTBOX_BOUNDARIES_v1.0.md), [`RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_PROCESS_AND_PACKAGE_MODEL_v1.0.md), [`MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/MIGRATION_AND_SCHEMA_EVOLUTION_PLAN_v1.0.md), [`RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_TOPOLOGY_AND_ENVIRONMENT_RECORD_CANDIDATE_v1.0.md), [`CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONFIGURATION_AND_SECRETS_BOUNDARY_v1.0.md), and [`RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md`](docs/04-modules/14-runtime-foundation-and-autonomous-integration/RUNTIME_ARCHITECTURE_AND_PHYSICAL_DATA_MODEL_CLOSURE_v1.0.md).
 
