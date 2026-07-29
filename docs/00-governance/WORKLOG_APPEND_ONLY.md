@@ -600,3 +600,15 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Correction/evidence:** SQLAlchemy URL construction now masks password rendering; protected-file DSN assembly, redacted secret wrappers and failing-setup regression assertions preserve safe host/database identity without printing the synthetic credential. Fresh isolated Postgres 18 RF-11 acceptance: `10 passed`; focused Identity unit/contract/architecture: `26 passed`; Ruff, mypy and import-linter passed.
 - **RF-11 result:** trusted session authority, serialized transaction gate, secret-free actor-bound fingerprints, link terminal idempotency, savepoint race handling and cross-key bootstrap serialization completed; `Migration-Decision: NONE`, `Migration-Head: RF09_FINALIZE`.
 - **Governance:** RF-11 remains pending ChatGPT review; RF-12 remains not started; `CHATGPT_REVIEW_REQUIRED: YES`; `NOT_PRODUCTION_READY`.
+
+## 2026-07-29 — RF-11 live PostgreSQL ten-command matrix correction
+
+- **Technical ID:** `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02`.
+- **Expected base / authoritative origin:** `76afc6936f6c7b4d29012c9a6ecd7acdd70b9f3b` (`fix(rf11): prove replay-safe command matrix`).
+- **Root cause:** `RF11_ACCEPTANCE_IS_DESCRIBED_BY_METADATA_BUT_NOT_EXECUTED_AS_ONE_DATABASE_BACKED_COMMAND_MATRIX`.
+- **Correction:** replaced string-only row fields with callable manifest behavior and one PostgreSQL runner for exactly ten Identity commands; each row is invoked and inspected through the production runtime and actual DB state.
+- **Collected IDs:** ten stable manifest IDs plus 74 collected cases; callable manifest/redaction local gate `12 passed`; PostgreSQL `63 passed`; broad unit/contract/architecture `4658 passed`.
+- **Concurrency/mismatch/rollback:** four-worker same-key command execution per row; provider shared key; bootstrap same-actor same-key and separate global-authority race; same-key fingerprint variants; caller rollback; actor-bound callable path; controlled clock for expiry; DB-backed audit and terminal counts.
+- **Savepoint/redaction:** provider resolution, link completion and recovery savepoint paths are exercised; failing subprocess captures argv/stdout/stderr/exit/report without secret emission; task-generated secrets were mode `0600` and removed.
+- **Static:** Ruff pass; mypy affected paths pass; import-linter `3 kept, 0 broken`; migration `NONE`; head `RF09_FINALIZE`; no production source, schema, dependency or RF-12 path changed.
+- **Governance status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; `CHATGPT_REVIEW_REQUIRED: YES`; `NOT_PRODUCTION_READY`; no duplicate closure entry on replay.

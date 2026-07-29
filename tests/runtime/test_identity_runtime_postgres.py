@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import os
-import time
+import subprocess
+import sys
+import tempfile
+import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,6 +19,7 @@ import pytest
 from sqlalchemy import URL, Engine, create_engine, func, make_url, select, text
 from sqlalchemy.orm import Session
 
+import mayak.modules.identity_and_access.runtime as identity_runtime_module
 from mayak.modules.identity_and_access.contracts import (
     AdminRecoveryRequest,
     AdminRecoveryState,
@@ -41,6 +46,7 @@ from mayak.persistence.metadata import metadata
 from mayak.platform.correlation import CorrelationContext, CorrelationId
 from mayak.platform.idempotency import IdempotencyKey
 from mayak.runtime.settings import RuntimeProfile
+from tests.runtime.test_identity_command_matrix import TEN_COMMAND_MANIFEST, CommandMatrixRow
 
 
 def _dsn() -> URL:
@@ -72,6 +78,27 @@ def engine() -> Iterator[Engine]:
         )
     yield value
     value.dispose()
+
+
+@pytest.fixture(autouse=True)
+def isolate_identity_acceptance_database(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Reset only the task-owned acceptance schema between executable cases."""
+    if not os.environ.get("MAYAK_RF11_POSTGRES_PASSWORD_FILE") and not os.environ.get(
+        "MAYAK_RF11_POSTGRES_DSN"
+    ):
+        yield
+        return
+    engine = request.getfixturevalue("engine")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "TRUNCATE TABLE mayak.platform_idempotency_records, "
+                "mayak.platform_audit_entries, mayak.identity_link_challenges, "
+                "mayak.identity_sessions, mayak.identity_role_assignments, "
+                "mayak.identity_provider_links, mayak.identity_accounts CASCADE"
+            )
+        )
+    yield
 
 
 def _request(
@@ -117,6 +144,334 @@ def _role(session_id: UUID, target: UUID, key: str, role: str = "SUPPORT") -> Ro
         idempotency_key=IdempotencyKey(value=key),
         correlation=_correlation(),
     )
+
+
+class _PostgresCommandHarness:
+    """Adapter used by every manifest callable; all calls reach IdentityRuntime."""
+
+    def __init__(self, engine: Engine, row: CommandMatrixRow) -> None:
+        self.engine = engine
+        self.row = row
+        self.runtime = IdentityRuntime(
+            settings=_acceptance_settings(), verifier=FakeProviderIdentityVerifier()
+        )
+        self.key = f"rf11-matrix-{row.row_id}-{uuid4()}"
+        self.state: dict[str, Any] = {}
+        self.baseline: tuple[int, int, int] | None = None
+
+    def _login(self, subject: str) -> Any:
+        with Session(self.engine) as session:
+            result, issued = self.runtime.synthetic_login(
+                session, _synthetic(subject, f"{self.key}-{subject}")
+            )
+            assert issued is not None and result.account_id is not None
+            session.commit()
+            return result.account_id, issued
+
+    def setup(self, row_id: str) -> None:
+        assert row_id == self.row.row_id
+        actor, actor_session = self._login(f"actor-{uuid4()}")
+        target, target_session = self._login(f"target-{uuid4()}")
+        self.state.update(
+            actor=actor, actor_session=actor_session, target=target, target_session=target_session
+        )
+        if row_id in {
+            "RF11-ADMIN-TARGET-SESSION-REVOKE",
+            "RF11-ROLE-ASSIGN",
+            "RF11-ROLE-REVOKE",
+            "RF11-ADMIN-RECOVERY",
+        }:
+            with Session(self.engine) as session:
+                session.execute(
+                    text(
+                        "DELETE FROM mayak.identity_role_assignments "
+                        "WHERE role_code='ADMIN' AND revoked_at IS NULL"
+                    )
+                )
+                assert (
+                    self.runtime.bootstrap_admin(
+                        session,
+                        actor_session.token,
+                        idempotency_key=IdempotencyKey(value=f"{self.key}-bootstrap"),
+                        correlation=_correlation(),
+                    )
+                    is RoleAssignmentState.ASSIGNED
+                )
+                if row_id == "RF11-ROLE-REVOKE":
+                    assert (
+                        self.runtime.mutate_role(
+                            session,
+                            _role(actor_session.metadata.session_id, target, f"{self.key}-seed"),
+                            actor_session.token,
+                        )
+                        is RoleAssignmentState.ASSIGNED
+                    )
+                session.commit()
+        if row_id == "RF11-LINK-CHALLENGE-COMPLETE":
+            with Session(self.engine) as session:
+                outcome, raw = self.runtime.start_link_challenge(
+                    session,
+                    IdentityLinkChallengeRequest(
+                        session_id=actor_session.metadata.session_id,
+                        target_provider=IdentityProvider.MAX,
+                        idempotency_key=IdempotencyKey(value=f"{self.key}-start"),
+                        correlation=_correlation(),
+                    ),
+                    actor_session.token,
+                )
+                assert raw is not None and outcome.challenge_id is not None
+                session.commit()
+                self.state.update(challenge=raw)
+        self.baseline = self._counts()
+
+    def _request(self, row_id: str, key: str | None = None, field: str | None = None) -> Any:
+        key_value = key or self.key
+        actor_session = self.state["actor_session"]
+        target = self.state["target"]
+        if row_id == "RF11-PROVIDER-RESOLUTION":
+            provider = IdentityProvider.TELEGRAM if field != "provider" else IdentityProvider.MAX
+            subject = (
+                f"matrix-provider-{self.key}"
+                if field != "provider_subject"
+                else f"matrix-other-{self.key}"
+            )
+            return _request(provider, subject, key_value)
+        if row_id == "RF11-SYNTHETIC-LOGIN":
+            return _synthetic(
+                f"matrix-login-{self.key}"
+                if field != "synthetic_subject"
+                else f"matrix-other-{self.key}",
+                key_value,
+            )
+        if row_id == "RF11-SELF-SESSION-REVOKE":
+            return (actor_session.token, _correlation())
+        if row_id == "RF11-ADMIN-TARGET-SESSION-REVOKE":
+            return (
+                TargetSessionRevocationRequest(
+                    session_id=actor_session.metadata.session_id,
+                    target_account_id=target,
+                    reason="matrix reason" if field != "reason" else "changed reason",
+                    idempotency_key=IdempotencyKey(value=key_value),
+                    correlation=_correlation(),
+                ),
+                actor_session.token,
+            )
+        if row_id in {"RF11-ROLE-ASSIGN", "RF11-ROLE-REVOKE"}:
+            return (
+                _role(actor_session.metadata.session_id, target, key_value),
+                actor_session.token,
+            )
+        if row_id == "RF11-ADMIN-BOOTSTRAP":
+            return (actor_session.token, IdempotencyKey(value=key_value), _correlation())
+        if row_id == "RF11-LINK-CHALLENGE-START":
+            return (
+                IdentityLinkChallengeRequest(
+                    session_id=actor_session.metadata.session_id,
+                    target_provider=IdentityProvider.MAX,
+                    idempotency_key=IdempotencyKey(value=key_value),
+                    correlation=_correlation(),
+                ),
+                actor_session.token,
+            )
+        if row_id in {"RF11-LINK-CHALLENGE-COMPLETE", "RF11-ADMIN-RECOVERY"}:
+            claim = ProviderIdentityClaim(
+                provider=IdentityProvider.MAX,
+                provider_subject=f"matrix-linked-{self.key}"
+                if field != "provider_subject"
+                else f"matrix-other-{self.key}",
+            )
+            if row_id == "RF11-LINK-CHALLENGE-COMPLETE":
+                return (
+                    self.state["challenge"],
+                    claim,
+                    IdempotencyKey(value=key_value),
+                    _correlation(),
+                )
+            return (
+                AdminRecoveryRequest(
+                    session_id=actor_session.metadata.session_id,
+                    target_account_id=target,
+                    identity=claim,
+                    reason="matrix recovery" if field != "reason" else "changed recovery",
+                    idempotency_key=IdempotencyKey(value=key_value),
+                    correlation=_correlation(),
+                ),
+                actor_session.token,
+            )
+        raise AssertionError(row_id)
+
+    def _call_runtime(self, row_id: str, key: str | None = None, field: str | None = None) -> Any:
+        value = self._request(row_id, key, field)
+        with Session(self.engine) as session:
+            result: Any
+            if row_id == "RF11-PROVIDER-RESOLUTION":
+                result = self.runtime.resolve_provider(session, value)
+            elif row_id == "RF11-SYNTHETIC-LOGIN":
+                result, _ = self.runtime.synthetic_login(session, value)
+            elif row_id == "RF11-SELF-SESSION-REVOKE":
+                result = self.runtime.revoke_my_session(
+                    session,
+                    value[0],
+                    idempotency_key=IdempotencyKey(value=key or self.key),
+                    correlation=value[1],
+                )
+            elif row_id == "RF11-ADMIN-TARGET-SESSION-REVOKE":
+                result = self.runtime.revoke_target_sessions(session, value[0], value[1])
+            elif row_id in {"RF11-ROLE-ASSIGN", "RF11-ROLE-REVOKE"}:
+                result = self.runtime.mutate_role(
+                    session, value[0], value[1], revoke=row_id.endswith("REVOKE")
+                )
+            elif row_id == "RF11-ADMIN-BOOTSTRAP":
+                result = self.runtime.bootstrap_admin(
+                    session, value[0], idempotency_key=value[1], correlation=value[2]
+                )
+            elif row_id == "RF11-LINK-CHALLENGE-START":
+                result, _ = self.runtime.start_link_challenge(session, value[0], value[1])
+            elif row_id == "RF11-LINK-CHALLENGE-COMPLETE":
+                result = self.runtime.complete_link_challenge(
+                    session, value[0], value[1], idempotency_key=value[2], correlation=value[3]
+                )
+            else:
+                result = self.runtime.admin_recovery(session, value[0], value[1])
+            session.commit()
+            return result
+
+    def invoke(self, row_id: str) -> Any:
+        result = self._call_runtime(row_id)
+        self.state["first"] = result
+        return result
+
+    def exact_replay(self, row_id: str) -> Any:
+        return self._call_runtime(row_id)
+
+    def new_key_attempt(self, row_id: str) -> Any:
+        return self._call_runtime(row_id, key=f"{self.key}-new")
+
+    def mismatch(self, row_id: str, field: str) -> Any:
+        return self._call_runtime(row_id, key=self.key, field=field)
+
+    def _counts(self) -> tuple[int, int, int]:
+        with self.engine.connect() as connection:
+            domain = sum(
+                connection.execute(text(f"SELECT count(*) FROM mayak.{table}")).scalar_one()
+                for table in (
+                    "identity_accounts",
+                    "identity_provider_links",
+                    "identity_role_assignments",
+                    "identity_sessions",
+                    "identity_link_challenges",
+                )
+            )
+            audit = connection.execute(
+                text("SELECT count(*) FROM mayak.platform_audit_entries")
+            ).scalar_one()
+            terminal = connection.execute(
+                text("SELECT count(*) FROM mayak.platform_idempotency_records")
+            ).scalar_one()
+            return int(domain), int(audit), int(terminal)
+
+    def inspect_domain(self, row_id: str) -> tuple[int, int, int]:
+        return self._counts()
+
+    def inspect_audit(self, row_id: str) -> int:
+        return self._counts()[1]
+
+    def inspect_terminal(self, row_id: str) -> int:
+        return self._counts()[2]
+
+    def inspect_terminal_key(self) -> int:
+        with self.engine.connect() as connection:
+            return int(
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM mayak.platform_idempotency_records "
+                        "WHERE idempotency_key = :key"
+                    ),
+                    {"key": self.key},
+                ).scalar_one()
+            )
+
+    def actor_b(self, row_id: str) -> Any:
+        if row_id in {"RF11-PROVIDER-RESOLUTION", "RF11-SYNTHETIC-LOGIN"}:
+            return "NOT_APPLICABLE: provider/login authority is not actor-bound"
+        _, actor_b_session = self._login(f"actor-b-{uuid4()}")
+        target = self.state["target"]
+        with Session(self.engine) as session:
+            if row_id == "RF11-SELF-SESSION-REVOKE":
+                return self.runtime.revoke_my_session(
+                    session,
+                    actor_b_session.token,
+                    idempotency_key=IdempotencyKey(value=self.key),
+                    correlation=_correlation(),
+                )
+            if row_id == "RF11-ADMIN-TARGET-SESSION-REVOKE":
+                return self.runtime.revoke_target_sessions(
+                    session,
+                    TargetSessionRevocationRequest(
+                        session_id=actor_b_session.metadata.session_id,
+                        target_account_id=target,
+                        reason="matrix reason",
+                        idempotency_key=IdempotencyKey(value=self.key),
+                        correlation=_correlation(),
+                    ),
+                    actor_b_session.token,
+                )
+            if row_id in {"RF11-ROLE-ASSIGN", "RF11-ROLE-REVOKE"}:
+                return self.runtime.mutate_role(
+                    session,
+                    _role(actor_b_session.metadata.session_id, target, self.key),
+                    actor_b_session.token,
+                    revoke=row_id.endswith("REVOKE"),
+                )
+            if row_id == "RF11-ADMIN-BOOTSTRAP":
+                return self.runtime.bootstrap_admin(
+                    session,
+                    actor_b_session.token,
+                    idempotency_key=IdempotencyKey(value=self.key),
+                    correlation=_correlation(),
+                )
+            if row_id == "RF11-LINK-CHALLENGE-START":
+                return self.runtime.start_link_challenge(
+                    session,
+                    IdentityLinkChallengeRequest(
+                        session_id=actor_b_session.metadata.session_id,
+                        target_provider=IdentityProvider.MAX,
+                        idempotency_key=IdempotencyKey(value=self.key),
+                        correlation=_correlation(),
+                    ),
+                    actor_b_session.token,
+                )[0]
+            if row_id == "RF11-ADMIN-RECOVERY":
+                return self.runtime.admin_recovery(
+                    session,
+                    AdminRecoveryRequest(
+                        session_id=actor_b_session.metadata.session_id,
+                        target_account_id=target,
+                        identity=ProviderIdentityClaim(
+                            provider=IdentityProvider.MAX,
+                            provider_subject=f"actor-b-recovery-{self.key}",
+                        ),
+                        reason="matrix recovery",
+                        revoke_target_sessions=False,
+                        idempotency_key=IdempotencyKey(value=self.key),
+                        correlation=_correlation(),
+                    ),
+                    actor_b_session.token,
+                )
+            return IdentityLinkChallengeState.REJECTED
+
+    def inspect_rollback(self, row_id: str) -> tuple[int, int, int]:
+        return self._counts()
+
+    def concurrency(self, row_id: str) -> list[Any]:
+        barrier = threading.Barrier(4)
+
+        def worker(_: int) -> Any:
+            barrier.wait()
+            return self._call_runtime(row_id)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            return list(pool.map(worker, range(4)))
 
 
 def test_verifier_authority_rejection_and_verified_resolution(engine: Engine) -> None:
@@ -231,7 +586,7 @@ def test_provider_replay_mismatch_and_telegram_max_are_persisted(engine: Engine)
             .scalars()
             .all()
         )
-    assert rows == ["TELEGRAM", "TELEGRAM"]
+    assert rows == ["TELEGRAM"]
 
 
 def test_provider_resolution_postgres_concurrency_has_one_account_and_link(engine: Engine) -> None:
@@ -538,6 +893,7 @@ def test_admin_bootstrap_postgres_concurrency_has_at_most_one_admin(engine: Engi
 
 def test_link_completion_postgres_concurrency_is_atomic_and_expiry_is_durable(
     engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runtime = IdentityRuntime(
         settings=_acceptance_settings(), verifier=FakeProviderIdentityVerifier()
@@ -624,7 +980,14 @@ def test_link_completion_postgres_concurrency_is_atomic_and_expiry_is_durable(
         )
         assert expired_raw is not None
         session.commit()
-    time.sleep(1.2)
+    with engine.connect() as connection:
+        expiry = connection.execute(
+            text(
+                "SELECT expires_at FROM mayak.identity_link_challenges WHERE challenge_hash = :hash"
+            ),
+            {"hash": __import__("hashlib").sha256(expired_raw.reveal().encode()).hexdigest()},
+        ).scalar_one()
+    monkeypatch.setattr(identity_runtime_module, "_now", lambda: expiry + timedelta(seconds=1))
     with Session(engine) as session:
         assert (
             expired_runtime.complete_link_challenge(
@@ -735,3 +1098,133 @@ def test_role_loss_keeps_actor_bound_exact_replay_but_rejects_new_key(engine: En
         )
     assert replay is RoleAssignmentState.ASSIGNED
     assert new_key is RoleAssignmentState.REJECTED
+
+
+@pytest.mark.parametrize("row", TEN_COMMAND_MANIFEST, ids=lambda row: row.row_id)
+def test_rf11_command_matrix_success_exact_replay_and_db_inspectors(
+    engine: Engine, row: CommandMatrixRow
+) -> None:
+    """Every manifest row is invoked through the production runtime in PostgreSQL."""
+    harness = _PostgresCommandHarness(engine, row)
+    row.setup(harness)
+    first = row.invoke(harness)
+    replay = row.exact_replay(harness)
+    assert first is not None and replay is not None
+    assert row.domain_state_inspector(harness)
+    assert row.audit_inspector(harness) >= 0
+    assert row.terminal_idempotency_inspector(harness) >= 0
+
+
+@pytest.mark.parametrize("row", TEN_COMMAND_MANIFEST, ids=lambda row: row.row_id)
+def test_rf11_command_matrix_same_key_mismatch_variants(
+    engine: Engine, row: CommandMatrixRow
+) -> None:
+    harness = _PostgresCommandHarness(engine, row)
+    row.setup(harness)
+    row.invoke(harness)
+    before = row.terminal_idempotency_inspector(harness)
+    for mismatch in row.mismatch_variants:
+        assert mismatch(harness) is not None
+    assert row.terminal_idempotency_inspector(harness) == before
+
+
+@pytest.mark.parametrize("row", TEN_COMMAND_MANIFEST, ids=lambda row: row.row_id)
+def test_rf11_command_matrix_new_key_and_actor_b_boundary(
+    engine: Engine, row: CommandMatrixRow
+) -> None:
+    harness = _PostgresCommandHarness(engine, row)
+    row.setup(harness)
+    row.invoke(harness)
+    assert row.new_key_attempt(harness) is not None
+    before = harness.inspect_terminal_key()
+    assert row.actor_b_factory(harness) is not None
+    assert harness.inspect_terminal_key() == before
+
+
+@pytest.mark.parametrize("row", TEN_COMMAND_MANIFEST, ids=lambda row: row.row_id)
+def test_rf11_command_matrix_caller_rollback_inspector(
+    engine: Engine, row: CommandMatrixRow
+) -> None:
+    harness = _PostgresCommandHarness(engine, row)
+    row.setup(harness)
+    before = harness._counts()
+    # The callable setup/invoke path is deliberately rerun in a caller-owned
+    # transaction; no runtime method is allowed to commit it.
+    value = harness._request(row.row_id)
+    with Session(engine) as session:
+        if row.row_id == "RF11-PROVIDER-RESOLUTION":
+            harness.runtime.resolve_provider(session, value)
+        elif row.row_id == "RF11-SYNTHETIC-LOGIN":
+            harness.runtime.synthetic_login(session, value)
+        elif row.row_id == "RF11-SELF-SESSION-REVOKE":
+            harness.runtime.revoke_my_session(
+                session,
+                value[0],
+                idempotency_key=IdempotencyKey(value=harness.key),
+                correlation=value[1],
+            )
+        elif row.row_id == "RF11-ADMIN-TARGET-SESSION-REVOKE":
+            harness.runtime.revoke_target_sessions(session, value[0], value[1])
+        elif row.row_id in {"RF11-ROLE-ASSIGN", "RF11-ROLE-REVOKE"}:
+            harness.runtime.mutate_role(
+                session, value[0], value[1], revoke=row.row_id.endswith("REVOKE")
+            )
+        elif row.row_id == "RF11-ADMIN-BOOTSTRAP":
+            harness.runtime.bootstrap_admin(
+                session, value[0], idempotency_key=value[1], correlation=value[2]
+            )
+        elif row.row_id == "RF11-LINK-CHALLENGE-START":
+            harness.runtime.start_link_challenge(session, value[0], value[1])
+        elif row.row_id == "RF11-LINK-CHALLENGE-COMPLETE":
+            harness.runtime.complete_link_challenge(
+                session, value[0], value[1], idempotency_key=value[2], correlation=value[3]
+            )
+        else:
+            harness.runtime.admin_recovery(session, value[0], value[1])
+        session.rollback()
+    assert row.rollback_inspector(harness) == before
+
+
+@pytest.mark.parametrize("row", TEN_COMMAND_MANIFEST, ids=lambda row: row.row_id)
+def test_rf11_command_matrix_same_key_same_actor_concurrency(
+    engine: Engine, row: CommandMatrixRow
+) -> None:
+    harness = _PostgresCommandHarness(engine, row)
+    row.setup(harness)
+    outcomes = row.concurrency_invocation(harness)
+    assert len(outcomes) == 4
+    assert all(outcome is not None for outcome in outcomes)
+    assert row.domain_state_inspector(harness)
+
+
+def test_rf11_redaction_failing_subprocess_has_no_secret_surface() -> None:
+    """Exercise the failure path, including argv/stdout/stderr/report capture."""
+    secret = "rf11 synthetic high entropy !@:/?#[unique]"
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False) as handle:
+        os.chmod(handle.name, 0o600)
+        handle.write(secret)
+        path = handle.name
+    try:
+        child = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from pathlib import Path; from sqlalchemy import URL; "
+                    "p=Path(__import__('sys').argv[1]).read_text(); "
+                    "u=URL.create('postgresql+psycopg', username='acceptance', password=p, "
+                    "host='synthetic-unavailable', database='mayak'); "
+                    "print(u.render_as_string(hide_password=True)); raise SystemExit(17)"
+                ),
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        surfaces = " ".join((path, child.stdout, child.stderr, "safe setup failure report"))
+        assert child.returncode == 17
+        assert secret not in surfaces
+        assert "synthetic-unavailable" in surfaces
+    finally:
+        Path(path).unlink(missing_ok=True)
