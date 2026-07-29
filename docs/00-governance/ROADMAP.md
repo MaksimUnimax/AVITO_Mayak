@@ -106,6 +106,8 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
 - `[ ] RF-29` Operator acceptance pack.
 - `[ ] RF-30` Final evidence handoff.
 
+RF-11 corrective trusted-authority and durable-PostgreSQL package is published for ChatGPT review; RF-11 is not accepted yet and `CHATGPT_REVIEW_REQUIRED: YES`. RF-12 has not started. Environment is `RUNTIME_ELIGIBLE`; runtime/deployment remains incomplete; `NOT_PRODUCTION_READY`.
+
 ## Execution rules
 
 - GitHub `main` is checked before every task.

@@ -46,3 +46,25 @@ Production verdict: `NOT_PRODUCTION_READY`.
 Status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 
 `CHATGPT_REVIEW_REQUIRED: YES`.
+
+## Corrective recovery — trusted authority and durable PostgreSQL gates
+
+- Technical ID: `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02`.
+- Expected base and preflight origin: `52d323b6a9ae21224c00c252449a2aea5a997767`; detached candidate HEAD matched.
+- Root cause: `UNTRUSTED_CALLER_DATA_CAN_ENTER_TRUSTED_IDENTITY_AND_AUTHORIZATION_PATHS`.
+- Public correction: provider input is explicitly untrusted `ProviderIdentityClaim`, restricted to Telegram/MAX; no caller verification boolean, arbitrary provider, generic synthetic provider, internal verified assertion or provider payload is public.
+- Verifier: internal `ProviderIdentityVerifier` port and deterministic `FakeProviderIdentityVerifier`; outcomes are `VERIFIED`, `REJECTED` or `AMBIGUOUS`, and verifier-backed resolution rejects generic synthetic claims.
+- Secret boundary: `_RawSecret` and `_IssuedSession` remain internal, redacted; public contracts/exports and persisted rows contain no raw session/challenge secret, password, ORM, session or SDK type. Session persistence is SHA-256 hash-only.
+- Authority: actor UUID is derived from the active persisted session; caller-supplied actor/account UUID spoofing is rejected. Synthetic login is acceptance-only and idempotent.
+- Mutation idempotency matrix: provider resolution; synthetic login; self and Admin target-session revocation; role assignment/revocation; acceptance Admin bootstrap; link challenge start/completion; Admin recovery. Each has normalized non-secret fingerprint, replay, same-key/different-fingerprint conflict, caller-owned transaction, persisted audit where applicable, and rollback proof.
+- Roles/bootstrap: active persisted Admin authority is required; bootstrap is acceptance-only, advisory-lock serialized and at most one initial Admin. Role mutation is authorized, audited and replay-safe.
+- Link/recovery: authenticated challenge start is replay/mismatch safe; completion is verifier-backed, row-locked and atomic. Provider mismatch, expired/consumed challenge, same-account replay, foreign-account rejection and six-worker completion were exercised. Admin recovery is authorized, verified, idempotent and can revoke target sessions.
+- Committed PostgreSQL path: `tests/runtime/test_identity_runtime_postgres.py`; exact task Compose project `avito-mayak-acceptance-rf11-corrective-20260729-02`; ephemeral CPython `3.14.6` test container supplied `MAYAK_RF11_POSTGRES_DSN` only in-process over the internal network. Final focused result: `31 passed`.
+- Actual validation: focused Identity unit/contract plus PostgreSQL suite `31 passed`; complete `tests/unit tests/contract tests/architecture` `4658 passed`; Ruff pass; mypy affected source/tests pass; import-linter `3 kept, 0 broken`; `git diff --check` pass.
+- Migration/schema: `Migration-Decision: NONE`; `Migration-Head: RF09_FINALIZE`; PostgreSQL inspection proved all five Identity tables, UUID/account authority, unique provider links, hash-only constraints, restricted FKs and TTL checks; historical migrations unchanged.
+- Toolchain/lock: CPython `3.14.6`, uv `0.11.31`, current `pyproject.toml`; `uv.lock` SHA-256 `e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6`; no dependency change.
+- Security/redaction: PostgreSQL 18 pinned image `postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296`; internal network, no host DB port, synthetic secret files mode `0600`, no values printed or committed, no private-key inspection, provider I/O, personal data or foreign-resource impact.
+- Resources: exact task containers/network/volume were created/recovered only for this run, then torn down with exact Compose `--volumes --remove-orphans`; exact secrets were unlinked with `Path.unlink`; exact runtime directory was removed with `Path.rmdir`; remaining task containers/networks/volumes and secret files: zero.
+- Governance/limitations: RF-11 corrective published for ChatGPT review; RF-11 not accepted yet; RF-12 not started; environment `RUNTIME_ELIGIBLE`; runtime/deployment incomplete; `NOT_PRODUCTION_READY`; no API, deployment, provider transport or production claim.
+- Status: `CORRECTIVE_PUBLISHED_FOR_CHATGPT_REVIEW`.
+- `CHATGPT_REVIEW_REQUIRED: YES`.

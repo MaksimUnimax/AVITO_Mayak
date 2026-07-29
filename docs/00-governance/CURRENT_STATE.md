@@ -191,3 +191,7 @@ RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worke
 ## RF-11 current reconciliation — 2026-07-29
 
 RF-10 is independently accepted through `74997f4da04fd9ae9e225ea39b22c20acd45353e`. RF-11 implementation and closure are published for independent acceptance. RF-12 is not started. Remaining RF-07 runtime gates are deferred. Environment status remains `RUNTIME_ELIGIBLE`; complete runtime/deployment has not been reached; `NOT_PRODUCTION_READY` remains authoritative; RF-30 remains the only route to `READY_FOR_OPERATOR_ACCEPTANCE`.
+
+## RF-11 corrective current gate — 2026-07-29
+
+`RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02` is published from exact base `52d323b6a9ae21224c00c252449a2aea5a997767` for ChatGPT review. RF-11 corrective is not accepted yet; RF-12 is not started; environment is `RUNTIME_ELIGIBLE`; runtime/deployment is incomplete; `NOT_PRODUCTION_READY` remains authoritative; `CHATGPT_REVIEW_REQUIRED: YES`.

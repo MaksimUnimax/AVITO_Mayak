@@ -9,6 +9,8 @@ from .contracts import (
     AccountIdentity,
     ActorContext,
     ActorContextValidationState,
+    AdminRecoveryRequest,
+    AdminRecoveryState,
     AuditReference,
     AuthChallenge,
     AuthChallengeState,
@@ -20,6 +22,7 @@ from .contracts import (
     IdentityLinkChallenge,
     IdentityLinkChallengeState,
     IdentityProvider,
+    ProviderIdentityClaim,
     RoleAssignment,
     RoleAssignmentDecision,
     RoleAssignmentState,
@@ -58,14 +61,16 @@ __all__ = [
     "TargetScope",
     "TargetScopeKind",
     "IdentityRuntime",
-    "IssuedSession",
+    "ProviderIdentityClaim",
+    "AdminRecoveryRequest",
+    "AdminRecoveryState",
 ]
 
 
 def __getattr__(name: str) -> Any:
     """Keep the transport-neutral import surface free of persistence imports."""
-    if name in {"IdentityRuntime", "IssuedSession"}:
-        from .runtime import IdentityRuntime, IssuedSession
+    if name == "IdentityRuntime":
+        from .runtime import IdentityRuntime
 
-        return {"IdentityRuntime": IdentityRuntime, "IssuedSession": IssuedSession}[name]
+        return IdentityRuntime
     raise AttributeError(name)

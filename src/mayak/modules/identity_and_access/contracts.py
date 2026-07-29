@@ -226,15 +226,16 @@ class IdentityLinkChallenge(_SemanticPrimitive):
     state: IdentityLinkChallengeState
 
 
-class VerifiedProviderIdentity(_SemanticPrimitive):
-    provider: IdentityProvider | str
+class ProviderIdentityClaim(_SemanticPrimitive):
+    """Untrusted, normalized input; it is never an authorization assertion."""
+
+    provider: IdentityProvider
     provider_subject: str = Field(min_length=1, max_length=255)
-    verified: bool
-    verification_reference: str = Field(min_length=1, max_length=128)
+    verification_reference: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class ProviderIdentityResolutionRequest(_SemanticPrimitive):
-    identity: VerifiedProviderIdentity
+    identity: ProviderIdentityClaim
     idempotency_key: IdempotencyKey
     correlation: CorrelationContext
 
@@ -242,7 +243,7 @@ class ProviderIdentityResolutionRequest(_SemanticPrimitive):
 class ProviderIdentityResolutionOutcome(_SemanticPrimitive):
     state: IdentityRuntimeState
     account_id: UUID | None = None
-    provider: IdentityProvider | str
+    provider: IdentityProvider
     audit_reference: AuditReference | None = None
 
 
@@ -279,7 +280,7 @@ class ActorContextValidationOutcome(_SemanticPrimitive):
 
 
 class IdentityLinkChallengeRequest(_SemanticPrimitive):
-    actor_account_id: UUID
+    session_id: UUID
     target_provider: IdentityProvider
     idempotency_key: IdempotencyKey
     correlation: CorrelationContext
@@ -293,7 +294,7 @@ class IdentityLinkChallengeOutcome(_SemanticPrimitive):
 
 
 class RoleMutationRequest(_SemanticPrimitive):
-    actor_account_id: UUID
+    session_id: UUID
     target_account_id: UUID
     role_code: str = Field(min_length=1, max_length=64)
     reason: str = Field(min_length=1, max_length=512)
@@ -320,19 +321,22 @@ class SyntheticAcceptanceLoginOutcome(_SemanticPrimitive):
     session: SafeSessionMetadata | None = None
 
 
-class SecretSessionToken:
-    """Internal-only issuance value; never a public contract or persisted value."""
+class AdminRecoveryRequest(_SemanticPrimitive):
+    session_id: UUID
+    target_account_id: UUID
+    identity: ProviderIdentityClaim
+    reason: str = Field(min_length=1, max_length=512)
+    revoke_target_sessions: bool = False
+    idempotency_key: IdempotencyKey
+    correlation: CorrelationContext
 
-    __slots__ = ("value",)
 
-    def __init__(self, value: str) -> None:
-        self.value = value
-
-    def __repr__(self) -> str:
-        return "SecretSessionToken(<redacted>)"
-
-    def __str__(self) -> str:
-        return "<redacted>"
+class AdminRecoveryState(str, Enum):
+    ATTACHED = "ATTACHED"
+    REPLAYED = "REPLAYED"
+    REJECTED = "REJECTED"
+    CONFLICT = "CONFLICT"
+    FOREIGN_ACCOUNT_REJECTED = "FOREIGN_ACCOUNT_REJECTED"
 
 
 __all__ = [
@@ -367,11 +371,12 @@ __all__ = [
     "RoleMutationRequest",
     "SafeAccountSummary",
     "SafeSessionMetadata",
-    "SecretSessionToken",
+    "ProviderIdentityClaim",
+    "AdminRecoveryRequest",
+    "AdminRecoveryState",
     "SessionValidationOutcome",
     "SyntheticAcceptanceLoginOutcome",
     "SyntheticAcceptanceLoginRequest",
-    "VerifiedProviderIdentity",
     "ActorContextValidationRequest",
     "ActorContextValidationOutcome",
 ]

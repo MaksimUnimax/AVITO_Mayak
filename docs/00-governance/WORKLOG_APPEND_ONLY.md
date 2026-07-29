@@ -546,6 +546,17 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - **CHATGPT_REVIEW_REQUIRED:** `YES`.
 
+## 2026-07-29 — RF-11 corrective trusted authority and durable PostgreSQL gates
+
+- **Technical ID:** `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02`.
+- **Expected base:** `52d323b6a9ae21224c00c252449a2aea5a997767`.
+- **Root cause/correction:** `UNTRUSTED_CALLER_DATA_CAN_ENTER_TRUSTED_IDENTITY_AND_AUTHORIZATION_PATHS`; untrusted Telegram/MAX claims, internal verifier port/fake, session-derived actor authority, generic synthetic rejection, hash-only secrets, authorized roles/bootstrap/recovery and terminal idempotency are enforced.
+- **Evidence:** committed `tests/runtime/test_identity_runtime_postgres.py` ran inside exact internal task network with final focused `31 passed`; provider 8-worker resolution, Admin bootstrap concurrency, six-worker link completion, replay/mismatch, rollback, actor spoofing, session revocation, role/audit and recovery persistence were exercised.
+- **Broad/static:** complete unit/contract/architecture `4658 passed`; Ruff pass; mypy affected pass; import-linter `3 kept, 0 broken`; lock identity `e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6`; PostgreSQL image pinned; no host DB port.
+- **Migration/schema:** `Migration-Decision: NONE`; `Migration-Head: RF09_FINALIZE`; five accepted Identity tables verified; historical migrations unchanged.
+- **Governance/resources:** RF-11 corrective published for ChatGPT review; RF-11 not accepted yet; RF-12 not started; environment `RUNTIME_ELIGIBLE`; runtime/deployment incomplete; `NOT_PRODUCTION_READY`; exact task resources and 0600 synthetic secret files cleaned; foreign impact none.
+- **Status:** `CORRECTIVE_PUBLISHED_FOR_CHATGPT_REVIEW`; `CHATGPT_REVIEW_REQUIRED: YES`.
+
 ## 2026-07-29 — RF-11 Identity & Access runtime completion boundary
 
 - **Technical ID:** `RF-11-IDENTITY-AND-ACCESS-RUNTIME-COMPLETION-AND-CLOSURE-20260729-01`.
