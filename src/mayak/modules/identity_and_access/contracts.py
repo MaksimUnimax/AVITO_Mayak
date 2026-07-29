@@ -86,6 +86,7 @@ class AuthSessionState(str, Enum):
     REVOKED = "REVOKED"
     EXPIRED = "EXPIRED"
     INVALID = "INVALID"
+    CONFLICT = "CONFLICT"
 
 
 class AuthChallengeState(str, Enum):
@@ -302,6 +303,16 @@ class RoleMutationRequest(_SemanticPrimitive):
     correlation: CorrelationContext
 
 
+class TargetSessionRevocationRequest(_SemanticPrimitive):
+    """Admin target-session revocation command contract."""
+
+    session_id: UUID
+    target_account_id: UUID
+    reason: str = Field(min_length=1, max_length=512)
+    idempotency_key: IdempotencyKey
+    correlation: CorrelationContext
+
+
 class AuthorizationDecision(_SemanticPrimitive):
     allowed: bool
     reason_code: str = Field(min_length=1)
@@ -369,6 +380,7 @@ __all__ = [
     "ProviderIdentityResolutionOutcome",
     "ProviderIdentityResolutionRequest",
     "RoleMutationRequest",
+    "TargetSessionRevocationRequest",
     "SafeAccountSummary",
     "SafeSessionMetadata",
     "ProviderIdentityClaim",

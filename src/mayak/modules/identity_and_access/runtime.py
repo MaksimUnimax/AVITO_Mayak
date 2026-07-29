@@ -56,6 +56,7 @@ from .contracts import (
     SessionValidationOutcome,
     SyntheticAcceptanceLoginOutcome,
     SyntheticAcceptanceLoginRequest,
+    TargetSessionRevocationRequest,
 )
 
 _ACCOUNTS = metadata.tables["mayak.identity_accounts"]
@@ -64,6 +65,8 @@ _ROLES = metadata.tables["mayak.identity_role_assignments"]
 _SESSIONS = metadata.tables["mayak.identity_sessions"]
 _CHALLENGES = metadata.tables["mayak.identity_link_challenges"]
 _SCOPE = IdempotencyScope(value="identity_and_access")
+_COMMAND_SCOPE = "rf11-command-gate"
+_BOOTSTRAP_SCOPE = "rf11-bootstrap-single-admin"
 
 
 class ProviderIdentityVerifier(Protocol):
@@ -120,6 +123,14 @@ class _IssuedSession:
     token: _RawSecret
 
 
+@dataclass(frozen=True, slots=True)
+class _AuthenticatedSession:
+    """Authority established solely from one active persisted session row."""
+
+    account_id: UUID
+    session_id: UUID
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -160,20 +171,44 @@ class IdentityRuntime:
         self.idempotency = PostgresTerminalIdempotencyRepository()
         self.audit = PostgresAuditRepository()
 
-    def _terminal(
+    @staticmethod
+    def _lock_key(key: Any) -> int:
+        """Derive a signed advisory key from scope and normalized key only."""
+        value = getattr(key, "value", str(key)).strip()
+        digest = hashlib.sha256(f"{_COMMAND_SCOPE}:{value}".encode("utf-8")).digest()
+        return int.from_bytes(digest[:8], "big", signed=True)
+
+    @staticmethod
+    def _lock_scope(session: Session, scope: str) -> None:
+        """Acquire a fixed transaction lock for cross-key invariants."""
+
+        digest = hashlib.sha256(scope.encode("utf-8")).digest()
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": int.from_bytes(digest[:8], "big", signed=True)},
+        )
+
+    def _begin_command(
+        self, session: Session, key: Any, fingerprint: IdempotencyFingerprint
+    ) -> tuple[IdempotencyDecision, CommonOutcome | None]:
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": self._lock_key(key)},
+        )
+        decision = self.idempotency.evaluate(
+            session, scope=_SCOPE, key=key, fingerprint=fingerprint, now=_now()
+        )
+        if decision.decision.decision is IdempotencyDecision.REPLAY_TERMINAL:
+            return IdempotencyDecision.REPLAY_TERMINAL, decision.outcome
+        return decision.decision.decision, None
+
+    def _finish_command(
         self,
         session: Session,
         key: Any,
         fingerprint: IdempotencyFingerprint,
         outcome: CommonOutcome,
-    ) -> tuple[bool, CommonOutcome | None]:
-        decision = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=key, fingerprint=fingerprint, now=_now()
-        )
-        if decision.decision.decision is IdempotencyDecision.MISMATCH:
-            return False, None
-        if decision.outcome is not None:
-            return False, decision.outcome
+    ) -> CommonOutcome | None:
         recorded = self.idempotency.record_terminal(
             session,
             record_id=uuid4(),
@@ -185,9 +220,13 @@ class IdentityRuntime:
             expires_at=_now() + timedelta(days=14),
             now=_now(),
         )
-        if recorded.outcome is not None:
-            return False, recorded.outcome
-        return recorded.decision.decision is IdempotencyDecision.NEW, None
+        if recorded.decision.decision is IdempotencyDecision.MISMATCH:
+            raise RuntimeError("terminal idempotency mismatch after serialized evaluation")
+        if recorded.decision.decision is IdempotencyDecision.REPLAY_TERMINAL:
+            return recorded.outcome
+        if recorded.decision.decision is not IdempotencyDecision.NEW:
+            raise RuntimeError("terminal idempotency reconciliation is required")
+        return None
 
     def _verified(self, claim: ProviderIdentityClaim) -> ProviderVerificationOutcome:
         if self.verifier is None:
@@ -218,17 +257,15 @@ class IdentityRuntime:
             return ProviderIdentityResolutionOutcome(state=state, provider=claim.provider)
         provider, subject = verified.provider, verified.subject
         fingerprint = _fingerprint((provider.value, subject, verified.reference))
-        previous = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=request.idempotency_key, fingerprint=fingerprint, now=_now()
-        )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
+        decision, previous = self._begin_command(session, request.idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
             return ProviderIdentityResolutionOutcome(
                 state=IdentityRuntimeState.CONFLICT, provider=provider
             )
-        if previous.outcome is not None:
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return ProviderIdentityResolutionOutcome(
                 state=IdentityRuntimeState.REPLAYED,
-                account_id=UUID(previous.outcome.details[0]),
+                account_id=UUID(previous.details[0]),
                 provider=provider,
             )
         row = session.execute(
@@ -274,20 +311,11 @@ class IdentityRuntime:
         outcome = CommonOutcome(
             result=Result.SUCCEEDED, reason_code="IDENTITY_RESOLVED", details=(str(account),)
         )
-        recorded = self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            outcome=outcome,
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
-        )
-        if recorded.decision.decision is IdempotencyDecision.MISMATCH:
+        recorded = self._finish_command(session, request.idempotency_key, fingerprint, outcome)
+        if recorded is not None:
             return ProviderIdentityResolutionOutcome(
-                state=IdentityRuntimeState.CONFLICT, provider=provider
+                state=IdentityRuntimeState.REPLAYED,
+                account_id=UUID(recorded.details[0]), provider=provider
             )
         self._audit(session, None, request.correlation, "IDENTITY_RESOLVE", "account", account)
         return ProviderIdentityResolutionOutcome(
@@ -309,15 +337,13 @@ class IdentityRuntime:
         ):
             return SyntheticAcceptanceLoginOutcome(state=IdentityRuntimeState.DISABLED), None
         fingerprint = _fingerprint(("SYNTHETIC_ACCEPTANCE", request.synthetic_subject.strip()))
-        previous = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=request.idempotency_key, fingerprint=fingerprint, now=_now()
-        )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
+        decision, previous = self._begin_command(session, request.idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
             return SyntheticAcceptanceLoginOutcome(state=IdentityRuntimeState.CONFLICT), None
-        if previous.outcome is not None:
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return SyntheticAcceptanceLoginOutcome(
                 state=IdentityRuntimeState.REPLAYED,
-                account_id=UUID(previous.outcome.details[0]),
+                account_id=UUID(previous.details[0]),
                 session=None,
             ), None
         claim_provider = "SYNTHETIC_ACCEPTANCE"
@@ -347,19 +373,18 @@ class IdentityRuntime:
                 )
             )
         issued = self.issue_session(session, account)
-        self.idempotency.record_terminal(
+        recorded = self._finish_command(
             session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(
+            request.idempotency_key,
+            fingerprint,
+            CommonOutcome(
                 result=Result.SUCCEEDED, reason_code="SYNTHETIC_LOGIN", details=(str(account),)
             ),
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
         )
+        if recorded is not None:
+            return SyntheticAcceptanceLoginOutcome(
+                state=IdentityRuntimeState.REPLAYED, account_id=UUID(recorded.details[0])
+            ), None
         self._audit(session, None, request.correlation, "SYNTHETIC_LOGIN", "account", account)
         return SyntheticAcceptanceLoginOutcome(
             state=IdentityRuntimeState.CREATED, account_id=account, session=issued.metadata
@@ -403,7 +428,9 @@ class IdentityRuntime:
     def validate_session(self, session: Session, token: _RawSecret) -> SessionValidationOutcome:
         row = (
             session.execute(
-                select(_SESSIONS).where(_SESSIONS.c.token_hash == _hash(token.reveal()))
+                select(_SESSIONS, _ACCOUNTS.c.state.label("account_state"))
+                .join(_ACCOUNTS, _ACCOUNTS.c.id == _SESSIONS.c.account_id)
+                .where(_SESSIONS.c.token_hash == _hash(token.reveal()))
             )
             .mappings()
             .one_or_none()
@@ -414,7 +441,9 @@ class IdentityRuntime:
             AuthSessionState.REVOKED
             if row["revoked_at"] is not None
             else (
-                AuthSessionState.EXPIRED if row["expires_at"] <= _now() else AuthSessionState.ACTIVE
+                AuthSessionState.EXPIRED
+                if row["expires_at"] <= _now() or row["account_state"] != "ACTIVE"
+                else AuthSessionState.ACTIVE
             )
         )
         meta = SafeSessionMetadata(
@@ -430,9 +459,9 @@ class IdentityRuntime:
             account_id=row["account_id"] if state is AuthSessionState.ACTIVE else None,
         )
 
-    def _actor(
+    def _authenticated_session(
         self, session: Session, token: _RawSecret, expected_session: UUID | None = None
-    ) -> UUID | None:
+    ) -> _AuthenticatedSession | None:
         validation = self.validate_session(session, token)
         if validation.account_id is None or (
             expected_session is not None
@@ -440,7 +469,15 @@ class IdentityRuntime:
             and validation.metadata.session_id != expected_session
         ):
             return None
-        return validation.account_id
+        if validation.metadata is None:
+            return None
+        return _AuthenticatedSession(validation.account_id, validation.metadata.session_id)
+
+    def _actor(
+        self, session: Session, token: _RawSecret, expected_session: UUID | None = None
+    ) -> UUID | None:
+        authority = self._authenticated_session(session, token, expected_session)
+        return authority.account_id if authority is not None else None
 
     def revoke_my_session(
         self,
@@ -450,16 +487,15 @@ class IdentityRuntime:
         idempotency_key: Any,
         correlation: CorrelationContext,
     ) -> AuthSessionState:
-        actor = self._actor(session, token)
-        fingerprint = _fingerprint(("self-revoke", str(actor)))
-        if actor is None:
+        authority = self._authenticated_session(session, token)
+        if authority is None:
             return AuthSessionState.INVALID
-        previous = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=idempotency_key, fingerprint=fingerprint, now=_now()
-        )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
-            return AuthSessionState.INVALID
-        if previous.outcome is not None:
+        actor = authority.account_id
+        fingerprint = _fingerprint(("self-revoke", str(actor), str(authority.session_id)))
+        decision, previous = self._begin_command(session, idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
+            return AuthSessionState.CONFLICT
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return AuthSessionState.REVOKED
         session.execute(
             update(_SESSIONS)
@@ -468,16 +504,9 @@ class IdentityRuntime:
             )
             .values(revoked_at=_now(), row_version=_SESSIONS.c.row_version + 1)
         )
-        self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=idempotency_key,
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(result=Result.SUCCEEDED, reason_code="SESSION_REVOKED"),
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
+        self._finish_command(
+            session, idempotency_key, fingerprint,
+            CommonOutcome(result=Result.SUCCEEDED, reason_code="SESSION_REVOKED"),
         )
         self._audit(session, actor, correlation, "SESSION_REVOKE", "account", actor)
         return AuthSessionState.REVOKED
@@ -490,7 +519,8 @@ class IdentityRuntime:
         *,
         revoke: bool = False,
     ) -> RoleAssignmentState:
-        actor = self._actor(session, token, request.session_id)
+        authority = self._authenticated_session(session, token, request.session_id)
+        actor = authority.account_id if authority is not None else None
         if (
             actor is None
             or request.role_code not in {"SUPPORT", "ADMIN"}
@@ -498,19 +528,18 @@ class IdentityRuntime:
         ):
             return RoleAssignmentState.REJECTED
         fingerprint = _fingerprint(
-            ("role", str(request.target_account_id), request.role_code, request.reason, revoke)
+            (
+                "ROLE_REVOKE" if revoke else "ROLE_ASSIGN",
+                str(actor),
+                str(authority.session_id) if authority is not None else "",
+                str(request.target_account_id), request.role_code, request.reason, revoke,
+            )
         )
-        previous = self.idempotency.evaluate(
-            session,
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            now=_now(),
-        )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
+        decision, previous = self._begin_command(session, request.idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
             return RoleAssignmentState.CONFLICT
-        if previous.outcome is not None:
-            return RoleAssignmentState(previous.outcome.details[0])
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
+            return RoleAssignmentState(previous.details[0])
         if (
             session.execute(
                 select(_ACCOUNTS.c.id).where(
@@ -543,21 +572,14 @@ class IdentityRuntime:
                 )
             )
             state = RoleAssignmentState.ASSIGNED
-        self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(
-                result=Result.SUCCEEDED,
-                reason_code="ROLE_MUTATION",
-                details=(state.value,),
+        recorded = self._finish_command(
+            session, request.idempotency_key, fingerprint,
+            CommonOutcome(
+                result=Result.SUCCEEDED, reason_code="ROLE_MUTATION", details=(state.value,)
             ),
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
         )
+        if recorded is not None:
+            return RoleAssignmentState(recorded.details[0])
         self._audit(
             session,
             actor,
@@ -565,34 +587,37 @@ class IdentityRuntime:
             "ROLE_MUTATION",
             "account",
             request.target_account_id,
+            reason=request.reason,
         )
         return state
 
     def start_link_challenge(
         self, session: Session, request: IdentityLinkChallengeRequest, token: _RawSecret
     ) -> tuple[IdentityLinkChallengeOutcome, _RawSecret | None]:
-        actor = self._actor(session, token, request.session_id)
-        if actor is None:
+        authority = self._authenticated_session(session, token, request.session_id)
+        if authority is None:
             return IdentityLinkChallengeOutcome(
                 state=IdentityLinkChallengeState.REJECTED, target_provider=request.target_provider
             ), None
-        fingerprint = _fingerprint(("link-start", str(actor), request.target_provider.value))
-        previous = self.idempotency.evaluate(
-            session,
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            now=_now(),
+        actor = authority.account_id
+        fingerprint = _fingerprint(
+            (
+                "LINK_CHALLENGE_START",
+                str(actor),
+                str(authority.session_id),
+                request.target_provider.value,
+            )
         )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
+        decision, previous = self._begin_command(session, request.idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
             return IdentityLinkChallengeOutcome(
                 state=IdentityLinkChallengeState.BLOCKED,
                 target_provider=request.target_provider,
             ), None
-        if previous.outcome is not None:
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return IdentityLinkChallengeOutcome(
                 state=IdentityLinkChallengeState.REPLAYED,
-                challenge_id=UUID(previous.outcome.details[0]),
+                challenge_id=UUID(previous.details[0]),
                 account_id=actor,
                 target_provider=request.target_provider,
             ), None
@@ -611,20 +636,11 @@ class IdentityRuntime:
                 created_at=now,
             )
         )
-        self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(
-                result=Result.SUCCEEDED,
-                reason_code="LINK_CHALLENGE_STARTED",
-                details=(str(cid),),
+        self._finish_command(
+            session, request.idempotency_key, fingerprint,
+            CommonOutcome(
+                result=Result.SUCCEEDED, reason_code="LINK_CHALLENGE_STARTED", details=(str(cid),)
             ),
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
         )
         self._audit(session, actor, request.correlation, "LINK_CHALLENGE_START", "account", actor)
         return IdentityLinkChallengeOutcome(
@@ -655,14 +671,25 @@ class IdentityRuntime:
             .mappings()
             .one_or_none()
         )
-        if row is None or row["consumed_at"] is not None:
-            return IdentityLinkChallengeState.REPLAYED
-        if row["expires_at"] <= _now() or verified.provider.value != row["provider_code"]:
-            return (
-                IdentityLinkChallengeState.EXPIRED
-                if row["expires_at"] <= _now()
-                else IdentityLinkChallengeState.REJECTED
+        if row is None:
+            return IdentityLinkChallengeState.REJECTED
+        fingerprint = _fingerprint(
+            (
+                "LINK_CHALLENGE_COMPLETE", str(row["id"]), str(row["account_id"]),
+                row["provider_code"], verified.provider.value, verified.subject, verified.reference,
             )
+        )
+        decision, previous = self._begin_command(session, idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
+            return IdentityLinkChallengeState.BLOCKED
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
+            return IdentityLinkChallengeState.REPLAYED
+        if row["expires_at"] <= _now():
+            return IdentityLinkChallengeState.EXPIRED
+        if verified.provider.value != row["provider_code"]:
+            return IdentityLinkChallengeState.REJECTED
+        if row["consumed_at"] is not None:
+            return IdentityLinkChallengeState.REPLAYED
         existing = session.execute(
             select(_LINKS.c.account_id).where(
                 _LINKS.c.provider_code == verified.provider.value,
@@ -677,19 +704,26 @@ class IdentityRuntime:
             )
         now = _now()
         try:
-            session.execute(
-                _LINKS.insert().values(
-                    id=uuid4(),
-                    account_id=row["account_id"],
-                    provider_code=verified.provider.value,
-                    provider_subject=verified.subject,
-                    state="VERIFIED",
-                    created_at=now,
-                    updated_at=now,
+            with session.begin_nested():
+                session.execute(
+                    _LINKS.insert().values(
+                        id=uuid4(), account_id=row["account_id"],
+                        provider_code=verified.provider.value, provider_subject=verified.subject,
+                        state="VERIFIED", created_at=now, updated_at=now,
+                    )
                 )
-            )
         except IntegrityError:
-            return IdentityLinkChallengeState.FOREIGN_ACCOUNT_REJECTED
+            existing = session.execute(
+                select(_LINKS.c.account_id).where(
+                    _LINKS.c.provider_code == verified.provider.value,
+                    _LINKS.c.provider_subject == verified.subject,
+                )
+            ).scalar_one_or_none()
+            return (
+                IdentityLinkChallengeState.REPLAYED
+                if existing == row["account_id"]
+                else IdentityLinkChallengeState.FOREIGN_ACCOUNT_REJECTED
+            )
         session.execute(
             update(_CHALLENGES)
             .where(_CHALLENGES.c.id == row["id"], _CHALLENGES.c.consumed_at.is_(None))
@@ -702,6 +736,15 @@ class IdentityRuntime:
             "LINK_CHALLENGE_COMPLETE",
             "account",
             row["account_id"],
+            reason="link challenge completion",
+        )
+        self._finish_command(
+            session, idempotency_key, fingerprint,
+            CommonOutcome(
+                result=Result.SUCCEEDED,
+                reason_code="LINK_CHALLENGE_COMPLETED",
+                details=(IdentityLinkChallengeState.COMPLETED.value,),
+            ),
         )
         return IdentityLinkChallengeState.COMPLETED
 
@@ -719,7 +762,8 @@ class IdentityRuntime:
             or not self.settings.session.admin_bootstrap_enabled
         ):
             return RoleAssignmentState.REJECTED
-        actor = self._actor(session, token)
+        authority = self._authenticated_session(session, token)
+        actor = authority.account_id if authority is not None else None
         if (
             actor is None
             or session.execute(
@@ -730,23 +774,25 @@ class IdentityRuntime:
             is None
         ):
             return RoleAssignmentState.REJECTED
-        fingerprint = _fingerprint(("admin-bootstrap", str(actor)))
-        previous = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=idempotency_key, fingerprint=fingerprint, now=_now()
+        if authority is None:
+            return RoleAssignmentState.REJECTED
+        self._lock_scope(session, _BOOTSTRAP_SCOPE)
+        fingerprint = _fingerprint(
+            ("SYNTHETIC_ACCEPTANCE", "ADMIN_BOOTSTRAP", str(actor), str(authority.session_id))
         )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
+        decision, previous = self._begin_command(session, idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
             return RoleAssignmentState.CONFLICT
-        if previous.outcome is not None:
-            return RoleAssignmentState(previous.outcome.details[0])
-        session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": 7342190311})
-        if (
-            session.execute(
-                select(_ROLES.c.id)
-                .where(_ROLES.c.role_code == "ADMIN", _ROLES.c.revoked_at.is_(None))
-                .with_for_update()
-            ).scalar_one_or_none()
-            is not None
-        ):
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
+            return RoleAssignmentState(previous.details[0])
+        existing_admin = session.execute(
+            select(_ROLES.c.account_id)
+            .where(_ROLES.c.role_code == "ADMIN", _ROLES.c.revoked_at.is_(None))
+            .with_for_update()
+        ).scalar_one_or_none()
+        if existing_admin is not None and existing_admin != actor:
+            return RoleAssignmentState.REJECTED
+        if existing_admin == actor:
             state = RoleAssignmentState.UNCHANGED
         else:
             session.execute(
@@ -760,81 +806,87 @@ class IdentityRuntime:
                 )
             )
             state = RoleAssignmentState.ASSIGNED
-            self._audit(session, actor, correlation, "ADMIN_BOOTSTRAP", "account", actor)
-        self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=idempotency_key,
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(
-                result=Result.SUCCEEDED, reason_code="ADMIN_BOOTSTRAP", details=(state.value,)
+            self._audit(
+                session, actor, correlation, "ADMIN_BOOTSTRAP", "account", actor,
+                reason="synthetic acceptance bootstrap",
+            )
+        self._finish_command(
+            session, idempotency_key, fingerprint,
+            CommonOutcome(
+                result=Result.SUCCEEDED,
+                reason_code="ADMIN_BOOTSTRAP",
+                details=(state.value,),
             ),
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
         )
         return state
 
     def revoke_target_sessions(
-        self, session: Session, request: RoleMutationRequest, token: _RawSecret
+        self, session: Session, request: TargetSessionRevocationRequest, token: _RawSecret
     ) -> AuthSessionState:
         """Admin-only target-session revocation command; actor comes from ``token``."""
-        actor = self._actor(session, token, request.session_id)
-        if actor is None or "ADMIN" not in _roles(session, actor):
+        authority = self._authenticated_session(session, token, request.session_id)
+        if authority is None:
+            return AuthSessionState.INVALID
+        actor = authority.account_id
+        if "ADMIN" not in _roles(session, actor):
             return AuthSessionState.INVALID
         target = request.target_account_id
-        fingerprint = _fingerprint(("target-session-revoke", str(actor), str(target)))
-        previous = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=request.idempotency_key, fingerprint=fingerprint, now=_now()
+        fingerprint = _fingerprint(
+            (
+                "TARGET_SESSION_REVOKE",
+                str(actor),
+                str(authority.session_id),
+                str(target),
+                request.reason,
+            )
         )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
-            return AuthSessionState.INVALID
-        if previous.outcome is not None:
+        decision, previous = self._begin_command(session, request.idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
+            return AuthSessionState.CONFLICT
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return AuthSessionState.REVOKED
         session.execute(
             update(_SESSIONS)
             .where(_SESSIONS.c.account_id == target, _SESSIONS.c.revoked_at.is_(None))
             .values(revoked_at=_now(), row_version=_SESSIONS.c.row_version + 1)
         )
-        self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(result=Result.SUCCEEDED, reason_code="TARGET_SESSIONS_REVOKED"),
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
+        self._finish_command(
+            session, request.idempotency_key, fingerprint,
+            CommonOutcome(result=Result.SUCCEEDED, reason_code="TARGET_SESSIONS_REVOKED"),
         )
-        self._audit(session, actor, request.correlation, "SESSION_REVOKE_TARGET", "account", target)
+        self._audit(
+            session, actor, request.correlation, "SESSION_REVOKE_TARGET", "account", target,
+            reason=request.reason,
+        )
         return AuthSessionState.REVOKED
 
     def admin_recovery(
         self, session: Session, request: AdminRecoveryRequest, token: _RawSecret
     ) -> AdminRecoveryState:
-        actor = self._actor(session, token, request.session_id)
-        if actor is None or "ADMIN" not in _roles(session, actor):
+        authority = self._authenticated_session(session, token, request.session_id)
+        if authority is None:
+            return AdminRecoveryState.REJECTED
+        actor = authority.account_id
+        if "ADMIN" not in _roles(session, actor):
             return AdminRecoveryState.REJECTED
         verified = self._verified(request.identity)
         if verified.status != "VERIFIED" or verified.provider is None or verified.subject is None:
             return AdminRecoveryState.REJECTED
         fingerprint = _fingerprint(
             (
+                "ADMIN_RECOVERY", str(actor), str(authority.session_id),
                 str(request.target_account_id),
                 verified.provider.value,
                 verified.subject,
+                verified.reference,
                 request.reason,
                 request.revoke_target_sessions,
             )
         )
-        previous = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=request.idempotency_key, fingerprint=fingerprint, now=_now()
-        )
-        if previous.decision.decision is IdempotencyDecision.MISMATCH:
+        decision, previous = self._begin_command(session, request.idempotency_key, fingerprint)
+        if decision is IdempotencyDecision.MISMATCH:
             return AdminRecoveryState.CONFLICT
-        if previous.outcome is not None:
+        if decision is IdempotencyDecision.REPLAY_TERMINAL and previous is not None:
             return AdminRecoveryState.REPLAYED
         if (
             session.execute(
@@ -856,19 +908,24 @@ class IdentityRuntime:
         if existing is None:
             now = _now()
             try:
-                session.execute(
-                    _LINKS.insert().values(
-                        id=uuid4(),
-                        account_id=request.target_account_id,
-                        provider_code=verified.provider.value,
-                        provider_subject=verified.subject,
-                        state="VERIFIED",
-                        created_at=now,
-                        updated_at=now,
+                with session.begin_nested():
+                    session.execute(
+                        _LINKS.insert().values(
+                            id=uuid4(), account_id=request.target_account_id,
+                            provider_code=verified.provider.value,
+                            provider_subject=verified.subject,
+                            state="VERIFIED", created_at=now, updated_at=now,
+                        )
                     )
-                )
             except IntegrityError:
-                return AdminRecoveryState.FOREIGN_ACCOUNT_REJECTED
+                existing = session.execute(
+                    select(_LINKS.c.account_id).where(
+                        _LINKS.c.provider_code == verified.provider.value,
+                        _LINKS.c.provider_subject == verified.subject,
+                    )
+                ).scalar_one_or_none()
+                if existing != request.target_account_id:
+                    return AdminRecoveryState.FOREIGN_ACCOUNT_REJECTED
         if request.revoke_target_sessions:
             session.execute(
                 update(_SESSIONS)
@@ -878,20 +935,12 @@ class IdentityRuntime:
                 )
                 .values(revoked_at=_now(), row_version=_SESSIONS.c.row_version + 1)
             )
-        self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=request.idempotency_key,
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(
-                result=Result.SUCCEEDED,
-                reason_code="ADMIN_RECOVERY",
+        self._finish_command(
+            session, request.idempotency_key, fingerprint,
+            CommonOutcome(
+                result=Result.SUCCEEDED, reason_code="ADMIN_RECOVERY",
                 details=(str(request.target_account_id),),
             ),
-            created_at=_now(),
-            expires_at=_now() + timedelta(days=14),
-            now=_now(),
         )
         self._audit(
             session,
@@ -900,6 +949,7 @@ class IdentityRuntime:
             "ADMIN_RECOVERY",
             "account",
             request.target_account_id,
+            reason=request.reason,
         )
         return AdminRecoveryState.ATTACHED
 
@@ -911,6 +961,7 @@ class IdentityRuntime:
         operation: str,
         target_type: str,
         target: UUID,
+        reason: str = "identity runtime command",
     ) -> None:
         context = AuditContext(
             actor_category=AuditActorCategory.REDACTED
@@ -919,7 +970,7 @@ class IdentityRuntime:
             operation=AuditOperation(value=operation),
             module_id=AuditModuleIdentifier(value="02-identity-and-access"),
             target_scope=AuditTargetScope(value=target_type),
-            reason=AuditReason(value="identity runtime command"),
+            reason=AuditReason(value=reason[:512]),
             details=("safe-reference-only",),
             correlation=correlation,
         )

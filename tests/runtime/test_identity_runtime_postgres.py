@@ -6,12 +6,13 @@ import os
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Engine, create_engine, func, select, text
+from sqlalchemy import URL, Engine, create_engine, func, make_url, select, text
 from sqlalchemy.orm import Session
 
 from mayak.modules.identity_and_access.contracts import (
@@ -27,23 +28,39 @@ from mayak.modules.identity_and_access.contracts import (
     RoleAssignmentState,
     RoleMutationRequest,
     SyntheticAcceptanceLoginRequest,
+    TargetSessionRevocationRequest,
 )
 from mayak.modules.identity_and_access.runtime import (
     FakeProviderIdentityVerifier,
     IdentityRuntime,
     ProviderVerificationOutcome,
+    _RawSecret,
 )
+from mayak.persistence.config import SecretValue
 from mayak.persistence.metadata import metadata
 from mayak.platform.correlation import CorrelationContext, CorrelationId
 from mayak.platform.idempotency import IdempotencyKey
 from mayak.runtime.settings import RuntimeProfile
 
 
-def _dsn() -> str:
-    value = os.environ.get("MAYAK_RF11_POSTGRES_DSN")
-    if not value:
-        pytest.fail("MAYAK_RF11_POSTGRES_DSN is required for RF-11 PostgreSQL acceptance")
-    return value
+def _dsn() -> URL:
+    raw = os.environ.get("MAYAK_RF11_POSTGRES_DSN")
+    if raw:
+        # Keep the credential-bearing value inside the process and give
+        # SQLAlchemy a URL object whose repr/str always masks the password.
+        return make_url(raw)
+    secret_file = os.environ.get("MAYAK_RF11_POSTGRES_PASSWORD_FILE")
+    if secret_file:
+        password = Path(secret_file).read_text(encoding="utf-8").rstrip("\r\n")
+        return URL.create(
+            "postgresql+psycopg",
+            username=os.environ.get("MAYAK_RF11_POSTGRES_USER", "mayak"),
+            password=password,
+            host=os.environ.get("MAYAK_RF11_POSTGRES_HOST", "mayak-postgres"),
+            port=int(os.environ.get("MAYAK_RF11_POSTGRES_PORT", "5432")),
+            database=os.environ.get("MAYAK_RF11_POSTGRES_DB", "mayak"),
+        )
+    pytest.fail("RF-11 PostgreSQL password-file configuration is required")
 
 
 @pytest.fixture(scope="module")
@@ -159,6 +176,29 @@ def test_hash_only_and_caller_transaction_rollback(engine: Engine) -> None:
         ).scalar_one()
         assert count == 0
         assert "rollback-user" not in repr(result)
+
+
+def test_database_setup_diagnostics_are_redacted_without_losing_identity() -> None:
+    synthetic = "rf11-redaction-regression-credential-unique"
+    url = URL.create(
+        "postgresql+psycopg",
+        username="acceptance",
+        password=synthetic,
+        host="db.internal",
+        port=5432,
+        database="mayak",
+    )
+    rendered = url.render_as_string(hide_password=True)
+    assert synthetic not in rendered
+    assert "acceptance:***@db.internal:5432/mayak" in rendered
+    assert synthetic not in repr(url)
+    assert synthetic not in str(url)
+    wrapped = SecretValue(synthetic)
+    raw_secret = _RawSecret(synthetic)
+    assert synthetic not in repr(wrapped)
+    assert synthetic not in str(wrapped)
+    assert synthetic not in repr(raw_secret)
+    assert synthetic not in str(raw_secret)
 
 
 def test_provider_replay_mismatch_and_telegram_max_are_persisted(engine: Engine) -> None:
@@ -308,7 +348,13 @@ def test_admin_bootstrap_roles_revocation_and_recovery_are_authorized_and_idempo
         )
         revoked = runtime.revoke_target_sessions(
             session,
-            _role(admin_session.metadata.session_id, target.account_id, "pg-target-revoke"),
+            TargetSessionRevocationRequest(
+                session_id=admin_session.metadata.session_id,
+                target_account_id=target.account_id,
+                reason="postgres acceptance",
+                idempotency_key=IdempotencyKey(value="pg-target-revoke"),
+                correlation=_correlation(),
+            ),
             admin_session.token,
         )
         recovery = runtime.admin_recovery(
@@ -417,7 +463,7 @@ def test_link_challenge_completion_replay_mismatch_and_rollback(engine: Engine) 
                 idempotency_key=IdempotencyKey(value="pg-link-mismatch"),
                 correlation=_correlation(),
             )
-            is IdentityLinkChallengeState.REPLAYED
+            is IdentityLinkChallengeState.REJECTED
         )
     assert (
         completed is IdentityLinkChallengeState.COMPLETED
@@ -442,13 +488,14 @@ def test_link_challenge_completion_replay_mismatch_and_rollback(engine: Engine) 
 
 def test_admin_bootstrap_postgres_concurrency_has_at_most_one_admin(engine: Engine) -> None:
     runtime = IdentityRuntime(settings=_acceptance_settings())
-    with engine.connect() as connection:
-        had_admin = connection.execute(
+    # Bootstrap isolation: this task-owned database starts with no active Admin.
+    with engine.begin() as connection:
+        connection.execute(
             text(
-                "SELECT count(*) FROM mayak.identity_role_assignments "
+                "DELETE FROM mayak.identity_role_assignments "
                 "WHERE role_code='ADMIN' AND revoked_at IS NULL"
             )
-        ).scalar_one()
+        )
     issued: list[Any] = []
     with Session(engine) as session:
         for index in range(8):
@@ -475,8 +522,8 @@ def test_admin_bootstrap_postgres_concurrency_has_at_most_one_admin(engine: Engi
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         outcomes = list(pool.map(bootstrap, enumerate(issued)))
-    assert outcomes.count(RoleAssignmentState.ASSIGNED) == (0 if had_admin else 1)
-    assert outcomes.count(RoleAssignmentState.UNCHANGED) == (8 if had_admin else 7)
+    assert outcomes.count(RoleAssignmentState.ASSIGNED) == 1
+    assert outcomes.count(RoleAssignmentState.REJECTED) == 7
     with engine.connect() as connection:
         assert (
             connection.execute(

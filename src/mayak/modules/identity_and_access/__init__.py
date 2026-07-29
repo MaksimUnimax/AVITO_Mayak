@@ -30,6 +30,7 @@ from .contracts import (
     RoleScopeKind,
     TargetScope,
     TargetScopeKind,
+    TargetSessionRevocationRequest,
 )
 from .fixtures import SYNTHETIC_FIXTURE_IDS
 
@@ -60,6 +61,7 @@ __all__ = [
     "SYNTHETIC_FIXTURE_IDS",
     "TargetScope",
     "TargetScopeKind",
+    "TargetSessionRevocationRequest",
     "IdentityRuntime",
     "ProviderIdentityClaim",
     "AdminRecoveryRequest",

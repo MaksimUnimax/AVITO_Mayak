@@ -591,3 +591,12 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Security/resources:** no foreign impact, credentials, secrets, DSNs, tokens, private keys, populated environment values or production data exposed.
 - **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - **CHATGPT_REVIEW_REQUIRED:** `YES`.
+
+## 2026-07-29 — RF-11 corrective security containment and completion
+
+- **Technical ID:** `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02`.
+- **Resumption:** continued from expected base `1fa62639a00e7615f24041805e6a9eed60f62502`; detached worktree and preserved partial RF-11 source were verified.
+- **Exposure/containment:** confirmed raw credential-bearing PostgreSQL setup/traceback path; no value is recorded. Replacement task credentials were CSPRNG-generated into exact mode-0600 files, never printed, and removed after validation. Exact task Compose resources were torn down; foreign resources were untouched. External Bridge transcript retention, if any, is not deletable from this environment.
+- **Correction/evidence:** SQLAlchemy URL construction now masks password rendering; protected-file DSN assembly, redacted secret wrappers and failing-setup regression assertions preserve safe host/database identity without printing the synthetic credential. Fresh isolated Postgres 18 RF-11 acceptance: `10 passed`; focused Identity unit/contract/architecture: `26 passed`; Ruff, mypy and import-linter passed.
+- **RF-11 result:** trusted session authority, serialized transaction gate, secret-free actor-bound fingerprints, link terminal idempotency, savepoint race handling and cross-key bootstrap serialization completed; `Migration-Decision: NONE`, `Migration-Head: RF09_FINALIZE`.
+- **Governance:** RF-11 remains pending ChatGPT review; RF-12 remains not started; `CHATGPT_REVIEW_REQUIRED: YES`; `NOT_PRODUCTION_READY`.

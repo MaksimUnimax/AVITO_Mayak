@@ -47,6 +47,17 @@ Status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 
 `CHATGPT_REVIEW_REQUIRED: YES`.
 
+## Security containment and completion run — 2026-07-29
+
+- Technical ID: `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02`.
+- Confirmed exposure: a failed PostgreSQL acceptance setup path could retain/render a credential-bearing DSN through the raw DSN fixture value and SQLAlchemy setup traceback. No credential value is reproduced here; any Bridge/executor transcript retention is external and cannot be deleted by this worktree.
+- Containment: exact task resources were absent at preflight; replacement bootstrap, migration, application and signing credentials were generated with a CSPRNG, kept in exact runtime files mode `0600`, rotated from the failed run, and never printed or committed. Exact Compose teardown removed the task container, internal network and volume.
+- Root-cause fix: the PostgreSQL test harness now reads the credential from a protected file or in-process environment and constructs a SQLAlchemy `URL`; diagnostics use masked-password rendering. Internal raw-secret and configuration wrappers have redacted `repr`/`str`.
+- Regression proof: redaction tests assert absence from URL rendering, `repr`, `str` and setup diagnostics while retaining safe database identity; no test assertion prints the synthetic credential. Final PostgreSQL package: `10 passed` on a fresh isolated Postgres 18 database.
+- RF-11 completion: trusted authenticated `(account_id, session_id)` authority, one transaction-scoped advisory-lock gate, normalized secret-free fingerprints, link terminal idempotency, savepoint reconciliation and fixed-key bootstrap serialization are preserved/completed. Migration-Decision: `NONE`; Migration-Head: `RF09_FINALIZE`.
+- Publication SHA: the single direct-child publication SHA is recorded in the terminal report for this closure; no amend or follow-up cleanup commit is permitted.
+- Status: `CORRECTIVE_PUBLISHED_FOR_CHATGPT_REVIEW`; `CHATGPT_REVIEW_REQUIRED: YES`; `NOT_PRODUCTION_READY`.
+
 ## Corrective recovery — trusted authority and durable PostgreSQL gates
 
 - Technical ID: `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02`.

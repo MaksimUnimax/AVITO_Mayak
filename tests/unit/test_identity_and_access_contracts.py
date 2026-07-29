@@ -226,6 +226,7 @@ def test_identity_and_access_semantic_states_are_public_and_stable() -> None:
         "REVOKED",
         "EXPIRED",
         "INVALID",
+        "CONFLICT",
     ]
     assert [member.value for member in AuthChallengeState] == [
         "CREATED",

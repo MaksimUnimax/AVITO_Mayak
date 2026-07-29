@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from sqlalchemy.engine import URL
+from sqlalchemy.engine import URL, make_url
 
 DATABASE_NAME: Final = "mayak"
 DATABASE_SCHEMA: Final = "mayak"
@@ -197,3 +197,10 @@ def build_migration_url(
         secret_path=secret_path or MIGRATION_SECRET_PATH
     )
     return _url(settings, search_path="public", require_secret=require_secret)
+
+
+def redacted_database_url(value: URL | str) -> str:
+    """Render database identity for diagnostics without rendering its password."""
+
+    url = value if isinstance(value, URL) else make_url(value)
+    return url.render_as_string(hide_password=True)
