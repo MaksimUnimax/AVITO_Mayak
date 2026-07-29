@@ -546,6 +546,17 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - **CHATGPT_REVIEW_REQUIRED:** `YES`.
 
+## 2026-07-29 — RF-11 Identity & Access runtime completion boundary
+
+- **Technical ID:** `RF-11-IDENTITY-AND-ACCESS-RUNTIME-COMPLETION-AND-CLOSURE-20260729-01`.
+- **Base:** `74997f4da04fd9ae9e225ea39b22c20acd45353e`.
+- **Scope:** PostgreSQL-backed Identity & Access runtime contour, verified provider resolution, synthetic acceptance login, bounded hash-only sessions, actor authorization, audited roles, one-time link challenges and safe recovery procedure.
+- **Migration:** no migration required; the five RF-11 tables are exact at accepted `RF09_FINALIZE`; accepted RF-09 migrations unchanged.
+- **Evidence:** focused `63 passed`; broad non-DB unit/contract/architecture evidence `4658 passed` was reused with recorded source hashes; task-owned PostgreSQL 18 harness `26 passed`, including 8-worker first-resolution concurrency, 6-worker challenge at-most-once concurrency and rollback of identity/audit/idempotency effects; schema head `RF09_FINALIZE`, exact five-table model, Migration-Decision `NONE`.
+- **Security/resources:** synthetic-only 0600 secrets, no credential exposure, raw tokens/challenges, provider calls, personal data, foreign-resource mutation or RF-12 work; exact task Compose containers/network/volume/secrets cleaned and verified absent.
+- **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`; production verdict `NOT_PRODUCTION_READY`.
+- **CHATGPT_REVIEW_REQUIRED:** `YES`.
+
 ## 2026-07-29 — RF-10 current-lock model-copy compatibility recovery
 
 - **Technical ID:** `RF-10-CORRECTIVE-LOCK-EXACT-ENVIRONMENT-AND-MODEL-COPY-COMPATIBILITY-20260729-04`.

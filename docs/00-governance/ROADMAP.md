@@ -85,7 +85,7 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - Evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`.
 - `[x] RF-09` PostgreSQL and Alembic foundation — independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; runtime/deployment not complete.
 - `[c] RF-10` Platform & Contracts runtime — corrective published for independent review; independent acceptance remains pending.
-- `[ ] RF-11` Identity & Access runtime.
+- `[~] RF-11` Identity & Access runtime — implementation/closure published for independent acceptance; `NOT_PRODUCTION_READY`.
 - `[ ] RF-12` Entitlements & Billing runtime.
 - `[ ] RF-13` Beacon Management runtime.
 - `[ ] RF-14` Avito Parser Adapter runtime.

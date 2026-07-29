@@ -117,3 +117,7 @@ Module 14 completes only with the final verdict `READY_FOR_OPERATOR_ACCEPTANCE`.
 The repository must not claim `PRODUCTION_READY` before separate operator acceptance and a future production launch gate.
 
 No public ingress, DNS, TLS, firewall or production-provider activation is authorized by this README.
+
+## Current RF-11 boundary (2026-07-29)
+
+RF-10 is independently accepted through `74997f4da04fd9ae9e225ea39b22c20acd45353e`; RF-11 implementation and closure are published for independent acceptance. RF-12 has not started. Remaining RF-07 runtime gates are deferred; the environment remains `RUNTIME_ELIGIBLE`, complete runtime/deployment is not reached, and `NOT_PRODUCTION_READY` remains authoritative. RF-30 is the only route to `READY_FOR_OPERATOR_ACCEPTANCE`.

@@ -1,5 +1,7 @@
 """Identity and Access module package."""
 
+from typing import Any
+
 from mayak.platform.boundaries import IDENTITY_AND_ACCESS_MODULE_ID
 
 from .contracts import (
@@ -55,4 +57,15 @@ __all__ = [
     "SYNTHETIC_FIXTURE_IDS",
     "TargetScope",
     "TargetScopeKind",
+    "IdentityRuntime",
+    "IssuedSession",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Keep the transport-neutral import surface free of persistence imports."""
+    if name in {"IdentityRuntime", "IssuedSession"}:
+        from .runtime import IdentityRuntime, IssuedSession
+
+        return {"IdentityRuntime": IdentityRuntime, "IssuedSession": IssuedSession}[name]
+    raise AttributeError(name)

@@ -72,3 +72,5 @@ Modules 01–13 remain semantic and ownership prerequisites. Module 14 may autho
 The current Module 14 target is `READY_FOR_OPERATOR_ACCEPTANCE`.
 
 Module 14 must not claim `PRODUCTION_READY`.
+
+Current RF-11 reconciliation (2026-07-29): RF-10 is independently accepted through `74997f4da04fd9ae9e225ea39b22c20acd45353e`; RF-11 implementation and closure are published for independent acceptance; RF-12 is not started; remaining RF-07 runtime gates are deferred; environment is `RUNTIME_ELIGIBLE`; complete runtime/deployment is not reached; `NOT_PRODUCTION_READY`; RF-30 remains the only route to `READY_FOR_OPERATOR_ACCEPTANCE`.

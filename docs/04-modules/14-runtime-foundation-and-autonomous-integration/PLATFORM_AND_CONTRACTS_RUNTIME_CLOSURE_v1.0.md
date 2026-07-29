@@ -9,6 +9,16 @@ Technical-ID: `RF-10-PLATFORM-CONTRACTS-RUNTIME-COMPLETION-AND-CLOSURE-20260729-
 - RF-10 status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - `CHATGPT_REVIEW_REQUIRED: YES`.
 
+## Independent acceptance
+
+- Accepted chain through `74997f4da04fd9ae9e225ea39b22c20acd45353e`.
+- Date: `2026-07-29`.
+- Independent verdict: `INDEPENDENTLY_ACCEPTED`.
+- Accepted source/public/persistence/configuration/health scope through the expected RF-10 base.
+- Current-lock environment: `/opt/avito-mayak-runtime/venvs/rf10-c04-lock-exact`; PostgreSQL evidence identity reused from accepted RF-10; no GitHub CI-success claim.
+- No foreign mutation, credential exposure or production-readiness claim; `NOT_PRODUCTION_READY`.
+- RF-11–RF-30 remain open.
+
 
 - No RF-11 work was started; no production-ready claim is made.
 

@@ -264,3 +264,7 @@ The historical no-runtime conclusion is superseded only inside exact governed Mo
 - Runtime is local-only until a separate future production gate.
 - PostgreSQL must not be host-published.
 - Public ingress, DNS, TLS, firewall and production-provider activation remain unauthorized.
+
+## Current RF-11 reconciliation — 2026-07-29
+
+RF-10 is independently accepted through `74997f4da04fd9ae9e225ea39b22c20acd45353e`; RF-11 implementation/closure is published for independent acceptance; RF-12 is not started. Remaining RF-07 runtime gates are deferred, environment is `RUNTIME_ELIGIBLE`, complete runtime/deployment is not reached, `NOT_PRODUCTION_READY` remains current, and RF-30 remains the only route to `READY_FOR_OPERATOR_ACCEPTANCE`.

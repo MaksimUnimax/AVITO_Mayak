@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from mayak.contracts.idempotency import IdempotencyKey
+from mayak.platform.correlation import CorrelationContext
 
 
 class _SemanticPrimitive(BaseModel):
@@ -18,6 +23,17 @@ class IdentityProvider(str, Enum):
 
     TELEGRAM = "TELEGRAM"
     MAX = "MAX"
+
+
+class IdentityRuntimeState(str, Enum):
+    RESOLVED = "RESOLVED"
+    CREATED = "CREATED"
+    REPLAYED = "REPLAYED"
+    REJECTED = "REJECTED"
+    CONFLICT = "CONFLICT"
+    DISABLED = "DISABLED"
+    ALREADY_LINKED = "ALREADY_LINKED"
+    FOREIGN_ACCOUNT_REJECTED = "FOREIGN_ACCOUNT_REJECTED"
 
 
 class ContactPointKind(str, Enum):
@@ -210,6 +226,115 @@ class IdentityLinkChallenge(_SemanticPrimitive):
     state: IdentityLinkChallengeState
 
 
+class VerifiedProviderIdentity(_SemanticPrimitive):
+    provider: IdentityProvider | str
+    provider_subject: str = Field(min_length=1, max_length=255)
+    verified: bool
+    verification_reference: str = Field(min_length=1, max_length=128)
+
+
+class ProviderIdentityResolutionRequest(_SemanticPrimitive):
+    identity: VerifiedProviderIdentity
+    idempotency_key: IdempotencyKey
+    correlation: CorrelationContext
+
+
+class ProviderIdentityResolutionOutcome(_SemanticPrimitive):
+    state: IdentityRuntimeState
+    account_id: UUID | None = None
+    provider: IdentityProvider | str
+    audit_reference: AuditReference | None = None
+
+
+class SafeAccountSummary(_SemanticPrimitive):
+    account_id: UUID
+    state: str = Field(min_length=1, max_length=64)
+    active_roles: tuple[str, ...] = ()
+
+
+class SafeSessionMetadata(_SemanticPrimitive):
+    session_id: UUID
+    account_id: UUID
+    issued_at: datetime
+    expires_at: datetime
+    state: AuthSessionState
+
+
+class SessionValidationOutcome(_SemanticPrimitive):
+    state: AuthSessionState
+    metadata: SafeSessionMetadata | None = None
+    account_id: UUID | None = None
+
+
+class ActorContextValidationRequest(_SemanticPrimitive):
+    session_id: UUID
+    target_account_id: UUID
+
+
+class ActorContextValidationOutcome(_SemanticPrimitive):
+    state: ActorContextValidationState
+    actor_account_id: UUID | None = None
+    target_account_id: UUID
+    roles: tuple[str, ...] = ()
+
+
+class IdentityLinkChallengeRequest(_SemanticPrimitive):
+    actor_account_id: UUID
+    target_provider: IdentityProvider
+    idempotency_key: IdempotencyKey
+    correlation: CorrelationContext
+
+
+class IdentityLinkChallengeOutcome(_SemanticPrimitive):
+    state: IdentityLinkChallengeState
+    challenge_id: UUID | None = None
+    account_id: UUID | None = None
+    target_provider: IdentityProvider
+
+
+class RoleMutationRequest(_SemanticPrimitive):
+    actor_account_id: UUID
+    target_account_id: UUID
+    role_code: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=512)
+    idempotency_key: IdempotencyKey
+    correlation: CorrelationContext
+
+
+class AuthorizationDecision(_SemanticPrimitive):
+    allowed: bool
+    reason_code: str = Field(min_length=1)
+    actor_account_id: UUID | None = None
+    target_account_id: UUID
+
+
+class SyntheticAcceptanceLoginRequest(_SemanticPrimitive):
+    synthetic_subject: str = Field(min_length=1, max_length=255)
+    idempotency_key: IdempotencyKey
+    correlation: CorrelationContext
+
+
+class SyntheticAcceptanceLoginOutcome(_SemanticPrimitive):
+    state: IdentityRuntimeState
+    account_id: UUID | None = None
+    session: SafeSessionMetadata | None = None
+
+
+class SecretSessionToken:
+    """Internal-only issuance value; never a public contract or persisted value."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def __repr__(self) -> str:
+        return "SecretSessionToken(<redacted>)"
+
+    def __str__(self) -> str:
+        return "<redacted>"
+
+
 __all__ = [
     "Account",
     "AccountIdentity",
@@ -233,4 +358,20 @@ __all__ = [
     "RoleScopeKind",
     "TargetScope",
     "TargetScopeKind",
+    "AuthorizationDecision",
+    "IdentityRuntimeState",
+    "IdentityLinkChallengeOutcome",
+    "IdentityLinkChallengeRequest",
+    "ProviderIdentityResolutionOutcome",
+    "ProviderIdentityResolutionRequest",
+    "RoleMutationRequest",
+    "SafeAccountSummary",
+    "SafeSessionMetadata",
+    "SecretSessionToken",
+    "SessionValidationOutcome",
+    "SyntheticAcceptanceLoginOutcome",
+    "SyntheticAcceptanceLoginRequest",
+    "VerifiedProviderIdentity",
+    "ActorContextValidationRequest",
+    "ActorContextValidationOutcome",
 ]

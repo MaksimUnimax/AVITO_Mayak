@@ -1,5 +1,7 @@
 """Strict, non-secret runtime configuration composition."""
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import os
@@ -169,6 +171,8 @@ class _Session(BaseModel):
     model_config = _CONFIG
     max_age_seconds: int = 86_400
     synthetic_identity_enabled: bool = False
+    link_challenge_ttl_seconds: int = 900
+    admin_bootstrap_enabled: bool = False
 
 
 class _Providers(BaseModel):
@@ -254,6 +258,20 @@ class MayakRuntimeSettings(BaseSettings):
             and self.session.synthetic_identity_enabled
         ):
             raise ValueError("synthetic identity is not allowed")
+        if (
+            self.session.synthetic_identity_enabled
+            and self.runtime.profile is not RuntimeProfile.SYNTHETIC_ACCEPTANCE
+        ):
+            raise ValueError("synthetic identity is acceptance-only")
+        if (
+            self.session.admin_bootstrap_enabled
+            and self.runtime.profile is not RuntimeProfile.SYNTHETIC_ACCEPTANCE
+        ):
+            raise ValueError("admin bootstrap is acceptance-only")
+        if not 1 <= self.session.max_age_seconds <= 86_400:
+            raise ValueError("session ttl out of bounds")
+        if not 1 <= self.session.link_challenge_ttl_seconds <= 900:
+            raise ValueError("link challenge ttl out of bounds")
         if self.runtime.profile is not RuntimeProfile.OPERATOR_ACCEPTANCE and any(
             (
                 self.providers.avito_live_enabled,
@@ -295,6 +313,11 @@ _REQUIRED = {
     "MAYAK_PROCESS_KIND",
     "MAYAK_DATABASE_APPLICATION_USER",
     "MAYAK_DATABASE_MIGRATION_USER",
+}
+
+_IDENTITY_RUNTIME_ENV_KEYS = {
+    "MAYAK_IDENTITY_LINK_CHALLENGE_TTL_SECONDS",
+    "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED",
 }
 
 
@@ -360,7 +383,9 @@ def compose_runtime_settings(values: Mapping[str, str]) -> MayakRuntimeSettings:
     unknown = sorted(
         key
         for key in copied
-        if key.startswith("MAYAK_") and key not in CANONICAL_NON_SECRET_ENV_KEYS
+        if key.startswith("MAYAK_")
+        and key not in CANONICAL_NON_SECRET_ENV_KEYS
+        and key not in _IDENTITY_RUNTIME_ENV_KEYS
     )
     if unknown:
         raise _error("UNKNOWN_MAYAK_KEYS", unknown)
@@ -464,6 +489,12 @@ def compose_runtime_settings(values: Mapping[str, str]) -> MayakRuntimeSettings:
                     "max_age_seconds": positive("MAYAK_SESSION_MAX_AGE_SECONDS", 86_400),
                     "synthetic_identity_enabled": _bool(
                         copied, "MAYAK_SYNTHETIC_IDENTITY_ENABLED", False
+                    ),
+                    "link_challenge_ttl_seconds": positive(
+                        "MAYAK_IDENTITY_LINK_CHALLENGE_TTL_SECONDS", 900
+                    ),
+                    "admin_bootstrap_enabled": _bool(
+                        copied, "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED", False
                     ),
                 },
             ),

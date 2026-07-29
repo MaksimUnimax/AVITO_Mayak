@@ -388,3 +388,7 @@ Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, We
 Module 14 completes only after all applicable RF-00–RF-30 and corrective steps are independently accepted, deployed acceptance evidence passes, the operator pack exists and the final verdict is `READY_FOR_OPERATOR_ACCEPTANCE`.
 
 The module must not claim `PRODUCTION_READY`.
+
+### RF-11 runtime-authority overlay — 2026-07-29
+
+RF-10 is independently accepted through `74997f4da04fd9ae9e225ea39b22c20acd45353e`. The exact RF-11 Identity & Access implementation and closure are published for independent acceptance; RF-12 is not started. Remaining RF-07 runtime gates remain deferred, the environment is `RUNTIME_ELIGIBLE`, complete runtime/deployment is not reached, and the verdict is `NOT_PRODUCTION_READY`. RF-30 remains the only route to `READY_FOR_OPERATOR_ACCEPTANCE`. This overlay does not rewrite historical Module 02 semantics or handoff evidence.
