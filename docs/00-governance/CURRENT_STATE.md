@@ -130,7 +130,6 @@ Current remaining gaps include:
 
   - remaining RF-07 runtime-dependent gates are genuinely deferred; synthetic E2E remains owned by RF-24; Docker build and Compose configuration validation foundation are satisfied by RF-08/RF-09 evidence;
   - RF-09 independent acceptance review of the published PostgreSQL/Alembic closure;
-- migration from zero and migration current-head proof;
 - RF-10–RF-22 DB-backed runtime for modules 01–13, including API, worker, scheduler, Web Cabinet, Admin and provider-disabled-by-default adapters;
 - RF-23 cross-module API and command wiring;
 - RF-24 deterministic synthetic end-to-end vertical slices;

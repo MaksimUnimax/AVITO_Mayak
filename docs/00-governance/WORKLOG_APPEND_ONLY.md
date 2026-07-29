@@ -507,3 +507,16 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Recovery:** first delivery was incomplete. M06 E501 wrapping and Compose/test quoting correction were preserved. Orchestration defects were malformed focused pytest quoting, rejected `rm -f`, failed patch contexts, invalid build metadata and wrong lock-proof key; none caused foreign mutation or RF-10 semantic change.
 - **Governance:** RF-00–RF-06 accepted; RF-07 open only for genuinely deferred runtime-dependent gates; RF-08 independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-10 active/not accepted; runtime/deployment not complete; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
 - **Foreign impact/security:** none; no live providers, production data, credentials, DSN, token or private-key contents exposed; task-owned runtime cleaned with exact Compose project scope.
+
+## 2026-07-29 — RF-09 corrective closure cleanup and governance consistency
+
+- **Technical ID:** `RF-09-CORRECTIVE-CLOSURE-CLEANUP-AND-GOVERNANCE-CONSISTENCY-20260729-02`
+- **Base:** `74653a6187a34eaec522db7f5fac098e080a9aed` (`chore(rf09): publish PostgreSQL foundation closure`).
+- **Contradiction found:** the closure's cleanup statement conflicted with its statement that task-owned secret files remained in the runtime root; `CURRENT_STATE.md` retained the stale migration-from-zero/current-head gap.
+- **Cleanup classification:** `ALREADY_CLEAN`.
+- **Cleanup result:** exact runtime root was present and empty; no exact-project Compose container, network or volume, process reference or mount reference remained; no deletion was required.
+- **Documentation paths changed:** `docs/00-governance/CURRENT_STATE.md`; `docs/00-governance/WORKLOG_APPEND_ONLY.md`; `docs/04-modules/14-runtime-foundation-and-autonomous-integration/POSTGRESQL_AND_ALEMBIC_FOUNDATION_CLOSURE_v1.0.md`.
+- **Foreign impact:** none; no foreign resource was changed.
+- **Secret-content read:** no; no secret contents or derived hashes were read or exposed.
+- **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
+- **CHATGPT_REVIEW_REQUIRED:** `YES`

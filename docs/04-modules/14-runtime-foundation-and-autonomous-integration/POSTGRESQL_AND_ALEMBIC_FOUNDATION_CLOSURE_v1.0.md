@@ -61,3 +61,24 @@ Limitations: independent ChatGPT review, GitHub publication verification, operat
 
 Exact status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 CHATGPT_REVIEW_REQUIRED: `YES`
+
+## Independent review corrective — cleanup and governance consistency
+
+- Corrective Technical ID: `RF-09-CORRECTIVE-CLOSURE-CLEANUP-AND-GOVERNANCE-CONSISTENCY-20260729-02`.
+- Expected base: `74653a6187a34eaec522db7f5fac098e080a9aed` (`chore(rf09): publish PostgreSQL foundation closure`).
+- Defect found by independent ChatGPT review: the published closure described the task-owned Compose resources as cleaned while also stating that task-owned secret files remained in the runtime root; `CURRENT_STATE.md` also retained the stale migration-from-zero/current-head remaining-gap bullet despite preserving the published proof.
+- Pre-cleanup classification: `ALREADY_CLEAN`.
+- Safe metadata-only residual inventory: `/opt/avito-mayak-runtime/acceptance-rf09-closure-20260729-01` existed as an empty directory (`uid=0`, `gid=0`, mode `0700`); it had no direct or nested entries. Exact project-scoped inspection found no matching container, network or volume. No process FD, mount reference or container mount reference used the exact runtime root.
+- Cleanup required: `NO`. No residual task-owned file or Compose resource required removal.
+- Cleanup method: no deletion or Docker cleanup was performed because the exact pre-cleanup inventory was already clean. No global prune, broad-prefix resource operation or foreign-resource operation was used.
+- Post-cleanup proof: the exact runtime root remains present and empty; residual entry count is `0`; no matching Compose container, network or volume exists; no active process, FD or mount reference exists.
+- Docker/Compose resource result: no exact-project resources remained before or after inspection; no resource lacking exact project ownership evidence was changed.
+- Process/mount result: no process, container mount or open-file reference to the exact runtime root was found before or after inspection.
+- No secret contents were read; no secret values, hashes derived from secret contents, DSNs or credentials were output.
+- No foreign resource was changed.
+- Reused RF-09 evidence identity: RF-09 source, migrations, `compose.yaml`, boundary test, `pyproject.toml`, `uv.lock`, `Dockerfile`, PostgreSQL image identity and closure source identity remain unchanged from the expected base; the corrective commit is documentation-only.
+- Exact changed-path identity: `docs/00-governance/CURRENT_STATE.md`, `docs/00-governance/WORKLOG_APPEND_ONLY.md`, `docs/04-modules/14-runtime-foundation-and-autonomous-integration/POSTGRESQL_AND_ALEMBIC_FOUNDATION_CLOSURE_v1.0.md` only.
+- Remaining limitations: independent ChatGPT acceptance, operator acceptance, deployment, live-provider proof and later RF-24–RF-30 gates remain open. This corrective does not claim `INDEPENDENTLY_ACCEPTED` or `PRODUCTION_READY`.
+
+Status: `CORRECTIVE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
+CHATGPT_REVIEW_REQUIRED: `YES`
