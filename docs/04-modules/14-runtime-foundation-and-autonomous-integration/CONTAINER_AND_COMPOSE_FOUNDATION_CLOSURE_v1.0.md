@@ -131,6 +131,16 @@ Before publication, rollback is deleting the new closure file, restoring the fiv
 - Cleanup is required after review and covers only the exact task project resources and acceptance secret root. RF-11 remains blocked pending restoration onto corrected main; RF-12 and RF-11 files are outside this change.
 - Status: `PUBLISHED_FOR_CHATGPT_REVIEW`. This corrective evidence is not an acceptance, operator-acceptance or production-readiness claim.
 
+## RF-08 crash-safe generation corrective — 2026-07-29
+
+- Technical-ID: `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`.
+- The earlier corrective represented by `f0423111ddd0ce74892f85b36e35828f9825905d` is rejected for flat-file, non-crash-consistent activation: lazy snapshots, destructive rollback, lost ownership, no on-disk manifest validation and no bootstrap-copy comparison.
+- The current implementation uses immutable complete generations under `sets/<generation-id>/`, a managed relative `active` pointer, safe on-disk manifest validation, constant-time bootstrap-copy comparison, temporary-sibling plus `os.replace` activation, fsync, recovery, retired-generation cleanup and acceptance-only failpoints. No active-generation file is replaced in place.
+- The orchestrator owns stage transitions and quarantines child output in private mode-0600 files; it emits one allowlisted JSON record and cannot report caller-asserted success.
+- Focused evidence: `28 passed`; Ruff and mypy affected-path checks passed; Compose config, task-only PostgreSQL 18 bootstrap, one-shot secret probes, migration head `RF09_FINALIZE`, application-role connection, persistence restart, failed activation rollback, abrupt recovery, exact cleanup and foreign non-impact passed. The pre-existing `apm-postgres` remained untouched.
+- Limitation: the expected-base application image lacks `mayak.runtime.api`, `mayak.runtime.worker` and `mayak.runtime.scheduler`. Those entrypoints are an RF-23 boundary and were not added here; no future process readiness or full runtime deployment is required or claimed. No independent acceptance, operator acceptance or production-readiness claim is made.
+- Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; RF-11 and RF-12 remain unchanged.
+
 ## Next gate
 
 RF-09 is `READY_TO_START_NOT_STARTED`; its prerequisites are satisfied and it must receive a separate exact task. This acceptance transition does not start RF-09. The CLI does not choose or start RF-09.

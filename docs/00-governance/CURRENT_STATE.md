@@ -4,6 +4,8 @@
 **Статус:** `MODULE_14_RF10_PLATFORM_CONTRACTS_RUNTIME_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 **Дата:** 2026-07-29
 
+**RF-08 crash-safe corrective:** immutable secret generations and atomic managed-pointer activation are implemented from `f0423111ddd0ce74892f85b36e35828f9825905d` for ChatGPT review. Persistence-only runtime proof, one-shot secret probes and application-role connection passed; RF-23 entrypoints remain deferred and RF-11/RF-12 are unchanged.
+
 ## RF-06-04 closure current gate
 
 - RF-06-03-C06 is accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; authoritative artifact count is 48/246/294.

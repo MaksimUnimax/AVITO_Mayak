@@ -75,6 +75,7 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-07-02-C03` independently accepted through `1e911fc4680296a2a81c634e56cd57ed6b333fd5`.
   - `[x] RF-07-02 closure` independently accepted through corrective chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`.
 - `[x] RF-08 independently accepted through closure chain head 104e9777f298c47428fa8bdb07af109c234c4630`.
+  - `[c] RF-08 crash-safe generation corrective` implemented for ChatGPT review; application proof is blocked at the RF-11 runtime boundary and is not independently accepted.
   - `[x] RF-08-01` read-only preflight accepted;
   - `[x] RF-08-02` image and Compose skeleton accepted through corrective chain head `243849bbf724b7bd301b685573f9664290783605`;
   - `[!] RF-08-02-CORRECTIVE-01` blocked historical stale shared validation environment;

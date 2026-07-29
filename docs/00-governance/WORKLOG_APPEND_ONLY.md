@@ -623,3 +623,15 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Evidence path: `/opt/avito-mayak-runtime/rf08-secret-delivery/RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01/secrets`; production path documented only as `/etc/avito-mayak/secrets/`; no production credential was placed.
 - Safe task-only evidence: Compose config passed; intended readability and unintended denial passed; PostgreSQL 18 from-zero health and bootstrap passed; migration head `RF09_FINALIZE`; authenticated application connection passed; restart and rotation proofs passed; exact task resources were cleaned; no foreign impact was observed.
 - RF-11 remains blocked and its dirty worktree remains task-owned and untouched. RF-12 was not changed. No secret value, digest, DSN, raw output, traceback, provider payload or personal data was recorded.
+
+## WL-RF08-20260729-02 — 2026-07-29 — crash-safe secret generation corrective
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `REPLACE_INPLACE_SECRET_ROTATION_WITH_CRASH_SAFE_GENERATION_ACTIVATION`
+**Base:** `f0423111ddd0ce74892f85b36e35828f9825905d`
+
+- Rejected flat-file activation was corrected with complete immutable generations, on-disk manifest validation, constant-time bootstrap-copy equality, atomic managed-pointer switching, fsync, recovery, retention and failpoint coverage.
+- Focused evidence: `28 passed`; real abrupt child termination and failpoint recovery passed; Ruff and mypy affected paths passed. No secret values, DSN, credential-bearing argv/environment or raw child output entered evidence.
+- Task runtime: Compose config, isolation, PostgreSQL 18 health, one-shot intended-readability/unintended-denial probes, from-zero bootstrap, migration head `RF09_FINALIZE`, application-role connection, persistence restart, failed activation rollback and abrupt recovery passed. API/worker/scheduler entrypoints are absent and deferred to RF-23; no future process readiness or full runtime deployment is claimed.
+- Exact task containers, network, volume, acceptance generations and temporary output were cleaned; foreign impact none; `apm-postgres` preserved; RF-11 worktree untouched; RF-12 unchanged.
+- **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready.

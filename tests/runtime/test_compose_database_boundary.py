@@ -37,7 +37,7 @@ def test_migration_secret_is_single_file_backed_declaration() -> None:
     text = _compose()
     declaration = (
         "  mayak_database_migration_password_runtime:\n"
-        "    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/"
+        "    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets/active}/"
         "mayak_database_migration_password"
     )
     assert text.count("mayak_database_migration_password_runtime:") == 1
@@ -72,8 +72,7 @@ def test_migration_service_has_exact_boundary() -> None:
     body = _section("mayak-migrate")
     assert "profiles: [runtime-foundation]" in body
     assert (
-        'command: ["python", "-m", "alembic", "-c", '
-        '"/opt/mayak/alembic.ini", "upgrade", "head"]'
+        'command: ["python", "-m", "alembic", "-c", "/opt/mayak/alembic.ini", "upgrade", "head"]'
     ) in body
     assert 'restart: "no"' in body
     assert "read_only: true" in body and "init: true" in body
@@ -134,7 +133,7 @@ def test_application_services_have_migration_gate_and_no_elevated_secrets() -> N
 
 def test_project_isolation_and_exposure_boundaries_remain_closed() -> None:
     text = _compose()
-    assert text.startswith("name: avito-mayak-acceptance\n")
+    assert text.startswith("name: avito-mayak-rf08-secret-delivery\n")
     assert text.count("profiles: [runtime-foundation]") == 6
     assert "mayak-postgres" in _compose()
     postgres = _section("mayak-postgres")
@@ -145,11 +144,11 @@ def test_project_isolation_and_exposure_boundaries_remain_closed() -> None:
     assert text.count("postgres-data:") == 2
     assert "external:" not in text
     assert "docker.sock" not in text
-    assert "MAYAK_AVITO_LIVE_ENABLED: \"false\"" in text
-    assert "MAYAK_TELEGRAM_ENABLED: \"false\"" in text
-    assert "MAYAK_MAX_ENABLED: \"false\"" in text
-    assert "MAYAK_YOOKASSA_ENABLED: \"false\"" in text
-    assert "MAYAK_EGRESS_AGENT_ENABLED: \"false\"" in text
+    assert 'MAYAK_AVITO_LIVE_ENABLED: "false"' in text
+    assert 'MAYAK_TELEGRAM_ENABLED: "false"' in text
+    assert 'MAYAK_MAX_ENABLED: "false"' in text
+    assert 'MAYAK_YOOKASSA_ENABLED: "false"' in text
+    assert 'MAYAK_EGRESS_AGENT_ENABLED: "false"' in text
     assert not re.search(
         r"(?m)^\s+(?:password|secret|token|key)\s*:\s*(?!file:|\$\{)[^\s]+",
         text,

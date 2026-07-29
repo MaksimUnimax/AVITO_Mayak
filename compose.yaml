@@ -1,4 +1,4 @@
-name: avito-mayak-acceptance
+name: avito-mayak-rf08-secret-delivery
 services:
   mayak-api:
     profiles: [runtime-foundation]
@@ -50,7 +50,7 @@ services:
     labels: &app-labels
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
-      com.avito-mayak.compose-project: avito-mayak-acceptance
+      com.avito-mayak.compose-project: avito-mayak-rf08-secret-delivery
       com.avito-mayak.source-sha: ${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
       com.avito-mayak.process-kind: mayak-api
   mayak-worker:
@@ -132,7 +132,7 @@ services:
     labels:
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
-      com.avito-mayak.compose-project: avito-mayak-acceptance
+      com.avito-mayak.compose-project: avito-mayak-rf08-secret-delivery
       com.avito-mayak.process-kind: mayak-postgres
   mayak-db-bootstrap:
     profiles: [runtime-foundation]
@@ -198,21 +198,21 @@ networks:
     labels:
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
-      com.avito-mayak.compose-project: avito-mayak-acceptance
+      com.avito-mayak.compose-project: avito-mayak-rf08-secret-delivery
 volumes:
   postgres-data:
     labels:
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
-      com.avito-mayak.compose-project: avito-mayak-acceptance
+      com.avito-mayak.compose-project: avito-mayak-rf08-secret-delivery
 secrets:
   mayak_postgres_bootstrap_password_postgres:
-    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_postgres_bootstrap_password_postgres
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets/active}/mayak_postgres_bootstrap_password_postgres
   mayak_postgres_bootstrap_password_runtime:
-    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_postgres_bootstrap_password_runtime
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets/active}/mayak_postgres_bootstrap_password_runtime
   mayak_database_application_password_runtime:
-    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_database_application_password
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets/active}/mayak_database_application_password
   mayak_session_signing_key_runtime:
-    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_session_signing_key
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets/active}/mayak_session_signing_key
   mayak_database_migration_password_runtime:
-    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets}/mayak_database_migration_password
+    file: ${MAYAK_SECRETS_ROOT:-/etc/avito-mayak/secrets/active}/mayak_database_migration_password

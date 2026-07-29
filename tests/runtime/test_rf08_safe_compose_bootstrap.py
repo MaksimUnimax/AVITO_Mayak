@@ -1,42 +1,76 @@
 import json
-import subprocess
-import sys
-from pathlib import Path
 
+import scripts.runtime.prepare_file_secrets as secret_module
 from scripts.runtime.safe_compose_bootstrap import (
     CLASSIFICATIONS,
+    PROTOCOL_VERSION,
     STAGES,
-    safe_result,
+    run_protocol,
 )
 
-ROOT = Path(__file__).parents[2]
-HELPER = ROOT / "scripts/runtime/safe_compose_bootstrap.py"
+
+class FakeRunner:
+    def __init__(self):
+        self.commands = []
+
+    def run(self, command, *, stage):
+        self.commands.append((stage, command))
+        return True
 
 
-def test_stage_and_classification_allowlist_is_complete() -> None:
-    assert "PREFLIGHT" in STAGES
-    assert "COMPLETE" in STAGES
-    assert "SECRET_FILE_PERMISSION" in CLASSIFICATIONS
-    assert "OBSERVABLE_SECRET_LEAK" in CLASSIFICATIONS
-    assert set(safe_result("COMPOSE_CONFIG")) == {
-        "schema", "stage", "classification", "ok", "detail"
+def test_orchestrator_owns_stage_transitions_and_safe_schema(tmp_path, monkeypatch):
+    monkeypatch.setattr(secret_module, "_ALLOWED_ROOTS", (tmp_path,))
+    runner = FakeRunner()
+    result = run_protocol(root=tmp_path / "secrets", source_sha="source", runner=runner)
+    assert result.status == "PASS"
+    executed = [stage for stage, _ in runner.commands]
+    assert all(stage in executed or any(item.startswith(stage + "_") for item in executed)
+               for stage in STAGES if stage not in {
+        "SECRET_GENERATION", "GENERATION_VALIDATION", "ACTIVE_POINTER_VALIDATION",
+        "FAILED_ACTIVATION_ROLLBACK", "ABRUPT_RECOVERY", "CLEANUP",
+    })
+    assert all("--no-deps" in command for stage, command in runner.commands
+               if stage.startswith("SECRET_MOUNT_PROBES") or stage in {
+                   "DB_BOOTSTRAP", "MIGRATION", "APPLICATION_ROLE_CONNECTION"
+               })
+    assert all("--force-recreate" not in command and "--no-start" not in command
+               for _, command in runner.commands)
+    payload = result.as_dict()
+    assert set(payload) == {
+        "protocol_version",
+        "task_id",
+        "source_sha",
+        "stage",
+        "status",
+        "classification",
+        "active_generation_id",
+        "previous_generation_id",
+        "postgres_major",
+        "migration_expected_head",
+        "migration_observed_safe_head",
+        "effective_numeric_uid",
+        "effective_numeric_gid",
+        "mode",
+        "container_state",
+        "health_status",
+        "cleanup_status",
+        "foreign_impact",
+        "no-secret-observed",
     }
+    json.dumps(payload)
+    assert payload["protocol_version"] == PROTOCOL_VERSION
+    assert payload["migration_expected_head"] == "RF09_FINALIZE"
+    assert payload["no-secret-observed"] is True
 
 
-def test_safe_cli_emits_one_schema_validated_object_and_no_stderr() -> None:
-    result = subprocess.run(
-        [sys.executable, str(HELPER), "APPLICATION_SECRET_READ"],
-        capture_output=True,
-        text=True,
-        check=False,
+def test_unexecuted_success_stage_cannot_be_reported(tmp_path, monkeypatch):
+    monkeypatch.setattr(secret_module, "_ALLOWED_ROOTS", (tmp_path,))
+    runner = FakeRunner()
+    result = run_protocol(
+        root=tmp_path / "secrets", source_sha="source", runner=runner, fail_stage="DB_BOOTSTRAP"
     )
-    assert result.returncode == 0
-    assert result.stderr == ""
-    payload = json.loads(result.stdout)
-    assert payload == {
-        "classification": "NONE",
-        "detail": "allowlisted-safe-diagnostic",
-        "ok": True,
-        "schema": "rf08-safe-bootstrap-v1",
-        "stage": "APPLICATION_SECRET_READ",
-    }
+    assert result.status == "FAIL"
+    assert result.classification == "BOOTSTRAP_FAILED"
+    assert result.stage == "DB_BOOTSTRAP"
+    assert all(stage != "ALEMBIC_UPGRADE_CURRENT" for stage, _ in runner.commands)
+    assert "OBSERVABLE_SECRET_LEAK" in CLASSIFICATIONS
