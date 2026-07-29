@@ -52,10 +52,12 @@ class BuildVersionIdentity(BaseModel):
     def model_copy(
         self, *, update: Mapping[str, Any] | None = None, deep: bool = False
     ) -> Self:
-        """Copy through the schema so cross-field identity invariants remain enforced."""
-        values = self.model_dump(mode="python", round_trip=True)
-        if update:
-            values.update(update)
+        """Copy with Pydantic identity semantics and validated updates."""
+        copied = super().model_copy(deep=deep)
+        if update is None:
+            return copied
+        values = {field_name: getattr(copied, field_name) for field_name in type(self).model_fields}
+        values.update(update)
         return type(self).model_validate(values)
 
     @field_validator("environment_id", "runtime_profile", mode="before")
@@ -187,10 +189,12 @@ class HealthSnapshot(BaseModel):
     def model_copy(
         self, *, update: Mapping[str, Any] | None = None, deep: bool = False
     ) -> Self:
-        """Copy through the schema so nested identity/readiness invariants remain enforced."""
-        values = self.model_dump(mode="python", round_trip=True)
-        if update:
-            values.update(update)
+        """Copy with Pydantic nested identity semantics and validated updates."""
+        copied = super().model_copy(deep=deep)
+        if update is None:
+            return copied
+        values = {field_name: getattr(copied, field_name) for field_name in type(self).model_fields}
+        values.update(update)
         return type(self).model_validate(values)
 
     @model_validator(mode="after")

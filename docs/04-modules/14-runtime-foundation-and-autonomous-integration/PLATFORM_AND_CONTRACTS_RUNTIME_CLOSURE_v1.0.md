@@ -71,6 +71,26 @@ Exact status: `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 
 CHATGPT_REVIEW_REQUIRED: YES
 
+## Corrective recovery — current lock identity and validated shallow/deep copy
+
+- Technical ID: `RF-10-CORRECTIVE-LOCK-EXACT-ENVIRONMENT-AND-MODEL-COPY-COMPATIBILITY-20260729-04`.
+- Recovery was required because the prior bootstrap used `/opt/avito-mayak-worktrees/RF-10-CORRECTIVE-LOCK-EXACT-ENVIRONMENT-AND-MODEL-COPY-COMPATIBILITY-20260729-04`, reported at historical head `623870e173ba3ce3fcabf25e8e4b2ba2414e62d6` with unrelated dirty changes and an untracked `__pycache__`. That path was absent during recovery inspection, unregistered and untouched; it remains classified `ABANDONED_INCORRECT_BOOTSTRAP_UNTOUCHED`.
+- Exact recovery worktree: `/opt/avito-mayak-worktrees/RF-10-CORRECTIVE-LOCK-EXACT-ENVIRONMENT-AND-MODEL-COPY-COMPATIBILITY-20260729-04-recovery-01`, detached at direct-child base `8548ff49de02738d94321637de5804f7cda6ac50`.
+- Stale evidence used `pytest 8.4.2` and `pytest-asyncio 0.26.0`. Current frozen identity is pyproject SHA `5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7d`, uv.lock SHA `e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6`, CPython `/opt/avito-mayak-runtime/toolchain/cpython/3.14.6/bin/python3.14` (`3.14.6`, standard GIL), and uv `/opt/avito-mayak-runtime/toolchain/bin/uv` (`0.11.31`).
+- New task-owned environment: `/opt/avito-mayak-runtime/venvs/rf10-c04-lock-exact`. Frozen sync succeeded with `uv sync --frozen --all-groups --python /opt/avito-mayak-runtime/toolchain/cpython/3.14.6/bin/python3.14 --project <recovery-worktree>`. Installed proof matched the current lock: pytest `9.0.3`, pytest-asyncio `1.4.0`, pydantic `2.13.4`, pydantic-settings `2.14.2`, ruff `0.15.20`, mypy `1.20.2`, import-linter `2.13`; `uv pip check` passed and all 48 installed packages were compatible.
+- Collection used the exact environment and `python -m pytest --collect-only -q`: `5671 tests collected`, exit `0`, zero errors; runtime-settings, async and PostgreSQL tests were collected.
+- Before correction, both public `model_copy` overrides reconstructed through `model_dump/model_validate`, breaking shallow identity and bypassing normal Pydantic copy semantics. After correction, no-update copies delegate to Pydantic shallow/deep copy, while updates merge copied field values and revalidate through `model_validate`; frozen models, exact types, proof triplet, safe identifiers, readiness precedence and transport neutrality remain intact.
+- Shallow evidence: distinct top-level identity/build and health snapshots preserve unchanged nested object identity. Deep evidence: nested identity, liveness and readiness are equal but distinct. Valid liveness/application updates pass; invalid proof changes, contradictory `UNPROVEN` plus `READY`, unknown fields and invalid updates fail.
+- Trusted-bypass inventory: `model_construct` and `object.__setattr__` remain only in unrelated trusted fixtures/tests and legacy module internals; no normal health/build/readiness/runtime path uses them. No new bypass was introduced.
+- Focused health/readiness gate: `40 passed`; complete non-DB `tests/unit tests/contract tests/architecture`: `4655 passed`; architecture subset: `213 passed`. Ruff changed paths passed; affected mypy passed with no issues in 3 files; import-linter passed (`3 kept, 0 broken`); compile/import proof and `git diff --check` passed.
+- Prior PostgreSQL evidence used old lock SHA `9c9a87fb0c455d36162c3dbcfbdddc8c3f7d3e528157fb0f228678695263c020`, so it was invalidated. The four exact DB paths were rerun in a new internal-only PostgreSQL 18 task resource with synthetic secrets, migration head `RF09_FINALIZE`: `49 passed`, one disposable read-only cache warning; no host PostgreSQL port. The exact container, network, volume and synthetic secret files were cleaned.
+- Changed paths: `src/mayak/contracts/health.py`, `tests/unit/test_health_and_readiness_completion.py`, this closure artifact and the append-only worklog. No governance contradiction required a broader current-governance change.
+- Dependency, pyproject, lock, migration and schema verdict: unchanged; `uv.lock` is byte-identical; migration change `NONE`; no dependency update or regeneration occurred.
+- Static/security evidence found no secret, DSN, token, private key, populated environment value, provider payload, production data or invalid-input echo in changed content. No foreign resource was inspected or mutated. Task-owned environment remains available for evidence; database resources are cleaned. Rollback is the direct parent base commit.
+- Limitations: independent ChatGPT review remains required; RF-10 is not self-accepted; RF-11, deployment, provider/live-call and production gates remain outside scope.
+- Status: `CORRECTIVE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
+- `CHATGPT_REVIEW_REQUIRED: YES`.
+
 ## Independent review corrective — public health invariants and governance consistency
 
 - Corrective Technical ID: `RF-10-CORRECTIVE-HEALTH-INVARIANTS-AND-GOVERNANCE-CONSISTENCY-20260729-02`.

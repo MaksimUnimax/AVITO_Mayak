@@ -546,6 +546,16 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Status:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`.
 - **CHATGPT_REVIEW_REQUIRED:** `YES`.
 
+## 2026-07-29 — RF-10 current-lock model-copy compatibility recovery
+
+- **Technical ID:** `RF-10-CORRECTIVE-LOCK-EXACT-ENVIRONMENT-AND-MODEL-COPY-COMPATIBILITY-20260729-04`.
+- **Base:** `8548ff49de02738d94321637de5804f7cda6ac50`; exact detached recovery worktree created after the historical dirty bootstrap was preserved untouched.
+- **Environment:** new `/opt/avito-mayak-runtime/venvs/rf10-c04-lock-exact`, frozen current lock; CPython 3.14.6 standard GIL; pytest 9.0.3; pytest-asyncio 1.4.0; `uv pip check` passed.
+- **Correction:** validated shallow/deep Pydantic copy semantics for `BuildVersionIdentity` and `HealthSnapshot`; proof/readiness/frozen/alias invariants preserved; invalid and unknown updates rejected.
+- **Evidence:** collection `5671` with zero errors; focused `40 passed`; non-DB `4655 passed`; PostgreSQL evidence was rerun under the current lock in isolated PostgreSQL 18 and exact DB paths gave `49 passed`; Ruff, mypy, import-linter, architecture, compile/import and diff checks passed.
+- **Changes:** source health contract, focused health tests, one closure recovery section and this entry; no pyproject, dependency-lock, migration/schema, RF-11 or foreign-resource change.
+- **Status:** `CORRECTIVE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`; `CHATGPT_REVIEW_REQUIRED: YES`.
+
 ## 2026-07-29 — RF-10 corrective acceptance-gate completion
 
 - **Technical ID:** `RF-10-CORRECTIVE-ACCEPTANCE-GATE-COMPLETION-20260729-03`.

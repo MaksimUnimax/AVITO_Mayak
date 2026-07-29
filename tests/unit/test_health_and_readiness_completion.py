@@ -318,6 +318,65 @@ def test_model_copy_preserves_valid_nested_health_updates() -> None:
     assert copied.readiness_status is ProcessReadinessStatus.NOT_READY
 
 
+def test_build_identity_model_copy_preserves_shallow_and_deep_semantics() -> None:
+    identity = _identity(SourceIdentityStatus.PROVEN)
+
+    shallow = identity.model_copy()
+    assert type(shallow) is BuildVersionIdentity
+    assert shallow is not identity
+    assert shallow.process_role is identity.process_role
+    assert shallow.model_dump() == identity.model_dump()
+
+    deep = identity.model_copy(deep=True)
+    assert type(deep) is BuildVersionIdentity
+    assert deep is not identity
+    assert deep.model_dump() == identity.model_dump()
+
+    updated = identity.model_copy(update={"application_version": "1.0.0"})
+    assert type(updated) is BuildVersionIdentity
+    assert updated.application_version == "1.0.0"
+    assert updated.process_role is identity.process_role
+
+    with pytest.raises(ValidationError):
+        identity.model_copy(update={"unknown": "value"})
+
+
+def test_health_snapshot_model_copy_preserves_nested_shallow_and_deep_semantics() -> None:
+    snapshot = HealthSnapshot(
+        identity=_identity(SourceIdentityStatus.PROVEN),
+        liveness=LivenessOutcome.alive(),
+        readiness=_readiness(ProcessReadinessStatus.NOT_READY),
+    )
+
+    shallow = snapshot.model_copy()
+    assert type(shallow) is HealthSnapshot
+    assert shallow is not snapshot
+    assert shallow.identity is snapshot.identity
+    assert shallow.liveness is snapshot.liveness
+    assert shallow.readiness is snapshot.readiness
+
+    deep = snapshot.model_copy(deep=True)
+    assert type(deep) is HealthSnapshot
+    assert deep is not snapshot
+    assert deep.identity == snapshot.identity and deep.identity is not snapshot.identity
+    assert deep.liveness == snapshot.liveness and deep.liveness is not snapshot.liveness
+    assert deep.readiness == snapshot.readiness and deep.readiness is not snapshot.readiness
+
+    updated = snapshot.model_copy(update={"liveness": LivenessOutcome.not_alive()})
+    assert updated.liveness.status is LivenessStatus.NOT_ALIVE
+    assert updated.identity is snapshot.identity
+
+    with pytest.raises(ValidationError):
+        snapshot.model_copy(
+            update={
+                "identity": _identity(SourceIdentityStatus.UNPROVEN),
+                "readiness": _readiness(ProcessReadinessStatus.READY),
+            }
+        )
+    with pytest.raises(ValidationError):
+        snapshot.model_copy(update={"unknown": "value"})
+
+
 def test_readiness_precedence_duplicate_types_and_safe_public_exports() -> None:
     blocked = compose_process_readiness(
         role=ProcessRole.API,
