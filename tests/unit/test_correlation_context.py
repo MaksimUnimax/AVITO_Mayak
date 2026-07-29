@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Event
 
 import pytest
 
@@ -177,19 +177,42 @@ async def test_async_nested_scope_restores_task_local_context() -> None:
 
 
 def test_new_thread_does_not_inherit_bound_context() -> None:
-    context = _context("thread-parent")
-    barrier = Barrier(2)
+    parent_context = _context("thread-parent")
+    child_context = _context("thread-child")
+    worker_started = Event()
+    worker_scope_active = Event()
+    release_worker = Event()
 
-    def worker() -> CorrelationContext | None:
-        barrier.wait()
-        return current_correlation_context()
+    def worker() -> tuple[
+        CorrelationContext | None,
+        CorrelationContext | None,
+        CorrelationContext | None,
+    ]:
+        initial = current_correlation_context()
+        worker_started.set()
+        with correlation_context_scope(child_context):
+            inside = current_correlation_context()
+            worker_scope_active.set()
+            assert release_worker.wait(timeout=5)
+        after = current_correlation_context()
+        return initial, inside, after
 
-    with correlation_context_scope(context):
+    with correlation_context_scope(parent_context):
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(worker)
-            barrier.wait()
-            assert future.result() is None
-        assert current_correlation_context() is context
+            try:
+                assert worker_started.wait(timeout=5)
+                assert worker_scope_active.wait(timeout=5)
+                assert current_correlation_context() is parent_context
+                assert current_correlation_context() is not child_context
+            finally:
+                release_worker.set()
+            initial, inside, after = future.result(timeout=5)
+            assert initial is None
+            assert inside is child_context
+            assert after is None
+        assert current_correlation_context() is parent_context
+    assert current_correlation_context() is None
 
 
 def test_public_platform_package_exports_correlation_context_api() -> None:
