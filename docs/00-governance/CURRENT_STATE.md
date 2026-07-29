@@ -1,14 +1,14 @@
 # Маяк Авито — текущее состояние проекта
 
 **Версия снимка:** 3.0
-**Статус:** `MODULE_14_RF08_CONTAINER_COMPOSE_FOUNDATION_INDEPENDENTLY_ACCEPTED_RF09_READY_TO_START`
-**Дата:** 2026-07-27
+**Статус:** `MODULE_14_RF09_CLOSURE_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
+**Дата:** 2026-07-29
 
 ## RF-06-04 closure current gate
 
 - RF-06-03-C06 is accepted at `372ecc630106e9b813bddf1edd384ce36f48db6d`; authoritative artifact count is 48/246/294.
 - Authoritative current mypy count is 249; historical 248 cause is not proven and its closure expectation is superseded.
-- RF-06 is independently accepted; RF-07 remains active only for genuinely deferred runtime-dependent gates; RF-08 implementation, RF-08-03 bootstrap evidence and closure are independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 is the next authorized step, ready to start but not started; runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
+- RF-06 is accepted; RF-07 remains active only for genuinely deferred runtime-dependent gates; RF-08 is independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 implementation and closure are published for independent acceptance; RF-10 is active/not accepted; complete runtime/deployment is not reached; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
 - Runtime is stopped; eligibility is `RUNTIME_ELIGIBLE`; production verdict is `NOT_PRODUCTION_READY`.
 **RF-02 audit baseline:** `59f86084bbc17386070dde34485aba6c1706712c`
 
@@ -47,7 +47,7 @@ The recorded RF-02 audit baseline is evidence only and does not replace a fresh 
 - RF-03 — complete at repository-content level; RF-03-01 is independently accepted through `23e73707b14b220da98beade93ee2d13021ba1b9`; RF-03-02 is independently accepted through corrective chain head `061757c4cfd9c5c4ea466539c4a92499e5b269d5`; RF-03-03 is independently accepted at `e8a38a1ce3e506f5d880129bb9781802cd69f48b`; RF-03 closure is published for independent acceptance.
 - RF-04 — independently accepted through current base `b6e4ad20bedc229b967fccd1dfcd41c7ea5fda58`.
 - RF-05 — independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`; server allocations verified; repository content and closure complete. Environment is `RUNTIME_ELIGIBLE`; runtime mutation beyond RF-05 allocations is absent; verdict is `NOT_PRODUCTION_READY`.
-- RF-06 is independently accepted; RF-07 remains active only for genuinely deferred runtime-dependent gates; RF-08 is independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 is the next authorized step, ready to start but not started; runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
+- RF-06 is accepted; RF-07 remains active only for genuinely deferred runtime-dependent gates; RF-08 is independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 closure is published for independent acceptance; RF-10 is partially published and remains active/not accepted; runtime/deployment is incomplete; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
 
 RF-02 closure commit `c92e9299e5c0bd11ea18362673a8ac342b835483` is independently accepted.
 
@@ -110,11 +110,17 @@ For the current Module 14 and MVP scope:
 
 Historical decision rows remain traceability evidence and must not be deleted.
 
+## RF-09 closure current gate
+
+- RF-09 implementation/corrective chain is present through the current base `1c81e534611330a9e066afa25af06f72d9407300`; closure artifact is published for independent acceptance at `docs/04-modules/14-runtime-foundation-and-autonomous-integration/POSTGRESQL_AND_ALEMBIC_FOUNDATION_CLOSURE_v1.0.md`.
+- PostgreSQL 18/Alembic zero-to-head, idempotent replay, current-head, drift, role, lock contention/release and second clean rebuild evidence is recorded; no production-ready claim is made.
+- RF-10 remains partially published and active/not accepted; RF-30 remains the only route to `READY_FOR_OPERATOR_ACCEPTANCE`.
+
 ## RF-08 closure current gate
 
 - RF-08 implementation commits are `af90b77575b3c0a1d9dda4f8cbd3f7ad5e6a73f6` and `243849bbf724b7bd301b685573f9664290783605`; RF-08-03 accepted the ephemeral bootstrap proof.
 - Closure artifact: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`; status `INDEPENDENTLY_ACCEPTED` through `104e9777f298c47428fa8bdb07af109c234c4630`; primary closure `b1db2e7eafa0f625bd45e44436a208857ff7d48a`.
-- RF-09 is the next authorized step; prerequisites are satisfied; it is `READY_TO_START_NOT_STARTED`. Runtime is stopped; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
+- RF-09 implementation and closure are published for independent acceptance; RF-10 remains active/not accepted. Runtime is stopped after scoped acceptance cleanup; environment is `RUNTIME_ELIGIBLE`; production is `NOT_PRODUCTION_READY`.
 
 ## Runtime status
 
@@ -122,8 +128,8 @@ The complete Module 14 acceptance runtime is not yet implemented or deployed.
 
 Current remaining gaps include:
 
-- remaining RF-07 runtime-dependent CI gates: PostgreSQL integration and Alembic upgrade-from-zero/current-head verification; synthetic E2E remains owned by RF-24; Docker build and Compose configuration validation foundation are satisfied by independently accepted RF-08 evidence;
-- RF-09 PostgreSQL 18, SQLAlchemy, Psycopg and Alembic authoritative persistence foundation;
+  - remaining RF-07 runtime-dependent gates are genuinely deferred; synthetic E2E remains owned by RF-24; Docker build and Compose configuration validation foundation are satisfied by RF-08/RF-09 evidence;
+  - RF-09 independent acceptance review of the published PostgreSQL/Alembic closure;
 - migration from zero and migration current-head proof;
 - RF-10–RF-22 DB-backed runtime for modules 01–13, including API, worker, scheduler, Web Cabinet, Admin and provider-disabled-by-default adapters;
 - RF-23 cross-module API and command wiring;
@@ -177,6 +183,6 @@ Until an exact applicable later RF task authorizes them, the following remain pr
 
 ## Next safe work
 
-RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is independently accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07-01 and RF-07-02 closure are independently accepted through the current corrective-chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`, while RF-07 remains active only for deferred runtime-dependent gates. RF-08 is independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 is the next authorized step, ready to start but not started. Exact CPython/uv and dependencies are project-owned, and runtime is stopped.
+RF-05 is independently accepted at `8d502c9baaad5008f79ebc916f9efc3f3378d985`. RF-06 is accepted through `f03e97ec433e9278247a15dafcb1d96387132eba`; RF-07-01 and RF-07-02 closure are independently accepted through the current corrective-chain head `ace1218dd6e1ab7cf889fac3e53051cb3c5b5782`, while RF-07 remains active only for deferred runtime-dependent gates. RF-08 is independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-09 implementation and closure are published for independent acceptance; RF-10 is active/not accepted. Exact CPython/uv and dependencies are project-owned, and runtime is stopped.
 
-RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden until their applicable prerequisites and exact tasks. RF-09 remains not started until a separate exact task authorizes it.
+RF-04 and every runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port or secret mutation remain forbidden outside the exact authorized task scope. RF-09 closure is published for independent acceptance; RF-10 and later runtime work remain separately gated.

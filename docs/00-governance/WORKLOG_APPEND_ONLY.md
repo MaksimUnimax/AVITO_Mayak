@@ -498,3 +498,12 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - **Security:** no credentials, private keys, populated `.env`, production personal data or raw provider payloads added.
 - **Foreign-resource impact:** none.
 - **Roadmap:** RF-01 governance capture complete; RF-02 is the next roadmap step after independent acceptance of this closure commit.
+## 2026-07-29 — RF-09 closure recovery and publication
+
+- **Technical ID:** `RF-09-CLOSURE-POSTGRESQL-ALEMBIC-PROOF-AND-GOVERNANCE-RECONCILIATION-20260729-01`
+- **Result:** `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`; closure artifact published; `CHATGPT_REVIEW_REQUIRED: YES`.
+- **Base:** `1c81e534611330a9e066afa25af06f72d9407300`.
+- **Evidence:** PostgreSQL 18 isolated task-owned Compose project; synthetic secrets outside Git with mode `0600`; separate roles; zero-to-head and second clean rebuild; idempotent replay; current head `RF09_FINALIZE`; single head; no drift; finalized/validated three deferred-origin constraints; fail-fast migration lock contention and release after controlled failure; `958 passed`, exit `0`; Ruff affected-path pass.
+- **Recovery:** first delivery was incomplete. M06 E501 wrapping and Compose/test quoting correction were preserved. Orchestration defects were malformed focused pytest quoting, rejected `rm -f`, failed patch contexts, invalid build metadata and wrong lock-proof key; none caused foreign mutation or RF-10 semantic change.
+- **Governance:** RF-00–RF-06 accepted; RF-07 open only for genuinely deferred runtime-dependent gates; RF-08 independently accepted through `104e9777f298c47428fa8bdb07af109c234c4630`; RF-10 active/not accepted; runtime/deployment not complete; `RUNTIME_ELIGIBLE`; `NOT_PRODUCTION_READY`.
+- **Foreign impact/security:** none; no live providers, production data, credentials, DSN, token or private-key contents exposed; task-owned runtime cleaned with exact Compose project scope.

@@ -17,7 +17,7 @@ services:
     init: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     restart: on-failure:5
     depends_on:
       mayak-postgres:
@@ -60,7 +60,7 @@ services:
     init: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     restart: on-failure:5
     depends_on:
       mayak-postgres:
@@ -86,7 +86,7 @@ services:
     init: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     restart: on-failure:5
     depends_on:
       mayak-postgres:
@@ -135,7 +135,7 @@ services:
     init: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     restart: "no"
     depends_on:
       mayak-postgres:
@@ -162,7 +162,7 @@ services:
     init: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:rw,noexec,nosuid,size=64m]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     restart: "no"
     depends_on:
       mayak-postgres:

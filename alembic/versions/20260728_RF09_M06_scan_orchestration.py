@@ -127,7 +127,9 @@ def upgrade() -> None:
         sa.CheckConstraint("row_version > 0", name="row_version_positive"),
         schema=S,
     )
-    op.create_index("ix_scan_runs_beacon_started_at", "scan_runs", ("beacon_id", "started_at"), schema=S)
+    op.create_index(
+        "ix_scan_runs_beacon_started_at", "scan_runs", ("beacon_id", "started_at"), schema=S
+    )
     op.create_index(
         "ix_scan_runs_active_states",
         "scan_runs",
@@ -207,7 +209,9 @@ def upgrade() -> None:
         ),
         schema=S,
     )
-    op.create_index("ix_scan_anchors_beacon_updated_at", "scan_anchors", ("beacon_id", "updated_at"), schema=S)
+    op.create_index(
+        "ix_scan_anchors_beacon_updated_at", "scan_anchors", ("beacon_id", "updated_at"), schema=S
+    )
 
 
 def downgrade() -> None:

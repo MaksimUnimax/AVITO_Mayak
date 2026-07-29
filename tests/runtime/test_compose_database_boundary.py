@@ -53,7 +53,7 @@ def test_bootstrap_service_has_exact_boundary() -> None:
     assert "read_only: true" in body and "init: true" in body
     assert "cap_drop: [ALL]" in body
     assert "security_opt: [no-new-privileges:true]" in body
-    assert "tmpfs: [/tmp:rw,noexec,nosuid,size=64m]" in body
+    assert 'tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]' in body
     assert "networks: [mayak-internal]" in body
     assert re.search(
         r"(?ms)    secrets:\n      - mayak_postgres_bootstrap_password\n"
@@ -76,7 +76,7 @@ def test_migration_service_has_exact_boundary() -> None:
     assert "read_only: true" in body and "init: true" in body
     assert "cap_drop: [ALL]" in body
     assert "security_opt: [no-new-privileges:true]" in body
-    assert "tmpfs: [/tmp:rw,noexec,nosuid,size=64m]" in body
+    assert 'tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]' in body
     assert "networks: [mayak-internal]" in body
     assert "secrets: [mayak_database_migration_password]" in body
     assert "mayak_postgres_bootstrap_password" not in body
