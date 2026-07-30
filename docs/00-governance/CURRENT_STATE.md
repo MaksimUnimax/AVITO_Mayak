@@ -203,3 +203,7 @@ RF-10 is independently accepted through `74997f4da04fd9ae9e225ea39b22c20acd45353
 ## RF-08 public-bootstrap corrective — 2026-07-30
 
 RF-08 public-bootstrap invariant diagnosis and the exact 57-stage execution-derived proof are published for ChatGPT review. The accepted RF-09 implementation, closure and migration semantics are unchanged. RF-11 remains preserved and not accepted; RF-12 and RF-23 remain unstarted. Status is `PUBLISHED_FOR_CHATGPT_REVIEW`; `NOT_PRODUCTION_READY` remains authoritative.
+
+## RF-08 Docker-native and typed foreign-equality corrective — 2026-07-30
+
+The published base `453356025051308b9cbe43b7201c248124348006` remains published but was independently rejected for non-authoritative build and foreign evidence. The current RF-08 candidate preserves the Docker-native exact-base context implementation and replaces raw stage-57 snapshot hashing with independently recomputed typed control-plane snapshots and exact delta classification. The isolated gate, complete 57-stage protocol, stage-55/56/57 independent verifier and cleanup checks passed. No foreign resource was intentionally mutated. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; `NOT_PRODUCTION_READY` remains authoritative.

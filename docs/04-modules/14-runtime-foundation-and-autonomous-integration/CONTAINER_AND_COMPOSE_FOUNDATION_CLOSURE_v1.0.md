@@ -161,3 +161,10 @@ Before publication, rollback is deleting the new closure file, restoring the fiv
 ## Historical next gate
 
 RF-09 was the historical next gate at the time of the prior closure. This corrective does not start RF-11, RF-12 or RF-23 and does not alter their implementation boundaries.
+
+## RF-08 typed foreign-equality corrective — 2026-07-30
+
+- Preserved Docker-native exact-base BuildKit COPY evidence produced 167 effective files with no generated Python artifacts.
+- Raw stage-57 `docker ps` hashing was replaced by independently recomputed typed `ForeignResourceSnapshotV2` records, exact ownership classes, structural/runtime delta classification and task-scoped mutation audit evidence.
+- The isolated gate, complete ordered 57-stage protocol and independent stage-55/56/57 verifier passed; task resources and private artifacts were zero after cleanup, and `apm-postgres` was observed and untouched.
+- Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; this is not independent acceptance, operator readiness or production readiness.

@@ -126,3 +126,5 @@ RF-11 corrective trusted-authority and durable-PostgreSQL package is published f
 - Module 14 must not claim `PRODUCTION_READY`.
 
 RF-08 public-bootstrap invariant diagnosis and exact 57-stage proof are published for ChatGPT review; RF-09 semantics are unchanged, RF-11 is preserved, and RF-12/RF-23 remain unstarted.
+
+RF-08 typed foreign-equality corrective remains the same RF-08 objective: Docker-native exact-base build evidence and independent `ForeignResourceSnapshotV2` equality evidence passed the isolated gate, complete 57-stage protocol and verifier. It is published for ChatGPT review only; no new roadmap step was created. RF-11 remains preserved, while RF-12 and RF-23 remain unstarted.

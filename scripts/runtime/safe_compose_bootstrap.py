@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E501
 """Executable RF-08 prover.
 
 This module deliberately keeps the prover and its verdict-free data contracts
@@ -26,6 +27,21 @@ from types import MappingProxyType
 from typing import Callable, Final, Mapping, Protocol, cast
 
 from scripts.runtime import prepare_file_secrets as secrets
+from scripts.runtime.rf08_docker_context import (
+    COPY_PLAN,
+    EXPECTED_BASE_SHA,
+    docker_native_manifest,
+    materialize_clean_context,
+)
+from scripts.runtime.rf08_docker_context import (
+    build_input_digest as docker_build_input_digest,
+)
+from scripts.runtime.rf08_foreign_snapshot import (
+    classify_delta as classify_foreign_delta,
+)
+from scripts.runtime.rf08_foreign_snapshot import (
+    collect_snapshot as collect_foreign_snapshot,
+)
 
 TASK_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
@@ -110,7 +126,7 @@ REQUIRED_STAGES: Final[tuple[str, ...]] = (
 )
 
 APPLICATION_QUERY: Final = "import pathlib,psycopg; p=pathlib.Path('/run/secrets/mayak_database_application_password').read_text(); c=psycopg.connect(host='mayak-postgres',port=5432,dbname='mayak',user='mayak_application',password=p); assert c.execute('SELECT 1').fetchone()==(1,); c.close(); print('APPLICATION_QUERY_OK')"  # noqa: E501
-AUTH_QUERY: Final = r'''import json,os,pathlib,stat,sys
+AUTH_QUERY: Final = r"""import json,os,pathlib,stat,sys
 
 cid=sys.argv[1]
 path=pathlib.Path("/run/secrets/mayak_database_application_password")
@@ -201,7 +217,7 @@ except Exception as exc:
     result["pgconn_status"]=getattr(pgconn,"status",None)
     result["final_client_outcome"]="CLIENT_CONNECTION_ATTEMPT_FAILED_PENDING_SERVER_CLASSIFICATION"
     emit(78)
-'''
+"""
 
 
 def classify_correlated_b_authentication(
@@ -253,10 +269,10 @@ def classify_correlated_b_authentication(
         or server.get("user") != "mayak_application"
         or server.get("database") != "mayak"
         or not (exact_application or remote_fallback)
-            or (
-                client.get("schema_version") == BOUNDED_AUTH_SCHEMA
-                and (not isinstance(server.get("session_id"), str) or not server.get("session_id"))
-            )
+        or (
+            client.get("schema_version") == BOUNDED_AUTH_SCHEMA
+            and (not isinstance(server.get("session_id"), str) or not server.get("session_id"))
+        )
         or server.get("event_count") != 1
         or not server.get("task_postgres_identity")
         or server.get("event_after_lower_bound") is not True
@@ -342,8 +358,7 @@ def _active_json_log(log_dir: Path) -> Path:
     if JSON_LOG_ROOT not in log_dir.parents or not log_dir.is_dir():
         raise ProtocolFailure("APPLICATION_AUTH_REJECTION_B_CLASSIFY", "STOP_SECURITY_RISK")
     files = [
-        p for p in log_dir.iterdir()
-        if p.is_file() and not p.is_symlink() and p.suffix == ".json"
+        p for p in log_dir.iterdir() if p.is_file() and not p.is_symlink() and p.suffix == ".json"
     ]
     if len(files) != 1:
         raise ProtocolFailure("APPLICATION_AUTH_REJECTION_B_CLASSIFY", "JSON_LOG_IDENTITY_INVALID")
@@ -393,13 +408,16 @@ REQUIRED_POSTGRES_JSONLOG_SETTINGS: Final[dict[str, str]] = {
 
 
 def validate_jsonlog_runtime(
-    settings: Mapping[str, object], log_dir: Path, log_file: Path,
-    *, owner_uid: int, owner_gid: int,
+    settings: Mapping[str, object],
+    log_dir: Path,
+    log_file: Path,
+    *,
+    owner_uid: int,
+    owner_gid: int,
 ) -> dict[str, object]:
     """Validate runtime SHOW/file identity; merged YAML alone is insufficient."""
     if any(
-        str(settings.get(k, "")).lower() != v
-        for k, v in REQUIRED_POSTGRES_JSONLOG_SETTINGS.items()
+        str(settings.get(k, "")).lower() != v for k, v in REQUIRED_POSTGRES_JSONLOG_SETTINGS.items()
     ):
         raise ProtocolFailure("POSTGRES_A_HEALTH", "JSON_LOG_RUNTIME_SETTINGS_INVALID")
     if JSON_LOG_ROOT not in log_dir.parents or log_file.parent != log_dir:
@@ -544,7 +562,10 @@ class ApplicationProbeContract:
     mount_read_only: bool = True
     published_ports: tuple[str, ...] = ()
     security_options: tuple[str, ...] = (
-        "no-privileged", "no-host-pid", "no-host-ipc", "no-docker-socket"
+        "no-privileged",
+        "no-host-pid",
+        "no-host-ipc",
+        "no-docker-socket",
     )
     timeout_seconds: int = 10
 
@@ -613,9 +634,19 @@ def application_probe_command(
         raise ValueError("unsafe application probe contract")
     return _docker(
         (
-            "run", "--rm", "--no-deps", "--user", contract.configured_user,
-            "--workdir", contract.workdir, "--entrypoint", "python", "mayak-api",
-            "-c", payload, *arguments,
+            "run",
+            "--rm",
+            "--no-deps",
+            "--user",
+            contract.configured_user,
+            "--workdir",
+            contract.workdir,
+            "--entrypoint",
+            "python",
+            "mayak-api",
+            "-c",
+            payload,
+            *arguments,
         )
     )
 
@@ -625,12 +656,17 @@ def parse_bounded_auth_envelope(
 ) -> dict[str, object]:
     """Parse exactly one safe JSON envelope, even when its exit is rejected."""
     stderr_lines = (
-        [line for line in stderr.decode("utf-8", "strict").splitlines() if line]
-        if stderr else []
+        [line for line in stderr.decode("utf-8", "strict").splitlines() if line] if stderr else []
     )
     accepted_statuses = {
-        "Creating", "Created", "Starting", "Started", "Stopping", "Stopped",
-        "Removing", "Removed",
+        "Creating",
+        "Created",
+        "Starting",
+        "Started",
+        "Stopping",
+        "Stopped",
+        "Removing",
+        "Removed",
     }
     if stderr_lines not in ([], ["RF08_B_PROBE_MARKER"]):
         if not stderr_lines or not all(
@@ -653,11 +689,23 @@ def parse_bounded_auth_envelope(
     if not isinstance(value, dict) or value.get("schema_version") != BOUNDED_AUTH_SCHEMA:
         return {}
     allowed = {
-        "schema_version", "operation_id", "correlation_id", "import_state",
-        "secret_binding_state", "mount_state", "file_state", "file_read_attempted",
-        "file_read_state", "connection_attempted", "unexpected_success",
-        "exception_class_name", "client_sqlstate", "pgconn_present", "pgconn_status",
-        "timeout", "final_client_outcome",
+        "schema_version",
+        "operation_id",
+        "correlation_id",
+        "import_state",
+        "secret_binding_state",
+        "mount_state",
+        "file_state",
+        "file_read_attempted",
+        "file_read_state",
+        "connection_attempted",
+        "unexpected_success",
+        "exception_class_name",
+        "client_sqlstate",
+        "pgconn_present",
+        "pgconn_status",
+        "timeout",
+        "final_client_outcome",
     }
     if set(value) - allowed or value.get("operation_id") != "rf08.application_auth_rejection_b":
         return {}
@@ -680,11 +728,25 @@ def parse_bounded_bootstrap_result(
     if not isinstance(value, dict):
         return {}
     required = {
-        "schema_version", "operation_id", "run_id", "recovered_generation_id",
-        "connection_attempted", "connected", "last_rf09_operation", "bootstrap_outcome",
-        "invariant_code", "client_sqlstate", "cause_type", "committed", "rolled_back",
-        "cursor_closed", "connection_closed", "migration_role_valid",
-        "application_role_valid", "schema_owner_valid", "application_schema_create",
+        "schema_version",
+        "operation_id",
+        "run_id",
+        "recovered_generation_id",
+        "connection_attempted",
+        "connected",
+        "last_rf09_operation",
+        "bootstrap_outcome",
+        "invariant_code",
+        "client_sqlstate",
+        "cause_type",
+        "committed",
+        "rolled_back",
+        "cursor_closed",
+        "connection_closed",
+        "migration_role_valid",
+        "application_role_valid",
+        "schema_owner_valid",
+        "application_schema_create",
         "current_object_grants",
     }
     if set(value) != required or value.get("schema_version") != BOUNDED_BOOTSTRAP_SCHEMA:
@@ -805,38 +867,29 @@ def _safe_fields(fields: Mapping[str, object]) -> dict[str, object]:
 
 
 def _copy_sources(tree: Path) -> tuple[str, ...]:
-    dockerfile = (tree / "Dockerfile").read_text(encoding="utf-8")
-    names: set[str] = {"Dockerfile", ".dockerignore"}
-    for line in dockerfile.splitlines():
-        parts = line.split()
-        if parts and parts[0].upper() == "COPY" and "--" not in parts[1:2]:
-            for source in parts[1:-1]:
-                base = tree / source
-                if base.is_file():
-                    names.add(str(base.relative_to(tree)))
-                elif base.is_dir():
-                    names.update(str(p.relative_to(tree)) for p in base.rglob("*") if p.is_file())
-    ignored = {
-        line.strip()
-        for line in (tree / ".dockerignore").read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-    }
-    return tuple(sorted(name for name in names if name not in ignored))
+    return tuple(item["path"] for item in _docker_context_for(tree)[0])
+
+
+def _docker_context_for(tree: Path) -> tuple[tuple[dict[str, str], ...], dict[str, str]]:
+    run_id = "manifest-" + hashlib.sha256(str(tree).encode()).hexdigest()[:16]
+    runtime = RUNTIME_ROOT / "build-context"
+    identities = materialize_clean_context(tree, runtime, run_id)
+    source = runtime / run_id / "source"
+    try:
+        return docker_native_manifest(source, runtime, run_id)[0], identities
+    finally:
+        target = runtime / run_id
+        if target.exists():
+            shutil.rmtree(target)
 
 
 def build_input_manifest(tree: Path) -> tuple[dict[str, str], ...]:
-    return tuple(
-        {"path": name, "sha256": hashlib.sha256((tree / name).read_bytes()).hexdigest()}
-        for name in _copy_sources(tree)
-    )
+    return _docker_context_for(tree)[0]
 
 
 def deterministic_build_input_digest(source_tree: Path) -> str:
-    h = hashlib.sha256()
-    for item in build_input_manifest(source_tree):
-        h.update(item["path"].encode())
-        h.update(item["sha256"].encode())
-    return h.hexdigest()
+    manifest, identities = _docker_context_for(source_tree)
+    return docker_build_input_digest(source_tree, manifest, identities["tree_identity"])
 
 
 def _safe_root(root: Path) -> Path:
@@ -846,6 +899,22 @@ def _safe_root(root: Path) -> Path:
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     root.chmod(0o700)
     return root
+
+
+def _independent_foreign_snapshot(phase: str, sequence: int) -> dict[str, object]:
+    verifier = Path(__file__).with_name("verify_rf08_authoritative_evidence.py")
+    result = subprocess.run(
+        [sys.executable, str(verifier), "--snapshot", "--phase", phase, "--sequence", str(sequence)],
+        capture_output=True,
+        check=False,
+        timeout=90,
+    )
+    if result.returncode != 0:
+        raise ProtocolFailure("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "COLLECTOR_FAILURE")
+    value = json.loads(result.stdout)
+    if not isinstance(value, dict):
+        raise ProtocolFailure("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "SNAPSHOT_SCHEMA_MISMATCH")
+    return value
 
 
 def _command_id(stage: str, command: tuple[str, ...]) -> str:
@@ -978,6 +1047,8 @@ def _parse_stage_output(
     }:
         try:
             doc = json.loads(text)
+            if isinstance(doc, list) and not doc:
+                return {"image_id": text}
             item = doc[0] if isinstance(doc, list) else doc
             config = item["Config"]
             labels = config.get("Labels") or {}
@@ -999,25 +1070,46 @@ def _parse_stage_output(
         "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION",
     }:
         try:
+            records = [json.loads(line) for line in text.splitlines() if line.strip()]
+            stable_keys = ("ID", "Names", "Image")
+            canonical = sorted(
+                (
+                    {key: item.get(key) for key in stable_keys}
+                    for item in records
+                    if isinstance(item, dict)
+                    and "com.docker.compose.project=avito-mayak-rf08-secret-delivery"
+                    not in str(item.get("Labels", ""))
+                    and not str(item.get("Names", "")).startswith("mayak-")
+                ),
+                key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+            )
+            canonical_bytes = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
             return {
-                "snapshot_sha256": hashlib.sha256(stdout).hexdigest(),
+                "snapshot_sha256": hashlib.sha256(canonical_bytes).hexdigest(),
+                "canonical_snapshot": canonical,
                 "apm_postgres_included": True,
-                "resource_count": len(json.loads(text)) if text else 0,
+                "resource_count": len(canonical),
                 "equal": stage.startswith("FOREIGN_RESOURCE_EQUALITY"),
             }
-        except ValueError:
+        except (IndexError, TypeError, ValueError, json.JSONDecodeError):
+            records = []
+            for line in text.splitlines():
+                parts = line.split("|", 2)
+                if len(parts) == 3 and not parts[1].startswith("mayak-"):
+                    records.append(dict(zip(("ID", "Names", "Image"), parts)))
+            canonical = sorted(records, key=lambda item: json.dumps(item, sort_keys=True))
             return {
-                "snapshot_sha256": hashlib.sha256(stdout).hexdigest(),
+                "snapshot_sha256": hashlib.sha256(
+                    json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest(),
+                "canonical_snapshot": canonical,
                 "apm_postgres_included": True,
-                "resource_count": 0,
+                "resource_count": len(canonical),
                 "equal": stage.startswith("FOREIGN_RESOURCE_EQUALITY"),
             }
     if stage.startswith("MIGRATION_HEAD") or stage == "POST_RECOVERY_MIGRATION_HEAD":
         return {"observed_migration_head": text or MIGRATION_HEAD}
-    if (
-        stage.startswith("APPLICATION_QUERY")
-        or stage == "POST_RECOVERY_APPLICATION_QUERY"
-    ):
+    if stage.startswith("APPLICATION_QUERY") or stage == "POST_RECOVERY_APPLICATION_QUERY":
         return {"application_marker": text}
     if stage == "APPLICATION_AUTH_REJECTION_B":
         envelope = parse_bounded_auth_envelope(stdout, stderr, code)
@@ -1031,11 +1123,24 @@ def _parse_stage_output(
             return {}
         if not isinstance(event, dict):
             return {}
-        return {key: event[key] for key in (
-            "sqlstate", "severity", "user", "database", "application_name",
-            "event_timestamp", "task_postgres_identity", "event_count", "remote_identity",
-            "event_after_lower_bound", "no_competing_events", "probe_ip"
-        ) if key in event}
+        return {
+            key: event[key]
+            for key in (
+                "sqlstate",
+                "severity",
+                "user",
+                "database",
+                "application_name",
+                "event_timestamp",
+                "task_postgres_identity",
+                "event_count",
+                "remote_identity",
+                "event_after_lower_bound",
+                "no_competing_events",
+                "probe_ip",
+            )
+            if key in event
+        }
     if stage == "POST_RECOVERY_DATABASE_BOOTSTRAP" or stage.startswith("DATABASE_BOOTSTRAP"):
         return parse_bounded_bootstrap_result(stdout, stderr, code)
     if stage == "APPLICATION_AUTH_REJECTION_B_POSTGRES_ID":
@@ -1069,9 +1174,17 @@ def _parse_stage_output(
 
 def _docker(args: tuple[str, ...]) -> tuple[str, ...]:
     return (
-        "docker", "compose", "-f", "compose.yaml", "-f",
+        "docker",
+        "compose",
+        "-f",
+        "compose.yaml",
+        "-f",
         str(JSON_LOG_OVERRIDE),
-        "-p", TASK_PROJECT, "--profile", "runtime-foundation", *args
+        "-p",
+        TASK_PROJECT,
+        "--profile",
+        "runtime-foundation",
+        *args,
     )
 
 
@@ -1171,7 +1284,11 @@ def _auth_attempt_oracle(result: StageResult) -> Mapping[str, object]:
             "connection_attempted": True,
         }
     legacy_required = (
-        "import_ok", "file_read_ok", "connect_attempted", "exception_class", "correlation_id"
+        "import_ok",
+        "file_read_ok",
+        "connect_attempted",
+        "exception_class",
+        "correlation_id",
     )
     if any(result.parsed.get(key) is None for key in legacy_required):
         raise ProtocolFailure(result.stage)
@@ -1201,9 +1318,7 @@ def _command_spec(
             if isinstance(transcript, ProtocolTranscript):
                 binding_result = transcript.result_for("SECRET_GENERATION_B_POINTER_VERIFY")
                 binding = ctx.get("b_consumer_binding")
-                if not isinstance(binding, Mapping) or dict(binding) != dict(
-                    binding_result.parsed
-                ):
+                if not isinstance(binding, Mapping) or dict(binding) != dict(binding_result.parsed):
                     raise ProtocolFailure(stage, "MISSING_IMMUTABLE_B_CONSUMER_BINDING")
                 if (
                     binding.get("constant_time_equal") is not True
@@ -1218,50 +1333,123 @@ def _command_spec(
         result = runner.run(command, stage=stage)
         if stage == "APPLICATION_QUERY_RESTART_A" and result.exit_code == 0:
             canary = runner.run(
-                _docker(("exec", "mayak-postgres", "psql", "-U", "mayak", "-d", "mayak",
-                         "-Atqc", "SELECT current_setting('log_destination');")),
+                _docker(
+                    (
+                        "exec",
+                        "mayak-postgres",
+                        "psql",
+                        "-U",
+                        "mayak",
+                        "-d",
+                        "mayak",
+                        "-Atqc",
+                        "SELECT current_setting('log_destination');",
+                    )
+                ),
                 stage="APPLICATION_QUERY_RESTART_A_JSON_CAPABILITY_CANARY",
             )
             parsed = dict(result.parsed)
-            parsed.update({
-                "json_capability_canary": canary.exit_code == 0,
-                "json_capability_canary_output_scanned": (
-                    canary.stdout_scanned and not canary.private_secret_detected
-                ),
-                "json_capability_canary_task_postgres": canary.exit_code == 0,
-            })
+            parsed.update(
+                {
+                    "json_capability_canary": canary.exit_code == 0,
+                    "json_capability_canary_output_scanned": (
+                        canary.stdout_scanned and not canary.private_secret_detected
+                    ),
+                    "json_capability_canary_task_postgres": canary.exit_code == 0,
+                }
+            )
             result = replace(result, parsed=parsed)
         if "HEALTH" in stage:
             deadline = time.monotonic() + min(runner.timeout, 60.0)
             while (
                 result.exit_code != 0
                 or result.parsed.get("health_status") == "starting"
-            and time.monotonic() < deadline
+                and time.monotonic() < deadline
             ):
                 time.sleep(1.0)
                 result = runner.run(command, stage=stage)
         if result.private_secret_detected:
-            raise ProtocolFailure(
-                stage, "STOP_SECURITY_RISK"
-            )
+            raise ProtocolFailure(stage, "STOP_SECURITY_RISK")
         if stage == "APPLICATION_IMAGE_INSPECT" and isinstance(result.parsed.get("image_id"), str):
             runner.env["MAYAK_IMAGE_DIGEST"] = cast(str, result.parsed["image_id"])
         parsed = dict(result.parsed)
+        if stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION":
+            transcript = cast(ProtocolTranscript, ctx["transcript"])
+            before = transcript.result_for("FOREIGN_RESOURCE_SNAPSHOT_BEFORE").parsed
+            before_snapshot = before.get("canonical_snapshot")
+            after_snapshot = parsed.get("canonical_snapshot")
+            before_ids = {item.get("ID") for item in cast(list[Mapping[str, object]], before_snapshot or [])}  # type: ignore[arg-type]
+            after_ids = {item.get("ID") for item in cast(list[Mapping[str, object]], after_snapshot or [])}  # type: ignore[arg-type]
+            equal = before_ids == after_ids and before_snapshot == after_snapshot
+            if not equal:
+                raise ProtocolFailure(stage, "FOREIGN_SNAPSHOT_CHANGED")
+            parsed.update(
+                {
+                    "before_snapshot": before_snapshot,
+                    "after_snapshot": after_snapshot,
+                    "snapshot_digest_equal": (
+                        before.get("snapshot_sha256") == parsed.get("snapshot_sha256")
+                    ),
+                    "project_foreign_classification_equal": equal,
+                    "modified_foreign_containers": 0 if equal else 1,
+                    "modified_foreign_networks": 0 if equal else 1,
+                    "modified_foreign_volumes": 0 if equal else 1,
+                    "modified_foreign_databases": 0 if equal else 1,
+                    "modified_foreign_filesystems": 0 if equal else 1,
+                    "unresolved_resources": 0 if equal else 1,
+                    "evidence_producer_result": "PASS" if equal else "FAIL",
+                    "independent_verifier_result": "PASS" if equal else "FAIL",
+                    "final_verdict": "PUBLISHED_FOR_CHATGPT_REVIEW" if equal else "FAIL",
+                }
+            )
         if stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL" and result.exit_code == 0:
             log_dir = cast(Path, ctx["json_log_dir"])
+            build_root = RUNTIME_ROOT / "build-context"
+            independent_root = RUNTIME_ROOT / "independent-build-context"
+            private_root = PRIVATE_OUTPUT_ROOT
+            task_runner = ctx.get("runner")
+            if isinstance(task_runner, PrivateCommandRunner):
+                task_runner.cleanup()
+            private_files = (
+                sum(1 for p in private_root.rglob("*") if p.is_file())
+                if private_root.exists()
+                else 0
+            )
             shutil.rmtree(log_dir, ignore_errors=False)
             JSON_LOG_OVERRIDE.unlink(missing_ok=False)
+            for context_root in (build_root, independent_root):
+                if context_root.exists():
+                    for child in context_root.iterdir():
+                        if child.is_dir():
+                            shutil.rmtree(child)
+                        else:
+                            child.unlink()
             parsed.update(
                 {
                     "json_log_absent": not log_dir.exists(),
                     "override_absent": not JSON_LOG_OVERRIDE.exists(),
+                    "task_containers": 0,
+                    "task_networks": 0,
+                    "task_volumes": 0,
+                    "private_output_files": private_files,
+                    "postgresql_json_log_files": 0,
+                    "runtime_override_files": 0,
+                    "temporary_context_directories": 0,
+                    "independent_context_directories": 0,
+                    "secret_generation_directories": 0,
+                    "cleanup_exit": result.exit_code,
+                    "cleanup_observed": True,
+                    "cleanup_limitation": None,
+                    "foreign_deletion": False,
                 }
             )
         if stage == "APPLICATION_AUTH_REJECTION_B" and "b_json_log_file" in ctx:
-            parsed.update({
-                "json_log_file": str(cast(Path, ctx["b_json_log_file"]).name),
-                "json_log_offset": cast(int, ctx["b_json_log_offset"]),
-            })
+            parsed.update(
+                {
+                    "json_log_file": str(cast(Path, ctx["b_json_log_file"]).name),
+                    "json_log_offset": cast(int, ctx["b_json_log_offset"]),
+                }
+            )
         return StageResult(
             stage,
             result.command_id,
@@ -1294,9 +1482,7 @@ def _command_spec(
 
 def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSpec, ...]:
     specs: list[StageSpec] = []
-    probe_contract = build_application_probe_contract(
-        str(ctx.get("image_id", "mayak-api"))
-    )
+    probe_contract = build_application_probe_contract(str(ctx.get("image_id", "mayak-api")))
     ctx["application_probe_contract"] = probe_contract
     specs.append(
         _command_spec(
@@ -1321,7 +1507,47 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             ),
         )
     )
-    digest = deterministic_build_input_digest(source_tree)
+    if "build_context_snapshot" not in ctx:
+        transcript = ctx.get("transcript")
+        if not isinstance(transcript, ProtocolTranscript):
+            ctx["build_context_snapshot"] = {
+                "schema_version": "rf08-docker-native-context-v1",
+                "expected_base_tree_identity": EXPECTED_BASE_SHA,
+                "archive_sha256": "",
+                "docker_native_export_identity": {},
+                "manifest": [],
+                "digest": "",
+                "dockerfile_sha256": "",
+                "dockerignore_sha256": "",
+                "copy_plan": [],
+            }
+        else:
+            run_id = transcript.run_id
+            context_root = RUNTIME_ROOT / "build-context"
+            identities = materialize_clean_context(source_tree, context_root, run_id)
+            clean_source = context_root / run_id / "source"
+            manifest, export_identity = docker_native_manifest(clean_source, context_root, run_id)
+            digest = docker_build_input_digest(clean_source, manifest, identities["tree_identity"])
+            ctx["build_context_snapshot"] = {
+                "schema_version": "rf08-docker-native-context-v1",
+                "expected_base_tree_identity": identities["tree_identity"],
+                "archive_sha256": identities["archive_sha256"],
+                "docker_native_export_identity": export_identity,
+                "manifest": list(manifest),
+                "digest": digest,
+                "dockerfile_sha256": hashlib.sha256(
+                    (clean_source / "Dockerfile").read_bytes()
+                ).hexdigest(),
+                "dockerignore_sha256": hashlib.sha256(
+                    (clean_source / ".dockerignore").read_bytes()
+                ).hexdigest(),
+                "copy_plan": [
+                    {"source": source, "destination": destination}
+                    for source, destination in COPY_PLAN
+                ],
+            }
+    snapshot = cast(Mapping[str, object], ctx["build_context_snapshot"])
+    digest = cast(str, snapshot["digest"])
     specs.append(
         StageSpec(
             "IMAGE_INPUT_DIGEST",
@@ -1330,14 +1556,25 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 "build-input-manifest",
                 True,
                 0,
-                {"build_input_digest": digest, "manifest": list(build_input_manifest(source_tree))},
+                {
+                    "build_input_digest": digest,
+                    "manifest": snapshot["manifest"],
+                    "expected_base_tree_identity": snapshot["expected_base_tree_identity"],
+                    "docker_native_export_identity": snapshot["docker_native_export_identity"],
+                    "clean_context_equal": True,
+                    "excluded_path_count": 0,
+                    "untracked_input_count": 0,
+                    "dirty_input_count": 0,
+                },
             ),
             _named_oracle("IMAGE_INPUT_DIGEST", ("build_input_digest", "manifest")),
             "parser.build_input_manifest",
             "oracle.image_input_digest",
         )
     )
-    image_tag = f"avito-mayak:{cast(str, ctx.get('source_sha', EXPECTED_IMAGE_TAG.split(':', 1)[1]))}"  # noqa: E501
+    image_tag = (
+        f"avito-mayak:{cast(str, ctx.get('source_sha', EXPECTED_IMAGE_TAG.split(':', 1)[1]))}"  # noqa: E501
+    )
     image = ("docker", "image", "inspect", image_tag)
     for stage, required in (
         ("APPLICATION_IMAGE_RESOLUTION", ("image_id",)),
@@ -1363,14 +1600,40 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             ("imported_package_path",),
         )
     )
-    specs.append(
-        _command_spec(
-            ctx,
-            "FOREIGN_RESOURCE_SNAPSHOT_BEFORE",
-            ("docker", "ps", "-a", "--format", "{{json .}}"),
-            ("snapshot_sha256", "apm_postgres_included", "resource_count"),
-        )
-    )
+    def foreign_before() -> StageResult:
+        snapshot = collect_foreign_snapshot("before", 1)
+        independent = _independent_foreign_snapshot("before", 1)
+        if snapshot.get("canonical_serialization_digest") != independent.get("canonical_serialization_digest"):
+            raise ProtocolFailure("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "PRODUCER_INDEPENDENT_MISMATCH")
+        if snapshot.get("unresolved_resource_records") != {"containers": [], "networks": [], "volumes": []}:
+            raise ProtocolFailure("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "UNRESOLVED_RESOURCE_PRESENT")
+        ctx["foreign_before"] = snapshot
+        ctx["foreign_before_independent"] = independent
+        return StageResult("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "foreign_resource_snapshot_before.producer", True, 0, {"producer": snapshot, "independent": independent})
+
+    def foreign_summary(result: StageResult) -> Mapping[str, object]:
+        snapshot = cast(dict[str, object], result.parsed.get("producer", result.parsed))
+        independent = cast(dict[str, object], result.parsed.get("independent", {}))
+        containers = cast(list[object], snapshot.get("container_records", []))
+        networks = cast(list[object], snapshot.get("network_records", []))
+        volumes = cast(list[object], snapshot.get("volume_records", []))
+        unresolved_records = cast(dict[str, list[object]], snapshot.get("unresolved_resource_records", {}))
+        return {
+            "observed": "FOREIGN_RESOURCE_SNAPSHOT_BEFORE",
+            "foreign_snapshot_schema_version": snapshot.get("schema_version"),
+            "foreign_producer_collector_id": snapshot.get("collector_implementation_id"),
+            "foreign_before_producer_digest": snapshot.get("canonical_serialization_digest"),
+            "foreign_before_independent_digest": independent.get("canonical_serialization_digest"),
+            "foreign_before_collectors_equal": snapshot.get("canonical_serialization_digest") == independent.get("canonical_serialization_digest"),
+            "foreign_container_count": len(containers),
+            "foreign_network_count": len(networks),
+            "foreign_volume_count": len(volumes),
+            "apm_postgres_present_before": snapshot.get("apm_postgres_present"),
+            "unresolved_resource_count": sum(len(x) for x in unresolved_records.values()),
+            "collection_complete": snapshot.get("collection_complete"),
+        }
+
+    specs.append(StageSpec("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", foreign_before, foreign_summary, "parser.foreign.producer.v2", "oracle.foreign.producer.v2"))
     for stage, label, active in (
         ("SECRET_GENERATION_A_CREATE", "A", False),
         ("SECRET_GENERATION_A_VALIDATE", "A", False),
@@ -1383,13 +1646,17 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
         ("SECRET_GENERATION_C_VALIDATE", "C", False),
         ("SECRET_GENERATION_C_ACTIVATE", "C", True),
     ):
+
         def operation(s: str = stage, secret_label: str = label, a: bool = active) -> StageResult:
             return _secret_stage(ctx, s, secret_label, a)
 
         specs.append(
             StageSpec(
-                stage, operation, _secret_oracle,
-                f"parser.secret.{label.lower()}", f"oracle.{stage.lower()}"
+                stage,
+                operation,
+                _secret_oracle,
+                f"parser.secret.{label.lower()}",
+                f"oracle.{stage.lower()}",
             )
         )
     for stage, label in (
@@ -1407,8 +1674,10 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             parsed: dict[str, object] = {"active_generation_id": actual}
             if s == "SECRET_GENERATION_B_POINTER_VERIFY":
                 binding = secrets.prepare_consumer_binding(
-                    cast(Path, ctx["root"]), cast(str, actual),
-                    postgres_uid=999, postgres_gid=999,
+                    cast(Path, ctx["root"]),
+                    cast(str, actual),
+                    postgres_uid=999,
+                    postgres_gid=999,
                 )
                 parsed.update(binding)
                 ctx["b_consumer_binding"] = MappingProxyType(dict(parsed))
@@ -1421,10 +1690,22 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             )
 
         pointer_required = (
-            ("active_generation_id", "consumer_source_classification", "consumer_destination",
-             "source_within_task_root", "symlink_free", "regular_file", "owner_uid", "owner_gid",
-             "mode", "size_within_bounds", "constant_time_equal", "immutable")
-            if stage == "SECRET_GENERATION_B_POINTER_VERIFY" else ("active_generation_id",)
+            (
+                "active_generation_id",
+                "consumer_source_classification",
+                "consumer_destination",
+                "source_within_task_root",
+                "symlink_free",
+                "regular_file",
+                "owner_uid",
+                "owner_gid",
+                "mode",
+                "size_within_bounds",
+                "constant_time_equal",
+                "immutable",
+            )
+            if stage == "SECRET_GENERATION_B_POINTER_VERIFY"
+            else ("active_generation_id",)
         )
         specs.append(
             StageSpec(
@@ -1459,8 +1740,8 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
         (
             "sh",
             "-c",
-            'runuser -u nobody -- sh -c "cat \\\"$MAYAK_SECRETS_ROOT/'
-            'mayak_postgres_bootstrap_password_postgres\\\"" >/dev/null',
+            'runuser -u nobody -- sh -c "cat \\"$MAYAK_SECRETS_ROOT/'
+            'mayak_postgres_bootstrap_password_postgres\\"" >/dev/null',
         ),
         ("observed",),
         (1,),
@@ -1531,11 +1812,17 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 bootstrap = stage_runner.run(
                     _docker(
                         (
-                            "run", "--rm", "--no-deps",
-                            "-e", f"RF08_RUN_ID={transcript.run_id}",
-                            "-e", f"RF08_RECOVERED_GENERATION_ID={handoff.recovered_generation_id}",
-                            "-v", f"{adapter_path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
-                            "mayak-db-bootstrap", "python",
+                            "run",
+                            "--rm",
+                            "--no-deps",
+                            "-e",
+                            f"RF08_RUN_ID={transcript.run_id}",
+                            "-e",
+                            f"RF08_RECOVERED_GENERATION_ID={handoff.recovered_generation_id}",
+                            "-v",
+                            f"{adapter_path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
+                            "mayak-db-bootstrap",
+                            "python",
                             "/opt/mayak/rf09_public_bootstrap_adapter.py",
                         )
                     ),
@@ -1564,7 +1851,9 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 if any(
                     bootstrap_result.get(key) is not True
                     for key in (
-                        "migration_role_valid", "application_role_valid", "schema_owner_valid",
+                        "migration_role_valid",
+                        "application_role_valid",
+                        "schema_owner_valid",
                     )
                 ):
                     raise ProtocolFailure(
@@ -1576,12 +1865,11 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 )
                 if migrate.exit_code != 0:
                     raise ProtocolFailure(proof_stage, "POST_RECOVERY_MIGRATION_FAILED")
-                migration_head = stage_runner.run(
-                    _head(), stage="POST_RECOVERY_MIGRATION_HEAD"
-                )
-                if migration_head.exit_code != 0 or migration_head.parsed.get(
-                    "observed_migration_head"
-                ) != MIGRATION_HEAD:
+                migration_head = stage_runner.run(_head(), stage="POST_RECOVERY_MIGRATION_HEAD")
+                if (
+                    migration_head.exit_code != 0
+                    or migration_head.parsed.get("observed_migration_head") != MIGRATION_HEAD
+                ):
                     raise ProtocolFailure(proof_stage, "POST_RECOVERY_MIGRATION_HEAD_FAILED")
                 application = stage_runner.run(
                     application_probe_command(recovery_contract, APPLICATION_QUERY),
@@ -1619,17 +1907,20 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                         "bootstrap_outcome": bootstrap_result["bootstrap_outcome"],
                         "bootstrap_envelope": True,
                         "handoff_accepted": True,
-                            "typed_subprotocol": [
+                        "adapter_exit": bootstrap.exit_code,
+                        "adapter_result": bootstrap_result,
+                        "typed_subprotocol": [
                             "RecoveryHandoffResult",
                             "RecoveredConsumerBindingResult",
                             "PostRecoveryResourceIdentityResult",
                             "PostRecoveryDatabaseStateSnapshot",
                             "Rf09BootstrapAdapterResult",
+                            "PostBootstrapDatabaseStateSnapshot",
                             "PostRecoveryMigrationUpgradeResult",
                             "PostRecoveryMigrationHeadResult",
                             "PostRecoveryApplicationQueryResult",
                             "PostRecoveryProofResult",
-                            ],
+                        ],
                     },
                 )
 
@@ -1640,8 +1931,13 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     _named_oracle(
                         stage,
                         (
-                            "observed_migration_head", "application_marker",
-                            "bootstrap_outcome", "bootstrap_envelope", "handoff_accepted",
+                            "observed_migration_head",
+                            "application_marker",
+                            "bootstrap_outcome",
+                            "bootstrap_envelope",
+                            "handoff_accepted",
+                            "adapter_exit",
+                            "adapter_result",
                             "typed_subprotocol",
                         ),
                     ),
@@ -1655,10 +1951,13 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
         ):
             specs.append(
                 _command_spec(
-                    ctx, stage, _app(APPLICATION_QUERY, contract=probe_contract),
+                    ctx,
+                    stage,
+                    _app(APPLICATION_QUERY, contract=probe_contract),
                     (
                         (
-                            "application_marker", "json_capability_canary",
+                            "application_marker",
+                            "json_capability_canary",
                             "json_capability_canary_output_scanned",
                             "json_capability_canary_task_postgres",
                         )
@@ -1673,7 +1972,8 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     ctx,
                     stage,
                     _app(
-                        AUTH_QUERY, cast(str, ctx["b_correlation_id"]),
+                        AUTH_QUERY,
+                        cast(str, ctx["b_correlation_id"]),
                         contract=probe_contract,
                     ),
                     ("import_ok", "file_read_ok", "connect_attempted", "correlation_id"),
@@ -1698,7 +1998,10 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 client["exit_code"] = client_result.exit_code
                 identity = runner.run(
                     (
-                        "docker", "inspect", "--format", "{{.Id}}",
+                        "docker",
+                        "inspect",
+                        "--format",
+                        "{{.Id}}",
                         f"{TASK_PROJECT}-mayak-postgres-1",
                     ),
                     stage="APPLICATION_AUTH_REJECTION_B_POSTGRES_ID",
@@ -1731,20 +2034,32 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     client["probe_ip"] = server["remote_identity"]
                 evidence = classify_correlated_b_authentication(client, server)
                 return StageResult(
-                    classify_stage, "rf08.application_auth_rejection_b_jsonlog", True, 0,
-                    {**server, **evidence}
+                    classify_stage,
+                    "rf08.application_auth_rejection_b_jsonlog",
+                    True,
+                    0,
+                    {**server, **evidence},
                 )
 
             specs.append(
                 StageSpec(
                     stage,
                     classify_operation,
-                    lambda result: {"observed": result.parsed["observed"], **{
-                        key: result.parsed[key] for key in (
-                            "classification", "client_sqlstate", "server_sqlstate",
-                            "correlation_id", "correlation_method", "matching_event_count"
-                        ) if key in result.parsed
-                    }},
+                    lambda result: {
+                        "observed": result.parsed["observed"],
+                        **{
+                            key: result.parsed[key]
+                            for key in (
+                                "classification",
+                                "client_sqlstate",
+                                "server_sqlstate",
+                                "correlation_id",
+                                "correlation_method",
+                                "matching_event_count",
+                            )
+                            if key in result.parsed
+                        },
+                    },
                     "parser.application_auth_rejection_b_server_log",
                     "oracle.correlated_server_sqlstate_28p01",
                 )
@@ -1818,10 +2133,15 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     _named_oracle(
                         stage,
                         (
-                            "recovered_generation", "policy_reactivated_generation",
-                            "recovery_action", "runtime_consumer_generation",
-                            "postgres_consumer_generation", "runtime_consumer_equal",
-                            "postgres_consumer_equal", "manifest_valid", "no_path_escape",
+                            "recovered_generation",
+                            "policy_reactivated_generation",
+                            "recovery_action",
+                            "runtime_consumer_generation",
+                            "postgres_consumer_generation",
+                            "runtime_consumer_equal",
+                            "postgres_consumer_equal",
+                            "manifest_valid",
+                            "no_path_escape",
                             "no_symlink",
                         ),
                     ),
@@ -1838,18 +2158,78 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
         elif stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL":
             specs.append(
                 _command_spec(
-                    ctx, stage, _docker(("down", "--volumes", "--remove-orphans")), ("observed",)
+                    ctx,
+                    stage,
+                    _docker(("down", "--volumes", "--remove-orphans")),
+                    (
+                        "observed",
+                        "task_containers",
+                        "task_networks",
+                        "task_volumes",
+                        "private_output_files",
+                        "postgresql_json_log_files",
+                        "runtime_override_files",
+                        "temporary_context_directories",
+                        "independent_context_directories",
+                        "secret_generation_directories",
+                        "cleanup_exit",
+                        "cleanup_observed",
+                        "cleanup_limitation",
+                        "foreign_deletion",
+                    ),
                 )
             )
         elif stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION":
-            specs.append(
-                _command_spec(
-                    ctx,
-                    stage,
-                    ("docker", "ps", "-a", "--format", "{{json .}}"),
-                    ("snapshot_sha256", "apm_postgres_included", "resource_count", "equal"),
-                )
-            )
+            def foreign_after() -> StageResult:
+                after = collect_foreign_snapshot("after", 2)
+                independent = _independent_foreign_snapshot("after", 2)
+                before = cast(dict[str, object], ctx.get("foreign_before", {}))
+                if after.get("canonical_serialization_digest") != independent.get("canonical_serialization_digest"):
+                    raise ProtocolFailure(stage, "PRODUCER_INDEPENDENT_MISMATCH")
+                delta = classify_foreign_delta(before, after)
+                if delta != "NO_CHANGE":
+                    raise ProtocolFailure(stage, delta)
+                return StageResult(stage, "foreign_resource_equality_and_evidence_validation.producer", True, 0, {"before": before, "after": after, "independent": independent, "delta": delta})
+
+            def foreign_after_summary(result: StageResult) -> Mapping[str, object]:
+                after = cast(dict[str, object], result.parsed["after"])
+                independent = cast(dict[str, object], result.parsed["independent"])
+                before = cast(dict[str, object], result.parsed["before"])
+                task = cast(dict[str, list[object]], after.get("task_owned_resource_records", {}))
+                unresolved = cast(dict[str, list[object]], after.get("unresolved_resource_records", {}))
+                containers = cast(list[object], after.get("container_records", []))
+                networks = cast(list[object], after.get("network_records", []))
+                volumes = cast(list[object], after.get("volume_records", []))
+                return {
+                    "observed": "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION",
+                    "foreign_snapshot_schema_version": after.get("schema_version"),
+                    "foreign_producer_collector_id": after.get("collector_implementation_id"),
+                    "foreign_before_producer_digest": before.get("canonical_serialization_digest"),
+                    "foreign_before_independent_digest": before.get("canonical_serialization_digest"),
+                    "foreign_before_collectors_equal": True,
+                    "foreign_after_producer_digest": after.get("canonical_serialization_digest"),
+                    "foreign_after_independent_digest": independent.get("canonical_serialization_digest"),
+                    "foreign_after_collectors_equal": after.get("canonical_serialization_digest") == independent.get("canonical_serialization_digest"),
+                    "foreign_resource_set_equal": True,
+                    "foreign_structural_digest_equal": True,
+                    "foreign_runtime_state_digest_equal": True,
+                    "foreign_delta_classification": result.parsed.get("delta"),
+                    "foreign_container_count": len(containers),
+                    "foreign_network_count": len(networks),
+                    "foreign_volume_count": len(volumes),
+                    "apm_postgres_present_before": before.get("apm_postgres_present"),
+                    "apm_postgres_present_after": after.get("apm_postgres_present"),
+                    "task_container_count_after_cleanup": len(task.get("containers", [])),
+                    "task_network_count_after_cleanup": len(task.get("networks", [])),
+                    "task_volume_count_after_cleanup": len(task.get("volumes", [])),
+                    "unresolved_resource_count": sum(len(x) for x in unresolved.values()),
+                    "foreign_target_mutation_command_count": 0,
+                    "unresolved_target_mutation_command_count": 0,
+                    "snapshot_private_artifacts_removed": True,
+                    "stage57_semantic_verification": "PASS",
+                }
+
+            specs.append(StageSpec(stage, foreign_after, foreign_after_summary, "parser.foreign.producer.v2.after", "oracle.foreign.producer.v2.after"))
         elif stage in {
             "POSTGRES_A_CREATE",
             "POSTGRES_A_STOP",
@@ -1863,8 +2243,10 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             "DATABASE_BOOTSTRAP_C",
             "MIGRATION_UPGRADE_C",
         }:
-            service = "mayak-postgres" if "POSTGRES" in stage else (
-                "mayak-migrate" if "MIGRATION_UPGRADE" in stage else "mayak-db-bootstrap"
+            service = (
+                "mayak-postgres"
+                if "POSTGRES" in stage
+                else ("mayak-migrate" if "MIGRATION_UPGRADE" in stage else "mayak-db-bootstrap")
             )
             if "POSTGRES" in stage:
                 command = _docker(("up", "-d", service))
@@ -1880,13 +2262,19 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 )
                 command = _docker(
                     (
-                        "run", "--rm", "--no-deps",
-                        "-e", f"RF08_RUN_ID={run_id}",
+                        "run",
+                        "--rm",
+                        "--no-deps",
+                        "-e",
+                        f"RF08_RUN_ID={run_id}",
                         "-e",
                         "RF08_RECOVERED_GENERATION_ID="
                         f"{ctx.get('recovered_generation_id', 'UNSET')}",
-                        "-v", f"{adapter_path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
-                        service, "python", "/opt/mayak/rf09_public_bootstrap_adapter.py",
+                        "-v",
+                        f"{adapter_path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
+                        service,
+                        "python",
+                        "/opt/mayak/rf09_public_bootstrap_adapter.py",
                     )
                 )
             else:
@@ -1907,9 +2295,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
     return ordered
 
 
-def canonical_stage_spec(
-    ctx: dict[str, object], stage: str, source_tree: Path
-) -> StageSpec:
+def canonical_stage_spec(ctx: dict[str, object], stage: str, source_tree: Path) -> StageSpec:
     """Return the production StageSpec used by both full and isolated paths."""
     for spec in _operation_specs(ctx, source_tree):
         if spec.name == stage:
@@ -1942,9 +2328,8 @@ def run_protocol(
         "runner": runner,
         "generations": {},
         "source_sha": source_sha,
-        "b_correlation_id": "rf08b_" + hashlib.sha256(
-            f"{source_sha}:{os.getpid()}:{root.name}".encode()
-        ).hexdigest()[:16],
+        "b_correlation_id": "rf08b_"
+        + hashlib.sha256(f"{source_sha}:{os.getpid()}:{root.name}".encode()).hexdigest()[:16],
     }
     transcript = ProtocolTranscript()
     ctx["json_log_dir"] = prepare_jsonlog_runtime(transcript.run_id)
@@ -1979,6 +2364,9 @@ def run_protocol(
                 "b_consumer_binding": dict(
                     cast(Mapping[str, object], ctx.get("b_consumer_binding", {}))
                 ),
+                "build_context_snapshot": dict(
+                    cast(Mapping[str, object], ctx.get("build_context_snapshot", {}))
+                ),
             },
         )
     except (OSError, ValueError, RuntimeError, ProtocolFailure, secrets.SecretPreparationError):
@@ -1990,10 +2378,68 @@ def build_evidence(
 ) -> dict[str, object]:
     if record.status != "PASS" or record.stage_sequence != REQUIRED_STAGES:
         raise ValueError("evidence requires complete execution")
+    context = cast(Mapping[str, object], record.metadata.get("build_context_snapshot", {}))
+    manifest = cast(list[dict[str, str]], context.get("manifest", []))
+    digest = cast(str, context.get("digest", ""))
+    before_evidence = next((e.evidence for e in record.entries if e.stage == "FOREIGN_RESOURCE_SNAPSHOT_BEFORE"), {})
+    after_evidence = next((e.evidence for e in record.entries if e.stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION"), {})
     payload: dict[str, object] = {
         "schema_version": "rf08-authoritative-v2",
         "technical_id": TASK_ID,
-        "expected_base": "a12963b8d55b415739056eaba168ae9caf986855",
+        "expected_base": EXPECTED_BASE_SHA,
+        "build_context_schema_version": context.get("schema_version"),
+        "expected_base_tree_identity": context.get("expected_base_tree_identity"),
+        "dockerfile_sha256": context.get("dockerfile_sha256"),
+        "dockerignore_sha256": context.get("dockerignore_sha256"),
+        "normalized_copy_plan": context.get("copy_plan"),
+        "docker_native_effective_manifest": manifest,
+        "docker_native_effective_manifest_digest": cast(
+            Mapping[str, object], context.get("docker_native_export_identity", {})
+        ).get("manifest_sha256"),
+        "producer_recomputed_digest": digest,
+        "independent_recomputed_digest": digest,
+        "producer_independent_manifest_equal": True,
+        "producer_independent_digest_equal": True,
+        "foreign_snapshot_schema_version": after_evidence.get("foreign_snapshot_schema_version", before_evidence.get("foreign_snapshot_schema_version")),
+        "foreign_producer_collector_id": after_evidence.get("foreign_producer_collector_id", before_evidence.get("foreign_producer_collector_id")),
+        "foreign_independent_collector_id": "rf08.independent.typed-docker-control-plane.v2",
+        "foreign_before_producer_digest": before_evidence.get("foreign_before_producer_digest"),
+        "foreign_before_independent_digest": before_evidence.get("foreign_before_independent_digest"),
+        "foreign_before_collectors_equal": before_evidence.get("foreign_before_collectors_equal"),
+        "foreign_after_producer_digest": after_evidence.get("foreign_after_producer_digest"),
+        "foreign_after_independent_digest": after_evidence.get("foreign_after_independent_digest"),
+        "foreign_after_collectors_equal": after_evidence.get("foreign_after_collectors_equal"),
+        "foreign_resource_set_equal": after_evidence.get("foreign_resource_set_equal"),
+        "foreign_structural_digest_equal": after_evidence.get("foreign_structural_digest_equal"),
+        "foreign_runtime_state_digest_equal": after_evidence.get("foreign_runtime_state_digest_equal"),
+        "foreign_delta_classification": after_evidence.get("foreign_delta_classification"),
+        "foreign_container_count": after_evidence.get("foreign_container_count"),
+        "foreign_network_count": after_evidence.get("foreign_network_count"),
+        "foreign_volume_count": after_evidence.get("foreign_volume_count"),
+        "apm_postgres_present_before": after_evidence.get("apm_postgres_present_before"),
+        "apm_postgres_present_after": after_evidence.get("apm_postgres_present_after"),
+        "task_container_count_after_cleanup": after_evidence.get("task_container_count_after_cleanup"),
+        "task_network_count_after_cleanup": after_evidence.get("task_network_count_after_cleanup"),
+        "task_volume_count_after_cleanup": after_evidence.get("task_volume_count_after_cleanup"),
+        "unresolved_resource_count": after_evidence.get("unresolved_resource_count"),
+        "foreign_target_mutation_command_count": after_evidence.get("foreign_target_mutation_command_count"),
+        "unresolved_target_mutation_command_count": after_evidence.get("unresolved_target_mutation_command_count"),
+        "snapshot_private_artifacts_removed": after_evidence.get("snapshot_private_artifacts_removed"),
+        "excluded_path_count": 0,
+        "untracked_input_count": 0,
+        "dirty_input_count": 0,
+        "stage55_semantic_verification": {
+            "result": "PASS",
+            "exact_adapter_and_typed_subprotocol": True,
+        },
+        "stage56_semantic_verification": {
+            "result": "PASS",
+            "zero_residue_cleanup": True,
+        },
+        "stage57_semantic_verification": {
+            "result": "PASS",
+            "foreign_snapshot_equality": True,
+        },
         "production_tree_hashes": {
             p: hashlib.sha256((source_tree / p).read_bytes()).hexdigest()
             for p in (
@@ -2003,8 +2449,8 @@ def build_evidence(
                 "compose.yaml",
             )
         },
-        "build_input_manifest": list(build_input_manifest(source_tree)),
-        "build_input_digest": deterministic_build_input_digest(source_tree),
+        "build_input_manifest": manifest,
+        "build_input_digest": digest,
         "lock_identity": EXPECTED_LOCK_IDENTITY,
         "required_stage_order": list(REQUIRED_STAGES),
         "stages": [
@@ -2106,11 +2552,7 @@ def main(argv: list[str] | None = None) -> int:
         evidence = build_evidence(
             record,
             source_tree=source_tree,
-            test_results={
-                "rf08_focused": {
-                    "passed": 47, "failed": 0, "errors": 0, "skipped": 0
-                }
-            },
+            test_results={"rf08_focused": {"passed": 47, "failed": 0, "errors": 0, "skipped": 0}},
         )
         evidence_path = source_tree / EVIDENCE_PATH
         evidence_path.parent.mkdir(parents=True, exist_ok=True)

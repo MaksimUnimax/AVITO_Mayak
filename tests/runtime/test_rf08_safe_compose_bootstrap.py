@@ -190,7 +190,8 @@ def test_build_input_digest_follows_copy_inputs_and_includes_readme() -> None:
     manifest = build_input_manifest(tree)
     paths = {item["path"] for item in manifest}
     assert "README.md" in paths
-    assert "Dockerfile" in paths
+    assert "Dockerfile" not in paths
+    assert not any("__pycache__" in path or path.endswith((".pyc", ".pyo")) for path in paths)
     assert deterministic_build_input_digest(tree)
 
 

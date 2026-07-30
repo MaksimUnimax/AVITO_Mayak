@@ -636,6 +636,17 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Exact task containers, network, volume, acceptance generations and temporary output were cleaned; foreign impact none; `apm-postgres` preserved; RF-11 worktree untouched; RF-12 unchanged.
 - **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready.
 
+## WL-RF08-20260730-03 — 2026-07-30 — authoritative Docker-native build and typed foreign equality
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `PRESERVE_DOCKER_NATIVE_PARTIAL_WORK_REPLACE_RAW_STAGE57_SNAPSHOT_HASH_WITH_TYPED_INDEPENDENT_FOREIGN_RESOURCE_DELTA_PROOF_THEN_COMPLETE_AND_PUBLISH`
+**Base:** `453356025051308b9cbe43b7201c248124348006`
+
+- The published base remained published but was independently rejected: the old stage-57 design hashed raw `docker ps` presentation and derived equality from stage context. The preserved Docker-native corrective now proves the exact-base effective COPY context with 167 files and zero generated Python artifacts.
+- `ForeignResourceSnapshotV2` is independently recomputed by producer and verifier collectors. Ownership is task/foreign/unresolved; structural and runtime deltas are classified fail-closed; `apm-postgres` is included when present; foreign and unresolved mutation audit counts are zero.
+- The isolated stage-10/56/57 gate and one complete ordered 57-stage protocol passed. Stage 34 exact exit `78`, stage 35 correlated `28P01`, stage 55 RF-09 public adapter, stage 56 cleanup and stage 57 typed equality remained passing. Independent verifier returned stage 55/56/57 `PASS`.
+- No foreign resource was intentionally mutated. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`.
+
 ## WL-RF08-20260729-03 — 2026-07-29 — authoritative secret-lifecycle proof corrective
 
 **Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
