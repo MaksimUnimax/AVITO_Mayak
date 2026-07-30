@@ -7,6 +7,7 @@ import hashlib
 import json
 import subprocess
 import uuid
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
@@ -91,7 +92,7 @@ class DockerInvocationPlan:
 @dataclass(frozen=True)
 class ReadOnlyDockerQuery(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "ReadOnlyDockerQuery":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "ReadOnlyDockerQuery":
         if plan.is_mutation:
             raise ValueError("mutation plan is not a read-only query")
         return cls(
@@ -113,13 +114,13 @@ class ReadOnlyDockerQuery(DockerInvocationPlan):
         plan = _direct_plan(tuple(argv))
         if plan.is_mutation:
             raise ValueError("mutation command is not read-only")
-        return cls.from_plan(plan)
+        return cls._from_plan(plan)
 
 
 @dataclass(frozen=True)
 class ComposeOperationPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "ComposeOperationPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "ComposeOperationPlan":
         if plan.command_class not in {
             DockerCommandClass.COMPOSE_CREATE,
             DockerCommandClass.COMPOSE_UP,
@@ -128,7 +129,6 @@ class ComposeOperationPlan(DockerInvocationPlan):
             DockerCommandClass.COMPOSE_RESTART,
             DockerCommandClass.COMPOSE_RUN,
             DockerCommandClass.COMPOSE_RM,
-            DockerCommandClass.COMPOSE_DOWN,
         }:
             raise ValueError("not a compose mutation plan")
         return cls(
@@ -149,7 +149,7 @@ class ComposeOperationPlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class ContainerProbeCreationPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "ContainerProbeCreationPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "ContainerProbeCreationPlan":
         if plan.command_class != DockerCommandClass.DIRECT_RUN:
             raise ValueError("not a direct run plan")
         return cls(
@@ -170,7 +170,7 @@ class ContainerProbeCreationPlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class ContainerRemovalPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "ContainerRemovalPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "ContainerRemovalPlan":
         if plan.command_class != DockerCommandClass.DIRECT_CONTAINER_RM:
             raise ValueError("not a direct container removal plan")
         return cls(
@@ -191,7 +191,7 @@ class ContainerRemovalPlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class ImageBuildPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "ImageBuildPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "ImageBuildPlan":
         if plan.command_class != DockerCommandClass.IMAGE_BUILD:
             raise ValueError("not an image build plan")
         return cls(
@@ -212,7 +212,7 @@ class ImageBuildPlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class ImageLoadPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "ImageLoadPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "ImageLoadPlan":
         if plan.command_class != DockerCommandClass.IMAGE_LOAD:
             raise ValueError("not an image load plan")
         return cls(
@@ -233,7 +233,7 @@ class ImageLoadPlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class BuildxManifestPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "BuildxManifestPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "BuildxManifestPlan":
         if plan.command_class != DockerCommandClass.BUILDX_BUILD:
             raise ValueError("not a buildx manifest plan")
         return cls(
@@ -254,7 +254,7 @@ class BuildxManifestPlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class BuilderScopePlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "BuilderScopePlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "BuilderScopePlan":
         if plan.command_class not in {
             DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
             DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
@@ -278,7 +278,7 @@ class BuilderScopePlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class NetworkCreationPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "NetworkCreationPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "NetworkCreationPlan":
         if plan.command_class not in {
             DockerCommandClass.NETWORK_CREATE,
             DockerCommandClass.NETWORK_RM,
@@ -302,7 +302,7 @@ class NetworkCreationPlan(DockerInvocationPlan):
 @dataclass(frozen=True)
 class VolumeCreationPlan(DockerInvocationPlan):
     @classmethod
-    def from_plan(cls, plan: DockerInvocationPlan) -> "VolumeCreationPlan":
+    def _from_plan(cls, plan: DockerInvocationPlan) -> "VolumeCreationPlan":
         if plan.command_class not in {
             DockerCommandClass.VOLUME_CREATE,
             DockerCommandClass.VOLUME_RM,
@@ -328,7 +328,9 @@ class ResolvedTaskResourceCapability:
     gateway_instance_id: str
     issuance_id: str
     seal: str
+    command_class: str
     resource_kind: str
+    resource_name: str | None
     immutable_identity_hash: str
     resource_name_hash: str
     project_identity: str
@@ -340,12 +342,21 @@ class ResolvedTaskResourceCapability:
     topology_digest: str
     label_set_digest: str
     allowed_operations: tuple[str, ...]
+    compose_file: str | None = None
+    compose_file_digest: str | None = None
+    compose_source_identity: str | None = None
+    compose_generation_identity: str | None = None
+    issue_sequence: int = 0
+    issued_at_ns: int = 0
+    single_use: bool = True
 
     def safe_dict(self) -> dict[str, object]:
         return {
             "gateway_instance_id": self.gateway_instance_id,
             "issuance_id": self.issuance_id,
+            "command_class": self.command_class,
             "resource_kind": self.resource_kind,
+            "resource_name": self.resource_name,
             "immutable_identity_hash": self.immutable_identity_hash,
             "resource_name_hash": self.resource_name_hash,
             "project_identity": self.project_identity,
@@ -357,6 +368,13 @@ class ResolvedTaskResourceCapability:
             "topology_digest": self.topology_digest,
             "label_set_digest": self.label_set_digest,
             "allowed_operations": list(self.allowed_operations),
+            "compose_file": self.compose_file,
+            "compose_file_digest": self.compose_file_digest,
+            "compose_source_identity": self.compose_source_identity,
+            "compose_generation_identity": self.compose_generation_identity,
+            "issue_sequence": self.issue_sequence,
+            "issued_at_ns": self.issued_at_ns,
+            "single_use": self.single_use,
         }
 
 
@@ -537,6 +555,29 @@ def _canonical_compose_identity(
     return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
 
+def _compose_file_identity(path: str) -> tuple[str, str, str, str]:
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        raise ValueError("compose file must be absolute")
+    if candidate.is_symlink() or any(parent.is_symlink() for parent in candidate.parents):
+        raise ValueError("compose file traversal mismatch")
+    resolved = candidate.resolve(strict=True)
+    repo_compose = Path(__file__).resolve().parents[2] / "compose.yaml"
+    runtime_compose = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml")
+    allowed = {
+        repo_compose.resolve(strict=True): ("repository", "source"),
+    }
+    if runtime_compose.exists():
+        allowed[runtime_compose.resolve(strict=True)] = ("runtime", "generated")
+    if resolved not in allowed:
+        raise ValueError("compose file identity mismatch")
+    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    source_kind, generation_kind = allowed[resolved]
+    source_identity = _sha256(f"{source_kind}:{resolved}:{digest}")
+    generation_identity = _sha256(f"{generation_kind}:{resolved}:{digest}")
+    return str(resolved), digest, source_identity, generation_identity
+
+
 def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if len(argv) < 3 or argv[0] != "docker" or argv[1] != "compose":
         raise ValueError("not a compose invocation")
@@ -578,13 +619,9 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         raise ValueError("compose command missing")
     if len(file_values) != 1 or len(project_values) != 1 or len(profile_values) != 1:
         raise ValueError("compose binding incomplete")
-    compose_file = Path(file_values[0])
-    if not compose_file.is_absolute():
-        raise ValueError("compose file must be absolute")
     if project_values[0] != TASK_PROJECT:
         raise ValueError("compose project mismatch")
-    if compose_file.name not in {COMPOSE_FILE, "compose.runtime.yaml"}:
-        raise ValueError("compose file mismatch")
+    compose_resolved, _compose_digest, _compose_source_identity, _compose_generation_identity = _compose_file_identity(file_values[0])
     if profile_values[0] != RUNTIME_PROFILE:
         raise ValueError("compose profile mismatch")
     if command == "version":
@@ -598,12 +635,12 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command, None, file_values[0], project_values[0], profile_values[0]
             ),
             is_mutation=False,
-            compose_file=file_values[0],
+            compose_file=compose_resolved,
             project_name=project_values[0],
             profile=profile_values[0],
             command=command,
             exact_options=(
-                ("-f", file_values[0]),
+                ("-f", compose_resolved),
                 ("-p", project_values[0]),
                 ("--profile", profile_values[0]),
             ),
@@ -619,17 +656,19 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command, None, file_values[0], project_values[0], profile_values[0]
             ),
             is_mutation=False,
-            compose_file=file_values[0],
+            compose_file=compose_resolved,
             project_name=project_values[0],
             profile=profile_values[0],
             command=command,
             exact_options=(
-                ("-f", file_values[0]),
+                ("-f", compose_resolved),
                 ("-p", project_values[0]),
                 ("--profile", profile_values[0]),
                 ("--format", "json"),
             ),
         )
+    if command == "down":
+        raise ValueError("compose down is disabled")
     if command == "ps":
         if remainder not in {(), ("-q",), ("--quiet",)}:
             raise ValueError("compose ps mismatch")
@@ -641,12 +680,12 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command, None, file_values[0], project_values[0], profile_values[0]
             ),
             is_mutation=False,
-            compose_file=file_values[0],
+            compose_file=compose_resolved,
             project_name=project_values[0],
             profile=profile_values[0],
             command=command,
             exact_options=(
-                ("-f", file_values[0]),
+                ("-f", compose_resolved),
                 ("-p", project_values[0]),
                 ("--profile", profile_values[0]),
             ),
@@ -700,7 +739,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 ("--profile", profile_values[0]),
             ),
         )
-    if command in {"create", "up", "start", "stop", "restart", "run", "rm", "down"}:
+    if command in {"create", "up", "start", "stop", "restart", "run", "rm"}:
         options_with_value = {
             "--name",
             "--entrypoint",
@@ -743,25 +782,19 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 raise ValueError("compose command option mismatch")
             positional.append(token)
             index += 1
-        if command == "down":
-            if positional:
-                raise ValueError("compose down operands mismatch")
-            if flags != {"--volumes", "--remove-orphans"}:
-                raise ValueError("compose down flags mismatch")
-        else:
-            if not positional:
-                raise ValueError("compose service missing")
-            if any(service not in ALLOWED_SERVICES for service in positional[:1]):
-                raise ValueError("compose service mismatch")
-            if command == "up" and not ({"-d", "--detach"} & flags):
-                raise ValueError("compose up flags mismatch")
-            if command == "rm" and not ({"-f", "--force"} & flags):
-                raise ValueError("compose rm flags mismatch")
-            if command == "run":
-                if flags not in ({"--rm"}, {"--rm", "--no-deps"}):
-                    raise ValueError("compose run flags mismatch")
-                if "-d" in flags or "--detach" in flags:
-                    raise ValueError("compose run flags mismatch")
+        if not positional:
+            raise ValueError("compose service missing")
+        if any(service not in ALLOWED_SERVICES for service in positional[:1]):
+            raise ValueError("compose service mismatch")
+        if command == "up" and not ({"-d", "--detach"} & flags):
+            raise ValueError("compose up flags mismatch")
+        if command == "rm" and not ({"-f", "--force"} & flags):
+            raise ValueError("compose rm flags mismatch")
+        if command == "run":
+            if flags not in ({"--rm"}, {"--rm", "--no-deps"}):
+                raise ValueError("compose run flags mismatch")
+            if "-d" in flags or "--detach" in flags:
+                raise ValueError("compose run flags mismatch")
         return ComposeOperationPlan(
             argv=argv,
             command_class={
@@ -772,24 +805,23 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 "restart": DockerCommandClass.COMPOSE_RESTART,
                 "run": DockerCommandClass.COMPOSE_RUN,
                 "rm": DockerCommandClass.COMPOSE_RM,
-                "down": DockerCommandClass.COMPOSE_DOWN,
             }[command],
             target_kind="compose_project",
             target_identity_hash=_canonical_compose_identity(
                 command,
                 positional[0] if positional else None,
-                file_values[0],
+                compose_resolved,
                 project_values[0],
                 profile_values[0],
             ),
             is_mutation=True,
-            compose_file=file_values[0],
+            compose_file=compose_resolved,
             project_name=project_values[0],
             profile=profile_values[0],
             command=command,
             service=positional[0] if positional else None,
             exact_options=(
-                ("-f", file_values[0]),
+                ("-f", compose_resolved),
                 ("-p", project_values[0]),
                 ("--profile", profile_values[0]),
             ),
@@ -1053,11 +1085,13 @@ def classify_docker_argv(argv: Iterable[str]) -> DockerCommandClass:
         return DockerCommandClass.UNKNOWN_DOCKER_COMMAND
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _CapabilityIssuance:
     capability: ResolvedTaskResourceCapability
     authorization: DockerMutationRecord
     audit: DockerInvocationAuditRecord
+    plan: DockerInvocationPlan
+    consumed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1115,7 +1149,6 @@ class MutationAuthority:
             DockerCommandClass.COMPOSE_RESTART,
             DockerCommandClass.COMPOSE_RUN,
             DockerCommandClass.COMPOSE_RM,
-            DockerCommandClass.COMPOSE_DOWN,
         }:
             return f"{self.task_project}-{plan.service}-1" if plan.service else self.task_project
         if plan.command_class in {
@@ -1409,17 +1442,11 @@ class MutationAuthority:
             DockerCommandClass.COMPOSE_RESTART,
             DockerCommandClass.COMPOSE_RUN,
             DockerCommandClass.COMPOSE_RM,
-            DockerCommandClass.COMPOSE_DOWN,
         }:
             labels = self._resolved_labels(plan, service=plan.service)
             record = self._inspect_kind("container", resource_name) if resource_name else None
             if plan.service == "apm-postgres":
                 ownership = "FOREIGN"
-            elif (
-                plan.command_class == DockerCommandClass.COMPOSE_DOWN
-                and resource_name == self.task_project
-            ):
-                ownership = "TASK_OWNED"
             elif record is not None:
                 raw_labels = record.get("Config", {}).get("Labels", {})
                 if not isinstance(raw_labels, dict):
@@ -1445,7 +1472,6 @@ class MutationAuthority:
                 DockerCommandClass.COMPOSE_RESTART,
                 DockerCommandClass.COMPOSE_RUN,
                 DockerCommandClass.COMPOSE_RM,
-                DockerCommandClass.COMPOSE_DOWN,
             }:
                 ownership = "TASK_OWNED"
             else:
@@ -1712,7 +1738,6 @@ class MutationAuthority:
             DockerCommandClass.COMPOSE_RESTART,
             DockerCommandClass.COMPOSE_RUN,
             DockerCommandClass.COMPOSE_RM,
-            DockerCommandClass.COMPOSE_DOWN,
             DockerCommandClass.DIRECT_RUN,
             DockerCommandClass.DIRECT_CONTAINER_RM,
             DockerCommandClass.NETWORK_CREATE,
@@ -1753,11 +1778,26 @@ class MutationAuthority:
         audit: DockerInvocationAuditRecord,
         authorization: DockerMutationRecord,
     ) -> ResolvedTaskResourceCapability:
+        compose_path = compose_digest = compose_source_identity = compose_generation_identity = None
+        if plan.command_class in {
+            DockerCommandClass.COMPOSE_CREATE,
+            DockerCommandClass.COMPOSE_UP,
+            DockerCommandClass.COMPOSE_START,
+            DockerCommandClass.COMPOSE_STOP,
+            DockerCommandClass.COMPOSE_RESTART,
+            DockerCommandClass.COMPOSE_RUN,
+            DockerCommandClass.COMPOSE_RM,
+        } and plan.compose_file:
+            compose_path, compose_digest, compose_source_identity, compose_generation_identity = (
+                _compose_file_identity(plan.compose_file)
+            )
         capability = ResolvedTaskResourceCapability(
             gateway_instance_id=self.gateway_instance_id,
             issuance_id=uuid.uuid4().hex,
             seal=uuid.uuid4().hex,
+            command_class=plan.command_class.value,
             resource_kind=details.resource_kind,
+            resource_name=details.resource_name,
             immutable_identity_hash=details.immutable_identity_hash,
             resource_name_hash=details.resource_name_hash,
             project_identity=details.project_identity,
@@ -1769,11 +1809,19 @@ class MutationAuthority:
             topology_digest=details.topology_digest,
             label_set_digest=details.label_set_digest,
             allowed_operations=details.allowed_operations,
+            compose_file=compose_path,
+            compose_file_digest=compose_digest,
+            compose_source_identity=compose_source_identity,
+            compose_generation_identity=compose_generation_identity,
+            issue_sequence=authorization.authorization_sequence,
+            issued_at_ns=time.monotonic_ns(),
+            single_use=True,
         )
         self._issued_capabilities[capability.issuance_id] = _CapabilityIssuance(
             capability=capability,
             authorization=authorization,
             audit=audit,
+            plan=plan,
         )
         return capability
 
@@ -1866,12 +1914,57 @@ class MutationAuthority:
         )
         return audit, authorization, capability
 
-    def authorize(
-        self, plan: DockerInvocationPlan, *, stage: str
+    def issue_from_argv(
+        self, argv: Sequence[str], *, stage: str
     ) -> ResolvedTaskResourceCapability:
+        plan = _direct_plan(tuple(argv))
         if not plan.is_mutation:
             raise ValueError("read-only command is not a mutation")
         _, _, capability = self._resolve_and_authorize(plan, stage=stage)
+        return capability
+
+    def authorize(
+        self, capability: ResolvedTaskResourceCapability, *, stage: str
+    ) -> ResolvedTaskResourceCapability:
+        if not isinstance(capability, ResolvedTaskResourceCapability):
+            raise TypeError("sealed capability required")
+        issuance = self._issued_capabilities.get(capability.issuance_id)
+        if issuance is None or issuance.capability is not capability:
+            raise PermissionError("unknown capability issuance")
+        plan = issuance.plan
+        if capability.command_class != plan.command_class.value:
+            raise PermissionError("capability operation mismatch")
+        details = self._current_resolution(plan)
+        expected = {
+            "resource_kind": details.resource_kind,
+            "resource_name": details.resource_name,
+            "immutable_identity_hash": details.immutable_identity_hash,
+            "resource_name_hash": details.resource_name_hash,
+            "project_identity": details.project_identity,
+            "technical_id": details.technical_id,
+            "owner_labels_digest": details.owner_labels_digest,
+            "service_identity": details.service_identity,
+            "driver": details.driver,
+            "scope": details.scope,
+            "topology_digest": details.topology_digest,
+            "label_set_digest": details.label_set_digest,
+        }
+        for key, value in expected.items():
+            if getattr(capability, key) != value:
+                raise PermissionError("stale or mismatched capability")
+        if plan.compose_file is not None:
+            compose_path, compose_digest, compose_source_identity, compose_generation_identity = (
+                _compose_file_identity(plan.compose_file)
+            )
+            if (
+                capability.compose_file != compose_path
+                or capability.compose_file_digest != compose_digest
+                or capability.compose_source_identity != compose_source_identity
+                or capability.compose_generation_identity != compose_generation_identity
+            ):
+                raise PermissionError("stale or mismatched capability")
+        if details.ownership != "TASK_OWNED":
+            raise PermissionError("capability no longer authorized")
         return capability
 
     def _record_result(
@@ -1908,10 +2001,9 @@ class MutationAuthority:
 
     def execute(
         self,
-        plan: DockerInvocationPlan,
+        capability: ResolvedTaskResourceCapability,
         *,
         stage: str,
-        capability: ResolvedTaskResourceCapability | None = None,
         stdin: Any = None,
         stdout: Any = None,
         stderr: Any = None,
@@ -1920,74 +2012,15 @@ class MutationAuthority:
         text: bool = False,
         capture_output: bool = False,
     ) -> subprocess.CompletedProcess[Any]:
-        if not plan.is_mutation:
-            raise ValueError("read-only command is not a mutation")
-        if capability is None:
-            capability = self.authorize(plan, stage=stage)
-        else:
-            audit = self._record_audit(plan, stage=stage)
-            details = self._current_resolution(plan)
-            try:
-                issuance = self._validate_capability(capability, plan)
-            except PermissionError:
-                self._record_authorization(
-                    plan=plan,
-                    stage=stage,
-                    audit=audit,
-                    details=details,
-                    outcome="REJECTED",
-                )
-                raise
-            authorization = issuance.authorization
-            # The validation above proves the capability still matches the current resource.
-            try:
-                completed = self._run_subprocess(
-                    plan.argv,
-                    stdin=stdin,
-                    stdout=stdout,
-                    stderr=stderr,
-                    timeout=timeout,
-                    check=check,
-                    text=text,
-                    capture_output=capture_output,
-                )
-            except subprocess.TimeoutExpired:
-                self._record_result(
-                    authorization,
-                    exit_code=None,
-                    completed=False,
-                    timed_out=True,
-                    failure_classification="TimeoutExpired",
-                )
-                raise
-            except OSError as exc:
-                self._record_result(
-                    authorization,
-                    exit_code=None,
-                    completed=False,
-                    timed_out=False,
-                    failure_classification=type(exc).__name__,
-                )
-                raise
-            except subprocess.CalledProcessError as exc:
-                self._record_result(
-                    authorization,
-                    exit_code=exc.returncode,
-                    completed=True,
-                    timed_out=False,
-                    failure_classification=type(exc).__name__,
-                )
-                raise
-            else:
-                self._record_result(
-                    authorization,
-                    exit_code=completed.returncode,
-                    completed=True,
-                    timed_out=False,
-                    failure_classification=None,
-                )
-                return completed
-        issuance = self._issued_capabilities[capability.issuance_id]
+        if not isinstance(capability, ResolvedTaskResourceCapability):
+            raise TypeError("sealed capability required")
+        issuance = self._issued_capabilities.get(capability.issuance_id)
+        if issuance is None or issuance.capability is not capability:
+            raise PermissionError("unknown capability issuance")
+        if issuance.consumed and capability.single_use:
+            raise PermissionError("capability already consumed")
+        plan = issuance.plan
+        self.authorize(capability, stage=stage)
         authorization = issuance.authorization
         try:
             completed = self._run_subprocess(
@@ -2035,6 +2068,7 @@ class MutationAuthority:
                 timed_out=False,
                 failure_classification=None,
             )
+            issuance.consumed = True
             return completed
 
     def run(

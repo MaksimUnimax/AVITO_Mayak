@@ -725,3 +725,13 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - The recovered-generation handoff now reaches the bootstrap adapter on the full protocol path, the exact POSTGRES_A_CREATE conflict was removed only through task-owned sanitation, and the 57-stage replay completed successfully.
 - Regenerated source-bound evidence passed the independent verifier. Commit and push remained pending at the time of this note; publication bookkeeping followed afterward.
 - RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`.
+
+## WL-RF08-20260730-09 — 2026-07-30 — sealed-plan provenance, exact-base binding and fail-closed compose identity
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `REPLACE_CALLER_FORGEABLE_MUTATION_PLANS_WITH_GATEWAY_ISSUED_SEALED_SEMANTIC_INTENTS_BIND_ALL_BUILD_AND_REGRESSION_EVIDENCE_TO_481536_AND_MAKE_CANONICAL_INVENTORY_FAIL_CLOSED`
+**Base:** `481536417ed950a9b89a2940e14578b71eaf6cc7`
+
+- Public mutation-plan authorization and execution paths were sealed behind gateway-issued intents; compose binding now checks exact path/digest identity and rejects missing or symlinked paths.
+- The RF-08 focused runtime regression slice passed after the ledger ordering fix, compose-identity hardening, runtime-compose fallback adjustment and exact-base rebinding.
+- Authoritative evidence was rebound to the exact base and the governance state was synchronized append-only. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`.

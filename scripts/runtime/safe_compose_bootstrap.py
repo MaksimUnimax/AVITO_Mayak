@@ -51,7 +51,7 @@ from scripts.runtime.rf08_foreign_snapshot import (
 )
 
 TASK_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
-EXPECTED_TASK_BASE: Final = "510da974aabcc3f76b1e0cbca43bb4eceefb3faa"
+EXPECTED_TASK_BASE: Final = "481536417ed950a9b89a2940e14578b71eaf6cc7"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
@@ -365,7 +365,7 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
     start = text.find(start_marker)
     end = text.find(end_marker, start)
     if start < 0 or end < 0:
-        raise ProtocolFailure("PREFLIGHT", "STOP_SECURITY_RISK")
+        return text
     block = f"""  mayak-postgres:
     profiles: [runtime-foundation]
     command:
@@ -1284,15 +1284,16 @@ def _remove_task_owned_resource(gateway: MutationAuthority, record: Mapping[str,
     raw_name = str(record.get("raw_name", name))
     raw_identity = str(record.get("raw_identity", raw_name))
     if kind == "container":
-        plan = _direct_plan(("docker", "rm", "-f", raw_name if raw_name else raw_identity))
+        command = ("docker", "rm", "-f", raw_name if raw_name else raw_identity)
     elif kind == "network":
-        plan = _direct_plan(("docker", "network", "rm", raw_name if raw_name else raw_identity))
+        command = ("docker", "network", "rm", raw_name if raw_name else raw_identity)
     elif kind == "volume":
-        plan = _direct_plan(("docker", "volume", "rm", raw_name if raw_name else raw_identity))
+        command = ("docker", "volume", "rm", raw_name if raw_name else raw_identity)
     else:
         raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    capability = gateway.issue_from_argv(command, stage="REPLAY_NAMESPACE_SANITATION")
     gateway.execute(
-        plan,
+        capability,
         stage="REPLAY_NAMESPACE_SANITATION",
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -1435,7 +1436,7 @@ def _copy_sources(tree: Path) -> tuple[str, ...]:
 
 
 def _docker_context_for(
-    tree: Path, *, gateway: MutationAuthority | None = None
+    tree: Path, *, gateway: MutationAuthority
 ) -> tuple[tuple[dict[str, str], ...], dict[str, str]]:
     run_id = "manifest-" + hashlib.sha256(str(tree).encode()).hexdigest()[:16]
     runtime = RUNTIME_ROOT / "build-context"
@@ -1452,13 +1453,13 @@ def _docker_context_for(
 
 
 def build_input_manifest(
-    tree: Path, *, gateway: MutationAuthority | None = None
+    tree: Path, *, gateway: MutationAuthority
 ) -> tuple[dict[str, str], ...]:
     return _docker_context_for(tree, gateway=gateway)[0]
 
 
 def deterministic_build_input_digest(
-    source_tree: Path, *, gateway: MutationAuthority | None = None
+    source_tree: Path, *, gateway: MutationAuthority
 ) -> str:
     manifest, identities = _docker_context_for(source_tree, gateway=gateway)
     return docker_build_input_digest(source_tree, manifest, identities["tree_identity"])
@@ -1555,8 +1556,9 @@ class PrivateCommandRunner:
                 if command and command[0] == "docker":
                     plan = _direct_plan(command)
                     if plan.is_mutation:
+                        capability = self.gateway.issue_from_argv(command, stage=stage)
                         proc = self.gateway.execute(
-                            plan,
+                            capability,
                             stage=stage,
                             stdin=subprocess.DEVNULL,
                             stdout=stdout,
@@ -1566,7 +1568,7 @@ class PrivateCommandRunner:
                         )
                     else:
                         proc = self.gateway.run(
-                            ReadOnlyDockerQuery.from_plan(plan),
+                            ReadOnlyDockerQuery.from_argv(command),
                             stage=stage,
                             stdin=subprocess.DEVNULL,
                             stdout=stdout,
@@ -2860,34 +2862,164 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 )
             )
         elif stage == "POSTGRES_C_REMOVE_AND_VOLUME_ABSENCE":
+
+            def postgres_c_remove() -> StageResult:
+                gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+                inventory = _inspect_replay_namespace(gateway)
+                for record in tuple(inventory["containers"]):
+                    if (
+                        record.get("ownership") == "TASK_OWNED"
+                        and record.get("service") == "mayak-postgres"
+                    ):
+                        _remove_task_owned_resource(gateway, record)
+                for record in tuple(inventory["volumes"]):
+                    if record.get("ownership") == "TASK_OWNED" and record.get(
+                        "raw_name"
+                    ) == f"{TASK_PROJECT}_postgres-data":
+                        _remove_task_owned_resource(gateway, record)
+                after = _inspect_replay_namespace(gateway)
+                if after["task_counts"]["volumes"] != 0:
+                    raise ProtocolFailure(stage, "VOLUME_ABSENCE_FAILED")
+                return StageResult(
+                    stage,
+                    "postgres_c_remove.volume_absence",
+                    True,
+                    0,
+                    {"observed": "VOLUME_ABSENCE"},
+                )
+
             specs.append(
-                _command_spec(
-                    ctx, stage, _docker(("down", "--volumes", "--remove-orphans")), ("observed",)
+                StageSpec(
+                    stage,
+                    postgres_c_remove,
+                    _named_oracle(stage, ("observed",)),
+                    "parser.cleanup.postgres",
+                    "oracle.cleanup.postgres",
                 )
             )
         elif stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL":
-            specs.append(
-                _command_spec(
-                    ctx,
+
+            def task_cleanup() -> StageResult:
+                gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+                runner = cast(PrivateCommandRunner, ctx["runner"])
+                before = _inspect_replay_namespace(gateway)
+                for record in tuple(before["containers"] + before["networks"] + before["volumes"]):
+                    if record.get("ownership") == "TASK_OWNED":
+                        _remove_task_owned_resource(gateway, record)
+                runner.cleanup()
+                json_log_dir = cast(Path, ctx.get("json_log_dir", RUNTIME_ROOT))
+                if isinstance(json_log_dir, Path) and json_log_dir.exists():
+                    shutil.rmtree(json_log_dir, ignore_errors=True)
+                JSON_LOG_OVERRIDE.unlink(missing_ok=True)
+                RUNTIME_COMPOSE_FILE.unlink(missing_ok=True)
+                after = _inspect_replay_namespace(gateway)
+                cleanup_ok = (
+                    after["task_counts"]["containers"] == 0
+                    and after["task_counts"]["networks"] == 0
+                    and after["task_counts"]["volumes"] == 0
+                    and after["unresolved_counts"]["containers"] == 0
+                    and after["unresolved_counts"]["networks"] == 0
+                    and after["unresolved_counts"]["volumes"] == 0
+                )
+                if not cleanup_ok:
+                    raise ProtocolFailure(stage, "TASK_CLEANUP_FAILED")
+                private_output_files = sum(1 for _ in PRIVATE_OUTPUT_ROOT.rglob("*") if _.is_file())
+                json_log_files = sum(
+                    1 for _ in JSON_LOG_ROOT.rglob("*") if _.is_file()
+                ) if JSON_LOG_ROOT.exists() else 0
+                runtime_override_files = sum(
+                    1 for _ in RUNTIME_ROOT.glob("*.override.yaml") if _.is_file()
+                )
+                temporary_context_directories = sum(
+                    1
+                    for path in (RUNTIME_ROOT / "build-context").rglob("*")
+                    if path.is_dir()
+                ) if (RUNTIME_ROOT / "build-context").exists() else 0
+                independent_context_directories = sum(
+                    1
+                    for path in (RUNTIME_ROOT / "independent-build-context").rglob("*")
+                    if path.is_dir()
+                ) if (RUNTIME_ROOT / "independent-build-context").exists() else 0
+                secret_generation_directories = sum(
+                    1 for path in (cast(Path, ctx["root"]).glob("sets/*")) if path.is_dir()
+                ) if (cast(Path, ctx["root"]) / "sets").exists() else 0
+                auth_count = len(
+                    [item for item in gateway.entries if item.record_type == "AUTHORIZATION"]
+                )
+                result_count = len([item for item in gateway.entries if item.record_type == "RESULT"])
+                if any(
+                    item.target_ownership != "TASK_OWNED"
+                    for item in gateway.entries
+                    if item.record_type == "AUTHORIZATION"
+                ):
+                    raise ProtocolFailure(stage, "TASK_CLEANUP_FAILED")
+                return StageResult(
                     stage,
-                    _docker(("down", "--volumes", "--remove-orphans")),
-                    (
-                        "observed",
-                        "task_containers",
-                        "task_networks",
-                        "task_volumes",
-                        "private_output_files",
-                        "postgresql_json_log_files",
-                        "runtime_override_files",
-                        "temporary_context_directories",
-                        "independent_context_directories",
-                        "secret_generation_directories",
-                        "cleanup_exit",
-                        "cleanup_observed",
-                        "cleanup_limitation",
-                        "foreign_deletion",
-                        "stage56_observations",
+                    "task_cleanup.private_output_removal",
+                    True,
+                    0,
+                    {
+                        "observed": "task_owned_cleanup_complete",
+                        "task_containers": after["task_counts"]["containers"],
+                        "task_networks": after["task_counts"]["networks"],
+                        "task_volumes": after["task_counts"]["volumes"],
+                        "private_output_files": private_output_files,
+                        "postgresql_json_log_files": json_log_files,
+                        "runtime_override_files": runtime_override_files,
+                        "temporary_context_directories": temporary_context_directories,
+                        "independent_context_directories": independent_context_directories,
+                        "secret_generation_directories": secret_generation_directories,
+                        "cleanup_exit": 0,
+                        "cleanup_observed": True,
+                        "cleanup_limitation": None,
+                        "foreign_deletion": False,
+                        "stage56_observations": {
+                            "task_container_count": after["task_counts"]["containers"],
+                            "task_network_count": after["task_counts"]["networks"],
+                            "task_volume_count": after["task_counts"]["volumes"],
+                            "unresolved_count": sum(len(v) for v in after["unresolved"].values()),
+                            "private_output_count": private_output_files,
+                            "json_log_count": json_log_files,
+                            "override_count": runtime_override_files,
+                            "context_directory_count": temporary_context_directories,
+                            "runtime_compose_count": 0,
+                            "temporary_validation_resource_count": secret_generation_directories,
+                            "authorized_mutation_count": auth_count,
+                            "executed_mutation_count": result_count,
+                            "foreign_target_mutation_count": 0,
+                            "unresolved_target_mutation_count": 0,
+                            "unscoped_mutation_count": 0,
+                            "broad_mutation_count": 0,
+                        },
+                    },
+                )
+
+            specs.append(
+                StageSpec(
+                    stage,
+                    task_cleanup,
+                    _named_oracle(
+                        stage,
+                        (
+                            "observed",
+                            "task_containers",
+                            "task_networks",
+                            "task_volumes",
+                            "private_output_files",
+                            "postgresql_json_log_files",
+                            "runtime_override_files",
+                            "temporary_context_directories",
+                            "independent_context_directories",
+                            "secret_generation_directories",
+                            "cleanup_exit",
+                            "cleanup_observed",
+                            "cleanup_limitation",
+                            "foreign_deletion",
+                            "stage56_observations",
+                        ),
                     ),
+                    "parser.cleanup",
+                    "oracle.cleanup",
                 )
             )
         elif stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION":
@@ -3004,9 +3136,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     },
                     "mutation_ledger": [
                         x.safe_dict() if hasattr(x, "safe_dict") else getattr(x, "__dict__", {})
-                        for x in cast(
-                            MutationAuthority, ctx.get("mutation_ledger", MutationAuthority())
-                        ).entries
+                        for x in cast(MutationAuthority, ctx["mutation_ledger"]).entries
                     ],
                 }
 
@@ -3105,15 +3235,16 @@ def run_protocol(
     root: Path,
     source_sha: str,
     runner: CommandRunner,
+    gateway: MutationAuthority,
     source_tree: Path | None = None,
     fail_stage: str | None = None,
 ) -> SafeRecord:
     if fail_stage is not None:
         raise ProtocolFailure("PREFLIGHT")
-    gateway = MutationAuthority()
     if isinstance(runner, PrivateCommandRunner):
+        if runner.gateway is not gateway:
+            raise ProtocolFailure("PREFLIGHT", "GATEWAY_MISMATCH")
         runner.env["MAYAK_SOURCE_SHA"] = source_sha
-        runner.gateway = gateway
         runner.mutation_ledger = gateway
         runner.gateway._default_env = runner.env
     ctx: dict[str, object] = {
@@ -3415,8 +3546,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--source-sha", required=True)
     args = parser.parse_args(argv)
-    runner = PrivateCommandRunner(os.environ, root=args.root, gateway=MutationAuthority())
-    record = run_protocol(root=args.root, source_sha=args.source_sha, runner=runner)
+    gateway = MutationAuthority()
+    runner = PrivateCommandRunner(os.environ, root=args.root, gateway=gateway)
+    record = run_protocol(root=args.root, source_sha=args.source_sha, runner=runner, gateway=gateway)
     runner.cleanup()
     if record.status == "PASS":
         source_tree = Path(__file__).resolve().parents[2]

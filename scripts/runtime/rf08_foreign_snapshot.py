@@ -404,10 +404,9 @@ def _canonical(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def collect_snapshot(
-    phase: str, sequence: int, *, gateway: MutationAuthority | None = None
+    phase: str, sequence: int, *, gateway: MutationAuthority
 ) -> dict[str, Any]:
     try:
-        gateway = gateway or MutationAuthority()
         host, boot = _host_identity(), _boot_identity()
         endpoint_schema, daemon, server_metadata = _endpoint_identity(gateway)
         all_records = {

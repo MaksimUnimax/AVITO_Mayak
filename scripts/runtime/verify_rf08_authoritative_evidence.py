@@ -23,10 +23,8 @@ from pathlib import Path, PurePosixPath
 from typing import cast
 
 from scripts.runtime.rf08_docker_authority import (
-    BuildxManifestPlan,
     MutationAuthority,
     ReadOnlyDockerQuery,
-    _direct_plan,
 )
 from scripts.runtime.rf08_safe_foreign_schema import (
     validate_failure_snapshot,
@@ -35,8 +33,8 @@ from scripts.runtime.rf08_safe_foreign_schema import (
 )
 
 TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
-BASE = "453356025051308b9cbe43b7201c248124348006"
-TASK_EXPECTED_BASE = "510da974aabcc3f76b1e0cbca43bb4eceefb3faa"
+BASE = "481536417ed950a9b89a2940e14578b71eaf6cc7"
+TASK_EXPECTED_BASE = "481536417ed950a9b89a2940e14578b71eaf6cc7"
 TREE = "6f9548e8eda66acba2f9ac403dcb3d43f209774c"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
@@ -225,12 +223,10 @@ def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, 
 
 
 def _independent_snapshot(
-    phase: str, sequence: int, *, gateway: MutationAuthority | None = None
+    phase: str, sequence: int, *, gateway: MutationAuthority
 ) -> dict[str, object]:
     """Independent read-only collector; no producer code or oracle is imported."""
     try:
-        gateway = gateway or MutationAuthority()
-
         def inspect(kind: str, ident: str) -> dict[str, object]:
             result = gateway.run(
                 ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident)),
@@ -635,7 +631,7 @@ def _clean_context(
 
 
 def _docker_manifest(
-    source: Path, root: Path, run_id: str, *, gateway: MutationAuthority | None = None
+    source: Path, root: Path, run_id: str, *, gateway: MutationAuthority
 ) -> tuple[list[dict[str, str]], dict[str, str]]:
     run_root = root / run_id
     output = run_root / "output"
@@ -649,22 +645,22 @@ def _docker_manifest(
         encoding="utf-8",
     )
     output.mkdir(mode=0o700)
-    (gateway or MutationAuthority()).execute(
-        BuildxManifestPlan.from_plan(
-            _direct_plan(
-                (
-                    "docker",
-                    "buildx",
-                    "build",
-                    "--progress=plain",
-                    "--file",
-                    str(inspector),
-                    "--output",
-                    f"type=local,dest={output}",
-                    str(source),
-                )
-            )
+    capability = gateway.issue_from_argv(
+        (
+            "docker",
+            "buildx",
+            "build",
+            "--progress=plain",
+            "--file",
+            str(inspector),
+            "--output",
+            f"type=local,dest={output}",
+            str(source),
         ),
+        stage="verifier-buildx-build",
+    )
+    gateway.execute(
+        capability,
         stage="verifier-buildx-build",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -990,7 +986,9 @@ def _verify_sanitation_record(document: dict[str, object]) -> None:
         raise ValueError("sanitation absence not proven")
 
 
-def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]:
+def verify_evidence(
+    evidence_path: Path, source_tree: Path, *, verifier_gateway: MutationAuthority
+) -> dict[str, object]:
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
     if (
         document.get("technical_id") != TASK_ID
@@ -1032,7 +1030,6 @@ def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]
             raise ValueError(f"source hash mismatch: {relative}")
     runtime_root = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/independent-build-context")
     run_id = "verify-" + hashlib.sha256(evidence_path.read_bytes()).hexdigest()[:16]
-    verifier_gateway = MutationAuthority()
     source, archive_sha = _clean_context(
         source_tree, runtime_root, run_id, gateway=verifier_gateway
     )
@@ -1150,9 +1147,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("source_tree", type=Path, nargs="?")
     args = parser.parse_args(argv)
     if args.snapshot:
+        gateway = MutationAuthority()
         print(
             json.dumps(
-                _independent_snapshot(args.phase, args.sequence),
+                _independent_snapshot(args.phase, args.sequence, gateway=gateway),
                 sort_keys=True,
                 separators=(",", ":"),
             )
@@ -1160,7 +1158,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.evidence is None or args.source_tree is None:
         parser.error("evidence and source_tree are required unless --snapshot is used")
-    print(json.dumps(verify_evidence(args.evidence, args.source_tree), sort_keys=True))
+    verifier_gateway = MutationAuthority()
+    print(
+        json.dumps(
+            verify_evidence(args.evidence, args.source_tree, verifier_gateway=verifier_gateway),
+            sort_keys=True,
+        )
+    )
     return 0
 
 

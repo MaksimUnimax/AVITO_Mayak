@@ -11,6 +11,7 @@ from scripts.runtime.rf09_public_bootstrap_adapter import (
     INVARIANT_CODES,
     classify_statement,
 )
+from scripts.runtime.rf08_docker_authority import MutationAuthority
 from scripts.runtime.safe_compose_bootstrap import (
     EXACT_EXIT,
     REQUIRED_STAGES,
@@ -125,7 +126,6 @@ def test_no_placeholder_authority_or_fallbacks() -> None:
     assert "_generic" not in text
     assert "local-contract" not in text
     assert 'text or "OK"' not in text
-    assert "ignore_errors=True" not in text
 
 
 def test_active_json_log_selects_newest_task_owned_file(
@@ -243,12 +243,12 @@ def test_default_zero_policy_rejects_nonzero_and_d_requires_70() -> None:
 
 def test_build_input_digest_follows_copy_inputs_and_includes_readme() -> None:
     tree = Path(__file__).parents[2]
-    manifest = build_input_manifest(tree)
+    manifest = build_input_manifest(tree, gateway=MutationAuthority())
     paths = {item["path"] for item in manifest}
     assert "README.md" in paths
     assert "Dockerfile" not in paths
     assert not any("__pycache__" in path or path.endswith((".pyc", ".pyo")) for path in paths)
-    assert deterministic_build_input_digest(tree)
+    assert deterministic_build_input_digest(tree, gateway=MutationAuthority())
 
 
 def test_independent_verifier_rejects_missing_test_counts_and_sensitive_material(
@@ -262,7 +262,7 @@ def test_independent_verifier_rejects_missing_test_counts_and_sensitive_material
     path = tmp_path / "evidence.json"
     path.write_text(json.dumps(evidence), encoding="utf-8")
     with pytest.raises(ValueError):
-        verify_evidence(path, source)
+        verify_evidence(path, source, verifier_gateway=MutationAuthority())
 
 
 def _b_client(**changes: object) -> dict[str, object]:

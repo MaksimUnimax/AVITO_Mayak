@@ -44,6 +44,7 @@ from scripts.runtime.verify_rf08_authoritative_evidence import (
 PROJECT = "avito-mayak-rf08-secret-delivery"
 TECHNICAL_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
 RUNTIME_COMPOSE = "/tmp/compose.runtime.yaml"
+REPO_COMPOSE = str(Path(__file__).resolve().parents[2] / "compose.yaml")
 REAL_SUBPROCESS_RUN = subprocess.run
 
 CANONICAL_STAGE57_KEYS = (
@@ -334,7 +335,7 @@ def _patch_docker(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", _fake_docker_run)
 
 
-def _compose_base(file: str = RUNTIME_COMPOSE) -> tuple[str, ...]:
+def _compose_base(file: str = REPO_COMPOSE) -> tuple[str, ...]:
     return (
         "docker",
         "compose",
@@ -347,18 +348,30 @@ def _compose_base(file: str = RUNTIME_COMPOSE) -> tuple[str, ...]:
     )
 
 
-def _mutation(argv_tail: tuple[str, ...], file: str = RUNTIME_COMPOSE):
+def _mutation(argv_tail: tuple[str, ...], file: str = REPO_COMPOSE):
     return _compose_plan(_compose_base(file) + argv_tail)
+
+
+def _issue_mutation(
+    gateway: MutationAuthority,
+    argv_tail: tuple[str, ...],
+    file: str = REPO_COMPOSE,
+    *,
+    stage: str,
+):
+    return gateway.issue_from_argv(_compose_base(file) + argv_tail, stage=stage)
 
 
 def _authority_three_mutations() -> MutationAuthority:
     authority = MutationAuthority()
-    mutation = _mutation(("up", "-d", "mayak-postgres"))
-    stop = _mutation(("stop", "mayak-postgres"))
-    down = _mutation(("down", "--remove-orphans", "--volumes"))
+    mutation = _issue_mutation(authority, ("up", "-d", "mayak-postgres"), stage="s1")
     authority.execute(mutation, stage="s1")
+    stop = _issue_mutation(authority, ("stop", "mayak-postgres"), stage="s2")
     authority.execute(stop, stage="s2")
-    authority.execute(down, stage="s3")
+    volume = authority.issue_from_argv(
+        ("docker", "volume", "create", f"{PROJECT}_postgres-data"), stage="s3"
+    )
+    authority.execute(volume, stage="s3")
     return authority
 
 
@@ -602,19 +615,31 @@ def _run_protocol_integration(
         def mut1() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
             assert isinstance(gateway, MutationAuthority)
-            gateway.execute(_mutation(("up", "-d", "mayak-postgres")), stage="MUT1")
+            gateway.execute(
+                _issue_mutation(gateway, ("up", "-d", "mayak-postgres"), stage="MUT1"),
+                stage="MUT1",
+            )
             return scb.StageResult("MUT1", "op.mut1", True, 0, {"observed": "mut1"})
 
         def mut2() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
             assert isinstance(gateway, MutationAuthority)
-            gateway.execute(_mutation(("stop", "mayak-postgres")), stage="MUT2")
+            gateway.execute(
+                _issue_mutation(gateway, ("stop", "mayak-postgres"), stage="MUT2"),
+                stage="MUT2",
+            )
             return scb.StageResult("MUT2", "op.mut2", True, 0, {"observed": "mut2"})
 
         def mut3() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
             assert isinstance(gateway, MutationAuthority)
-            gateway.execute(_mutation(("down", "--remove-orphans", "--volumes")), stage="MUT3")
+            gateway.execute(
+                gateway.issue_from_argv(
+                    ("docker", "volume", "create", f"{PROJECT}_postgres-data"),
+                    stage="MUT3",
+                ),
+                stage="MUT3",
+            )
             return scb.StageResult("MUT3", "op.mut3", True, 0, {"observed": "mut3"})
 
         return (
@@ -639,7 +664,12 @@ def _run_protocol_integration(
     monkeypatch.setattr(scb, "_operation_specs", fake_specs)
     root = scb.RUNTIME_ROOT / "registry-integration" / tmp_path.name
     runner = scb.PrivateCommandRunner({}, root=root, gateway=MutationAuthority())
-    record = scb.run_protocol(root=root, source_sha="0" * 40, runner=runner)
+    record = scb.run_protocol(
+        root=root,
+        source_sha="0" * 40,
+        runner=runner,
+        gateway=runner.gateway,
+    )
     return record, runner
 
 
@@ -910,7 +940,12 @@ def test_replay_transcript_refuses_without_sanitation_record(
     monkeypatch.setattr(scb, "prepare_jsonlog_runtime", lambda run_id: tmp_path / "logs")
     root = scb.RUNTIME_ROOT / "rf08-test" / tmp_path.name
     runner = scb.PrivateCommandRunner({}, root=root, gateway=MutationAuthority())
-    record = scb.run_protocol(root=root, source_sha="0" * 40, runner=runner)
+    record = scb.run_protocol(
+        root=root,
+        source_sha="0" * 40,
+        runner=runner,
+        gateway=runner.gateway,
+    )
     assert record.status == "FAIL"
     assert record.stage_sequence == ()
 
@@ -1012,48 +1047,35 @@ def dispatch(
     if scenario == "authorize_reject":
         authority = MutationAuthority()
         with pytest.raises(tuple(params["exceptions"])):
-            authority.authorize(
-                argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
-                stage="negative",
-            )
+            authority.issue_from_argv(argv, stage="negative")
         return
 
     if scenario == "direct_run_reject":
         authority = MutationAuthority()
         with pytest.raises(tuple(params["exceptions"])):
-            authority.execute(
-                argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
-                stage="direct",
-            )
+            authority.issue_from_argv(argv, stage="direct")
         return
 
     if scenario == "direct_run_accept":
         authority = MutationAuthority()
-        result = authority.execute(
-            argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
-            stage="direct",
-        )
+        capability = authority.issue_from_argv(argv, stage="direct")
+        result = authority.execute(capability, stage="direct")
         assert isinstance(result, subprocess.CompletedProcess)
         return
 
     if scenario == "authorize_accept":
         authority = MutationAuthority()
-        auth = authority.authorize(
-            argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
-            stage="authorize",
-        )
+        capability = authority.issue_from_argv(argv, stage="authorize")
+        auth = authority.authorize(capability, stage="authorize")
         assert auth.gateway_instance_id == authority.gateway_instance_id
         assert authority.entries[0].authorization_outcome == "AUTHORIZED"
         return
 
     if scenario == "caller_ownership_absent":
         authority = MutationAuthority()
+        capability = authority.issue_from_argv(argv, stage="authorize")
         with pytest.raises(TypeError):
-            getattr(authority, "authorize")(
-                argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
-                stage="authorize",
-                ownership="TASK_OWNED",
-            )  # type: ignore[arg-type]
+            getattr(authority, "authorize")(capability, stage="authorize", ownership="TASK_OWNED")  # type: ignore[arg-type]
         return
 
     if scenario == "ledger_three":
@@ -1094,7 +1116,10 @@ def dispatch(
             return
         if tamper == "empty_with_mutations":
             authority = MutationAuthority()
-            authority.execute(_mutation(("up", "-d", "mayak-postgres")), stage="s1")
+            authority.execute(
+                _issue_mutation(authority, ("up", "-d", "mayak-postgres"), stage="s1"),
+                stage="s1",
+            )
             authority._ledger.clear()
             with pytest.raises(ValueError):
                 authority.validate_complete(1)
@@ -1162,7 +1187,10 @@ def dispatch(
 
             monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", timeout_run)
             with pytest.raises(subprocess.TimeoutExpired):
-                authority.execute(_mutation(("up", "-d", "mayak-postgres")), stage="timeout")
+                authority.execute(
+                    _issue_mutation(authority, ("up", "-d", "mayak-postgres"), stage="timeout"),
+                    stage="timeout",
+                )
             assert authority.entries[-1].timed_out is True
             return
         if tamper == "process_start_failure":
@@ -1176,7 +1204,10 @@ def dispatch(
 
             monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", fail_run)
             with pytest.raises(OSError):
-                authority.execute(_mutation(("up", "-d", "mayak-postgres")), stage="failure")
+                authority.execute(
+                    _issue_mutation(authority, ("up", "-d", "mayak-postgres"), stage="failure"),
+                    stage="failure",
+                )
             assert authority.entries[-1].record_type == "RESULT"
             assert authority.entries[-1].safe_failure_classification == "OSError"
             return
@@ -1405,7 +1436,10 @@ def dispatch(
             return
         if kind == "mutation_audit":
             gateway = MutationAuthority()
-            gateway.execute(_mutation(("up", "-d", "mayak-postgres")), stage="audit")
+            gateway.execute(
+                _issue_mutation(gateway, ("up", "-d", "mayak-postgres"), stage="audit"),
+                stage="audit",
+            )
             assert [
                 item.authorization_sequence
                 for item in gateway.entries
@@ -1567,18 +1601,18 @@ for case_id, argv, expected in [
     ),
     (
         "command_grammar_compose_up_mutation",
-        _mutation(("up", "-d", "mayak-postgres")).argv,
+        _compose_plan(_compose_base() + ("up", "-d", "mayak-postgres")).argv,
         DockerCommandClass.COMPOSE_UP,
     ),
     (
         "command_grammar_compose_stop_mutation",
-        _mutation(("stop", "mayak-postgres")).argv,
+        _compose_plan(_compose_base() + ("stop", "mayak-postgres")).argv,
         DockerCommandClass.COMPOSE_STOP,
     ),
     (
         "command_grammar_compose_down_mutation",
-        _mutation(("down", "--remove-orphans", "--volumes")).argv,
-        DockerCommandClass.COMPOSE_DOWN,
+        _compose_base() + ("down", "--remove-orphans", "--volumes"),
+        DockerCommandClass.UNKNOWN_DOCKER_COMMAND,
     ),
     (
         "command_grammar_direct_run_mutation",
@@ -1683,7 +1717,17 @@ for case_id, argv in [
     ),
     (
         "exact_option_missing_required_profile_rejected",
-        ("docker", "compose", "-f", RUNTIME_COMPOSE, "-p", PROJECT, "up", "-d", "mayak-postgres"),
+        (
+            "docker",
+            "compose",
+            "-f",
+            str(Path(__file__).resolve().parents[2] / "compose.yaml"),
+            "-p",
+            PROJECT,
+            "up",
+            "-d",
+            "mayak-postgres",
+        ),
     ),
     (
         "exact_option_wrong_profile_rejected",
@@ -1691,7 +1735,7 @@ for case_id, argv in [
             "docker",
             "compose",
             "-f",
-            RUNTIME_COMPOSE,
+            str(Path(__file__).resolve().parents[2] / "compose.yaml"),
             "-p",
             PROJECT,
             "--profile",
@@ -1707,7 +1751,7 @@ for case_id, argv in [
             "docker",
             "compose",
             "-f",
-            RUNTIME_COMPOSE,
+            str(Path(__file__).resolve().parents[2] / "compose.yaml"),
             "-p",
             PROJECT,
             "--profile",
@@ -1728,7 +1772,7 @@ for case_id, argv in [
         "exact_option_binding",
         "authorize_reject",
         argv=argv,
-        exceptions=(ValueError, PermissionError),
+        exceptions=(ValueError, PermissionError, FileNotFoundError),
     )
 
 for i in range(8):
@@ -1740,7 +1784,7 @@ for i in range(8):
             "docker",
             "compose",
             "-f",
-            RUNTIME_COMPOSE,
+            str(Path(__file__).resolve().parents[2] / "compose.yaml"),
             "-p",
             PROJECT,
             "--profile",
@@ -1811,18 +1855,18 @@ for case_id, argv, scenario in [
     ),
     (
         "ownership_compose_up_task_owned",
-        _mutation(("up", "-d", "mayak-postgres")),
+        _compose_plan(_compose_base() + ("up", "-d", "mayak-postgres")),
         "authorize_accept",
     ),
     (
         "ownership_compose_stop_task_owned",
-        _mutation(("stop", "mayak-postgres")),
+        _compose_plan(_compose_base() + ("stop", "mayak-postgres")),
         "authorize_accept",
     ),
     (
         "ownership_compose_down_task_owned",
-        _mutation(("down", "--remove-orphans", "--volumes")),
-        "authorize_accept",
+        _compose_base() + ("down", "--remove-orphans", "--volumes"),
+        "authorize_reject",
     ),
     (
         "ownership_network_create_task_owned",
@@ -1860,7 +1904,7 @@ for case_id, argv, scenario in [
     ),
     (
         "ownership_caller_ownership_parameter_absent",
-        _mutation(("up", "-d", "mayak-postgres")),
+        _compose_plan(_compose_base() + ("up", "-d", "mayak-postgres")),
         "caller_ownership_absent",
     ),
     (
@@ -1882,7 +1926,7 @@ for i in range(12):
         f"ownership_extra_{i}",
         "ownership_resolution",
         "authorize_accept",
-        argv=_mutation(("up", "-d", "mayak-postgres")),
+        argv=_compose_plan(_compose_base() + ("up", "-d", "mayak-postgres")),
     )
 
 for case_id, kind in [
