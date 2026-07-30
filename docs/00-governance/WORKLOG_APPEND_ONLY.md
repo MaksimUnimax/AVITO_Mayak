@@ -708,3 +708,9 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Every Docker mutation is structurally authorized and appended before execution; producer and verifier independently implement exact ownership and delta semantics, while recursive safe-value validation minimizes committed evidence.
 - Exact CPython 3.14.6, uv 0.11.31, frozen lock, 167-file Docker-native manifest, 57/57 protocol, stage-56 observation derivation, stage-57 recomputation and independent verifier passed. Same-command regression metadata and tamper controls are included in the evidence contract.
 - RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status is `PUBLISHED_FOR_CHATGPT_REVIEW`; no independent acceptance, operator readiness or `PRODUCTION_READY` claim is made.
+
+## WL-RF08-20260730-07 — 2026-07-30 — one protocol-owned Docker gateway and ledger bijection corrective
+
+- `af24a6837ad24ccb0c22e4038512cf2901cbecd4` remained published but was independently rejected because authority was instantiated per Docker command, caller ownership was asserted, `buildx` bypassed authority, the ledger was not bijective, snapshot and collector-ID validation were incomplete, and the mandatory adversarial registry was absent.
+- The corrective now uses one protocol-owned Docker gateway, repository-wide bypass guards, exact compose option binding, independent ownership resolution, typed invocation audit and mutation-ledger bijection, plus an executable adversarial registry and integration coverage.
+- RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`; no independent acceptance, operator readiness or `PRODUCTION_READY` claim is made.

@@ -43,8 +43,14 @@ def _stage34_result(**parsed: object) -> PrivateCommandResult:
     }
     payload.update(parsed)
     return PrivateCommandResult(
-        "APPLICATION_AUTH_REJECTION_B", "rf08.application_auth_rejection_b", 78,
-        True, payload, True, True, False,
+        "APPLICATION_AUTH_REJECTION_B",
+        "rf08.application_auth_rejection_b",
+        78,
+        True,
+        payload,
+        True,
+        True,
+        False,
     )
 
 
@@ -56,6 +62,8 @@ class _Stage34Runner:
     def run(self, command: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
         assert stage == "APPLICATION_AUTH_REJECTION_B"
         return self.result
+
+
 def test_exact_canonical_stage_contract() -> None:
     assert REQUIRED_STAGES == STAGES
     assert len(REQUIRED_STAGES) == 57
@@ -68,21 +76,28 @@ def test_post_recovery_bootstrap_parser_is_typed_and_rejects_text_only() -> None
         b"RF09_DATABASE_BOOTSTRAP_COMPLETE\n", b"Container x Created\n", 0
     )
     assert complete == {}
-    assert parse_bounded_bootstrap_result(
-        b'{"bootstrap_outcome":"RF09_BOOTSTRAP_SUCCESS","client_sqlstate":null,'
-        b'"connection_attempted":true,"connected":true,"cause_type":null,'
-        b'"committed":true,"connection_closed":true,"cursor_closed":true,'
-        b'"current_object_grants":false,"application_role_valid":true,'
-        b'"application_schema_create":false,"invariant_code":null,'
-        b'"last_rf09_operation":"RF09_COMMIT","migration_role_valid":true,'
-        b'"operation_id":"rf09.public.bootstrap","recovered_generation_id":"g",'
-        b'"rolled_back":false,"run_id":"r","schema_owner_valid":true,'
-        b'"schema_version":"rf08-post-recovery-bootstrap-v1"}\n',
-        b"Container x Created\n", 0,
-    )["bootstrap_outcome"] == "RF09_BOOTSTRAP_SUCCESS"
-    assert parse_bounded_bootstrap_result(
-        b"RF09_DATABASE_BOOTSTRAP_ERROR: BootstrapInvariantError\n", b"", 1
-    ) == {}
+    assert (
+        parse_bounded_bootstrap_result(
+            b'{"bootstrap_outcome":"RF09_BOOTSTRAP_SUCCESS","client_sqlstate":null,'
+            b'"connection_attempted":true,"connected":true,"cause_type":null,'
+            b'"committed":true,"connection_closed":true,"cursor_closed":true,'
+            b'"current_object_grants":false,"application_role_valid":true,'
+            b'"application_schema_create":false,"invariant_code":null,'
+            b'"last_rf09_operation":"RF09_COMMIT","migration_role_valid":true,'
+            b'"operation_id":"rf09.public.bootstrap","recovered_generation_id":"g",'
+            b'"rolled_back":false,"run_id":"r","schema_owner_valid":true,'
+            b'"schema_version":"rf08-post-recovery-bootstrap-v1"}\n',
+            b"Container x Created\n",
+            0,
+        )["bootstrap_outcome"]
+        == "RF09_BOOTSTRAP_SUCCESS"
+    )
+    assert (
+        parse_bounded_bootstrap_result(
+            b"RF09_DATABASE_BOOTSTRAP_ERROR: BootstrapInvariantError\n", b"", 1
+        )
+        == {}
+    )
     assert parse_bounded_bootstrap_result(b"role already exists\n", b"", 1) == {}
 
 
@@ -96,9 +111,7 @@ def test_public_adapter_uses_exact_invariant_allowlist() -> None:
 def test_public_adapter_operation_classifier_fails_closed() -> None:
     from psycopg import sql
 
-    assert classify_statement(sql.SQL("SELECT pg_advisory_xact_lock(%s)")) == (
-        "RF09_ADVISORY_LOCK"
-    )
+    assert classify_statement(sql.SQL("SELECT pg_advisory_xact_lock(%s)")) == ("RF09_ADVISORY_LOCK")
     assert classify_statement(sql.SQL("SELECT arbitrary_function()")) == (
         "RF09_UNRECOGNIZED_OPERATION"
     )
@@ -143,8 +156,11 @@ def test_transcript_rejects_order_missing_execution_and_missing_observed() -> No
 def test_canonical_stage34_uses_transcript_and_accepts_exact_78(tmp_path: Path) -> None:
     runner = _Stage34Runner(_stage34_result())
     ctx: dict[str, object] = {
-        "runner": runner, "root": tmp_path, "generations": {},
-        "b_correlation_id": "rf08b_test01", "source_sha": "0" * 40,
+        "runner": runner,
+        "root": tmp_path,
+        "generations": {},
+        "b_correlation_id": "rf08b_test01",
+        "source_sha": "0" * 40,
     }
     spec = canonical_stage_spec(ctx, "APPLICATION_AUTH_REJECTION_B", Path(__file__).parents[2])
     assert spec.exit_policy == EXACT_EXIT(78)
@@ -161,13 +177,22 @@ def test_canonical_stage34_uses_transcript_and_accepts_exact_78(tmp_path: Path) 
 def test_stage34_rejects_wrong_exit(code: int) -> None:
     result = _stage34_result()
     result = PrivateCommandResult(
-        result.stage, result.command_id, code, result.executed, result.parsed,
-        result.stdout_scanned, result.stderr_scanned, result.private_output_cleaned,
+        result.stage,
+        result.command_id,
+        code,
+        result.executed,
+        result.parsed,
+        result.stdout_scanned,
+        result.stderr_scanned,
+        result.private_output_cleaned,
     )
     runner = _Stage34Runner(result)
     ctx: dict[str, object] = {
-        "runner": runner, "root": Path("/tmp"), "generations": {},
-        "b_correlation_id": "rf08b_test01", "source_sha": "0" * 40,
+        "runner": runner,
+        "root": Path("/tmp"),
+        "generations": {},
+        "b_correlation_id": "rf08b_test01",
+        "source_sha": "0" * 40,
     }
     spec = canonical_stage_spec(ctx, "APPLICATION_AUTH_REJECTION_B", Path(__file__).parents[2])
     with pytest.raises(ProtocolFailure):
@@ -175,13 +200,24 @@ def test_stage34_rejects_wrong_exit(code: int) -> None:
 
 
 def test_default_zero_policy_rejects_nonzero_and_d_requires_70() -> None:
-    zero = StageSpec("PREFLIGHT", lambda: StageResult("PREFLIGHT", "op", True, 78, {}),
-                     lambda _: {"observed": "x"}, "p", "o", ZERO_REQUIRED)
+    zero = StageSpec(
+        "PREFLIGHT",
+        lambda: StageResult("PREFLIGHT", "op", True, 78, {}),
+        lambda _: {"observed": "x"},
+        "p",
+        "o",
+        ZERO_REQUIRED,
+    )
     with pytest.raises(ProtocolFailure):
         ProtocolTranscript(("PREFLIGHT",)).execute(zero)
-    abrupt = StageSpec("ABRUPT_ACTIVATION_D_EXIT_70",
-                       lambda: StageResult("ABRUPT_ACTIVATION_D_EXIT_70", "op", True, 70, {}),
-                       lambda _: {"observed": "x"}, "p", "o", EXACT_EXIT(70))
+    abrupt = StageSpec(
+        "ABRUPT_ACTIVATION_D_EXIT_70",
+        lambda: StageResult("ABRUPT_ACTIVATION_D_EXIT_70", "op", True, 70, {}),
+        lambda _: {"observed": "x"},
+        "p",
+        "o",
+        EXACT_EXIT(70),
+    )
     assert ProtocolTranscript((abrupt.name,)).execute(abrupt).status == "PASS"
 
 
@@ -265,7 +301,8 @@ def test_b_binding_is_active_generation_scoped_and_constant_time_equal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        prepare_file_secrets, "_ALLOWED_ROOTS",
+        prepare_file_secrets,
+        "_ALLOWED_ROOTS",
         (*prepare_file_secrets._ALLOWED_ROOTS, tmp_path),
     )
     generation = prepare_file_secrets.prepare_generation(
@@ -312,12 +349,8 @@ def test_b_bounded_parser_requires_one_safe_json_object_and_keeps_rejected_exit(
     )
     assert parsed["final_client_outcome"] == "SECRET_FILE_MISSING"
     assert parsed["exit_code"] == 66
-    assert parse_bounded_auth_envelope(
-        b"{}\n{}\n", b"", 66
-    ) == {}
-    assert parse_bounded_auth_envelope(
-        (json.dumps(payload) + "\nextra\n").encode(), b"", 66
-    ) == {}
+    assert parse_bounded_auth_envelope(b"{}\n{}\n", b"", 66) == {}
+    assert parse_bounded_auth_envelope((json.dumps(payload) + "\nextra\n").encode(), b"", 66) == {}
 
 
 @pytest.mark.parametrize(
@@ -340,6 +373,4 @@ def test_b_negative_controls_cannot_become_authentication_rejection(
     client_change: dict[str, object], server_change: dict[str, object]
 ) -> None:
     with pytest.raises(ProtocolFailure):
-        classify_correlated_b_authentication(
-            _b_client(**client_change), _b_server(**server_change)
-        )
+        classify_correlated_b_authentication(_b_client(**client_change), _b_server(**server_change))

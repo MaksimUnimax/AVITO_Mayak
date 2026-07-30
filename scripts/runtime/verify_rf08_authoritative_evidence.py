@@ -22,12 +22,18 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import cast
 
-from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value, validate_snapshot
+from scripts.runtime.rf08_docker_authority import MutationAuthority
+from scripts.runtime.rf08_safe_foreign_schema import (
+    validate_failure_snapshot,
+    validate_safe_value,
+    validate_snapshot,
+)
 
 TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
 BASE = "453356025051308b9cbe43b7201c248124348006"
 TASK_EXPECTED_BASE = "7467ba2092d9e83fba52d402cf78556912d10a83"
 TREE = "6f9548e8eda66acba2f9ac403dcb3d43f209774c"
+PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
     ("uv.lock", "uv.lock"),
@@ -144,7 +150,7 @@ def _docker_endpoint() -> Path:
     return endpoint
 
 
-def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
+def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, str]]:
     endpoint = _docker_endpoint()
     socket_stat = endpoint.stat()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -158,8 +164,9 @@ def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
     peer: tuple[int, int, int] | None = struct.unpack("3i", raw_peer) if raw_peer else None
     if peer is not None and min(peer) < 0:
         raise ValueError("invalid peer credentials")
-    server = subprocess.run(
-        ["docker", "version", "--format", "{{json .Server}}"],
+    server = gateway.run(
+        ("docker", "version", "--format", "{{json .Server}}"),
+        stage="verifier-endpoint-version",
         capture_output=True,
         check=False,
         timeout=30,
@@ -177,8 +184,15 @@ def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
     if not safe_server.get("Version"):
         raise ValueError("docker server version absent")
     payload = {
-        "schema": "LOCAL_UNIX_DOCKER_ENDPOINT_INSTANCE_V1" if peer else "LOCAL_UNIX_DOCKER_ENDPOINT_SOCKET_V1",
-        "socket": {"path": str(endpoint), "st_dev": socket_stat.st_dev, "st_ino": socket_stat.st_ino, "mode": socket_stat.st_mode},
+        "schema": "LOCAL_UNIX_DOCKER_ENDPOINT_INSTANCE_V1"
+        if peer
+        else "LOCAL_UNIX_DOCKER_ENDPOINT_SOCKET_V1",
+        "socket": {
+            "path": str(endpoint),
+            "st_dev": socket_stat.st_dev,
+            "st_ino": socket_stat.st_ino,
+            "mode": socket_stat.st_mode,
+        },
         "boot": _boot_identity(),
         "server": safe_server,
     }
@@ -205,13 +219,20 @@ def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
     return str(payload["schema"]), _safe_digest(payload), safe_server
 
 
-def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
+def _independent_snapshot(
+    phase: str, sequence: int, *, gateway: MutationAuthority | None = None
+) -> dict[str, object]:
     """Independent read-only collector; no producer code or oracle is imported."""
     try:
+        gateway = gateway or MutationAuthority()
 
         def inspect(kind: str, ident: str) -> dict[str, object]:
-            result = subprocess.run(
-                ["docker", kind, "inspect", ident], capture_output=True, check=False, timeout=30
+            result = gateway.run(
+                ("docker", kind, "inspect", ident),
+                stage=f"verifier-inspect-{kind}",
+                capture_output=True,
+                check=False,
+                timeout=30,
             )
             if result.returncode != 0:
                 raise RuntimeError("inspect failed")
@@ -226,10 +247,15 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
 
         def ids(kind: str) -> list[str]:
             command = (
-                ["docker", "ps", "-aq"] if kind == "container" else ["docker", kind, "ls", "-q"]
+                ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
             )
-            result = subprocess.run(
-                command, capture_output=True, text=True, check=False, timeout=30
+            result = gateway.run(
+                command,
+                stage=f"verifier-enumerate-{kind}",
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
             )
             if result.returncode != 0:
                 raise RuntimeError("enumeration failed")
@@ -251,7 +277,8 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                         }
                         else _safe_digest(str(k)),
                         str(v)
-                        if str(k) in {
+                        if str(k)
+                        in {
                             "com.docker.compose.project",
                             "com.docker.compose.service",
                             "com.avito-mayak.technical-id",
@@ -288,10 +315,19 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                 return "UNRESOLVED" if task_indicator else "FOREIGN"
             if kind == "container":
                 service = raw.get("com.docker.compose.service")
-                exact = project == TASK_PROJECT and service in {
-                    "mayak-api", "mayak-worker", "mayak-scheduler", "mayak-postgres",
-                    "mayak-db-bootstrap", "mayak-migrate",
-                } and name == f"{TASK_PROJECT}-{service}-1"
+                exact = (
+                    project == TASK_PROJECT
+                    and service
+                    in {
+                        "mayak-api",
+                        "mayak-worker",
+                        "mayak-scheduler",
+                        "mayak-postgres",
+                        "mayak-db-bootstrap",
+                        "mayak-migrate",
+                    }
+                    and name == f"{TASK_PROJECT}-{service}-1"
+                )
             elif kind == "network":
                 exact = project == TASK_PROJECT and name == TASK_PROJECT + "_mayak-internal"
             elif kind == "volume":
@@ -313,22 +349,24 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
             state = item.get("State", {})
             raw_labels = cfg.get("Labels", {}) if isinstance(cfg, dict) else {}
             mounts_value = item.get("Mounts")
-            mounts = [
-                {
-                    "type": m.get("Type"),
-                    "destination_hash": _safe_digest(str(m.get("Destination"))),
-                    "mode": m.get("Mode"),
-                    "rw": m.get("RW"),
-                }
-                for m in mounts_value
-                if isinstance(m, dict)
-            ] if isinstance(mounts_value, list) else []
+            mounts = (
+                [
+                    {
+                        "type": m.get("Type"),
+                        "destination_hash": _safe_digest(str(m.get("Destination"))),
+                        "mode": m.get("Mode"),
+                        "rw": m.get("RW"),
+                    }
+                    for m in mounts_value
+                    if isinstance(m, dict)
+                ]
+                if isinstance(mounts_value, list)
+                else []
+            )
             attachments = []
             network_settings = item.get("NetworkSettings")
             networks_value = (
-                network_settings.get("Networks")
-                if isinstance(network_settings, dict)
-                else None
+                network_settings.get("Networks") if isinstance(network_settings, dict) else None
             )
             for net, data in networks_value.items() if isinstance(networks_value, dict) else ():
                 if isinstance(data, dict):
@@ -364,9 +402,7 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                     attachments, key=lambda x: (str(x.get("name")), str(x.get("network_id")))
                 ),
                 "published_port_count": len(
-                    network_settings.get("Ports", {})
-                    if isinstance(network_settings, dict)
-                    else {}
+                    network_settings.get("Ports", {}) if isinstance(network_settings, dict) else {}
                 ),
                 "ownership": own(name, raw_labels, "container"),
             }
@@ -418,7 +454,9 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                         "attachment_count": len(attached_containers)
                         if isinstance(attached_containers, dict)
                         else 0,
-                        "attachment_hashes": sorted(_safe_digest(str(x)) for x in attached_containers)
+                        "attachment_hashes": sorted(
+                            _safe_digest(str(x)) for x in attached_containers
+                        )
                         if isinstance(attached_containers, dict)
                         else [],
                         "ownership": own(name, raw_labels, "network"),
@@ -436,6 +474,7 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
             volumes.append(
                 {
                     "stable": {
+                        "identity": _safe_digest(name),
                         "name": _safe_digest(name),
                         "driver": item.get("Driver"),
                         "labels": labels(raw_labels),
@@ -472,7 +511,7 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
         }
         host = _host_identity()
         boot = _boot_identity()
-        endpoint_schema, endpoint, server_metadata = _endpoint_identity()
+        endpoint_schema, endpoint, server_metadata = _endpoint_identity(gateway)
         result = {
             "schema_version": FOREIGN_SCHEMA_VERSION,
             "capture_phase": phase,
@@ -550,7 +589,9 @@ def _relative(value: str) -> str:
     return path.as_posix()
 
 
-def _clean_context(repo: Path, root: Path, run_id: str) -> tuple[Path, str]:
+def _clean_context(
+    repo: Path, root: Path, run_id: str, *, gateway: MutationAuthority | None = None
+) -> tuple[Path, str]:
     run_root = root / run_id
     source = run_root / "source"
     run_root.mkdir(mode=0o700, parents=True)
@@ -586,7 +627,7 @@ def _clean_context(repo: Path, root: Path, run_id: str) -> tuple[Path, str]:
 
 
 def _docker_manifest(
-    source: Path, root: Path, run_id: str
+    source: Path, root: Path, run_id: str, *, gateway: MutationAuthority | None = None
 ) -> tuple[list[dict[str, str]], dict[str, str]]:
     run_root = root / run_id
     output = run_root / "output"
@@ -600,8 +641,8 @@ def _docker_manifest(
         encoding="utf-8",
     )
     output.mkdir(mode=0o700)
-    subprocess.run(
-        [
+    (gateway or MutationAuthority()).run(
+        (
             "docker",
             "buildx",
             "build",
@@ -611,7 +652,8 @@ def _docker_manifest(
             "--output",
             f"type=local,dest={output}",
             str(source),
-        ],
+        ),
+        stage="verifier-buildx-build",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=True,
@@ -736,10 +778,21 @@ def _verify_stage56(evidence: dict[str, object]) -> None:
     if not isinstance(observations, dict):
         raise ValueError("stage 56 observations missing")
     required = {
-        "task_container_count", "task_network_count", "task_volume_count", "unresolved_count",
-        "private_output_count", "json_log_count", "override_count", "context_directory_count",
-        "temporary_validation_resource_count", "authorized_mutation_count", "executed_mutation_count",
-        "foreign_target_mutation_count", "unresolved_target_mutation_count", "unscoped_mutation_count",
+        "task_container_count",
+        "task_network_count",
+        "task_volume_count",
+        "unresolved_count",
+        "private_output_count",
+        "json_log_count",
+        "override_count",
+        "context_directory_count",
+        "runtime_compose_count",
+        "temporary_validation_resource_count",
+        "authorized_mutation_count",
+        "executed_mutation_count",
+        "foreign_target_mutation_count",
+        "unresolved_target_mutation_count",
+        "unscoped_mutation_count",
         "broad_mutation_count",
     }
     if set(observations) != required or any(
@@ -751,12 +804,25 @@ def _verify_stage56(evidence: dict[str, object]) -> None:
         or evidence.get("cleanup_observed") is not True
         or evidence.get("cleanup_exit") != 0
         or evidence.get("foreign_deletion") is not False
-        or any(observations[key] != 0 for key in (
-            "task_container_count", "task_network_count", "task_volume_count", "unresolved_count",
-            "private_output_count", "json_log_count", "override_count", "context_directory_count",
-            "temporary_validation_resource_count", "foreign_target_mutation_count",
-            "unresolved_target_mutation_count", "unscoped_mutation_count", "broad_mutation_count",
-        ))
+        or any(
+            observations[key] != 0
+            for key in (
+                "task_container_count",
+                "task_network_count",
+                "task_volume_count",
+                "unresolved_count",
+                "private_output_count",
+                "json_log_count",
+                "override_count",
+                "context_directory_count",
+                "runtime_compose_count",
+                "temporary_validation_resource_count",
+                "foreign_target_mutation_count",
+                "unresolved_target_mutation_count",
+                "unscoped_mutation_count",
+                "broad_mutation_count",
+            )
+        )
         or observations["authorized_mutation_count"] != observations["executed_mutation_count"]
     ):
         raise ValueError("stage 56 observed cleanup failed")
@@ -780,23 +846,38 @@ def _verify_stage57(evidence: dict[str, object]) -> None:
     before_i = cast(dict[str, object], records["independent_before"])
     after = cast(dict[str, object], records["producer_after"])
     after_i = cast(dict[str, object], records["independent_after"])
-    canonical_keys = (
-        "schema_version", "source_host_safe_identity", "host_boot_instance_safe_identity",
-        "docker_server_safe_identity", "docker_endpoint_identity_schema",
-        "docker_server_safe_metadata", "container_records", "network_records", "volume_records",
-        "apm_postgres_present", "task_owned_resource_records", "unresolved_resource_records",
-        "collection_complete", "collection_errors", "redaction_passed",
-    )
-    for snapshot in (before, before_i, after, after_i):
-        validate_snapshot(
-            snapshot,
-            collector_id=str(snapshot.get("collector_implementation_id")),
-        )
+    for label, snapshot, collector_id in (
+        ("producer_before", before, PRODUCER_COLLECTOR_ID),
+        ("independent_before", before_i, INDEPENDENT_COLLECTOR_ID),
+        ("producer_after", after, PRODUCER_COLLECTOR_ID),
+        ("independent_after", after_i, INDEPENDENT_COLLECTOR_ID),
+    ):
+        if snapshot.get("collection_complete") is True:
+            validate_snapshot(snapshot, collector_id=collector_id)
+        else:
+            validate_failure_snapshot(snapshot, collector_id=collector_id)
         validate_safe_value(snapshot)
-        if snapshot.get("canonical_serialization_digest") != _safe_digest(
-            {key: snapshot.get(key) for key in canonical_keys}
-        ):
-            raise ValueError("safe record recomputation failed")
+        canonical_keys = (
+            "schema_version",
+            "source_host_safe_identity",
+            "host_boot_instance_safe_identity",
+            "docker_server_safe_identity",
+            "docker_endpoint_identity_schema",
+            "docker_server_safe_metadata",
+            "container_records",
+            "network_records",
+            "volume_records",
+            "apm_postgres_present",
+            "task_owned_resource_records",
+            "unresolved_resource_records",
+            "collection_complete",
+            "collection_errors",
+            "redaction_passed",
+        )
+        if snapshot.get("collection_complete") is True:
+            expected_digest = _safe_digest({key: snapshot.get(key) for key in canonical_keys})
+            if snapshot.get("canonical_serialization_digest") != expected_digest:
+                raise ValueError("safe record recomputation failed")
     if before.get("collector_implementation_id") == before_i.get("collector_implementation_id"):
         raise ValueError("collector identity aliasing")
     if after.get("collector_implementation_id") == after_i.get("collector_implementation_id"):
@@ -807,11 +888,12 @@ def _verify_stage57(evidence: dict[str, object]) -> None:
         "canonical_serialization_digest"
     ):
         raise ValueError("collector parity failed")
-    if before.get("source_host_safe_identity") != after.get(
-        "source_host_safe_identity"
-    ) or before.get("host_boot_instance_safe_identity") != after.get(
-        "host_boot_instance_safe_identity"
-    ) or before.get("docker_server_safe_identity") != after.get("docker_server_safe_identity"):
+    if (
+        before.get("source_host_safe_identity") != after.get("source_host_safe_identity")
+        or before.get("host_boot_instance_safe_identity")
+        != after.get("host_boot_instance_safe_identity")
+        or before.get("docker_server_safe_identity") != after.get("docker_server_safe_identity")
+    ):
         raise ValueError("identity stability failed")
     if (
         before.get("container_records") != after.get("container_records")
@@ -822,16 +904,28 @@ def _verify_stage57(evidence: dict[str, object]) -> None:
     ledger = evidence.get("mutation_ledger")
     if not isinstance(ledger, list):
         raise ValueError("mutation ledger failed")
-    if ledger:
-        auth = [item for item in ledger if isinstance(item, dict) and item.get("execution_result_sequence") is None]
-        results = [item for item in ledger if isinstance(item, dict) and item.get("execution_result_sequence") is not None]
-        if len(auth) != len(results) or any(
-            a.get("authorization_sequence") != r.get("authorization_sequence")
-            for a, r in zip(auth, results)
-        ):
-            raise ValueError("mutation ledger parity failed")
-        if any(item.get("planned_ownership") != "TASK_OWNED" for item in ledger if isinstance(item, dict)):
-            raise ValueError("foreign mutation target")
+    if not ledger:
+        raise ValueError("mutation ledger failed")
+    auth = [
+        item
+        for item in ledger
+        if isinstance(item, dict) and item.get("execution_result_sequence") is None
+    ]
+    results = [
+        item
+        for item in ledger
+        if isinstance(item, dict) and item.get("execution_result_sequence") is not None
+    ]
+    if len(auth) != len(results) or any(
+        a.get("authorization_sequence") != r.get("authorization_sequence")
+        for a, r in zip(auth, results)
+    ):
+        raise ValueError("mutation ledger parity failed")
+    if any(
+        item.get("planned_ownership") != "TASK_OWNED" for item in ledger if isinstance(item, dict)
+    ):
+        raise ValueError("foreign mutation target")
+
     def record_list(snapshot: dict[str, object], key: str) -> list[object]:
         value = snapshot.get(key)
         if not isinstance(value, list):
@@ -899,9 +993,12 @@ def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]
             raise ValueError(f"source hash mismatch: {relative}")
     runtime_root = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/independent-build-context")
     run_id = "verify-" + hashlib.sha256(evidence_path.read_bytes()).hexdigest()[:16]
-    source, archive_sha = _clean_context(source_tree, runtime_root, run_id)
+    verifier_gateway = MutationAuthority()
+    source, archive_sha = _clean_context(
+        source_tree, runtime_root, run_id, gateway=verifier_gateway
+    )
     try:
-        manifest, export = _docker_manifest(source, runtime_root, run_id)
+        manifest, export = _docker_manifest(source, runtime_root, run_id, gateway=verifier_gateway)
         expected_manifest = document.get("docker_native_effective_manifest")
         if manifest != expected_manifest or document.get("build_input_manifest") != manifest:
             raise ValueError("independent manifest mismatch")
@@ -945,9 +1042,12 @@ def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]
         if not isinstance(document.get("stage55_semantic_verification"), dict):
             raise ValueError("stage 55 semantic observations missing")
         cleanup_stage = cast(
-            dict[str, object], _stage(document, "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL")["evidence"]
+            dict[str, object],
+            _stage(document, "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL")["evidence"],
         )
-        if document.get("stage56_semantic_verification") != cleanup_stage.get("stage56_observations"):
+        if document.get("stage56_semantic_verification") != cleanup_stage.get(
+            "stage56_observations"
+        ):
             raise ValueError("stage 56 semantic observations mismatch")
         if document.get("stage57_semantic_verification") != {
             "derived_delta": "NO_CHANGE",
@@ -976,7 +1076,9 @@ def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]
             dict[str, object], _stage(document, "FOREIGN_RESOURCE_SNAPSHOT_BEFORE")["evidence"]
         )
         stage57.setdefault("producer_before_snapshot", stage10.get("producer_before_snapshot"))
-        stage57.setdefault("independent_before_snapshot", stage10.get("independent_before_snapshot"))
+        stage57.setdefault(
+            "independent_before_snapshot", stage10.get("independent_before_snapshot")
+        )
         _verify_stage57(stage57)
         if (
             not document.get("image_id")

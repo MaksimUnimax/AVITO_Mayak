@@ -1,9 +1,10 @@
 from copy import deepcopy
+from typing import Any
 
 from scripts.runtime.rf08_foreign_snapshot import classify_delta
 
 
-def _snapshot() -> dict[str, object]:
+def _snapshot() -> dict[str, Any]:
     return {
         "collection_complete": True,
         "unresolved_resource_records": {"containers": [], "networks": [], "volumes": []},
@@ -39,7 +40,9 @@ def test_foreign_structure_and_unresolved_resources_fail_closed() -> None:
     assert classify_delta(left, structure) == "FOREIGN_STRUCTURE_CHANGED"
     unresolved = deepcopy(left)
     unresolved["unresolved_resource_records"] = {
-        "containers": [{"id": "u1"}], "networks": [], "volumes": []
+        "containers": [{"id": "u1"}],
+        "networks": [],
+        "volumes": [],
     }
     assert classify_delta(left, unresolved) == "UNRESOLVED_RESOURCE_PRESENT"
 

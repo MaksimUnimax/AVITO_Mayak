@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from scripts.runtime.rf08_docker_authority import MutationAuthority
 from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value
 
 SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
@@ -95,7 +96,7 @@ def _peer_start_time(pid: int) -> str:
     return fields[19]
 
 
-def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
+def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, str]]:
     endpoint = _docker_endpoint()
     socket_stat = endpoint.stat()
     if not stat.S_ISSOCK(socket_stat.st_mode):
@@ -116,8 +117,9 @@ def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
                 raise CollectionFailure("malformed peer credentials") from exc
     if peer is not None and any(value < 0 for value in peer):
         raise CollectionFailure("invalid peer credentials")
-    server = subprocess.run(
-        ["docker", "version", "--format", "{{json .Server}}"],
+    server = gateway.run(
+        ("docker", "version", "--format", "{{json .Server}}"),
+        stage="foreign-endpoint-version",
         capture_output=True,
         check=False,
         timeout=30,
@@ -171,8 +173,8 @@ def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
     return (str(payload["schema"]), _digest(payload), safe_server)
 
 
-def _daemon_identity() -> str:
-    return _endpoint_identity()[1]
+def _daemon_identity(gateway: MutationAuthority) -> str:
+    return _endpoint_identity(gateway)[1]
 
 
 def _labels(value: Any) -> dict[str, str]:
@@ -182,13 +184,17 @@ def _labels(value: Any) -> dict[str, str]:
 def _safe_labels(labels: dict[str, str]) -> list[list[str]]:
     return [
         [
-            k if k in {
+            k
+            if k
+            in {
                 "com.docker.compose.project",
                 "com.docker.compose.service",
                 "com.avito-mayak.technical-id",
-            } else _digest(k),
+            }
+            else _digest(k),
             v
-            if k in {
+            if k
+            in {
                 "com.docker.compose.project",
                 "com.docker.compose.service",
                 "com.avito-mayak.technical-id",
@@ -226,9 +232,13 @@ def _ownership(name: str, labels: dict[str, str], kind: str) -> str:
     return "UNRESOLVED" if task_indicator else "FOREIGN"
 
 
-def _inspect(kind: str, ident: str) -> dict[str, Any]:
-    proc = subprocess.run(
-        ["docker", kind, "inspect", ident], capture_output=True, check=False, timeout=30
+def _inspect(gateway: MutationAuthority, kind: str, ident: str) -> dict[str, Any]:
+    proc = gateway.run(
+        ("docker", kind, "inspect", ident),
+        stage=f"foreign-inspect-{kind}",
+        capture_output=True,
+        check=False,
+        timeout=30,
     )
     if proc.returncode:
         raise CollectionFailure("inspect failed")
@@ -248,9 +258,16 @@ def _inspect(kind: str, ident: str) -> dict[str, Any]:
     return item
 
 
-def _enumerate(kind: str) -> list[str]:
-    command = ["docker", "ps", "-aq"] if kind == "container" else ["docker", kind, "ls", "-q"]
-    proc = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
+def _enumerate(gateway: MutationAuthority, kind: str) -> list[str]:
+    command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
+    proc = gateway.run(
+        command,
+        stage=f"foreign-enumerate-{kind}",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
     if proc.returncode:
         raise CollectionFailure("enumeration failed")
     ids = [x.strip() for x in proc.stdout.splitlines() if x.strip()]
@@ -383,16 +400,19 @@ def _canonical(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: payload[k] for k in keys}
 
 
-def collect_snapshot(phase: str, sequence: int) -> dict[str, Any]:
+def collect_snapshot(
+    phase: str, sequence: int, *, gateway: MutationAuthority | None = None
+) -> dict[str, Any]:
     try:
+        gateway = gateway or MutationAuthority()
         host, boot = _host_identity(), _boot_identity()
-        endpoint_schema, daemon, server_metadata = _endpoint_identity()
+        endpoint_schema, daemon, server_metadata = _endpoint_identity(gateway)
         all_records = {
             kind: [
                 ({"container": _container, "network": _network, "volume": _volume}[kind])(
-                    _inspect(kind, ident)
+                    _inspect(gateway, kind, ident)
                 )
-                for ident in _enumerate(kind)
+                for ident in _enumerate(gateway, kind)
             ]
             for kind in ("container", "network", "volume")
         }
@@ -449,6 +469,12 @@ def collect_snapshot(phase: str, sequence: int) -> dict[str, Any]:
             "schema_version": SCHEMA_VERSION,
             "capture_phase": phase,
             "collector_implementation_id": COLLECTOR_ID,
+            "capture_monotonic_sequence": sequence,
+            "source_host_safe_identity": None,
+            "docker_server_safe_identity": None,
+            "host_boot_instance_safe_identity": None,
+            "docker_endpoint_identity_schema": None,
+            "docker_server_safe_metadata": {},
             "collection_complete": False,
             "collection_errors": [type(exc).__name__],
             "redaction_passed": False,
