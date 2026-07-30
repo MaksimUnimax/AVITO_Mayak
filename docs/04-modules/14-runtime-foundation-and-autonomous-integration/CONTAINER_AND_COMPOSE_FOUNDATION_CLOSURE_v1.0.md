@@ -143,6 +143,14 @@ Before publication, rollback is deleting the new closure file, restoring the fiv
 - Limitation: the expected-base application image lacks `mayak.runtime.api`, `mayak.runtime.worker` and `mayak.runtime.scheduler`. Those entrypoints are an RF-23 boundary and were not added here; no future process readiness or full runtime deployment is required or claimed. No independent acceptance, operator acceptance or production-readiness claim is made.
 - Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; RF-11 and RF-12 remain unchanged.
 
+## RF-08 corrective publication — deterministic stale-resource preflight
+
+- Technical-ID: `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`.
+- The authoritative transcript contains exactly 57 unique ordered stages. Every stage requires an executed typed operation, semantic oracle and safe evidence; only `ProtocolTranscript.execute` appends entries.
+- Before generation A, `TASK_RESOURCE_PREFLIGHT` verifies complete project-owned labels for exact task PostgreSQL resources, removes only exact stale task resources, and classifies an unlabeled or foreign collision as `STOP_FOREIGN_RESOURCE`.
+- Exact CPython `3.14.6`, uv `0.11.31` and frozen dev sync were used. The complete A/restart-A/B/rollback-A/from-zero-C/D/recovery/cleanup/foreign protocol reran successfully after the corrective source change.
+- Evidence: `docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json`; verdict `PUBLISHED_FOR_CHATGPT_REVIEW`. RF-11 remains preserved; RF-12 and RF-23 remain unstarted; no independent acceptance, operator readiness or `PRODUCTION_READY` claim is made.
+
 ## Historical next gate
 
 RF-09 was the historical next gate at the time of the prior closure. This corrective does not start RF-11, RF-12 or RF-23 and does not alter their implementation boundaries.

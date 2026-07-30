@@ -83,6 +83,7 @@ Historical A0 completion does not mean that the Module 14 runtime is implemented
   - `[x] RF-08-02-CORRECTIVE-03` project-scoped resource names accepted at `243849bbf724b7bd301b685573f9664290783605`;
   - `[x] RF-08-03` ephemeral Compose bootstrap runtime proof accepted;
   - `[x] RF-08-04` independently accepted through closure chain head `104e9777f298c47428fa8bdb07af109c234c4630`.
+  - `[c] RF-08 corrective stale-resource and semantic-oracle publication` — exact 57-stage CPython 3.14.6/uv 0.11.31 proof published for ChatGPT review; not independently accepted; RF-11 preserved; RF-12/RF-23 unstarted.
   - Evidence: `docs/04-modules/14-runtime-foundation-and-autonomous-integration/CONTAINER_AND_COMPOSE_FOUNDATION_CLOSURE_v1.0.md`.
 - `[x] RF-09` PostgreSQL and Alembic foundation — independently accepted through `54300eb672a883cc052c131bf788501ed4b4a918`; runtime/deployment not complete.
 - `[c] RF-10` Platform & Contracts runtime — corrective published for independent review; independent acceptance remains pending.

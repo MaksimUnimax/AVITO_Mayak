@@ -657,3 +657,14 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Root cause and resolution: the old lifecycle collapsed image/build handling into `POSTGRES_A_CREATE`; the corrective now resolves the exact image before service creation and prevents implicit build. Compose 2.30.0 does not support `run --no-build`; one-shot `run` commands therefore carry no build option and are gated by the prior exact image proof, while service creation uses supported `--no-build`.
 - Authoritative protocol passed: canonical identity, task isolation, A/readiness/bootstrap/migration/application query, restart A, real B authentication failure, rollback A health persistence proof, C volume recreation/bootstrap/migration/application query, abrupt D exit `70`, recovery, exact cleanup and foreign before/after equality. Final task resources were zero and no observable secret or raw build output was exported.
 - RF-11 remains preserved and out of scope; RF-12 and RF-23 entrypoint paths remain unchanged. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready. Replay must not append this entry again.
+
+## WL-RF08-20260730-01 — 2026-07-30 — exact locked semantic-oracle corrective publication
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `USE_EXACT_PY314_UV_TEST_HARNESS_STABILIZE_STALE_RESOURCE_PREFLIGHT_REUSE_VALID_RUNTIME_PROOF_AND_PUBLISH_RF08_CORRECTIVE`
+**Base:** `7d53282d08095669b38547571aba9d15464aff20`
+
+- Deterministic `TASK_RESOURCE_PREFLIGHT` validates exact task-owned labels before clearing stale PostgreSQL container/volume state; a same-named foreign or unlabeled resource is `STOP_FOREIGN_RESOURCE`.
+- The final transcript has exactly 57 unique ordered stages with one append authority and semantic oracles. Full runtime proof reran after production changes and passed A, restart A, B rejection, rollback A, from-zero C, D exit `70`, recovery, cleanup and foreign equality.
+- Locked validation used project-owned CPython `3.14.6`, uv `0.11.31`, committed lock and `uv sync --frozen --group dev`. Focused tests, Ruff, mypy, import-linter and applicable runtime checks passed; DSN-gated RF-10/RF-11 tests were outside this RF-08 scope and unchanged.
+- Evidence: `docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json`. **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready. RF-11 was untouched; RF-12 and RF-23 were not started. No secret, credential, raw output or foreign resource was exposed or modified.

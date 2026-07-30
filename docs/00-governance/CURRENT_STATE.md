@@ -4,6 +4,8 @@
 **Статус:** `MODULE_14_RF10_PLATFORM_CONTRACTS_RUNTIME_PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`
 **Дата:** 2026-07-29
 
+**RF-08 current corrective publication:** `RF08_EXACT_PY314_FULL_REGRESSION_AND_SEMANTIC_ORACLE_PROOF_PUBLISHED_FOR_CHATGPT_REVIEW`; deterministic stale task-resource preflight and exact locked-toolchain proof are recorded in the authoritative evidence. This is not independent acceptance, operator readiness or `PRODUCTION_READY`; RF-11 remains preserved and RF-12/RF-23 remain unstarted.
+
 **RF-08 authoritative corrective:** Technical-ID `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`, direct-child publication `fix(rf08): make secret lifecycle proof authoritative` from rejected base `63dc73662c5d3c78106d4163e509136579ae9fec`, is `PUBLISHED_FOR_CHATGPT_REVIEW`. It restores canonical Compose identity and makes persistence-only secret proof executable and authoritative; application-role persistence proof is not blocked by RF-11. API/worker/scheduler entrypoints remain RF-23; RF-11/RF-12 are unchanged.
 
 ## RF-06-04 closure current gate
