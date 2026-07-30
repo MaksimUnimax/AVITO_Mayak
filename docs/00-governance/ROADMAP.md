@@ -124,3 +124,5 @@ RF-11 corrective trusted-authority and durable-PostgreSQL package is published f
 - Public ingress and production launch remain blocked.
 - `READY_FOR_OPERATOR_ACCEPTANCE` is achieved only after RF-30 acceptance.
 - Module 14 must not claim `PRODUCTION_READY`.
+
+RF-08 public-bootstrap invariant diagnosis and exact 57-stage proof are published for ChatGPT review; RF-09 semantics are unchanged, RF-11 is preserved, and RF-12/RF-23 remain unstarted.

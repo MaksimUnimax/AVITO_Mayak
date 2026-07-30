@@ -65,6 +65,67 @@ class SecretPreparationError(Exception):
     """Constant, safe diagnostic exception."""
 
 
+def prepare_consumer_binding(
+    root: Path,
+    generation_id: str,
+    *,
+    postgres_uid: int,
+    postgres_gid: int,
+    reader_uid: int = RUNTIME_UID,
+    reader_gid: int = RUNTIME_GID,
+) -> dict[str, object]:
+    """Validate the application consumer copy for one immutable generation.
+
+    This is the production authority shared by A and B.  It deliberately
+    returns metadata and a boolean equality result only; secret bytes never
+    cross this API boundary.
+    """
+    root = _safe_root(root)
+    generation = _generation(root, generation_id)
+    validate_generation(root, generation_id, postgres_uid=postgres_uid, postgres_gid=postgres_gid)
+    source = generation / _FILES["application_password"][0]
+    consumer = root / "active" / _FILES["application_password"][0]
+    root_resolved = root.resolve(strict=True)
+    source_resolved = source.resolve(strict=True)
+    consumer_resolved = consumer.resolve(strict=True)
+    if (
+        root_resolved not in source_resolved.parents
+        or root_resolved not in consumer_resolved.parents
+    ):
+        raise SecretPreparationError("consumer path escapes task secret root")
+    if source_resolved.is_symlink() or consumer.is_symlink() or not source_resolved.is_file():
+        raise SecretPreparationError("consumer source is not a regular file")
+    if not consumer_resolved.is_file() or not stat.S_ISREG(consumer_resolved.stat().st_mode):
+        raise SecretPreparationError("consumer copy is not a regular file")
+    source_info = source_resolved.stat()
+    consumer_info = consumer_resolved.stat()
+    if (consumer_info.st_uid, consumer_info.st_gid) != (reader_uid, reader_gid):
+        raise SecretPreparationError("consumer owner mismatch")
+    mode = stat.S_IMODE(consumer_info.st_mode)
+    if mode not in (0o400, 0o600) or mode & 0o077:
+        raise SecretPreparationError("consumer mode mismatch")
+    size = consumer_info.st_size
+    if not 1 <= size <= 4096 or source_info.st_size != size:
+        raise SecretPreparationError("consumer size outside accepted bounds")
+    equal = hmac.compare_digest(source_resolved.read_bytes(), consumer_resolved.read_bytes())
+    if not equal:
+        raise SecretPreparationError("consumer copy does not equal active source")
+    return {
+        "generation_id": generation_id,
+        "consumer_source_classification": "task_owned_regular_file",
+        "consumer_destination": _FILES["application_password"][0],
+        "source_within_task_root": True,
+        "symlink_free": True,
+        "regular_file": True,
+        "owner_uid": consumer_info.st_uid,
+        "owner_gid": consumer_info.st_gid,
+        "mode": f"{mode:04o}",
+        "size_within_bounds": True,
+        "constant_time_equal": bool(equal),
+        "immutable": True,
+    }
+
+
 def _failpoint(stage: str) -> None:
     if os.environ.get(FAILPOINT_ENV) != stage:
         return

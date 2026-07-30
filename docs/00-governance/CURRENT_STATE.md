@@ -199,3 +199,7 @@ RF-10 is independently accepted through `74997f4da04fd9ae9e225ea39b22c20acd45353
 ## RF-11 corrective current gate — 2026-07-29
 
 `RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02` resumes from exact base `1fa62639a00e7615f24041805e6a9eed60f62502` for ChatGPT review. Security containment is complete for the confirmed task-owned PostgreSQL DSN disclosure path: credentials were rotated, exact task resources and secret files were removed, and redaction regression coverage passed. RF-11 corrective is not accepted yet; RF-12 is not started; environment is `RUNTIME_ELIGIBLE`; runtime/deployment is incomplete; `NOT_PRODUCTION_READY` remains authoritative; `CHATGPT_REVIEW_REQUIRED: YES`.
+
+## RF-08 public-bootstrap corrective — 2026-07-30
+
+RF-08 public-bootstrap invariant diagnosis and the exact 57-stage execution-derived proof are published for ChatGPT review. The accepted RF-09 implementation, closure and migration semantics are unchanged. RF-11 remains preserved and not accepted; RF-12 and RF-23 remain unstarted. Status is `PUBLISHED_FOR_CHATGPT_REVIEW`; `NOT_PRODUCTION_READY` remains authoritative.

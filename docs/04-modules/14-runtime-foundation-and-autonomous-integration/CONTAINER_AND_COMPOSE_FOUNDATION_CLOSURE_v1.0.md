@@ -151,6 +151,13 @@ Before publication, rollback is deleting the new closure file, restoring the fiv
 - Exact CPython `3.14.6`, uv `0.11.31` and frozen dev sync were used. The complete A/restart-A/B/rollback-A/from-zero-C/D/recovery/cleanup/foreign protocol reran successfully after the corrective source change.
 - Evidence: `docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json`; verdict `PUBLISHED_FOR_CHATGPT_REVIEW`. RF-11 remains preserved; RF-12 and RF-23 remain unstarted; no independent acceptance, operator readiness or `PRODUCTION_READY` claim is made.
 
+## RF-08 public-bootstrap invariant diagnosis — 2026-07-30
+
+- Stage 55 now uses the accepted `mayak.persistence.bootstrap.bootstrap_database()` public API through `scripts/runtime/rf09_public_bootstrap_adapter.py`; RF-09 CLI class-only output is not diagnostic authority.
+- The adapter uses an exact redacted invariant allowlist, a fail-closed static operation observer and one bounded JSON object while preserving RF-09 source and migration semantics.
+- Proven RF-08 causes were task-owned adapter bind readability for UID `10001:10001`, stage-specific post-recovery parsing and JSON-safe cleanup evidence. The complete 57-stage execution passed stages 55–57 and foreign equality.
+- Evidence was independently verified at `docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json`. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; no independent acceptance or production-readiness claim is made.
+
 ## Historical next gate
 
 RF-09 was the historical next gate at the time of the prior closure. This corrective does not start RF-11, RF-12 or RF-23 and does not alter their implementation boundaries.

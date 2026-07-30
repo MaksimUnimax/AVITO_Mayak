@@ -668,3 +668,14 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - The final transcript has exactly 57 unique ordered stages with one append authority and semantic oracles. Full runtime proof reran after production changes and passed A, restart A, B rejection, rollback A, from-zero C, D exit `70`, recovery, cleanup and foreign equality.
 - Locked validation used project-owned CPython `3.14.6`, uv `0.11.31`, committed lock and `uv sync --frozen --group dev`. Focused tests, Ruff, mypy, import-linter and applicable runtime checks passed; DSN-gated RF-10/RF-11 tests were outside this RF-08 scope and unchanged.
 - Evidence: `docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json`. **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready. RF-11 was untouched; RF-12 and RF-23 were not started. No secret, credential, raw output or foreign resource was exposed or modified.
+
+## WL-RF08-20260730-02 — 2026-07-30 — public RF-09 bootstrap invariant diagnosis and stage-specific proof
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `USE_RF09_PUBLIC_BOOTSTRAP_API_AND_SAFE_INVARIANT_ENUM_IDENTIFY_AND_FIX_THE_ACTUAL_STAGE55_FAILURE_COMPLETE_57_STAGE_PROTOCOL_AND_PUBLISH`
+**Base:** `a12963b8d55b415739056eaba168ae9caf986855`
+
+- Stage 55 uses the accepted RF-09 public Python API through one read-only mounted RF-08 adapter; CLI class-only output is rejected as diagnostic authority. The adapter emits exact safe invariant enums, fail-closed operation IDs and one bounded JSON object without SQL, parameters, secrets or raw exceptions.
+- Proven RF-08 defects were corrected in task-owned adapter resource binding, stage-specific post-recovery migration/application parsing and JSON-safe cleanup evidence. The final exact 57-stage execution passed stages 55–57, migration head `RF09_FINALIZE`, application marker, cleanup and foreign equality.
+- CPython `3.14.6`, uv `0.11.31`, frozen lock, affected tests, compile, Ruff, mypy, import-linter and independent evidence verification passed. RF-09 source paths and semantics were unchanged; RF-11 was preserved; RF-12/RF-23 were not started.
+- **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready.
