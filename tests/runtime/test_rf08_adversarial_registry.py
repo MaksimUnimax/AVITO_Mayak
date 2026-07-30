@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # mypy: ignore-errors
-
 import json
 import shutil
 import socket
@@ -20,6 +19,7 @@ from scripts.runtime.rf08_docker_authority import (
     ReadOnlyDockerQuery,
     _compose_plan,
     _direct_plan,
+    _split_option_pairs,
     classify_docker_argv,
     gateway_token_active,
 )
@@ -42,7 +42,9 @@ from scripts.runtime.verify_rf08_authoritative_evidence import (
 )
 
 PROJECT = "avito-mayak-rf08-secret-delivery"
-TECHNICAL_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
+TECHNICAL_ID = (
+    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+)
 RUNTIME_COMPOSE = "/tmp/compose.runtime.yaml"
 REPO_COMPOSE = str(Path(__file__).resolve().parents[2] / "compose.yaml")
 REAL_SUBPROCESS_RUN = subprocess.run
@@ -359,7 +361,139 @@ def _issue_mutation(
     *,
     stage: str,
 ):
-    return gateway.issue_from_argv(_compose_base(file) + argv_tail, stage=stage)
+    argv = _compose_base(file) + argv_tail
+    plan = _compose_plan(argv)
+    if plan.command_class not in {
+        DockerCommandClass.COMPOSE_CREATE,
+        DockerCommandClass.COMPOSE_UP,
+        DockerCommandClass.COMPOSE_START,
+        DockerCommandClass.COMPOSE_STOP,
+        DockerCommandClass.COMPOSE_RESTART,
+        DockerCommandClass.COMPOSE_RUN,
+        DockerCommandClass.COMPOSE_RM,
+    }:
+        raise ValueError("compose mutation required")
+    if plan.command is None or plan.service is None or plan.compose_file is None:
+        raise ValueError("compose mutation plan incomplete")
+    return gateway.issue_compose_operation(
+        command=plan.command,
+        service=plan.service,
+        stage=stage,
+        compose_file=plan.compose_file,
+        project_name=plan.project_name,
+        profile=plan.profile,
+        detach="-d" in argv,
+        force=plan.command == "rm" and argv.count("-f") > 1,
+        remove_orphans="--remove-orphans" in argv,
+        no_deps="--no-deps" in argv,
+        rm_volumes="--volumes" in argv,
+        extra_args=argv[argv.index(plan.service) + 1 :] if plan.command == "run" else (),
+    )
+
+
+def _issue_semantic(
+    gateway: MutationAuthority,
+    argv: tuple[str, ...],
+    *,
+    stage: str,
+):
+    plan = _direct_plan(argv)
+    if not plan.is_mutation:
+        raise ValueError("mutation command required")
+    if (
+        plan.command_class
+        in {
+            DockerCommandClass.COMPOSE_CREATE,
+            DockerCommandClass.COMPOSE_UP,
+            DockerCommandClass.COMPOSE_START,
+            DockerCommandClass.COMPOSE_STOP,
+            DockerCommandClass.COMPOSE_RESTART,
+            DockerCommandClass.COMPOSE_RUN,
+            DockerCommandClass.COMPOSE_RM,
+        }
+        and plan.command is not None
+        and plan.service is not None
+        and plan.compose_file is not None
+    ):
+        return gateway.issue_compose_operation(
+            command=plan.command,
+            service=plan.service,
+            stage=stage,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            detach="-d" in argv or "--detach" in argv,
+            force=plan.command == "rm" and argv.count("-f") > 1,
+            remove_orphans="--remove-orphans" in argv,
+            no_deps="--no-deps" in argv,
+            rm_volumes="--volumes" in argv,
+            extra_args=argv[argv.index(plan.service) + 1 :] if plan.command == "run" else (),
+        )
+    if plan.command_class in {DockerCommandClass.NETWORK_CREATE, DockerCommandClass.NETWORK_RM}:
+        return gateway.issue_resource_lifecycle(
+            stage=stage,
+            kind="network",
+            operation="create"
+            if plan.command_class == DockerCommandClass.NETWORK_CREATE
+            else "remove",
+            name=argv[-1],
+        )
+    if plan.command_class in {DockerCommandClass.VOLUME_CREATE, DockerCommandClass.VOLUME_RM}:
+        return gateway.issue_resource_lifecycle(
+            stage=stage,
+            kind="volume",
+            operation="create"
+            if plan.command_class == DockerCommandClass.VOLUME_CREATE
+            else "remove",
+            name=argv[-1],
+        )
+    if plan.command_class == DockerCommandClass.DIRECT_CONTAINER_RM:
+        return gateway.issue_resource_lifecycle(
+            stage=stage,
+            kind="container",
+            operation="remove",
+            name=argv[-1],
+        )
+    if plan.command_class == DockerCommandClass.DIRECT_RUN:
+        pairs = _split_option_pairs(argv[2:])
+        labels = tuple(
+            tuple(item.split("=", 1)) for item in pairs.get("--label", []) if "=" in item
+        )
+        positional = [token for token in argv[2:] if not token.startswith("-")]
+        if not positional:
+            raise ValueError("direct run image missing")
+        image = positional[0]
+        command_tail = tuple(positional[1:])
+        return gateway.issue_container_probe(
+            stage=stage,
+            name=pairs.get("--name", [argv[-1]])[0],
+            image=image,
+            labels={key: value for key, value in labels},
+            command=command_tail,
+            user=pairs.get("--user", [None])[0],
+            workdir=pairs.get("--workdir", [None])[0],
+            entrypoint=pairs.get("--entrypoint", [None])[0],
+            network=pairs.get("--network", [None])[0],
+            rm="--rm" in pairs,
+            no_deps="--no-deps" in pairs,
+            privileged="--privileged" in pairs,
+            pid_host="--pid" in pairs and pairs["--pid"] == ["host"],
+            ipc_host="--ipc" in pairs and pairs["--ipc"] == ["host"],
+            publish=tuple(pairs.get("--publish", [])),
+            env=tuple(tuple(item.split("=", 1)) for item in pairs.get("-e", []) if "=" in item),
+            volume=tuple(pairs.get("-v", [])),
+        )
+    if plan.command_class == DockerCommandClass.BUILDX_BUILD:
+        pairs = _split_option_pairs(argv[2:])
+        return gateway.issue_buildx_manifest(
+            stage=stage,
+            context=argv[-1],
+            dockerfile=pairs.get("--file", [str(REPO_COMPOSE)])[0],
+            output=pairs.get("--output", ["type=local,dest=./out"])[0]
+            .split("dest=", 1)[-1]
+            .split(",", 1)[0],
+        )
+    raise ValueError("unsupported semantic mutation command")
 
 
 def _authority_three_mutations() -> MutationAuthority:
@@ -368,8 +502,10 @@ def _authority_three_mutations() -> MutationAuthority:
     authority.execute(mutation, stage="s1")
     stop = _issue_mutation(authority, ("stop", "mayak-postgres"), stage="s2")
     authority.execute(stop, stage="s2")
-    volume = authority.issue_from_argv(
-        ("docker", "volume", "create", f"{PROJECT}_postgres-data"), stage="s3"
+    volume = _issue_semantic(
+        authority,
+        ("docker", "volume", "create", f"{PROJECT}_postgres-data"),
+        stage="s3",
     )
     authority.execute(volume, stage="s3")
     return authority
@@ -634,7 +770,8 @@ def _run_protocol_integration(
             gateway = ctx["mutation_ledger"]
             assert isinstance(gateway, MutationAuthority)
             gateway.execute(
-                gateway.issue_from_argv(
+                _issue_semantic(
+                    gateway,
                     ("docker", "volume", "create", f"{PROJECT}_postgres-data"),
                     stage="MUT3",
                 ),
@@ -1047,25 +1184,25 @@ def dispatch(
     if scenario == "authorize_reject":
         authority = MutationAuthority()
         with pytest.raises(tuple(params["exceptions"])):
-            authority.issue_from_argv(argv, stage="negative")
+            _issue_semantic(authority, argv, stage="negative")
         return
 
     if scenario == "direct_run_reject":
         authority = MutationAuthority()
         with pytest.raises(tuple(params["exceptions"])):
-            authority.issue_from_argv(argv, stage="direct")
+            _issue_semantic(authority, argv, stage="direct")
         return
 
     if scenario == "direct_run_accept":
         authority = MutationAuthority()
-        capability = authority.issue_from_argv(argv, stage="direct")
+        capability = _issue_semantic(authority, argv, stage="direct")
         result = authority.execute(capability, stage="direct")
         assert isinstance(result, subprocess.CompletedProcess)
         return
 
     if scenario == "authorize_accept":
         authority = MutationAuthority()
-        capability = authority.issue_from_argv(argv, stage="authorize")
+        capability = _issue_semantic(authority, argv, stage="authorize")
         auth = authority.authorize(capability, stage="authorize")
         assert auth.gateway_instance_id == authority.gateway_instance_id
         assert authority.entries[0].authorization_outcome == "AUTHORIZED"
@@ -1073,7 +1210,7 @@ def dispatch(
 
     if scenario == "caller_ownership_absent":
         authority = MutationAuthority()
-        capability = authority.issue_from_argv(argv, stage="authorize")
+        capability = _issue_semantic(authority, argv, stage="authorize")
         with pytest.raises(TypeError):
             getattr(authority, "authorize")(capability, stage="authorize", ownership="TASK_OWNED")  # type: ignore[arg-type]
         return

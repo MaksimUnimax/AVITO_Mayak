@@ -735,3 +735,13 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Public mutation-plan authorization and execution paths were sealed behind gateway-issued intents; compose binding now checks exact path/digest identity and rejects missing or symlinked paths.
 - The RF-08 focused runtime regression slice passed after the ledger ordering fix, compose-identity hardening, runtime-compose fallback adjustment and exact-base rebinding.
 - Authoritative evidence was rebound to the exact base and the governance state was synchronized append-only. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`.
+
+## WL-RF08-20260730-10 — 2026-07-30 — sealed-plan provenance continuation and fail-closed inventory proof
+
+**Technical-ID:** `RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02`
+**Execution-Mode:** `CLOSE_UNKNOWN_COMMAND_AND_PUBLIC_RAW_ARGV_BYPASSES_REPLACE_PLANS_WITH_SEMANTIC_GATEWAY_ISSUANCE_REGENERATE_ALL_RUNTIME_EVIDENCE_AND_ENFORCE_ONE_EXECUTABLE_PREPUBLICATION_GATE`
+**Base:** `b43be0f0f007267126a8eac79248af7d79f344bb`
+
+- Public raw-argv mutation authority was removed from the RF-08 gateway surface, read-only unknown Docker commands were fail-closed, and provenance now flows through gateway-issued semantic intents only.
+- The live acceptance harness regenerated the evidence, reran the real 57-stage protocol, and passed the static gates plus focused tests with `accepted: true`.
+- RF-11 remained preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`.

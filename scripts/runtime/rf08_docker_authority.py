@@ -6,8 +6,8 @@ import contextvars
 import hashlib
 import json
 import subprocess
-import uuid
 import time
+import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
@@ -15,7 +15,9 @@ from pathlib import Path
 from typing import Any, Final, TypeAlias
 
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
-TECHNICAL_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
+TECHNICAL_ID: Final = (
+    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+)
 COMPOSE_FILE: Final = "compose.yaml"
 RUNTIME_PROFILE: Final = "runtime-foundation"
 ALLOWED_SERVICES: Final = frozenset(
@@ -34,6 +36,7 @@ _GATEWAY_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "rf08_docker_gateway_token",
     default=None,
 )
+_READ_ONLY_PROOF_SALT: Final = uuid.uuid4().hex
 
 
 class DockerCommandClass(StrEnum):
@@ -91,6 +94,8 @@ class DockerInvocationPlan:
 
 @dataclass(frozen=True)
 class ReadOnlyDockerQuery(DockerInvocationPlan):
+    proof_token: str = ""
+
     @classmethod
     def _from_plan(cls, plan: DockerInvocationPlan) -> "ReadOnlyDockerQuery":
         if plan.is_mutation:
@@ -107,11 +112,16 @@ class ReadOnlyDockerQuery(DockerInvocationPlan):
             command=plan.command,
             service=plan.service,
             exact_options=plan.exact_options,
+            proof_token=_read_only_proof(
+                plan.argv,
+                command_class=plan.command_class,
+                target_kind=plan.target_kind,
+            ),
         )
 
     @classmethod
     def from_argv(cls, argv: Sequence[str]) -> "ReadOnlyDockerQuery":
-        plan = _direct_plan(tuple(argv))
+        plan = _read_only_plan(tuple(argv))
         if plan.is_mutation:
             raise ValueError("mutation command is not read-only")
         return cls._from_plan(plan)
@@ -475,6 +485,28 @@ def _fingerprint(argv: Sequence[str]) -> str:
     return _sha256(json.dumps(list(argv), separators=(",", ":"), ensure_ascii=True))
 
 
+def _read_only_proof(
+    argv: Sequence[str],
+    *,
+    command_class: DockerCommandClass,
+    target_kind: str,
+) -> str:
+    payload = {
+        "salt": _READ_ONLY_PROOF_SALT,
+        "argv": list(argv),
+        "command_class": command_class.value,
+        "target_kind": target_kind,
+    }
+    return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+
+
+def _read_only_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
+    plan = _direct_plan(argv)
+    if plan.is_mutation:
+        raise ValueError("mutation command is not read-only")
+    return plan
+
+
 def _split_option_pairs(argv: Sequence[str]) -> dict[str, list[str]]:
     pairs: dict[str, list[str]] = {}
     index = 0
@@ -621,7 +653,12 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         raise ValueError("compose binding incomplete")
     if project_values[0] != TASK_PROJECT:
         raise ValueError("compose project mismatch")
-    compose_resolved, _compose_digest, _compose_source_identity, _compose_generation_identity = _compose_file_identity(file_values[0])
+    (
+        compose_resolved,
+        _compose_digest,
+        _compose_source_identity,
+        _compose_generation_identity,
+    ) = _compose_file_identity(file_values[0])
     if profile_values[0] != RUNTIME_PROFILE:
         raise ValueError("compose profile mismatch")
     if command == "version":
@@ -643,6 +680,11 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 ("-f", compose_resolved),
                 ("-p", project_values[0]),
                 ("--profile", profile_values[0]),
+            ),
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="compose_project",
             ),
         )
     if command == "config":
@@ -666,6 +708,11 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 ("--profile", profile_values[0]),
                 ("--format", "json"),
             ),
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="compose_project",
+            ),
         )
     if command == "down":
         raise ValueError("compose down is disabled")
@@ -688,6 +735,11 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 ("-f", compose_resolved),
                 ("-p", project_values[0]),
                 ("--profile", profile_values[0]),
+            ),
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="compose_project",
             ),
         )
     if command == "exec":
@@ -737,6 +789,11 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 ("-f", file_values[0]),
                 ("-p", project_values[0]),
                 ("--profile", profile_values[0]),
+            ),
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="container",
             ),
         )
     if command in {"create", "up", "start", "stop", "restart", "run", "rm"}:
@@ -843,8 +900,31 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             _sha256(" ".join(argv)),
             False,
             command=command,
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="daemon",
+            ),
         )
     if command == "inspect":
+        health_format = (
+            "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|"
+            "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"
+        )
+        if len(argv) == 5 and argv[2] == "--format" and argv[3] == health_format:
+            return ReadOnlyDockerQuery(
+                argv,
+                DockerCommandClass.READ_ONLY,
+                "container",
+                _sha256(" ".join(argv)),
+                False,
+                command=command,
+                proof_token=_read_only_proof(
+                    argv,
+                    command_class=DockerCommandClass.READ_ONLY,
+                    target_kind="container",
+                ),
+            )
         return ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
@@ -852,6 +932,29 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             _sha256(" ".join(argv)),
             False,
             command=command,
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="target",
+            ),
+        )
+    if (
+        command in {"container", "network", "volume", "image"}
+        and len(argv) > 3
+        and argv[2] == "inspect"
+    ):
+        return ReadOnlyDockerQuery(
+            argv,
+            DockerCommandClass.READ_ONLY,
+            command,
+            _sha256(" ".join(argv)),
+            False,
+            command="inspect",
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind=command,
+            ),
         )
     if command == "ps":
         if argv[2:] not in {("-aq",), ("-q",), ("-a", "-q")} and "-aq" not in argv[2:]:
@@ -863,6 +966,11 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             _sha256(" ".join(argv)),
             False,
             command=command,
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="target",
+            ),
         )
     if command == "image" and len(argv) > 2:
         if argv[2] == "inspect":
@@ -873,6 +981,11 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 _sha256(" ".join(argv)),
                 False,
                 command="inspect",
+                proof_token=_read_only_proof(
+                    argv,
+                    command_class=DockerCommandClass.READ_ONLY,
+                    target_kind="image",
+                ),
             )
         if argv[2] == "build":
             return ImageBuildPlan(
@@ -920,6 +1033,11 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             _sha256(" ".join(argv)),
             False,
             command="ls",
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="builder",
+            ),
         )
     if command == "run":
         pairs = _split_option_pairs(argv[2:])
@@ -997,6 +1115,11 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 _sha256(" ".join(argv)),
                 False,
                 command="ls",
+                proof_token=_read_only_proof(
+                    argv,
+                    command_class=DockerCommandClass.READ_ONLY,
+                    target_kind="network",
+                ),
             )
     if command == "volume" and len(argv) > 2:
         if argv[2] == "create":
@@ -1025,6 +1148,11 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 _sha256(" ".join(argv)),
                 False,
                 command="ls",
+                proof_token=_read_only_proof(
+                    argv,
+                    command_class=DockerCommandClass.READ_ONLY,
+                    target_kind="volume",
+                ),
             )
     if command == "builder" and len(argv) > 2:
         if argv[2] == "create":
@@ -1055,24 +1183,13 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             _sha256(" ".join(argv)),
             False,
             command=command,
+            proof_token=_read_only_proof(
+                argv,
+                command_class=DockerCommandClass.READ_ONLY,
+                target_kind="daemon",
+            ),
         )
-    if command in {"network", "volume", "image"}:
-        return ReadOnlyDockerQuery(
-            argv,
-            DockerCommandClass.UNKNOWN_DOCKER_COMMAND,
-            "unknown",
-            _sha256(" ".join(argv)),
-            False,
-            command=command,
-        )
-    return ReadOnlyDockerQuery(
-        argv,
-        DockerCommandClass.UNKNOWN_DOCKER_COMMAND,
-        "unknown",
-        _sha256(" ".join(argv)),
-        False,
-        command=command,
-    )
+    raise ValueError("unknown docker command")
 
 
 def classify_docker_argv(argv: Iterable[str]) -> DockerCommandClass:
@@ -1401,8 +1518,7 @@ class MutationAuthority:
                 and raw_labels.get("com.avito-mayak.project-owned") == "true"
                 and raw_labels.get("com.avito-mayak.environment-id")
                 == "avito-mayak-acceptance-local-01"
-                and raw_labels.get("com.avito-mayak.compose-project")
-                == "avito-mayak-acceptance"
+                and raw_labels.get("com.avito-mayak.compose-project") == "avito-mayak-acceptance"
                 and service in self.allowed_services
                 and isinstance(record.get("Id") or record.get("ID") or "", str)
             )
@@ -1555,13 +1671,13 @@ class MutationAuthority:
                                 "attachable": record.get("Attachable"),
                                 "ingress": record.get("Ingress"),
                                 "name": resource_name,
-                        }
-                    ),
-                    label_set_digest=_sha256(
-                        json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                    ),
-                    allowed_operations=(plan.command_class.value,),
-                )
+                            }
+                        ),
+                        label_set_digest=_sha256(
+                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                        ),
+                        allowed_operations=(plan.command_class.value,),
+                    )
                 labels = raw_labels
             if plan.command_class == DockerCommandClass.NETWORK_CREATE and resource_name == (
                 f"{self.task_project}_mayak-internal"
@@ -1779,15 +1895,19 @@ class MutationAuthority:
         authorization: DockerMutationRecord,
     ) -> ResolvedTaskResourceCapability:
         compose_path = compose_digest = compose_source_identity = compose_generation_identity = None
-        if plan.command_class in {
-            DockerCommandClass.COMPOSE_CREATE,
-            DockerCommandClass.COMPOSE_UP,
-            DockerCommandClass.COMPOSE_START,
-            DockerCommandClass.COMPOSE_STOP,
-            DockerCommandClass.COMPOSE_RESTART,
-            DockerCommandClass.COMPOSE_RUN,
-            DockerCommandClass.COMPOSE_RM,
-        } and plan.compose_file:
+        if (
+            plan.command_class
+            in {
+                DockerCommandClass.COMPOSE_CREATE,
+                DockerCommandClass.COMPOSE_UP,
+                DockerCommandClass.COMPOSE_START,
+                DockerCommandClass.COMPOSE_STOP,
+                DockerCommandClass.COMPOSE_RESTART,
+                DockerCommandClass.COMPOSE_RUN,
+                DockerCommandClass.COMPOSE_RM,
+            }
+            and plan.compose_file
+        ):
             compose_path, compose_digest, compose_source_identity, compose_generation_identity = (
                 _compose_file_identity(plan.compose_file)
             )
@@ -1914,14 +2034,155 @@ class MutationAuthority:
         )
         return audit, authorization, capability
 
-    def issue_from_argv(
-        self, argv: Sequence[str], *, stage: str
+    def _issue_command(
+        self,
+        argv: tuple[str, ...],
+        *,
+        stage: str,
     ) -> ResolvedTaskResourceCapability:
-        plan = _direct_plan(tuple(argv))
+        plan = _direct_plan(argv)
         if not plan.is_mutation:
             raise ValueError("read-only command is not a mutation")
         _, _, capability = self._resolve_and_authorize(plan, stage=stage)
         return capability
+
+    def issue_compose_operation(
+        self,
+        *,
+        command: str,
+        service: str,
+        stage: str,
+        compose_file: str | None = None,
+        project_name: str | None = None,
+        profile: str | None = None,
+        detach: bool = False,
+        force: bool = False,
+        remove_orphans: bool = False,
+        no_deps: bool = False,
+        rm_volumes: bool = False,
+        run_options: Sequence[str] = (),
+        extra_args: Sequence[str] = (),
+    ) -> ResolvedTaskResourceCapability:
+        file_value = compose_file or self.compose_file
+        project_value = project_name or self.task_project
+        profile_value = profile or self.profile
+        if command not in {"create", "up", "start", "stop", "restart", "run", "rm"}:
+            raise ValueError("unsupported compose operation")
+        compose_resolved, _, _, _ = _compose_file_identity(file_value)
+        argv: list[str] = [
+            "docker",
+            "compose",
+            "-f",
+            compose_resolved,
+            "-p",
+            project_value,
+            "--profile",
+            profile_value,
+            command,
+        ]
+        if command == "up" and detach:
+            argv.append("-d")
+        if command == "rm":
+            if force:
+                argv.append("-f")
+            if rm_volumes:
+                argv.append("--volumes")
+            if remove_orphans:
+                argv.append("--remove-orphans")
+        if command == "run":
+            argv.append("--rm")
+            if no_deps:
+                argv.append("--no-deps")
+            argv.extend(run_options)
+        argv.append(service)
+        if extra_args:
+            argv.extend(extra_args)
+        return self._issue_command(tuple(argv), stage=stage)
+
+    def issue_container_probe(
+        self,
+        *,
+        stage: str,
+        name: str,
+        image: str,
+        labels: Mapping[str, str],
+        command: Sequence[str],
+        user: str | None = None,
+        workdir: str | None = None,
+        entrypoint: str | None = None,
+        network: str | None = None,
+        rm: bool = True,
+        no_deps: bool = False,
+        privileged: bool = False,
+        pid_host: bool = False,
+        ipc_host: bool = False,
+        publish: Sequence[str] = (),
+        env: Sequence[tuple[str, str]] = (),
+        volume: Sequence[str] = (),
+    ) -> ResolvedTaskResourceCapability:
+        argv: list[str] = ["docker", "run"]
+        if rm:
+            argv.append("--rm")
+        if no_deps:
+            argv.append("--no-deps")
+        if user is not None:
+            argv.extend(["--user", user])
+        if workdir is not None:
+            argv.extend(["--workdir", workdir])
+        if entrypoint is not None:
+            argv.extend(["--entrypoint", entrypoint])
+        for key, value in env:
+            argv.extend(["-e", f"{key}={value}"])
+        for item in volume:
+            argv.extend(["-v", item])
+        for item in publish:
+            argv.extend(["-p", item])
+        if network is not None:
+            argv.extend(["--network", network])
+        if privileged:
+            argv.append("--privileged")
+        if pid_host:
+            argv.extend(["--pid", "host"])
+        if ipc_host:
+            argv.extend(["--ipc", "host"])
+        for key, value in sorted(labels.items()):
+            argv.extend(["--label", f"{key}={value}"])
+        argv.extend(["--name", name, image, *command])
+        return self._issue_command(tuple(argv), stage=stage)
+
+    def issue_resource_lifecycle(
+        self, *, stage: str, kind: str, operation: str, name: str
+    ) -> ResolvedTaskResourceCapability:
+        if kind == "container":
+            argv = ("docker", "rm", "-f" if operation == "remove" else "-f", name)
+        elif kind == "network":
+            argv = ("docker", "network", "rm" if operation == "remove" else operation, name)
+        elif kind == "volume":
+            argv = ("docker", "volume", "rm" if operation == "remove" else operation, name)
+        else:
+            raise ValueError("unsupported resource lifecycle")
+        return self._issue_command(argv, stage=stage)
+
+    def issue_buildx_manifest(
+        self,
+        *,
+        stage: str,
+        context: str,
+        dockerfile: str,
+        output: str,
+    ) -> ResolvedTaskResourceCapability:
+        argv = (
+            "docker",
+            "buildx",
+            "build",
+            "--progress=plain",
+            "--file",
+            dockerfile,
+            "--output",
+            f"type=local,dest={output}",
+            context,
+        )
+        return self._issue_command(argv, stage=stage)
 
     def authorize(
         self, capability: ResolvedTaskResourceCapability, *, stage: str
@@ -2089,6 +2350,9 @@ class MutationAuthority:
         self._record_audit(query, stage=stage)
         if query.is_mutation:
             raise ValueError("query is not read-only")
+        expected = ReadOnlyDockerQuery.from_argv(tuple(query.argv))
+        if query != expected:
+            raise PermissionError("stale or forged read-only query")
         return self._run_subprocess(
             query.argv,
             stdin=stdin,

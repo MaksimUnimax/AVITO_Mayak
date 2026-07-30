@@ -27,12 +27,17 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Final, Mapping, Protocol, cast
 
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from scripts.runtime import prepare_file_secrets as secrets
 from scripts.runtime.rf08_docker_authority import (
+    DockerCommandClass,
     DockerMutationRecord,
     MutationAuthority,
     ReadOnlyDockerQuery,
     _direct_plan,
+    _split_option_pairs,
 )
 from scripts.runtime.rf08_docker_context import (
     COPY_PLAN,
@@ -50,8 +55,10 @@ from scripts.runtime.rf08_foreign_snapshot import (
     collect_snapshot as collect_foreign_snapshot,
 )
 
-TASK_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
-EXPECTED_TASK_BASE: Final = "481536417ed950a9b89a2940e14578b71eaf6cc7"
+TASK_ID: Final = (
+    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+)
+EXPECTED_TASK_BASE: Final = "b43be0f0f007267126a8eac79248af7d79f344bb"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
@@ -418,13 +425,15 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
 """
     result = text[:start] + block + text[end:]
     label_block = (
-        "      com.avito-mayak.project-owned: \"true\"\n"
+        '      com.avito-mayak.project-owned: "true"\n'
         "      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01\n"
         "      com.avito-mayak.compose-project: avito-mayak-acceptance\n"
     )
     result = result.replace(
         label_block,
-        label_block + "      com.avito-mayak.technical-id: RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01\n",
+        label_block + "      com.avito-mayak.technical-id: "
+        "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-"
+        "INVENTORY-20260730-02\n",
     )
     return result
 
@@ -1105,7 +1114,14 @@ def _required_name_hashes() -> tuple[str, ...]:
 def _kind_ids(gateway: MutationAuthority, kind: str) -> tuple[str, ...]:
     if kind == "builder":
         query = ReadOnlyDockerQuery.from_argv(("docker", "buildx", "ls"))
-        result = gateway.run(query, stage="replay-namespace-builders", capture_output=True, text=True, check=False, timeout=30)
+        result = gateway.run(
+            query,
+            stage="replay-namespace-builders",
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
         if result.returncode != 0:
             raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
         names: list[str] = []
@@ -1125,7 +1141,14 @@ def _kind_ids(gateway: MutationAuthority, kind: str) -> tuple[str, ...]:
         return tuple(dict.fromkeys(names))
     command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
     query = ReadOnlyDockerQuery.from_argv(command)
-    result = gateway.run(query, stage=f"replay-namespace-{kind}-ids", capture_output=True, text=True, check=False, timeout=30)
+    result = gateway.run(
+        query,
+        stage=f"replay-namespace-{kind}-ids",
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
     if result.returncode != 0:
         raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
     return tuple(dict.fromkeys(line.strip() for line in result.stdout.splitlines() if line.strip()))
@@ -1138,7 +1161,13 @@ def _inspect_resource(gateway: MutationAuthority, kind: str, ident: str) -> dict
         if isinstance(value, dict):
             return value
     query = ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident))
-    result = gateway.run(query, stage=f"replay-namespace-inspect-{kind}", capture_output=True, check=False, timeout=30)
+    result = gateway.run(
+        query,
+        stage=f"replay-namespace-inspect-{kind}",
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
     if result.returncode != 0:
         raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
     value = json.loads(result.stdout)
@@ -1159,7 +1188,15 @@ def _resource_ownership(name: str, labels: Mapping[str, object], kind: str) -> s
         service = str(labels.get("com.docker.compose.service", ""))
         if (
             project == TASK_PROJECT
-            and service in {"mayak-api", "mayak-worker", "mayak-scheduler", "mayak-postgres", "mayak-db-bootstrap", "mayak-migrate"}
+            and service
+            in {
+                "mayak-api",
+                "mayak-worker",
+                "mayak-scheduler",
+                "mayak-postgres",
+                "mayak-db-bootstrap",
+                "mayak-migrate",
+            }
             and name == f"{TASK_PROJECT}-{service}-1"
         ) or (project == TASK_PROJECT and name == f"{TASK_PROJECT}-image-probe-1"):
             return "TASK_OWNED"
@@ -1241,7 +1278,9 @@ def _inspect_replay_namespace(gateway: MutationAuthority) -> dict[str, Any]:
                 "raw_identity": str(item.get("Id") or item.get("ID") or name),
                 "ownership": ownership,
                 "labels": {str(k): str(v) for k, v in labels.items()},
-                "service": str(labels.get("com.docker.compose.service", "")) if kind == "container" else "",
+                "service": str(labels.get("com.docker.compose.service", ""))
+                if kind == "container"
+                else "",
             }
             bucket.append(record)
             if ownership == "TASK_OWNED":
@@ -1283,15 +1322,14 @@ def _remove_task_owned_resource(gateway: MutationAuthority, record: Mapping[str,
     name = str(record.get("name", ""))
     raw_name = str(record.get("raw_name", name))
     raw_identity = str(record.get("raw_identity", raw_name))
-    if kind == "container":
-        command = ("docker", "rm", "-f", raw_name if raw_name else raw_identity)
-    elif kind == "network":
-        command = ("docker", "network", "rm", raw_name if raw_name else raw_identity)
-    elif kind == "volume":
-        command = ("docker", "volume", "rm", raw_name if raw_name else raw_identity)
-    else:
+    if kind not in {"container", "network", "volume"}:
         raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
-    capability = gateway.issue_from_argv(command, stage="REPLAY_NAMESPACE_SANITATION")
+    capability = gateway.issue_resource_lifecycle(
+        stage="REPLAY_NAMESPACE_SANITATION",
+        kind=kind,
+        operation="remove",
+        name=raw_name if raw_name else raw_identity,
+    )
     gateway.execute(
         capability,
         stage="REPLAY_NAMESPACE_SANITATION",
@@ -1315,7 +1353,9 @@ def _verify_namespace_absence(gateway: MutationAuthority) -> None:
         raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
 
 
-def _prepare_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Path) -> ReplayNamespaceSanitationRecord:
+def _prepare_replay_namespace_sanitation(
+    ctx: dict[str, object], source_tree: Path
+) -> ReplayNamespaceSanitationRecord:
     gateway = cast(MutationAuthority, ctx["mutation_ledger"])
     transcript = cast(ProtocolTranscript, ctx["transcript"])
     source_sha = cast(str, ctx["source_sha"])
@@ -1325,10 +1365,18 @@ def _prepare_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Pa
         "sanitation-before", 1, source_tree=source_tree
     )
     before_builder_count = _buildx_builder_count(gateway)
-    if before["task_counts"]["containers"] or before["task_counts"]["networks"] or before["task_counts"]["volumes"]:
-        for record in tuple(before["task"]["containers"] + before["task"]["networks"] + before["task"]["volumes"]):
+    if (
+        before["task_counts"]["containers"]
+        or before["task_counts"]["networks"]
+        or before["task_counts"]["volumes"]
+    ):
+        for record in tuple(
+            before["task"]["containers"] + before["task"]["networks"] + before["task"]["volumes"]
+        ):
             _remove_task_owned_resource(gateway, record)
-    cleared_secret_root_count, cleared_secret_root = _secret_generation_residue(cast(Path, ctx["root"]))
+    cleared_secret_root_count, cleared_secret_root = _secret_generation_residue(
+        cast(Path, ctx["root"])
+    )
     _verify_namespace_absence(gateway)
     after = _inspect_replay_namespace(gateway)
     after_foreign = collect_foreign_snapshot("sanitation-after", 2, gateway=gateway)
@@ -1344,7 +1392,9 @@ def _prepare_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Pa
         "transcript_run_id": transcript.run_id,
         "source_sha": source_sha,
         "sanitation_nonce": uuid.uuid4().hex,
-        "foreign_before_digest": cast(str, before_foreign.get("canonical_serialization_digest", "")),
+        "foreign_before_digest": cast(
+            str, before_foreign.get("canonical_serialization_digest", "")
+        ),
         "foreign_before_independent_digest": cast(
             str, independent_before.get("canonical_serialization_digest", "")
         ),
@@ -1387,13 +1437,17 @@ def _prepare_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Pa
     ctx["replay_namespace_sanitation"] = record
     ctx["replay_namespace_sanitation_verified"] = True
     ctx["replay_namespace_sanitation_nonce"] = record.sanitation_nonce
-    ctx["replay_namespace_sanitation_required_name_absence_digest"] = record.required_name_absence_digest
+    ctx["replay_namespace_sanitation_required_name_absence_digest"] = (
+        record.required_name_absence_digest
+    )
     ctx["replay_namespace_sanitation_foreign_digest"] = record.foreign_after_digest
     ctx["replay_namespace_sanitation_absence_hashes"] = record.required_name_absence_hashes
     return record
 
 
-def _require_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Path) -> ReplayNamespaceSanitationRecord:
+def _require_replay_namespace_sanitation(
+    ctx: dict[str, object], source_tree: Path
+) -> ReplayNamespaceSanitationRecord:
     gateway = cast(MutationAuthority, ctx["mutation_ledger"])
     record = ctx.get("replay_namespace_sanitation")
     if not isinstance(record, ReplayNamespaceSanitationRecord):
@@ -1402,11 +1456,17 @@ def _require_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Pa
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
     if record.technical_id != TASK_ID or record.gateway_instance_id != gateway.gateway_instance_id:
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
-    if record.source_sha != cast(str, ctx["source_sha"]) or record.transcript_run_id != cast(ProtocolTranscript, ctx["transcript"]).run_id:
+    if (
+        record.source_sha != cast(str, ctx["source_sha"])
+        or record.transcript_run_id != cast(ProtocolTranscript, ctx["transcript"]).run_id
+    ):
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
     if ctx.get("replay_namespace_sanitation_nonce") != record.sanitation_nonce:
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
-    if ctx.get("replay_namespace_sanitation_required_name_absence_digest") != record.required_name_absence_digest:
+    if (
+        ctx.get("replay_namespace_sanitation_required_name_absence_digest")
+        != record.required_name_absence_digest
+    ):
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
     if ctx.get("replay_namespace_sanitation_foreign_digest") != record.foreign_after_digest:
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
@@ -1425,14 +1485,20 @@ def _require_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Pa
     )
     if fresh_before.get("canonical_serialization_digest") != record.foreign_after_digest:
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
-    if fresh_independent.get("canonical_serialization_digest") != record.foreign_after_independent_digest:
+    if (
+        fresh_independent.get("canonical_serialization_digest")
+        != record.foreign_after_independent_digest
+    ):
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
     ctx["replay_namespace_sanitation_verified"] = True
     return record
 
 
-def _copy_sources(tree: Path) -> tuple[str, ...]:
-    return tuple(item["path"] for item in _docker_context_for(tree)[0])
+def _copy_sources(tree: Path, *, gateway: MutationAuthority | None = None) -> tuple[str, ...]:
+    return tuple(
+        item["path"]
+        for item in _docker_context_for(tree, gateway=gateway or MutationAuthority())[0]
+    )
 
 
 def _docker_context_for(
@@ -1452,15 +1518,11 @@ def _docker_context_for(
             shutil.rmtree(target)
 
 
-def build_input_manifest(
-    tree: Path, *, gateway: MutationAuthority
-) -> tuple[dict[str, str], ...]:
+def build_input_manifest(tree: Path, *, gateway: MutationAuthority) -> tuple[dict[str, str], ...]:
     return _docker_context_for(tree, gateway=gateway)[0]
 
 
-def deterministic_build_input_digest(
-    source_tree: Path, *, gateway: MutationAuthority
-) -> str:
+def deterministic_build_input_digest(source_tree: Path, *, gateway: MutationAuthority) -> str:
     manifest, identities = _docker_context_for(source_tree, gateway=gateway)
     return docker_build_input_digest(source_tree, manifest, identities["tree_identity"])
 
@@ -1556,7 +1618,155 @@ class PrivateCommandRunner:
                 if command and command[0] == "docker":
                     plan = _direct_plan(command)
                     if plan.is_mutation:
-                        capability = self.gateway.issue_from_argv(command, stage=stage)
+                        if (
+                            plan.command_class
+                            in {
+                                DockerCommandClass.COMPOSE_CREATE,
+                                DockerCommandClass.COMPOSE_UP,
+                                DockerCommandClass.COMPOSE_START,
+                                DockerCommandClass.COMPOSE_STOP,
+                                DockerCommandClass.COMPOSE_RESTART,
+                                DockerCommandClass.COMPOSE_RUN,
+                                DockerCommandClass.COMPOSE_RM,
+                            }
+                            and plan.command is not None
+                            and plan.service is not None
+                        ):
+                            service_index = command.index(plan.service)
+                            payload = command[service_index + 1 :] if plan.command == "run" else ()
+                            run_options = (
+                                command[command.index(plan.command) + 1 : service_index]
+                                if plan.command == "run"
+                                else ()
+                            )
+                            capability = self.gateway.issue_compose_operation(
+                                command=plan.command,
+                                service=plan.service,
+                                stage=stage,
+                                compose_file=cast(str, plan.compose_file),
+                                project_name=cast(str, plan.project_name),
+                                profile=cast(str, plan.profile),
+                                detach="-d" in command or "--detach" in command,
+                                force=plan.command == "rm" and command.count("-f") > 1,
+                                remove_orphans="--remove-orphans" in command,
+                                no_deps="--no-deps" in command,
+                                rm_volumes="--volumes" in command,
+                                run_options=run_options,
+                                extra_args=payload,
+                            )
+                        elif plan.command_class == DockerCommandClass.DIRECT_RUN:
+                            pairs = _split_option_pairs(command[2:])
+                            labels = tuple(
+                                tuple(item.split("=", 1))
+                                for item in pairs.get("--label", [])
+                                if "=" in item
+                            )
+                            index = 2
+                            options_with_value = {
+                                "--name",
+                                "--user",
+                                "--workdir",
+                                "--entrypoint",
+                                "--network",
+                                "--label",
+                                "-e",
+                                "-v",
+                                "-p",
+                                "--pid",
+                                "--ipc",
+                            }
+                            while index < len(command):
+                                token = command[index]
+                                if token in {"--rm", "--no-deps", "--privileged"}:
+                                    index += 1
+                                    continue
+                                if token in options_with_value:
+                                    if index + 1 >= len(command):
+                                        raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
+                                    index += 2
+                                    continue
+                                if token.startswith("-"):
+                                    raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
+                                break
+                            if index >= len(command):
+                                raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
+                            image = command[index]
+                            command_tail = tuple(command[index + 1 :])
+                            if not command_tail:
+                                raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
+                            capability = self.gateway.issue_container_probe(
+                                stage=stage,
+                                name=pairs.get("--name", [command[-1]])[0],
+                                image=image,
+                                labels={key: value for key, value in labels},
+                                command=command_tail,
+                                user=pairs.get("--user", [None])[0],
+                                workdir=pairs.get("--workdir", [None])[0],
+                                entrypoint=pairs.get("--entrypoint", [None])[0],
+                                network=pairs.get("--network", [None])[0],
+                                rm="--rm" in pairs,
+                                no_deps="--no-deps" in pairs,
+                                privileged="--privileged" in pairs,
+                                pid_host="--pid" in pairs and pairs["--pid"] == ["host"],
+                                ipc_host="--ipc" in pairs and pairs["--ipc"] == ["host"],
+                                publish=tuple(pairs.get("--publish", [])),
+                                env=tuple(
+                                    (key, value)
+                                    for item in pairs.get("-e", [])
+                                    if "=" in item
+                                    for key, value in [item.split("=", 1)]
+                                ),
+                                volume=tuple(pairs.get("-v", [])),
+                            )
+                        elif plan.command_class in {
+                            DockerCommandClass.NETWORK_CREATE,
+                            DockerCommandClass.NETWORK_RM,
+                        }:
+                            capability = self.gateway.issue_resource_lifecycle(
+                                stage=stage,
+                                kind="network",
+                                operation=(
+                                    "create"
+                                    if plan.command_class == DockerCommandClass.NETWORK_CREATE
+                                    else "remove"
+                                ),
+                                name=command[-1],
+                            )
+                        elif plan.command_class in {
+                            DockerCommandClass.VOLUME_CREATE,
+                            DockerCommandClass.VOLUME_RM,
+                        }:
+                            capability = self.gateway.issue_resource_lifecycle(
+                                stage=stage,
+                                kind="volume",
+                                operation=(
+                                    "create"
+                                    if plan.command_class == DockerCommandClass.VOLUME_CREATE
+                                    else "remove"
+                                ),
+                                name=command[-1],
+                            )
+                        elif plan.command_class == DockerCommandClass.DIRECT_CONTAINER_RM:
+                            capability = self.gateway.issue_resource_lifecycle(
+                                stage=stage,
+                                kind="container",
+                                operation="remove",
+                                name=command[-1],
+                            )
+                        elif plan.command_class == DockerCommandClass.BUILDX_BUILD:
+                            pairs = _split_option_pairs(command[2:])
+                            capability = self.gateway.issue_buildx_manifest(
+                                stage=stage,
+                                context=command[-1],
+                                dockerfile=pairs.get("--file", [str(RUNTIME_COMPOSE_FILE)])[0],
+                                output=(
+                                    pairs.get("--output", ["type=local,dest=./out"])[0]
+                                    .split("dest=", 1)[-1]
+                                    .split(",", 1)[0]
+                                ),
+                            )
+                        else:
+                            raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
                         proc = self.gateway.execute(
                             capability,
                             stage=stage,
@@ -2570,7 +2780,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 ):
                     raise ProtocolFailure(
                         proof_stage, "POST_RECOVERY_BOOTSTRAP_INVARIANT_NOT_PROVEN"
-                )
+                    )
                 migrate = stage_runner.run(
                     _docker(("run", "--rm", "mayak-migrate")),
                     stage="POST_RECOVERY_MIGRATION",
@@ -2863,7 +3073,9 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             )
         elif stage == "POSTGRES_C_REMOVE_AND_VOLUME_ABSENCE":
 
-            def postgres_c_remove() -> StageResult:
+            def postgres_c_remove(
+                cleanup_stage: str = stage,
+            ) -> StageResult:
                 gateway = cast(MutationAuthority, ctx["mutation_ledger"])
                 inventory = _inspect_replay_namespace(gateway)
                 for record in tuple(inventory["containers"]):
@@ -2873,16 +3085,17 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     ):
                         _remove_task_owned_resource(gateway, record)
                 for record in tuple(inventory["volumes"]):
-                    if record.get("ownership") == "TASK_OWNED" and record.get(
-                        "raw_name"
-                    ) == f"{TASK_PROJECT}_postgres-data":
+                    if (
+                        record.get("ownership") == "TASK_OWNED"
+                        and record.get("raw_name") == f"{TASK_PROJECT}_postgres-data"
+                    ):
                         _remove_task_owned_resource(gateway, record)
                 after = _inspect_replay_namespace(gateway)
                 if after["task_counts"]["volumes"] != 0:
-                    raise ProtocolFailure(stage, "VOLUME_ABSENCE_FAILED")
+                    raise ProtocolFailure(cleanup_stage, "VOLUME_ABSENCE_FAILED")
                 return StageResult(
-                    stage,
-                    "postgres_c_remove.volume_absence",
+                    cleanup_stage,
+                    "postgres_c_remove_and_volume_absence",
                     True,
                     0,
                     {"observed": "VOLUME_ABSENCE"},
@@ -2899,7 +3112,9 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             )
         elif stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL":
 
-            def task_cleanup() -> StageResult:
+            def task_cleanup(
+                cleanup_stage: str = stage,
+            ) -> StageResult:
                 gateway = cast(MutationAuthority, ctx["mutation_ledger"])
                 runner = cast(PrivateCommandRunner, ctx["runner"])
                 before = _inspect_replay_namespace(gateway)
@@ -2910,6 +3125,10 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 json_log_dir = cast(Path, ctx.get("json_log_dir", RUNTIME_ROOT))
                 if isinstance(json_log_dir, Path) and json_log_dir.exists():
                     shutil.rmtree(json_log_dir, ignore_errors=True)
+                shutil.rmtree(JSON_LOG_ROOT, ignore_errors=True)
+                shutil.rmtree(RUNTIME_ROOT / "build-context", ignore_errors=True)
+                shutil.rmtree(RUNTIME_ROOT / "independent-build-context", ignore_errors=True)
+                shutil.rmtree(cast(Path, ctx["root"]) / "sets", ignore_errors=True)
                 JSON_LOG_OVERRIDE.unlink(missing_ok=True)
                 RUNTIME_COMPOSE_FILE.unlink(missing_ok=True)
                 after = _inspect_replay_namespace(gateway)
@@ -2922,40 +3141,50 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     and after["unresolved_counts"]["volumes"] == 0
                 )
                 if not cleanup_ok:
-                    raise ProtocolFailure(stage, "TASK_CLEANUP_FAILED")
+                    raise ProtocolFailure(cleanup_stage, "TASK_CLEANUP_FAILED")
                 private_output_files = sum(1 for _ in PRIVATE_OUTPUT_ROOT.rglob("*") if _.is_file())
-                json_log_files = sum(
-                    1 for _ in JSON_LOG_ROOT.rglob("*") if _.is_file()
-                ) if JSON_LOG_ROOT.exists() else 0
+                json_log_files = (
+                    sum(1 for _ in JSON_LOG_ROOT.rglob("*") if _.is_file())
+                    if JSON_LOG_ROOT.exists()
+                    else 0
+                )
                 runtime_override_files = sum(
                     1 for _ in RUNTIME_ROOT.glob("*.override.yaml") if _.is_file()
                 )
-                temporary_context_directories = sum(
-                    1
-                    for path in (RUNTIME_ROOT / "build-context").rglob("*")
-                    if path.is_dir()
-                ) if (RUNTIME_ROOT / "build-context").exists() else 0
-                independent_context_directories = sum(
-                    1
-                    for path in (RUNTIME_ROOT / "independent-build-context").rglob("*")
-                    if path.is_dir()
-                ) if (RUNTIME_ROOT / "independent-build-context").exists() else 0
-                secret_generation_directories = sum(
-                    1 for path in (cast(Path, ctx["root"]).glob("sets/*")) if path.is_dir()
-                ) if (cast(Path, ctx["root"]) / "sets").exists() else 0
+                temporary_context_directories = (
+                    sum(1 for path in (RUNTIME_ROOT / "build-context").rglob("*") if path.is_dir())
+                    if (RUNTIME_ROOT / "build-context").exists()
+                    else 0
+                )
+                independent_context_directories = (
+                    sum(
+                        1
+                        for path in (RUNTIME_ROOT / "independent-build-context").rglob("*")
+                        if path.is_dir()
+                    )
+                    if (RUNTIME_ROOT / "independent-build-context").exists()
+                    else 0
+                )
+                secret_generation_directories = (
+                    sum(1 for path in (cast(Path, ctx["root"]).glob("sets/*")) if path.is_dir())
+                    if (cast(Path, ctx["root"]) / "sets").exists()
+                    else 0
+                )
                 auth_count = len(
                     [item for item in gateway.entries if item.record_type == "AUTHORIZATION"]
                 )
-                result_count = len([item for item in gateway.entries if item.record_type == "RESULT"])
+                result_count = len(
+                    [item for item in gateway.entries if item.record_type == "RESULT"]
+                )
                 if any(
                     item.target_ownership != "TASK_OWNED"
                     for item in gateway.entries
                     if item.record_type == "AUTHORIZATION"
                 ):
-                    raise ProtocolFailure(stage, "TASK_CLEANUP_FAILED")
+                    raise ProtocolFailure(cleanup_stage, "TASK_CLEANUP_FAILED")
                 return StageResult(
-                    stage,
-                    "task_cleanup.private_output_removal",
+                    cleanup_stage,
+                    "task_cleanup_and_private_output_removal",
                     True,
                     0,
                     {
@@ -3024,7 +3253,9 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             )
         elif stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION":
 
-            def foreign_after() -> StageResult:
+            def foreign_after(
+                validation_stage: str = stage,
+            ) -> StageResult:
                 gateway = cast(MutationAuthority, ctx["mutation_ledger"])
                 after = collect_foreign_snapshot("after", 2, gateway=gateway)
                 independent = _independent_foreign_snapshot("after", 2, source_tree=source_tree)
@@ -3032,12 +3263,12 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 if after.get("canonical_serialization_digest") != independent.get(
                     "canonical_serialization_digest"
                 ):
-                    raise ProtocolFailure(stage, "PRODUCER_INDEPENDENT_MISMATCH")
+                    raise ProtocolFailure(validation_stage, "PRODUCER_INDEPENDENT_MISMATCH")
                 delta = classify_foreign_delta(before, after)
                 if delta != "NO_CHANGE":
-                    raise ProtocolFailure(stage, delta)
+                    raise ProtocolFailure(validation_stage, delta)
                 return StageResult(
-                    stage,
+                    validation_stage,
                     "foreign_resource_equality_and_evidence_validation.producer",
                     True,
                     0,
@@ -3180,22 +3411,28 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 adapter_path = (source_tree or Path(__file__).resolve().parents[2]) / (
                     "scripts/runtime/rf09_public_bootstrap_adapter.py"
                 )
-                command = lambda adapter_path=adapter_path, service=service, ctx=ctx, source_tree=source_tree: _docker(  # noqa: E731,E501
-                    (
-                        "run",
-                        "--rm",
-                        "-e",
-                        f"RF08_RUN_ID={cast(ProtocolTranscript, ctx['transcript']).run_id if isinstance(ctx.get('transcript'), ProtocolTranscript) else 'rf08-adapter'}",
-                        "-e",
-                        "RF08_RECOVERED_GENERATION_ID="
-                        f"{ctx.get('recovered_generation_id', 'UNSET')}",
-                        "-v",
-                        f"{adapter_path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
-                        service,
-                        "python",
-                        "/opt/mayak/rf09_public_bootstrap_adapter.py",
+
+                def database_bootstrap_command(
+                    bootstrap_service: str = service,
+                ) -> tuple[str, ...]:
+                    return _docker(
+                        (
+                            "run",
+                            "--rm",
+                            "-e",
+                            f"RF08_RUN_ID={cast(ProtocolTranscript, ctx['transcript']).run_id if isinstance(ctx.get('transcript'), ProtocolTranscript) else 'rf08-adapter'}",
+                            "-e",
+                            "RF08_RECOVERED_GENERATION_ID="
+                            f"{ctx.get('recovered_generation_id', 'UNSET')}",
+                            "-v",
+                            f"{adapter_path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
+                            bootstrap_service,
+                            "python",
+                            "/opt/mayak/rf09_public_bootstrap_adapter.py",
+                        )
                     )
-                )
+
+                command = database_bootstrap_command
             else:
                 command = _docker(("run", "--rm", service))
             specs.append(_command_spec(ctx, stage, command, ("observed",)))
@@ -3260,8 +3497,12 @@ def run_protocol(
     ctx["json_log_dir"] = prepare_jsonlog_runtime(transcript.run_id)
     ctx["transcript"] = transcript
     try:
-        _prepare_replay_namespace_sanitation(ctx, source_tree or Path(__file__).resolve().parents[2])
-        _require_replay_namespace_sanitation(ctx, source_tree or Path(__file__).resolve().parents[2])
+        _prepare_replay_namespace_sanitation(
+            ctx, source_tree or Path(__file__).resolve().parents[2]
+        )
+        _require_replay_namespace_sanitation(
+            ctx, source_tree or Path(__file__).resolve().parents[2]
+        )
         for spec in _operation_specs(ctx, source_tree or Path(__file__).resolve().parents[2]):
             transcript.execute(spec)
         transcript.finalize({"all_stages_passed": True})
@@ -3295,8 +3536,12 @@ def run_protocol(
                     cast(Mapping[str, object], ctx.get("build_context_snapshot", {}))
                 ),
                 "replay_namespace_sanitation": (
-                    cast(ReplayNamespaceSanitationRecord, ctx["replay_namespace_sanitation"]).safe_dict()
-                    if isinstance(ctx.get("replay_namespace_sanitation"), ReplayNamespaceSanitationRecord)
+                    cast(
+                        ReplayNamespaceSanitationRecord, ctx["replay_namespace_sanitation"]
+                    ).safe_dict()
+                    if isinstance(
+                        ctx.get("replay_namespace_sanitation"), ReplayNamespaceSanitationRecord
+                    )
                     else {}
                 ),
             },
@@ -3548,7 +3793,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     gateway = MutationAuthority()
     runner = PrivateCommandRunner(os.environ, root=args.root, gateway=gateway)
-    record = run_protocol(root=args.root, source_sha=args.source_sha, runner=runner, gateway=gateway)
+    record = run_protocol(
+        root=args.root, source_sha=args.source_sha, runner=runner, gateway=gateway
+    )
     runner.cleanup()
     if record.status == "PASS":
         source_tree = Path(__file__).resolve().parents[2]

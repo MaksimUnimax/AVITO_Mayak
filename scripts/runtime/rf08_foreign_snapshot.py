@@ -19,7 +19,9 @@ from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value
 SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
 COLLECTOR_ID: Final = "rf08.producer.observed.typed-docker.v3"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
-TASK_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
+TASK_ID: Final = (
+    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+)
 ALLOWED_SERVICES: Final = frozenset(
     {
         "mayak-api",
@@ -403,9 +405,7 @@ def _canonical(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: payload[k] for k in keys}
 
 
-def collect_snapshot(
-    phase: str, sequence: int, *, gateway: MutationAuthority
-) -> dict[str, Any]:
+def collect_snapshot(phase: str, sequence: int, *, gateway: MutationAuthority) -> dict[str, Any]:
     try:
         host, boot = _host_identity(), _boot_identity()
         endpoint_schema, daemon, server_metadata = _endpoint_identity(gateway)

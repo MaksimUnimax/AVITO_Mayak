@@ -228,3 +228,7 @@ Published main `7467ba2092d9e83fba52d402cf78556912d10a83` remained published but
 ## RF-08 sealed-plan provenance and exact-base corrective — 2026-07-30
 
 The current RF-08 corrective rebinding replaces caller-forgeable mutation plans with sealed gateway-issued intents, removes the active `COMPOSE_DOWN` path, requires explicit gateway ownership for producer/verifier execution, and binds Docker-native evidence to exact base `481536417ed950a9b89a2940e14578b71eaf6cc7`. The focused RF-08 runtime regression slice passed after the sealed-capability refactor, compose identity hardening, ledger ordering fix and runtime-compose fallback adjustment. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; `NOT_PRODUCTION_READY` remains authoritative.
+
+## RF-08 sealed-plan provenance and fail-closed inventory continuation — 2026-07-30
+
+The corrective continuation `RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02` closes the raw-argv mutation bypass, regenerates the Docker-native evidence from the exact base `b43be0f0f007267126a8eac79248af7d79f344bb`, and validates the one-harness live acceptance path with exact-base inventory and RF-11 preservation checks. The accepted harness run completed with `accepted: true`; publication bookkeeping remains append-only and RF-11 remains preserved and unaccepted.

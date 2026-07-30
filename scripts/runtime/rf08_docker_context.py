@@ -18,7 +18,7 @@ from typing import Final
 
 from scripts.runtime.rf08_docker_authority import MutationAuthority
 
-EXPECTED_BASE_SHA: Final = "481536417ed950a9b89a2940e14578b71eaf6cc7"
+EXPECTED_BASE_SHA: Final = "b43be0f0f007267126a8eac79248af7d79f344bb"
 COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("pyproject.toml", "pyproject.toml"),
     ("uv.lock", "uv.lock"),
@@ -108,19 +108,11 @@ def docker_native_manifest(
     output = run_root / "docker-native-output"
     inspector = _inspector_file(run_root)
     output.mkdir(mode=0o700, parents=True)
-    capability = gateway.issue_from_argv(
-        (
-            "docker",
-            "buildx",
-            "build",
-            "--progress=plain",
-            "--file",
-            str(inspector),
-            "--output",
-            f"type=local,dest={output}",
-            str(context),
-        ),
+    capability = gateway.issue_buildx_manifest(
         stage="docker-native-manifest",
+        context=str(context),
+        dockerfile=str(inspector),
+        output=str(output),
     )
     gateway.execute(
         capability,

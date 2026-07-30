@@ -7,11 +7,11 @@ import pytest
 
 from scripts.runtime import prepare_file_secrets
 from scripts.runtime import safe_compose_bootstrap as scb
+from scripts.runtime.rf08_docker_authority import MutationAuthority
 from scripts.runtime.rf09_public_bootstrap_adapter import (
     INVARIANT_CODES,
     classify_statement,
 )
-from scripts.runtime.rf08_docker_authority import MutationAuthority
 from scripts.runtime.safe_compose_bootstrap import (
     EXACT_EXIT,
     REQUIRED_STAGES,
@@ -256,7 +256,10 @@ def test_independent_verifier_rejects_missing_test_counts_and_sensitive_material
 ) -> None:
     source = Path(__file__).parents[2]
     evidence = {
-        "technical_id": "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01",
+        "technical_id": (
+            "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-"
+            "INVENTORY-20260730-02"
+        ),
         "expected_base": "a12963b8d55b415739056eaba168ae9caf986855",
     }
     path = tmp_path / "evidence.json"

@@ -18,9 +18,13 @@ import socket
 import stat
 import struct
 import subprocess
+import sys
 import tarfile
 from pathlib import Path, PurePosixPath
 from typing import cast
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.runtime.rf08_docker_authority import (
     MutationAuthority,
@@ -32,10 +36,10 @@ from scripts.runtime.rf08_safe_foreign_schema import (
     validate_snapshot,
 )
 
-TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
-BASE = "481536417ed950a9b89a2940e14578b71eaf6cc7"
-TASK_EXPECTED_BASE = "481536417ed950a9b89a2940e14578b71eaf6cc7"
-TREE = "6f9548e8eda66acba2f9ac403dcb3d43f209774c"
+TASK_ID = "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+BASE = "b43be0f0f007267126a8eac79248af7d79f344bb"
+TASK_EXPECTED_BASE = "b43be0f0f007267126a8eac79248af7d79f344bb"
+TREE = "689a0d417b8305a572d51789e13ab4f37640a99e"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -108,7 +112,7 @@ SENSITIVE = re.compile(r"(?i)(-----BEGIN .*PRIVATE KEY-----|postgresql://|passwo
 FOREIGN_SCHEMA_VERSION = "ForeignResourceSnapshotV3"
 INDEPENDENT_COLLECTOR_ID = "rf08.independent.observed.typed-docker.v3"
 TASK_PROJECT = "avito-mayak-rf08-secret-delivery"
-TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
+TASK_ID = "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
 
 
 def _sha(path: Path) -> str:
@@ -227,6 +231,7 @@ def _independent_snapshot(
 ) -> dict[str, object]:
     """Independent read-only collector; no producer code or oracle is imported."""
     try:
+
         def inspect(kind: str, ident: str) -> dict[str, object]:
             result = gateway.run(
                 ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident)),
@@ -645,19 +650,11 @@ def _docker_manifest(
         encoding="utf-8",
     )
     output.mkdir(mode=0o700)
-    capability = gateway.issue_from_argv(
-        (
-            "docker",
-            "buildx",
-            "build",
-            "--progress=plain",
-            "--file",
-            str(inspector),
-            "--output",
-            f"type=local,dest={output}",
-            str(source),
-        ),
+    capability = gateway.issue_buildx_manifest(
         stage="verifier-buildx-build",
+        context=str(source),
+        dockerfile=str(inspector),
+        output=str(output),
     )
     gateway.execute(
         capability,
@@ -976,11 +973,22 @@ def _verify_sanitation_record(document: dict[str, object]) -> None:
         raise ValueError("sanitation schema mismatch")
     if record.get("technical_id") != TASK_ID:
         raise ValueError("sanitation technical id mismatch")
-    if record.get("foreign_before_equal") is not True or record.get("foreign_after_equal") is not True:
+    if (
+        record.get("foreign_before_equal") is not True
+        or record.get("foreign_after_equal") is not True
+    ):
         raise ValueError("sanitation foreign equality failed")
-    if record.get("task_container_count_after") != 0 or record.get("task_network_count_after") != 0 or record.get("task_volume_count_after") != 0:
+    if (
+        record.get("task_container_count_after") != 0
+        or record.get("task_network_count_after") != 0
+        or record.get("task_volume_count_after") != 0
+    ):
         raise ValueError("sanitation task namespace not empty")
-    if record.get("unresolved_container_count_after") != 0 or record.get("unresolved_network_count_after") != 0 or record.get("unresolved_volume_count_after") != 0:
+    if (
+        record.get("unresolved_container_count_after") != 0
+        or record.get("unresolved_network_count_after") != 0
+        or record.get("unresolved_volume_count_after") != 0
+    ):
         raise ValueError("sanitation unresolved namespace not empty")
     if record.get("verified_absence") is not True:
         raise ValueError("sanitation absence not proven")
@@ -1010,6 +1018,7 @@ def verify_evidence(
             "generation_metadata",
             "bounded_command_output",
             "task_owned_cleanup_complete",
+            "VOLUME_ABSENCE",
             "POSTGRESQL_AUTHENTICATION_REJECTED_SQLSTATE_28P01",
             "CLIENT_CONNECTION_ATTEMPT_FAILED_PENDING_SERVER_CLASSIFICATION",
             "permission_denied",
