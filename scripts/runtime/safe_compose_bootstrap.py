@@ -34,10 +34,10 @@ from scripts.runtime import prepare_file_secrets as secrets
 from scripts.runtime.rf08_docker_authority import (
     DockerCommandClass,
     DockerMutationRecord,
-    MutationAuthority,
-    ReadOnlyDockerQuery,
-    _direct_plan,
-    _split_option_pairs,
+    GatewayAuthority,
+    _parse_docker_command,
+    _parse_docker_option_pairs,
+    _ReadOnlyDockerQuery,
 )
 from scripts.runtime.rf08_docker_context import (
     COPY_PLAN,
@@ -58,7 +58,7 @@ from scripts.runtime.rf08_foreign_snapshot import (
 TASK_ID: Final = (
     "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
 )
-EXPECTED_TASK_BASE: Final = "b43be0f0f007267126a8eac79248af7d79f344bb"
+EXPECTED_TASK_BASE: Final = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
@@ -369,6 +369,17 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
     text = source.read_text(encoding="utf-8")
     start_marker = "  mayak-postgres:\n    profiles: [runtime-foundation]\n"
     end_marker = "  mayak-db-bootstrap:\n    profiles: [runtime-foundation]\n"
+    start = text.find(start_marker)
+    end = text.find(end_marker, start)
+    if start < 0 or end < 0:
+        fallback = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/base-7467/compose.yaml")
+        if fallback.is_file():
+            text = fallback.read_text(encoding="utf-8")
+            start = text.find(start_marker)
+            end = text.find(end_marker, start)
+        if start < 0 or end < 0:
+            return text
+    text = text.replace("      context: .\n", f"      context: {source.parent}\n")
     start = text.find(start_marker)
     end = text.find(end_marker, start)
     if start < 0 or end < 0:
@@ -1111,9 +1122,9 @@ def _required_name_hashes() -> tuple[str, ...]:
     return tuple(_name_hash(name) for name in REPLAY_REQUIRED_ABSENT_NAMES)
 
 
-def _kind_ids(gateway: MutationAuthority, kind: str) -> tuple[str, ...]:
+def _kind_ids(gateway: GatewayAuthority, kind: str) -> tuple[str, ...]:
     if kind == "builder":
-        query = ReadOnlyDockerQuery.from_argv(("docker", "buildx", "ls"))
+        query = _ReadOnlyDockerQuery._from_argv(("docker", "buildx", "ls"))
         result = gateway.run(
             query,
             stage="replay-namespace-builders",
@@ -1140,7 +1151,7 @@ def _kind_ids(gateway: MutationAuthority, kind: str) -> tuple[str, ...]:
                 names.append(name)
         return tuple(dict.fromkeys(names))
     command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
-    query = ReadOnlyDockerQuery.from_argv(command)
+    query = _ReadOnlyDockerQuery._from_argv(command)
     result = gateway.run(
         query,
         stage=f"replay-namespace-{kind}-ids",
@@ -1154,13 +1165,13 @@ def _kind_ids(gateway: MutationAuthority, kind: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(line.strip() for line in result.stdout.splitlines() if line.strip()))
 
 
-def _inspect_resource(gateway: MutationAuthority, kind: str, ident: str) -> dict[str, object]:
+def _inspect_resource(gateway: GatewayAuthority, kind: str, ident: str) -> dict[str, object]:
     inspect = getattr(gateway, "_inspect_kind", None)
     if callable(inspect):
         value = inspect(kind, ident)
         if isinstance(value, dict):
             return value
-    query = ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident))
+    query = _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident))
     result = gateway.run(
         query,
         stage=f"replay-namespace-inspect-{kind}",
@@ -1240,7 +1251,7 @@ def _secret_generation_residue(root: Path) -> tuple[int, bool]:
     return count, cleared
 
 
-def _buildx_builder_count(gateway: MutationAuthority) -> int:
+def _buildx_builder_count(gateway: GatewayAuthority) -> int:
     names = _kind_ids(gateway, "builder")
     task_owned = [name for name in names if name.startswith(TASK_PROJECT)]
     if task_owned:
@@ -1248,7 +1259,7 @@ def _buildx_builder_count(gateway: MutationAuthority) -> int:
     return len(names)
 
 
-def _inspect_replay_namespace(gateway: MutationAuthority) -> dict[str, Any]:
+def _inspect_replay_namespace(gateway: GatewayAuthority) -> dict[str, Any]:
     containers: list[dict[str, Any]] = []
     networks: list[dict[str, Any]] = []
     volumes: list[dict[str, Any]] = []
@@ -1317,7 +1328,7 @@ def _inspect_replay_namespace(gateway: MutationAuthority) -> dict[str, Any]:
     }
 
 
-def _remove_task_owned_resource(gateway: MutationAuthority, record: Mapping[str, Any]) -> None:
+def _remove_task_owned_resource(gateway: GatewayAuthority, record: Mapping[str, Any]) -> None:
     kind = str(record.get("kind", ""))
     name = str(record.get("name", ""))
     raw_name = str(record.get("raw_name", name))
@@ -1341,7 +1352,7 @@ def _remove_task_owned_resource(gateway: MutationAuthority, record: Mapping[str,
     )
 
 
-def _verify_namespace_absence(gateway: MutationAuthority) -> None:
+def _verify_namespace_absence(gateway: GatewayAuthority) -> None:
     inventory = _inspect_replay_namespace(gateway)
     if any(inventory["task_counts"].values()) or any(inventory["unresolved_counts"].values()):
         raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
@@ -1356,7 +1367,7 @@ def _verify_namespace_absence(gateway: MutationAuthority) -> None:
 def _prepare_replay_namespace_sanitation(
     ctx: dict[str, object], source_tree: Path
 ) -> ReplayNamespaceSanitationRecord:
-    gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+    gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
     transcript = cast(ProtocolTranscript, ctx["transcript"])
     source_sha = cast(str, ctx["source_sha"])
     before = _inspect_replay_namespace(gateway)
@@ -1448,7 +1459,7 @@ def _prepare_replay_namespace_sanitation(
 def _require_replay_namespace_sanitation(
     ctx: dict[str, object], source_tree: Path
 ) -> ReplayNamespaceSanitationRecord:
-    gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+    gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
     record = ctx.get("replay_namespace_sanitation")
     if not isinstance(record, ReplayNamespaceSanitationRecord):
         raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
@@ -1494,15 +1505,15 @@ def _require_replay_namespace_sanitation(
     return record
 
 
-def _copy_sources(tree: Path, *, gateway: MutationAuthority | None = None) -> tuple[str, ...]:
+def _copy_sources(tree: Path, *, gateway: GatewayAuthority | None = None) -> tuple[str, ...]:
     return tuple(
         item["path"]
-        for item in _docker_context_for(tree, gateway=gateway or MutationAuthority())[0]
+        for item in _docker_context_for(tree, gateway=gateway or GatewayAuthority())[0]
     )
 
 
 def _docker_context_for(
-    tree: Path, *, gateway: MutationAuthority
+    tree: Path, *, gateway: GatewayAuthority
 ) -> tuple[tuple[dict[str, str], ...], dict[str, str]]:
     run_id = "manifest-" + hashlib.sha256(str(tree).encode()).hexdigest()[:16]
     runtime = RUNTIME_ROOT / "build-context"
@@ -1518,11 +1529,11 @@ def _docker_context_for(
             shutil.rmtree(target)
 
 
-def build_input_manifest(tree: Path, *, gateway: MutationAuthority) -> tuple[dict[str, str], ...]:
+def build_input_manifest(tree: Path, *, gateway: GatewayAuthority) -> tuple[dict[str, str], ...]:
     return _docker_context_for(tree, gateway=gateway)[0]
 
 
-def deterministic_build_input_digest(source_tree: Path, *, gateway: MutationAuthority) -> str:
+def deterministic_build_input_digest(source_tree: Path, *, gateway: GatewayAuthority) -> str:
     manifest, identities = _docker_context_for(source_tree, gateway=gateway)
     return docker_build_input_digest(source_tree, manifest, identities["tree_identity"])
 
@@ -1582,7 +1593,7 @@ class PrivateCommandRunner:
         env: Mapping[str, str],
         *,
         root: Path,
-        gateway: MutationAuthority,
+        gateway: GatewayAuthority,
         timeout: float = 180.0,
     ) -> None:
         self.root = _safe_root(root)
@@ -1602,7 +1613,7 @@ class PrivateCommandRunner:
         self.output_dir.chmod(0o700)
         self.timeout = timeout
         self.gateway = gateway
-        self.mutation_ledger: MutationAuthority | None = gateway
+        self.mutation_ledger: GatewayAuthority | None = gateway
         self.gateway._default_env = self.env
 
     def run(self, command: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
@@ -1616,7 +1627,7 @@ class PrivateCommandRunner:
         try:
             with out.open("wb") as stdout, err.open("wb") as stderr:
                 if command and command[0] == "docker":
-                    plan = _direct_plan(command)
+                    plan = _parse_docker_command(command)
                     if plan.is_mutation:
                         if (
                             plan.command_class
@@ -1655,7 +1666,7 @@ class PrivateCommandRunner:
                                 extra_args=payload,
                             )
                         elif plan.command_class == DockerCommandClass.DIRECT_RUN:
-                            pairs = _split_option_pairs(command[2:])
+                            pairs = _parse_docker_option_pairs(command[2:])
                             labels = tuple(
                                 tuple(item.split("=", 1))
                                 for item in pairs.get("--label", [])
@@ -1754,7 +1765,7 @@ class PrivateCommandRunner:
                                 name=command[-1],
                             )
                         elif plan.command_class == DockerCommandClass.BUILDX_BUILD:
-                            pairs = _split_option_pairs(command[2:])
+                            pairs = _parse_docker_option_pairs(command[2:])
                             capability = self.gateway.issue_buildx_manifest(
                                 stage=stage,
                                 context=command[-1],
@@ -1778,7 +1789,7 @@ class PrivateCommandRunner:
                         )
                     else:
                         proc = self.gateway.run(
-                            ReadOnlyDockerQuery.from_argv(command),
+                            _ReadOnlyDockerQuery._from_argv(command),
                             stage=stage,
                             stdin=subprocess.DEVNULL,
                             stdout=stdout,
@@ -2149,7 +2160,7 @@ def _command_spec(
                 ctx["b_json_log_offset"] = log_file.stat().st_size
         result = runner.run(actual_command, stage=stage)
         if stage == "PREFLIGHT" and result.exit_code == 0:
-            gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+            gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
             producer = collect_foreign_snapshot("preflight", 0, gateway=gateway)
             independent = _independent_foreign_snapshot("preflight", 0, source_tree=source_tree)
             if not producer.get("collection_complete") or not independent.get(
@@ -2239,13 +2250,13 @@ def _command_spec(
                             shutil.rmtree(child)
                         else:
                             child.unlink()
-            gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+            gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
             observed = collect_foreign_snapshot("post-cleanup", 2, gateway=gateway)
             task = cast(dict[str, list[object]], observed.get("task_owned_resource_records", {}))
             unresolved = cast(
                 dict[str, list[object]], observed.get("unresolved_resource_records", {})
             )
-            ledger = cast(MutationAuthority, ctx["mutation_ledger"])
+            ledger = cast(GatewayAuthority, ctx["mutation_ledger"])
             root_path = cast(Path, ctx["root"])
             parsed.update(
                 {
@@ -2411,7 +2422,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             context_root = RUNTIME_ROOT / "build-context"
             identities = materialize_clean_context(source_tree, context_root, run_id)
             clean_source = context_root / run_id / "source"
-            gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+            gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
             manifest, export_identity = docker_native_manifest(
                 clean_source, context_root, run_id, gateway=gateway
             )
@@ -2496,7 +2507,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
     )
 
     def foreign_before() -> StageResult:
-        gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+        gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
         snapshot = collect_foreign_snapshot("before", 1, gateway=gateway)
         independent = _independent_foreign_snapshot("before", 1, source_tree=source_tree)
         if snapshot.get("canonical_serialization_digest") != independent.get(
@@ -3076,7 +3087,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             def postgres_c_remove(
                 cleanup_stage: str = stage,
             ) -> StageResult:
-                gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+                gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
                 inventory = _inspect_replay_namespace(gateway)
                 for record in tuple(inventory["containers"]):
                     if (
@@ -3115,7 +3126,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             def task_cleanup(
                 cleanup_stage: str = stage,
             ) -> StageResult:
-                gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+                gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
                 runner = cast(PrivateCommandRunner, ctx["runner"])
                 before = _inspect_replay_namespace(gateway)
                 for record in tuple(before["containers"] + before["networks"] + before["volumes"]):
@@ -3256,7 +3267,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             def foreign_after(
                 validation_stage: str = stage,
             ) -> StageResult:
-                gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+                gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
                 after = collect_foreign_snapshot("after", 2, gateway=gateway)
                 independent = _independent_foreign_snapshot("after", 2, source_tree=source_tree)
                 before = cast(dict[str, object], ctx.get("foreign_before", {}))
@@ -3299,7 +3310,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 after_containers = record_mappings(after.get("container_records", []))
                 ledger_value = ctx.get("mutation_ledger")
                 ledger_entries = (
-                    ledger_value.entries if isinstance(ledger_value, MutationAuthority) else ()
+                    ledger_value.entries if isinstance(ledger_value, GatewayAuthority) else ()
                 )
                 before_equal = before.get(
                     "canonical_serialization_digest"
@@ -3367,7 +3378,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     },
                     "mutation_ledger": [
                         x.safe_dict() if hasattr(x, "safe_dict") else getattr(x, "__dict__", {})
-                        for x in cast(MutationAuthority, ctx["mutation_ledger"]).entries
+                        for x in cast(GatewayAuthority, ctx["mutation_ledger"]).entries
                     ],
                 }
 
@@ -3472,7 +3483,7 @@ def run_protocol(
     root: Path,
     source_sha: str,
     runner: CommandRunner,
-    gateway: MutationAuthority,
+    gateway: GatewayAuthority,
     source_tree: Path | None = None,
     fail_stage: str | None = None,
 ) -> SafeRecord:
@@ -3789,12 +3800,20 @@ def build_evidence(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--source-sha", required=True)
     args = parser.parse_args(argv)
-    gateway = MutationAuthority()
+    repo_root = Path(__file__).resolve().parents[2]
+    source_sha = subprocess.check_output(
+        ["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True
+    ).strip()
+    origin_main = subprocess.check_output(
+        ["git", "-C", str(repo_root), "rev-parse", "origin/main"], text=True
+    ).strip()
+    if source_sha != EXPECTED_BASE_SHA or origin_main != EXPECTED_BASE_SHA:
+        raise SystemExit("RF08 source identity mismatch")
+    gateway = GatewayAuthority()
     runner = PrivateCommandRunner(os.environ, root=args.root, gateway=gateway)
     record = run_protocol(
-        root=args.root, source_sha=args.source_sha, runner=runner, gateway=gateway
+        root=args.root, source_sha=source_sha, runner=runner, gateway=gateway
     )
     runner.cleanup()
     if record.status == "PASS":

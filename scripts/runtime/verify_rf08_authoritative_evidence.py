@@ -27,8 +27,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.runtime.rf08_docker_authority import (
-    MutationAuthority,
-    ReadOnlyDockerQuery,
+    GatewayAuthority,
+    _ReadOnlyDockerQuery,
 )
 from scripts.runtime.rf08_safe_foreign_schema import (
     validate_failure_snapshot,
@@ -37,9 +37,9 @@ from scripts.runtime.rf08_safe_foreign_schema import (
 )
 
 TASK_ID = "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
-BASE = "b43be0f0f007267126a8eac79248af7d79f344bb"
-TASK_EXPECTED_BASE = "b43be0f0f007267126a8eac79248af7d79f344bb"
-TREE = "689a0d417b8305a572d51789e13ab4f37640a99e"
+BASE = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
+TASK_EXPECTED_BASE = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
+TREE = "b9eac31635f3e92e4d72051d3cbdedfe387cc000"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -157,7 +157,7 @@ def _docker_endpoint() -> Path:
     return endpoint
 
 
-def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, str]]:
+def _endpoint_identity(gateway: GatewayAuthority) -> tuple[str, str, dict[str, str]]:
     endpoint = _docker_endpoint()
     socket_stat = endpoint.stat()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -172,7 +172,7 @@ def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, 
     if peer is not None and min(peer) < 0:
         raise ValueError("invalid peer credentials")
     server = gateway.run(
-        ReadOnlyDockerQuery.from_argv(("docker", "version", "--format", "{{json .Server}}")),
+        _ReadOnlyDockerQuery._from_argv(("docker", "version", "--format", "{{json .Server}}")),
         stage="verifier-endpoint-version",
         capture_output=True,
         check=False,
@@ -227,14 +227,14 @@ def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, 
 
 
 def _independent_snapshot(
-    phase: str, sequence: int, *, gateway: MutationAuthority
+    phase: str, sequence: int, *, gateway: GatewayAuthority
 ) -> dict[str, object]:
     """Independent read-only collector; no producer code or oracle is imported."""
     try:
 
         def inspect(kind: str, ident: str) -> dict[str, object]:
             result = gateway.run(
-                ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident)),
+                _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident)),
                 stage=f"verifier-inspect-{kind}",
                 capture_output=True,
                 check=False,
@@ -256,7 +256,7 @@ def _independent_snapshot(
                 ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
             )
             result = gateway.run(
-                ReadOnlyDockerQuery.from_argv(command),
+                _ReadOnlyDockerQuery._from_argv(command),
                 stage=f"verifier-enumerate-{kind}",
                 capture_output=True,
                 text=True,
@@ -271,42 +271,41 @@ def _independent_snapshot(
             return sorted(values)
 
         def labels(value: object) -> list[list[str]]:
-            return (
+            if not isinstance(value, dict):
+                return []
+            mapping = value
+            return [
                 [
-                    [
-                        str(k)
-                        if str(k)
-                        in {
-                            "com.docker.compose.project",
-                            "com.docker.compose.service",
-                            "com.avito-mayak.technical-id",
-                        }
-                        else _safe_digest(str(k)),
-                        str(v)
-                        if str(k)
-                        in {
-                            "com.docker.compose.project",
-                            "com.docker.compose.service",
-                            "com.avito-mayak.technical-id",
-                        }
-                        and str(v)
-                        in {
-                            TASK_PROJECT,
-                            TASK_ID,
-                            "mayak-api",
-                            "mayak-worker",
-                            "mayak-scheduler",
-                            "mayak-postgres",
-                            "mayak-db-bootstrap",
-                            "mayak-migrate",
-                        }
-                        else _safe_digest(str(v)),
-                    ]
-                    for k, v in sorted((value or {}).items())
+                    str(k)
+                    if str(k)
+                    in {
+                        "com.docker.compose.project",
+                        "com.docker.compose.service",
+                        "com.avito-mayak.technical-id",
+                    }
+                    else _safe_digest(str(k)),
+                    str(v)
+                    if str(k)
+                    in {
+                        "com.docker.compose.project",
+                        "com.docker.compose.service",
+                        "com.avito-mayak.technical-id",
+                    }
+                    and str(v)
+                    in {
+                        TASK_PROJECT,
+                        TASK_ID,
+                        "mayak-api",
+                        "mayak-worker",
+                        "mayak-scheduler",
+                        "mayak-postgres",
+                        "mayak-db-bootstrap",
+                        "mayak-migrate",
+                    }
+                    else _safe_digest(str(v)),
                 ]
-                if isinstance(value, dict)
-                else []
-            )
+                for k, v in sorted(mapping.items())
+            ]
 
         def own(name: str, value: object, kind: str) -> str:
             raw = value if isinstance(value, dict) else {}
@@ -599,7 +598,7 @@ def _relative(value: str) -> str:
 
 
 def _clean_context(
-    repo: Path, root: Path, run_id: str, *, gateway: MutationAuthority | None = None
+    repo: Path, root: Path, run_id: str, *, gateway: GatewayAuthority | None = None
 ) -> tuple[Path, str]:
     run_root = root / run_id
     source = run_root / "source"
@@ -636,7 +635,7 @@ def _clean_context(
 
 
 def _docker_manifest(
-    source: Path, root: Path, run_id: str, *, gateway: MutationAuthority
+    source: Path, root: Path, run_id: str, *, gateway: GatewayAuthority
 ) -> tuple[list[dict[str, str]], dict[str, str]]:
     run_root = root / run_id
     output = run_root / "output"
@@ -995,7 +994,7 @@ def _verify_sanitation_record(document: dict[str, object]) -> None:
 
 
 def verify_evidence(
-    evidence_path: Path, source_tree: Path, *, verifier_gateway: MutationAuthority
+    evidence_path: Path, source_tree: Path, *, verifier_gateway: GatewayAuthority
 ) -> dict[str, object]:
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
     if (
@@ -1117,6 +1116,16 @@ def verify_evidence(
                 _stage(document, "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION")["evidence"],
             )
         )
+        foreign_records = document.get("foreign_records")
+        if isinstance(foreign_records, dict):
+            stage57.setdefault("producer_before_snapshot", foreign_records.get("producer_before"))
+            stage57.setdefault(
+                "independent_before_snapshot", foreign_records.get("independent_before")
+            )
+            stage57.setdefault("producer_after_snapshot", foreign_records.get("producer_after"))
+            stage57.setdefault(
+                "independent_after_snapshot", foreign_records.get("independent_after")
+            )
         stage10 = cast(
             dict[str, object], _stage(document, "FOREIGN_RESOURCE_SNAPSHOT_BEFORE")["evidence"]
         )
@@ -1156,7 +1165,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("source_tree", type=Path, nargs="?")
     args = parser.parse_args(argv)
     if args.snapshot:
-        gateway = MutationAuthority()
+        gateway = GatewayAuthority()
         print(
             json.dumps(
                 _independent_snapshot(args.phase, args.sequence, gateway=gateway),
@@ -1167,7 +1176,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.evidence is None or args.source_tree is None:
         parser.error("evidence and source_tree are required unless --snapshot is used")
-    verifier_gateway = MutationAuthority()
+    verifier_gateway = GatewayAuthority()
     print(
         json.dumps(
             verify_evidence(args.evidence, args.source_tree, verifier_gateway=verifier_gateway),

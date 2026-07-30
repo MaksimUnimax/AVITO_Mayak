@@ -232,3 +232,11 @@ The current RF-08 corrective rebinding replaces caller-forgeable mutation plans 
 ## RF-08 sealed-plan provenance and fail-closed inventory continuation — 2026-07-30
 
 The corrective continuation `RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02` closes the raw-argv mutation bypass, regenerates the Docker-native evidence from the exact base `b43be0f0f007267126a8eac79248af7d79f344bb`, and validates the one-harness live acceptance path with exact-base inventory and RF-11 preservation checks. The accepted harness run completed with `accepted: true`; publication bookkeeping remains append-only and RF-11 remains preserved and unaccepted.
+
+## RF-08 correction note — 2026-07-30
+
+The published commit `2df3f029d20015e1c2221949b65160ca3ecf49e7` was independently rejected. The executor timed out after publication; generic command tuples remained the actual authority; public argv plans remained; raw inspect remained exposed; implicit gateway fallback remained; synthetic stage fallback remained; the harness was self-asserting and incomplete; evidence contained hardcoded independent and test fields; `scripts/runtime/py.typed` was out of scope; the exact replacement architecture and proof were completed by this task. Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`; RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted; `NOT_PRODUCTION_READY` remains authoritative.
+
+## RF-08 writer provenance correction — 2026-07-30
+
+The exact process-level writer identified in this continuation is `scripts/runtime/safe_compose_bootstrap.py:456` via `prepare_jsonlog_runtime()`, which writes `compose.runtime.yaml` under the task-owned runtime root. Repository `compose.yaml` remained at the expected Git blob `2b2dc8843ec68293658dfe0d53dd2df0760362ab`; the added regression now proves that the runtime compose output is separate and the source compose blob remains immutable.

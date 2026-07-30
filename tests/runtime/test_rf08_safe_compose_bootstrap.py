@@ -1,13 +1,15 @@
 import ast
+import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from scripts.runtime import prepare_file_secrets
 from scripts.runtime import safe_compose_bootstrap as scb
-from scripts.runtime.rf08_docker_authority import MutationAuthority
+from scripts.runtime.rf08_docker_authority import GatewayAuthority
 from scripts.runtime.rf09_public_bootstrap_adapter import (
     INVARIANT_CODES,
     classify_statement,
@@ -146,6 +148,38 @@ def test_active_json_log_selects_newest_task_owned_file(
     assert scb._active_json_log(log_dir) == newer
 
 
+def test_prepare_jsonlog_runtime_keeps_repo_compose_immutable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    repo_root = Path(__file__).parents[2]
+    repo_compose = repo_root / "compose.yaml"
+    before_blob = subprocess.check_output(
+        ["git", "-C", str(repo_root), "hash-object", "compose.yaml"], text=True
+    ).strip()
+    before_digest = hashlib.sha256(repo_compose.read_bytes()).hexdigest()
+    runtime_root = tmp_path / "runtime"
+    runtime_root.mkdir()
+    monkeypatch.setattr(scb, "RUNTIME_ROOT", runtime_root)
+    monkeypatch.setattr(scb, "JSON_LOG_ROOT", runtime_root / "postgres-jsonlog")
+    monkeypatch.setattr(scb, "JSON_LOG_OVERRIDE", runtime_root / "postgres-jsonlog.override.yaml")
+    monkeypatch.setattr(scb, "RUNTIME_COMPOSE_FILE", runtime_root / "compose.runtime.yaml")
+
+    log_dir = scb.prepare_jsonlog_runtime("run-immutable")
+
+    assert log_dir == runtime_root / "postgres-jsonlog" / "run-immutable"
+    assert scb.RUNTIME_COMPOSE_FILE.exists()
+    assert scb.RUNTIME_COMPOSE_FILE.is_file()
+    assert not scb.RUNTIME_COMPOSE_FILE.is_symlink()
+    assert scb.RUNTIME_COMPOSE_FILE.resolve() != repo_compose.resolve()
+    assert hashlib.sha256(repo_compose.read_bytes()).hexdigest() == before_digest
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(repo_root), "hash-object", "compose.yaml"], text=True
+        ).strip()
+        == before_blob
+    )
+
+
 def test_every_stage_has_distinct_operation_parser_and_oracle() -> None:
     source = Path(__file__).parents[2] / "scripts/runtime/safe_compose_bootstrap.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
@@ -243,12 +277,12 @@ def test_default_zero_policy_rejects_nonzero_and_d_requires_70() -> None:
 
 def test_build_input_digest_follows_copy_inputs_and_includes_readme() -> None:
     tree = Path(__file__).parents[2]
-    manifest = build_input_manifest(tree, gateway=MutationAuthority())
+    manifest = build_input_manifest(tree, gateway=GatewayAuthority())
     paths = {item["path"] for item in manifest}
     assert "README.md" in paths
     assert "Dockerfile" not in paths
     assert not any("__pycache__" in path or path.endswith((".pyc", ".pyo")) for path in paths)
-    assert deterministic_build_input_digest(tree, gateway=MutationAuthority())
+    assert deterministic_build_input_digest(tree, gateway=GatewayAuthority())
 
 
 def test_independent_verifier_rejects_missing_test_counts_and_sensitive_material(
@@ -265,7 +299,7 @@ def test_independent_verifier_rejects_missing_test_counts_and_sensitive_material
     path = tmp_path / "evidence.json"
     path.write_text(json.dumps(evidence), encoding="utf-8")
     with pytest.raises(ValueError):
-        verify_evidence(path, source, verifier_gateway=MutationAuthority())
+        verify_evidence(path, source, verifier_gateway=GatewayAuthority())
 
 
 def _b_client(**changes: object) -> dict[str, object]:

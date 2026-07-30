@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # mypy: ignore-errors
-
 import ast
 import json
 import os
@@ -16,8 +15,8 @@ import pytest
 
 from scripts.runtime import safe_compose_bootstrap as scb
 from scripts.runtime.rf08_docker_authority import (
-    MutationAuthority,
-    ReadOnlyDockerQuery,
+    GatewayAuthority,
+    _ReadOnlyDockerQuery,
     gateway_token_active,
 )
 from scripts.runtime.rf08_foreign_snapshot import collect_snapshot
@@ -331,9 +330,9 @@ def test_dynamic_subprocess_guard_allows_gateway_and_rejects_bypass(
     sock, server = _endpoint_socket(tmp_path)
     monkeypatch.setenv("DOCKER_HOST", f"unix://{sock}")
     try:
-        gateway = MutationAuthority()
+        gateway = GatewayAuthority()
         completed = gateway.run(
-            ReadOnlyDockerQuery.from_argv(("docker", "version", "--format", "{{json .Server}}")),
+            _ReadOnlyDockerQuery._from_argv(("docker", "version", "--format", "{{json .Server}}")),
             stage="guard",
             capture_output=True,
             check=False,
@@ -342,24 +341,24 @@ def test_dynamic_subprocess_guard_allows_gateway_and_rejects_bypass(
         with pytest.raises(RuntimeError):
             subprocess.run(["docker", "version", "--format", "{{json .Server}}"])
 
-        producer = collect_snapshot("before", 1, gateway=MutationAuthority())
+        producer = collect_snapshot("before", 1, gateway=GatewayAuthority())
         assert producer["collector_implementation_id"] == PRODUCER_COLLECTOR_ID
 
         source = tmp_path / "source-link"
         repo = ROOT
         if not source.exists():
             source.symlink_to(repo, target_is_directory=True)
-        manifest = scb.build_input_manifest(source, gateway=MutationAuthority())
+        manifest = scb.build_input_manifest(source, gateway=GatewayAuthority())
         assert manifest
 
-        verifier_gateway = MutationAuthority()
+        verifier_gateway = GatewayAuthority()
         independent = _independent_snapshot("before", 1, gateway=verifier_gateway)
         assert independent["collector_implementation_id"] != PRODUCER_COLLECTOR_ID
 
         root = tmp_path / "verifier-root"
         root.mkdir(parents=True, exist_ok=True)
         (root / "guard").mkdir(parents=True, exist_ok=True)
-        rows, export = _docker_manifest(repo, root, "guard", gateway=MutationAuthority())
+        rows, export = _docker_manifest(repo, root, "guard", gateway=GatewayAuthority())
         assert rows
         assert len(export["manifest_sha256"]) == 64
     finally:

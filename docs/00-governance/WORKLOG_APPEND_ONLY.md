@@ -745,3 +745,40 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Public raw-argv mutation authority was removed from the RF-08 gateway surface, read-only unknown Docker commands were fail-closed, and provenance now flows through gateway-issued semantic intents only.
 - The live acceptance harness regenerated the evidence, reran the real 57-stage protocol, and passed the static gates plus focused tests with `accepted: true`.
 - RF-11 remained preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`.
+
+## WL-RF08-20260730-11 — 2026-07-30 — rejection correction and provenance reset note
+
+**Technical-ID:** `RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02`
+**Execution-Mode:** `CORRECT_PREVIOUS_PUBLICATION_WITHOUT_REWRITING_HISTORY_AND_REBASE_THE_PUBLIC_STATE_ON_SOURCE-DERIVED_LIVE_GATING`
+**Base:** `2df3f029d20015e1c2221949b65160ca3ecf49e7`
+
+- `2df3f029d20015e1c2221949b65160ca3ecf49e7` was published but independently rejected.
+- The executor timed out after publication.
+- Generic command tuples remained the actual authority.
+- Public argv plans remained.
+- Raw inspect remained exposed.
+- Implicit gateway fallback remained.
+- Synthetic stage fallback remained.
+- The harness was self-asserting and incomplete.
+- Evidence contained hardcoded independent and test fields.
+- `scripts/runtime/py.typed` was out of scope and has been deleted.
+- The exact replacement architecture and proof were completed by this task.
+- Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`.
+- RF-11 remains preserved and unaccepted.
+- RF-12 and RF-23 remain unstarted.
+- `NOT_PRODUCTION_READY` remains authoritative.
+
+## WL-RF08-20260730-12 — 2026-07-30 — runtime writer provenance correction
+
+**Technical-ID:** `RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02`
+**Execution-Mode:** `IDENTIFY_EXACT_WRITER_THEN_FIX_PATH_ROUTING_WITH_SOURCE_IMMUTABILITY_REGRESSION`
+**Base:** `2df3f029d20015e1c2221949b65160ca3ecf49e7`
+
+- The exact process-level writer identified in this continuation is `scripts/runtime/safe_compose_bootstrap.py:456` via `prepare_jsonlog_runtime()`.
+- The writer targets `compose.runtime.yaml` under the task-owned runtime root.
+- Repository `compose.yaml` remained at the expected Git blob `2b2dc8843ec68293658dfe0d53dd2df0760362ab`.
+- The added regression proves the runtime compose output is distinct and the source compose blob remains immutable.
+- Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`.
+- RF-11 remains preserved and unaccepted.
+- RF-12 and RF-23 remain unstarted.
+- `NOT_PRODUCTION_READY` remains authoritative.

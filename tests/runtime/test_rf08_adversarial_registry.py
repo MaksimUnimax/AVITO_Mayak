@@ -15,12 +15,12 @@ import pytest
 from scripts.runtime import safe_compose_bootstrap as scb
 from scripts.runtime.rf08_docker_authority import (
     DockerCommandClass,
-    MutationAuthority,
-    ReadOnlyDockerQuery,
+    GatewayAuthority,
     _compose_plan,
-    _direct_plan,
-    _split_option_pairs,
-    classify_docker_argv,
+    _parse_docker_command,
+    _parse_docker_option_pairs,
+    _ReadOnlyDockerQuery,
+    classify_docker_command_class,
     gateway_token_active,
 )
 from scripts.runtime.rf08_foreign_snapshot import collect_snapshot
@@ -355,7 +355,7 @@ def _mutation(argv_tail: tuple[str, ...], file: str = REPO_COMPOSE):
 
 
 def _issue_mutation(
-    gateway: MutationAuthority,
+    gateway: GatewayAuthority,
     argv_tail: tuple[str, ...],
     file: str = REPO_COMPOSE,
     *,
@@ -392,12 +392,12 @@ def _issue_mutation(
 
 
 def _issue_semantic(
-    gateway: MutationAuthority,
+    gateway: GatewayAuthority,
     argv: tuple[str, ...],
     *,
     stage: str,
 ):
-    plan = _direct_plan(argv)
+    plan = _parse_docker_command(argv)
     if not plan.is_mutation:
         raise ValueError("mutation command required")
     if (
@@ -455,7 +455,7 @@ def _issue_semantic(
             name=argv[-1],
         )
     if plan.command_class == DockerCommandClass.DIRECT_RUN:
-        pairs = _split_option_pairs(argv[2:])
+        pairs = _parse_docker_option_pairs(argv[2:])
         labels = tuple(
             tuple(item.split("=", 1)) for item in pairs.get("--label", []) if "=" in item
         )
@@ -484,7 +484,7 @@ def _issue_semantic(
             volume=tuple(pairs.get("-v", [])),
         )
     if plan.command_class == DockerCommandClass.BUILDX_BUILD:
-        pairs = _split_option_pairs(argv[2:])
+        pairs = _parse_docker_option_pairs(argv[2:])
         return gateway.issue_buildx_manifest(
             stage=stage,
             context=argv[-1],
@@ -496,8 +496,8 @@ def _issue_semantic(
     raise ValueError("unsupported semantic mutation command")
 
 
-def _authority_three_mutations() -> MutationAuthority:
-    authority = MutationAuthority()
+def _authority_three_mutations() -> GatewayAuthority:
+    authority = GatewayAuthority()
     mutation = _issue_mutation(authority, ("up", "-d", "mayak-postgres"), stage="s1")
     authority.execute(mutation, stage="s1")
     stop = _issue_mutation(authority, ("stop", "mayak-postgres"), stage="s2")
@@ -651,8 +651,8 @@ def _stage56_evidence(*, authorized: int = 3, executed: int = 3) -> dict[str, An
 
 
 def _valid_stage57_evidence(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
-    _producer_gateway = MutationAuthority()
-    _independent_gateway = MutationAuthority()
+    _producer_gateway = GatewayAuthority()
+    _independent_gateway = GatewayAuthority()
     sock, server = _endpoint_socket(tmp_path)
     monkeypatch.setenv("DOCKER_HOST", f"unix://{sock}")
     try:
@@ -750,7 +750,7 @@ def _run_protocol_integration(
 
         def mut1() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
-            assert isinstance(gateway, MutationAuthority)
+            assert isinstance(gateway, GatewayAuthority)
             gateway.execute(
                 _issue_mutation(gateway, ("up", "-d", "mayak-postgres"), stage="MUT1"),
                 stage="MUT1",
@@ -759,7 +759,7 @@ def _run_protocol_integration(
 
         def mut2() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
-            assert isinstance(gateway, MutationAuthority)
+            assert isinstance(gateway, GatewayAuthority)
             gateway.execute(
                 _issue_mutation(gateway, ("stop", "mayak-postgres"), stage="MUT2"),
                 stage="MUT2",
@@ -768,7 +768,7 @@ def _run_protocol_integration(
 
         def mut3() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
-            assert isinstance(gateway, MutationAuthority)
+            assert isinstance(gateway, GatewayAuthority)
             gateway.execute(
                 _issue_semantic(
                     gateway,
@@ -800,7 +800,7 @@ def _run_protocol_integration(
 
     monkeypatch.setattr(scb, "_operation_specs", fake_specs)
     root = scb.RUNTIME_ROOT / "registry-integration" / tmp_path.name
-    runner = scb.PrivateCommandRunner({}, root=root, gateway=MutationAuthority())
+    runner = scb.PrivateCommandRunner({}, root=root, gateway=GatewayAuthority())
     record = scb.run_protocol(
         root=root,
         source_sha="0" * 40,
@@ -830,7 +830,7 @@ def test_replay_namespace_sanitation_is_idempotent_and_exact(
     removed: list[tuple[str, str]] = []
     state = {"task": True}
 
-    def fake_inspect(_: MutationAuthority) -> dict[str, object]:
+    def fake_inspect(_: GatewayAuthority) -> dict[str, object]:
         task_containers = (
             [
                 {
@@ -917,7 +917,7 @@ def test_replay_namespace_sanitation_is_idempotent_and_exact(
         }
 
     def fake_collect(
-        phase: str, sequence: int, gateway: MutationAuthority | None = None
+        phase: str, sequence: int, gateway: GatewayAuthority | None = None
     ) -> dict[str, object]:
         return {
             "schema_version": "ForeignResourceSnapshotV3",
@@ -953,7 +953,7 @@ def test_replay_namespace_sanitation_is_idempotent_and_exact(
             "apm_postgres_present": True,
         }
 
-    def fake_remove(gateway: MutationAuthority, record: dict[str, object]) -> None:
+    def fake_remove(gateway: GatewayAuthority, record: dict[str, object]) -> None:
         removed.append((str(record["kind"]), str(record["name"])))
         state["task"] = False
 
@@ -970,7 +970,7 @@ def test_replay_namespace_sanitation_is_idempotent_and_exact(
     monkeypatch.setattr(scb, "_secret_generation_residue", lambda root: (0, False))
     monkeypatch.setattr(scb, "_remove_task_owned_resource", fake_remove)
     ctx: dict[str, object] = {
-        "mutation_ledger": MutationAuthority(),
+        "mutation_ledger": GatewayAuthority(),
         "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
         "source_sha": "0" * 40,
         "root": tmp_path,
@@ -1004,7 +1004,7 @@ def test_replay_namespace_sanitation_is_idempotent_and_exact(
 def test_replay_namespace_sanitation_rejects_unresolved_resources(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    def fake_inspect(_: MutationAuthority) -> dict[str, object]:
+    def fake_inspect(_: GatewayAuthority) -> dict[str, object]:
         unresolved = {
             "containers": [
                 {
@@ -1060,7 +1060,7 @@ def test_replay_namespace_sanitation_rejects_unresolved_resources(
         lambda gateway, record: called.append((str(record["kind"]), str(record["name"]))),
     )
     ctx: dict[str, object] = {
-        "mutation_ledger": MutationAuthority(),
+        "mutation_ledger": GatewayAuthority(),
         "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
         "source_sha": "0" * 40,
         "root": tmp_path,
@@ -1076,7 +1076,7 @@ def test_replay_transcript_refuses_without_sanitation_record(
     monkeypatch.setattr(scb, "_prepare_replay_namespace_sanitation", lambda ctx, source_tree: None)
     monkeypatch.setattr(scb, "prepare_jsonlog_runtime", lambda run_id: tmp_path / "logs")
     root = scb.RUNTIME_ROOT / "rf08-test" / tmp_path.name
-    runner = scb.PrivateCommandRunner({}, root=root, gateway=MutationAuthority())
+    runner = scb.PrivateCommandRunner({}, root=root, gateway=GatewayAuthority())
     record = scb.run_protocol(
         root=root,
         source_sha="0" * 40,
@@ -1103,7 +1103,7 @@ def test_database_bootstrap_stage_carries_recovered_generation_id(
             )
 
     ctx: dict[str, object] = {
-        "mutation_ledger": MutationAuthority(),
+        "mutation_ledger": GatewayAuthority(),
         "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
         "runner": Runner(),
         "source_sha": "0" * 40,
@@ -1140,7 +1140,7 @@ def test_migration_upgrade_stage_uses_compose_run_service_command(
             )
 
     ctx: dict[str, object] = {
-        "mutation_ledger": MutationAuthority(),
+        "mutation_ledger": GatewayAuthority(),
         "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
         "runner": Runner(),
         "source_sha": "0" * 40,
@@ -1178,30 +1178,30 @@ def dispatch(
     )
 
     if scenario == "classify":
-        assert classify_docker_argv(argv) == params["expected"]
+        assert classify_docker_command_class(argv) == params["expected"]
         return
 
     if scenario == "authorize_reject":
-        authority = MutationAuthority()
+        authority = GatewayAuthority()
         with pytest.raises(tuple(params["exceptions"])):
             _issue_semantic(authority, argv, stage="negative")
         return
 
     if scenario == "direct_run_reject":
-        authority = MutationAuthority()
+        authority = GatewayAuthority()
         with pytest.raises(tuple(params["exceptions"])):
             _issue_semantic(authority, argv, stage="direct")
         return
 
     if scenario == "direct_run_accept":
-        authority = MutationAuthority()
+        authority = GatewayAuthority()
         capability = _issue_semantic(authority, argv, stage="direct")
         result = authority.execute(capability, stage="direct")
         assert isinstance(result, subprocess.CompletedProcess)
         return
 
     if scenario == "authorize_accept":
-        authority = MutationAuthority()
+        authority = GatewayAuthority()
         capability = _issue_semantic(authority, argv, stage="authorize")
         auth = authority.authorize(capability, stage="authorize")
         assert auth.gateway_instance_id == authority.gateway_instance_id
@@ -1209,7 +1209,7 @@ def dispatch(
         return
 
     if scenario == "caller_ownership_absent":
-        authority = MutationAuthority()
+        authority = GatewayAuthority()
         capability = _issue_semantic(authority, argv, stage="authorize")
         with pytest.raises(TypeError):
             getattr(authority, "authorize")(capability, stage="authorize", ownership="TASK_OWNED")  # type: ignore[arg-type]
@@ -1252,7 +1252,7 @@ def dispatch(
                 authority.entries.append(authority.entries[0])  # type: ignore[attr-defined]
             return
         if tamper == "empty_with_mutations":
-            authority = MutationAuthority()
+            authority = GatewayAuthority()
             authority.execute(
                 _issue_mutation(authority, ("up", "-d", "mayak-postgres"), stage="s1"),
                 stage="s1",
@@ -1314,7 +1314,7 @@ def dispatch(
                 authority.validate_complete(3)
             return
         if tamper == "timeout_result_not_zero":
-            authority = MutationAuthority()
+            authority = GatewayAuthority()
 
             def timeout_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
                 argv = tuple(str(item) for item in args[0])
@@ -1331,7 +1331,7 @@ def dispatch(
             assert authority.entries[-1].timed_out is True
             return
         if tamper == "process_start_failure":
-            authority = MutationAuthority()
+            authority = GatewayAuthority()
 
             def fail_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
                 argv = tuple(str(item) for item in args[0])
@@ -1357,7 +1357,7 @@ def dispatch(
             sock, server = _endpoint_socket(tmp_path)
             monkeypatch.setenv("DOCKER_HOST", f"unix://{sock}")
             try:
-                schema, digest, metadata = verifier_endpoint_identity(MutationAuthority())
+                schema, digest, metadata = verifier_endpoint_identity(GatewayAuthority())
                 assert schema in {
                     "LOCAL_UNIX_DOCKER_ENDPOINT_INSTANCE_V1",
                     "LOCAL_UNIX_DOCKER_ENDPOINT_SOCKET_V1",
@@ -1370,25 +1370,25 @@ def dispatch(
         if kind == "nonunix":
             monkeypatch.setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
             with pytest.raises(ValueError):
-                verifier_endpoint_identity(MutationAuthority())
+                verifier_endpoint_identity(GatewayAuthority())
             return
         if kind == "unsafe_path":
             monkeypatch.setenv("DOCKER_HOST", "unix://../bad.sock")
             with pytest.raises(ValueError):
-                verifier_endpoint_identity(MutationAuthority())
+                verifier_endpoint_identity(GatewayAuthority())
             return
         if kind == "missing_socket":
             monkeypatch.setenv("DOCKER_HOST", f"unix://{tmp_path / 'missing.sock'}")
             with pytest.raises(Exception):
-                verifier_endpoint_identity(MutationAuthority())
+                verifier_endpoint_identity(GatewayAuthority())
             return
         if kind == "collector_ids":
             _patch_docker(monkeypatch)
             sock, server = _endpoint_socket(tmp_path)
             monkeypatch.setenv("DOCKER_HOST", f"unix://{sock}")
             try:
-                producer = collect_snapshot("before", 1, gateway=MutationAuthority())
-                independent = _independent_snapshot("before", 1, gateway=MutationAuthority())
+                producer = collect_snapshot("before", 1, gateway=GatewayAuthority())
+                independent = _independent_snapshot("before", 1, gateway=GatewayAuthority())
                 assert producer["collector_implementation_id"] == PRODUCER_COLLECTOR_ID
                 assert independent["collector_implementation_id"] == INDEPENDENT_COLLECTOR_ID
             finally:
@@ -1399,8 +1399,8 @@ def dispatch(
             sock, server = _endpoint_socket(tmp_path)
             monkeypatch.setenv("DOCKER_HOST", f"unix://{sock}")
             try:
-                producer = collect_snapshot("before", 1, gateway=MutationAuthority())
-                independent = _independent_snapshot("before", 1, gateway=MutationAuthority())
+                producer = collect_snapshot("before", 1, gateway=GatewayAuthority())
+                independent = _independent_snapshot("before", 1, gateway=GatewayAuthority())
                 assert (
                     producer["canonical_serialization_digest"]
                     == independent["canonical_serialization_digest"]
@@ -1565,14 +1565,14 @@ def dispatch(
         kind = params["kind"]
         if kind == "read_only_audit":
             _patch_docker(monkeypatch)
-            gateway = MutationAuthority()
+            gateway = GatewayAuthority()
             snapshot = collect_snapshot("before", 1, gateway=gateway)
             assert snapshot["collector_implementation_id"] == PRODUCER_COLLECTOR_ID
             assert any(not item.is_mutation for item in gateway.invocation_audit)
             assert gateway.entries == ()
             return
         if kind == "mutation_audit":
-            gateway = MutationAuthority()
+            gateway = GatewayAuthority()
             gateway.execute(
                 _issue_mutation(gateway, ("up", "-d", "mayak-postgres"), stage="audit"),
                 stage="audit",
@@ -1590,7 +1590,7 @@ def dispatch(
             return
         if kind == "producer_snapshot_uses_gateway":
             _patch_docker(monkeypatch)
-            gateway = MutationAuthority()
+            gateway = GatewayAuthority()
             collect_snapshot("before", 1, gateway=gateway)
             assert (
                 gateway.invocation_audit
@@ -1599,15 +1599,15 @@ def dispatch(
             return
         if kind == "collector_calls_audited":
             _patch_docker(monkeypatch)
-            gateway = MutationAuthority()
+            gateway = GatewayAuthority()
             collect_snapshot("before", 1, gateway=gateway)
             assert gateway.invocation_audit
             assert all(not item.is_mutation for item in gateway.invocation_audit)
             return
         if kind == "verifier_separate_gateway":
             _patch_docker(monkeypatch)
-            producer = MutationAuthority()
-            verifier = MutationAuthority()
+            producer = GatewayAuthority()
+            verifier = GatewayAuthority()
             collect_snapshot("before", 1, gateway=producer)
             _independent_snapshot("before", 1, gateway=verifier)
             assert producer.gateway_instance_id != verifier.gateway_instance_id
@@ -1615,10 +1615,10 @@ def dispatch(
             return
         if kind == "gateway_token":
             _patch_docker(monkeypatch)
-            gateway = MutationAuthority()
+            gateway = GatewayAuthority()
             assert not gateway_token_active()
             gateway.run(
-                ReadOnlyDockerQuery.from_argv(
+                _ReadOnlyDockerQuery._from_argv(
                     ("docker", "version", "--format", "{{json .Server}}")
                 ),
                 stage="token",
@@ -1629,7 +1629,7 @@ def dispatch(
             return
         if kind == "docker_context_path":
             _patch_docker(monkeypatch)
-            gateway = MutationAuthority()
+            gateway = GatewayAuthority()
             source = tmp_path / "source-link"
             repo = Path(__file__).resolve().parents[2]
             if not source.exists():
@@ -1640,7 +1640,7 @@ def dispatch(
             return
         if kind == "verifier_build_path":
             _patch_docker(monkeypatch)
-            gateway = MutationAuthority()
+            gateway = GatewayAuthority()
             root = tmp_path / "verifier-root"
             root.mkdir(parents=True, exist_ok=True)
             source = Path(__file__).resolve().parents[2]
@@ -1658,7 +1658,7 @@ def dispatch(
         if kind == "creates_gateway":
             assert record.status == "PASS"
             assert runner.gateway is runner.mutation_ledger
-            assert isinstance(runner.gateway, MutationAuthority)
+            assert isinstance(runner.gateway, GatewayAuthority)
             return
         if kind == "runner_identity":
             assert runner.gateway is runner.mutation_ledger
@@ -1678,7 +1678,7 @@ def dispatch(
             return
         if kind == "producer_context_gateway":
             assert runner.gateway is runner.mutation_ledger
-            assert isinstance(runner.gateway, MutationAuthority)
+            assert isinstance(runner.gateway, GatewayAuthority)
             return
         if kind == "producer_read_only_audit":
             assert len(runner.gateway.entries) == 6
@@ -1688,7 +1688,7 @@ def dispatch(
             return
         if kind == "verifier_separate_gateway":
             _patch_docker(monkeypatch)
-            verifier_gateway = MutationAuthority()
+            verifier_gateway = GatewayAuthority()
             _independent_snapshot("before", 1, gateway=verifier_gateway)
             assert verifier_gateway.invocation_audit
             return

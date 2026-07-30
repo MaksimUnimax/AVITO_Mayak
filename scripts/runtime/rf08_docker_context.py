@@ -16,9 +16,9 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from scripts.runtime.rf08_docker_authority import MutationAuthority
+from scripts.runtime.rf08_docker_authority import GatewayAuthority
 
-EXPECTED_BASE_SHA: Final = "b43be0f0f007267126a8eac79248af7d79f344bb"
+EXPECTED_BASE_SHA: Final = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
 COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("pyproject.toml", "pyproject.toml"),
     ("uv.lock", "uv.lock"),
@@ -101,7 +101,7 @@ def _inspector_file(root: Path) -> Path:
 
 
 def docker_native_manifest(
-    context: Path, runtime_root: Path, run_id: str, *, gateway: MutationAuthority
+    context: Path, runtime_root: Path, run_id: str, *, gateway: GatewayAuthority
 ) -> tuple[tuple[dict[str, str], ...], dict[str, str]]:
     """Materialize COPY output using BuildKit local output and hash files."""
     run_root = runtime_root / run_id

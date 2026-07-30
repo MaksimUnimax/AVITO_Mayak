@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from scripts.runtime.rf08_docker_authority import MutationAuthority, ReadOnlyDockerQuery
+from scripts.runtime.rf08_docker_authority import GatewayAuthority, _ReadOnlyDockerQuery
 from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value
 
 SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
@@ -98,7 +98,7 @@ def _peer_start_time(pid: int) -> str:
     return fields[19]
 
 
-def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, str]]:
+def _endpoint_identity(gateway: GatewayAuthority) -> tuple[str, str, dict[str, str]]:
     endpoint = _docker_endpoint()
     socket_stat = endpoint.stat()
     if not stat.S_ISSOCK(socket_stat.st_mode):
@@ -120,7 +120,7 @@ def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, 
     if peer is not None and any(value < 0 for value in peer):
         raise CollectionFailure("invalid peer credentials")
     server = gateway.run(
-        ReadOnlyDockerQuery.from_argv(("docker", "version", "--format", "{{json .Server}}")),
+        _ReadOnlyDockerQuery._from_argv(("docker", "version", "--format", "{{json .Server}}")),
         stage="foreign-endpoint-version",
         capture_output=True,
         check=False,
@@ -175,7 +175,7 @@ def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, 
     return (str(payload["schema"]), _digest(payload), safe_server)
 
 
-def _daemon_identity(gateway: MutationAuthority) -> str:
+def _daemon_identity(gateway: GatewayAuthority) -> str:
     return _endpoint_identity(gateway)[1]
 
 
@@ -237,9 +237,9 @@ def _ownership(name: str, labels: dict[str, str], kind: str) -> str:
     return "UNRESOLVED" if task_indicator else "FOREIGN"
 
 
-def _inspect(gateway: MutationAuthority, kind: str, ident: str) -> dict[str, Any]:
+def _inspect(gateway: GatewayAuthority, kind: str, ident: str) -> dict[str, Any]:
     proc = gateway.run(
-        ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident)),
+        _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident)),
         stage=f"foreign-inspect-{kind}",
         capture_output=True,
         check=False,
@@ -263,10 +263,10 @@ def _inspect(gateway: MutationAuthority, kind: str, ident: str) -> dict[str, Any
     return item
 
 
-def _enumerate(gateway: MutationAuthority, kind: str) -> list[str]:
+def _enumerate(gateway: GatewayAuthority, kind: str) -> list[str]:
     command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
     proc = gateway.run(
-        ReadOnlyDockerQuery.from_argv(command),
+        _ReadOnlyDockerQuery._from_argv(command),
         stage=f"foreign-enumerate-{kind}",
         capture_output=True,
         text=True,
@@ -405,7 +405,7 @@ def _canonical(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: payload[k] for k in keys}
 
 
-def collect_snapshot(phase: str, sequence: int, *, gateway: MutationAuthority) -> dict[str, Any]:
+def collect_snapshot(phase: str, sequence: int, *, gateway: GatewayAuthority) -> dict[str, Any]:
     try:
         host, boot = _host_identity(), _boot_identity()
         endpoint_schema, daemon, server_metadata = _endpoint_identity(gateway)

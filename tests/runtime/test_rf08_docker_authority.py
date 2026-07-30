@@ -10,10 +10,10 @@ import pytest
 
 from scripts.runtime.rf08_docker_authority import (
     DockerCommandClass,
-    MutationAuthority,
-    ReadOnlyDockerQuery,
+    GatewayAuthority,
     ResolvedTaskResourceCapability,
-    classify_docker_argv,
+    _ReadOnlyDockerQuery,
+    classify_docker_command_class,
 )
 
 PROJECT = "avito-mayak-rf08-secret-delivery"
@@ -46,7 +46,7 @@ def _compose_up_argv(compose_file: Path) -> tuple[str, ...]:
 
 
 def _issue_network_create(
-    authority: MutationAuthority, *, stage: str
+    authority: GatewayAuthority, *, stage: str
 ) -> ResolvedTaskResourceCapability:
     return authority.issue_resource_lifecycle(
         stage=stage,
@@ -59,7 +59,7 @@ def _issue_network_create(
 def test_authorization_is_recorded_before_subprocess_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    authority = MutationAuthority()
+    authority = GatewayAuthority()
     seen: list[int] = []
 
     def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -82,7 +82,7 @@ def test_authorization_is_recorded_before_subprocess_execution(
 def test_execution_result_references_prior_authorization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    authority = MutationAuthority()
+    authority = GatewayAuthority()
 
     def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         argv = tuple(str(item) for item in args[0])
@@ -99,13 +99,15 @@ def test_execution_result_references_prior_authorization(
 
 
 def test_read_only_does_not_create_mutation_record() -> None:
-    assert classify_docker_argv(("docker", "inspect", "abc")) == DockerCommandClass.READ_ONLY
+    assert classify_docker_command_class(("docker", "inspect", "abc")) == (
+        DockerCommandClass.READ_ONLY
+    )
     assert (
-        classify_docker_argv(("docker", "version", "--format", "{{json .Server}}"))
+        classify_docker_command_class(("docker", "version", "--format", "{{json .Server}}"))
         == DockerCommandClass.READ_ONLY
     )
     assert (
-        classify_docker_argv(("docker", "system", "prune", "-f"))
+        classify_docker_command_class(("docker", "system", "prune", "-f"))
         == DockerCommandClass.UNKNOWN_DOCKER_COMMAND
     )
 
@@ -113,7 +115,7 @@ def test_read_only_does_not_create_mutation_record() -> None:
 def test_compose_binding_requires_exact_absolute_path_and_identity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    authority = MutationAuthority()
+    authority = GatewayAuthority()
     capability = authority.issue_compose_operation(
         command="up",
         service="mayak-api",
@@ -173,7 +175,8 @@ def test_compose_binding_requires_exact_absolute_path_and_identity(
             detach=True,
         )
 
-    changed = tmp_path / "compose.yaml"
+    changed = tmp_path / "changed" / "compose.yaml"
+    changed.parent.mkdir(parents=True, exist_ok=True)
     changed.write_text("version: '3'\nservices: {}\n", encoding="utf-8")
     with pytest.raises(ValueError):
         authority.issue_compose_operation(
@@ -208,9 +211,9 @@ def test_compose_binding_requires_exact_absolute_path_and_identity(
 
 
 def test_broad_unscoped_and_unknown_fail_closed() -> None:
-    authority = MutationAuthority()
+    authority = GatewayAuthority()
     with pytest.raises(ValueError):
-        ReadOnlyDockerQuery.from_argv(("docker", "system", "prune", "-f"))
+        _ReadOnlyDockerQuery._from_argv(("docker", "system", "prune", "-f"))
     with pytest.raises(ValueError):
         authority.issue_compose_operation(
             command="down",
@@ -225,7 +228,7 @@ def test_broad_unscoped_and_unknown_fail_closed() -> None:
 def test_forged_and_reconstructed_capabilities_fail_before_subprocess(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    authority = MutationAuthority()
+    authority = GatewayAuthority()
     seen: list[tuple[str, ...]] = []
 
     def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -245,14 +248,16 @@ def test_forged_and_reconstructed_capabilities_fail_before_subprocess(
         command_class=DockerCommandClass.COMPOSE_DOWN.value,
         allowed_operations=("COMPOSE_DOWN",),
     )
-    payload = capability.safe_dict()
-    payload["allowed_operations"] = tuple(payload["allowed_operations"])
+    payload = cast(dict[str, Any], capability.safe_dict())
+    payload["allowed_operations"] = cast(
+        tuple[str, ...], payload["allowed_operations"]
+    )
     manual = ResolvedTaskResourceCapability(seal="manual", **payload)
 
     with pytest.raises(PermissionError):
         authority.execute(copied, stage="copied")
     with pytest.raises(PermissionError):
-        MutationAuthority().execute(copied, stage="cross-gateway")
+        GatewayAuthority().execute(copied, stage="cross-gateway")
     with pytest.raises(PermissionError):
         authority.authorize(forged, stage="forged")
     with pytest.raises(PermissionError):
@@ -265,7 +270,7 @@ def test_forged_and_reconstructed_capabilities_fail_before_subprocess(
 def test_capability_is_single_use_and_ledger_tamper_is_detected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    authority = MutationAuthority()
+    authority = GatewayAuthority()
 
     def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         argv = tuple(str(item) for item in args[0])

@@ -78,7 +78,7 @@ class TaskCreationPlan:
 
 
 @dataclass(frozen=True)
-class DockerInvocationPlan:
+class _DockerInvocationPlan:
     argv: tuple[str, ...]
     command_class: DockerCommandClass
     target_kind: str
@@ -93,11 +93,11 @@ class DockerInvocationPlan:
 
 
 @dataclass(frozen=True)
-class ReadOnlyDockerQuery(DockerInvocationPlan):
+class _ReadOnlyDockerQuery(_DockerInvocationPlan):
     proof_token: str = ""
 
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "ReadOnlyDockerQuery":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "_ReadOnlyDockerQuery":
         if plan.is_mutation:
             raise ValueError("mutation plan is not a read-only query")
         return cls(
@@ -120,7 +120,7 @@ class ReadOnlyDockerQuery(DockerInvocationPlan):
         )
 
     @classmethod
-    def from_argv(cls, argv: Sequence[str]) -> "ReadOnlyDockerQuery":
+    def _from_argv(cls, argv: Sequence[str]) -> "_ReadOnlyDockerQuery":
         plan = _read_only_plan(tuple(argv))
         if plan.is_mutation:
             raise ValueError("mutation command is not read-only")
@@ -128,9 +128,9 @@ class ReadOnlyDockerQuery(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class ComposeOperationPlan(DockerInvocationPlan):
+class ComposeOperationPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "ComposeOperationPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ComposeOperationPlan":
         if plan.command_class not in {
             DockerCommandClass.COMPOSE_CREATE,
             DockerCommandClass.COMPOSE_UP,
@@ -157,9 +157,9 @@ class ComposeOperationPlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class ContainerProbeCreationPlan(DockerInvocationPlan):
+class ContainerProbeCreationPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "ContainerProbeCreationPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ContainerProbeCreationPlan":
         if plan.command_class != DockerCommandClass.DIRECT_RUN:
             raise ValueError("not a direct run plan")
         return cls(
@@ -178,9 +178,9 @@ class ContainerProbeCreationPlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class ContainerRemovalPlan(DockerInvocationPlan):
+class ContainerRemovalPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "ContainerRemovalPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ContainerRemovalPlan":
         if plan.command_class != DockerCommandClass.DIRECT_CONTAINER_RM:
             raise ValueError("not a direct container removal plan")
         return cls(
@@ -199,9 +199,9 @@ class ContainerRemovalPlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class ImageBuildPlan(DockerInvocationPlan):
+class ImageBuildPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "ImageBuildPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ImageBuildPlan":
         if plan.command_class != DockerCommandClass.IMAGE_BUILD:
             raise ValueError("not an image build plan")
         return cls(
@@ -220,9 +220,9 @@ class ImageBuildPlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class ImageLoadPlan(DockerInvocationPlan):
+class ImageLoadPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "ImageLoadPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ImageLoadPlan":
         if plan.command_class != DockerCommandClass.IMAGE_LOAD:
             raise ValueError("not an image load plan")
         return cls(
@@ -241,9 +241,9 @@ class ImageLoadPlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class BuildxManifestPlan(DockerInvocationPlan):
+class BuildxManifestPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "BuildxManifestPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "BuildxManifestPlan":
         if plan.command_class != DockerCommandClass.BUILDX_BUILD:
             raise ValueError("not a buildx manifest plan")
         return cls(
@@ -262,9 +262,9 @@ class BuildxManifestPlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class BuilderScopePlan(DockerInvocationPlan):
+class BuilderScopePlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "BuilderScopePlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "BuilderScopePlan":
         if plan.command_class not in {
             DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
             DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
@@ -286,9 +286,9 @@ class BuilderScopePlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class NetworkCreationPlan(DockerInvocationPlan):
+class NetworkCreationPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "NetworkCreationPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "NetworkCreationPlan":
         if plan.command_class not in {
             DockerCommandClass.NETWORK_CREATE,
             DockerCommandClass.NETWORK_RM,
@@ -310,9 +310,9 @@ class NetworkCreationPlan(DockerInvocationPlan):
 
 
 @dataclass(frozen=True)
-class VolumeCreationPlan(DockerInvocationPlan):
+class VolumeCreationPlan(_DockerInvocationPlan):
     @classmethod
-    def _from_plan(cls, plan: DockerInvocationPlan) -> "VolumeCreationPlan":
+    def _from_plan(cls, plan: _DockerInvocationPlan) -> "VolumeCreationPlan":
         if plan.command_class not in {
             DockerCommandClass.VOLUME_CREATE,
             DockerCommandClass.VOLUME_RM,
@@ -388,7 +388,7 @@ class ResolvedTaskResourceCapability:
         }
 
 
-MutationPlan: TypeAlias = (
+_MutationPlan: TypeAlias = (
     ComposeOperationPlan
     | ContainerProbeCreationPlan
     | ContainerRemovalPlan
@@ -500,14 +500,14 @@ def _read_only_proof(
     return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
 
-def _read_only_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
-    plan = _direct_plan(argv)
+def _read_only_plan(argv: tuple[str, ...]) -> _DockerInvocationPlan:
+    plan = _parse_docker_command(argv)
     if plan.is_mutation:
         raise ValueError("mutation command is not read-only")
     return plan
 
 
-def _split_option_pairs(argv: Sequence[str]) -> dict[str, list[str]]:
+def _parse_docker_option_pairs(argv: Sequence[str]) -> dict[str, list[str]]:
     pairs: dict[str, list[str]] = {}
     index = 0
     while index < len(argv):
@@ -610,7 +610,7 @@ def _compose_file_identity(path: str) -> tuple[str, str, str, str]:
     return str(resolved), digest, source_identity, generation_identity
 
 
-def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
+def _compose_plan(argv: tuple[str, ...]) -> _DockerInvocationPlan:
     if len(argv) < 3 or argv[0] != "docker" or argv[1] != "compose":
         raise ValueError("not a compose invocation")
     file_values: list[str] = []
@@ -664,7 +664,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "version":
         if remainder != ("--short",):
             raise ValueError("compose version mismatch")
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="compose_project",
@@ -690,7 +690,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "config":
         if remainder != ("--format", "json"):
             raise ValueError("compose config mismatch")
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="compose_project",
@@ -719,7 +719,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "ps":
         if remainder not in {(), ("-q",), ("--quiet",)}:
             raise ValueError("compose ps mismatch")
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="compose_project",
@@ -772,7 +772,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         }
         if tuple(payload) not in safe_execs:
             raise ValueError("compose exec payload mismatch")
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="container",
@@ -886,14 +886,14 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     raise ValueError("unknown compose command")
 
 
-def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
+def _parse_docker_command(argv: tuple[str, ...]) -> _DockerInvocationPlan:
     if len(argv) < 2 or argv[0] != "docker":
         raise ValueError("not docker")
     command = argv[1]
     if command == "version":
         if argv[2:] not in {("--format", "{{json .Server}}"), ("--format", "{{json .Client}}")}:
             raise ValueError("version mismatch")
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "daemon",
@@ -912,7 +912,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"
         )
         if len(argv) == 5 and argv[2] == "--format" and argv[3] == health_format:
-            return ReadOnlyDockerQuery(
+            return _ReadOnlyDockerQuery(
                 argv,
                 DockerCommandClass.READ_ONLY,
                 "container",
@@ -925,7 +925,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                     target_kind="container",
                 ),
             )
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "target",
@@ -943,7 +943,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         and len(argv) > 3
         and argv[2] == "inspect"
     ):
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             command,
@@ -959,7 +959,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "ps":
         if argv[2:] not in {("-aq",), ("-q",), ("-a", "-q")} and "-aq" not in argv[2:]:
             raise ValueError("ps mismatch")
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "target",
@@ -974,7 +974,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         )
     if command == "image" and len(argv) > 2:
         if argv[2] == "inspect":
-            return ReadOnlyDockerQuery(
+            return _ReadOnlyDockerQuery(
                 argv,
                 DockerCommandClass.READ_ONLY,
                 "image",
@@ -1026,7 +1026,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             command=argv[2],
         )
     if command == "buildx" and len(argv) > 2 and argv[2] == "ls":
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "builder",
@@ -1040,7 +1040,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             ),
         )
     if command == "run":
-        pairs = _split_option_pairs(argv[2:])
+        pairs = _parse_docker_option_pairs(argv[2:])
         if (
             "--privileged" in pairs
             or "--pid" in pairs
@@ -1108,7 +1108,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="rm",
             )
         if argv[2] == "ls":
-            return ReadOnlyDockerQuery(
+            return _ReadOnlyDockerQuery(
                 argv,
                 DockerCommandClass.READ_ONLY,
                 "network",
@@ -1141,7 +1141,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="rm",
             )
         if argv[2] == "ls":
-            return ReadOnlyDockerQuery(
+            return _ReadOnlyDockerQuery(
                 argv,
                 DockerCommandClass.READ_ONLY,
                 "volume",
@@ -1176,7 +1176,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "compose":
         return _compose_plan(argv)
     if command in {"version", "info"}:
-        return ReadOnlyDockerQuery(
+        return _ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "daemon",
@@ -1192,12 +1192,12 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     raise ValueError("unknown docker command")
 
 
-def classify_docker_argv(argv: Iterable[str]) -> DockerCommandClass:
+def classify_docker_command_class(argv: Iterable[str]) -> DockerCommandClass:
     args = tuple(argv)
     if not args or args[0] != "docker":
         return DockerCommandClass.UNKNOWN_DOCKER_COMMAND
     try:
-        return _direct_plan(args).command_class
+        return _parse_docker_command(args).command_class
     except ValueError:
         return DockerCommandClass.UNKNOWN_DOCKER_COMMAND
 
@@ -1207,7 +1207,7 @@ class _CapabilityIssuance:
     capability: ResolvedTaskResourceCapability
     authorization: DockerMutationRecord
     audit: DockerInvocationAuditRecord
-    plan: DockerInvocationPlan
+    plan: _DockerInvocationPlan
     consumed: bool = False
 
 
@@ -1230,7 +1230,7 @@ class _ResolvedResourceDetails:
 
 
 @dataclass
-class MutationAuthority:
+class GatewayAuthority:
     task_project: str = TASK_PROJECT
     technical_id: str = TECHNICAL_ID
     compose_file: str = COMPOSE_FILE
@@ -1257,7 +1257,7 @@ class MutationAuthority:
     def entries(self) -> tuple[DockerMutationRecord, ...]:
         return self.ledger
 
-    def _resource_name(self, plan: DockerInvocationPlan) -> str | None:
+    def _resource_name(self, plan: _DockerInvocationPlan) -> str | None:
         if plan.command_class in {
             DockerCommandClass.COMPOSE_CREATE,
             DockerCommandClass.COMPOSE_UP,
@@ -1276,7 +1276,7 @@ class MutationAuthority:
             DockerCommandClass.VOLUME_CREATE,
             DockerCommandClass.VOLUME_RM,
         }:
-            pairs = _split_option_pairs(plan.argv[2:])
+            pairs = _parse_docker_option_pairs(plan.argv[2:])
             if "--name" in pairs and pairs["--name"]:
                 return pairs["--name"][0]
             names = [token for token in plan.argv[2:] if not token.startswith("-")]
@@ -1292,7 +1292,7 @@ class MutationAuthority:
         return None
 
     def _resolved_labels(
-        self, plan: DockerInvocationPlan, *, service: str | None = None
+        self, plan: _DockerInvocationPlan, *, service: str | None = None
     ) -> dict[str, str]:
         labels = {
             "com.docker.compose.project": self.task_project,
@@ -1315,7 +1315,7 @@ class MutationAuthority:
 
     def _inspect_resource(self, kind: str, ident: str) -> dict[str, Any] | None:
         try:
-            query = ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident))
+            query = _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident))
         except ValueError:
             return None
         completed = self.run(query, stage=f"inspect-{kind}", capture_output=True)
@@ -1335,7 +1335,7 @@ class MutationAuthority:
     def _resource_digest(self, payload: Mapping[str, object]) -> str:
         return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
-    def _current_resolution(self, plan: DockerInvocationPlan) -> _ResolvedResourceDetails:
+    def _current_resolution(self, plan: _DockerInvocationPlan) -> _ResolvedResourceDetails:
         resource_name = self._resource_name(plan)
         if plan.command_class == DockerCommandClass.DIRECT_RUN:
             if resource_name == "apm-postgres":
@@ -1845,7 +1845,7 @@ class MutationAuthority:
             allowed_operations=(plan.command_class.value,),
         )
 
-    def _authorization_basis(self, plan: DockerInvocationPlan) -> str:
+    def _authorization_basis(self, plan: _DockerInvocationPlan) -> str:
         if plan.command_class in {
             DockerCommandClass.COMPOSE_CREATE,
             DockerCommandClass.COMPOSE_UP,
@@ -1870,7 +1870,7 @@ class MutationAuthority:
         return "READ_ONLY_INSPECT"
 
     def _record_audit(
-        self, plan: DockerInvocationPlan, *, stage: str
+        self, plan: _DockerInvocationPlan, *, stage: str
     ) -> DockerInvocationAuditRecord:
         self._invocation_sequence += 1
         record = DockerInvocationAuditRecord(
@@ -1888,7 +1888,7 @@ class MutationAuthority:
 
     def _issue_capability(
         self,
-        plan: DockerInvocationPlan,
+        plan: _DockerInvocationPlan,
         *,
         details: _ResolvedResourceDetails,
         audit: DockerInvocationAuditRecord,
@@ -1946,7 +1946,7 @@ class MutationAuthority:
         return capability
 
     def _validate_capability(
-        self, capability: ResolvedTaskResourceCapability, plan: DockerInvocationPlan
+        self, capability: ResolvedTaskResourceCapability, plan: _DockerInvocationPlan
     ) -> _CapabilityIssuance:
         if capability.gateway_instance_id != self.gateway_instance_id:
             raise PermissionError("foreign capability gateway")
@@ -1979,7 +1979,7 @@ class MutationAuthority:
     def _record_authorization(
         self,
         *,
-        plan: DockerInvocationPlan,
+        plan: _DockerInvocationPlan,
         stage: str,
         audit: DockerInvocationAuditRecord,
         details: _ResolvedResourceDetails,
@@ -2006,7 +2006,7 @@ class MutationAuthority:
         return record
 
     def _resolve_and_authorize(
-        self, plan: DockerInvocationPlan, *, stage: str
+        self, plan: _DockerInvocationPlan, *, stage: str
     ) -> tuple[DockerInvocationAuditRecord, DockerMutationRecord, ResolvedTaskResourceCapability]:
         audit = self._record_audit(plan, stage=stage)
         details = self._current_resolution(plan)
@@ -2040,7 +2040,7 @@ class MutationAuthority:
         *,
         stage: str,
     ) -> ResolvedTaskResourceCapability:
-        plan = _direct_plan(argv)
+        plan = _parse_docker_command(argv)
         if not plan.is_mutation:
             raise ValueError("read-only command is not a mutation")
         _, _, capability = self._resolve_and_authorize(plan, stage=stage)
@@ -2334,7 +2334,7 @@ class MutationAuthority:
 
     def run(
         self,
-        query: ReadOnlyDockerQuery,
+        query: _ReadOnlyDockerQuery,
         *,
         stage: str,
         stdin: Any = None,
@@ -2345,12 +2345,12 @@ class MutationAuthority:
         text: bool = False,
         capture_output: bool = False,
     ) -> subprocess.CompletedProcess[Any]:
-        if not isinstance(query, ReadOnlyDockerQuery):
-            raise TypeError("read-only Docker queries must use ReadOnlyDockerQuery")
+        if not isinstance(query, _ReadOnlyDockerQuery):
+            raise TypeError("read-only Docker queries must use _ReadOnlyDockerQuery")
         self._record_audit(query, stage=stage)
         if query.is_mutation:
             raise ValueError("query is not read-only")
-        expected = ReadOnlyDockerQuery.from_argv(tuple(query.argv))
+        expected = _ReadOnlyDockerQuery._from_argv(tuple(query.argv))
         if query != expected:
             raise PermissionError("stale or forged read-only query")
         return self._run_subprocess(
