@@ -22,9 +22,11 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import cast
 
+from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value, validate_snapshot
+
 TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
 BASE = "453356025051308b9cbe43b7201c248124348006"
-TASK_EXPECTED_BASE = "e547399fa19cd867983096ce86a2cecb23b8c676"
+TASK_EXPECTED_BASE = "7467ba2092d9e83fba52d402cf78556912d10a83"
 TREE = "6f9548e8eda66acba2f9ac403dcb3d43f209774c"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -200,7 +202,7 @@ def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
             }
         else:
             payload["schema"] = "LOCAL_UNIX_DOCKER_ENDPOINT_SOCKET_V1"
-    return "LOCAL_UNIX_DOCKER_ENDPOINT_INSTANCE_V1", _safe_digest(payload), safe_server
+    return str(payload["schema"]), _safe_digest(payload), safe_server
 
 
 def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
@@ -240,12 +242,30 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
             return (
                 [
                     [
-                        str(k),
+                        str(k)
+                        if str(k)
+                        in {
+                            "com.docker.compose.project",
+                            "com.docker.compose.service",
+                            "com.avito-mayak.technical-id",
+                        }
+                        else _safe_digest(str(k)),
                         str(v)
                         if str(k) in {
                             "com.docker.compose.project",
                             "com.docker.compose.service",
                             "com.avito-mayak.technical-id",
+                        }
+                        and str(v)
+                        in {
+                            TASK_PROJECT,
+                            TASK_ID,
+                            "mayak-api",
+                            "mayak-worker",
+                            "mayak-scheduler",
+                            "mayak-postgres",
+                            "mayak-db-bootstrap",
+                            "mayak-migrate",
                         }
                         else _safe_digest(str(v)),
                     ]
@@ -255,7 +275,7 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                 else []
             )
 
-        def own(name: str, value: object) -> str:
+        def own(name: str, value: object, kind: str) -> str:
             raw = value if isinstance(value, dict) else {}
             project, technical = (
                 raw.get("com.docker.compose.project"),
@@ -263,15 +283,24 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
             )
             if name == "apm-postgres":
                 return "FOREIGN"
-            if technical is not None and technical != TASK_ID:
-                return (
-                    "UNRESOLVED"
-                    if project == TASK_PROJECT or name.startswith(TASK_PROJECT + "-")
-                    else "FOREIGN"
-                )
-            if project == TASK_PROJECT and name.startswith(TASK_PROJECT + "-"):
+            task_indicator = project == TASK_PROJECT or name.startswith(TASK_PROJECT)
+            if technical != TASK_ID:
+                return "UNRESOLVED" if task_indicator else "FOREIGN"
+            if kind == "container":
+                service = raw.get("com.docker.compose.service")
+                exact = project == TASK_PROJECT and service in {
+                    "mayak-api", "mayak-worker", "mayak-scheduler", "mayak-postgres",
+                    "mayak-db-bootstrap", "mayak-migrate",
+                } and name == f"{TASK_PROJECT}-{service}-1"
+            elif kind == "network":
+                exact = project == TASK_PROJECT and name == TASK_PROJECT + "_mayak-internal"
+            elif kind == "volume":
+                exact = project == TASK_PROJECT and name == TASK_PROJECT + "_postgres-data"
+            else:
+                exact = False
+            if exact:
                 return "TASK_OWNED"
-            if project == TASK_PROJECT or name.startswith(TASK_PROJECT + "-"):
+            if task_indicator:
                 return "UNRESOLVED"
             return "FOREIGN"
 
@@ -287,7 +316,7 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
             mounts = [
                 {
                     "type": m.get("Type"),
-                    "destination": m.get("Destination"),
+                    "destination_hash": _safe_digest(str(m.get("Destination"))),
                     "mode": m.get("Mode"),
                     "rw": m.get("RW"),
                 }
@@ -305,32 +334,41 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                 if isinstance(data, dict):
                     attachments.append(
                         {
-                            "name": str(net),
-                            "network_id": data.get("NetworkID"),
-                            "endpoint_id": data.get("EndpointID"),
+                            "name_hash": _safe_digest(str(net)),
+                            "network_id_hash": _safe_digest(str(data.get("NetworkID"))),
+                            "endpoint_id_hash": _safe_digest(str(data.get("EndpointID"))),
                         }
                     )
             stable = {
                 "id": _safe_digest(str(item.get("Id"))),
-                "image_id": item.get("Image"),
-                "image_reference": cfg.get("Image") if isinstance(cfg, dict) else None,
+                "image_id_hash": _safe_digest(str(item.get("Image"))),
+                "image_reference_hash": _safe_digest(
+                    str(cfg.get("Image")) if isinstance(cfg, dict) else ""
+                ),
                 "labels": labels(raw_labels),
                 "restart_policy": host.get("RestartPolicy", {}).get("Name")
                 if isinstance(host, dict)
                 else None,
-                "network_mode": host.get("NetworkMode") if isinstance(host, dict) else None,
+                "network_mode": (
+                    host.get("NetworkMode")
+                    if isinstance(host, dict)
+                    and host.get("NetworkMode") in {"host", "none", "bridge", "default"}
+                    else _safe_digest(str(host.get("NetworkMode")))
+                    if isinstance(host, dict)
+                    else None
+                ),
                 "privileged": host.get("Privileged") if isinstance(host, dict) else None,
                 "read_only_rootfs": host.get("ReadonlyRootfs") if isinstance(host, dict) else None,
                 "mounts": sorted(mounts, key=lambda x: json.dumps(x, sort_keys=True)),
                 "networks": sorted(
                     attachments, key=lambda x: (str(x.get("name")), str(x.get("network_id")))
                 ),
-                "published_ports": (
+                "published_port_count": len(
                     network_settings.get("Ports", {})
                     if isinstance(network_settings, dict)
                     else {}
                 ),
-                "ownership": own(name, raw_labels),
+                "ownership": own(name, raw_labels, "container"),
             }
             runtime = {
                 "id": _safe_digest(str(item.get("Id"))),
@@ -348,7 +386,8 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                 {
                     "stable": {
                         "fingerprint": _safe_digest(["container", item.get("Id"), name]),
-                        "name": name if name == "apm-postgres" else _safe_digest(name),
+                        "name": _safe_digest(name),
+                        "is_apm_postgres": name == "apm-postgres",
                         **stable,
                     },
                     "runtime": runtime,
@@ -375,11 +414,14 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                         "attachable": item.get("Attachable"),
                         "ingress": item.get("Ingress"),
                         "labels": labels(raw_labels),
-                        "ipam": item.get("IPAM", {}),
-                        "attached_container_ids": sorted(attached_containers.keys())
+                        "ipam_hash": _safe_digest(item.get("IPAM", {})),
+                        "attachment_count": len(attached_containers)
+                        if isinstance(attached_containers, dict)
+                        else 0,
+                        "attachment_hashes": sorted(_safe_digest(str(x)) for x in attached_containers)
                         if isinstance(attached_containers, dict)
                         else [],
-                        "ownership": own(name, raw_labels),
+                        "ownership": own(name, raw_labels, "network"),
                     }
                 }
             )
@@ -398,10 +440,11 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
                         "driver": item.get("Driver"),
                         "labels": labels(raw_labels),
                         "options": [
-                            [str(k), _safe_digest(str(v))] for k, v in sorted(options.items())
+                            [_safe_digest(str(k)), _safe_digest(str(v))]
+                            for k, v in sorted(options.items())
                         ],
                         "scope": item.get("Scope"),
-                        "ownership": own(name, raw_labels),
+                        "ownership": own(name, raw_labels, "volume"),
                     }
                 }
             )
@@ -444,14 +487,16 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
             "network_records": foreign["networks"],
             "volume_records": foreign["volumes"],
             "apm_postgres_present": any(
-                x["stable"].get("name") == "apm-postgres" for x in foreign["containers"]
+                x["stable"].get("is_apm_postgres") is True for x in foreign["containers"]
             ),
             "task_owned_resource_records": task,
             "unresolved_resource_records": unresolved,
             "collection_complete": True,
             "collection_errors": [],
-            "redaction_passed": True,
+            "redaction_passed": False,
         }
+        validate_safe_value(result)
+        result["redaction_passed"] = True
         canonical = {
             key: result[key]
             for key in (
@@ -687,23 +732,32 @@ def _verify_stage55(evidence: dict[str, object]) -> None:
 
 
 def _verify_stage56(evidence: dict[str, object]) -> None:
+    observations = evidence.get("stage56_observations")
+    if not isinstance(observations, dict):
+        raise ValueError("stage 56 observations missing")
+    required = {
+        "task_container_count", "task_network_count", "task_volume_count", "unresolved_count",
+        "private_output_count", "json_log_count", "override_count", "context_directory_count",
+        "temporary_validation_resource_count", "authorized_mutation_count", "executed_mutation_count",
+        "foreign_target_mutation_count", "unresolved_target_mutation_count", "unscoped_mutation_count",
+        "broad_mutation_count",
+    }
+    if set(observations) != required or any(
+        not isinstance(observations[key], int) or observations[key] < 0 for key in required
+    ):
+        raise ValueError("stage 56 observation shape")
     if (
         evidence.get("observed") != "task_owned_cleanup_complete"
         or evidence.get("cleanup_observed") is not True
         or evidence.get("cleanup_exit") != 0
         or evidence.get("foreign_deletion") is not False
-        or any(
-            evidence.get(k) != 0
-            for k in (
-                "task_containers",
-                "task_networks",
-                "task_volumes",
-                "private_output_files",
-                "runtime_override_files",
-                "independent_context_directories",
-                "temporary_context_directories",
-            )
-        )
+        or any(observations[key] != 0 for key in (
+            "task_container_count", "task_network_count", "task_volume_count", "unresolved_count",
+            "private_output_count", "json_log_count", "override_count", "context_directory_count",
+            "temporary_validation_resource_count", "foreign_target_mutation_count",
+            "unresolved_target_mutation_count", "unscoped_mutation_count", "broad_mutation_count",
+        ))
+        or observations["authorized_mutation_count"] != observations["executed_mutation_count"]
     ):
         raise ValueError("stage 56 observed cleanup failed")
 
@@ -734,10 +788,19 @@ def _verify_stage57(evidence: dict[str, object]) -> None:
         "collection_complete", "collection_errors", "redaction_passed",
     )
     for snapshot in (before, before_i, after, after_i):
+        validate_snapshot(
+            snapshot,
+            collector_id=str(snapshot.get("collector_implementation_id")),
+        )
+        validate_safe_value(snapshot)
         if snapshot.get("canonical_serialization_digest") != _safe_digest(
             {key: snapshot.get(key) for key in canonical_keys}
         ):
             raise ValueError("safe record recomputation failed")
+    if before.get("collector_implementation_id") == before_i.get("collector_implementation_id"):
+        raise ValueError("collector identity aliasing")
+    if after.get("collector_implementation_id") == after_i.get("collector_implementation_id"):
+        raise ValueError("collector identity aliasing")
     if before.get("canonical_serialization_digest") != before_i.get(
         "canonical_serialization_digest"
     ) or after.get("canonical_serialization_digest") != after_i.get(
@@ -757,10 +820,18 @@ def _verify_stage57(evidence: dict[str, object]) -> None:
     ):
         raise ValueError("foreign delta failed")
     ledger = evidence.get("mutation_ledger")
-    if not isinstance(ledger, list) or any(
-        not isinstance(item, dict) or item.get("ownership") != "TASK_OWNED" for item in ledger
-    ):
+    if not isinstance(ledger, list):
         raise ValueError("mutation ledger failed")
+    if ledger:
+        auth = [item for item in ledger if isinstance(item, dict) and item.get("execution_result_sequence") is None]
+        results = [item for item in ledger if isinstance(item, dict) and item.get("execution_result_sequence") is not None]
+        if len(auth) != len(results) or any(
+            a.get("authorization_sequence") != r.get("authorization_sequence")
+            for a, r in zip(auth, results)
+        ):
+            raise ValueError("mutation ledger parity failed")
+        if any(item.get("planned_ownership") != "TASK_OWNED" for item in ledger if isinstance(item, dict)):
+            raise ValueError("foreign mutation target")
     def record_list(snapshot: dict[str, object], key: str) -> list[object]:
         value = snapshot.get(key)
         if not isinstance(value, list):
@@ -871,15 +942,18 @@ def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]
             or document.get("dirty_input_count") != 0
         ):
             raise ValueError("context exclusion counts failed")
-        if (
-            document.get("stage55_semantic_verification")
-            != {"result": "PASS", "exact_adapter_and_typed_subprotocol": True}
-            or document.get("stage56_semantic_verification")
-            != {"result": "PASS", "zero_residue_cleanup": True}
-            or document.get("stage57_semantic_verification")
-            != {"result": "PASS", "foreign_snapshot_equality": True}
-        ):
-            raise ValueError("stage semantic summaries missing")
+        if not isinstance(document.get("stage55_semantic_verification"), dict):
+            raise ValueError("stage 55 semantic observations missing")
+        cleanup_stage = cast(
+            dict[str, object], _stage(document, "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL")["evidence"]
+        )
+        if document.get("stage56_semantic_verification") != cleanup_stage.get("stage56_observations"):
+            raise ValueError("stage 56 semantic observations mismatch")
+        if document.get("stage57_semantic_verification") != {
+            "derived_delta": "NO_CHANGE",
+            "producer_after_collectors_equal": True,
+        }:
+            raise ValueError("stage 57 semantic observations mismatch")
         _verify_stage55(
             cast(
                 dict[str, object],

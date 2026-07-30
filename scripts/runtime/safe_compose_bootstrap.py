@@ -27,6 +27,12 @@ from types import MappingProxyType
 from typing import Callable, Final, Mapping, Protocol, cast
 
 from scripts.runtime import prepare_file_secrets as secrets
+from scripts.runtime.rf08_docker_authority import (
+    DockerCommandClass,
+    DockerMutationRecord,
+    MutationAuthority,
+    classify_docker_argv,
+)
 from scripts.runtime.rf08_docker_context import (
     COPY_PLAN,
     EXPECTED_BASE_SHA,
@@ -36,7 +42,6 @@ from scripts.runtime.rf08_docker_context import (
 from scripts.runtime.rf08_docker_context import (
     build_input_digest as docker_build_input_digest,
 )
-from scripts.runtime.rf08_foreign_snapshot import DockerMutationRecord
 from scripts.runtime.rf08_foreign_snapshot import (
     classify_delta as classify_foreign_delta,
 )
@@ -45,6 +50,7 @@ from scripts.runtime.rf08_foreign_snapshot import (
 )
 
 TASK_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
+EXPECTED_TASK_BASE: Final = "7467ba2092d9e83fba52d402cf78556912d10a83"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
@@ -788,6 +794,25 @@ class DockerMutationLedger:
             raise ProtocolFailure(entry.stage, "STOP_FOREIGN_RESOURCE")
         self.entries.append(entry)
 
+    def append_result(self, authorization: DockerMutationRecord, *, exit_code: int | None,
+                      completed: bool, timed_out: bool) -> None:
+        self.entries.append(DockerMutationRecord(
+            authorization_sequence=authorization.authorization_sequence,
+            execution_result_sequence=len(self.entries) + 1,
+            stage=authorization.stage,
+            operation_class=authorization.operation_class,
+            docker_command_class=authorization.docker_command_class,
+            task_project=authorization.task_project,
+            target_kind=authorization.target_kind,
+            target_identity_hash=authorization.target_identity_hash,
+            planned_ownership=authorization.planned_ownership,
+            authorization_result=authorization.authorization_result,
+            execution_attempted=True,
+            execution_completed=completed,
+            exit_code=exit_code,
+            timed_out=timed_out,
+        ))
+
 
 class ProtocolTranscript:
     def __init__(self, required_stages: tuple[str, ...] = REQUIRED_STAGES) -> None:
@@ -964,6 +989,7 @@ class PrivateCommandRunner:
         self.output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.output_dir.chmod(0o700)
         self.timeout = timeout
+        self.mutation_ledger: DockerMutationLedger | None = None
 
     def run(self, command: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
         out, err = self.output_dir / f"{stage}.stdout", self.output_dir / f"{stage}.stderr"
@@ -973,6 +999,14 @@ class PrivateCommandRunner:
         code: int | None = None
         executed = False
         leaked = False
+        authorization: DockerMutationRecord | None = None
+        command_class = classify_docker_argv(command)
+        if command_class not in {DockerCommandClass.READ_ONLY} and command and command[0] == "docker":
+            if self.mutation_ledger is None:
+                raise ProtocolFailure(stage, "MISSING_MUTATION_LEDGER")
+            authority = MutationAuthority()
+            authorization = authority.authorize(command, stage=stage)
+            self.mutation_ledger.entries.append(authorization)
         try:
             with out.open("wb") as stdout, err.open("wb") as stderr:
                 proc = subprocess.run(
@@ -985,6 +1019,10 @@ class PrivateCommandRunner:
                     timeout=self.timeout,
                 )
                 code, executed = proc.returncode, True
+            if authorization is not None and self.mutation_ledger is not None:
+                self.mutation_ledger.append_result(
+                    authorization, exit_code=code, completed=True, timed_out=False
+                )
             for path in (out, err):
                 info = path.stat()
                 if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
@@ -1003,6 +1041,10 @@ class PrivateCommandRunner:
                 leaked,
             )
         except subprocess.TimeoutExpired:
+            if authorization is not None and self.mutation_ledger is not None:
+                self.mutation_ledger.append_result(
+                    authorization, exit_code=code, completed=False, timed_out=True
+                )
             return PrivateCommandResult(
                 stage,
                 _command_id(stage, command),
@@ -1036,8 +1078,7 @@ def _parse_stage_output(
     if stage == "PREFLIGHT":
         return {
             "docker_compose_version": text,
-            "stale_task_resources_absent": True,
-            "foreign_snapshot_equal": True,
+            "preflight_observation": {},
         }
     if stage == "CANONICAL_COMPOSE_VALIDATION":
         try:
@@ -1326,6 +1367,21 @@ def _command_spec(
                 ctx["b_json_log_file"] = log_file
                 ctx["b_json_log_offset"] = log_file.stat().st_size
         result = runner.run(command, stage=stage)
+        if stage == "PREFLIGHT" and result.exit_code == 0:
+            producer = collect_foreign_snapshot("preflight", 0)
+            independent = _independent_foreign_snapshot("preflight", 0)
+            if not producer.get("collection_complete") or not independent.get("collection_complete"):
+                raise ProtocolFailure(stage, "SNAPSHOT_INCOMPLETE")
+            ctx["foreign_before_producer"] = producer
+            ctx["foreign_before_independent"] = independent
+            parsed = dict(result.parsed)
+            parsed["preflight_observation"] = {
+                "producer_complete": producer.get("collection_complete"),
+                "independent_complete": independent.get("collection_complete"),
+                "producer_digest": producer.get("canonical_serialization_digest"),
+                "independent_digest": independent.get("canonical_serialization_digest"),
+            }
+            result = replace(result, parsed=parsed)
         if stage == "APPLICATION_QUERY_RESTART_A" and result.exit_code == 0:
             canary = runner.run(
                 _docker(
@@ -1369,23 +1425,6 @@ def _command_spec(
             runner.env["MAYAK_IMAGE_DIGEST"] = cast(str, result.parsed["image_id"])
         parsed = dict(result.parsed)
         if stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL" and result.exit_code == 0:
-            cast(DockerMutationLedger, ctx["mutation_ledger"]).append(
-                DockerMutationRecord(
-                    sequence=1,
-                    stage=stage,
-                    operation_class="compose_cleanup",
-                    docker_command_class="compose_down",
-                    compose_project=TASK_PROJECT,
-                    target_kind="task_project",
-                    target_identity=hashlib.sha256(TASK_PROJECT.encode()).hexdigest(),
-                    ownership="TASK_OWNED",
-                    scoped=True,
-                    executed=result.executed,
-                    exit_code=result.exit_code,
-                    timed_out=result.timed_out,
-                    mutation_allowed=True,
-                )
-            )
             log_dir = cast(Path, ctx["json_log_dir"])
             build_root = RUNTIME_ROOT / "build-context"
             independent_root = RUNTIME_ROOT / "independent-build-context"
@@ -1393,12 +1432,20 @@ def _command_spec(
             task_runner = ctx.get("runner")
             if isinstance(task_runner, PrivateCommandRunner):
                 task_runner.cleanup()
-            private_files = (
-                sum(1 for p in private_root.rglob("*") if p.is_file())
-                if private_root.exists()
-                else 0
-            )
+            private_files = 0
+            if private_root.exists():
+                for child in tuple(private_root.iterdir()):
+                    if child.is_dir():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
             shutil.rmtree(log_dir, ignore_errors=False)
+            if JSON_LOG_ROOT.exists():
+                for child in tuple(JSON_LOG_ROOT.iterdir()):
+                    if child.is_dir():
+                        shutil.rmtree(child)
+                    else:
+                        child.unlink()
             JSON_LOG_OVERRIDE.unlink(missing_ok=False)
             for context_root in (build_root, independent_root):
                 if context_root.exists():
@@ -1412,6 +1459,7 @@ def _command_spec(
             unresolved = cast(
                 dict[str, list[object]], observed.get("unresolved_resource_records", {})
             )
+            ledger = cast(DockerMutationLedger, ctx["mutation_ledger"])
             root_path = cast(Path, ctx["root"])
             parsed.update(
                 {
@@ -1447,6 +1495,39 @@ def _command_spec(
                     "cleanup_limitation": None,
                     "foreign_deletion": any(unresolved.values()),
                     "unresolved_resource_count": sum(len(v) for v in unresolved.values()),
+                    "stage56_observations": {
+                        "task_container_count": len(task.get("containers", [])),
+                        "task_network_count": len(task.get("networks", [])),
+                        "task_volume_count": len(task.get("volumes", [])),
+                        "unresolved_count": sum(len(v) for v in unresolved.values()),
+                        "private_output_count": private_files,
+                        "json_log_count": sum(1 for p in JSON_LOG_ROOT.rglob("*") if p.is_file())
+                        if JSON_LOG_ROOT.exists() else 0,
+                        "override_count": int(JSON_LOG_OVERRIDE.exists()),
+                        "context_directory_count": sum(1 for p in build_root.iterdir() if p.is_dir())
+                        if build_root.exists() else 0,
+                        "temporary_validation_resource_count": sum(
+                            1 for p in (RUNTIME_ROOT / "independent-build-context").iterdir()
+                            if p.is_dir()
+                        ) if (RUNTIME_ROOT / "independent-build-context").exists() else 0,
+                        "authorized_mutation_count": len(ledger.entries) // 2,
+                        "executed_mutation_count": sum(
+                            1 for item in ledger.entries if item.execution_result_sequence is not None
+                        ),
+                        "foreign_target_mutation_count": sum(
+                            1 for item in ledger.entries if item.planned_ownership == "FOREIGN"
+                        ),
+                        "unresolved_target_mutation_count": sum(
+                            1 for item in ledger.entries if item.planned_ownership == "UNRESOLVED"
+                        ),
+                        "unscoped_mutation_count": sum(
+                            1 for item in ledger.entries if not item.scoped
+                        ),
+                        "broad_mutation_count": sum(
+                            1 for item in ledger.entries
+                            if item.docker_command_class == "FORBIDDEN_BROAD_MUTATION"
+                        ),
+                    },
                 }
             )
         if stage == "APPLICATION_AUTH_REJECTION_B" and "b_json_log_file" in ctx:
@@ -1495,7 +1576,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             ctx,
             "PREFLIGHT",
             ("docker", "compose", "version", "--short"),
-            ("docker_compose_version", "stale_task_resources_absent", "foreign_snapshot_equal"),
+            ("docker_compose_version", "preflight_observation"),
         )
     )
     specs.append(
@@ -1596,6 +1677,12 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 "docker",
                 "run",
                 "--rm",
+                "--name",
+                f"{TASK_PROJECT}-image-probe-1",
+                "--label",
+                f"com.docker.compose.project={TASK_PROJECT}",
+                "--label",
+                f"com.avito-mayak.technical-id={TASK_ID}",
                 image_tag,
                 "python",
                 "-c",
@@ -1647,14 +1734,14 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             "foreign_before_independent_digest": independent.get("canonical_serialization_digest"),
             "foreign_before_collectors_equal": snapshot.get("canonical_serialization_digest")
             == independent.get("canonical_serialization_digest"),
+            "producer_before_snapshot": snapshot,
+            "independent_before_snapshot": independent,
             "foreign_container_count": len(containers),
             "foreign_network_count": len(networks),
             "foreign_volume_count": len(volumes),
             "apm_postgres_present_before": snapshot.get("apm_postgres_present"),
             "unresolved_resource_count": sum(len(x) for x in unresolved_records.values()),
             "collection_complete": snapshot.get("collection_complete"),
-            "producer_before_snapshot": snapshot,
-            "independent_before_snapshot": independent,
         }
 
     specs.append(
@@ -2208,6 +2295,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                         "cleanup_observed",
                         "cleanup_limitation",
                         "foreign_deletion",
+                        "stage56_observations",
                     ),
                 )
             )
@@ -2263,9 +2351,6 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 before_equal = before.get(
                     "canonical_serialization_digest"
                 ) == before_independent.get("canonical_serialization_digest")
-                after_equal = after.get("canonical_serialization_digest") == independent.get(
-                    "canonical_serialization_digest"
-                )
                 foreign_set_equal = {
                     k: before.get(k, [])
                     for k in ("container_records", "network_records", "volume_records")
@@ -2282,18 +2367,6 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 runtime_equal = [
                     {"runtime": x.get("runtime")} for x in before_containers
                 ] == [{"runtime": x.get("runtime")} for x in after_containers]
-                semantic = all(
-                    (
-                        before_equal,
-                        after_equal,
-                        foreign_set_equal,
-                        structural_equal,
-                        runtime_equal,
-                        result.parsed.get("delta") == "NO_CHANGE",
-                        not any(unresolved.values()),
-                        not any(task.values()),
-                    )
-                )
                 return {
                     "observed": "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION",
                     "foreign_snapshot_schema_version": after.get("schema_version"),
@@ -2335,7 +2408,6 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     "snapshot_private_artifacts_removed": not any(
                         Path(p).is_file() for p in (PRIVATE_OUTPUT_ROOT,)
                     ),
-                    "stage57_semantic_verification": "PASS" if semantic else "FAIL",
                     "producer_after_snapshot": after,
                     "independent_after_snapshot": independent,
                     "cleanup_observation": {
@@ -2464,6 +2536,8 @@ def run_protocol(
         + hashlib.sha256(f"{source_sha}:{os.getpid()}:{root.name}".encode()).hexdigest()[:16],
     }
     transcript = ProtocolTranscript()
+    if isinstance(runner, PrivateCommandRunner):
+        runner.mutation_ledger = cast(DockerMutationLedger, ctx["mutation_ledger"])
     ctx["json_log_dir"] = prepare_jsonlog_runtime(transcript.run_id)
     ctx["transcript"] = transcript
     try:
@@ -2524,11 +2598,15 @@ def build_evidence(
         ),
         {},
     )
+    cleanup_evidence = next(
+        (e.evidence for e in record.entries if e.stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL"),
+        {},
+    )
     payload: dict[str, object] = {
         "schema_version": "rf08-authoritative-v2",
         "technical_id": TASK_ID,
         "expected_base": EXPECTED_BASE_SHA,
-        "task_expected_base": "e547399fa19cd867983096ce86a2cecb23b8c676",
+        "task_expected_base": EXPECTED_TASK_BASE,
         "runtime_image_input_base": EXPECTED_BASE_SHA,
         "runtime_image_input_tree_identity": context.get("expected_base_tree_identity"),
         "runtime_image_build_input_digest": digest,
@@ -2553,7 +2631,7 @@ def build_evidence(
         "foreign_producer_collector_id": after_evidence.get(
             "foreign_producer_collector_id", before_evidence.get("foreign_producer_collector_id")
         ),
-        "foreign_independent_collector_id": "rf08.independent.typed-docker-control-plane.v2",
+        "foreign_independent_collector_id": "rf08.independent.observed.typed-docker.v3",
         "foreign_before_producer_digest": before_evidence.get("foreign_before_producer_digest"),
         "foreign_before_independent_digest": before_evidence.get(
             "foreign_before_independent_digest"
@@ -2578,6 +2656,7 @@ def build_evidence(
             "independent_after": after_evidence.get("independent_after_snapshot"),
         },
         "cleanup_observation": after_evidence.get("cleanup_observation"),
+        "stage56_observations": cleanup_evidence.get("stage56_observations"),
         "mutation_ledger": after_evidence.get("mutation_ledger", []),
         "apm_postgres_present_before": after_evidence.get("apm_postgres_present_before"),
         "apm_postgres_present_after": after_evidence.get("apm_postgres_present_after"),
@@ -2600,16 +2679,12 @@ def build_evidence(
         "untracked_input_count": 0,
         "dirty_input_count": 0,
         "stage55_semantic_verification": {
-            "result": "PASS",
-            "exact_adapter_and_typed_subprotocol": True,
+            "observed": "POST_RECOVERY_DATABASE_AND_APPLICATION_PROOF",
         },
-        "stage56_semantic_verification": {
-            "result": "PASS",
-            "zero_residue_cleanup": True,
-        },
+        "stage56_semantic_verification": cleanup_evidence.get("stage56_observations"),
         "stage57_semantic_verification": {
-            "result": "PASS",
-            "foreign_snapshot_equality": True,
+            "derived_delta": after_evidence.get("foreign_delta_classification"),
+            "producer_after_collectors_equal": after_evidence.get("foreign_after_collectors_equal"),
         },
         "production_tree_hashes": {
             p: hashlib.sha256((source_tree / p).read_bytes()).hexdigest()

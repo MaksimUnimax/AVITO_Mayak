@@ -701,3 +701,10 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Exact CPython `3.14.6`, uv `0.11.31`, committed lock and frozen development dependencies passed. Optional Docker `.ID` is not used; local Docker endpoint instance identity comes from actual Unix socket, peer/process, boot-instance and safe server-version observations.
 - Stages 56–57 derive fields from immutable typed observations and mutation records. Producer and independent collectors recomputed canonical safe records; the independent verifier recomputed the verdict. Exact 57/57 protocol, cleanup, committed evidence verification and summary/safe-record tamper controls passed.
 - Docker-native image-input evidence remains unchanged. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. No foreign resource was intentionally mutated. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`.
+
+## WL-RF08-20260730-06 — 2026-07-30 — pre-execution Docker mutation authority and minimized independent foreign proof
+
+- `7467ba2092d9e83fba52d402cf78556912d10a83` remained published but was independently rejected for post-execution ledger accounting, classifier divergence, endpoint fallback mislabeling, hardcoded preflight claims, insufficient tests and excessive foreign topology evidence.
+- Every Docker mutation is structurally authorized and appended before execution; producer and verifier independently implement exact ownership and delta semantics, while recursive safe-value validation minimizes committed evidence.
+- Exact CPython 3.14.6, uv 0.11.31, frozen lock, 167-file Docker-native manifest, 57/57 protocol, stage-56 observation derivation, stage-57 recomputation and independent verifier passed. Same-command regression metadata and tamper controls are included in the evidence contract.
+- RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status is `PUBLISHED_FOR_CHATGPT_REVIEW`; no independent acceptance, operator readiness or `PRODUCTION_READY` claim is made.

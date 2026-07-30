@@ -175,3 +175,10 @@ RF-09 was the historical next gate at the time of the prior closure. This correc
 - Exact CPython 3.14.6, uv 0.11.31 and frozen development dependencies were validated. Optional Docker `.ID` is not used. Local Unix endpoint identity is derived from socket metadata, SO_PEERCRED/process observations, host boot identity and safe Docker server-version metadata; only hashes and safe version fields are persisted.
 - Stage-56 cleanup and stage-57 foreign equality fields are derived from immutable typed observations and mutation records. Producer and independent collectors recompute canonical safe records and the verifier independently reconstructs the verdict. The exact 57-stage protocol and committed evidence verifier passed; summary and safe-record tamper controls rejected.
 - Docker-native image-input identity remains unchanged. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status is `PUBLISHED_FOR_CHATGPT_REVIEW`; this does not claim independent acceptance, operator readiness or production readiness.
+
+## RF-08 pre-execution mutation authority corrective — 2026-07-30
+
+- Published base `7467ba2092d9e83fba52d402cf78556912d10a83` remained published but was independently rejected for post-execution ledger accounting, producer/verifier classifier divergence, endpoint fallback mislabeling, hardcoded preflight semantics, insufficient adversarial tests and excessive foreign topology evidence.
+- Every mutation-capable Docker command now crosses one structural pre-execution authority; authorization records precede subprocess execution and result records are linked, ordered and complete.
+- Producer and independent verifier separately implement exact kind-specific ownership and delta rules. Foreign snapshots are recursively minimized and validated; raw Docker IDs, paths, endpoint IDs, image references, IPAM and arbitrary foreign labels are not committed.
+- Exact 57/57 protocol, stage-56 observation derivation, stage-57 independent recomputation, focused/adversarial tests and independent evidence verification passed. Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`; no operator-readiness or production-readiness claim is made.

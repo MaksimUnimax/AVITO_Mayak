@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value
+
 SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
 COLLECTOR_ID: Final = "rf08.producer.observed.typed-docker.v3"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
@@ -39,23 +41,6 @@ class ForeignResourceDeltaV3:
     resource_set_equal: bool
     structural_equal: bool
     runtime_equal: bool
-
-
-@dataclass(frozen=True)
-class DockerMutationRecord:
-    sequence: int
-    stage: str
-    operation_class: str
-    docker_command_class: str
-    compose_project: str
-    target_kind: str
-    target_identity: str
-    ownership: str
-    scoped: bool
-    executed: bool
-    exit_code: int | None
-    timed_out: bool
-    mutation_allowed: bool
 
 
 def _digest(value: Any) -> str:
@@ -183,11 +168,7 @@ def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
             }
         else:
             payload["schema"] = "LOCAL_UNIX_DOCKER_ENDPOINT_SOCKET_V1"
-    return (
-        "LOCAL_UNIX_DOCKER_ENDPOINT_INSTANCE_V1",
-        _digest(payload),
-        safe_server,
-    )
+    return (str(payload["schema"]), _digest(payload), safe_server)
 
 
 def _daemon_identity() -> str:
@@ -201,14 +182,18 @@ def _labels(value: Any) -> dict[str, str]:
 def _safe_labels(labels: dict[str, str]) -> list[list[str]]:
     return [
         [
-            k,
+            k if k in {
+                "com.docker.compose.project",
+                "com.docker.compose.service",
+                "com.avito-mayak.technical-id",
+            } else _digest(k),
             v
-            if k
-            in {
+            if k in {
                 "com.docker.compose.project",
                 "com.docker.compose.service",
                 "com.avito-mayak.technical-id",
             }
+            and v in {TASK_PROJECT, TASK_ID, *ALLOWED_SERVICES}
             else _digest(v),
         ]
         for k, v in labels.items()
@@ -218,21 +203,17 @@ def _safe_labels(labels: dict[str, str]) -> list[list[str]]:
 def _ownership(name: str, labels: dict[str, str], kind: str) -> str:
     project = labels.get("com.docker.compose.project")
     technical = labels.get("com.avito-mayak.technical-id")
-    task_indicator = (
-        project == TASK_PROJECT
-        or name.startswith(TASK_PROJECT)
-        or name.startswith(TASK_PROJECT + "-")
-    )
+    task_indicator = project == TASK_PROJECT or name.startswith(TASK_PROJECT)
     if name == "apm-postgres" and kind == "container":
         return "FOREIGN"
-    if technical is not None and technical != TASK_ID:
+    if technical != TASK_ID:
         return "UNRESOLVED" if task_indicator else "FOREIGN"
     if kind == "container":
         service = labels.get("com.docker.compose.service")
         exact = (
             project == TASK_PROJECT
             and service in ALLOWED_SERVICES
-            and (name.startswith(TASK_PROJECT + "-") or name.startswith(TASK_PROJECT + "_"))
+            and name == f"{TASK_PROJECT}-{service}-1"
         )
     elif kind == "network":
         exact = project == TASK_PROJECT and name == TASK_PROJECT + "_mayak-internal"
@@ -289,20 +270,25 @@ def _container(item: dict[str, Any]) -> dict[str, Any]:
     labels = _labels(cfg.get("Labels"))
     stable = {
         "fingerprint": _digest(["container", item.get("Id"), name]),
-        "name": name if name == "apm-postgres" else _digest(name),
+        "name": _digest(name),
+        "is_apm_postgres": name == "apm-postgres",
         "id": _digest(str(item.get("Id"))),
-        "image_id": item.get("Image"),
-        "image_reference": cfg.get("Image"),
+        "image_id_hash": _digest(str(item.get("Image"))),
+        "image_reference_hash": _digest(str(cfg.get("Image"))),
         "labels": _safe_labels(labels),
         "restart_policy": (host.get("RestartPolicy") or {}).get("Name"),
-        "network_mode": host.get("NetworkMode"),
+        "network_mode": (
+            host.get("NetworkMode")
+            if host.get("NetworkMode") in {"host", "none", "bridge", "default"}
+            else _digest(str(host.get("NetworkMode")))
+        ),
         "privileged": host.get("Privileged"),
         "read_only_rootfs": host.get("ReadonlyRootfs"),
         "mounts": sorted(
             (
                 {
                     "type": m.get("Type"),
-                    "destination": m.get("Destination"),
+                    "destination_hash": _digest(str(m.get("Destination"))),
                     "mode": m.get("Mode"),
                     "rw": m.get("RW"),
                 }
@@ -313,16 +299,16 @@ def _container(item: dict[str, Any]) -> dict[str, Any]:
         ),
         "networks": [
             {
-                "name": str(name),
-                "network_id": data.get("NetworkID"),
-                "endpoint_id": data.get("EndpointID"),
+                "name_hash": _digest(str(name)),
+                "network_id_hash": _digest(str(data.get("NetworkID"))),
+                "endpoint_id_hash": _digest(str(data.get("EndpointID"))),
             }
             for name, data in sorted(
                 ((item.get("NetworkSettings") or {}).get("Networks") or {}).items()
             )
             if isinstance(data, dict)
         ],
-        "published_ports": item.get("NetworkSettings", {}).get("Ports", {}),
+        "published_port_count": len(item.get("NetworkSettings", {}).get("Ports", {}) or {}),
         "ownership": _ownership(name, labels, "container"),
     }
     runtime = {
@@ -352,8 +338,9 @@ def _network(item: dict[str, Any]) -> dict[str, Any]:
         "attachable": item.get("Attachable"),
         "ingress": item.get("Ingress"),
         "labels": _safe_labels(labels),
-        "ipam": item.get("IPAM", {}),
-        "attached_container_ids": sorted((item.get("Containers") or {}).keys()),
+        "ipam_hash": _digest(item.get("IPAM", {})),
+        "attachment_count": len(item.get("Containers") or {}),
+        "attachment_hashes": sorted(_digest(str(x)) for x in (item.get("Containers") or {})),
         "ownership": _ownership(name, labels, "network"),
     }
     return {"stable": stable}
@@ -368,7 +355,7 @@ def _volume(item: dict[str, Any]) -> dict[str, Any]:
         "name": _digest(name),
         "driver": item.get("Driver"),
         "labels": _safe_labels(labels),
-        "options": [[str(k), _digest(str(v))] for k, v in sorted(options.items())],
+        "options": [[_digest(str(k)), _digest(str(v))] for k, v in sorted(options.items())],
         "scope": item.get("Scope"),
         "ownership": _ownership(name, labels, "volume"),
     }
@@ -439,14 +426,16 @@ def collect_snapshot(phase: str, sequence: int) -> dict[str, Any]:
             "network_records": foreign["networks"],
             "volume_records": foreign["volumes"],
             "apm_postgres_present": any(
-                x["stable"].get("name") == "apm-postgres" for x in foreign["containers"]
+                x["stable"].get("is_apm_postgres") is True for x in foreign["containers"]
             ),
             "task_owned_resource_records": task,
             "unresolved_resource_records": unresolved,
             "collection_complete": True,
             "collection_errors": [],
-            "redaction_passed": True,
+            "redaction_passed": False,
         }
+        validate_safe_value(result)
+        result["redaction_passed"] = True
         result["canonical_serialization_digest"] = _digest(_canonical(result))
         return result
     except (
@@ -462,7 +451,7 @@ def collect_snapshot(phase: str, sequence: int) -> dict[str, Any]:
             "collector_implementation_id": COLLECTOR_ID,
             "collection_complete": False,
             "collection_errors": [type(exc).__name__],
-            "redaction_passed": True,
+            "redaction_passed": False,
             "container_records": [],
             "network_records": [],
             "volume_records": [],
