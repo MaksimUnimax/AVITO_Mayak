@@ -5,6 +5,7 @@ import pytest
 
 from scripts.runtime.rf08_safe_foreign_schema import (
     canonical_digest,
+    validate_failure_snapshot,
     validate_safe_value,
     validate_snapshot,
 )
@@ -40,7 +41,7 @@ def test_incomplete_or_unresolved_snapshot_rejected() -> None:
         "redaction_passed": True,
     }
     with pytest.raises(ValueError):
-        validate_snapshot(snapshot, collector_id="collector")
+        validate_failure_snapshot(snapshot, collector_id="collector")
 
 
 def test_duplicate_identity_rejected() -> None:

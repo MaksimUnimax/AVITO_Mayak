@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from scripts.runtime.rf08_docker_authority import MutationAuthority
+from scripts.runtime.rf08_docker_authority import MutationAuthority, ReadOnlyDockerQuery
 from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value
 
 SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
@@ -118,7 +118,7 @@ def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, 
     if peer is not None and any(value < 0 for value in peer):
         raise CollectionFailure("invalid peer credentials")
     server = gateway.run(
-        ("docker", "version", "--format", "{{json .Server}}"),
+        ReadOnlyDockerQuery.from_argv(("docker", "version", "--format", "{{json .Server}}")),
         stage="foreign-endpoint-version",
         capture_output=True,
         check=False,
@@ -221,6 +221,9 @@ def _ownership(name: str, labels: dict[str, str], kind: str) -> str:
             and service in ALLOWED_SERVICES
             and name == f"{TASK_PROJECT}-{service}-1"
         )
+        direct_exact = project == TASK_PROJECT and name.startswith(TASK_PROJECT)
+        if exact or direct_exact:
+            return "TASK_OWNED"
     elif kind == "network":
         exact = project == TASK_PROJECT and name == TASK_PROJECT + "_mayak-internal"
     elif kind == "volume":
@@ -234,7 +237,7 @@ def _ownership(name: str, labels: dict[str, str], kind: str) -> str:
 
 def _inspect(gateway: MutationAuthority, kind: str, ident: str) -> dict[str, Any]:
     proc = gateway.run(
-        ("docker", kind, "inspect", ident),
+        ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident)),
         stage=f"foreign-inspect-{kind}",
         capture_output=True,
         check=False,
@@ -261,7 +264,7 @@ def _inspect(gateway: MutationAuthority, kind: str, ident: str) -> dict[str, Any
 def _enumerate(gateway: MutationAuthority, kind: str) -> list[str]:
     command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
     proc = gateway.run(
-        command,
+        ReadOnlyDockerQuery.from_argv(command),
         stage=f"foreign-enumerate-{kind}",
         capture_output=True,
         text=True,

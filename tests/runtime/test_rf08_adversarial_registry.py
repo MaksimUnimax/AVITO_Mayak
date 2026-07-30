@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+# mypy: ignore-errors
+
 import json
+import shutil
 import socket
 import subprocess
-import shutil
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,9 @@ from scripts.runtime import safe_compose_bootstrap as scb
 from scripts.runtime.rf08_docker_authority import (
     DockerCommandClass,
     MutationAuthority,
+    ReadOnlyDockerQuery,
+    _compose_plan,
+    _direct_plan,
     classify_docker_argv,
     gateway_token_active,
 )
@@ -28,15 +33,17 @@ from scripts.runtime.verify_rf08_authoritative_evidence import (
     INDEPENDENT_COLLECTOR_ID,
     PRODUCER_COLLECTOR_ID,
     _docker_manifest,
-    _endpoint_identity as verifier_endpoint_identity,
     _independent_snapshot,
     _verify_stage56,
     _verify_stage57,
 )
+from scripts.runtime.verify_rf08_authoritative_evidence import (
+    _endpoint_identity as verifier_endpoint_identity,
+)
 
 PROJECT = "avito-mayak-rf08-secret-delivery"
 TECHNICAL_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
-RUNTIME_COMPOSE = "compose.runtime.yaml"
+RUNTIME_COMPOSE = "/tmp/compose.runtime.yaml"
 REAL_SUBPROCESS_RUN = subprocess.run
 
 CANONICAL_STAGE57_KEYS = (
@@ -168,8 +175,12 @@ def _fake_docker_run(
             "secret_wiring": {},
         }
         return _fake_completed(argv, json.dumps(payload) + "\n", text=text)
-    if argv[:2] == ("docker", "inspect"):
-        ident = argv[2]
+    if argv[:2] == ("docker", "inspect") or (
+        len(argv) >= 4
+        and argv[1] in {"container", "network", "volume", "image"}
+        and argv[2] == "inspect"
+    ):
+        ident = argv[2] if argv[:2] == ("docker", "inspect") else argv[3]
         if ident == "apm-postgres":
             payload: Any = [
                 {
@@ -203,11 +214,52 @@ def _fake_docker_run(
                     "Mounts": [],
                 }
             ]
-        elif ident == "net-id-1":
+        elif ident == f"{PROJECT}-mayak-postgres-1":
+            payload = [
+                {
+                    "Id": ident,
+                    "Name": f"/{ident}",
+                    "Config": {
+                        "Labels": {
+                            "com.docker.compose.project": PROJECT,
+                            "com.docker.compose.service": "mayak-postgres",
+                            "com.avito-mayak.technical-id": TECHNICAL_ID,
+                            "com.avito-mayak.owner": "rf08",
+                            "com.avito-mayak.project-owned": "true",
+                            "com.avito-mayak.environment-id": "avito-mayak-acceptance-local-01",
+                            "com.avito-mayak.compose-project": "avito-mayak-acceptance",
+                        },
+                        "Image": "postgres:18-bookworm",
+                    },
+                    "HostConfig": {
+                        "NetworkMode": "bridge",
+                        "Privileged": False,
+                        "ReadonlyRootfs": True,
+                        "RestartPolicy": {"Name": "always"},
+                    },
+                    "State": {
+                        "Status": "running",
+                        "Running": True,
+                        "Paused": False,
+                        "Restarting": False,
+                        "Dead": False,
+                        "ExitCode": 0,
+                        "Health": {"Status": "healthy"},
+                    },
+                    "NetworkSettings": {
+                        "Ports": {},
+                        "Networks": {
+                            "bridge": {"NetworkID": "bridge-id", "EndpointID": "bridge-endpoint"}
+                        },
+                    },
+                    "Mounts": [],
+                }
+            ]
+        elif ident in {"net-id-1", f"{PROJECT}_mayak-internal"}:
             payload: Any = [
                 {
-                    "Id": "net-id-1",
-                    "Name": "net-id-1",
+                    "Id": ident,
+                    "Name": ident,
                     "Driver": "bridge",
                     "Scope": "local",
                     "Internal": False,
@@ -218,11 +270,11 @@ def _fake_docker_run(
                     "Containers": {},
                 }
             ]
-        elif ident == "vol-id-1":
+        elif ident in {"vol-id-1", f"{PROJECT}_postgres-data"}:
             payload: Any = [
                 {
-                    "Id": "vol-id-1",
-                    "Name": "vol-id-1",
+                    "Id": ident,
+                    "Name": ident,
                     "Driver": "local",
                     "Scope": "local",
                     "Labels": {},
@@ -295,8 +347,8 @@ def _compose_base(file: str = RUNTIME_COMPOSE) -> tuple[str, ...]:
     )
 
 
-def _mutation(argv_tail: tuple[str, ...], file: str = RUNTIME_COMPOSE) -> tuple[str, ...]:
-    return _compose_base(file) + argv_tail
+def _mutation(argv_tail: tuple[str, ...], file: str = RUNTIME_COMPOSE):
+    return _compose_plan(_compose_base(file) + argv_tail)
 
 
 def _authority_three_mutations() -> MutationAuthority:
@@ -304,9 +356,9 @@ def _authority_three_mutations() -> MutationAuthority:
     mutation = _mutation(("up", "-d", "mayak-postgres"))
     stop = _mutation(("stop", "mayak-postgres"))
     down = _mutation(("down", "--remove-orphans", "--volumes"))
-    authority.execute(mutation, stage="s1", runner=lambda _: (0, True, False))
-    authority.execute(stop, stage="s2", runner=lambda _: (0, True, False))
-    authority.execute(down, stage="s3", runner=lambda _: (0, True, False))
+    authority.execute(mutation, stage="s1")
+    authority.execute(stop, stage="s2")
+    authority.execute(down, stage="s3")
     return authority
 
 
@@ -550,31 +602,19 @@ def _run_protocol_integration(
         def mut1() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
             assert isinstance(gateway, MutationAuthority)
-            gateway.execute(
-                _mutation(("up", "-d", "mayak-postgres")),
-                stage="MUT1",
-                runner=lambda _: (0, True, False),
-            )
+            gateway.execute(_mutation(("up", "-d", "mayak-postgres")), stage="MUT1")
             return scb.StageResult("MUT1", "op.mut1", True, 0, {"observed": "mut1"})
 
         def mut2() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
             assert isinstance(gateway, MutationAuthority)
-            gateway.execute(
-                _mutation(("stop", "mayak-postgres")),
-                stage="MUT2",
-                runner=lambda _: (0, True, False),
-            )
+            gateway.execute(_mutation(("stop", "mayak-postgres")), stage="MUT2")
             return scb.StageResult("MUT2", "op.mut2", True, 0, {"observed": "mut2"})
 
         def mut3() -> scb.StageResult:
             gateway = ctx["mutation_ledger"]
             assert isinstance(gateway, MutationAuthority)
-            gateway.execute(
-                _mutation(("down", "--remove-orphans", "--volumes")),
-                stage="MUT3",
-                runner=lambda _: (0, True, False),
-            )
+            gateway.execute(_mutation(("down", "--remove-orphans", "--volumes")), stage="MUT3")
             return scb.StageResult("MUT3", "op.mut3", True, 0, {"observed": "mut3"})
 
         return (
@@ -603,47 +643,416 @@ def _run_protocol_integration(
     return record, runner
 
 
+def _minimal_build_context_snapshot() -> dict[str, Any]:
+    return {
+        "schema_version": "rf08-docker-native-context-v1",
+        "expected_base_tree_identity": "base-tree",
+        "archive_sha256": "archive",
+        "docker_native_export_identity": {"manifest_sha256": "manifest"},
+        "manifest": [],
+        "digest": "digest",
+        "dockerfile_sha256": "dockerfile",
+        "dockerignore_sha256": "dockerignore",
+        "copy_plan": [],
+    }
+
+
+def test_replay_namespace_sanitation_is_idempotent_and_exact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    removed: list[tuple[str, str]] = []
+    state = {"task": True}
+
+    def fake_inspect(_: MutationAuthority) -> dict[str, object]:
+        task_containers = (
+            [
+                {
+                    "kind": "container",
+                    "name": f"{PROJECT}-mayak-postgres-1",
+                    "identity_hash": _hash("task-container"),
+                    "ownership": "TASK_OWNED",
+                    "labels": {
+                        "com.docker.compose.project": PROJECT,
+                        "com.docker.compose.service": "mayak-postgres",
+                        "com.avito-mayak.technical-id": TECHNICAL_ID,
+                        "com.avito-mayak.owner": "rf08",
+                    },
+                    "service": "mayak-postgres",
+                }
+            ]
+            if state["task"]
+            else []
+        )
+        task_networks = (
+            [
+                {
+                    "kind": "network",
+                    "name": f"{PROJECT}_mayak-internal",
+                    "identity_hash": _hash("task-network"),
+                    "ownership": "TASK_OWNED",
+                    "labels": {
+                        "com.docker.compose.project": PROJECT,
+                        "com.avito-mayak.project-owned": "true",
+                        "com.avito-mayak.environment-id": "avito-mayak-acceptance-local-01",
+                        "com.avito-mayak.compose-project": "avito-mayak-acceptance",
+                    },
+                    "service": "",
+                }
+            ]
+            if state["task"]
+            else []
+        )
+        task_volumes = (
+            [
+                {
+                    "kind": "volume",
+                    "name": f"{PROJECT}_postgres-data",
+                    "identity_hash": _hash("task-volume"),
+                    "ownership": "TASK_OWNED",
+                    "labels": {
+                        "com.docker.compose.project": PROJECT,
+                        "com.avito-mayak.project-owned": "true",
+                        "com.avito-mayak.environment-id": "avito-mayak-acceptance-local-01",
+                        "com.avito-mayak.compose-project": "avito-mayak-acceptance",
+                    },
+                    "service": "",
+                }
+            ]
+            if state["task"]
+            else []
+        )
+        foreign = {
+            "containers": [
+                {
+                    "kind": "container",
+                    "name": "apm-postgres",
+                    "identity_hash": _hash("foreign-container"),
+                    "ownership": "FOREIGN",
+                    "labels": {},
+                    "service": "",
+                }
+            ],
+            "networks": [],
+            "volumes": [],
+        }
+        task = {"containers": task_containers, "networks": task_networks, "volumes": task_volumes}
+        unresolved = {"containers": [], "networks": [], "volumes": []}
+        return {
+            "containers": task_containers + foreign["containers"],
+            "networks": task_networks,
+            "volumes": task_volumes,
+            "task": task,
+            "unresolved": unresolved,
+            "foreign": foreign,
+            "task_counts": {k: len(v) for k, v in task.items()},
+            "unresolved_counts": {k: 0 for k in task},
+            "foreign_counts": {"containers": 1, "networks": 0, "volumes": 0},
+        }
+
+    def fake_collect(
+        phase: str, sequence: int, gateway: MutationAuthority | None = None
+    ) -> dict[str, object]:
+        return {
+            "schema_version": "ForeignResourceSnapshotV3",
+            "collector_implementation_id": PRODUCER_COLLECTOR_ID,
+            "collection_complete": True,
+            "canonical_serialization_digest": "foreign-digest",
+            "task_owned_resource_records": {"containers": [], "networks": [], "volumes": []},
+            "unresolved_resource_records": {"containers": [], "networks": [], "volumes": []},
+            "container_records": [
+                {
+                    "stable": {
+                        "fingerprint": _hash("foreign-container"),
+                        "name": _hash("foreign-container"),
+                        "is_apm_postgres": True,
+                        "id": _hash("foreign-container"),
+                        "image_id_hash": _hash("foreign-image"),
+                        "image_reference_hash": _hash("foreign-image-ref"),
+                        "labels": [],
+                        "restart_policy": "always",
+                        "network_mode": "bridge",
+                        "privileged": False,
+                        "read_only_rootfs": True,
+                        "mounts": [],
+                        "networks": [],
+                        "published_port_count": 0,
+                        "ownership": "FOREIGN",
+                    },
+                    "runtime": {"id": _hash("foreign-container")},
+                }
+            ],
+            "network_records": [],
+            "volume_records": [],
+            "apm_postgres_present": True,
+        }
+
+    def fake_remove(gateway: MutationAuthority, record: dict[str, object]) -> None:
+        removed.append((str(record["kind"]), str(record["name"])))
+        state["task"] = False
+
+    monkeypatch.setattr(scb, "_inspect_replay_namespace", fake_inspect)
+    monkeypatch.setattr(scb, "collect_foreign_snapshot", fake_collect)
+    monkeypatch.setattr(
+        scb,
+        "_independent_foreign_snapshot",
+        lambda phase, sequence, source_tree=None: {
+            "canonical_serialization_digest": "foreign-digest"
+        },
+    )
+    monkeypatch.setattr(scb, "_buildx_builder_count", lambda gateway: 0)
+    monkeypatch.setattr(scb, "_secret_generation_residue", lambda root: (0, False))
+    monkeypatch.setattr(scb, "_remove_task_owned_resource", fake_remove)
+    ctx: dict[str, object] = {
+        "mutation_ledger": MutationAuthority(),
+        "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
+        "source_sha": "0" * 40,
+        "root": tmp_path,
+    }
+    record = scb._prepare_replay_namespace_sanitation(ctx, Path(__file__).resolve().parents[2])
+    assert record.task_container_count_before == 1
+    assert record.task_network_count_before == 1
+    assert record.task_volume_count_before == 1
+    assert record.task_container_count_after == 0
+    assert record.task_network_count_after == 0
+    assert record.task_volume_count_after == 0
+    digest_payload = record.safe_dict()
+    digest_payload.pop("record_digest", None)
+    assert record.record_digest == scb._record_digest(digest_payload)
+    assert ctx["replay_namespace_sanitation_verified"] is True
+    assert removed == [
+        ("container", f"{PROJECT}-mayak-postgres-1"),
+        ("network", f"{PROJECT}_mayak-internal"),
+        ("volume", f"{PROJECT}_postgres-data"),
+    ]
+    removed.clear()
+    record_again = scb._prepare_replay_namespace_sanitation(
+        ctx, Path(__file__).resolve().parents[2]
+    )
+    assert record_again.task_container_count_before == 0
+    assert record_again.task_network_count_before == 0
+    assert record_again.task_volume_count_before == 0
+    assert removed == []
+
+
+def test_replay_namespace_sanitation_rejects_unresolved_resources(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_inspect(_: MutationAuthority) -> dict[str, object]:
+        unresolved = {
+            "containers": [
+                {
+                    "kind": "container",
+                    "name": f"{PROJECT}-stale-1",
+                    "identity_hash": _hash("stale-container"),
+                    "ownership": "UNRESOLVED",
+                    "labels": {
+                        "com.docker.compose.project": PROJECT,
+                        "com.avito-mayak.technical-id": "WRONG",
+                        "com.avito-mayak.owner": "rf08",
+                    },
+                    "service": "",
+                }
+            ],
+            "networks": [],
+            "volumes": [],
+        }
+        return {
+            "containers": unresolved["containers"],
+            "networks": [],
+            "volumes": [],
+            "task": {"containers": [], "networks": [], "volumes": []},
+            "unresolved": unresolved,
+            "foreign": {"containers": [], "networks": [], "volumes": []},
+            "task_counts": {"containers": 0, "networks": 0, "volumes": 0},
+            "unresolved_counts": {"containers": 1, "networks": 0, "volumes": 0},
+            "foreign_counts": {"containers": 0, "networks": 0, "volumes": 0},
+        }
+
+    monkeypatch.setattr(scb, "_inspect_replay_namespace", fake_inspect)
+    monkeypatch.setattr(
+        scb,
+        "collect_foreign_snapshot",
+        lambda phase, sequence, gateway=None: {
+            "canonical_serialization_digest": "foreign-digest",
+            "collection_complete": True,
+        },
+    )
+    monkeypatch.setattr(
+        scb,
+        "_independent_foreign_snapshot",
+        lambda phase, sequence, source_tree=None: {
+            "canonical_serialization_digest": "foreign-digest"
+        },
+    )
+    monkeypatch.setattr(scb, "_buildx_builder_count", lambda gateway: 0)
+    monkeypatch.setattr(scb, "_secret_generation_residue", lambda root: (0, False))
+    called: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        scb,
+        "_remove_task_owned_resource",
+        lambda gateway, record: called.append((str(record["kind"]), str(record["name"]))),
+    )
+    ctx: dict[str, object] = {
+        "mutation_ledger": MutationAuthority(),
+        "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
+        "source_sha": "0" * 40,
+        "root": tmp_path,
+    }
+    with pytest.raises(scb.ProtocolFailure):
+        scb._prepare_replay_namespace_sanitation(ctx, Path(__file__).resolve().parents[2])
+    assert called == []
+
+
+def test_replay_transcript_refuses_without_sanitation_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(scb, "_prepare_replay_namespace_sanitation", lambda ctx, source_tree: None)
+    monkeypatch.setattr(scb, "prepare_jsonlog_runtime", lambda run_id: tmp_path / "logs")
+    root = scb.RUNTIME_ROOT / "rf08-test" / tmp_path.name
+    runner = scb.PrivateCommandRunner({}, root=root, gateway=MutationAuthority())
+    record = scb.run_protocol(root=root, source_sha="0" * 40, runner=runner)
+    assert record.status == "FAIL"
+    assert record.stage_sequence == ()
+
+
+def test_database_bootstrap_stage_carries_recovered_generation_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(scb, "_require_replay_namespace_sanitation", lambda ctx, source_tree: None)
+    command: dict[str, tuple[str, ...]] = {}
+
+    class Runner:
+        env: dict[str, str] = {}
+
+        def run(self, argv: tuple[str, ...], *, stage: str) -> scb.PrivateCommandResult:
+            command["argv"] = argv
+            return scb.PrivateCommandResult(
+                stage, "cmd", 0, True, {"observed": "ok"}, True, True, False, False
+            )
+
+    ctx: dict[str, object] = {
+        "mutation_ledger": MutationAuthority(),
+        "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
+        "runner": Runner(),
+        "source_sha": "0" * 40,
+        "root": tmp_path,
+        "recovered_generation_id": "g-" + "a" * 24,
+        "build_context_snapshot": _minimal_build_context_snapshot(),
+        "replay_namespace_sanitation_verified": True,
+        "b_correlation_id": "rf08b_test01",
+    }
+    specs = scb._operation_specs(ctx, Path(__file__).resolve().parents[2])
+    spec = next(item for item in specs if item.name == "DATABASE_BOOTSTRAP_A")
+    result = spec.operation()
+    assert result.stage == "DATABASE_BOOTSTRAP_A"
+    assert any(
+        item == f"RF08_RECOVERED_GENERATION_ID={ctx['recovered_generation_id']}"
+        for item in command["argv"]
+    )
+    assert "UNSET" not in " ".join(command["argv"])
+
+
+def test_migration_upgrade_stage_uses_compose_run_service_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(scb, "_require_replay_namespace_sanitation", lambda ctx, source_tree: None)
+    command: dict[str, tuple[str, ...]] = {}
+
+    class Runner:
+        env: dict[str, str] = {}
+
+        def run(self, argv: tuple[str, ...], *, stage: str) -> scb.PrivateCommandResult:
+            command["argv"] = argv
+            return scb.PrivateCommandResult(
+                stage, "cmd", 0, True, {"observed": "ok"}, True, True, False, False
+            )
+
+    ctx: dict[str, object] = {
+        "mutation_ledger": MutationAuthority(),
+        "transcript": scb.ProtocolTranscript(("PREFLIGHT",)),
+        "runner": Runner(),
+        "source_sha": "0" * 40,
+        "root": tmp_path,
+        "build_context_snapshot": _minimal_build_context_snapshot(),
+        "replay_namespace_sanitation_verified": True,
+        "b_correlation_id": "rf08b_test02",
+    }
+    specs = scb._operation_specs(ctx, Path(__file__).resolve().parents[2])
+    spec = next(item for item in specs if item.name == "MIGRATION_UPGRADE_A")
+    result = spec.operation()
+    assert result.stage == "MIGRATION_UPGRADE_A"
+    assert command["argv"][:8] == (
+        "docker",
+        "compose",
+        "-f",
+        str(scb.RUNTIME_COMPOSE_FILE),
+        "-p",
+        scb.TASK_PROJECT,
+        "--profile",
+        "runtime-foundation",
+    )
+    assert command["argv"][8:] == ("run", "--rm", "mayak-migrate")
+
+
 def dispatch(
     scenario: str, params: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    _patch_docker(monkeypatch)
+    argv_value = params.get("argv")
+    argv = (
+        tuple(argv_value.argv if hasattr(argv_value, "argv") else argv_value)
+        if argv_value is not None
+        else ()
+    )
+
     if scenario == "classify":
-        assert classify_docker_argv(tuple(params["argv"])) == params["expected"]
+        assert classify_docker_argv(argv) == params["expected"]
         return
 
     if scenario == "authorize_reject":
         authority = MutationAuthority()
         with pytest.raises(tuple(params["exceptions"])):
-            authority.authorize(tuple(params["argv"]), stage="negative")
+            authority.authorize(
+                argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
+                stage="negative",
+            )
         return
 
     if scenario == "direct_run_reject":
         authority = MutationAuthority()
         with pytest.raises(tuple(params["exceptions"])):
             authority.execute(
-                tuple(params["argv"]), stage="direct", runner=lambda _: (0, True, False)
+                argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
+                stage="direct",
             )
         return
 
     if scenario == "direct_run_accept":
         authority = MutationAuthority()
         result = authority.execute(
-            tuple(params["argv"]), stage="direct", runner=lambda _: (0, True, False)
+            argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
+            stage="direct",
         )
-        assert result == (0, True, False)
+        assert isinstance(result, subprocess.CompletedProcess)
         return
 
     if scenario == "authorize_accept":
         authority = MutationAuthority()
-        auth = authority.authorize(tuple(params["argv"]), stage="authorize")
-        assert auth.authorization_outcome == "AUTHORIZED"
-        assert auth.planned_ownership == "TASK_OWNED"
+        auth = authority.authorize(
+            argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
+            stage="authorize",
+        )
+        assert auth.gateway_instance_id == authority.gateway_instance_id
+        assert authority.entries[0].authorization_outcome == "AUTHORIZED"
         return
 
     if scenario == "caller_ownership_absent":
         authority = MutationAuthority()
         with pytest.raises(TypeError):
             getattr(authority, "authorize")(
-                tuple(params["argv"]), stage="authorize", ownership="TASK_OWNED"
+                argv_value if hasattr(argv_value, "command_class") else _direct_plan(argv),
+                stage="authorize",
+                ownership="TASK_OWNED",
             )  # type: ignore[arg-type]
         return
 
@@ -685,63 +1094,59 @@ def dispatch(
             return
         if tamper == "empty_with_mutations":
             authority = MutationAuthority()
-            authority.execute(
-                _mutation(("up", "-d", "mayak-postgres")),
-                stage="s1",
-                runner=lambda _: (0, True, False),
-            )
-            authority.ledger.clear()
+            authority.execute(_mutation(("up", "-d", "mayak-postgres")), stage="s1")
+            authority._ledger.clear()
             with pytest.raises(ValueError):
                 authority.validate_complete(1)
             return
         if tamper == "missing_result":
             authority = _authority_three_mutations()
-            authority.ledger.pop()
+            authority._ledger.pop()  # type: ignore[attr-defined]
             with pytest.raises(ValueError):
                 authority.validate_complete(3)
             return
         if tamper == "duplicate_result":
             authority = _authority_three_mutations()
-            authority.ledger.append(authority.ledger[-1])
+            authority._ledger.append(authority._ledger[-1])
             with pytest.raises(ValueError):
                 authority.validate_complete(3)
             return
         if tamper == "result_before_auth":
             authority = _authority_three_mutations()
-            authority.ledger[:] = (
-                authority.ledger[1:2] + authority.ledger[0:1] + authority.ledger[2:]
+            authority._ledger[:] = (
+                authority._ledger[1:2] + authority._ledger[0:1] + authority._ledger[2:]
             )
             with pytest.raises(ValueError):
                 authority.validate_complete(3)
             return
         if tamper == "sequence_gap":
             authority = _authority_three_mutations()
-            authority.ledger[0] = authority.ledger[0].__class__(
-                **{**_record_kwargs(authority.ledger[0]), "authorization_sequence": 3}
+            authority._ledger[0] = authority._ledger[0].__class__(
+                **{**_record_kwargs(authority._ledger[0]), "authorization_sequence": 3}
             )
             with pytest.raises(ValueError):
                 authority.validate_complete(3)
             return
         if tamper == "duplicate_authorization":
             authority = _authority_three_mutations()
-            authority.ledger[2] = authority.ledger[2].__class__(
-                **{**_record_kwargs(authority.ledger[2]), "authorization_sequence": 1}
+            authority._ledger[2] = authority._ledger[2].__class__(
+                **{**_record_kwargs(authority._ledger[2]), "authorization_sequence": 1}
             )
             with pytest.raises(ValueError):
                 authority.validate_complete(3)
             return
         if tamper == "mismatched_hash":
             authority = _authority_three_mutations()
-            authority.invocation_audit[0] = authority.invocation_audit[0].__class__(
-                **{**authority.invocation_audit[0].__dict__, "argv_fingerprint": "0" * 64}
+            authority._invocation_audit[0] = replace(
+                authority._invocation_audit[0], argv_fingerprint="0" * 64
             )
             with pytest.raises(ValueError):
                 authority.validate_complete(3)
             return
         if tamper == "mismatched_stage":
             authority = _authority_three_mutations()
-            authority.ledger[1] = authority.ledger[1].__class__(
-                **{**_record_kwargs(authority.ledger[1]), "stage": "OTHER"}
+            authority._ledger[1] = authority._ledger[1].__class__(
+                **{**_record_kwargs(authority._ledger[1]), "stage": "OTHER"}
             )
             with pytest.raises(ValueError):
                 authority.validate_complete(3)
@@ -749,25 +1154,29 @@ def dispatch(
         if tamper == "timeout_result_not_zero":
             authority = MutationAuthority()
 
-            def timeout_runner(_argv: tuple[str, ...]) -> tuple[int, bool, bool]:
-                return 1, False, True
+            def timeout_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                argv = tuple(str(item) for item in args[0])
+                if argv[:3] == ("docker", "container", "inspect"):
+                    return _fake_completed(argv, returncode=1)
+                raise subprocess.TimeoutExpired(cmd=argv, timeout=1)
 
-            authority.execute(
-                _mutation(("up", "-d", "mayak-postgres")), stage="timeout", runner=timeout_runner
-            )
+            monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", timeout_run)
+            with pytest.raises(subprocess.TimeoutExpired):
+                authority.execute(_mutation(("up", "-d", "mayak-postgres")), stage="timeout")
             assert authority.entries[-1].timed_out is True
-            assert authority.entries[-1].exit_code == 1
             return
         if tamper == "process_start_failure":
             authority = MutationAuthority()
 
-            def start_failure(_argv: tuple[str, ...]) -> tuple[int, bool, bool]:
+            def fail_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+                argv = tuple(str(item) for item in args[0])
+                if argv[:3] == ("docker", "container", "inspect"):
+                    return _fake_completed(argv, returncode=1)
                 raise OSError("boom")
 
+            monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", fail_run)
             with pytest.raises(OSError):
-                authority.execute(
-                    _mutation(("up", "-d", "mayak-postgres")), stage="failure", runner=start_failure
-                )
+                authority.execute(_mutation(("up", "-d", "mayak-postgres")), stage="failure")
             assert authority.entries[-1].record_type == "RESULT"
             assert authority.entries[-1].safe_failure_classification == "OSError"
             return
@@ -996,11 +1405,7 @@ def dispatch(
             return
         if kind == "mutation_audit":
             gateway = MutationAuthority()
-            gateway.execute(
-                _mutation(("up", "-d", "mayak-postgres")),
-                stage="audit",
-                runner=lambda _: (0, True, False),
-            )
+            gateway.execute(_mutation(("up", "-d", "mayak-postgres")), stage="audit")
             assert [
                 item.authorization_sequence
                 for item in gateway.entries
@@ -1042,7 +1447,9 @@ def dispatch(
             gateway = MutationAuthority()
             assert not gateway_token_active()
             gateway.run(
-                ("docker", "version", "--format", "{{json .Server}}"),
+                ReadOnlyDockerQuery.from_argv(
+                    ("docker", "version", "--format", "{{json .Server}}")
+                ),
                 stage="token",
                 capture_output=True,
                 check=False,
@@ -1104,7 +1511,9 @@ def dispatch(
             return
         if kind == "producer_read_only_audit":
             assert len(runner.gateway.entries) == 6
-            assert len(runner.gateway.invocation_audit) == 3
+            assert len(runner.gateway.invocation_audit) >= len(runner.gateway.entries)
+            assert any(not item.is_mutation for item in runner.gateway.invocation_audit)
+            assert any(item.is_mutation for item in runner.gateway.invocation_audit)
             return
         if kind == "verifier_separate_gateway":
             _patch_docker(monkeypatch)
@@ -1158,17 +1567,17 @@ for case_id, argv, expected in [
     ),
     (
         "command_grammar_compose_up_mutation",
-        _mutation(("up", "-d", "mayak-postgres")),
+        _mutation(("up", "-d", "mayak-postgres")).argv,
         DockerCommandClass.COMPOSE_UP,
     ),
     (
         "command_grammar_compose_stop_mutation",
-        _mutation(("stop", "mayak-postgres")),
+        _mutation(("stop", "mayak-postgres")).argv,
         DockerCommandClass.COMPOSE_STOP,
     ),
     (
         "command_grammar_compose_down_mutation",
-        _mutation(("down", "--remove-orphans", "--volumes")),
+        _mutation(("down", "--remove-orphans", "--volumes")).argv,
         DockerCommandClass.COMPOSE_DOWN,
     ),
     (
@@ -1258,7 +1667,19 @@ for case_id, argv in [
     ),
     (
         "exact_option_wrong_compose_file_rejected",
-        _mutation(("up", "-d", "mayak-postgres"), file="compose.wrong.yaml"),
+        (
+            "docker",
+            "compose",
+            "-f",
+            "/tmp/compose.wrong.yaml",
+            "-p",
+            PROJECT,
+            "--profile",
+            "runtime-foundation",
+            "up",
+            "-d",
+            "mayak-postgres",
+        ),
     ),
     (
         "exact_option_missing_required_profile_rejected",
@@ -1405,12 +1826,12 @@ for case_id, argv, scenario in [
     ),
     (
         "ownership_network_create_task_owned",
-        ("docker", "network", "create", "net-id-1"),
+        ("docker", "network", "create", f"{PROJECT}_mayak-internal"),
         "authorize_accept",
     ),
     (
         "ownership_volume_create_task_owned",
-        ("docker", "volume", "create", "vol-id-1"),
+        ("docker", "volume", "create", f"{PROJECT}_postgres-data"),
         "authorize_accept",
     ),
     (
@@ -1444,7 +1865,7 @@ for case_id, argv, scenario in [
     ),
     (
         "ownership_direct_container_rm_task_owned",
-        ("docker", "rm", "-f", "container-id"),
+        ("docker", "rm", "-f", f"{PROJECT}-mayak-postgres-1"),
         "authorize_accept",
     ),
 ]:

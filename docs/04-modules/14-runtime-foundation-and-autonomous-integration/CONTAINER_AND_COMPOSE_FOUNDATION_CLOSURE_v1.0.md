@@ -187,3 +187,9 @@ RF-09 was the historical next gate at the time of the prior closure. This correc
 - Published `af24a6837ad24ccb0c22e4038512cf2901cbecd4` was independently rejected because authority was recreated per Docker command, ownership was caller asserted, `buildx` bypassed authority, the mutation ledger was not bijective, and snapshot/collector validation was incomplete.
 - The corrective uses one protocol-owned Docker gateway, exact compose binding, repository-wide bypass guards, independent ownership resolution, typed invocation audit and mutation-ledger bijection, plus the executable adversarial registry and integration coverage.
 - Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`; RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted.
+
+## RF-08 namespace sanitation and source-bound evidence corrective — 2026-07-30
+
+- The latest continuation tightened the RF-08 replay boundary by making task-namespace sanitation a verified precondition rather than an ad hoc cleanup step.
+- The same source path now proves exact recovered-generation handoff, required-name absence before stage 1 and source-bound evidence regeneration with independent verification.
+- This note records the current checkpoint only; final publish bookkeeping remains in the task worktree and does not change the closure verdict here.

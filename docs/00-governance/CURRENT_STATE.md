@@ -218,3 +218,9 @@ Published main `7467ba2092d9e83fba52d402cf78556912d10a83` remained published but
 ## RF-08 one-gateway Docker authority corrective — 2026-07-30
 
 `af24a6837ad24ccb0c22e4038512cf2901cbecd4` remained published but was independently rejected because the gateway authority was recreated per Docker command, ownership was caller asserted, `buildx` bypassed authority, ledger/result bijection was non-authoritative, and snapshot/collector validation was incomplete. The corrective now uses one protocol-owned Docker gateway, exact compose binding, independent ownership resolution, repository-wide bypass guards, and an executable adversarial registry. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status is `PUBLISHED_FOR_CHATGPT_REVIEW`; `NOT_PRODUCTION_READY` remains authoritative.
+
+## RF-08 namespace sanitation and source-bound evidence corrective — 2026-07-30
+
+- The RF-08 continuation made task-namespace sanitation an owned, idempotent, inspect-backed precondition before the transcript runner can start stage 1.
+- The same path now preserves the recovered-generation handoff, proves required-name absence before replay, and regenerates source-bound evidence that independently verifies the completed 57-stage protocol.
+- This checkpoint records the state before commit/push publication bookkeeping only; RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted.

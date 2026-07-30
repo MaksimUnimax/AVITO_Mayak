@@ -16,7 +16,11 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from scripts.runtime.rf08_docker_authority import MutationAuthority
+from scripts.runtime.rf08_docker_authority import (
+    BuildxManifestPlan,
+    MutationAuthority,
+    _direct_plan,
+)
 
 EXPECTED_BASE_SHA: Final = "453356025051308b9cbe43b7201c248124348006"
 COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
@@ -108,18 +112,23 @@ def docker_native_manifest(
     output = run_root / "docker-native-output"
     inspector = _inspector_file(run_root)
     output.mkdir(mode=0o700, parents=True)
-    (gateway or MutationAuthority()).run(
-        (
-            "docker",
-            "buildx",
-            "build",
-            "--progress=plain",
-            "--file",
-            str(inspector),
-            "--output",
-            f"type=local,dest={output}",
-            str(context),
-        ),
+    plan = BuildxManifestPlan.from_plan(
+        _direct_plan(
+            (
+                "docker",
+                "buildx",
+                "build",
+                "--progress=plain",
+                "--file",
+                str(inspector),
+                "--output",
+                f"type=local,dest={output}",
+                str(context),
+            )
+        )
+    )
+    (gateway or MutationAuthority()).execute(
+        plan,
         stage="docker-native-manifest",
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

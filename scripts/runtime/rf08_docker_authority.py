@@ -11,7 +11,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TypeAlias
 
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 TECHNICAL_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
@@ -86,6 +86,291 @@ class DockerInvocationPlan:
     command: str | None = None
     service: str | None = None
     exact_options: tuple[tuple[str, str | None], ...] = ()
+
+
+@dataclass(frozen=True)
+class ReadOnlyDockerQuery(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "ReadOnlyDockerQuery":
+        if plan.is_mutation:
+            raise ValueError("mutation plan is not a read-only query")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+    @classmethod
+    def from_argv(cls, argv: Sequence[str]) -> "ReadOnlyDockerQuery":
+        plan = _direct_plan(tuple(argv))
+        if plan.is_mutation:
+            raise ValueError("mutation command is not read-only")
+        return cls.from_plan(plan)
+
+
+@dataclass(frozen=True)
+class ComposeOperationPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "ComposeOperationPlan":
+        if plan.command_class not in {
+            DockerCommandClass.COMPOSE_CREATE,
+            DockerCommandClass.COMPOSE_UP,
+            DockerCommandClass.COMPOSE_START,
+            DockerCommandClass.COMPOSE_STOP,
+            DockerCommandClass.COMPOSE_RESTART,
+            DockerCommandClass.COMPOSE_RUN,
+            DockerCommandClass.COMPOSE_RM,
+            DockerCommandClass.COMPOSE_DOWN,
+        }:
+            raise ValueError("not a compose mutation plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class ContainerProbeCreationPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "ContainerProbeCreationPlan":
+        if plan.command_class != DockerCommandClass.DIRECT_RUN:
+            raise ValueError("not a direct run plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class ContainerRemovalPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "ContainerRemovalPlan":
+        if plan.command_class != DockerCommandClass.DIRECT_CONTAINER_RM:
+            raise ValueError("not a direct container removal plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class ImageBuildPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "ImageBuildPlan":
+        if plan.command_class != DockerCommandClass.IMAGE_BUILD:
+            raise ValueError("not an image build plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class ImageLoadPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "ImageLoadPlan":
+        if plan.command_class != DockerCommandClass.IMAGE_LOAD:
+            raise ValueError("not an image load plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class BuildxManifestPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "BuildxManifestPlan":
+        if plan.command_class != DockerCommandClass.BUILDX_BUILD:
+            raise ValueError("not a buildx manifest plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class BuilderScopePlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "BuilderScopePlan":
+        if plan.command_class not in {
+            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
+            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
+        }:
+            raise ValueError("not a builder scope plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class NetworkCreationPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "NetworkCreationPlan":
+        if plan.command_class not in {
+            DockerCommandClass.NETWORK_CREATE,
+            DockerCommandClass.NETWORK_RM,
+        }:
+            raise ValueError("not a network plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True)
+class VolumeCreationPlan(DockerInvocationPlan):
+    @classmethod
+    def from_plan(cls, plan: DockerInvocationPlan) -> "VolumeCreationPlan":
+        if plan.command_class not in {
+            DockerCommandClass.VOLUME_CREATE,
+            DockerCommandClass.VOLUME_RM,
+        }:
+            raise ValueError("not a volume plan")
+        return cls(
+            argv=plan.argv,
+            command_class=plan.command_class,
+            target_kind=plan.target_kind,
+            target_identity_hash=plan.target_identity_hash,
+            is_mutation=plan.is_mutation,
+            compose_file=plan.compose_file,
+            project_name=plan.project_name,
+            profile=plan.profile,
+            command=plan.command,
+            service=plan.service,
+            exact_options=plan.exact_options,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedTaskResourceCapability:
+    gateway_instance_id: str
+    issuance_id: str
+    seal: str
+    resource_kind: str
+    immutable_identity_hash: str
+    resource_name_hash: str
+    project_identity: str
+    technical_id: str
+    owner_labels_digest: str
+    service_identity: str | None
+    driver: str | None
+    scope: str | None
+    topology_digest: str
+    label_set_digest: str
+    allowed_operations: tuple[str, ...]
+
+    def safe_dict(self) -> dict[str, object]:
+        return {
+            "gateway_instance_id": self.gateway_instance_id,
+            "issuance_id": self.issuance_id,
+            "resource_kind": self.resource_kind,
+            "immutable_identity_hash": self.immutable_identity_hash,
+            "resource_name_hash": self.resource_name_hash,
+            "project_identity": self.project_identity,
+            "technical_id": self.technical_id,
+            "owner_labels_digest": self.owner_labels_digest,
+            "service_identity": self.service_identity,
+            "driver": self.driver,
+            "scope": self.scope,
+            "topology_digest": self.topology_digest,
+            "label_set_digest": self.label_set_digest,
+            "allowed_operations": list(self.allowed_operations),
+        }
+
+
+MutationPlan: TypeAlias = (
+    ComposeOperationPlan
+    | ContainerProbeCreationPlan
+    | ContainerRemovalPlan
+    | ImageBuildPlan
+    | ImageLoadPlan
+    | BuildxManifestPlan
+    | BuilderScopePlan
+    | NetworkCreationPlan
+    | VolumeCreationPlan
+)
 
 
 @dataclass(frozen=True)
@@ -177,6 +462,32 @@ def _split_option_pairs(argv: Sequence[str]) -> dict[str, list[str]]:
     index = 0
     while index < len(argv):
         token = argv[index]
+        if token.startswith("--") and "=" in token:
+            option, value = token.split("=", 1)
+            if option in {
+                "-f",
+                "--file",
+                "-p",
+                "--project-name",
+                "--profile",
+                "-e",
+                "--env",
+                "-v",
+                "--volume",
+                "--user",
+                "--entrypoint",
+                "--name",
+                "--network",
+                "--workdir",
+                "--mount",
+                "--label",
+                "--driver",
+                "--scope",
+                "--opt",
+            }:
+                pairs.setdefault(option, []).append(value)
+                index += 1
+                continue
         if token in {
             "-f",
             "--file",
@@ -194,6 +505,9 @@ def _split_option_pairs(argv: Sequence[str]) -> dict[str, list[str]]:
             "--workdir",
             "--mount",
             "--label",
+            "--driver",
+            "--scope",
+            "--opt",
         }:
             if index + 1 >= len(argv):
                 raise ValueError("missing option value")
@@ -232,22 +546,27 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     index = 2
     while index < len(argv):
         token = argv[index]
-        if token in {"-f", "--file"}:
-            if index + 1 >= len(argv):
-                raise ValueError("missing compose file")
-            file_values.append(argv[index + 1])
-            index += 2
+        if token.startswith("--file="):
+            file_values.append(token.split("=", 1)[1])
+            index += 1
             continue
-        if token in {"-p", "--project-name"}:
-            if index + 1 >= len(argv):
-                raise ValueError("missing compose project")
-            project_values.append(argv[index + 1])
-            index += 2
+        if token.startswith("--project-name="):
+            project_values.append(token.split("=", 1)[1])
+            index += 1
             continue
-        if token == "--profile":
+        if token.startswith("--profile="):
+            profile_values.append(token.split("=", 1)[1])
+            index += 1
+            continue
+        if token in {"-f", "--file", "-p", "--project-name", "--profile"}:
             if index + 1 >= len(argv):
-                raise ValueError("missing compose profile")
-            profile_values.append(argv[index + 1])
+                raise ValueError("missing compose option value")
+            if token in {"-f", "--file"}:
+                file_values.append(argv[index + 1])
+            elif token in {"-p", "--project-name"}:
+                project_values.append(argv[index + 1])
+            else:
+                profile_values.append(argv[index + 1])
             index += 2
             continue
         if token.startswith("-"):
@@ -259,16 +578,19 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         raise ValueError("compose command missing")
     if len(file_values) != 1 or len(project_values) != 1 or len(profile_values) != 1:
         raise ValueError("compose binding incomplete")
+    compose_file = Path(file_values[0])
+    if not compose_file.is_absolute():
+        raise ValueError("compose file must be absolute")
     if project_values[0] != TASK_PROJECT:
         raise ValueError("compose project mismatch")
-    if Path(file_values[0]).name not in {COMPOSE_FILE, "compose.runtime.yaml"}:
+    if compose_file.name not in {COMPOSE_FILE, "compose.runtime.yaml"}:
         raise ValueError("compose file mismatch")
     if profile_values[0] != RUNTIME_PROFILE:
         raise ValueError("compose profile mismatch")
     if command == "version":
         if remainder != ("--short",):
             raise ValueError("compose version mismatch")
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="compose_project",
@@ -289,7 +611,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "config":
         if remainder != ("--format", "json"):
             raise ValueError("compose config mismatch")
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="compose_project",
@@ -311,7 +633,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "ps":
         if remainder not in {(), ("-q",), ("--quiet",)}:
             raise ValueError("compose ps mismatch")
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="compose_project",
@@ -359,7 +681,7 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         }
         if tuple(payload) not in safe_execs:
             raise ValueError("compose exec payload mismatch")
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv=argv,
             command_class=DockerCommandClass.READ_ONLY,
             target_kind="container",
@@ -395,6 +717,10 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         index = 0
         while index < len(remainder):
             token = remainder[index]
+            if command == "run" and positional:
+                positional.append(token)
+                index += 1
+                continue
             if token in options_with_value:
                 if index + 1 >= len(remainder):
                     raise ValueError("compose option missing value")
@@ -432,13 +758,11 @@ def _compose_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             if command == "rm" and not ({"-f", "--force"} & flags):
                 raise ValueError("compose rm flags mismatch")
             if command == "run":
-                if flags != {"--rm", "--no-deps"} and flags != {"--no-deps", "--rm"}:
+                if flags not in ({"--rm"}, {"--rm", "--no-deps"}):
                     raise ValueError("compose run flags mismatch")
                 if "-d" in flags or "--detach" in flags:
                     raise ValueError("compose run flags mismatch")
-                if positional[1:] == []:
-                    raise ValueError("compose run command missing")
-        return DockerInvocationPlan(
+        return ComposeOperationPlan(
             argv=argv,
             command_class={
                 "create": DockerCommandClass.COMPOSE_CREATE,
@@ -480,7 +804,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "version":
         if argv[2:] not in {("--format", "{{json .Server}}"), ("--format", "{{json .Client}}")}:
             raise ValueError("version mismatch")
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "daemon",
@@ -489,7 +813,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             command=command,
         )
     if command == "inspect":
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "target",
@@ -500,7 +824,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "ps":
         if argv[2:] not in {("-aq",), ("-q",), ("-a", "-q")} and "-aq" not in argv[2:]:
             raise ValueError("ps mismatch")
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "target",
@@ -510,7 +834,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         )
     if command == "image" and len(argv) > 2:
         if argv[2] == "inspect":
-            return DockerInvocationPlan(
+            return ReadOnlyDockerQuery(
                 argv,
                 DockerCommandClass.READ_ONLY,
                 "image",
@@ -519,7 +843,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="inspect",
             )
         if argv[2] == "build":
-            return DockerInvocationPlan(
+            return ImageBuildPlan(
                 argv,
                 DockerCommandClass.IMAGE_BUILD,
                 "image",
@@ -528,7 +852,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="build",
             )
         if argv[2] == "load":
-            return DockerInvocationPlan(
+            return ImageLoadPlan(
                 argv,
                 DockerCommandClass.IMAGE_LOAD,
                 "image",
@@ -537,13 +861,33 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="load",
             )
     if command == "buildx" and len(argv) > 2 and argv[2] == "build":
-        return DockerInvocationPlan(
+        return BuildxManifestPlan(
             argv,
             DockerCommandClass.BUILDX_BUILD,
             "image",
             _sha256(" ".join(argv)),
             True,
             command="build",
+        )
+    if command == "buildx" and len(argv) > 2 and argv[2] in {"create", "rm"}:
+        return BuilderScopePlan(
+            argv,
+            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE
+            if argv[2] == "create"
+            else DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
+            "builder",
+            _sha256(" ".join(argv)),
+            True,
+            command=argv[2],
+        )
+    if command == "buildx" and len(argv) > 2 and argv[2] == "ls":
+        return ReadOnlyDockerQuery(
+            argv,
+            DockerCommandClass.READ_ONLY,
+            "builder",
+            _sha256(" ".join(argv)),
+            False,
+            command="ls",
         )
     if command == "run":
         pairs = _split_option_pairs(argv[2:])
@@ -577,7 +921,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         name = pairs.get("--name", [""])[0]
         if name != "apm-postgres" and not name.startswith(TASK_PROJECT):
             raise ValueError("run name mismatch")
-        return DockerInvocationPlan(
+        return ContainerProbeCreationPlan(
             argv,
             DockerCommandClass.DIRECT_RUN,
             "container",
@@ -586,7 +930,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             command=command,
         )
     if command == "rm":
-        return DockerInvocationPlan(
+        return ContainerRemovalPlan(
             argv,
             DockerCommandClass.DIRECT_CONTAINER_RM,
             "container",
@@ -596,7 +940,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
         )
     if command == "network" and len(argv) > 2:
         if argv[2] == "create":
-            return DockerInvocationPlan(
+            return NetworkCreationPlan(
                 argv,
                 DockerCommandClass.NETWORK_CREATE,
                 "network",
@@ -605,7 +949,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="create",
             )
         if argv[2] == "rm":
-            return DockerInvocationPlan(
+            return NetworkCreationPlan(
                 argv,
                 DockerCommandClass.NETWORK_RM,
                 "network",
@@ -614,7 +958,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="rm",
             )
         if argv[2] == "ls":
-            return DockerInvocationPlan(
+            return ReadOnlyDockerQuery(
                 argv,
                 DockerCommandClass.READ_ONLY,
                 "network",
@@ -624,7 +968,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             )
     if command == "volume" and len(argv) > 2:
         if argv[2] == "create":
-            return DockerInvocationPlan(
+            return VolumeCreationPlan(
                 argv,
                 DockerCommandClass.VOLUME_CREATE,
                 "volume",
@@ -633,7 +977,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="create",
             )
         if argv[2] == "rm":
-            return DockerInvocationPlan(
+            return VolumeCreationPlan(
                 argv,
                 DockerCommandClass.VOLUME_RM,
                 "volume",
@@ -642,7 +986,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="rm",
             )
         if argv[2] == "ls":
-            return DockerInvocationPlan(
+            return ReadOnlyDockerQuery(
                 argv,
                 DockerCommandClass.READ_ONLY,
                 "volume",
@@ -652,7 +996,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             )
     if command == "builder" and len(argv) > 2:
         if argv[2] == "create":
-            return DockerInvocationPlan(
+            return BuilderScopePlan(
                 argv,
                 DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
                 "builder",
@@ -661,7 +1005,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
                 command="create",
             )
         if argv[2] == "rm":
-            return DockerInvocationPlan(
+            return BuilderScopePlan(
                 argv,
                 DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
                 "builder",
@@ -672,7 +1016,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
     if command == "compose":
         return _compose_plan(argv)
     if command in {"version", "info"}:
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.READ_ONLY,
             "daemon",
@@ -681,7 +1025,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             command=command,
         )
     if command in {"network", "volume", "image"}:
-        return DockerInvocationPlan(
+        return ReadOnlyDockerQuery(
             argv,
             DockerCommandClass.UNKNOWN_DOCKER_COMMAND,
             "unknown",
@@ -689,7 +1033,7 @@ def _direct_plan(argv: tuple[str, ...]) -> DockerInvocationPlan:
             False,
             command=command,
         )
-    return DockerInvocationPlan(
+    return ReadOnlyDockerQuery(
         argv,
         DockerCommandClass.UNKNOWN_DOCKER_COMMAND,
         "unknown",
@@ -709,35 +1053,29 @@ def classify_docker_argv(argv: Iterable[str]) -> DockerCommandClass:
         return DockerCommandClass.UNKNOWN_DOCKER_COMMAND
 
 
-def _target_ownership(plan: DockerInvocationPlan) -> str:
-    if plan.argv and any(token == "apm-postgres" for token in plan.argv):
-        return "FOREIGN"
-    if plan.command == "run" and plan.command_class == DockerCommandClass.DIRECT_RUN:
-        return "TASK_OWNED"
-    if plan.command == "create" and plan.command_class in {
-        DockerCommandClass.COMPOSE_CREATE,
-        DockerCommandClass.COMPOSE_UP,
-        DockerCommandClass.COMPOSE_START,
-        DockerCommandClass.COMPOSE_STOP,
-        DockerCommandClass.COMPOSE_RESTART,
-        DockerCommandClass.COMPOSE_RUN,
-        DockerCommandClass.COMPOSE_RM,
-        DockerCommandClass.COMPOSE_DOWN,
-    }:
-        return "TASK_OWNED"
-    if plan.command_class in {
-        DockerCommandClass.NETWORK_CREATE,
-        DockerCommandClass.NETWORK_RM,
-        DockerCommandClass.VOLUME_CREATE,
-        DockerCommandClass.VOLUME_RM,
-        DockerCommandClass.IMAGE_BUILD,
-        DockerCommandClass.IMAGE_LOAD,
-        DockerCommandClass.BUILDX_BUILD,
-    }:
-        return "TASK_OWNED"
-    if plan.command_class == DockerCommandClass.UNKNOWN_DOCKER_COMMAND:
-        return "UNRESOLVED"
-    return "TASK_OWNED" if plan.is_mutation else "FOREIGN"
+@dataclass(frozen=True, slots=True)
+class _CapabilityIssuance:
+    capability: ResolvedTaskResourceCapability
+    authorization: DockerMutationRecord
+    audit: DockerInvocationAuditRecord
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedResourceDetails:
+    ownership: str
+    resource_kind: str
+    resource_name: str | None
+    immutable_identity_hash: str
+    resource_name_hash: str
+    project_identity: str
+    technical_id: str
+    owner_labels_digest: str
+    service_identity: str | None
+    driver: str | None
+    scope: str | None
+    topology_digest: str
+    label_set_digest: str
+    allowed_operations: tuple[str, ...]
 
 
 @dataclass
@@ -748,53 +1086,647 @@ class MutationAuthority:
     profile: str = RUNTIME_PROFILE
     allowed_services: tuple[str, ...] = tuple(sorted(ALLOWED_SERVICES))
     gateway_instance_id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    invocation_audit: list[DockerInvocationAuditRecord] = field(default_factory=list)
-    ledger: list[DockerMutationRecord] = field(default_factory=list)
+    _invocation_audit: list[DockerInvocationAuditRecord] = field(default_factory=list, repr=False)
+    _ledger: list[DockerMutationRecord] = field(default_factory=list, repr=False)
+    _issued_capabilities: dict[str, _CapabilityIssuance] = field(default_factory=dict, repr=False)
     _invocation_sequence: int = 0
     _authorization_sequence: int = 0
     _result_sequence: int = 0
+    _default_env: Mapping[str, str] | None = field(default=None, repr=False)
+
+    @property
+    def invocation_audit(self) -> tuple[DockerInvocationAuditRecord, ...]:
+        return tuple(self._invocation_audit)
+
+    @property
+    def ledger(self) -> tuple[DockerMutationRecord, ...]:
+        return tuple(self._ledger)
 
     @property
     def entries(self) -> tuple[DockerMutationRecord, ...]:
-        return tuple(self.ledger)
+        return self.ledger
 
-    def authorize(
-        self, argv: tuple[str, ...], *, stage: str, target_kind: str | None = None
-    ) -> DockerMutationRecord:
-        plan = _direct_plan(argv)
-        if not plan.is_mutation:
-            raise ValueError("read-only command is not a mutation")
-        if target_kind is not None:
-            plan = DockerInvocationPlan(
-                argv=plan.argv,
-                command_class=plan.command_class,
-                target_kind=target_kind,
-                target_identity_hash=plan.target_identity_hash,
-                is_mutation=plan.is_mutation,
-                compose_file=plan.compose_file,
-                project_name=plan.project_name,
-                profile=plan.profile,
-                command=plan.command,
-                service=plan.service,
-                exact_options=plan.exact_options,
+    def _resource_name(self, plan: DockerInvocationPlan) -> str | None:
+        if plan.command_class in {
+            DockerCommandClass.COMPOSE_CREATE,
+            DockerCommandClass.COMPOSE_UP,
+            DockerCommandClass.COMPOSE_START,
+            DockerCommandClass.COMPOSE_STOP,
+            DockerCommandClass.COMPOSE_RESTART,
+            DockerCommandClass.COMPOSE_RUN,
+            DockerCommandClass.COMPOSE_RM,
+            DockerCommandClass.COMPOSE_DOWN,
+        }:
+            return f"{self.task_project}-{plan.service}-1" if plan.service else self.task_project
+        if plan.command_class in {
+            DockerCommandClass.DIRECT_RUN,
+            DockerCommandClass.DIRECT_CONTAINER_RM,
+            DockerCommandClass.NETWORK_CREATE,
+            DockerCommandClass.NETWORK_RM,
+            DockerCommandClass.VOLUME_CREATE,
+            DockerCommandClass.VOLUME_RM,
+        }:
+            pairs = _split_option_pairs(plan.argv[2:])
+            if "--name" in pairs and pairs["--name"]:
+                return pairs["--name"][0]
+            names = [token for token in plan.argv[2:] if not token.startswith("-")]
+            return names[-1] if names else None
+        if plan.command_class in {
+            DockerCommandClass.IMAGE_BUILD,
+            DockerCommandClass.IMAGE_LOAD,
+            DockerCommandClass.BUILDX_BUILD,
+            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
+            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
+        }:
+            return plan.argv[-1] if len(plan.argv) > 2 else None
+        return None
+
+    def _resolved_labels(
+        self, plan: DockerInvocationPlan, *, service: str | None = None
+    ) -> dict[str, str]:
+        labels = {
+            "com.docker.compose.project": self.task_project,
+            "com.avito-mayak.technical-id": self.technical_id,
+            "com.avito-mayak.owner": ALLOWED_OWNER,
+        }
+        service_name = service or plan.service
+        if service_name:
+            labels["com.docker.compose.service"] = service_name
+        if plan.command_class in {
+            DockerCommandClass.NETWORK_CREATE,
+            DockerCommandClass.NETWORK_RM,
+            DockerCommandClass.VOLUME_CREATE,
+            DockerCommandClass.VOLUME_RM,
+        }:
+            labels["com.avito-mayak.project-owned"] = "true"
+            labels["com.avito-mayak.environment-id"] = "avito-mayak-acceptance-local-01"
+            labels["com.avito-mayak.compose-project"] = "avito-mayak-acceptance"
+        return labels
+
+    def _inspect_resource(self, kind: str, ident: str) -> dict[str, Any] | None:
+        try:
+            query = ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident))
+        except ValueError:
+            return None
+        completed = self.run(query, stage=f"inspect-{kind}", capture_output=True)
+        if completed.returncode != 0:
+            return None
+        try:
+            value = json.loads(completed.stdout)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], dict):
+            return None
+        return value[0]
+
+    def _inspect_kind(self, kind: str, ident: str) -> dict[str, Any] | None:
+        return self._inspect_resource(kind, ident)
+
+    def _resource_digest(self, payload: Mapping[str, object]) -> str:
+        return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+
+    def _current_resolution(self, plan: DockerInvocationPlan) -> _ResolvedResourceDetails:
+        resource_name = self._resource_name(plan)
+        if plan.command_class == DockerCommandClass.DIRECT_RUN:
+            if resource_name == "apm-postgres":
+                ownership = "FOREIGN"
+                labels = self._resolved_labels(plan)
+                identity_hash = plan.target_identity_hash
+                topology = {
+                    "argv": list(plan.argv),
+                    "command_class": plan.command_class.value,
+                    "name": resource_name,
+                }
+                return _ResolvedResourceDetails(
+                    ownership=ownership,
+                    resource_kind=plan.target_kind,
+                    resource_name=resource_name,
+                    immutable_identity_hash=identity_hash,
+                    resource_name_hash=_sha256(resource_name),
+                    project_identity=self.task_project,
+                    technical_id=self.technical_id,
+                    owner_labels_digest=_sha256(
+                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                    ),
+                    service_identity=plan.service,
+                    driver=None,
+                    scope=None,
+                    topology_digest=self._resource_digest(topology),
+                    label_set_digest=_sha256(
+                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                    ),
+                    allowed_operations=(plan.command_class.value,),
+                )
+            record = self._inspect_kind("container", resource_name) if resource_name else None
+            labels = self._resolved_labels(plan)
+            if record is not None:
+                raw_labels = record.get("Config", {}).get("Labels", {})
+                if not isinstance(raw_labels, dict):
+                    raw_labels = {}
+                service = str(raw_labels.get("com.docker.compose.service", ""))
+                task_owned = (
+                    isinstance(resource_name, str)
+                    and raw_labels.get("com.docker.compose.project") == self.task_project
+                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
+                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
+                    and raw_labels.get("com.avito-mayak.environment-id")
+                    == "avito-mayak-acceptance-local-01"
+                    and raw_labels.get("com.avito-mayak.compose-project")
+                    == "avito-mayak-acceptance"
+                    and service in self.allowed_services
+                    and isinstance(record.get("Id") or record.get("ID") or "", str)
+                )
+                if task_owned:
+                    assert isinstance(resource_name, str)
+                    identity_hash = _sha256(str(record.get("Id") or record.get("ID") or ""))
+                    return _ResolvedResourceDetails(
+                        ownership="TASK_OWNED",
+                        resource_kind=plan.target_kind,
+                        resource_name=resource_name,
+                        immutable_identity_hash=identity_hash,
+                        resource_name_hash=_sha256(resource_name),
+                        project_identity=self.task_project,
+                        technical_id=self.technical_id,
+                        owner_labels_digest=_sha256(
+                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                        ),
+                        service_identity=service,
+                        driver=str(record.get("HostConfig", {}).get("NetworkMode"))
+                        if isinstance(record.get("HostConfig"), dict)
+                        else None,
+                        scope=str(record.get("State", {}).get("Status"))
+                        if isinstance(record.get("State"), dict)
+                        else None,
+                        topology_digest=self._resource_digest(
+                            {
+                                "id": identity_hash,
+                                "name": resource_name,
+                                "labels": raw_labels,
+                            }
+                        ),
+                        label_set_digest=_sha256(
+                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                        ),
+                        allowed_operations=(plan.command_class.value,),
+                    )
+            if resource_name and resource_name.startswith(self.task_project):
+                ownership = "TASK_OWNED"
+            else:
+                ownership = "UNRESOLVED"
+            return _ResolvedResourceDetails(
+                ownership=ownership,
+                resource_kind=plan.target_kind,
+                resource_name=resource_name,
+                immutable_identity_hash=plan.target_identity_hash,
+                resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
+                project_identity=self.task_project,
+                technical_id=self.technical_id,
+                owner_labels_digest=_sha256(
+                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                ),
+                service_identity=plan.service,
+                driver=None,
+                scope=None,
+                topology_digest=self._resource_digest(
+                    {
+                        "argv": list(plan.argv),
+                        "command_class": plan.command_class.value,
+                        "service": plan.service,
+                    }
+                ),
+                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
+                allowed_operations=(plan.command_class.value,),
             )
-        ownership = _target_ownership(plan)
-        if ownership != "TASK_OWNED":
-            raise PermissionError("foreign or unresolved target")
-        return DockerMutationRecord(
-            record_type="AUTHORIZATION",
-            authorization_sequence=0,
-            execution_result_sequence=None,
-            invocation_sequence=0,
-            stage=stage,
-            command_class=plan.command_class.value,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            authorization_basis="TASK_CREATION_PLAN",
-            authorization_outcome="AUTHORIZED",
-            target_ownership=ownership,
-            argv_fingerprint=_fingerprint(argv),
+        if plan.command_class == DockerCommandClass.DIRECT_CONTAINER_RM:
+            if resource_name == "apm-postgres":
+                ownership = "FOREIGN"
+                labels = self._resolved_labels(plan)
+                return _ResolvedResourceDetails(
+                    ownership=ownership,
+                    resource_kind=plan.target_kind,
+                    resource_name=resource_name,
+                    immutable_identity_hash=plan.target_identity_hash,
+                    resource_name_hash=_sha256(resource_name),
+                    project_identity=self.task_project,
+                    technical_id=self.technical_id,
+                    owner_labels_digest=_sha256(
+                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                    ),
+                    service_identity=None,
+                    driver=None,
+                    scope=None,
+                    topology_digest=self._resource_digest(
+                        {"argv": list(plan.argv), "command_class": plan.command_class.value}
+                    ),
+                    label_set_digest=_sha256(
+                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                    ),
+                    allowed_operations=(plan.command_class.value,),
+                )
+            record = self._inspect_kind("container", resource_name) if resource_name else None
+            if record is None:
+                ownership = (
+                    "UNRESOLVED"
+                    if isinstance(resource_name, str)
+                    and resource_name.startswith(self.task_project)
+                    else "FOREIGN"
+                )
+                return _ResolvedResourceDetails(
+                    ownership=ownership,
+                    resource_kind=plan.target_kind,
+                    resource_name=resource_name,
+                    immutable_identity_hash=plan.target_identity_hash,
+                    resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
+                    project_identity=self.task_project,
+                    technical_id=self.technical_id,
+                    owner_labels_digest=_sha256(
+                        json.dumps(
+                            self._resolved_labels(plan), sort_keys=True, separators=(",", ":")
+                        )
+                    ),
+                    service_identity=None,
+                    driver=None,
+                    scope=None,
+                    topology_digest=self._resource_digest(
+                        {"argv": list(plan.argv), "command_class": plan.command_class.value}
+                    ),
+                    label_set_digest=_sha256(
+                        json.dumps(
+                            self._resolved_labels(plan), sort_keys=True, separators=(",", ":")
+                        )
+                    ),
+                    allowed_operations=(plan.command_class.value,),
+                )
+            raw_labels = record.get("Config", {}).get("Labels", {})
+            if not isinstance(raw_labels, dict):
+                raw_labels = {}
+            service = str(raw_labels.get("com.docker.compose.service", ""))
+            task_owned = (
+                isinstance(resource_name, str)
+                and raw_labels.get("com.docker.compose.project") == self.task_project
+                and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
+                and raw_labels.get("com.avito-mayak.project-owned") == "true"
+                and raw_labels.get("com.avito-mayak.environment-id")
+                == "avito-mayak-acceptance-local-01"
+                and raw_labels.get("com.avito-mayak.compose-project")
+                == "avito-mayak-acceptance"
+                and service in self.allowed_services
+                and isinstance(record.get("Id") or record.get("ID") or "", str)
+            )
+            ownership = "TASK_OWNED" if task_owned else "UNRESOLVED"
+            identity = str(record.get("Id") or record.get("ID") or plan.target_identity_hash)
+            return _ResolvedResourceDetails(
+                ownership=ownership,
+                resource_kind=plan.target_kind,
+                resource_name=resource_name,
+                immutable_identity_hash=_sha256(identity),
+                resource_name_hash=_sha256(resource_name or identity),
+                project_identity=self.task_project,
+                technical_id=self.technical_id,
+                owner_labels_digest=_sha256(
+                    json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                ),
+                service_identity=service or None,
+                driver=str(record.get("HostConfig", {}).get("NetworkMode"))
+                if isinstance(record.get("HostConfig"), dict)
+                else None,
+                scope=str(record.get("State", {}).get("Status"))
+                if isinstance(record.get("State"), dict)
+                else None,
+                topology_digest=self._resource_digest(
+                    {"id": identity, "name": resource_name, "labels": raw_labels}
+                ),
+                label_set_digest=_sha256(
+                    json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                ),
+                allowed_operations=(plan.command_class.value,),
+            )
+        if plan.command_class in {
+            DockerCommandClass.COMPOSE_CREATE,
+            DockerCommandClass.COMPOSE_UP,
+            DockerCommandClass.COMPOSE_START,
+            DockerCommandClass.COMPOSE_STOP,
+            DockerCommandClass.COMPOSE_RESTART,
+            DockerCommandClass.COMPOSE_RUN,
+            DockerCommandClass.COMPOSE_RM,
+            DockerCommandClass.COMPOSE_DOWN,
+        }:
+            labels = self._resolved_labels(plan, service=plan.service)
+            record = self._inspect_kind("container", resource_name) if resource_name else None
+            if plan.service == "apm-postgres":
+                ownership = "FOREIGN"
+            elif (
+                plan.command_class == DockerCommandClass.COMPOSE_DOWN
+                and resource_name == self.task_project
+            ):
+                ownership = "TASK_OWNED"
+            elif record is not None:
+                raw_labels = record.get("Config", {}).get("Labels", {})
+                if not isinstance(raw_labels, dict):
+                    raw_labels = {}
+                exact = (
+                    raw_labels.get("com.docker.compose.project") == self.task_project
+                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
+                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
+                    and raw_labels.get("com.avito-mayak.environment-id")
+                    == "avito-mayak-acceptance-local-01"
+                    and raw_labels.get("com.avito-mayak.compose-project")
+                    == "avito-mayak-acceptance"
+                    and raw_labels.get("com.docker.compose.service") == plan.service
+                    and resource_name == f"{self.task_project}-{plan.service}-1"
+                )
+                ownership = "TASK_OWNED" if exact else "UNRESOLVED"
+                labels = raw_labels
+            elif plan.command_class in {
+                DockerCommandClass.COMPOSE_CREATE,
+                DockerCommandClass.COMPOSE_UP,
+                DockerCommandClass.COMPOSE_START,
+                DockerCommandClass.COMPOSE_STOP,
+                DockerCommandClass.COMPOSE_RESTART,
+                DockerCommandClass.COMPOSE_RUN,
+                DockerCommandClass.COMPOSE_RM,
+                DockerCommandClass.COMPOSE_DOWN,
+            }:
+                ownership = "TASK_OWNED"
+            else:
+                ownership = "UNRESOLVED"
+            identity = (
+                str(record.get("Id") or record.get("ID") or "")
+                if record is not None
+                else plan.target_identity_hash
+            )
+            return _ResolvedResourceDetails(
+                ownership=ownership,
+                resource_kind=plan.target_kind,
+                resource_name=resource_name,
+                immutable_identity_hash=_sha256(identity or plan.target_identity_hash),
+                resource_name_hash=_sha256(resource_name or identity or plan.target_identity_hash),
+                project_identity=self.task_project,
+                technical_id=self.technical_id,
+                owner_labels_digest=_sha256(
+                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                ),
+                service_identity=plan.service,
+                driver=None,
+                scope=plan.profile,
+                topology_digest=self._resource_digest(
+                    {
+                        "argv": list(plan.argv),
+                        "command": plan.command,
+                        "service": plan.service,
+                        "compose_file": plan.compose_file,
+                    }
+                ),
+                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
+                allowed_operations=(plan.command_class.value,),
+            )
+        if plan.command_class in {
+            DockerCommandClass.NETWORK_CREATE,
+            DockerCommandClass.NETWORK_RM,
+        }:
+            labels = self._resolved_labels(plan)
+            record = self._inspect_kind("network", resource_name) if resource_name else None
+            if record is not None:
+                raw_labels = record.get("Labels", {})
+                if not isinstance(raw_labels, dict):
+                    raw_labels = {}
+                exact = (
+                    raw_labels.get("com.docker.compose.project") == self.task_project
+                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
+                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
+                    and raw_labels.get("com.avito-mayak.environment-id")
+                    == "avito-mayak-acceptance-local-01"
+                    and raw_labels.get("com.avito-mayak.compose-project")
+                    == "avito-mayak-acceptance"
+                    and isinstance(record.get("Driver"), str)
+                    and isinstance(record.get("Scope"), str)
+                    and isinstance(record.get("Internal"), bool)
+                    and isinstance(record.get("Attachable"), bool)
+                    and isinstance(record.get("Ingress"), bool)
+                    and resource_name == f"{self.task_project}_mayak-internal"
+                )
+                if exact:
+                    identity = str(record.get("Id") or record.get("ID") or "")
+                    return _ResolvedResourceDetails(
+                        ownership="TASK_OWNED",
+                        resource_kind=plan.target_kind,
+                        resource_name=resource_name,
+                        immutable_identity_hash=_sha256(identity or plan.target_identity_hash),
+                        resource_name_hash=_sha256(resource_name or identity),
+                        project_identity=self.task_project,
+                        technical_id=self.technical_id,
+                        owner_labels_digest=_sha256(
+                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                        ),
+                        service_identity=None,
+                        driver=str(record.get("Driver")),
+                        scope=str(record.get("Scope")),
+                        topology_digest=self._resource_digest(
+                            {
+                                "driver": record.get("Driver"),
+                                "scope": record.get("Scope"),
+                                "internal": record.get("Internal"),
+                                "attachable": record.get("Attachable"),
+                                "ingress": record.get("Ingress"),
+                                "name": resource_name,
+                        }
+                    ),
+                    label_set_digest=_sha256(
+                        json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                    ),
+                    allowed_operations=(plan.command_class.value,),
+                )
+                labels = raw_labels
+            if plan.command_class == DockerCommandClass.NETWORK_CREATE and resource_name == (
+                f"{self.task_project}_mayak-internal"
+            ):
+                ownership = "TASK_OWNED"
+            elif resource_name and resource_name.startswith(self.task_project):
+                ownership = "UNRESOLVED"
+            else:
+                ownership = "FOREIGN"
+            return _ResolvedResourceDetails(
+                ownership=ownership,
+                resource_kind=plan.target_kind,
+                resource_name=resource_name,
+                immutable_identity_hash=plan.target_identity_hash,
+                resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
+                project_identity=self.task_project,
+                technical_id=self.technical_id,
+                owner_labels_digest=_sha256(
+                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                ),
+                service_identity=None,
+                driver=None,
+                scope=None,
+                topology_digest=self._resource_digest(
+                    {
+                        "argv": list(plan.argv),
+                        "command_class": plan.command_class.value,
+                        "name": resource_name,
+                    }
+                ),
+                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
+                allowed_operations=(plan.command_class.value,),
+            )
+        if plan.command_class in {
+            DockerCommandClass.VOLUME_CREATE,
+            DockerCommandClass.VOLUME_RM,
+        }:
+            labels = self._resolved_labels(plan)
+            record = self._inspect_kind("volume", resource_name) if resource_name else None
+            if record is not None:
+                raw_labels = record.get("Labels", {})
+                if not isinstance(raw_labels, dict):
+                    raw_labels = {}
+                exact = (
+                    raw_labels.get("com.docker.compose.project") == self.task_project
+                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
+                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
+                    and raw_labels.get("com.avito-mayak.environment-id")
+                    == "avito-mayak-acceptance-local-01"
+                    and raw_labels.get("com.avito-mayak.compose-project")
+                    == "avito-mayak-acceptance"
+                    and isinstance(record.get("Driver"), str)
+                    and isinstance(record.get("Scope"), str)
+                )
+                if exact:
+                    identity = str(record.get("Id") or record.get("ID") or "")
+                    return _ResolvedResourceDetails(
+                        ownership="TASK_OWNED",
+                        resource_kind=plan.target_kind,
+                        resource_name=resource_name,
+                        immutable_identity_hash=_sha256(identity or plan.target_identity_hash),
+                        resource_name_hash=_sha256(resource_name or identity),
+                        project_identity=self.task_project,
+                        technical_id=self.technical_id,
+                        owner_labels_digest=_sha256(
+                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                        ),
+                        service_identity=None,
+                        driver=str(record.get("Driver")),
+                        scope=str(record.get("Scope")),
+                        topology_digest=self._resource_digest(
+                            {
+                                "driver": record.get("Driver"),
+                                "scope": record.get("Scope"),
+                                "name": resource_name,
+                            }
+                        ),
+                        label_set_digest=_sha256(
+                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
+                        ),
+                        allowed_operations=(plan.command_class.value,),
+                    )
+                labels = raw_labels
+            if plan.command_class == DockerCommandClass.VOLUME_CREATE and resource_name == (
+                f"{self.task_project}_postgres-data"
+            ):
+                ownership = "TASK_OWNED"
+            elif resource_name and resource_name.startswith(self.task_project):
+                ownership = "UNRESOLVED"
+            else:
+                ownership = "FOREIGN"
+            return _ResolvedResourceDetails(
+                ownership=ownership,
+                resource_kind=plan.target_kind,
+                resource_name=resource_name,
+                immutable_identity_hash=plan.target_identity_hash,
+                resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
+                project_identity=self.task_project,
+                technical_id=self.technical_id,
+                owner_labels_digest=_sha256(
+                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                ),
+                service_identity=None,
+                driver=None,
+                scope=None,
+                topology_digest=self._resource_digest(
+                    {
+                        "argv": list(plan.argv),
+                        "command_class": plan.command_class.value,
+                        "name": resource_name,
+                    }
+                ),
+                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
+                allowed_operations=(plan.command_class.value,),
+            )
+        labels = self._resolved_labels(plan)
+        ownership = "TASK_OWNED" if plan.is_mutation else "FOREIGN"
+        if plan.command_class in {
+            DockerCommandClass.IMAGE_BUILD,
+            DockerCommandClass.IMAGE_LOAD,
+            DockerCommandClass.BUILDX_BUILD,
+            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
+            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
+        }:
+            identity = plan.target_identity_hash
+            builder_topology: dict[str, object] = {
+                "argv": list(plan.argv),
+                "command_class": plan.command_class.value,
+                "compose_file": plan.compose_file,
+                "project_name": plan.project_name,
+                "profile": plan.profile,
+            }
+            return _ResolvedResourceDetails(
+                ownership=ownership,
+                resource_kind=plan.target_kind,
+                resource_name=resource_name,
+                immutable_identity_hash=identity,
+                resource_name_hash=_sha256(resource_name or identity),
+                project_identity=self.task_project,
+                technical_id=self.technical_id,
+                owner_labels_digest=_sha256(
+                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
+                ),
+                service_identity=plan.service,
+                driver=plan.command_class.value,
+                scope=self.profile,
+                topology_digest=self._resource_digest(builder_topology),
+                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
+                allowed_operations=(plan.command_class.value,),
+            )
+        return _ResolvedResourceDetails(
+            ownership=ownership,
+            resource_kind=plan.target_kind,
+            resource_name=resource_name,
+            immutable_identity_hash=plan.target_identity_hash,
+            resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
+            project_identity=self.task_project,
+            technical_id=self.technical_id,
+            owner_labels_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
+            service_identity=plan.service,
+            driver=None,
+            scope=None,
+            topology_digest=self._resource_digest({"argv": list(plan.argv)}),
+            label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
+            allowed_operations=(plan.command_class.value,),
         )
+
+    def _authorization_basis(self, plan: DockerInvocationPlan) -> str:
+        if plan.command_class in {
+            DockerCommandClass.COMPOSE_CREATE,
+            DockerCommandClass.COMPOSE_UP,
+            DockerCommandClass.COMPOSE_START,
+            DockerCommandClass.COMPOSE_STOP,
+            DockerCommandClass.COMPOSE_RESTART,
+            DockerCommandClass.COMPOSE_RUN,
+            DockerCommandClass.COMPOSE_RM,
+            DockerCommandClass.COMPOSE_DOWN,
+            DockerCommandClass.DIRECT_RUN,
+            DockerCommandClass.DIRECT_CONTAINER_RM,
+            DockerCommandClass.NETWORK_CREATE,
+            DockerCommandClass.NETWORK_RM,
+            DockerCommandClass.VOLUME_CREATE,
+            DockerCommandClass.VOLUME_RM,
+            DockerCommandClass.IMAGE_BUILD,
+            DockerCommandClass.IMAGE_LOAD,
+            DockerCommandClass.BUILDX_BUILD,
+            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
+            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
+        }:
+            return "TASK_CREATION_PLAN"
+        return "READ_ONLY_INSPECT"
 
     def _record_audit(
         self, plan: DockerInvocationPlan, *, stage: str
@@ -810,17 +1742,81 @@ class MutationAuthority:
             is_mutation=plan.is_mutation,
             gateway_instance_id=self.gateway_instance_id,
         )
-        self.invocation_audit.append(record)
+        self._invocation_audit.append(record)
         return record
 
-    def _authorize(
-        self, plan: DockerInvocationPlan, *, stage: str, audit: DockerInvocationAuditRecord
-    ) -> DockerMutationRecord | None:
-        if not plan.is_mutation:
-            return None
-        ownership = _target_ownership(plan)
-        if ownership != "TASK_OWNED":
-            raise PermissionError("foreign or unresolved target")
+    def _issue_capability(
+        self,
+        plan: DockerInvocationPlan,
+        *,
+        details: _ResolvedResourceDetails,
+        audit: DockerInvocationAuditRecord,
+        authorization: DockerMutationRecord,
+    ) -> ResolvedTaskResourceCapability:
+        capability = ResolvedTaskResourceCapability(
+            gateway_instance_id=self.gateway_instance_id,
+            issuance_id=uuid.uuid4().hex,
+            seal=uuid.uuid4().hex,
+            resource_kind=details.resource_kind,
+            immutable_identity_hash=details.immutable_identity_hash,
+            resource_name_hash=details.resource_name_hash,
+            project_identity=details.project_identity,
+            technical_id=details.technical_id,
+            owner_labels_digest=details.owner_labels_digest,
+            service_identity=details.service_identity,
+            driver=details.driver,
+            scope=details.scope,
+            topology_digest=details.topology_digest,
+            label_set_digest=details.label_set_digest,
+            allowed_operations=details.allowed_operations,
+        )
+        self._issued_capabilities[capability.issuance_id] = _CapabilityIssuance(
+            capability=capability,
+            authorization=authorization,
+            audit=audit,
+        )
+        return capability
+
+    def _validate_capability(
+        self, capability: ResolvedTaskResourceCapability, plan: DockerInvocationPlan
+    ) -> _CapabilityIssuance:
+        if capability.gateway_instance_id != self.gateway_instance_id:
+            raise PermissionError("foreign capability gateway")
+        issuance = self._issued_capabilities.get(capability.issuance_id)
+        if issuance is None or issuance.capability is not capability:
+            raise PermissionError("unknown capability issuance")
+        if capability.allowed_operations != (plan.command_class.value,):
+            raise PermissionError("capability operation mismatch")
+        details = self._current_resolution(plan)
+        expected = {
+            "resource_kind": details.resource_kind,
+            "immutable_identity_hash": details.immutable_identity_hash,
+            "resource_name_hash": details.resource_name_hash,
+            "project_identity": details.project_identity,
+            "technical_id": details.technical_id,
+            "owner_labels_digest": details.owner_labels_digest,
+            "service_identity": details.service_identity,
+            "driver": details.driver,
+            "scope": details.scope,
+            "topology_digest": details.topology_digest,
+            "label_set_digest": details.label_set_digest,
+        }
+        for key, value in expected.items():
+            if getattr(capability, key) != value:
+                raise PermissionError("stale or mismatched capability")
+        if details.ownership != "TASK_OWNED":
+            raise PermissionError("capability no longer authorized")
+        return issuance
+
+    def _record_authorization(
+        self,
+        *,
+        plan: DockerInvocationPlan,
+        stage: str,
+        audit: DockerInvocationAuditRecord,
+        details: _ResolvedResourceDetails,
+        outcome: str,
+    ) -> DockerMutationRecord:
         self._authorization_sequence += 1
         record = DockerMutationRecord(
             record_type="AUTHORIZATION",
@@ -830,37 +1826,53 @@ class MutationAuthority:
             stage=stage,
             command_class=plan.command_class.value,
             target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            authorization_basis="TASK_CREATION_PLAN"
-            if plan.command_class
-            in {
-                DockerCommandClass.COMPOSE_CREATE,
-                DockerCommandClass.COMPOSE_UP,
-                DockerCommandClass.COMPOSE_START,
-                DockerCommandClass.COMPOSE_STOP,
-                DockerCommandClass.COMPOSE_RESTART,
-                DockerCommandClass.COMPOSE_RUN,
-                DockerCommandClass.COMPOSE_RM,
-                DockerCommandClass.COMPOSE_DOWN,
-                DockerCommandClass.DIRECT_RUN,
-                DockerCommandClass.DIRECT_CONTAINER_RM,
-                DockerCommandClass.NETWORK_CREATE,
-                DockerCommandClass.NETWORK_RM,
-                DockerCommandClass.VOLUME_CREATE,
-                DockerCommandClass.VOLUME_RM,
-                DockerCommandClass.IMAGE_BUILD,
-                DockerCommandClass.IMAGE_LOAD,
-                DockerCommandClass.BUILDX_BUILD,
-                DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
-                DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
-            }
-            else "READ_ONLY_INSPECT",
-            authorization_outcome="AUTHORIZED",
-            target_ownership=ownership,
+            target_identity_hash=details.immutable_identity_hash,
+            authorization_basis=self._authorization_basis(plan),
+            authorization_outcome=outcome,
+            execution_attempted=False,
+            execution_completed=False,
+            target_ownership=details.ownership,
             argv_fingerprint=audit.argv_fingerprint,
         )
-        self.ledger.append(record)
+        self._ledger.append(record)
         return record
+
+    def _resolve_and_authorize(
+        self, plan: DockerInvocationPlan, *, stage: str
+    ) -> tuple[DockerInvocationAuditRecord, DockerMutationRecord, ResolvedTaskResourceCapability]:
+        audit = self._record_audit(plan, stage=stage)
+        details = self._current_resolution(plan)
+        if details.ownership != "TASK_OWNED":
+            authorization = self._record_authorization(
+                plan=plan,
+                stage=stage,
+                audit=audit,
+                details=details,
+                outcome="REJECTED",
+            )
+            raise PermissionError("foreign or unresolved target")
+        authorization = self._record_authorization(
+            plan=plan,
+            stage=stage,
+            audit=audit,
+            details=details,
+            outcome="AUTHORIZED",
+        )
+        capability = self._issue_capability(
+            plan,
+            details=details,
+            audit=audit,
+            authorization=authorization,
+        )
+        return audit, authorization, capability
+
+    def authorize(
+        self, plan: DockerInvocationPlan, *, stage: str
+    ) -> ResolvedTaskResourceCapability:
+        if not plan.is_mutation:
+            raise ValueError("read-only command is not a mutation")
+        _, _, capability = self._resolve_and_authorize(plan, stage=stage)
+        return capability
 
     def _record_result(
         self,
@@ -891,139 +1903,103 @@ class MutationAuthority:
             target_ownership=authorization.target_ownership,
             argv_fingerprint=authorization.argv_fingerprint,
         )
-        self.ledger.append(record)
+        self._ledger.append(record)
         return record
-
-    def append_result(
-        self,
-        authorization: DockerMutationRecord,
-        *,
-        exit_code: int | None,
-        completed: bool,
-        timed_out: bool,
-    ) -> DockerMutationRecord:
-        return self._record_result(
-            authorization,
-            exit_code=exit_code,
-            completed=completed,
-            timed_out=timed_out,
-            failure_classification=None,
-        )
 
     def execute(
         self,
-        argv: tuple[str, ...],
+        plan: DockerInvocationPlan,
         *,
         stage: str,
-        runner: Any,
-        target_kind: str | None = None,
-    ) -> tuple[int, bool, bool]:
-        plan = _direct_plan(argv)
-        if target_kind is not None:
-            plan = DockerInvocationPlan(
-                argv=plan.argv,
-                command_class=plan.command_class,
-                target_kind=target_kind,
-                target_identity_hash=plan.target_identity_hash,
-                is_mutation=plan.is_mutation,
-                compose_file=plan.compose_file,
-                project_name=plan.project_name,
-                profile=plan.profile,
-                command=plan.command,
-                service=plan.service,
-                exact_options=plan.exact_options,
-            )
-        audit = self._record_audit(plan, stage=stage)
-        authorization = self._authorize(plan, stage=stage, audit=audit)
-        if authorization is None:
-            result = runner(argv)
-            code, completed, timed_out = result
-            return code, completed, timed_out
-        try:
-            code, completed, timed_out = runner(argv)
-        except TimeoutError:
-            self._record_result(
-                authorization,
-                exit_code=None,
-                completed=False,
-                timed_out=True,
-                failure_classification="TimeoutError",
-            )
-            raise
-        except OSError as exc:
-            self._record_result(
-                authorization,
-                exit_code=None,
-                completed=False,
-                timed_out=False,
-                failure_classification=type(exc).__name__,
-            )
-            raise
-        else:
-            self._record_result(
-                authorization,
-                exit_code=code,
-                completed=completed,
-                timed_out=timed_out,
-                failure_classification=None,
-            )
-            return code, completed, timed_out
-
-    def run(
-        self,
-        argv: Sequence[str],
-        *,
-        stage: str,
+        capability: ResolvedTaskResourceCapability | None = None,
         stdin: Any = None,
         stdout: Any = None,
         stderr: Any = None,
-        env: Mapping[str, str] | None = None,
-        cwd: str | Path | None = None,
         timeout: float | None = None,
         check: bool = False,
         text: bool = False,
         capture_output: bool = False,
     ) -> subprocess.CompletedProcess[Any]:
-        plan = _direct_plan(tuple(argv))
-        audit = self._record_audit(plan, stage=stage)
         if not plan.is_mutation:
-            return self._run_subprocess(
-                plan.argv,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                env=env,
-                cwd=cwd,
-                timeout=timeout,
-                check=check,
-                text=text,
-                capture_output=capture_output,
-            )
-        authorization = self._authorize(plan, stage=stage, audit=audit)
-        if authorization is None:
-            raise PermissionError("mutation authorization missing")
+            raise ValueError("read-only command is not a mutation")
+        if capability is None:
+            capability = self.authorize(plan, stage=stage)
+        else:
+            audit = self._record_audit(plan, stage=stage)
+            details = self._current_resolution(plan)
+            try:
+                issuance = self._validate_capability(capability, plan)
+            except PermissionError:
+                self._record_authorization(
+                    plan=plan,
+                    stage=stage,
+                    audit=audit,
+                    details=details,
+                    outcome="REJECTED",
+                )
+                raise
+            authorization = issuance.authorization
+            # The validation above proves the capability still matches the current resource.
+            try:
+                completed = self._run_subprocess(
+                    plan.argv,
+                    stdin=stdin,
+                    stdout=stdout,
+                    stderr=stderr,
+                    timeout=timeout,
+                    check=check,
+                    text=text,
+                    capture_output=capture_output,
+                )
+            except subprocess.TimeoutExpired:
+                self._record_result(
+                    authorization,
+                    exit_code=None,
+                    completed=False,
+                    timed_out=True,
+                    failure_classification="TimeoutExpired",
+                )
+                raise
+            except OSError as exc:
+                self._record_result(
+                    authorization,
+                    exit_code=None,
+                    completed=False,
+                    timed_out=False,
+                    failure_classification=type(exc).__name__,
+                )
+                raise
+            except subprocess.CalledProcessError as exc:
+                self._record_result(
+                    authorization,
+                    exit_code=exc.returncode,
+                    completed=True,
+                    timed_out=False,
+                    failure_classification=type(exc).__name__,
+                )
+                raise
+            else:
+                self._record_result(
+                    authorization,
+                    exit_code=completed.returncode,
+                    completed=True,
+                    timed_out=False,
+                    failure_classification=None,
+                )
+                return completed
+        issuance = self._issued_capabilities[capability.issuance_id]
+        authorization = issuance.authorization
         try:
             completed = self._run_subprocess(
                 plan.argv,
                 stdin=stdin,
                 stdout=stdout,
                 stderr=stderr,
-                env=env,
-                cwd=cwd,
                 timeout=timeout,
                 check=check,
                 text=text,
                 capture_output=capture_output,
             )
-        except subprocess.CalledProcessError as exc:
-            self._record_result(
-                authorization,
-                exit_code=exc.returncode,
-                completed=True,
-                timed_out=False,
-                failure_classification=type(exc).__name__,
-            )
-            raise
         except subprocess.TimeoutExpired:
             self._record_result(
                 authorization,
@@ -1042,6 +2018,15 @@ class MutationAuthority:
                 failure_classification=type(exc).__name__,
             )
             raise
+        except subprocess.CalledProcessError as exc:
+            self._record_result(
+                authorization,
+                exit_code=exc.returncode,
+                completed=True,
+                timed_out=False,
+                failure_classification=type(exc).__name__,
+            )
+            raise
         else:
             self._record_result(
                 authorization,
@@ -1052,15 +2037,43 @@ class MutationAuthority:
             )
             return completed
 
+    def run(
+        self,
+        query: ReadOnlyDockerQuery,
+        *,
+        stage: str,
+        stdin: Any = None,
+        stdout: Any = None,
+        stderr: Any = None,
+        timeout: float | None = None,
+        check: bool = False,
+        text: bool = False,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[Any]:
+        if not isinstance(query, ReadOnlyDockerQuery):
+            raise TypeError("read-only Docker queries must use ReadOnlyDockerQuery")
+        self._record_audit(query, stage=stage)
+        if query.is_mutation:
+            raise ValueError("query is not read-only")
+        return self._run_subprocess(
+            query.argv,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            timeout=timeout,
+            check=check,
+            text=text,
+            capture_output=capture_output,
+        )
+
     def _run_subprocess(
         self,
         argv: Sequence[str],
         *,
+        env: Mapping[str, str] | None = None,
         stdin: Any = None,
         stdout: Any = None,
         stderr: Any = None,
-        env: Mapping[str, str] | None = None,
-        cwd: str | Path | None = None,
         timeout: float | None = None,
         check: bool = False,
         text: bool = False,
@@ -1070,43 +2083,33 @@ class MutationAuthority:
         try:
             return subprocess.run(
                 list(argv),
+                env=dict(env) if env is not None else self._default_env,
                 stdin=stdin,
                 stdout=stdout,
                 stderr=stderr,
-                env=dict(env) if env is not None else None,
-                cwd=str(cwd) if cwd is not None else None,
                 timeout=timeout,
                 check=check,
                 text=text,
                 capture_output=capture_output,
+                shell=False,
             )
         finally:
             _GATEWAY_TOKEN.reset(token)
 
     def validate_complete(self, executed_mutations: int | None = None) -> None:
-        auth = [item for item in self.ledger if item.record_type == "AUTHORIZATION"]
-        results = [item for item in self.ledger if item.record_type == "RESULT"]
-        if not self.ledger and executed_mutations:
-            raise ValueError("empty mutation ledger")
-        if executed_mutations is not None and executed_mutations != len(auth):
-            raise ValueError("mutation count mismatch")
-        if self.ledger and not auth:
-            raise ValueError("missing authorization records")
-        if len(auth) != len(results):
-            raise ValueError("mutation ledger incomplete")
-        mutation_audit = [item for item in self.invocation_audit if item.is_mutation]
-        if len(mutation_audit) != len(auth):
-            raise ValueError("mutation audit mismatch")
-        if any(
-            auth_item.argv_fingerprint != audit_item.argv_fingerprint
-            or result_item.argv_fingerprint != audit_item.argv_fingerprint
-            for auth_item, result_item, audit_item in zip(auth, results, mutation_audit)
+        auth = [item for item in self._ledger if item.record_type == "AUTHORIZATION"]
+        results = [item for item in self._ledger if item.record_type == "RESULT"]
+        mutation_audit = [item for item in self._invocation_audit if item.is_mutation]
+        if executed_mutations is not None and executed_mutations != len(
+            [item for item in auth if item.authorization_outcome == "AUTHORIZED"]
         ):
-            raise ValueError("invocation hash mismatch")
-        if len(self.invocation_audit) != len(
-            [item for item in self.invocation_audit if item.is_mutation]
-        ) + len([item for item in self.invocation_audit if not item.is_mutation]):
-            raise ValueError("invocation audit corrupted")
+            raise ValueError("mutation count mismatch")
+        if len(auth) != len(mutation_audit):
+            raise ValueError("mutation audit mismatch")
+        if len([item for item in auth if item.authorization_outcome == "AUTHORIZED"]) != len(
+            results
+        ):
+            raise ValueError("mutation ledger incomplete")
         if sorted(item.authorization_sequence for item in auth) != list(range(1, len(auth) + 1)):
             raise ValueError("authorization sequence gap")
         if sorted(
@@ -1115,22 +2118,38 @@ class MutationAuthority:
             if item.execution_result_sequence is not None
         ) != list(range(1, len(results) + 1)):
             raise ValueError("result sequence gap")
-        if any(
-            self.ledger[index].record_type != "AUTHORIZATION"
-            or self.ledger[index + 1].record_type != "RESULT"
-            or self.ledger[index].authorization_sequence
-            != self.ledger[index + 1].authorization_sequence
-            or self.ledger[index].invocation_sequence != self.ledger[index + 1].invocation_sequence
-            or self.ledger[index].stage != self.ledger[index + 1].stage
-            or self.ledger[index].command_class != self.ledger[index + 1].command_class
-            or self.ledger[index].target_kind != self.ledger[index + 1].target_kind
-            or self.ledger[index].target_identity_hash
-            != self.ledger[index + 1].target_identity_hash
-            for index in range(0, len(self.ledger), 2)
-        ):
-            raise ValueError("invocation bijection mismatch")
-        if any(item.authorization_outcome != "AUTHORIZED" for item in auth):
-            raise ValueError("authorization rejected")
+        if len(self._ledger) != len(auth) + len(results):
+            raise ValueError("mutation ledger mismatch")
+        if len(self._ledger) % 2 != 0:
+            raise ValueError("mutation ledger incomplete")
+        audit_by_invocation = {item.invocation_sequence: item for item in mutation_audit}
+        seen_results: set[int] = set()
+        for index in range(0, len(self._ledger), 2):
+            auth_item = self._ledger[index]
+            result_item = self._ledger[index + 1]
+            if auth_item.record_type != "AUTHORIZATION" or result_item.record_type != "RESULT":
+                raise ValueError("invocation bijection mismatch")
+            audit_item = audit_by_invocation.get(auth_item.invocation_sequence)
+            if audit_item is None:
+                raise ValueError("missing mutation audit")
+            if audit_item.argv_fingerprint != auth_item.argv_fingerprint:
+                raise ValueError("invocation hash mismatch")
+            if auth_item.authorization_outcome != "AUTHORIZED":
+                raise ValueError("authorization rejected")
+            if (
+                result_item.authorization_sequence != auth_item.authorization_sequence
+                or result_item.invocation_sequence != auth_item.invocation_sequence
+                or result_item.stage != auth_item.stage
+                or result_item.command_class != auth_item.command_class
+                or result_item.target_kind != auth_item.target_kind
+                or result_item.target_identity_hash != auth_item.target_identity_hash
+            ):
+                raise ValueError("invocation bijection mismatch")
+            if result_item.execution_result_sequence in seen_results:
+                raise ValueError("duplicate result sequence")
+            seen_results.add(result_item.execution_result_sequence or 0)
+        if len(results) != len(seen_results):
+            raise ValueError("result sequence reuse")
         if any(item.execution_attempted is not True for item in results):
             raise ValueError("result missing execution flag")
         if any(
@@ -1140,6 +2159,10 @@ class MutationAuthority:
             for item in results
         ):
             raise ValueError("result without authorization")
+        if len(self._invocation_audit) != len(auth) + len(
+            [item for item in self._invocation_audit if not item.is_mutation]
+        ):
+            raise ValueError("invocation audit corrupted")
 
 
 def gateway_token_active() -> bool:

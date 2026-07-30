@@ -1,10 +1,12 @@
 import ast
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from scripts.runtime import prepare_file_secrets
+from scripts.runtime import safe_compose_bootstrap as scb
 from scripts.runtime.rf09_public_bootstrap_adapter import (
     INVARIANT_CODES,
     classify_statement,
@@ -124,6 +126,24 @@ def test_no_placeholder_authority_or_fallbacks() -> None:
     assert "local-contract" not in text
     assert 'text or "OK"' not in text
     assert "ignore_errors=True" not in text
+
+
+def test_active_json_log_selects_newest_task_owned_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_root = tmp_path / "postgres-jsonlog"
+    log_dir = log_root / "run-1"
+    log_dir.mkdir(parents=True)
+    older = log_dir / "postgresql.json"
+    newer = log_dir / "postgresql.json.json"
+    older.write_text("old\n", encoding="utf-8")
+    newer.write_text("new\n", encoding="utf-8")
+    older.chmod(0o600)
+    newer.chmod(0o600)
+    os.utime(older, ns=(1_000_000_000, 1_000_000_000))
+    os.utime(newer, ns=(2_000_000_000, 2_000_000_000))
+    monkeypatch.setattr(scb, "JSON_LOG_ROOT", log_root)
+    assert scb._active_json_log(log_dir) == newer
 
 
 def test_every_stage_has_distinct_operation_parser_and_oracle() -> None:

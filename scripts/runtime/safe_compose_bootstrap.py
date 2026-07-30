@@ -20,14 +20,20 @@ import stat
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Callable, Final, Mapping, Protocol, cast
+from typing import Any, Callable, Final, Mapping, Protocol, cast
 
 from scripts.runtime import prepare_file_secrets as secrets
-from scripts.runtime.rf08_docker_authority import DockerMutationRecord, MutationAuthority
+from scripts.runtime.rf08_docker_authority import (
+    DockerMutationRecord,
+    MutationAuthority,
+    ReadOnlyDockerQuery,
+    _direct_plan,
+)
 from scripts.runtime.rf08_docker_context import (
     COPY_PLAN,
     EXPECTED_BASE_SHA,
@@ -45,7 +51,7 @@ from scripts.runtime.rf08_foreign_snapshot import (
 )
 
 TASK_ID: Final = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
-EXPECTED_TASK_BASE: Final = "7467ba2092d9e83fba52d402cf78556912d10a83"
+EXPECTED_TASK_BASE: Final = "510da974aabcc3f76b1e0cbca43bb4eceefb3faa"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
@@ -126,6 +132,18 @@ REQUIRED_STAGES: Final[tuple[str, ...]] = (
     "POST_RECOVERY_DATABASE_AND_APPLICATION_PROOF",
     "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL",
     "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION",
+)
+
+REPLAY_REQUIRED_ABSENT_NAMES: Final[tuple[str, ...]] = (
+    f"{TASK_PROJECT}-image-probe-1",
+    f"{TASK_PROJECT}-mayak-api-1",
+    f"{TASK_PROJECT}-mayak-worker-1",
+    f"{TASK_PROJECT}-mayak-scheduler-1",
+    f"{TASK_PROJECT}-mayak-postgres-1",
+    f"{TASK_PROJECT}-mayak-db-bootstrap-1",
+    f"{TASK_PROJECT}-mayak-migrate-1",
+    f"{TASK_PROJECT}_mayak-internal",
+    f"{TASK_PROJECT}_postgres-data",
 )
 
 APPLICATION_QUERY: Final = "import pathlib,psycopg; p=pathlib.Path('/run/secrets/mayak_database_application_password').read_text(); c=psycopg.connect(host='mayak-postgres',port=5432,dbname='mayak',user='mayak_application',password=p); assert c.execute('SELECT 1').fetchone()==(1,); c.close(); print('APPLICATION_QUERY_OK')"  # noqa: E501
@@ -342,8 +360,10 @@ def _jsonlog_override(run_id: str, log_dir: Path) -> str:
 def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
     source = Path(__file__).resolve().parents[2] / "compose.yaml"
     text = source.read_text(encoding="utf-8")
-    start = text.find("  mayak-postgres:\n")
-    end = text.find("  mayak-db-bootstrap:\n", start)
+    start_marker = "  mayak-postgres:\n    profiles: [runtime-foundation]\n"
+    end_marker = "  mayak-db-bootstrap:\n    profiles: [runtime-foundation]\n"
+    start = text.find(start_marker)
+    end = text.find(end_marker, start)
     if start < 0 or end < 0:
         raise ProtocolFailure("PREFLIGHT", "STOP_SECURITY_RISK")
     block = f"""  mayak-postgres:
@@ -385,7 +405,7 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
       - {str(log_dir)}:/var/log/postgresql:rw
     networks: [mayak-internal]
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -396,7 +416,17 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
       com.avito-mayak.compose-project: avito-mayak-acceptance
       com.avito-mayak.process-kind: mayak-postgres
 """
-    return text[:start] + block + text[end:]
+    result = text[:start] + block + text[end:]
+    label_block = (
+        "      com.avito-mayak.project-owned: \"true\"\n"
+        "      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01\n"
+        "      com.avito-mayak.compose-project: avito-mayak-acceptance\n"
+    )
+    result = result.replace(
+        label_block,
+        label_block + "      com.avito-mayak.technical-id: RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01\n",
+    )
+    return result
 
 
 def prepare_jsonlog_runtime(run_id: str) -> Path:
@@ -425,12 +455,13 @@ def _active_json_log(log_dir: Path) -> Path:
     files = [
         p for p in log_dir.iterdir() if p.is_file() and not p.is_symlink() and p.suffix == ".json"
     ]
-    if len(files) != 1:
+    if not files:
         raise ProtocolFailure("APPLICATION_AUTH_REJECTION_B_CLASSIFY", "JSON_LOG_IDENTITY_INVALID")
-    info = files[0].stat()
+    active = max(files, key=lambda path: (path.stat().st_mtime_ns, path.name))
+    info = active.stat()
     if stat.S_IMODE(info.st_mode) != 0o600:
         raise ProtocolFailure("APPLICATION_AUTH_REJECTION_B_CLASSIFY", "STOP_SECURITY_RISK")
-    return files[0]
+    return active
 
 
 def _read_appended_json(log_file: Path, offset: int) -> list[dict[str, object]]:
@@ -545,6 +576,88 @@ class RecoveryHandoffResult:
     no_path_escape: bool
     no_symlink: bool
     recovery_cleanup: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayNamespaceSanitationRecord:
+    """Immutable, source-bound proof that the replay namespace was reset."""
+
+    schema_version: str
+    technical_id: str
+    gateway_instance_id: str
+    transcript_run_id: str
+    source_sha: str
+    sanitation_nonce: str
+    foreign_before_digest: str
+    foreign_before_independent_digest: str
+    foreign_after_digest: str
+    foreign_after_independent_digest: str
+    foreign_before_equal: bool
+    foreign_after_equal: bool
+    required_name_absence_hashes: tuple[str, ...]
+    required_name_absence_digest: str
+    task_container_count_before: int
+    task_network_count_before: int
+    task_volume_count_before: int
+    task_container_count_after: int
+    task_network_count_after: int
+    task_volume_count_after: int
+    unresolved_container_count_before: int
+    unresolved_network_count_before: int
+    unresolved_volume_count_before: int
+    unresolved_container_count_after: int
+    unresolved_network_count_after: int
+    unresolved_volume_count_after: int
+    removed_container_count: int
+    removed_network_count: int
+    removed_volume_count: int
+    builder_count_before: int
+    builder_count_after: int
+    task_secret_generation_count_before: int
+    task_secret_generation_count_after: int
+    cleared_secret_root: bool
+    verified_absence: bool
+    record_digest: str
+
+    def safe_dict(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "technical_id": self.technical_id,
+            "gateway_instance_id": self.gateway_instance_id,
+            "transcript_run_id": self.transcript_run_id,
+            "source_sha": self.source_sha,
+            "sanitation_nonce": self.sanitation_nonce,
+            "foreign_before_digest": self.foreign_before_digest,
+            "foreign_before_independent_digest": self.foreign_before_independent_digest,
+            "foreign_after_digest": self.foreign_after_digest,
+            "foreign_after_independent_digest": self.foreign_after_independent_digest,
+            "foreign_before_equal": self.foreign_before_equal,
+            "foreign_after_equal": self.foreign_after_equal,
+            "required_name_absence_hashes": list(self.required_name_absence_hashes),
+            "required_name_absence_digest": self.required_name_absence_digest,
+            "task_container_count_before": self.task_container_count_before,
+            "task_network_count_before": self.task_network_count_before,
+            "task_volume_count_before": self.task_volume_count_before,
+            "task_container_count_after": self.task_container_count_after,
+            "task_network_count_after": self.task_network_count_after,
+            "task_volume_count_after": self.task_volume_count_after,
+            "unresolved_container_count_before": self.unresolved_container_count_before,
+            "unresolved_network_count_before": self.unresolved_network_count_before,
+            "unresolved_volume_count_before": self.unresolved_volume_count_before,
+            "unresolved_container_count_after": self.unresolved_container_count_after,
+            "unresolved_network_count_after": self.unresolved_network_count_after,
+            "unresolved_volume_count_after": self.unresolved_volume_count_after,
+            "removed_container_count": self.removed_container_count,
+            "removed_network_count": self.removed_network_count,
+            "removed_volume_count": self.removed_volume_count,
+            "builder_count_before": self.builder_count_before,
+            "builder_count_after": self.builder_count_after,
+            "task_secret_generation_count_before": self.task_secret_generation_count_before,
+            "task_secret_generation_count_after": self.task_secret_generation_count_after,
+            "cleared_secret_root": self.cleared_secret_root,
+            "verified_absence": self.verified_absence,
+            "record_digest": self.record_digest,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -749,7 +862,7 @@ def parse_bounded_auth_envelope(
         return {}
     try:
         value = json.loads(lines[0].decode("utf-8"))
-    except UnicodeError, ValueError, json.JSONDecodeError:
+    except (UnicodeError, ValueError, json.JSONDecodeError):
         return {}
     if not isinstance(value, dict) or value.get("schema_version") != BOUNDED_AUTH_SCHEMA:
         return {}
@@ -788,7 +901,7 @@ def parse_bounded_bootstrap_result(
         if len(lines) != 1 or not text.endswith("\n"):
             return {}
         value = json.loads(lines[0])
-    except UnicodeError, ValueError, json.JSONDecodeError:
+    except (UnicodeError, ValueError, json.JSONDecodeError):
         return {}
     if not isinstance(value, dict):
         return {}
@@ -975,6 +1088,348 @@ def _safe_fields(fields: Mapping[str, object]) -> dict[str, object]:
     return result
 
 
+def _record_digest(payload: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _name_hash(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _required_name_hashes() -> tuple[str, ...]:
+    return tuple(_name_hash(name) for name in REPLAY_REQUIRED_ABSENT_NAMES)
+
+
+def _kind_ids(gateway: MutationAuthority, kind: str) -> tuple[str, ...]:
+    if kind == "builder":
+        query = ReadOnlyDockerQuery.from_argv(("docker", "buildx", "ls"))
+        result = gateway.run(query, stage="replay-namespace-builders", capture_output=True, text=True, check=False, timeout=30)
+        if result.returncode != 0:
+            raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+        names: list[str] = []
+        for line in result.stdout.splitlines():
+            tokens = line.split()
+            if not tokens or tokens[0].lower() == "name":
+                continue
+            name = tokens[0]
+            if name == "*":
+                if len(tokens) < 2:
+                    continue
+                name = tokens[1]
+            elif name.startswith("*"):
+                name = name.lstrip("*")
+            if name:
+                names.append(name)
+        return tuple(dict.fromkeys(names))
+    command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
+    query = ReadOnlyDockerQuery.from_argv(command)
+    result = gateway.run(query, stage=f"replay-namespace-{kind}-ids", capture_output=True, text=True, check=False, timeout=30)
+    if result.returncode != 0:
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    return tuple(dict.fromkeys(line.strip() for line in result.stdout.splitlines() if line.strip()))
+
+
+def _inspect_resource(gateway: MutationAuthority, kind: str, ident: str) -> dict[str, object]:
+    inspect = getattr(gateway, "_inspect_kind", None)
+    if callable(inspect):
+        value = inspect(kind, ident)
+        if isinstance(value, dict):
+            return value
+    query = ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident))
+    result = gateway.run(query, stage=f"replay-namespace-inspect-{kind}", capture_output=True, check=False, timeout=30)
+    if result.returncode != 0:
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    value = json.loads(result.stdout)
+    if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], dict):
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    return value[0]
+
+
+def _resource_ownership(name: str, labels: Mapping[str, object], kind: str) -> str:
+    project = str(labels.get("com.docker.compose.project", ""))
+    technical = str(labels.get("com.avito-mayak.technical-id", ""))
+    task_indicator = project == TASK_PROJECT or name.startswith(TASK_PROJECT)
+    if name == "apm-postgres" and kind == "container":
+        return "FOREIGN"
+    if technical != TASK_ID:
+        return "UNRESOLVED" if task_indicator else "FOREIGN"
+    if kind == "container":
+        service = str(labels.get("com.docker.compose.service", ""))
+        if (
+            project == TASK_PROJECT
+            and service in {"mayak-api", "mayak-worker", "mayak-scheduler", "mayak-postgres", "mayak-db-bootstrap", "mayak-migrate"}
+            and name == f"{TASK_PROJECT}-{service}-1"
+        ) or (project == TASK_PROJECT and name == f"{TASK_PROJECT}-image-probe-1"):
+            return "TASK_OWNED"
+    elif kind == "network":
+        if project == TASK_PROJECT and name == f"{TASK_PROJECT}_mayak-internal":
+            return "TASK_OWNED"
+    elif kind == "volume":
+        if project == TASK_PROJECT and name == f"{TASK_PROJECT}_postgres-data":
+            return "TASK_OWNED"
+    return "UNRESOLVED" if task_indicator else "FOREIGN"
+
+
+def _secret_generation_residue(root: Path) -> tuple[int, bool]:
+    cleared = False
+    count = 0
+    sets = root / "sets"
+    if sets.exists():
+        if sets.is_symlink() or not sets.is_dir():
+            raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+        for child in tuple(sets.iterdir()):
+            if child.is_symlink():
+                child.unlink()
+                cleared = True
+                continue
+            if not child.is_dir() or not secrets.GENERATION_RE.fullmatch(child.name):
+                raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+            secrets.validate_generation(root, child.name, postgres_uid=999, postgres_gid=999)
+            shutil.rmtree(child)
+            count += 1
+            cleared = True
+        if not any(sets.iterdir()):
+            shutil.rmtree(sets)
+            cleared = True
+    active = root / "active"
+    if active.exists() or active.is_symlink():
+        if active.is_symlink() or active.is_file():
+            active.unlink()
+            cleared = True
+        else:
+            raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    return count, cleared
+
+
+def _buildx_builder_count(gateway: MutationAuthority) -> int:
+    names = _kind_ids(gateway, "builder")
+    task_owned = [name for name in names if name.startswith(TASK_PROJECT)]
+    if task_owned:
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    return len(names)
+
+
+def _inspect_replay_namespace(gateway: MutationAuthority) -> dict[str, Any]:
+    containers: list[dict[str, Any]] = []
+    networks: list[dict[str, Any]] = []
+    volumes: list[dict[str, Any]] = []
+    task: dict[str, list[dict[str, Any]]] = {"containers": [], "networks": [], "volumes": []}
+    unresolved: dict[str, list[dict[str, Any]]] = {
+        "containers": [],
+        "networks": [],
+        "volumes": [],
+    }
+    for kind, bucket in (("container", containers), ("network", networks), ("volume", volumes)):
+        for ident in _kind_ids(gateway, kind):
+            item = _inspect_resource(gateway, kind, ident)
+            if kind == "container":
+                name = str(item.get("Name", "")).lstrip("/")
+                cfg = item.get("Config", {})
+                labels = cfg.get("Labels", {}) if isinstance(cfg, dict) else {}
+            else:
+                name = str(item.get("Name", ""))
+                labels = item.get("Labels", {})
+            labels = labels if isinstance(labels, dict) else {}
+            ownership = _resource_ownership(name, labels, kind)
+            record: dict[str, Any] = {
+                "kind": kind,
+                "name": name,
+                "raw_name": name,
+                "identity_hash": _name_hash(str(item.get("Id") or item.get("ID") or name)),
+                "raw_identity": str(item.get("Id") or item.get("ID") or name),
+                "ownership": ownership,
+                "labels": {str(k): str(v) for k, v in labels.items()},
+                "service": str(labels.get("com.docker.compose.service", "")) if kind == "container" else "",
+            }
+            bucket.append(record)
+            if ownership == "TASK_OWNED":
+                task[f"{kind}s"].append(record)
+            elif ownership == "UNRESOLVED":
+                unresolved[f"{kind}s"].append(record)
+    foreign: dict[str, list[dict[str, Any]]] = {
+        "containers": [item for item in containers if item["ownership"] == "FOREIGN"],
+        "networks": [item for item in networks if item["ownership"] == "FOREIGN"],
+        "volumes": [item for item in volumes if item["ownership"] == "FOREIGN"],
+    }
+    return {
+        "containers": containers,
+        "networks": networks,
+        "volumes": volumes,
+        "task": task,
+        "unresolved": unresolved,
+        "foreign": foreign,
+        "task_counts": {
+            "containers": len(task["containers"]),
+            "networks": len(task["networks"]),
+            "volumes": len(task["volumes"]),
+        },
+        "unresolved_counts": {
+            "containers": len(unresolved["containers"]),
+            "networks": len(unresolved["networks"]),
+            "volumes": len(unresolved["volumes"]),
+        },
+        "foreign_counts": {
+            "containers": len(foreign["containers"]),
+            "networks": len(foreign["networks"]),
+            "volumes": len(foreign["volumes"]),
+        },
+    }
+
+
+def _remove_task_owned_resource(gateway: MutationAuthority, record: Mapping[str, Any]) -> None:
+    kind = str(record.get("kind", ""))
+    name = str(record.get("name", ""))
+    raw_name = str(record.get("raw_name", name))
+    raw_identity = str(record.get("raw_identity", raw_name))
+    if kind == "container":
+        plan = _direct_plan(("docker", "rm", "-f", raw_name if raw_name else raw_identity))
+    elif kind == "network":
+        plan = _direct_plan(("docker", "network", "rm", raw_name if raw_name else raw_identity))
+    elif kind == "volume":
+        plan = _direct_plan(("docker", "volume", "rm", raw_name if raw_name else raw_identity))
+    else:
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    gateway.execute(
+        plan,
+        stage="REPLAY_NAMESPACE_SANITATION",
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+        timeout=60,
+    )
+
+
+def _verify_namespace_absence(gateway: MutationAuthority) -> None:
+    inventory = _inspect_replay_namespace(gateway)
+    if any(inventory["task_counts"].values()) or any(inventory["unresolved_counts"].values()):
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    if any(
+        item["name"] in REPLAY_REQUIRED_ABSENT_NAMES
+        for bucket in (inventory["containers"], inventory["networks"], inventory["volumes"])
+        for item in bucket
+    ):
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+
+
+def _prepare_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Path) -> ReplayNamespaceSanitationRecord:
+    gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+    transcript = cast(ProtocolTranscript, ctx["transcript"])
+    source_sha = cast(str, ctx["source_sha"])
+    before = _inspect_replay_namespace(gateway)
+    before_foreign = collect_foreign_snapshot("sanitation-before", 1, gateway=gateway)
+    independent_before = _independent_foreign_snapshot(
+        "sanitation-before", 1, source_tree=source_tree
+    )
+    before_builder_count = _buildx_builder_count(gateway)
+    if before["task_counts"]["containers"] or before["task_counts"]["networks"] or before["task_counts"]["volumes"]:
+        for record in tuple(before["task"]["containers"] + before["task"]["networks"] + before["task"]["volumes"]):
+            _remove_task_owned_resource(gateway, record)
+    cleared_secret_root_count, cleared_secret_root = _secret_generation_residue(cast(Path, ctx["root"]))
+    _verify_namespace_absence(gateway)
+    after = _inspect_replay_namespace(gateway)
+    after_foreign = collect_foreign_snapshot("sanitation-after", 2, gateway=gateway)
+    independent_after = _independent_foreign_snapshot(
+        "sanitation-after", 2, source_tree=source_tree
+    )
+    after_builder_count = _buildx_builder_count(gateway)
+    required_hashes = _required_name_hashes()
+    record_payload: dict[str, Any] = {
+        "schema_version": "rf08-replay-namespace-sanitation-v1",
+        "technical_id": TASK_ID,
+        "gateway_instance_id": gateway.gateway_instance_id,
+        "transcript_run_id": transcript.run_id,
+        "source_sha": source_sha,
+        "sanitation_nonce": uuid.uuid4().hex,
+        "foreign_before_digest": cast(str, before_foreign.get("canonical_serialization_digest", "")),
+        "foreign_before_independent_digest": cast(
+            str, independent_before.get("canonical_serialization_digest", "")
+        ),
+        "foreign_after_digest": cast(str, after_foreign.get("canonical_serialization_digest", "")),
+        "foreign_after_independent_digest": cast(
+            str, independent_after.get("canonical_serialization_digest", "")
+        ),
+        "foreign_before_equal": cast(str, before_foreign.get("canonical_serialization_digest", ""))
+        == cast(str, independent_before.get("canonical_serialization_digest", "")),
+        "foreign_after_equal": cast(str, after_foreign.get("canonical_serialization_digest", ""))
+        == cast(str, independent_after.get("canonical_serialization_digest", "")),
+        "required_name_absence_hashes": required_hashes,
+        "required_name_absence_digest": _record_digest(required_hashes),
+        "task_container_count_before": int(before["task_counts"]["containers"]),
+        "task_network_count_before": int(before["task_counts"]["networks"]),
+        "task_volume_count_before": int(before["task_counts"]["volumes"]),
+        "task_container_count_after": int(after["task_counts"]["containers"]),
+        "task_network_count_after": int(after["task_counts"]["networks"]),
+        "task_volume_count_after": int(after["task_counts"]["volumes"]),
+        "unresolved_container_count_before": int(before["unresolved_counts"]["containers"]),
+        "unresolved_network_count_before": int(before["unresolved_counts"]["networks"]),
+        "unresolved_volume_count_before": int(before["unresolved_counts"]["volumes"]),
+        "unresolved_container_count_after": int(after["unresolved_counts"]["containers"]),
+        "unresolved_network_count_after": int(after["unresolved_counts"]["networks"]),
+        "unresolved_volume_count_after": int(after["unresolved_counts"]["volumes"]),
+        "removed_container_count": len(before["task"]["containers"]),
+        "removed_network_count": len(before["task"]["networks"]),
+        "removed_volume_count": len(before["task"]["volumes"]),
+        "builder_count_before": before_builder_count,
+        "builder_count_after": after_builder_count,
+        "task_secret_generation_count_before": cleared_secret_root_count,
+        "task_secret_generation_count_after": 0,
+        "cleared_secret_root": cleared_secret_root,
+        "verified_absence": True,
+    }
+    record = ReplayNamespaceSanitationRecord(
+        **record_payload,
+        record_digest=_record_digest(record_payload),
+    )
+    ctx["replay_namespace_sanitation"] = record
+    ctx["replay_namespace_sanitation_verified"] = True
+    ctx["replay_namespace_sanitation_nonce"] = record.sanitation_nonce
+    ctx["replay_namespace_sanitation_required_name_absence_digest"] = record.required_name_absence_digest
+    ctx["replay_namespace_sanitation_foreign_digest"] = record.foreign_after_digest
+    ctx["replay_namespace_sanitation_absence_hashes"] = record.required_name_absence_hashes
+    return record
+
+
+def _require_replay_namespace_sanitation(ctx: dict[str, object], source_tree: Path) -> ReplayNamespaceSanitationRecord:
+    gateway = cast(MutationAuthority, ctx["mutation_ledger"])
+    record = ctx.get("replay_namespace_sanitation")
+    if not isinstance(record, ReplayNamespaceSanitationRecord):
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
+    if record.schema_version != "rf08-replay-namespace-sanitation-v1":
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
+    if record.technical_id != TASK_ID or record.gateway_instance_id != gateway.gateway_instance_id:
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
+    if record.source_sha != cast(str, ctx["source_sha"]) or record.transcript_run_id != cast(ProtocolTranscript, ctx["transcript"]).run_id:
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_MISSING")
+    if ctx.get("replay_namespace_sanitation_nonce") != record.sanitation_nonce:
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
+    if ctx.get("replay_namespace_sanitation_required_name_absence_digest") != record.required_name_absence_digest:
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
+    if ctx.get("replay_namespace_sanitation_foreign_digest") != record.foreign_after_digest:
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
+    current = _inspect_replay_namespace(gateway)
+    if any(current["task_counts"].values()) or any(current["unresolved_counts"].values()):
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    if any(
+        item["name"] in REPLAY_REQUIRED_ABSENT_NAMES
+        for bucket in (current["containers"], current["networks"], current["volumes"])
+        for item in bucket
+    ):
+        raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
+    fresh_before = collect_foreign_snapshot("sanitation-validate", 3, gateway=gateway)
+    fresh_independent = _independent_foreign_snapshot(
+        "sanitation-validate", 3, source_tree=source_tree
+    )
+    if fresh_before.get("canonical_serialization_digest") != record.foreign_after_digest:
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
+    if fresh_independent.get("canonical_serialization_digest") != record.foreign_after_independent_digest:
+        raise ProtocolFailure("PREFLIGHT", "SANITATION_RECORD_REPLAY")
+    ctx["replay_namespace_sanitation_verified"] = True
+    return record
+
+
 def _copy_sources(tree: Path) -> tuple[str, ...]:
     return tuple(item["path"] for item in _docker_context_for(tree)[0])
 
@@ -1018,18 +1473,28 @@ def _safe_root(root: Path) -> Path:
     return root
 
 
-def _independent_foreign_snapshot(phase: str, sequence: int) -> dict[str, object]:
-    verifier = Path(__file__).with_name("verify_rf08_authoritative_evidence.py")
+def _independent_foreign_snapshot(
+    phase: str, sequence: int, *, source_tree: Path | None = None
+) -> dict[str, object]:
+    tree = source_tree or Path(__file__).resolve().parents[2]
+    env = dict(os.environ)
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{tree}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(tree)
+    )
     result = subprocess.run(
         [
             sys.executable,
-            str(verifier),
+            "-m",
+            "scripts.runtime.verify_rf08_authoritative_evidence",
             "--snapshot",
             "--phase",
             phase,
             "--sequence",
             str(sequence),
         ],
+        cwd=tree,
+        env=env,
         capture_output=True,
         check=False,
         timeout=90,
@@ -1075,6 +1540,7 @@ class PrivateCommandRunner:
         self.timeout = timeout
         self.gateway = gateway
         self.mutation_ledger: MutationAuthority | None = gateway
+        self.gateway._default_env = self.env
 
     def run(self, command: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
         out, err = self.output_dir / f"{stage}.stdout", self.output_dir / f"{stage}.stderr"
@@ -1087,16 +1553,27 @@ class PrivateCommandRunner:
         try:
             with out.open("wb") as stdout, err.open("wb") as stderr:
                 if command and command[0] == "docker":
-                    proc = self.gateway.run(
-                        command,
-                        stage=stage,
-                        stdin=subprocess.DEVNULL,
-                        stdout=stdout,
-                        stderr=stderr,
-                        env=self.env,
-                        check=False,
-                        timeout=self.timeout,
-                    )
+                    plan = _direct_plan(command)
+                    if plan.is_mutation:
+                        proc = self.gateway.execute(
+                            plan,
+                            stage=stage,
+                            stdin=subprocess.DEVNULL,
+                            stdout=stdout,
+                            stderr=stderr,
+                            check=False,
+                            timeout=self.timeout,
+                        )
+                    else:
+                        proc = self.gateway.run(
+                            ReadOnlyDockerQuery.from_plan(plan),
+                            stage=stage,
+                            stdin=subprocess.DEVNULL,
+                            stdout=stdout,
+                            stderr=stderr,
+                            check=False,
+                            timeout=self.timeout,
+                        )
                 else:
                     proc = subprocess.run(
                         command,
@@ -1138,7 +1615,7 @@ class PrivateCommandRunner:
                 leaked,
                 True,
             )
-        except OSError, UnicodeError, ValueError:
+        except (OSError, UnicodeError, ValueError):
             return PrivateCommandResult(
                 stage, _command_id(stage, command), code, executed, {}, True, True, False, leaked
             )
@@ -1169,17 +1646,23 @@ def _parse_stage_output(
             postgres = services["mayak-postgres"]
             api = services["mayak-api"]
             secret_files = document["secrets"]
+            api_ports = api.get("ports", [])
+            api_bind_host = ""
+            if api_ports:
+                first_port = api_ports[0]
+                if isinstance(first_port, dict):
+                    api_bind_host = str(first_port.get("host_ip", ""))
+                else:
+                    api_bind_host = str(first_port).split(":", 1)[0]
             return {
                 "config_name": document["name"],
                 "services": sorted(services),
                 "internal_network": network.get("internal") is True,
                 "postgres_host_ports": len(postgres.get("ports", [])),
-                "api_bind_host": str(api.get("ports", [])[0]).split(":", 1)[0]
-                if api.get("ports")
-                else "",
+                "api_bind_host": api_bind_host,
                 "secret_wiring": all("file" in value for value in secret_files.values()),
             }
-        except KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError:
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
             return {}
     if stage == "IMAGE_INPUT_DIGEST":
         return {"build_input_digest": text}
@@ -1206,7 +1689,7 @@ def _parse_stage_output(
                 "environment_entries": len(config.get("Env", [])),
                 "action": "REUSED",
             }
-        except KeyError, TypeError, ValueError, json.JSONDecodeError:
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             return {"image_id": text}
     if stage == "APPLICATION_IMAGE_IMPORT_PROBE":
         return {"imported_package_path": text}
@@ -1222,7 +1705,7 @@ def _parse_stage_output(
             ):
                 return {}
             return value
-        except TypeError, ValueError, json.JSONDecodeError:
+        except (TypeError, ValueError, json.JSONDecodeError):
             return {}
     if stage.startswith("MIGRATION_HEAD") or stage == "POST_RECOVERY_MIGRATION_HEAD":
         return {"observed_migration_head": text or MIGRATION_HEAD}
@@ -1236,7 +1719,7 @@ def _parse_stage_output(
     if stage == "APPLICATION_AUTH_REJECTION_B_CLASSIFY":
         try:
             event = json.loads(text)
-        except TypeError, ValueError, json.JSONDecodeError:
+        except (TypeError, ValueError, json.JSONDecodeError):
             return {}
         if not isinstance(event, dict):
             return {}
@@ -1259,7 +1742,10 @@ def _parse_stage_output(
             if key in event
         }
     if stage == "POST_RECOVERY_DATABASE_BOOTSTRAP" or stage.startswith("DATABASE_BOOTSTRAP"):
-        return parse_bounded_bootstrap_result(stdout, stderr, code)
+        parsed = parse_bounded_bootstrap_result(stdout, stderr, code)
+        if parsed:
+            parsed["observed"] = stage
+        return parsed
     if stage == "APPLICATION_AUTH_REJECTION_B_POSTGRES_ID":
         return {"observed": text} if text else {}
     if stage == "SECRET_UNINTENDED_DENIAL_A":
@@ -1345,6 +1831,8 @@ def _secret_stage(ctx: dict[str, object], stage: str, label: str, activate: bool
     gens[label] = generation
     if activate:
         secrets.activate_generation(root, generation, postgres_uid=999, postgres_gid=999)
+        if label == "A":
+            ctx["recovered_generation_id"] = generation
     else:
         secrets.validate_generation(root, generation, postgres_uid=999, postgres_gid=999)
     return StageResult(
@@ -1420,14 +1908,16 @@ def _auth_attempt_oracle(result: StageResult) -> Mapping[str, object]:
 def _command_spec(
     ctx: dict[str, object],
     stage: str,
-    command: tuple[str, ...],
+    command: tuple[str, ...] | Callable[[], tuple[str, ...]],
     required: tuple[str, ...],
     *,
     allow: tuple[int, ...] = (0,),
+    source_tree: Path = Path(__file__).resolve().parents[2],
 ) -> StageSpec:
     runner = cast(PrivateCommandRunner, ctx["runner"])
 
     def operation() -> StageResult:
+        actual_command = command() if callable(command) else command
         if stage == "APPLICATION_AUTH_REJECTION_B":
             transcript = ctx.get("transcript")
             if isinstance(transcript, ProtocolTranscript):
@@ -1445,11 +1935,11 @@ def _command_spec(
                 log_file = _active_json_log(log_dir)
                 ctx["b_json_log_file"] = log_file
                 ctx["b_json_log_offset"] = log_file.stat().st_size
-        result = runner.run(command, stage=stage)
+        result = runner.run(actual_command, stage=stage)
         if stage == "PREFLIGHT" and result.exit_code == 0:
             gateway = cast(MutationAuthority, ctx["mutation_ledger"])
             producer = collect_foreign_snapshot("preflight", 0, gateway=gateway)
-            independent = _independent_foreign_snapshot("preflight", 0)
+            independent = _independent_foreign_snapshot("preflight", 0, source_tree=source_tree)
             if not producer.get("collection_complete") or not independent.get(
                 "collection_complete"
             ):
@@ -1500,7 +1990,7 @@ def _command_spec(
                 and time.monotonic() < deadline
             ):
                 time.sleep(1.0)
-                result = runner.run(command, stage=stage)
+                result = runner.run(actual_command, stage=stage)
         if result.private_secret_detected:
             raise ProtocolFailure(stage, "STOP_SECURITY_RISK")
         if stage == "APPLICATION_IMAGE_INSPECT" and isinstance(result.parsed.get("image_id"), str):
@@ -1796,7 +2286,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
     def foreign_before() -> StageResult:
         gateway = cast(MutationAuthority, ctx["mutation_ledger"])
         snapshot = collect_foreign_snapshot("before", 1, gateway=gateway)
-        independent = _independent_foreign_snapshot("before", 1)
+        independent = _independent_foreign_snapshot("before", 1, source_tree=source_tree)
         if snapshot.get("canonical_serialization_digest") != independent.get(
             "canonical_serialization_digest"
         ):
@@ -2035,7 +2525,6 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                         (
                             "run",
                             "--rm",
-                            "--no-deps",
                             "-e",
                             f"RF08_RUN_ID={transcript.run_id}",
                             "-e",
@@ -2079,9 +2568,9 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 ):
                     raise ProtocolFailure(
                         proof_stage, "POST_RECOVERY_BOOTSTRAP_INVARIANT_NOT_PROVEN"
-                    )
+                )
                 migrate = stage_runner.run(
-                    _docker(("run", "--rm", "--no-deps", "mayak-migrate")),
+                    _docker(("run", "--rm", "mayak-migrate")),
                     stage="POST_RECOVERY_MIGRATION",
                 )
                 if migrate.exit_code != 0:
@@ -2406,7 +2895,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             def foreign_after() -> StageResult:
                 gateway = cast(MutationAuthority, ctx["mutation_ledger"])
                 after = collect_foreign_snapshot("after", 2, gateway=gateway)
-                independent = _independent_foreign_snapshot("after", 2)
+                independent = _independent_foreign_snapshot("after", 2, source_tree=source_tree)
                 before = cast(dict[str, object], ctx.get("foreign_before", {}))
                 if after.get("canonical_serialization_digest") != independent.get(
                     "canonical_serialization_digest"
@@ -2548,25 +3037,25 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 if "POSTGRES" in stage
                 else ("mayak-migrate" if "MIGRATION_UPGRADE" in stage else "mayak-db-bootstrap")
             )
+            if (
+                stage == "POSTGRES_A_CREATE"
+                and ctx.get("replay_namespace_sanitation") is not None
+                and not ctx.get("replay_namespace_sanitation_verified")
+            ):
+                raise ProtocolFailure(stage, "SANITATION_RECORD_MISSING")
+            command: tuple[str, ...] | Callable[[], tuple[str, ...]]
             if "POSTGRES" in stage:
                 command = _docker(("up", "-d", service))
             elif "DATABASE_BOOTSTRAP" in stage:
                 adapter_path = (source_tree or Path(__file__).resolve().parents[2]) / (
                     "scripts/runtime/rf09_public_bootstrap_adapter.py"
                 )
-                transcript = ctx.get("transcript")
-                run_id = (
-                    transcript.run_id
-                    if isinstance(transcript, ProtocolTranscript)
-                    else "rf08-adapter"
-                )
-                command = _docker(
+                command = lambda adapter_path=adapter_path, service=service, ctx=ctx, source_tree=source_tree: _docker(  # noqa: E731,E501
                     (
                         "run",
                         "--rm",
-                        "--no-deps",
                         "-e",
-                        f"RF08_RUN_ID={run_id}",
+                        f"RF08_RUN_ID={cast(ProtocolTranscript, ctx['transcript']).run_id if isinstance(ctx.get('transcript'), ProtocolTranscript) else 'rf08-adapter'}",
                         "-e",
                         "RF08_RECOVERED_GENERATION_ID="
                         f"{ctx.get('recovered_generation_id', 'UNSET')}",
@@ -2578,7 +3067,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     )
                 )
             else:
-                command = _docker(("run", "--rm", "--no-deps", service))
+                command = _docker(("run", "--rm", service))
             specs.append(_command_spec(ctx, stage, command, ("observed",)))
         else:
             specs.append(
@@ -2626,6 +3115,7 @@ def run_protocol(
         runner.env["MAYAK_SOURCE_SHA"] = source_sha
         runner.gateway = gateway
         runner.mutation_ledger = gateway
+        runner.gateway._default_env = runner.env
     ctx: dict[str, object] = {
         "root": _safe_root(root),
         "runner": runner,
@@ -2639,6 +3129,8 @@ def run_protocol(
     ctx["json_log_dir"] = prepare_jsonlog_runtime(transcript.run_id)
     ctx["transcript"] = transcript
     try:
+        _prepare_replay_namespace_sanitation(ctx, source_tree or Path(__file__).resolve().parents[2])
+        _require_replay_namespace_sanitation(ctx, source_tree or Path(__file__).resolve().parents[2])
         for spec in _operation_specs(ctx, source_tree or Path(__file__).resolve().parents[2]):
             transcript.execute(spec)
         transcript.finalize({"all_stages_passed": True})
@@ -2671,9 +3163,14 @@ def run_protocol(
                 "build_context_snapshot": dict(
                     cast(Mapping[str, object], ctx.get("build_context_snapshot", {}))
                 ),
+                "replay_namespace_sanitation": (
+                    cast(ReplayNamespaceSanitationRecord, ctx["replay_namespace_sanitation"]).safe_dict()
+                    if isinstance(ctx.get("replay_namespace_sanitation"), ReplayNamespaceSanitationRecord)
+                    else {}
+                ),
             },
         )
-    except OSError, ValueError, RuntimeError, ProtocolFailure, secrets.SecretPreparationError:
+    except (OSError, ValueError, RuntimeError, ProtocolFailure, secrets.SecretPreparationError):
         return SafeRecord("FAIL", transcript.stage_sequence, transcript.entries)
 
 
@@ -2704,6 +3201,7 @@ def build_evidence(
         ),
         {},
     )
+    sanitation = cast(Mapping[str, object], record.metadata.get("replay_namespace_sanitation", {}))
     payload: dict[str, object] = {
         "schema_version": "rf08-authoritative-v2",
         "technical_id": TASK_ID,
@@ -2817,6 +3315,31 @@ def build_evidence(
         "application_probe_contract": record.metadata.get("application_probe_contract"),
         "a_b_probe_parity": record.metadata.get("a_b_probe_parity"),
         "b_consumer_binding": record.metadata.get("b_consumer_binding"),
+        "replay_namespace_sanitation": dict(sanitation),
+        "replay_namespace_sanitation_digest": sanitation.get("record_digest"),
+        "replay_namespace_sanitation_required_name_absence_digest": sanitation.get(
+            "required_name_absence_digest"
+        ),
+        "replay_namespace_sanitation_foreign_before_digest": sanitation.get(
+            "foreign_before_digest"
+        ),
+        "replay_namespace_sanitation_foreign_after_digest": sanitation.get("foreign_after_digest"),
+        "replay_namespace_sanitation_task_counts": {
+            "before": {
+                "containers": sanitation.get("task_container_count_before"),
+                "networks": sanitation.get("task_network_count_before"),
+                "volumes": sanitation.get("task_volume_count_before"),
+            },
+            "after": {
+                "containers": sanitation.get("task_container_count_after"),
+                "networks": sanitation.get("task_network_count_after"),
+                "volumes": sanitation.get("task_volume_count_after"),
+            },
+        },
+        "replay_namespace_sanitation_builder_counts": {
+            "before": sanitation.get("builder_count_before"),
+            "after": sanitation.get("builder_count_after"),
+        },
         "rf09_public_api": {
             "module": "mayak.persistence.bootstrap",
             "callable": "bootstrap_database",

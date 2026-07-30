@@ -714,3 +714,14 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - `af24a6837ad24ccb0c22e4038512cf2901cbecd4` remained published but was independently rejected because authority was instantiated per Docker command, caller ownership was asserted, `buildx` bypassed authority, the ledger was not bijective, snapshot and collector-ID validation were incomplete, and the mandatory adversarial registry was absent.
 - The corrective now uses one protocol-owned Docker gateway, repository-wide bypass guards, exact compose option binding, independent ownership resolution, typed invocation audit and mutation-ledger bijection, plus an executable adversarial registry and integration coverage.
 - RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status remains `PUBLISHED_FOR_CHATGPT_REVIEW`; no independent acceptance, operator readiness or `PRODUCTION_READY` claim is made.
+
+## WL-RF08-20260730-08 — 2026-07-30 — deterministic namespace sanitation and source-bound replay completion
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `COMPLETE_THE_EXISTING_TYPED_CAPABILITY_CORRECTIVE_BY_MAKING_TASK_NAMESPACE_SANITATION_AN_IDEMPOTENT_INSPECT_BACKED_REPLAY_PRECONDITION_THEN_EXECUTE_57_OF_57_GENERATE_SOURCE_BOUND_EVIDENCE_AND_PUBLISH`
+**Base:** `510da974aabcc3f76b1e0cbca43bb4eceefb3faa`
+
+- The replay boundary was corrected so task-namespace sanitation is inspect-backed, idempotent and owned by the RF-08 orchestration path before stage 1 begins.
+- The recovered-generation handoff now reaches the bootstrap adapter on the full protocol path, the exact POSTGRES_A_CREATE conflict was removed only through task-owned sanitation, and the 57-stage replay completed successfully.
+- Regenerated source-bound evidence passed the independent verifier. Commit and push remained pending at the time of this note; publication bookkeeping followed afterward.
+- RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`.

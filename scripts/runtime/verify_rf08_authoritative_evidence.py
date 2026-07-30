@@ -22,7 +22,12 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import cast
 
-from scripts.runtime.rf08_docker_authority import MutationAuthority
+from scripts.runtime.rf08_docker_authority import (
+    BuildxManifestPlan,
+    MutationAuthority,
+    ReadOnlyDockerQuery,
+    _direct_plan,
+)
 from scripts.runtime.rf08_safe_foreign_schema import (
     validate_failure_snapshot,
     validate_safe_value,
@@ -31,7 +36,7 @@ from scripts.runtime.rf08_safe_foreign_schema import (
 
 TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
 BASE = "453356025051308b9cbe43b7201c248124348006"
-TASK_EXPECTED_BASE = "7467ba2092d9e83fba52d402cf78556912d10a83"
+TASK_EXPECTED_BASE = "510da974aabcc3f76b1e0cbca43bb4eceefb3faa"
 TREE = "6f9548e8eda66acba2f9ac403dcb3d43f209774c"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
@@ -165,7 +170,7 @@ def _endpoint_identity(gateway: MutationAuthority) -> tuple[str, str, dict[str, 
     if peer is not None and min(peer) < 0:
         raise ValueError("invalid peer credentials")
     server = gateway.run(
-        ("docker", "version", "--format", "{{json .Server}}"),
+        ReadOnlyDockerQuery.from_argv(("docker", "version", "--format", "{{json .Server}}")),
         stage="verifier-endpoint-version",
         capture_output=True,
         check=False,
@@ -228,7 +233,7 @@ def _independent_snapshot(
 
         def inspect(kind: str, ident: str) -> dict[str, object]:
             result = gateway.run(
-                ("docker", kind, "inspect", ident),
+                ReadOnlyDockerQuery.from_argv(("docker", kind, "inspect", ident)),
                 stage=f"verifier-inspect-{kind}",
                 capture_output=True,
                 check=False,
@@ -250,7 +255,7 @@ def _independent_snapshot(
                 ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
             )
             result = gateway.run(
-                command,
+                ReadOnlyDockerQuery.from_argv(command),
                 stage=f"verifier-enumerate-{kind}",
                 capture_output=True,
                 text=True,
@@ -328,6 +333,9 @@ def _independent_snapshot(
                     }
                     and name == f"{TASK_PROJECT}-{service}-1"
                 )
+                direct_exact = project == TASK_PROJECT and name.startswith(TASK_PROJECT)
+                if exact or direct_exact:
+                    return "TASK_OWNED"
             elif kind == "network":
                 exact = project == TASK_PROJECT and name == TASK_PROJECT + "_mayak-internal"
             elif kind == "volume":
@@ -572,7 +580,7 @@ def _independent_snapshot(
             "capture_monotonic_sequence": sequence,
             "collection_complete": False,
             "collection_errors": [type(exc).__name__],
-            "redaction_passed": True,
+            "redaction_passed": False,
             "container_records": [],
             "network_records": [],
             "volume_records": [],
@@ -641,17 +649,21 @@ def _docker_manifest(
         encoding="utf-8",
     )
     output.mkdir(mode=0o700)
-    (gateway or MutationAuthority()).run(
-        (
-            "docker",
-            "buildx",
-            "build",
-            "--progress=plain",
-            "--file",
-            str(inspector),
-            "--output",
-            f"type=local,dest={output}",
-            str(source),
+    (gateway or MutationAuthority()).execute(
+        BuildxManifestPlan.from_plan(
+            _direct_plan(
+                (
+                    "docker",
+                    "buildx",
+                    "build",
+                    "--progress=plain",
+                    "--file",
+                    str(inspector),
+                    "--output",
+                    f"type=local,dest={output}",
+                    str(source),
+                )
+            )
         ),
         stage="verifier-buildx-build",
         stdout=subprocess.DEVNULL,
@@ -952,6 +964,32 @@ def _verify_stage57(evidence: dict[str, object]) -> None:
         raise ValueError("foreign summary recomputation failed")
 
 
+def _verify_sanitation_record(document: dict[str, object]) -> None:
+    record = document.get("replay_namespace_sanitation")
+    if not isinstance(record, dict):
+        raise ValueError("sanitation record missing")
+    required_hashes = record.get("required_name_absence_hashes")
+    if not isinstance(required_hashes, list) or not required_hashes:
+        raise ValueError("sanitation required-name proof missing")
+    if record.get("required_name_absence_digest") != _safe_digest(required_hashes):
+        raise ValueError("sanitation required-name digest mismatch")
+    expected = _safe_digest({k: record.get(k) for k in record if k != "record_digest"})
+    if record.get("record_digest") != expected:
+        raise ValueError("sanitation record digest mismatch")
+    if record.get("schema_version") != "rf08-replay-namespace-sanitation-v1":
+        raise ValueError("sanitation schema mismatch")
+    if record.get("technical_id") != TASK_ID:
+        raise ValueError("sanitation technical id mismatch")
+    if record.get("foreign_before_equal") is not True or record.get("foreign_after_equal") is not True:
+        raise ValueError("sanitation foreign equality failed")
+    if record.get("task_container_count_after") != 0 or record.get("task_network_count_after") != 0 or record.get("task_volume_count_after") != 0:
+        raise ValueError("sanitation task namespace not empty")
+    if record.get("unresolved_container_count_after") != 0 or record.get("unresolved_network_count_after") != 0 or record.get("unresolved_volume_count_after") != 0:
+        raise ValueError("sanitation unresolved namespace not empty")
+    if record.get("verified_absence") is not True:
+        raise ValueError("sanitation absence not proven")
+
+
 def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]:
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
     if (
@@ -981,6 +1019,7 @@ def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]
         ):
             raise ValueError(f"stage-specific evidence missing: {expected}")
         _check_stage_ids(row, expected)
+    _verify_sanitation_record(document)
     hashes = document.get("production_tree_hashes")
     if not isinstance(hashes, dict):
         raise ValueError("source hashes missing")

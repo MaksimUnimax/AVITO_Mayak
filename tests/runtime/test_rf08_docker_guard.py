@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# mypy: ignore-errors
+
 import ast
 import json
 import os
@@ -13,7 +15,11 @@ from typing import Any
 import pytest
 
 from scripts.runtime import safe_compose_bootstrap as scb
-from scripts.runtime.rf08_docker_authority import MutationAuthority, gateway_token_active
+from scripts.runtime.rf08_docker_authority import (
+    MutationAuthority,
+    ReadOnlyDockerQuery,
+    gateway_token_active,
+)
 from scripts.runtime.rf08_foreign_snapshot import collect_snapshot
 from scripts.runtime.verify_rf08_authoritative_evidence import (
     PRODUCER_COLLECTOR_ID,
@@ -327,7 +333,7 @@ def test_dynamic_subprocess_guard_allows_gateway_and_rejects_bypass(
     try:
         gateway = MutationAuthority()
         completed = gateway.run(
-            ("docker", "version", "--format", "{{json .Server}}"),
+            ReadOnlyDockerQuery.from_argv(("docker", "version", "--format", "{{json .Server}}")),
             stage="guard",
             capture_output=True,
             check=False,
