@@ -168,3 +168,10 @@ RF-09 was the historical next gate at the time of the prior closure. This correc
 - Raw stage-57 `docker ps` hashing was replaced by independently recomputed typed `ForeignResourceSnapshotV2` records, exact ownership classes, structural/runtime delta classification and task-scoped mutation audit evidence.
 - The isolated gate, complete ordered 57-stage protocol and independent stage-55/56/57 verifier passed; task resources and private artifacts were zero after cleanup, and `apm-postgres` was observed and untouched.
 - Status: `PUBLISHED_FOR_CHATGPT_REVIEW`; this is not independent acceptance, operator readiness or production readiness.
+
+## RF-08 observed cleanup and foreign recomputation corrective — 2026-07-30
+
+- The e547 candidate remained published but independently unaccepted; the first continuation attempt was not published because its validation toolchain and Docker identity source were incomplete.
+- Exact CPython 3.14.6, uv 0.11.31 and frozen development dependencies were validated. Optional Docker `.ID` is not used. Local Unix endpoint identity is derived from socket metadata, SO_PEERCRED/process observations, host boot identity and safe Docker server-version metadata; only hashes and safe version fields are persisted.
+- Stage-56 cleanup and stage-57 foreign equality fields are derived from immutable typed observations and mutation records. Producer and independent collectors recompute canonical safe records and the verifier independently reconstructs the verdict. The exact 57-stage protocol and committed evidence verifier passed; summary and safe-record tamper controls rejected.
+- Docker-native image-input identity remains unchanged. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. Status is `PUBLISHED_FOR_CHATGPT_REVIEW`; this does not claim independent acceptance, operator readiness or production readiness.

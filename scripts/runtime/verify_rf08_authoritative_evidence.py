@@ -11,8 +11,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
+import socket
+import stat
+import struct
 import subprocess
 import tarfile
 from pathlib import Path, PurePosixPath
@@ -20,6 +24,7 @@ from typing import cast
 
 TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
 BASE = "453356025051308b9cbe43b7201c248124348006"
+TASK_EXPECTED_BASE = "e547399fa19cd867983096ce86a2cecb23b8c676"
 TREE = "6f9548e8eda66acba2f9ac403dcb3d43f209774c"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -89,8 +94,8 @@ TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL
 FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION""".splitlines()
 )
 SENSITIVE = re.compile(r"(?i)(-----BEGIN .*PRIVATE KEY-----|postgresql://|password\s*=|dsn\s*=)")
-FOREIGN_SCHEMA_VERSION = "ForeignResourceSnapshotV2"
-INDEPENDENT_COLLECTOR_ID = "rf08.independent.typed-docker-control-plane.v2"
+FOREIGN_SCHEMA_VERSION = "ForeignResourceSnapshotV3"
+INDEPENDENT_COLLECTOR_ID = "rf08.independent.observed.typed-docker.v3"
 TASK_PROJECT = "avito-mayak-rf08-secret-delivery"
 TASK_ID = "RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01"
 
@@ -100,38 +105,170 @@ def _sha(path: Path) -> str:
 
 
 def _safe_digest(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _identity_hash(prefix: str, value: bytes) -> str:
+    return hashlib.sha256(prefix.encode() + b":" + value).hexdigest()
+
+
+def _host_identity() -> str:
+    value = Path("/etc/machine-id").read_bytes().strip()
+    if not value or len(value) > 256:
+        raise ValueError("host identity unavailable")
+    return _identity_hash("rf08-host-v2", value)
+
+
+def _boot_identity() -> str:
+    value = Path("/proc/sys/kernel/random/boot_id").read_bytes().strip()
+    if not value or len(value) > 256:
+        raise ValueError("boot identity unavailable")
+    return _identity_hash("rf08-boot-v1", value)
+
+
+def _docker_endpoint() -> Path:
+    raw = os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock")
+    if not raw.startswith("unix://"):
+        raise ValueError("foreign docker endpoint")
+    path = raw.removeprefix("unix://")
+    if not path.startswith("/") or ".." in Path(path).parts:
+        raise ValueError("unsafe docker endpoint")
+    endpoint = Path(os.path.abspath(path))
+    metadata = endpoint.lstat()
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISSOCK(metadata.st_mode):
+        raise ValueError("unsafe docker socket")
+    return endpoint
+
+
+def _endpoint_identity() -> tuple[str, str, dict[str, str]]:
+    endpoint = _docker_endpoint()
+    socket_stat = endpoint.stat()
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.connect(str(endpoint))
+        try:
+            raw_peer = connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+        except OSError:
+            raw_peer = b""
+    if raw_peer and len(raw_peer) != 12:
+        raise ValueError("malformed peer credentials")
+    peer: tuple[int, int, int] | None = struct.unpack("3i", raw_peer) if raw_peer else None
+    if peer is not None and min(peer) < 0:
+        raise ValueError("invalid peer credentials")
+    server = subprocess.run(
+        ["docker", "version", "--format", "{{json .Server}}"],
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    if server.returncode:
+        raise ValueError("docker server version failed")
+    parsed = json.loads(server.stdout)
+    if not isinstance(parsed, dict):
+        raise ValueError("docker server envelope malformed")
+    safe_server = {
+        key: str(parsed[key])
+        for key in ("Version", "ApiVersion", "MinAPIVersion", "Os", "Arch", "KernelVersion")
+        if parsed.get(key) is not None
+    }
+    if not safe_server.get("Version"):
+        raise ValueError("docker server version absent")
+    payload = {
+        "schema": "LOCAL_UNIX_DOCKER_ENDPOINT_INSTANCE_V1" if peer else "LOCAL_UNIX_DOCKER_ENDPOINT_SOCKET_V1",
+        "socket": {"path": str(endpoint), "st_dev": socket_stat.st_dev, "st_ino": socket_stat.st_ino, "mode": socket_stat.st_mode},
+        "boot": _boot_identity(),
+        "server": safe_server,
+    }
+    if peer is not None:
+        pid, uid, gid = peer
+        try:
+            peer_stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            close = peer_stat.rfind(")")
+            fields = peer_stat[close + 2 :].split() if close >= 0 else []
+            executable = Path(f"/proc/{pid}/exe").stat()
+        except OSError:
+            fields, executable = [], None
+        if len(fields) > 19 and fields[19].isdigit() and executable is not None:
+            payload["peer"] = {
+                "pid": pid,
+                "uid": uid,
+                "gid": gid,
+                "start_time": fields[19],
+                "exe_dev": executable.st_dev,
+                "exe_ino": executable.st_ino,
+            }
+        else:
+            payload["schema"] = "LOCAL_UNIX_DOCKER_ENDPOINT_SOCKET_V1"
+    return "LOCAL_UNIX_DOCKER_ENDPOINT_INSTANCE_V1", _safe_digest(payload), safe_server
 
 
 def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
     """Independent read-only collector; no producer code or oracle is imported."""
     try:
+
         def inspect(kind: str, ident: str) -> dict[str, object]:
-            result = subprocess.run(["docker", kind, "inspect", ident], capture_output=True, check=False, timeout=30)
+            result = subprocess.run(
+                ["docker", kind, "inspect", ident], capture_output=True, check=False, timeout=30
+            )
             if result.returncode != 0:
                 raise RuntimeError("inspect failed")
             value = json.loads(result.stdout)[0]
             if not isinstance(value, dict):
                 raise ValueError("inspect shape")
+            actual = str(value.get("Id") or value.get("ID") or value.get("Name", "")).lstrip("/")
+            name = str(value.get("Name", "")).lstrip("/")
+            if actual and not (ident == actual or actual.startswith(ident) or ident == name):
+                raise ValueError("inspect identity mismatch")
             return value
 
         def ids(kind: str) -> list[str]:
-            command = ["docker", "ps", "-aq"] if kind == "container" else ["docker", kind, "ls", "-q"]
-            result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
+            command = (
+                ["docker", "ps", "-aq"] if kind == "container" else ["docker", kind, "ls", "-q"]
+            )
+            result = subprocess.run(
+                command, capture_output=True, text=True, check=False, timeout=30
+            )
             if result.returncode != 0:
                 raise RuntimeError("enumeration failed")
-            return sorted(set(x for x in result.stdout.splitlines() if x))
+            values = [x.strip() for x in result.stdout.splitlines() if x.strip()]
+            if len(values) != len(list(dict.fromkeys(values))):
+                raise ValueError("duplicate enumeration")
+            return sorted(values)
 
         def labels(value: object) -> list[list[str]]:
-            return [[str(k), str(v) if str(k) in {"com.docker.compose.project", "com.avito-mayak.technical-id"} else _safe_digest(str(v))] for k, v in sorted((value or {}).items())] if isinstance(value, dict) else []
+            return (
+                [
+                    [
+                        str(k),
+                        str(v)
+                        if str(k) in {
+                            "com.docker.compose.project",
+                            "com.docker.compose.service",
+                            "com.avito-mayak.technical-id",
+                        }
+                        else _safe_digest(str(v)),
+                    ]
+                    for k, v in sorted((value or {}).items())
+                ]
+                if isinstance(value, dict)
+                else []
+            )
 
         def own(name: str, value: object) -> str:
             raw = value if isinstance(value, dict) else {}
-            project, technical = raw.get("com.docker.compose.project"), raw.get("com.avito-mayak.technical-id")
+            project, technical = (
+                raw.get("com.docker.compose.project"),
+                raw.get("com.avito-mayak.technical-id"),
+            )
             if name == "apm-postgres":
                 return "FOREIGN"
             if technical is not None and technical != TASK_ID:
-                return "UNRESOLVED" if project == TASK_PROJECT or name.startswith(TASK_PROJECT + "-") else "FOREIGN"
+                return (
+                    "UNRESOLVED"
+                    if project == TASK_PROJECT or name.startswith(TASK_PROJECT + "-")
+                    else "FOREIGN"
+                )
             if project == TASK_PROJECT and name.startswith(TASK_PROJECT + "-"):
                 return "TASK_OWNED"
             if project == TASK_PROJECT or name.startswith(TASK_PROJECT + "-"):
@@ -140,36 +277,225 @@ def _independent_snapshot(phase: str, sequence: int) -> dict[str, object]:
 
         containers = []
         for ident in ids("container"):
-            item = inspect("container", ident); name = str(item.get("Name", "")).lstrip("/"); cfg = item.get("Config", {}); host = item.get("HostConfig", {}); state = item.get("State", {}); raw_labels = cfg.get("Labels", {}) if isinstance(cfg, dict) else {}
-            mounts = [{"type": m.get("Type"), "destination": m.get("Destination"), "mode": m.get("Mode"), "rw": m.get("RW")} for m in (item.get("Mounts") or []) if isinstance(m, dict)]  # type: ignore[union-attr,attr-defined]
+            item = inspect("container", ident)
+            name = str(item.get("Name", "")).lstrip("/")
+            cfg = item.get("Config", {})
+            host = item.get("HostConfig", {})
+            state = item.get("State", {})
+            raw_labels = cfg.get("Labels", {}) if isinstance(cfg, dict) else {}
+            mounts_value = item.get("Mounts")
+            mounts = [
+                {
+                    "type": m.get("Type"),
+                    "destination": m.get("Destination"),
+                    "mode": m.get("Mode"),
+                    "rw": m.get("RW"),
+                }
+                for m in mounts_value
+                if isinstance(m, dict)
+            ] if isinstance(mounts_value, list) else []
             attachments = []
-            for net, data in (item.get("NetworkSettings", {}).get("Networks", {}) or {}).items():  # type: ignore[union-attr,attr-defined]
+            network_settings = item.get("NetworkSettings")
+            networks_value = (
+                network_settings.get("Networks")
+                if isinstance(network_settings, dict)
+                else None
+            )
+            for net, data in networks_value.items() if isinstance(networks_value, dict) else ():
                 if isinstance(data, dict):
-                    attachments.append({"name": str(net), "network_id": data.get("NetworkID"), "endpoint_id": data.get("EndpointID")})
-            stable = {"id": item.get("Id"), "image_id": item.get("Image"), "image_reference": cfg.get("Image") if isinstance(cfg, dict) else None, "labels": labels(raw_labels), "restart_policy": host.get("RestartPolicy", {}).get("Name") if isinstance(host, dict) else None, "network_mode": host.get("NetworkMode") if isinstance(host, dict) else None, "privileged": host.get("Privileged") if isinstance(host, dict) else None, "read_only_rootfs": host.get("ReadonlyRootfs") if isinstance(host, dict) else None, "mounts": sorted(mounts, key=lambda x: json.dumps(x, sort_keys=True)), "networks": sorted(attachments, key=lambda x: (str(x.get("name")), str(x.get("network_id")))), "published_ports": item.get("NetworkSettings", {}).get("Ports", {}), "ownership": own(name, raw_labels)}  # type: ignore[union-attr,attr-defined]
-            runtime = {"id": item.get("Id"), "status": state.get("Status") if isinstance(state, dict) else None, "running": state.get("Running") if isinstance(state, dict) else None, "paused": state.get("Paused") if isinstance(state, dict) else None, "restarting": state.get("Restarting") if isinstance(state, dict) else None, "dead": state.get("Dead") if isinstance(state, dict) else None, "exit_code": state.get("ExitCode") if isinstance(state, dict) else None, "health": state.get("Health", {}).get("Status") if isinstance(state, dict) and isinstance(state.get("Health"), dict) else None}
-            containers.append({"stable": {"fingerprint": _safe_digest(["container", item.get("Id"), name]), "name": name if name == "apm-postgres" else _safe_digest(name), **stable}, "runtime": runtime})
+                    attachments.append(
+                        {
+                            "name": str(net),
+                            "network_id": data.get("NetworkID"),
+                            "endpoint_id": data.get("EndpointID"),
+                        }
+                    )
+            stable = {
+                "id": _safe_digest(str(item.get("Id"))),
+                "image_id": item.get("Image"),
+                "image_reference": cfg.get("Image") if isinstance(cfg, dict) else None,
+                "labels": labels(raw_labels),
+                "restart_policy": host.get("RestartPolicy", {}).get("Name")
+                if isinstance(host, dict)
+                else None,
+                "network_mode": host.get("NetworkMode") if isinstance(host, dict) else None,
+                "privileged": host.get("Privileged") if isinstance(host, dict) else None,
+                "read_only_rootfs": host.get("ReadonlyRootfs") if isinstance(host, dict) else None,
+                "mounts": sorted(mounts, key=lambda x: json.dumps(x, sort_keys=True)),
+                "networks": sorted(
+                    attachments, key=lambda x: (str(x.get("name")), str(x.get("network_id")))
+                ),
+                "published_ports": (
+                    network_settings.get("Ports", {})
+                    if isinstance(network_settings, dict)
+                    else {}
+                ),
+                "ownership": own(name, raw_labels),
+            }
+            runtime = {
+                "id": _safe_digest(str(item.get("Id"))),
+                "status": state.get("Status") if isinstance(state, dict) else None,
+                "running": state.get("Running") if isinstance(state, dict) else None,
+                "paused": state.get("Paused") if isinstance(state, dict) else None,
+                "restarting": state.get("Restarting") if isinstance(state, dict) else None,
+                "dead": state.get("Dead") if isinstance(state, dict) else None,
+                "exit_code": state.get("ExitCode") if isinstance(state, dict) else None,
+                "health": state.get("Health", {}).get("Status")
+                if isinstance(state, dict) and isinstance(state.get("Health"), dict)
+                else None,
+            }
+            containers.append(
+                {
+                    "stable": {
+                        "fingerprint": _safe_digest(["container", item.get("Id"), name]),
+                        "name": name if name == "apm-postgres" else _safe_digest(name),
+                        **stable,
+                    },
+                    "runtime": runtime,
+                }
+            )
         containers.sort(key=lambda x: str(x["stable"].get("id")))
         # Networks and volumes use the same immutable object IDs, labels, and ownership basis.
         networks = []
         for ident in ids("network"):
-            item = inspect("network", ident); name = str(item.get("Name", "")); raw_labels = item.get("Labels", {})  # type: ignore[union-attr,attr-defined]
-            networks.append({"stable": {"id": item.get("Id"), "name": name if name == TASK_PROJECT + "_mayak-internal" else _safe_digest(name), "driver": item.get("Driver"), "scope": item.get("Scope"), "internal": item.get("Internal"), "attachable": item.get("Attachable"), "ingress": item.get("Ingress"), "labels": labels(raw_labels), "ipam": item.get("IPAM", {}), "attached_container_ids": sorted((item.get("Containers") or {}).keys()) if isinstance(item.get("Containers"), dict) else [], "ownership": own(name, raw_labels)}})  # type: ignore[attr-defined]
-        networks.sort(key=lambda x: str(x["stable"].get("id")))
+            item = inspect("network", ident)
+            name = str(item.get("Name", ""))
+            raw_labels = item.get("Labels", {})
+            attached_containers = item.get("Containers")
+            networks.append(
+                {
+                    "stable": {
+                        "identity": _safe_digest(str(item.get("Id"))),
+                        "name": name
+                        if name == TASK_PROJECT + "_mayak-internal"
+                        else _safe_digest(name),
+                        "driver": item.get("Driver"),
+                        "scope": item.get("Scope"),
+                        "internal": item.get("Internal"),
+                        "attachable": item.get("Attachable"),
+                        "ingress": item.get("Ingress"),
+                        "labels": labels(raw_labels),
+                        "ipam": item.get("IPAM", {}),
+                        "attached_container_ids": sorted(attached_containers.keys())
+                        if isinstance(attached_containers, dict)
+                        else [],
+                        "ownership": own(name, raw_labels),
+                    }
+                }
+            )
+        networks.sort(key=lambda x: str(x["stable"].get("identity")))
         volumes = []
         for ident in ids("volume"):
-            item = inspect("volume", ident); name = str(item.get("Name", "")); raw_labels = item.get("Labels", {}); options = item.get("Options") or {}  # type: ignore[union-attr,attr-defined]
-            volumes.append({"stable": {"name": _safe_digest(name), "driver": item.get("Driver"), "labels": labels(raw_labels), "options": [[str(k), _safe_digest(str(v))] for k, v in sorted(options.items())], "scope": item.get("Scope"), "ownership": own(name, raw_labels)}})  # type: ignore[attr-defined]
+            item = inspect("volume", ident)
+            name = str(item.get("Name", ""))
+            raw_labels = item.get("Labels", {})
+            options_value = item.get("Options")
+            options = options_value if isinstance(options_value, dict) else {}
+            volumes.append(
+                {
+                    "stable": {
+                        "name": _safe_digest(name),
+                        "driver": item.get("Driver"),
+                        "labels": labels(raw_labels),
+                        "options": [
+                            [str(k), _safe_digest(str(v))] for k, v in sorted(options.items())
+                        ],
+                        "scope": item.get("Scope"),
+                        "ownership": own(name, raw_labels),
+                    }
+                }
+            )
         volumes.sort(key=lambda x: str(x["stable"].get("name")))
-        foreign = {"containers": [x for x in containers if x["stable"]["ownership"] == "FOREIGN"], "networks": [x for x in networks if x["stable"]["ownership"] == "FOREIGN"], "volumes": [x for x in volumes if x["stable"]["ownership"] == "FOREIGN"]}
-        task = {kind: [x for x in values if x["stable"]["ownership"] == "TASK_OWNED"] for kind, values in {"containers": containers, "networks": networks, "volumes": volumes}.items()}
-        unresolved = {kind: [x for x in values if x["stable"]["ownership"] == "UNRESOLVED"] for kind, values in {"containers": containers, "networks": networks, "volumes": volumes}.items()}
-        result = {"schema_version": FOREIGN_SCHEMA_VERSION, "capture_phase": phase, "collector_implementation_id": INDEPENDENT_COLLECTOR_ID, "source_host_safe_identity": _safe_digest("host"), "docker_server_safe_identity": _safe_digest("docker"), "capture_monotonic_sequence": sequence, "container_records": foreign["containers"], "network_records": foreign["networks"], "volume_records": foreign["volumes"], "apm_postgres_present": any(x["stable"].get("name") == "apm-postgres" for x in foreign["containers"]), "task_owned_resource_records": task, "unresolved_resource_records": unresolved, "collection_complete": True, "collection_errors": [], "redaction_passed": True}
-        canonical = {key: result[key] for key in ("schema_version", "source_host_safe_identity", "docker_server_safe_identity", "container_records", "network_records", "volume_records", "apm_postgres_present", "task_owned_resource_records", "unresolved_resource_records", "collection_complete", "collection_errors", "redaction_passed")}
+        foreign = {
+            "containers": [x for x in containers if x["stable"]["ownership"] == "FOREIGN"],
+            "networks": [x for x in networks if x["stable"]["ownership"] == "FOREIGN"],
+            "volumes": [x for x in volumes if x["stable"]["ownership"] == "FOREIGN"],
+        }
+        task = {
+            kind: [x for x in values if x["stable"]["ownership"] == "TASK_OWNED"]
+            for kind, values in {
+                "containers": containers,
+                "networks": networks,
+                "volumes": volumes,
+            }.items()
+        }
+        unresolved = {
+            kind: [x for x in values if x["stable"]["ownership"] == "UNRESOLVED"]
+            for kind, values in {
+                "containers": containers,
+                "networks": networks,
+                "volumes": volumes,
+            }.items()
+        }
+        host = _host_identity()
+        boot = _boot_identity()
+        endpoint_schema, endpoint, server_metadata = _endpoint_identity()
+        result = {
+            "schema_version": FOREIGN_SCHEMA_VERSION,
+            "capture_phase": phase,
+            "collector_implementation_id": INDEPENDENT_COLLECTOR_ID,
+            "source_host_safe_identity": host,
+            "host_boot_instance_safe_identity": boot,
+            "docker_server_safe_identity": endpoint,
+            "docker_endpoint_identity_schema": endpoint_schema,
+            "docker_server_safe_metadata": server_metadata,
+            "capture_monotonic_sequence": sequence,
+            "container_records": foreign["containers"],
+            "network_records": foreign["networks"],
+            "volume_records": foreign["volumes"],
+            "apm_postgres_present": any(
+                x["stable"].get("name") == "apm-postgres" for x in foreign["containers"]
+            ),
+            "task_owned_resource_records": task,
+            "unresolved_resource_records": unresolved,
+            "collection_complete": True,
+            "collection_errors": [],
+            "redaction_passed": True,
+        }
+        canonical = {
+            key: result[key]
+            for key in (
+                "schema_version",
+                "source_host_safe_identity",
+                "host_boot_instance_safe_identity",
+                "docker_server_safe_identity",
+                "docker_endpoint_identity_schema",
+                "docker_server_safe_metadata",
+                "container_records",
+                "network_records",
+                "volume_records",
+                "apm_postgres_present",
+                "task_owned_resource_records",
+                "unresolved_resource_records",
+                "collection_complete",
+                "collection_errors",
+                "redaction_passed",
+            )
+        }
         result["canonical_serialization_digest"] = _safe_digest(canonical)
         return result
-    except (OSError, subprocess.SubprocessError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
-        return {"schema_version": FOREIGN_SCHEMA_VERSION, "collector_implementation_id": INDEPENDENT_COLLECTOR_ID, "capture_phase": phase, "capture_monotonic_sequence": sequence, "collection_complete": False, "collection_errors": [type(exc).__name__], "redaction_passed": True, "container_records": [], "network_records": [], "volume_records": [], "task_owned_resource_records": {"containers": [], "networks": [], "volumes": []}, "unresolved_resource_records": {"containers": [], "networks": [], "volumes": []}, "canonical_serialization_digest": ""}
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+        json.JSONDecodeError,
+        RuntimeError,
+    ) as exc:
+        return {
+            "schema_version": FOREIGN_SCHEMA_VERSION,
+            "collector_implementation_id": INDEPENDENT_COLLECTOR_ID,
+            "capture_phase": phase,
+            "capture_monotonic_sequence": sequence,
+            "collection_complete": False,
+            "collection_errors": [type(exc).__name__],
+            "redaction_passed": True,
+            "container_records": [],
+            "network_records": [],
+            "volume_records": [],
+            "task_owned_resource_records": {"containers": [], "networks": [], "volumes": []},
+            "unresolved_resource_records": {"containers": [], "networks": [], "volumes": []},
+            "canonical_serialization_digest": "",
+        }
 
 
 def _relative(value: str) -> str:
@@ -301,12 +627,14 @@ def _check_stage_ids(row: dict[str, object], name: str) -> None:
     }:
         evidence = row["evidence"]
         assert isinstance(evidence, dict)
-        if name.lower() not in str(row["operation_id"]).lower() and not (
-            name.startswith("APPLICATION_AUTH_REJECTION_B")
-            and str(row["operation_id"]).startswith("rf08.application_auth_rejection_b")
-        ) and not str(
-            row["operation_id"]
-        ).startswith(("secret.", "pointer.")):
+        if (
+            name.lower() not in str(row["operation_id"]).lower()
+            and not (
+                name.startswith("APPLICATION_AUTH_REJECTION_B")
+                and str(row["operation_id"]).startswith("rf08.application_auth_rejection_b")
+            )
+            and not str(row["operation_id"]).startswith(("secret.", "pointer."))
+        ):
             raise ValueError(f"operation id does not identify stage: {name}")
 
 
@@ -359,51 +687,113 @@ def _verify_stage55(evidence: dict[str, object]) -> None:
 
 
 def _verify_stage56(evidence: dict[str, object]) -> None:
-    exact = {
-        "observed": "task_owned_cleanup_complete",
-        "task_containers": 0,
-        "task_networks": 0,
-        "task_volumes": 0,
-        "private_output_files": 0,
-        "postgresql_json_log_files": 0,
-        "runtime_override_files": 0,
-        "temporary_context_directories": 0,
-        "independent_context_directories": 0,
-        "secret_generation_directories": 0,
-        "cleanup_exit": 0,
-        "cleanup_observed": True,
-        "cleanup_limitation": None,
-        "foreign_deletion": False,
-    }
-    if any(evidence.get(k) != v for k, v in exact.items()):
-        raise ValueError("stage 56 semantic contract failed")
+    if (
+        evidence.get("observed") != "task_owned_cleanup_complete"
+        or evidence.get("cleanup_observed") is not True
+        or evidence.get("cleanup_exit") != 0
+        or evidence.get("foreign_deletion") is not False
+        or any(
+            evidence.get(k) != 0
+            for k in (
+                "task_containers",
+                "task_networks",
+                "task_volumes",
+                "private_output_files",
+                "runtime_override_files",
+                "independent_context_directories",
+                "temporary_context_directories",
+            )
+        )
+    ):
+        raise ValueError("stage 56 observed cleanup failed")
 
 
 def _verify_stage57(evidence: dict[str, object]) -> None:
-    required = {
-        "foreign_delta_classification": "NO_CHANGE",
-        "foreign_resource_set_equal": True,
-        "foreign_structural_digest_equal": True,
-        "foreign_runtime_state_digest_equal": True,
+    records = evidence.get("foreign_records")
+    if not isinstance(records, dict):
+        records = {
+            "producer_before": evidence.get("producer_before_snapshot"),
+            "independent_before": evidence.get("independent_before_snapshot"),
+            "producer_after": evidence.get("producer_after_snapshot"),
+            "independent_after": evidence.get("independent_after_snapshot"),
+        }
+    if not isinstance(records, dict):
+        raise ValueError("foreign records missing")
+    required = ("producer_before", "independent_before", "producer_after", "independent_after")
+    if any(not isinstance(records.get(k), dict) for k in required):
+        raise ValueError("foreign record shape")
+    before = cast(dict[str, object], records["producer_before"])
+    before_i = cast(dict[str, object], records["independent_before"])
+    after = cast(dict[str, object], records["producer_after"])
+    after_i = cast(dict[str, object], records["independent_after"])
+    canonical_keys = (
+        "schema_version", "source_host_safe_identity", "host_boot_instance_safe_identity",
+        "docker_server_safe_identity", "docker_endpoint_identity_schema",
+        "docker_server_safe_metadata", "container_records", "network_records", "volume_records",
+        "apm_postgres_present", "task_owned_resource_records", "unresolved_resource_records",
+        "collection_complete", "collection_errors", "redaction_passed",
+    )
+    for snapshot in (before, before_i, after, after_i):
+        if snapshot.get("canonical_serialization_digest") != _safe_digest(
+            {key: snapshot.get(key) for key in canonical_keys}
+        ):
+            raise ValueError("safe record recomputation failed")
+    if before.get("canonical_serialization_digest") != before_i.get(
+        "canonical_serialization_digest"
+    ) or after.get("canonical_serialization_digest") != after_i.get(
+        "canonical_serialization_digest"
+    ):
+        raise ValueError("collector parity failed")
+    if before.get("source_host_safe_identity") != after.get(
+        "source_host_safe_identity"
+    ) or before.get("host_boot_instance_safe_identity") != after.get(
+        "host_boot_instance_safe_identity"
+    ) or before.get("docker_server_safe_identity") != after.get("docker_server_safe_identity"):
+        raise ValueError("identity stability failed")
+    if (
+        before.get("container_records") != after.get("container_records")
+        or before.get("network_records") != after.get("network_records")
+        or before.get("volume_records") != after.get("volume_records")
+    ):
+        raise ValueError("foreign delta failed")
+    ledger = evidence.get("mutation_ledger")
+    if not isinstance(ledger, list) or any(
+        not isinstance(item, dict) or item.get("ownership") != "TASK_OWNED" for item in ledger
+    ):
+        raise ValueError("mutation ledger failed")
+    def record_list(snapshot: dict[str, object], key: str) -> list[object]:
+        value = snapshot.get(key)
+        if not isinstance(value, list):
+            raise ValueError("foreign record list missing")
+        return value
+
+    after_containers = record_list(after, "container_records")
+    after_networks = record_list(after, "network_records")
+    after_volumes = record_list(after, "volume_records")
+    expected_summary = {
         "foreign_before_collectors_equal": True,
         "foreign_after_collectors_equal": True,
-        "task_container_count_after_cleanup": 0,
-        "task_network_count_after_cleanup": 0,
-        "task_volume_count_after_cleanup": 0,
-        "unresolved_resource_count": 0,
+        "foreign_before_producer_digest": before.get("canonical_serialization_digest"),
+        "foreign_before_independent_digest": before_i.get("canonical_serialization_digest"),
+        "foreign_after_producer_digest": after.get("canonical_serialization_digest"),
+        "foreign_after_independent_digest": after_i.get("canonical_serialization_digest"),
+        "foreign_delta_classification": "NO_CHANGE",
+        "foreign_container_count": len(after_containers),
+        "foreign_network_count": len(after_networks),
+        "foreign_volume_count": len(after_volumes),
         "foreign_target_mutation_command_count": 0,
-        "unresolved_target_mutation_command_count": 0,
-        "snapshot_private_artifacts_removed": True,
     }
-    if any(evidence.get(key) != value for key, value in required.items()):
-        raise ValueError("stage 57 typed equality contract failed")
-    if evidence.get("stage57_semantic_verification") != "PASS":
-        raise ValueError("stage 57 semantic result failed")
+    if any(evidence.get(key) != value for key, value in expected_summary.items()):
+        raise ValueError("foreign summary recomputation failed")
 
 
 def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]:
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
-    if document.get("technical_id") != TASK_ID or document.get("expected_base") != BASE:
+    if (
+        document.get("technical_id") != TASK_ID
+        or document.get("task_expected_base") != TASK_EXPECTED_BASE
+        or document.get("runtime_image_input_base") != BASE
+    ):
         raise ValueError("identity or base mismatch")
     if document.get("required_stage_order") != list(STAGES) or len(STAGES) != 57:
         raise ValueError("exact stage contract mismatch")
@@ -502,12 +892,18 @@ def verify_evidence(evidence_path: Path, source_tree: Path) -> dict[str, object]
                 _stage(document, "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL")["evidence"],
             )
         )
-        _verify_stage57(
+        stage57 = dict(
             cast(
                 dict[str, object],
                 _stage(document, "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION")["evidence"],
             )
         )
+        stage10 = cast(
+            dict[str, object], _stage(document, "FOREIGN_RESOURCE_SNAPSHOT_BEFORE")["evidence"]
+        )
+        stage57.setdefault("producer_before_snapshot", stage10.get("producer_before_snapshot"))
+        stage57.setdefault("independent_before_snapshot", stage10.get("independent_before_snapshot"))
+        _verify_stage57(stage57)
         if (
             not document.get("image_id")
             or document.get("verdict") != "PUBLISHED_FOR_CHATGPT_REVIEW"
@@ -539,7 +935,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("source_tree", type=Path, nargs="?")
     args = parser.parse_args(argv)
     if args.snapshot:
-        print(json.dumps(_independent_snapshot(args.phase, args.sequence), sort_keys=True, separators=(",", ":")))
+        print(
+            json.dumps(
+                _independent_snapshot(args.phase, args.sequence),
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
         return 0
     if args.evidence is None or args.source_tree is None:
         parser.error("evidence and source_tree are required unless --snapshot is used")

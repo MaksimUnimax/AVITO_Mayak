@@ -36,6 +36,7 @@ from scripts.runtime.rf08_docker_context import (
 from scripts.runtime.rf08_docker_context import (
     build_input_digest as docker_build_input_digest,
 )
+from scripts.runtime.rf08_foreign_snapshot import DockerMutationRecord
 from scripts.runtime.rf08_foreign_snapshot import (
     classify_delta as classify_foreign_delta,
 )
@@ -774,6 +775,20 @@ class TranscriptEntry:
     evidence: Mapping[str, object]
 
 
+@dataclass
+class DockerMutationLedger:
+    entries: list[DockerMutationRecord] = field(default_factory=list)
+
+    def append(self, entry: DockerMutationRecord) -> None:
+        if (
+            entry.ownership in {"FOREIGN", "UNRESOLVED"}
+            or not entry.scoped
+            or not entry.mutation_allowed
+        ):
+            raise ProtocolFailure(entry.stage, "STOP_FOREIGN_RESOURCE")
+        self.entries.append(entry)
+
+
 class ProtocolTranscript:
     def __init__(self, required_stages: tuple[str, ...] = REQUIRED_STAGES) -> None:
         if len(required_stages) != len(set(required_stages)):
@@ -904,7 +919,15 @@ def _safe_root(root: Path) -> Path:
 def _independent_foreign_snapshot(phase: str, sequence: int) -> dict[str, object]:
     verifier = Path(__file__).with_name("verify_rf08_authoritative_evidence.py")
     result = subprocess.run(
-        [sys.executable, str(verifier), "--snapshot", "--phase", phase, "--sequence", str(sequence)],
+        [
+            sys.executable,
+            str(verifier),
+            "--snapshot",
+            "--phase",
+            phase,
+            "--sequence",
+            str(sequence),
+        ],
         capture_output=True,
         check=False,
         timeout=90,
@@ -1070,43 +1093,15 @@ def _parse_stage_output(
         "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION",
     }:
         try:
-            records = [json.loads(line) for line in text.splitlines() if line.strip()]
-            stable_keys = ("ID", "Names", "Image")
-            canonical = sorted(
-                (
-                    {key: item.get(key) for key in stable_keys}
-                    for item in records
-                    if isinstance(item, dict)
-                    and "com.docker.compose.project=avito-mayak-rf08-secret-delivery"
-                    not in str(item.get("Labels", ""))
-                    and not str(item.get("Names", "")).startswith("mayak-")
-                ),
-                key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
-            )
-            canonical_bytes = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-            return {
-                "snapshot_sha256": hashlib.sha256(canonical_bytes).hexdigest(),
-                "canonical_snapshot": canonical,
-                "apm_postgres_included": True,
-                "resource_count": len(canonical),
-                "equal": stage.startswith("FOREIGN_RESOURCE_EQUALITY"),
-            }
-        except (IndexError, TypeError, ValueError, json.JSONDecodeError):
-            records = []
-            for line in text.splitlines():
-                parts = line.split("|", 2)
-                if len(parts) == 3 and not parts[1].startswith("mayak-"):
-                    records.append(dict(zip(("ID", "Names", "Image"), parts)))
-            canonical = sorted(records, key=lambda item: json.dumps(item, sort_keys=True))
-            return {
-                "snapshot_sha256": hashlib.sha256(
-                    json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
-                ).hexdigest(),
-                "canonical_snapshot": canonical,
-                "apm_postgres_included": True,
-                "resource_count": len(canonical),
-                "equal": stage.startswith("FOREIGN_RESOURCE_EQUALITY"),
-            }
+            value = json.loads(text)
+            if (
+                not isinstance(value, dict)
+                or value.get("schema_version") != "ForeignResourceSnapshotV3"
+            ):
+                return {}
+            return value
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
     if stage.startswith("MIGRATION_HEAD") or stage == "POST_RECOVERY_MIGRATION_HEAD":
         return {"observed_migration_head": text or MIGRATION_HEAD}
     if stage.startswith("APPLICATION_QUERY") or stage == "POST_RECOVERY_APPLICATION_QUERY":
@@ -1373,36 +1368,24 @@ def _command_spec(
         if stage == "APPLICATION_IMAGE_INSPECT" and isinstance(result.parsed.get("image_id"), str):
             runner.env["MAYAK_IMAGE_DIGEST"] = cast(str, result.parsed["image_id"])
         parsed = dict(result.parsed)
-        if stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION":
-            transcript = cast(ProtocolTranscript, ctx["transcript"])
-            before = transcript.result_for("FOREIGN_RESOURCE_SNAPSHOT_BEFORE").parsed
-            before_snapshot = before.get("canonical_snapshot")
-            after_snapshot = parsed.get("canonical_snapshot")
-            before_ids = {item.get("ID") for item in cast(list[Mapping[str, object]], before_snapshot or [])}  # type: ignore[arg-type]
-            after_ids = {item.get("ID") for item in cast(list[Mapping[str, object]], after_snapshot or [])}  # type: ignore[arg-type]
-            equal = before_ids == after_ids and before_snapshot == after_snapshot
-            if not equal:
-                raise ProtocolFailure(stage, "FOREIGN_SNAPSHOT_CHANGED")
-            parsed.update(
-                {
-                    "before_snapshot": before_snapshot,
-                    "after_snapshot": after_snapshot,
-                    "snapshot_digest_equal": (
-                        before.get("snapshot_sha256") == parsed.get("snapshot_sha256")
-                    ),
-                    "project_foreign_classification_equal": equal,
-                    "modified_foreign_containers": 0 if equal else 1,
-                    "modified_foreign_networks": 0 if equal else 1,
-                    "modified_foreign_volumes": 0 if equal else 1,
-                    "modified_foreign_databases": 0 if equal else 1,
-                    "modified_foreign_filesystems": 0 if equal else 1,
-                    "unresolved_resources": 0 if equal else 1,
-                    "evidence_producer_result": "PASS" if equal else "FAIL",
-                    "independent_verifier_result": "PASS" if equal else "FAIL",
-                    "final_verdict": "PUBLISHED_FOR_CHATGPT_REVIEW" if equal else "FAIL",
-                }
-            )
         if stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL" and result.exit_code == 0:
+            cast(DockerMutationLedger, ctx["mutation_ledger"]).append(
+                DockerMutationRecord(
+                    sequence=1,
+                    stage=stage,
+                    operation_class="compose_cleanup",
+                    docker_command_class="compose_down",
+                    compose_project=TASK_PROJECT,
+                    target_kind="task_project",
+                    target_identity=hashlib.sha256(TASK_PROJECT.encode()).hexdigest(),
+                    ownership="TASK_OWNED",
+                    scoped=True,
+                    executed=result.executed,
+                    exit_code=result.exit_code,
+                    timed_out=result.timed_out,
+                    mutation_allowed=True,
+                )
+            )
             log_dir = cast(Path, ctx["json_log_dir"])
             build_root = RUNTIME_ROOT / "build-context"
             independent_root = RUNTIME_ROOT / "independent-build-context"
@@ -1424,23 +1407,46 @@ def _command_spec(
                             shutil.rmtree(child)
                         else:
                             child.unlink()
+            observed = collect_foreign_snapshot("post-cleanup", 2)
+            task = cast(dict[str, list[object]], observed.get("task_owned_resource_records", {}))
+            unresolved = cast(
+                dict[str, list[object]], observed.get("unresolved_resource_records", {})
+            )
+            root_path = cast(Path, ctx["root"])
             parsed.update(
                 {
                     "json_log_absent": not log_dir.exists(),
                     "override_absent": not JSON_LOG_OVERRIDE.exists(),
-                    "task_containers": 0,
-                    "task_networks": 0,
-                    "task_volumes": 0,
+                    "task_containers": len(task.get("containers", [])),
+                    "task_networks": len(task.get("networks", [])),
+                    "task_volumes": len(task.get("volumes", [])),
                     "private_output_files": private_files,
-                    "postgresql_json_log_files": 0,
-                    "runtime_override_files": 0,
-                    "temporary_context_directories": 0,
-                    "independent_context_directories": 0,
-                    "secret_generation_directories": 0,
+                    "postgresql_json_log_files": sum(
+                        1 for p in JSON_LOG_ROOT.rglob("*") if p.is_file()
+                    )
+                    if JSON_LOG_ROOT.exists()
+                    else 0,
+                    "runtime_override_files": int(JSON_LOG_OVERRIDE.exists()),
+                    "temporary_context_directories": sum(
+                        1 for p in build_root.iterdir() if p.is_dir()
+                    )
+                    if build_root.exists()
+                    else 0,
+                    "independent_context_directories": sum(
+                        1 for p in independent_root.iterdir() if p.is_dir()
+                    )
+                    if independent_root.exists()
+                    else 0,
+                    "secret_generation_directories": sum(
+                        1 for p in root_path.iterdir() if p.is_dir()
+                    )
+                    if root_path.exists()
+                    else 0,
                     "cleanup_exit": result.exit_code,
-                    "cleanup_observed": True,
+                    "cleanup_observed": bool(observed.get("collection_complete")),
                     "cleanup_limitation": None,
-                    "foreign_deletion": False,
+                    "foreign_deletion": any(unresolved.values()),
+                    "unresolved_resource_count": sum(len(v) for v in unresolved.values()),
                 }
             )
         if stage == "APPLICATION_AUTH_REJECTION_B" and "b_json_log_file" in ctx:
@@ -1572,9 +1578,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             "oracle.image_input_digest",
         )
     )
-    image_tag = (
-        f"avito-mayak:{cast(str, ctx.get('source_sha', EXPECTED_IMAGE_TAG.split(':', 1)[1]))}"  # noqa: E501
-    )
+    image_tag = EXPECTED_IMAGE_TAG
     image = ("docker", "image", "inspect", image_tag)
     for stage, required in (
         ("APPLICATION_IMAGE_RESOLUTION", ("image_id",)),
@@ -1600,16 +1604,31 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             ("imported_package_path",),
         )
     )
+
     def foreign_before() -> StageResult:
         snapshot = collect_foreign_snapshot("before", 1)
         independent = _independent_foreign_snapshot("before", 1)
-        if snapshot.get("canonical_serialization_digest") != independent.get("canonical_serialization_digest"):
-            raise ProtocolFailure("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "PRODUCER_INDEPENDENT_MISMATCH")
-        if snapshot.get("unresolved_resource_records") != {"containers": [], "networks": [], "volumes": []}:
+        if snapshot.get("canonical_serialization_digest") != independent.get(
+            "canonical_serialization_digest"
+        ):
+            raise ProtocolFailure(
+                "FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "PRODUCER_INDEPENDENT_MISMATCH"
+            )
+        if snapshot.get("unresolved_resource_records") != {
+            "containers": [],
+            "networks": [],
+            "volumes": [],
+        }:
             raise ProtocolFailure("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "UNRESOLVED_RESOURCE_PRESENT")
         ctx["foreign_before"] = snapshot
         ctx["foreign_before_independent"] = independent
-        return StageResult("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", "foreign_resource_snapshot_before.producer", True, 0, {"producer": snapshot, "independent": independent})
+        return StageResult(
+            "FOREIGN_RESOURCE_SNAPSHOT_BEFORE",
+            "foreign_resource_snapshot_before.producer",
+            True,
+            0,
+            {"producer": snapshot, "independent": independent},
+        )
 
     def foreign_summary(result: StageResult) -> Mapping[str, object]:
         snapshot = cast(dict[str, object], result.parsed.get("producer", result.parsed))
@@ -1617,23 +1636,36 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
         containers = cast(list[object], snapshot.get("container_records", []))
         networks = cast(list[object], snapshot.get("network_records", []))
         volumes = cast(list[object], snapshot.get("volume_records", []))
-        unresolved_records = cast(dict[str, list[object]], snapshot.get("unresolved_resource_records", {}))
+        unresolved_records = cast(
+            dict[str, list[object]], snapshot.get("unresolved_resource_records", {})
+        )
         return {
             "observed": "FOREIGN_RESOURCE_SNAPSHOT_BEFORE",
             "foreign_snapshot_schema_version": snapshot.get("schema_version"),
             "foreign_producer_collector_id": snapshot.get("collector_implementation_id"),
             "foreign_before_producer_digest": snapshot.get("canonical_serialization_digest"),
             "foreign_before_independent_digest": independent.get("canonical_serialization_digest"),
-            "foreign_before_collectors_equal": snapshot.get("canonical_serialization_digest") == independent.get("canonical_serialization_digest"),
+            "foreign_before_collectors_equal": snapshot.get("canonical_serialization_digest")
+            == independent.get("canonical_serialization_digest"),
             "foreign_container_count": len(containers),
             "foreign_network_count": len(networks),
             "foreign_volume_count": len(volumes),
             "apm_postgres_present_before": snapshot.get("apm_postgres_present"),
             "unresolved_resource_count": sum(len(x) for x in unresolved_records.values()),
             "collection_complete": snapshot.get("collection_complete"),
+            "producer_before_snapshot": snapshot,
+            "independent_before_snapshot": independent,
         }
 
-    specs.append(StageSpec("FOREIGN_RESOURCE_SNAPSHOT_BEFORE", foreign_before, foreign_summary, "parser.foreign.producer.v2", "oracle.foreign.producer.v2"))
+    specs.append(
+        StageSpec(
+            "FOREIGN_RESOURCE_SNAPSHOT_BEFORE",
+            foreign_before,
+            foreign_summary,
+            "parser.foreign.producer.v2",
+            "oracle.foreign.producer.v2",
+        )
+    )
     for stage, label, active in (
         ("SECRET_GENERATION_A_CREATE", "A", False),
         ("SECRET_GENERATION_A_VALIDATE", "A", False),
@@ -2180,39 +2212,106 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 )
             )
         elif stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION":
+
             def foreign_after() -> StageResult:
                 after = collect_foreign_snapshot("after", 2)
                 independent = _independent_foreign_snapshot("after", 2)
                 before = cast(dict[str, object], ctx.get("foreign_before", {}))
-                if after.get("canonical_serialization_digest") != independent.get("canonical_serialization_digest"):
+                if after.get("canonical_serialization_digest") != independent.get(
+                    "canonical_serialization_digest"
+                ):
                     raise ProtocolFailure(stage, "PRODUCER_INDEPENDENT_MISMATCH")
                 delta = classify_foreign_delta(before, after)
                 if delta != "NO_CHANGE":
                     raise ProtocolFailure(stage, delta)
-                return StageResult(stage, "foreign_resource_equality_and_evidence_validation.producer", True, 0, {"before": before, "after": after, "independent": independent, "delta": delta})
+                return StageResult(
+                    stage,
+                    "foreign_resource_equality_and_evidence_validation.producer",
+                    True,
+                    0,
+                    {"before": before, "after": after, "independent": independent, "delta": delta},
+                )
 
             def foreign_after_summary(result: StageResult) -> Mapping[str, object]:
                 after = cast(dict[str, object], result.parsed["after"])
                 independent = cast(dict[str, object], result.parsed["independent"])
                 before = cast(dict[str, object], result.parsed["before"])
+                before_independent = cast(
+                    dict[str, object], ctx.get("foreign_before_independent", {})
+                )
                 task = cast(dict[str, list[object]], after.get("task_owned_resource_records", {}))
-                unresolved = cast(dict[str, list[object]], after.get("unresolved_resource_records", {}))
+                unresolved = cast(
+                    dict[str, list[object]], after.get("unresolved_resource_records", {})
+                )
                 containers = cast(list[object], after.get("container_records", []))
                 networks = cast(list[object], after.get("network_records", []))
                 volumes = cast(list[object], after.get("volume_records", []))
+
+                def record_mappings(value: object) -> tuple[Mapping[str, object], ...]:
+                    if not isinstance(value, list):
+                        return ()
+                    return tuple(item for item in value if isinstance(item, Mapping))
+
+                before_containers = record_mappings(before.get("container_records", []))
+                after_containers = record_mappings(after.get("container_records", []))
+                ledger_value = ctx.get("mutation_ledger")
+                ledger_entries = (
+                    ledger_value.entries
+                    if isinstance(ledger_value, DockerMutationLedger)
+                    else ()
+                )
+                before_equal = before.get(
+                    "canonical_serialization_digest"
+                ) == before_independent.get("canonical_serialization_digest")
+                after_equal = after.get("canonical_serialization_digest") == independent.get(
+                    "canonical_serialization_digest"
+                )
+                foreign_set_equal = {
+                    k: before.get(k, [])
+                    for k in ("container_records", "network_records", "volume_records")
+                } == {
+                    k: after.get(k, [])
+                    for k in ("container_records", "network_records", "volume_records")
+                }
+                structural_equal = (
+                    [x.get("stable") for x in before_containers]
+                    == [x.get("stable") for x in after_containers]
+                    and before.get("network_records") == after.get("network_records")
+                    and before.get("volume_records") == after.get("volume_records")
+                )
+                runtime_equal = [
+                    {"runtime": x.get("runtime")} for x in before_containers
+                ] == [{"runtime": x.get("runtime")} for x in after_containers]
+                semantic = all(
+                    (
+                        before_equal,
+                        after_equal,
+                        foreign_set_equal,
+                        structural_equal,
+                        runtime_equal,
+                        result.parsed.get("delta") == "NO_CHANGE",
+                        not any(unresolved.values()),
+                        not any(task.values()),
+                    )
+                )
                 return {
                     "observed": "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION",
                     "foreign_snapshot_schema_version": after.get("schema_version"),
                     "foreign_producer_collector_id": after.get("collector_implementation_id"),
                     "foreign_before_producer_digest": before.get("canonical_serialization_digest"),
-                    "foreign_before_independent_digest": before.get("canonical_serialization_digest"),
-                    "foreign_before_collectors_equal": True,
+                    "foreign_before_independent_digest": before_independent.get(
+                        "canonical_serialization_digest"
+                    ),
+                    "foreign_before_collectors_equal": before_equal,
                     "foreign_after_producer_digest": after.get("canonical_serialization_digest"),
-                    "foreign_after_independent_digest": independent.get("canonical_serialization_digest"),
-                    "foreign_after_collectors_equal": after.get("canonical_serialization_digest") == independent.get("canonical_serialization_digest"),
-                    "foreign_resource_set_equal": True,
-                    "foreign_structural_digest_equal": True,
-                    "foreign_runtime_state_digest_equal": True,
+                    "foreign_after_independent_digest": independent.get(
+                        "canonical_serialization_digest"
+                    ),
+                    "foreign_after_collectors_equal": after.get("canonical_serialization_digest")
+                    == independent.get("canonical_serialization_digest"),
+                    "foreign_resource_set_equal": foreign_set_equal,
+                    "foreign_structural_digest_equal": structural_equal,
+                    "foreign_runtime_state_digest_equal": runtime_equal,
                     "foreign_delta_classification": result.parsed.get("delta"),
                     "foreign_container_count": len(containers),
                     "foreign_network_count": len(networks),
@@ -2223,13 +2322,45 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     "task_network_count_after_cleanup": len(task.get("networks", [])),
                     "task_volume_count_after_cleanup": len(task.get("volumes", [])),
                     "unresolved_resource_count": sum(len(x) for x in unresolved.values()),
-                    "foreign_target_mutation_command_count": 0,
-                    "unresolved_target_mutation_command_count": 0,
-                    "snapshot_private_artifacts_removed": True,
-                    "stage57_semantic_verification": "PASS",
+                    "foreign_target_mutation_command_count": sum(
+                        1
+                        for x in ledger_entries
+                        if getattr(x, "ownership", None) == "FOREIGN"
+                    ),
+                    "unresolved_target_mutation_command_count": sum(
+                        1
+                        for x in ledger_entries
+                        if getattr(x, "ownership", None) == "UNRESOLVED"
+                    ),
+                    "snapshot_private_artifacts_removed": not any(
+                        Path(p).is_file() for p in (PRIVATE_OUTPUT_ROOT,)
+                    ),
+                    "stage57_semantic_verification": "PASS" if semantic else "FAIL",
+                    "producer_after_snapshot": after,
+                    "independent_after_snapshot": independent,
+                    "cleanup_observation": {
+                        "task_containers": len(task.get("containers", [])),
+                        "task_networks": len(task.get("networks", [])),
+                        "task_volumes": len(task.get("volumes", [])),
+                        "unresolved": sum(len(v) for v in unresolved.values()),
+                    },
+                    "mutation_ledger": [
+                        getattr(x, "__dict__", {})
+                        for x in cast(
+                            DockerMutationLedger, ctx.get("mutation_ledger", DockerMutationLedger())
+                        ).entries
+                    ],
                 }
 
-            specs.append(StageSpec(stage, foreign_after, foreign_after_summary, "parser.foreign.producer.v2.after", "oracle.foreign.producer.v2.after"))
+            specs.append(
+                StageSpec(
+                    stage,
+                    foreign_after,
+                    foreign_after_summary,
+                    "parser.foreign.producer.v2.after",
+                    "oracle.foreign.producer.v2.after",
+                )
+            )
         elif stage in {
             "POSTGRES_A_CREATE",
             "POSTGRES_A_STOP",
@@ -2328,6 +2459,7 @@ def run_protocol(
         "runner": runner,
         "generations": {},
         "source_sha": source_sha,
+        "mutation_ledger": DockerMutationLedger(),
         "b_correlation_id": "rf08b_"
         + hashlib.sha256(f"{source_sha}:{os.getpid()}:{root.name}".encode()).hexdigest()[:16],
     }
@@ -2381,12 +2513,26 @@ def build_evidence(
     context = cast(Mapping[str, object], record.metadata.get("build_context_snapshot", {}))
     manifest = cast(list[dict[str, str]], context.get("manifest", []))
     digest = cast(str, context.get("digest", ""))
-    before_evidence = next((e.evidence for e in record.entries if e.stage == "FOREIGN_RESOURCE_SNAPSHOT_BEFORE"), {})
-    after_evidence = next((e.evidence for e in record.entries if e.stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION"), {})
+    before_evidence = next(
+        (e.evidence for e in record.entries if e.stage == "FOREIGN_RESOURCE_SNAPSHOT_BEFORE"), {}
+    )
+    after_evidence = next(
+        (
+            e.evidence
+            for e in record.entries
+            if e.stage == "FOREIGN_RESOURCE_EQUALITY_AND_EVIDENCE_VALIDATION"
+        ),
+        {},
+    )
     payload: dict[str, object] = {
         "schema_version": "rf08-authoritative-v2",
         "technical_id": TASK_ID,
         "expected_base": EXPECTED_BASE_SHA,
+        "task_expected_base": "e547399fa19cd867983096ce86a2cecb23b8c676",
+        "runtime_image_input_base": EXPECTED_BASE_SHA,
+        "runtime_image_input_tree_identity": context.get("expected_base_tree_identity"),
+        "runtime_image_build_input_digest": digest,
+        "runtime_image_manifest_count": len(manifest),
         "build_context_schema_version": context.get("schema_version"),
         "expected_base_tree_identity": context.get("expected_base_tree_identity"),
         "dockerfile_sha256": context.get("dockerfile_sha256"),
@@ -2400,31 +2546,56 @@ def build_evidence(
         "independent_recomputed_digest": digest,
         "producer_independent_manifest_equal": True,
         "producer_independent_digest_equal": True,
-        "foreign_snapshot_schema_version": after_evidence.get("foreign_snapshot_schema_version", before_evidence.get("foreign_snapshot_schema_version")),
-        "foreign_producer_collector_id": after_evidence.get("foreign_producer_collector_id", before_evidence.get("foreign_producer_collector_id")),
+        "foreign_snapshot_schema_version": after_evidence.get(
+            "foreign_snapshot_schema_version",
+            before_evidence.get("foreign_snapshot_schema_version"),
+        ),
+        "foreign_producer_collector_id": after_evidence.get(
+            "foreign_producer_collector_id", before_evidence.get("foreign_producer_collector_id")
+        ),
         "foreign_independent_collector_id": "rf08.independent.typed-docker-control-plane.v2",
         "foreign_before_producer_digest": before_evidence.get("foreign_before_producer_digest"),
-        "foreign_before_independent_digest": before_evidence.get("foreign_before_independent_digest"),
+        "foreign_before_independent_digest": before_evidence.get(
+            "foreign_before_independent_digest"
+        ),
         "foreign_before_collectors_equal": before_evidence.get("foreign_before_collectors_equal"),
         "foreign_after_producer_digest": after_evidence.get("foreign_after_producer_digest"),
         "foreign_after_independent_digest": after_evidence.get("foreign_after_independent_digest"),
         "foreign_after_collectors_equal": after_evidence.get("foreign_after_collectors_equal"),
         "foreign_resource_set_equal": after_evidence.get("foreign_resource_set_equal"),
         "foreign_structural_digest_equal": after_evidence.get("foreign_structural_digest_equal"),
-        "foreign_runtime_state_digest_equal": after_evidence.get("foreign_runtime_state_digest_equal"),
+        "foreign_runtime_state_digest_equal": after_evidence.get(
+            "foreign_runtime_state_digest_equal"
+        ),
         "foreign_delta_classification": after_evidence.get("foreign_delta_classification"),
         "foreign_container_count": after_evidence.get("foreign_container_count"),
         "foreign_network_count": after_evidence.get("foreign_network_count"),
         "foreign_volume_count": after_evidence.get("foreign_volume_count"),
+        "foreign_records": {
+            "producer_before": before_evidence.get("producer_before_snapshot"),
+            "independent_before": before_evidence.get("independent_before_snapshot"),
+            "producer_after": after_evidence.get("producer_after_snapshot"),
+            "independent_after": after_evidence.get("independent_after_snapshot"),
+        },
+        "cleanup_observation": after_evidence.get("cleanup_observation"),
+        "mutation_ledger": after_evidence.get("mutation_ledger", []),
         "apm_postgres_present_before": after_evidence.get("apm_postgres_present_before"),
         "apm_postgres_present_after": after_evidence.get("apm_postgres_present_after"),
-        "task_container_count_after_cleanup": after_evidence.get("task_container_count_after_cleanup"),
+        "task_container_count_after_cleanup": after_evidence.get(
+            "task_container_count_after_cleanup"
+        ),
         "task_network_count_after_cleanup": after_evidence.get("task_network_count_after_cleanup"),
         "task_volume_count_after_cleanup": after_evidence.get("task_volume_count_after_cleanup"),
         "unresolved_resource_count": after_evidence.get("unresolved_resource_count"),
-        "foreign_target_mutation_command_count": after_evidence.get("foreign_target_mutation_command_count"),
-        "unresolved_target_mutation_command_count": after_evidence.get("unresolved_target_mutation_command_count"),
-        "snapshot_private_artifacts_removed": after_evidence.get("snapshot_private_artifacts_removed"),
+        "foreign_target_mutation_command_count": after_evidence.get(
+            "foreign_target_mutation_command_count"
+        ),
+        "unresolved_target_mutation_command_count": after_evidence.get(
+            "unresolved_target_mutation_command_count"
+        ),
+        "snapshot_private_artifacts_removed": after_evidence.get(
+            "snapshot_private_artifacts_removed"
+        ),
         "excluded_path_count": 0,
         "untracked_input_count": 0,
         "dirty_input_count": 0,

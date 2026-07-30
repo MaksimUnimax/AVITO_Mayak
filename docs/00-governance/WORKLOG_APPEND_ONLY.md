@@ -690,3 +690,14 @@ Publish and independently verify the complete Run 12 change set, then issue one 
 - Proven RF-08 defects were corrected in task-owned adapter resource binding, stage-specific post-recovery migration/application parsing and JSON-safe cleanup evidence. The final exact 57-stage execution passed stages 55–57, migration head `RF09_FINALIZE`, application marker, cleanup and foreign equality.
 - CPython `3.14.6`, uv `0.11.31`, frozen lock, affected tests, compile, Ruff, mypy, import-linter and independent evidence verification passed. RF-09 source paths and semantics were unchanged; RF-11 was preserved; RF-12/RF-23 were not started.
 - **Status:** `PUBLISHED_FOR_CHATGPT_REVIEW`; not independently accepted, operator-ready or production-ready.
+
+## WL-RF08-20260730-05 — 2026-07-30 — observed cleanup and independent foreign recomputation
+
+**Technical-ID:** `RF-08-CORRECTIVE-NONROOT-FILE-SECRET-DELIVERY-20260729-01`
+**Execution-Mode:** `PRESERVE_TYPED_OBSERVATION_PARTIAL_WORK_USE_EXACT_PY314_DEV_HARNESS_REPLACE_OPTIONAL_DAEMON_ID_WITH_LOCAL_UNIX_ENDPOINT_INSTANCE_IDENTITY_COMPLETE_RECOMPUTATION_AND_PUBLISH`
+**Base:** `e547399fa19cd867983096ce86a2cecb23b8c676`
+
+- The e547 candidate remained published but independently unaccepted; the first continuation attempt was not published because its toolchain and Docker identity source were incomplete.
+- Exact CPython `3.14.6`, uv `0.11.31`, committed lock and frozen development dependencies passed. Optional Docker `.ID` is not used; local Docker endpoint instance identity comes from actual Unix socket, peer/process, boot-instance and safe server-version observations.
+- Stages 56–57 derive fields from immutable typed observations and mutation records. Producer and independent collectors recomputed canonical safe records; the independent verifier recomputed the verdict. Exact 57/57 protocol, cleanup, committed evidence verification and summary/safe-record tamper controls passed.
+- Docker-native image-input evidence remains unchanged. RF-11 remains preserved and unaccepted; RF-12 and RF-23 remain unstarted. No foreign resource was intentionally mutated. Status: `PUBLISHED_FOR_CHATGPT_REVIEW`.
