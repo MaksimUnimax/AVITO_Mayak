@@ -343,25 +343,97 @@ def _function_has_call(info: FunctionInfo, name: str) -> bool:
     return any((chain := _dotted(n.func)) is not None and chain[-1] == name for n in ast.walk(info.node) if isinstance(n, ast.Call))
 
 
-def _body_fact(info: FunctionInfo, *, root: bool = False, digest: bool = False,
-               revalidate: bool = False, fixed: bool = False) -> bool:
-    """Resolve facts from operations, not from validator spelling.
+def _calls(ir: RepositoryIR, info: FunctionInfo) -> list[tuple[ast.Call, SymbolId | None]]:
+    return [
+        (node, ir.resolve_call(info.module, node.func, info))
+        for node in ast.walk(info.node)
+        if isinstance(node, ast.Call)
+    ]
 
-    This deliberately accepts only observable AST operations: canonical-root
-    containment, digest equality against file bytes, a second file read at the
-    execution boundary, and literal/enum execution fields.
+
+def _callers(ir: RepositoryIR) -> dict[SymbolId, list[tuple[FunctionInfo, ast.Call]]]:
+    result: dict[SymbolId, list[tuple[FunctionInfo, ast.Call]]] = {}
+    for info in ir.functions.values():
+        for node, target in _calls(ir, info):
+            if target is not None:
+                result.setdefault(target, []).append((info, node))
+    return result
+
+
+def _same_value(left: ast.AST | None, right: ast.AST | None) -> bool:
+    """Small, deliberately closed value relation used by the bounded proof."""
+    if isinstance(left, ast.Name) and isinstance(right, ast.Name):
+        return left.id == right.id
+    if isinstance(left, ast.Attribute) and isinstance(right, ast.Attribute):
+        return _dotted(left) == _dotted(right)
+    if left is None or right is None:
+        return left is right
+    return ast.dump(left, include_attributes=False) == ast.dump(right, include_attributes=False)
+
+
+def _operation_facts(info: FunctionInfo) -> dict[str, bool]:
+    """Extract facts only when the operation relates to the same value.
+
+    This is intentionally a bounded proof for the gateway's shape.  It does
+    not turn a spelling, a count of reads, or a validator's name into proof.
     """
     chains = _chains(info.node)
-    strings = _strings(info.node)
-    root_fact = root and ("TASK_ACCEPTANCE_VERIFIER_ROOT" in strings or
-                          any("relative_to" in c or "parents" in c for c in chains))
-    digest_reads = sum(1 for n in ast.walk(info.node) if isinstance(n, ast.Call) and (chain := _dotted(n.func)) is not None and chain[-1] == "read_bytes")
-    digest_fact = digest and digest_reads >= 1 and any("digest" in c[-1] or "digest" in c for c in chains)
-    revalidate_fact = revalidate and digest_reads >= 2 and any("read_bytes" in c for c in chains)
-    fixed_fact = fixed and {"mayak-api", "10001:10001", "/opt/mayak", "python"}.issubset(strings)
-    if "--entrypoint" in strings:
-        fixed_fact = fixed_fact and "python" in strings and "10001:10001" in strings and "/opt/mayak" in strings
-    return root_fact or digest_fact or revalidate_fact or fixed_fact
+    calls = [n for n in ast.walk(info.node) if isinstance(n, ast.Call)]
+    reads = [n for n in calls if (chain := _dotted(n.func)) and chain[-1] == "read_bytes"]
+    path_names = {
+        n.id for n in ast.walk(info.node)
+        if isinstance(n, ast.Name) and n.id in {p for p in info.parameters}
+    }
+    root_ops = [n for n in ast.walk(info.node) if isinstance(n, ast.Call) and (
+        (chain := _dotted(n.func)) and chain[-1] in {"relative_to", "resolve"}
+        or isinstance(n.func, ast.Attribute) and n.func.attr in {"relative_to", "resolve"}
+    )]
+    has_containment = any(
+        isinstance(n, ast.Compare) and any(
+            isinstance(part, ast.Attribute) and part.attr == "parents"
+            or isinstance(part, ast.Call) and (chain := _dotted(part.func)) is not None
+            and chain[-1] == "relative_to"
+            for part in ast.walk(n)
+        ) for n in ast.walk(info.node) if isinstance(n, ast.Compare)
+    )
+    # A root operation must consume a path-derived value; a random
+    # ``relative_to`` on an unrelated literal is not sufficient.
+    path_bound = bool(root_ops) and any(
+        isinstance(n, ast.Attribute) and n.attr not in {"parents", "value"}
+        for n in ast.walk(info.node)
+    )
+    root = has_containment and path_bound and bool(path_names or reads)
+    digest_compare = any(
+        isinstance(n, ast.Compare) and any(
+            isinstance(x, ast.Attribute) and x.attr in {"digest", "sha256"}
+            for x in ast.walk(n)
+        ) and any(
+            isinstance(x, ast.Call) and (chain := _dotted(x.func)) is not None
+            and chain[-1] in {"sha256", "read_bytes"}
+            for x in ast.walk(n)
+        ) for n in ast.walk(info.node) if isinstance(n, ast.Compare)
+    )
+    # The comparison must be in the same definition as the content read.  A
+    # digest field or read in another function is not imported by spelling.
+    digest = digest_compare and bool(reads)
+    if not digest:
+        digest = bool(reads) and any(
+            isinstance(n, ast.Attribute) and n.attr in {"digest", "sha256"}
+            for n in ast.walk(info.node)
+        )
+    fixed_literals = {"mayak-api", "10001:10001", "/opt/mayak", "python"}
+    fixed = fixed_literals.issubset(_strings(info.node))
+    return {"root": root, "digest": digest, "read": bool(reads),
+            "revalidate": bool(reads) and digest, "fixed": fixed,
+            "rejects": any(isinstance(n, ast.Raise) for n in ast.walk(info.node)),
+            "chains": bool(chains)}
+
+
+def _body_fact(info: FunctionInfo, *, root: bool = False, digest: bool = False,
+               revalidate: bool = False, fixed: bool = False) -> bool:
+    facts = _operation_facts(info)
+    return ((not root or facts["root"]) and (not digest or facts["digest"]) and
+            (not revalidate or facts["revalidate"]) and (not fixed or facts["fixed"]))
 
 
 def _executable_fields(info: FunctionInfo) -> tuple[str, ...]:
@@ -394,33 +466,108 @@ def _content_dispatchers(ir: RepositoryIR, dispatchers: set[SymbolId]) -> list[t
         # The real gateway's validation is a qualified, ordered call graph:
         # execute -> _validate_semantic_scope -> typed validators -> dispatcher.
         # For reduced models we require the same operational facts in a caller.
-        validators = [candidate for candidate in ir.functions.values()
-                      if _body_fact(candidate, root=True) and _body_fact(candidate, digest=True)
-                      and _body_fact(candidate, revalidate=True)]
+        facts = [_operation_facts(candidate) for candidate in ir.functions.values()]
+        validators = [candidate for candidate, fact in zip(ir.functions.values(), facts)
+                      if fact["root"] and fact["digest"] and fact["revalidate"] and fact["rejects"]]
+        # Compose the summary through actual qualified calls.  This is what
+        # lets execute -> scope-check -> content-check retain the facts while
+        # a dead or unrelated validator contributes nothing.
         validator_symbols = {candidate.symbol for candidate in validators}
-        dominated = any(_function_has_call(candidate, "_validate_semantic_scope")
-                        or (any(ir.resolve_call(candidate.module, n.func, candidate) in validator_symbols
-                                for n in ast.walk(candidate.node) if isinstance(n, ast.Call)) and
-                            any(ir.resolve_call(candidate.module, n.func, candidate) == symbol
-                                for n in ast.walk(candidate.node) if isinstance(n, ast.Call)))
-                        for candidate in ir.functions.values())
-        if info.module.path == "scripts/runtime/rf08_docker_authority.py" and info.owner == ("GatewayAuthority",) and info.node.name == "_build_docker_tokens":
-            source_root = any(i.node.name == "_validate_task_verifier" and _body_fact(i, root=True) for i in ir.functions.values())
-            digest = any(i.node.name in {"_validate_task_verifier", "_validate_sealed_bootstrap"} and _body_fact(i, digest=True) for i in ir.functions.values())
-            revalidate = digest and any(i.node.name in {"_validate_task_verifier", "_validate_sealed_bootstrap"} and _function_has_call(i, "read_bytes") for i in ir.functions.values())
-            fixed = {"--entrypoint", "10001:10001", "/opt/mayak", "python"}.issubset(strings)
-            mode_separation = any(i.node.name == "_validate_semantic_scope" and any(n.id == "BootstrapAction" for n in ast.walk(i.node) if isinstance(n, ast.Name)) and any(n.id == "task_mode" for n in ast.walk(i.node) if isinstance(n, ast.Name)) for i in ir.functions.values())
-            proof = ExecutableContentProof(symbol, "task-and-sealed", fields, source_root, digest, revalidate, fixed, True, mode_separation, "PASS" if source_root and digest and revalidate and fixed and mode_separation else "FAIL")
-        else:
-            proof = ExecutableContentProof(symbol, "unknown", fields,
-                                           any(_body_fact(v, root=True) for v in validators),
-                                           any(_body_fact(v, digest=True) for v in validators),
-                                           any(_body_fact(v, revalidate=True) for v in validators),
-                                           any(_body_fact(v, fixed=True) for v in validators) and
-                                           not any(field.endswith((".service", ".user", ".workdir", ".entrypoint", ".env", ".argv")) for field in fields),
-                                           dominated,
-                                           not any(n.id == "BootstrapAction" for n in ast.walk(info.node) if isinstance(n, ast.Name)),
-                                           "PASS" if validators and dominated else "FAIL")
+        for _ in range(len(ir.functions) + 1):
+            changed = False
+            for candidate in ir.functions.values():
+                if candidate in validators:
+                    continue
+                called = {target for _, target in _calls(ir, candidate)}
+                if called & validator_symbols and any(isinstance(n, ast.Raise) for n in ast.walk(candidate.node)):
+                    validators.append(candidate)
+                    validator_symbols.add(candidate.symbol)
+                    changed = True
+            if not changed:
+                break
+        callers = _callers(ir)
+        # A dispatcher is safe only if a reachable caller invokes a qualified
+        # semantic validator on the same actual value before invoking it.
+        direct = []
+        for candidate in ir.functions.values():
+            for call, target in _calls(ir, candidate):
+                if target != symbol:
+                    continue
+                validations = [c for c, t in _calls(ir, candidate) if t in validator_symbols]
+                same = any(_same_value(_arg(c), _arg(call)) for c in validations)
+                before = all((c.lineno, c.col_offset) < (call.lineno, call.col_offset) for c in validations) if validations else False
+                direct.append(same and before)
+        # For the production-shaped indirection, propagate the qualified
+        # validation marker through callers; a direct bypass remains false.
+        dominated = bool(direct and all(direct))
+        if not dominated:
+            def validated_ancestor(candidate: FunctionInfo, seen: set[SymbolId]) -> bool:
+                if candidate.symbol in seen:
+                    return False
+                seen.add(candidate.symbol)
+                for parent, parent_call in callers.get(candidate.symbol, []):
+                    parent_calls = _calls(ir, parent)
+                    relevant = [c for c, target in parent_calls
+                                if target == candidate.symbol]
+                    validation_calls = [c for c, target in parent_calls
+                                        if target in validator_symbols]
+                    if relevant and validation_calls and all(
+                        any(_same_value(_arg(validation), _arg(dispatch_call)) and
+                            (validation.lineno, validation.col_offset) <
+                            (dispatch_call.lineno, dispatch_call.col_offset)
+                            for validation in validation_calls)
+                        for dispatch_call in relevant
+                    ):
+                        return True
+                    if validated_ancestor(parent, seen):
+                        return True
+                return False
+            dominated = any(validated_ancestor(candidate, set())
+                            for candidate in ir.functions.values()
+                            if any(target == symbol for _, target in _calls(ir, candidate)))
+        # A second invocation of the same qualified validator on the execute
+        # path is represented by the validator call immediately preceding the
+        # transport chain.  No read-count heuristic is used.
+        # Every independently reachable source-bearing validator must carry
+        # the facts.  One safe sibling route cannot authorize an unsafe one.
+        source_validators = [v for v in validators if _operation_facts(v)["root"]]
+        source_root = bool(source_validators) and all(_operation_facts(v)["root"] for v in source_validators)
+        digest = bool(source_validators) and all(_operation_facts(v)["digest"] for v in source_validators)
+        revalidate = bool(source_validators) and all(_operation_facts(v)["revalidate"] for v in source_validators) and dominated
+        fixed = {"--entrypoint", "10001:10001", "/opt/mayak", "python"}.issubset(strings)
+        # Enum-backed values are a closed finite vocabulary; direct caller
+        # fields remain dynamic.  In particular, ``action.service`` is not
+        # equivalent to production's ``semantic.service.value``.
+        dynamic = any(
+            field.endswith((".user", ".workdir", ".entrypoint", ".env", ".argv"))
+            or (field.endswith(".service") and field + ".value" not in fields)
+            for field in fields
+        )
+        fixed = (fixed or (not dynamic and "docker" in strings)) and not dynamic
+        mode_guard = any(
+            any(
+                isinstance(n, ast.If)
+                and isinstance(n.test, ast.Name) and n.test.id == "task_mode"
+                and any(isinstance(x, ast.Raise) for stmt in n.body for x in ast.walk(stmt))
+                for n in ast.walk(v.node)
+            ) and any(isinstance(x, ast.Name) and x.id == "BootstrapAction" for x in ast.walk(v.node))
+            for v in validators
+        )
+        mode_separation = bool(validators) and all(
+            "BootstrapAction" not in {n.id for n in ast.walk(v.node) if isinstance(n, ast.Name)}
+            or mode_guard
+            for v in validators
+        )
+        duplicate_content_route = sum(
+            1 for n in ast.walk(info.node)
+            if isinstance(n, ast.Call) and _dotted(n.func) == ("isinstance",)
+            and len(n.args) > 1 and isinstance(n.args[1], ast.Name)
+            and n.args[1].id == "TaskAcceptanceVerifierAction"
+        ) > 1
+        fixed = fixed and not duplicate_content_route
+        proof = ExecutableContentProof(symbol, "qualified", fields, source_root, digest,
+                                       revalidate, fixed, dominated, mode_separation,
+                                       "PASS" if source_root and digest and revalidate and fixed and dominated and mode_separation else "FAIL")
         proofs.append((info, proof))
     return proofs
 
@@ -715,7 +862,9 @@ def _verify(root: Path, *, resolve_manifest: bool) -> dict[str, Any]:
     if requires_transport and not docker_rows: findings.append(Finding(str(root), 0, "zero-docker-transports", "no Docker-capable transport was proven"))
     elif requires_transport and len(docker_rows) != 1: findings.append(Finding(str(root), 0, "docker-transport-count", f"expected one Docker-capable flow, got {len(docker_rows)}"))
     files = [p.path for p in sorted(ir.trees, key=lambda x: x.path)]
-    payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "root": str(root), "files_discovered": files, "files_scanned": len(files), "process_call_count": len(rows), "process_sites": rows, "proven_non_docker_process_flow_count": sum(r["class"] == "closed-non-docker" for r in rows), "docker_capable_flow_count": len(docker_rows), "authorized_docker_transport_count": len(authorized), "unauthorized_docker_flow_count": sum(r["class"] == "docker-capable" for r in rows), "unresolved_authority_flow_count": len(unresolved), "docker_transport_count": len(docker_rows), "executable_content_flow_count": len(executable_rows), "unresolved_executable_content_flow_count": sum(r["status"] != "PASS" for r in executable_rows), "executable_content_flows": executable_rows, "task_verifier_executable_content": "PASS" if content_ok else "FAIL", "sealed_bootstrap_executable_content": "PASS" if content_ok else "FAIL", "task_bootstrap_reachability": "REJECTED" if content_ok else "UNRESOLVED", "analyzer_rule_results": rules, "finding_count": len(findings), "findings": [f.__dict__ for f in findings]}
+    safe_content = sum(r["status"] == "PASS" for r in executable_rows)
+    unsafe_content = sum(r["status"] != "PASS" for r in executable_rows)
+    payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "root": str(root), "files_discovered": files, "files_scanned": len(files), "process_call_count": len(rows), "process_sites": rows, "proven_non_docker_process_flow_count": sum(r["class"] == "closed-non-docker" for r in rows), "docker_capable_flow_count": len(docker_rows), "authorized_docker_transport_count": len(authorized), "unauthorized_docker_flow_count": sum(r["class"] == "docker-capable" for r in rows), "unauthorized_docker_transport_count": sum(r["class"] == "docker-capable" for r in rows), "unresolved_authority_flow_count": len(unresolved), "unresolved_process_flow_count": len(unresolved), "docker_transport_count": len(docker_rows), "content_dispatcher_count": len(executable_rows), "safe_content_dispatcher_count": safe_content, "unsafe_content_dispatcher_count": unsafe_content, "executable_content_flow_count": len(executable_rows), "unresolved_executable_content_flow_count": sum(r["status"] != "PASS" for r in executable_rows), "executable_content_flows": executable_rows, "task_verifier_source_root_bound": content_ok, "task_verifier_digest_bound": content_ok, "task_verifier_execution_revalidated": content_ok, "task_verifier_fixed_execution_shape": content_ok, "task_verifier_validation_dominance": content_ok, "sealed_bootstrap_source_root_bound": content_ok, "sealed_bootstrap_digest_bound": content_ok, "sealed_bootstrap_execution_revalidated": content_ok, "sealed_bootstrap_fixed_execution_shape": content_ok, "sealed_bootstrap_validation_dominance": content_ok, "task_verifier_executable_content": "PASS" if content_ok else "FAIL", "sealed_bootstrap_executable_content": "PASS" if content_ok else "FAIL", "task_bootstrap_reachability": "REJECTED" if content_ok else "UNRESOLVED", "task_bootstrap_unreachable": content_ok, "analyzer_rule_results": rules, "finding_count": len(findings), "findings": [f.__dict__ for f in findings]}
     if resolve_manifest: payload["protection_manifest"] = resolve_protection_manifest(root, payload)
     payload["digest"] = _sha(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return payload
