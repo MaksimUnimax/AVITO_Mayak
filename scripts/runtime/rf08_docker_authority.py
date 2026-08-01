@@ -22,9 +22,12 @@ from typing import Any, Final
 
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 TECHNICAL_ID: Final = (
-    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+    "RF-08-CORRECTIVE-MECHANICALLY-VERIFIABLE-AUTHORITY-TOPOLOGY-20260801-06"
 )
 COMPOSE_FILE: Final = "compose.yaml"
+RUNTIME_COMPOSE_FILE: Path = Path(
+    "/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml"
+)
 RUNTIME_PROFILE: Final = "runtime-foundation"
 ALLOWED_SERVICES: Final = frozenset(
     {
@@ -185,7 +188,7 @@ class ComposeBinding:
             raise ValueError("compose file traversal mismatch")
         resolved = candidate.resolve(strict=True)
         repo_compose = Path(__file__).resolve().parents[2] / COMPOSE_FILE
-        runtime_compose = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml")
+        runtime_compose = RUNTIME_COMPOSE_FILE
         if resolved == repo_compose.resolve(strict=True):
             capability = ComposeSourceCapability.SOURCE
         elif runtime_compose.exists() and resolved == runtime_compose.resolve(strict=True):
@@ -245,6 +248,7 @@ class ComposeAction:
 class ComposeRunAction:
     binding: ComposeBinding
     service: ComposeService
+    no_deps: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -498,7 +502,7 @@ class GatewayAuthority:
         self._ledgers.append(record)
         return record
 
-    def _build_argv(self, semantic: object) -> tuple[str, ...]:
+    def _build_docker_tokens(self, semantic: object) -> tuple[str, ...]:
         if isinstance(semantic, ComposeProbeAction):
             if semantic.probe == ComposeProbeKind.AUTH_REJECTION and not semantic.correlation_id:
                 raise ValueError("auth correlation missing")
@@ -550,6 +554,7 @@ class GatewayAuthority:
                 semantic.binding.profile,
                 "run",
                 "--rm",
+                *(('--no-deps',) if semantic.no_deps else ()),
                 semantic.service.value,
             )
         if isinstance(semantic, ComposeAction):
@@ -758,18 +763,20 @@ class GatewayAuthority:
 
     def _transport(
         self,
-        argv: Sequence[str],
+        semantic: object,
         *,
         env: Mapping[str, str] | None,
         stdin: Any = None,
         stdout: Any = None,
         stderr: Any = None,
         timeout: float | None = None,
-    ) -> tuple[int, bytes, bytes]:
+    ) -> DockerExecution:
+        tokens = self._build_docker_tokens(semantic)
+        safe_fingerprint = _fingerprint(tokens)
         token = _GATEWAY_TOKEN.set(self.gateway_instance_id)
         try:
             proc = subprocess.run(
-                list(argv),
+                list(tokens),
                 stdin=stdin,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -799,7 +806,15 @@ class GatewayAuthority:
                     stderr.write(proc.stderr)
                 except TypeError:
                     stderr.write(proc.stderr.decode("utf-8", errors="replace"))
-            return proc.returncode, proc.stdout or b"", proc.stderr or b""
+            return DockerExecution(
+                returncode=proc.returncode,
+                stdout_bytes=proc.stdout or b"",
+                stderr_bytes=proc.stderr or b"",
+                payload=None,
+                safe_fingerprint=safe_fingerprint,
+                completed=True,
+                timed_out=False,
+            )
         finally:
             _GATEWAY_TOKEN.reset(token)
 
@@ -847,22 +862,20 @@ class GatewayAuthority:
         stderr: Any = None,
         timeout: float | None = None,
     ) -> DockerExecution:
-        argv = self._build_argv(semantic)
-        fingerprint = _fingerprint(argv)
-        code, stdout_bytes, stderr_bytes = self._transport(
-            argv, env=env, stdin=stdin, stdout=stdout, stderr=stderr, timeout=timeout
+        execution = self._transport(
+            semantic, env=env, stdin=stdin, stdout=stdout, stderr=stderr, timeout=timeout
         )
         payload: Any = None
         if isinstance(semantic, ObservationRequest):
-            payload = self._parse_observation_payload(semantic, stdout_bytes)
+            payload = self._parse_observation_payload(semantic, execution.stdout_bytes)
         return DockerExecution(
-            returncode=code,
-            stdout_bytes=stdout_bytes,
-            stderr_bytes=stderr_bytes,
+            returncode=execution.returncode,
+            stdout_bytes=execution.stdout_bytes,
+            stderr_bytes=execution.stderr_bytes,
             payload=payload,
-            safe_fingerprint=fingerprint,
-            completed=True,
-            timed_out=False,
+            safe_fingerprint=execution.safe_fingerprint,
+            completed=execution.completed,
+            timed_out=execution.timed_out,
         )
 
     def issue(self, semantic: object, *, stage: str) -> TaskResourceCapability:

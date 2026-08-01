@@ -83,6 +83,21 @@ class SemanticDispatch:
     is_mutation: bool
 
 
+class LocalExecutable(str, Enum):
+    SHELL = "sh"
+    RUNUSER = "runuser"
+    PYTHON = sys.executable
+
+
+@dataclass(frozen=True, slots=True)
+class LocalCommand:
+    executable: LocalExecutable
+    arguments: tuple[str, ...]
+
+
+CommandRequest = SemanticDispatch | LocalCommand
+
+
 @dataclass(frozen=True)
 class DockerMutationRecord:
     record_type: str
@@ -320,11 +335,17 @@ def _compose_dispatch(argv: tuple[str, ...]) -> SemanticDispatch:
                 ),
                 True,
             )
-        if service == ComposeService.MIGRATE.value and tuple(argv[run_index + 1 :]) == (
-            "--rm",
-            service,
-        ):
-            return SemanticDispatch(ComposeRunAction(binding=binding, service=ComposeService.MIGRATE), True)
+        if service == ComposeService.MIGRATE.value and tuple(
+            item for item in argv[run_index + 1 :] if item != "--no-deps"
+        ) == ("--rm", service):
+            return SemanticDispatch(
+                ComposeRunAction(
+                    binding=binding,
+                    service=ComposeService.MIGRATE,
+                    no_deps="--no-deps" in argv[run_index + 1 :],
+                ),
+                True,
+            )
         if service == ComposeService.API.value and "APPLICATION_QUERY_OK" in " ".join(argv):
             return SemanticDispatch(
                 ComposeProbeAction(
@@ -565,9 +586,9 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
 
 
 TASK_ID: Final = (
-    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+    "RF-08-CORRECTIVE-MECHANICALLY-VERIFIABLE-AUTHORITY-TOPOLOGY-20260801-06"
 )
-EXPECTED_TASK_BASE: Final = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
+EXPECTED_TASK_BASE: Final = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
@@ -951,9 +972,7 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
     )
     result = result.replace(
         label_block,
-        label_block + "      com.avito-mayak.technical-id: "
-        "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-"
-        "INVENTORY-20260730-02\n",
+        label_block + "      com.avito-mayak.technical-id: " + TASK_ID + "\n",
     )
     return result
 
@@ -1303,7 +1322,7 @@ class ProtocolFailure(RuntimeError):
 
 
 class CommandRunner(Protocol):
-    def run(self, payload: tuple[str, ...], *, stage: str) -> PrivateCommandResult: ...
+    def run(self, payload: CommandRequest, *, stage: str) -> PrivateCommandResult: ...
 
 
 @dataclass(frozen=True)
@@ -1399,7 +1418,7 @@ def application_probe_parity(
 
 def application_probe_command(
     contract: ApplicationProbeContract, payload: str, *arguments: str
-) -> tuple[str, ...]:
+) -> CommandRequest:
     """Build every A/restart/B/rollback/C/recovery probe through one authority."""
     if not contract.mount_read_only or contract.published_ports:
         raise ValueError("unsafe application probe contract")
@@ -2170,10 +2189,16 @@ def _independent_foreign_snapshot(
     return value
 
 
-def _command_id(stage: str, command: tuple[str, ...]) -> str:
-    if not command or any("\x00" in p for p in command):
-        raise ValueError("invalid command")
+def _command_id(stage: str, command: CommandRequest) -> str:
     return f"rf08.{stage.lower()}"
+
+
+def _request(payload: tuple[str, ...]) -> CommandRequest:
+    if payload and payload[0] == "docker":
+        return _dispatch_docker_command(payload)
+    if not payload or payload[0] not in {item.value for item in LocalExecutable}:
+        raise ValueError("unsupported local executable")
+    return LocalCommand(LocalExecutable(payload[0]), payload[1:])
 
 
 class PrivateCommandRunner:
@@ -2205,7 +2230,7 @@ class PrivateCommandRunner:
         self.mutation_ledger: GatewayAuthority | None = gateway
         self.gateway._default_env = self.env
 
-    def run(self, payload: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
+    def run(self, payload: CommandRequest, *, stage: str) -> PrivateCommandResult:
         out, err = self.output_dir / f"{stage}.stdout", self.output_dir / f"{stage}.stderr"
         for path in (out, err):
             path.touch(mode=0o600, exist_ok=True)
@@ -2216,8 +2241,8 @@ class PrivateCommandRunner:
         try:
             with out.open("wb") as stdout, err.open("wb") as stderr:
                 execution: DockerExecution | DockerObservation
-                if payload and payload[0] == "docker":
-                    dispatch = _dispatch_docker_command(payload)
+                if isinstance(payload, SemanticDispatch):
+                    dispatch = payload
                     if dispatch.is_mutation:
                         capability = self.gateway.issue(dispatch.semantic, stage=stage)
                         execution = self.gateway.execute(
@@ -2244,7 +2269,7 @@ class PrivateCommandRunner:
                     code, executed = execution.returncode, True
                 else:
                     raw_process = subprocess.run(
-                        payload,
+                        [payload.executable.value, *payload.arguments],
                         stdin=subprocess.DEVNULL,
                         stdout=stdout,
                         stderr=stderr,
@@ -2443,8 +2468,8 @@ def _parse_stage_output(
     }
 
 
-def _docker(args: tuple[str, ...]) -> tuple[str, ...]:
-    return (
+def _docker(args: tuple[str, ...]) -> SemanticDispatch:
+    return _dispatch_docker_command((
         "docker",
         "compose",
         "-f",
@@ -2454,20 +2479,20 @@ def _docker(args: tuple[str, ...]) -> tuple[str, ...]:
         "--profile",
         "runtime-foundation",
         *args,
-    )
+    ))
 
 
-def _health() -> tuple[str, ...]:
-    return (
+def _health() -> CommandRequest:
+    return _request((
         "docker",
         "inspect",
         "--format",
         "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",  # noqa: E501
         f"{TASK_PROJECT}-mayak-postgres-1",
-    )
+    ))
 
 
-def _head() -> tuple[str, ...]:
+def _head() -> CommandRequest:
     return _docker(
         (
             "exec",
@@ -2485,7 +2510,7 @@ def _head() -> tuple[str, ...]:
 
 def _app(
     code: str, *arguments: str, contract: ApplicationProbeContract | None = None
-) -> tuple[str, ...]:
+) -> CommandRequest:
     return application_probe_command(
         contract or build_application_probe_contract("mayak-api"), code, *arguments
     )
@@ -2615,7 +2640,7 @@ def _auth_attempt_oracle(result: StageResult) -> Mapping[str, object]:
 def _command_spec(
     ctx: dict[str, object],
     stage: str,
-    command: tuple[str, ...] | Callable[[], tuple[str, ...]],
+    command: CommandRequest | tuple[str, ...] | Callable[[], CommandRequest | tuple[str, ...]],
     required: tuple[str, ...],
     *,
     allow: tuple[int, ...] = (0,),
@@ -2642,7 +2667,8 @@ def _command_spec(
                 log_file = _active_json_log(log_dir)
                 ctx["b_json_log_file"] = log_file
                 ctx["b_json_log_offset"] = log_file.stat().st_size
-        result = runner.run(actual_command, stage=stage)
+        request = _request(actual_command) if isinstance(actual_command, tuple) else actual_command
+        result = runner.run(request, stage=stage)
         if stage == "PREFLIGHT" and result.exit_code == 0:
             gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
             producer = collect_foreign_snapshot("preflight", 0, gateway=gateway)
@@ -2697,7 +2723,7 @@ def _command_spec(
                 and time.monotonic() < deadline
             ):
                 time.sleep(1.0)
-                result = runner.run(actual_command, stage=stage)
+                result = runner.run(request, stage=stage)
         if result.private_secret_detected:
             raise ProtocolFailure(stage, "STOP_SECURITY_RISK")
         if stage == "APPLICATION_IMAGE_INSPECT" and isinstance(result.parsed.get("image_id"), str):
@@ -3405,13 +3431,13 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     raise ProtocolFailure(classify_stage, "MISMATCHED_CORRELATION")
                 client["exit_code"] = client_result.exit_code
                 identity = runner.run(
-                    (
+                    _request((
                         "docker",
                         "inspect",
                         "--format",
                         "{{.Id}}",
                         f"{TASK_PROJECT}-mayak-postgres-1",
-                    ),
+                    )),
                     stage="APPLICATION_AUTH_REJECTION_B_POSTGRES_ID",
                 )
                 if identity.exit_code != 0 or not identity.parsed.get("observed"):
@@ -3891,7 +3917,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 and not ctx.get("replay_namespace_sanitation_verified")
             ):
                 raise ProtocolFailure(stage, "SANITATION_RECORD_MISSING")
-            command: tuple[str, ...] | Callable[[], tuple[str, ...]]
+            command: CommandRequest | tuple[str, ...] | Callable[[], CommandRequest | tuple[str, ...]]
             if "POSTGRES" in stage:
                 command = _docker(("up", "-d", "--force-recreate", service))
             elif "DATABASE_BOOTSTRAP" in stage:
@@ -3902,7 +3928,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 def database_bootstrap_command(
                     bootstrap_service: str = service,
                     bootstrap_stage: str = stage,
-                ) -> tuple[str, ...]:
+                ) -> CommandRequest:
                     return _docker(
                         (
                             "run",
@@ -3922,7 +3948,11 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
 
                 command = database_bootstrap_command
             else:
-                command = _docker(("run", "--rm", service))
+                command = _docker(
+                    ("run", "--no-deps", "--rm", service)
+                    if stage == "MIGRATION_UPGRADE_C"
+                    else ("run", "--rm", service)
+                )
             specs.append(_command_spec(ctx, stage, command, ("observed",)))
         else:
             specs.append(
@@ -4277,6 +4307,12 @@ def build_evidence(
     return payload
 
 
+def validate_source_identity(*, origin_main: str, parent_sha: str) -> None:
+    """Require the live origin and candidate parent to share the governed base."""
+    if origin_main != EXPECTED_BASE_SHA or parent_sha != EXPECTED_TASK_BASE:
+        raise ValueError("RF08 source identity mismatch")
+
+
 def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
@@ -4292,8 +4328,10 @@ def main(args: list[str] | None = None) -> int:
     parent_sha = subprocess.check_output(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD^"], text=True
     ).strip()
-    if origin_main != EXPECTED_BASE_SHA or parent_sha != EXPECTED_BASE_SHA:
-        raise SystemExit("RF08 source identity mismatch")
+    try:
+        validate_source_identity(origin_main=origin_main, parent_sha=parent_sha)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     gateway = GatewayAuthority()
     runner = PrivateCommandRunner(os.environ, root=parsed.root, gateway=gateway)
     record = run_protocol(root=parsed.root, source_sha=source_sha, runner=runner, gateway=gateway)

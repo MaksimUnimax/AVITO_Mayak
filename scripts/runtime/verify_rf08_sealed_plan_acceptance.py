@@ -8,6 +8,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -18,18 +19,23 @@ from scripts.runtime.rf08_verify_structural_gateway import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PYTHON = sys.executable
-
-
 def _digest(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
 
 
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
+class _Tool(StrEnum):
+    GIT = "git"
+    PYTHON = sys.executable
+    RUFF = "ruff"
+    MYPY = "mypy"
+    IMPORT_LINTER = "lint-imports"
+
+
+def _run(tool: _Tool, args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        command,
+        [tool.value, *args],
         cwd=REPO_ROOT,
         text=True,
         stdout=subprocess.PIPE,
@@ -38,8 +44,8 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _gate(gate_id: str, command: list[str]) -> dict[str, Any]:
-    proc = _run(command)
+def _gate(gate_id: str, tool: _Tool, args: tuple[str, ...]) -> dict[str, Any]:
+    proc = _run(tool, args)
     return {
         "id": gate_id,
         "ok": proc.returncode == 0,
@@ -70,10 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     parsed = parser.parse_args(argv)
     root = parsed.root.resolve()
     gates: list[dict[str, Any]] = []
-    head = _run(["git", "-C", str(root), "rev-parse", "HEAD"]).stdout.strip()
-    parent = _run(["git", "-C", str(root), "rev-parse", "HEAD^"]).stdout.strip()
-    origin = _run(["git", "-C", str(root), "rev-parse", "origin/main"]).stdout.strip()
-    status = _run(["git", "-C", str(root), "status", "--porcelain"]).stdout
+    head = _run(_Tool.GIT, ("-C", str(root), "rev-parse", "HEAD")).stdout.strip()
+    parent = _run(_Tool.GIT, ("-C", str(root), "rev-parse", "HEAD^")).stdout.strip()
+    origin = _run(_Tool.GIT, ("-C", str(root), "rev-parse", "origin/main")).stdout.strip()
+    status = _run(_Tool.GIT, ("-C", str(root), "status", "--porcelain")).stdout
     provenance_ok = (
         bool(parsed.expected_base)
         and parent == parsed.expected_base
@@ -140,31 +146,41 @@ def main(argv: list[str] | None = None) -> int:
     manifest_gate, targets = _manifest_gate()
     gates.append(manifest_gate)
     for target in targets:
-        gates.append(_gate(f"manifest:{target}", [PYTHON, "-m", "pytest", target]))
+        gates.append(_gate(f"manifest:{target}", _Tool.PYTHON, ("-m", "pytest", target)))
     gates.append(
-        _gate("compile", [PYTHON, "-m", "compileall", "-q", "scripts/runtime", "tests/runtime"])
+        _gate(
+            "compile",
+            _Tool.PYTHON,
+            ("-m", "compileall", "-q", "scripts/runtime", "tests/runtime"),
+        )
     )
     changed = [
+        "scripts/runtime/rf08_docker_authority.py",
+        "scripts/runtime/rf08_docker_context.py",
+        "scripts/runtime/rf08_foreign_snapshot.py",
         "scripts/runtime/rf08_verify_structural_gateway.py",
+        "scripts/runtime/safe_compose_bootstrap.py",
+        "scripts/runtime/verify_rf08_authoritative_evidence.py",
         "scripts/runtime/verify_rf08_sealed_plan_acceptance.py",
         "scripts/runtime/rf08_protection_manifest.json",
         "tests/runtime/test_rf08_adversarial_registry.py",
         "tests/runtime/test_rf08_protection_manifest.py",
+        "tests/runtime/test_rf08_safe_compose_bootstrap.py",
     ]
     changed_python = [path for path in changed if path.endswith(".py")]
-    gates.append(_gate("ruff", ["ruff", "check", *changed_python]))
+    gates.append(_gate("ruff", _Tool.RUFF, ("check", *changed_python)))
     gates.append(
         _gate(
             "mypy",
-            [
-                "mypy",
+            _Tool.MYPY,
+            (
                 "--ignore-missing-imports",
                 "--explicit-package-bases",
                 *changed_python,
-            ],
+            ),
         )
     )
-    gates.append(_gate("import-linter", ["lint-imports"]))
+    gates.append(_gate("import-linter", _Tool.IMPORT_LINTER, ()))
     accepted = all(bool(g.get("ok")) for g in gates)
     result = {
         "accepted": accepted,

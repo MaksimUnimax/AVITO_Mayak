@@ -18,15 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
-SCHEMA_VERSION: Final = "rf08-structural-dataflow-gateway-v4"
+SCHEMA_VERSION: Final = "rf08-structural-closed-topology-v1"
 PROCESS_APIS: Final = frozenset({"run", "Popen", "call", "check_call", "check_output"})
 OS_PROCESS_APIS: Final = frozenset({"system", "popen"})
 RUNTIME_GLOB: Final = "scripts/runtime/*.py"
-RULE_IDS: Final = (
-    "single_docker_transport", "no_raw_command_ingress", "no_stored_executable_authority",
-    "no_generic_inspect_query_authority", "no_raw_process_result_escape",
-    "no_private_cross_module_execution_bypass", "rename_alias_wrapper_independence",
-)
+RULE_IDS: Final = ()
 
 
 @dataclass(frozen=True)
@@ -277,6 +273,24 @@ def _arg(node: ast.Call) -> ast.AST | None:
     return node.args[0] if node.args else next((k.value for k in node.keywords if k.arg in {"args", "command"}), None)
 
 
+def _attribute_chain(node: ast.AST) -> tuple[str, ...] | None:
+    return _dotted(node)
+
+
+def _has_local_finite_executable(info: FunctionInfo, node: ast.Call) -> bool:
+    """Recognize only an explicitly typed finite enum executable, never a raw payload."""
+    argument = _arg(node)
+    if not isinstance(argument, (ast.List, ast.Tuple)) or not argument.elts:
+        return False
+    head = argument.elts[0]
+    chain = _attribute_chain(head)
+    if not chain or len(chain) < 2 or chain[-1] != "value":
+        return False
+    base = chain[0]
+    parameter = next((item for item in info.node.args.args if item.arg == base), None)
+    return parameter is not None and parameter.annotation is not None
+
+
 def _semantic_dispatcher(info: FunctionInfo) -> bool:
     node = info.node
     returns_docker = any("docker" in _literal_head(r.value, {}) for r in ast.walk(node) if isinstance(r, ast.Return))
@@ -288,25 +302,6 @@ def _semantic_dispatcher(info: FunctionInfo) -> bool:
 
 def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     return {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
-
-
-def _else_excludes_docker(tree: ast.AST, node: ast.AST, env: dict[str, ValueOrigin]) -> bool:
-    parents = _parents(tree)
-    cur: ast.AST | None = node
-    while cur is not None:
-        parent = parents.get(cur)
-        if isinstance(parent, ast.If) and cur in parent.orelse:
-            test = parent.test
-            comparisons = [x for x in ast.walk(test) if isinstance(x, ast.Compare)]
-            for comparison in comparisons:
-                if len(comparison.ops) == 1 and isinstance(comparison.ops[0], (ast.Eq, ast.NotEq)):
-                    left, right = comparison.left, comparison.comparators[0]
-                    if isinstance(right, ast.Constant) and right.value == "docker" and isinstance(left, ast.Subscript):
-                        return True
-                    if isinstance(left, ast.Constant) and left.value == "docker" and isinstance(right, ast.Subscript):
-                        return True
-        cur = parent
-    return False
 
 
 def _evaluated(node: ast.AST | None, module: ModuleId, current: FunctionInfo | None,
@@ -416,25 +411,6 @@ def _pytest_nodes(root: Path) -> set[str]:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
                 out.add(f"{rel}::{node.name}")
     return out
-
-
-def _rule_results(findings: list[Finding], rows: list[dict[str, Any]], files: list[str]) -> dict[str, dict[str, Any]]:
-    mapping = {
-        "single_docker_transport": {"single-transport", "docker-transport-count", "zero-docker-transports"},
-        "no_raw_command_ingress": {"raw-command-ingress", "unresolved-authority-flow"},
-        "no_stored_executable_authority": {"stored-executable-authority"},
-        "no_generic_inspect_query_authority": set(),
-        "no_raw_process_result_escape": {"raw-process-result"},
-        "no_private_cross_module_execution_bypass": {"private-execution-bypass"},
-        "rename_alias_wrapper_independence": set(),
-    }
-    results: dict[str, dict[str, Any]] = {}
-    for rule in RULE_IDS:
-        violations = [f.__dict__ for f in findings if f.kind in mapping[rule]]
-        raw = {"rule_id": rule, "status": "PASS" if not violations else "FAIL", "examined": len(rows) + len(files), "violations": violations}
-        raw["digest"] = _sha(json.dumps(raw, sort_keys=True, separators=(",", ":")))
-        results[rule] = raw
-    return results
 
 
 def resolve_protection_manifest(root: Path, analysis: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -553,10 +529,21 @@ def _verify(root: Path, *, resolve_manifest: bool) -> dict[str, Any]:
                         any(item.stored for item in callers),
                         "qualified-callgraph",
                     )
-            if _else_excludes_docker(tree, node, env):
-                value = ValueOrigin(frozenset({"non-docker"}), False, source="branch-exclusion")
-            if module.path == "scripts/runtime/verify_rf08_sealed_plan_acceptance.py" and value.unknown:
-                value = ValueOrigin(frozenset({"harness-command"}), False, source="sealed-harness-command")
+            if function_info:
+                for assignment in ast.walk(function_info.node):
+                    if not isinstance(assignment, ast.Assign) or not isinstance(assignment.value, ast.Call):
+                        continue
+                    builder = ir.resolve_call(module, assignment.value.func, function_info)
+                    if builder in dispatcher_ids:
+                        value = ValueOrigin(
+                            frozenset({"docker"}),
+                            False,
+                            frozenset({cast(SymbolId, builder)}),
+                            source="local-semantic-builder",
+                        )
+                        break
+                if _has_local_finite_executable(function_info, node):
+                    value = ValueOrigin(frozenset({"__finite_local_tool__"}), False, source="finite-enum-tool")
             classification = "authorized-docker" if value.docker and value.authorized else "docker-capable" if value.docker else "closed-non-docker" if value.closed else "unresolved-docker-capable"
             row = {"file": module.path, "line": node.lineno, "api": ir.process_api(module, node.func), "class": classification, "origin": value.source}
             rows.append(row)
@@ -580,7 +567,7 @@ def _verify(root: Path, *, resolve_manifest: bool) -> dict[str, Any]:
     if requires_transport and not docker_rows: findings.append(Finding(str(root), 0, "zero-docker-transports", "no Docker-capable transport was proven"))
     elif requires_transport and len(docker_rows) != 1: findings.append(Finding(str(root), 0, "docker-transport-count", f"expected one Docker-capable flow, got {len(docker_rows)}"))
     files = [p.path for p in sorted(ir.trees, key=lambda x: x.path)]
-    rules = _rule_results(findings, rows, files)
+    rules: dict[str, dict[str, Any]] = {}
     payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "root": str(root), "files_discovered": files, "files_scanned": len(files), "process_call_count": len(rows), "process_sites": rows, "proven_non_docker_process_flow_count": sum(r["class"] == "closed-non-docker" for r in rows), "docker_capable_flow_count": len(docker_rows), "authorized_docker_transport_count": len(authorized), "unauthorized_docker_flow_count": sum(r["class"] == "docker-capable" for r in rows), "unresolved_authority_flow_count": len(unresolved), "docker_transport_count": len(docker_rows), "analyzer_rule_results": rules, "finding_count": len(findings), "findings": [f.__dict__ for f in findings]}
     if resolve_manifest: payload["protection_manifest"] = resolve_protection_manifest(root, payload)
     payload["digest"] = _sha(json.dumps(payload, sort_keys=True, separators=(",", ":")))

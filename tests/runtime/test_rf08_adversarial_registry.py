@@ -194,6 +194,42 @@ def test_textual_docker_word_does_not_prove_else_branch(tmp_path: Path) -> None:
     assert payload["finding_count"] > 0
 
 
+@pytest.mark.parametrize("operator", ["==", "!="])
+def test_docker_comparison_else_never_closes_unknown_executable(
+    tmp_path: Path, operator: str
+) -> None:
+    payload = _verify(
+        tmp_path,
+        "import subprocess\n"
+        "def launch(command):\n"
+        f"    if command[0] {operator} 'docker':\n"
+        "        return None\n"
+        "    else:\n"
+        "        return subprocess.run(command)\n"
+        "launch(unknown)\n",
+    )
+    assert payload["finding_count"] > 0
+
+
+def test_canonical_filename_does_not_authorize_unknown_command(tmp_path: Path) -> None:
+    runtime = tmp_path / "scripts" / "runtime"
+    runtime.mkdir(parents=True)
+    (runtime / "verify_rf08_sealed_plan_acceptance.py").write_text(
+        "import subprocess\nsubprocess.run(unknown)\n", encoding="utf-8"
+    )
+    assert verify_source(tmp_path)["finding_count"] > 0
+
+
+def test_renamed_unknown_command_stays_rejected(tmp_path: Path) -> None:
+    runtime = tmp_path / "scripts" / "runtime"
+    runtime.mkdir(parents=True)
+    for filename in ("verify_rf08_sealed_plan_acceptance.py", "renamed_harness.py"):
+        (runtime / filename).write_text(
+            "import subprocess\nsubprocess.run(unknown)\n", encoding="utf-8"
+        )
+    assert verify_source(tmp_path)["finding_count"] > 0
+
+
 @pytest.mark.parametrize("field", ["banana", "state", "parcel", "neutral"])
 def test_stored_authority_is_field_spelling_independent(tmp_path: Path, field: str) -> None:
     payload = _verify(

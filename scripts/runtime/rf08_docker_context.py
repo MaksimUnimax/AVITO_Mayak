@@ -24,7 +24,7 @@ from scripts.runtime.rf08_docker_authority import (
     PathCapabilityKind,
 )
 
-EXPECTED_BASE_SHA: Final = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
+EXPECTED_BASE_SHA: Final = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
 COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("pyproject.toml", "pyproject.toml"),
     ("uv.lock", "uv.lock"),

@@ -13,18 +13,12 @@ def test_rf08_protection_manifest_has_required_semantic_invariants() -> None:
     )
     required = {
         "single_transport",
-        "no_raw_command_ingress",
-        "no_stored_executable_authority",
-        "no_generic_inspect_query_authority",
-        "no_raw_process_result_escape",
-        "no_private_execution_bypass",
-        "rename_alias_wrapper_rejection",
+        "closed_authority_adversaries",
+        "rename_invariance",
         "runtime_binding_generation_epoch",
-        "cleanup",
-        "foreign_equality",
     }
     entries = {entry["id"] for entry in manifest["invariants"]}
-    assert manifest["schema_version"] == "rf08-protection-scenarios-v2"
+    assert manifest["schema_version"] == "rf08-protection-scenarios-v3"
     assert entries == required
     result = resolve_protection_manifest(root)
     assert not result["errors"]

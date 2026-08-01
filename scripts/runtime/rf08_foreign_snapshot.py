@@ -25,7 +25,7 @@ SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
 COLLECTOR_ID: Final = "rf08.producer.observed.typed-docker.v3"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 TASK_ID: Final = (
-    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
+    "RF-08-CORRECTIVE-MECHANICALLY-VERIFIABLE-AUTHORITY-TOPOLOGY-20260801-06"
 )
 ALLOWED_SERVICES: Final = frozenset(
     {

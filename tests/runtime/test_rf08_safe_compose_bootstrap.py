@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.runtime import prepare_file_secrets
+from scripts.runtime import prepare_file_secrets, rf08_docker_authority
 from scripts.runtime import safe_compose_bootstrap as scb
 from scripts.runtime.rf08_docker_authority import GatewayAuthority
 from scripts.runtime.rf09_public_bootstrap_adapter import (
@@ -32,8 +32,29 @@ from scripts.runtime.safe_compose_bootstrap import (
     deterministic_build_input_digest,
     parse_bounded_auth_envelope,
     parse_bounded_bootstrap_result,
+    validate_source_identity,
 )
 from scripts.runtime.verify_rf08_authoritative_evidence import STAGES, verify_evidence
+
+
+def test_source_identity_contract_rejects_historical_parent_and_accepts_exact_shape() -> None:
+    expected = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
+    historical = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
+    with pytest.raises(ValueError, match="source identity mismatch"):
+        validate_source_identity(origin_main=historical, parent_sha=expected)
+    validate_source_identity(origin_main=expected, parent_sha=expected)
+
+
+def test_candidate_source_identity_is_not_parent_identity() -> None:
+    candidate = "6d1a3522fb14d79ada5e26f85bd38ec2b5e92dd3"
+    expected = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
+    assert candidate != expected
+
+
+def test_generated_compose_labels_bind_current_technical_id() -> None:
+    rendered = scb._runtime_compose_file("run-current", Path("/tmp/rf08-log"))
+    assert scb.TASK_ID in rendered
+    assert "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE" not in rendered
 
 
 def _stage34_result(**parsed: object) -> PrivateCommandResult:
@@ -207,7 +228,17 @@ def test_transcript_rejects_order_missing_execution_and_missing_observed() -> No
         transcript.finalize({"cleanup": False})
 
 
-def test_canonical_stage34_uses_transcript_and_accepts_exact_78(tmp_path: Path) -> None:
+def _temporary_runtime_compose(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    compose = tmp_path / "compose.runtime.yaml"
+    compose.write_text("services: {}\n", encoding="utf-8")
+    monkeypatch.setattr(rf08_docker_authority, "RUNTIME_COMPOSE_FILE", compose)
+    monkeypatch.setattr(scb, "RUNTIME_COMPOSE_FILE", compose)
+
+
+def test_canonical_stage34_uses_transcript_and_accepts_exact_78(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _temporary_runtime_compose(tmp_path, monkeypatch)
     runner = _Stage34Runner(_stage34_result())
     ctx: dict[str, object] = {
         "runner": runner,
@@ -228,7 +259,10 @@ def test_canonical_stage34_uses_transcript_and_accepts_exact_78(tmp_path: Path) 
 
 
 @pytest.mark.parametrize("code", [0, 77, 79])
-def test_stage34_rejects_wrong_exit(code: int) -> None:
+def test_stage34_rejects_wrong_exit(
+    code: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _temporary_runtime_compose(tmp_path, monkeypatch)
     result = _stage34_result()
     result = PrivateCommandResult(
         result.stage,
