@@ -149,3 +149,47 @@ checks. PostgreSQL 18 migration/runtime and concurrency evidence is required
 for publication acceptance; this document records no `PRODUCTION_READY` claim.
 Security, foreign equality, rollback/roll-forward and cleanup requirements
 remain as above. RF-13 remains untouched and `NOT_STARTED`.
+
+## RF-12 corrective closure record — 2026-08-01
+
+`fedccb12…` is rejected. `a15b8288…` is rejected as corrective-required;
+the remaining defects were transaction serialization before effects, direct
+foreign audit ownership, caller-selected authorization, public trusted
+AuthorityFacts, manual capability/scope and expiry evaluation, weak grant
+kind/tariff invariants, metadata/index drift, destructive downgrade, a second
+usage policy engine, non-terminal rejection paths, unbounded transport-chunk
+retention, and the missing committed PostgreSQL command matrix.
+
+This corrective package does not rewrite `RF12_MANUAL_GRANT` or any RF-09
+revision. It adds `RF12_RUNTIME_HARDEN` after `RF12_MANUAL_GRANT` and makes
+the current head roll-forward-only (`Recovery-Policy: ROLL_FORWARD_ONLY`).
+The final database enforces explicit TARIFF versus MANUAL ownership of
+`tariff_id`, capability and scope, plus bounded non-empty reason, exact
+interval, non-empty state and positive row version. Canonical metadata includes
+the active manual capability/scope index and has no semantic-writing grant
+defaults.
+
+Runtime audit writes go through the Platform-owned `PostgresAuditRepository`;
+direct Module-01 table writes are zero. Identity is resolved through the
+public verified port before effects. Manual access always requires the fixed
+`ENTITLEMENTS_MANUAL_ACCESS_ADMIN`; actor scope, target account, granted
+capability and granted scope remain distinct. Effective entitlement requires
+exact manual capability/scope/account/time matching; expired, revoked and
+non-matching rows are non-effective without `TariffName(None)`. Payment
+evidence remains non-authoritative.
+
+Every effecting command uses a transaction-scoped advisory lock before
+idempotency evaluation and mutation, checks the terminal repository result,
+and retains the lock through the caller transaction. Provider identity payment
+duplicates use an additional deterministic lock. The executable manifest is
+`tests/runtime/test_rf12_command_matrix.py`; the real PostgreSQL entry point is
+`tests/runtime/test_rf12_runtime_postgres.py`. Required evidence is the
+empty/RF09/RF12 migration ladder, physical constraint rejection matrix,
+metadata parity, rollback and genuinely concurrent command matrix including
+payment races. Bounded YooKassa transport retains at most the configured limit
+plus one sentinel byte; injected clients remain open and owned clients close.
+
+This record is `PUBLISHED_FOR_CHATGPT_REVIEW`, not an independent acceptance
+claim. PostgreSQL evidence, concurrency, cleanup, foreign-resource equality,
+security review and machine verifier results must be recorded by the task
+harness before publication. RF-13: `NOT_STARTED`. Status: `NOT_PRODUCTION_READY`.

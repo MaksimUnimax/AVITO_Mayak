@@ -19,12 +19,23 @@ from uuid import UUID, uuid4, uuid5
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
+from mayak.contracts.audit import AuditContext
+from mayak.contracts.idempotency import IdempotencyDecision
 from mayak.contracts.results import CommonOutcome, Result
+from mayak.persistence.audit import PostgresAuditRepository
 from mayak.persistence.idempotency import PostgresTerminalIdempotencyRepository
 from mayak.persistence.metadata import metadata
+from mayak.platform.audit import (
+    AuditActorCategory,
+    AuditModuleIdentifier,
+    AuditOperation,
+    AuditReason,
+    AuditTargetScope,
+)
+from mayak.platform.correlation import CorrelationContext, CorrelationId
 from mayak.platform.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
 
 from .contracts import EntitlementDecisionStatus, TariffName
@@ -36,7 +47,6 @@ _USAGE = metadata.tables["mayak.entitlement_usage_counters"]
 _PAYMENTS = metadata.tables["mayak.billing_payment_records"]
 _OPERATIONS = metadata.tables["mayak.billing_payment_operations"]
 _RECONCILIATIONS = metadata.tables["mayak.billing_reconciliations"]
-_AUDIT = metadata.tables["mayak.platform_audit_entries"]
 _SCOPE = IdempotencyScope(value="entitlements_and_billing")
 _TARIFF_NAMESPACE = UUID("b7c25d70-1c9b-4d29-a6b9-0a0d6b0a4f12")
 
@@ -194,22 +204,23 @@ def _audit(
     target: UUID | None,
     reason: str,
 ) -> None:
-    """Append a bounded Platform audit record without owning the transaction."""
-    session.execute(
-        _AUDIT.insert().values(
-            id=uuid4(),
-            actor_account_id=authority.actor_id,
-            action_code=action,
-            target_type="entitlements_and_billing",
-            target_id=str(target) if target is not None else None,
-            reason=reason[:512],
-            correlation_id=authority.audit_reference,
-            details={
-                "module": "entitlements_and_billing",
-                "authorization_reference": authority.authorization_reference,
-            },
-            created_at=_now(),
-        )
+    """Append through the Platform-owned public repository boundary."""
+    context = AuditContext(
+        actor_category=AuditActorCategory.OPERATOR,
+        operation=AuditOperation(value=action),
+        module_id=AuditModuleIdentifier(value="03-entitlements-and-billing"),
+        target_scope=AuditTargetScope(value="entitlements_and_billing"),
+        reason=AuditReason(value=reason[:512]),
+        details=("safe-reference-only",),
+        correlation=CorrelationContext(correlation_id=CorrelationId(value=authority.audit_reference)),
+    )
+    PostgresAuditRepository().append(
+        session,
+        entry_id=uuid4(),
+        actor_account_id=authority.actor_id,
+        context=context,
+        target_id=str(target) if target is not None else None,
+        created_at=_now(),
     )
 
 
@@ -221,16 +232,68 @@ class EntitlementsBillingRuntime:
         self.idempotency = PostgresTerminalIdempotencyRepository()
 
     def _resolve(
-        self, session: Session, authority: AuthorityFacts, target: UUID, actor_reference: str | None
+        self,
+        session: Session,
+        actor_reference: str | AuthorityFacts,
+        target: UUID,
+        legacy_actor_reference: str | None = None,
     ) -> AuthorityFacts | None:
         if self.identity is None:
             return None
+        # The legacy shape is accepted only for internal fixture compatibility;
+        # the supplied facts are intentionally ignored and never authorize.
+        reference = (
+            legacy_actor_reference
+            if isinstance(actor_reference, AuthorityFacts)
+            else actor_reference
+        )
+        if not reference:
+            return None
         try:
             return self.identity.authority(
-                session, actor_reference or authority.authorization_reference, target
+                session, reference, target
             )
-        except PermissionError, ValueError:
+        except (PermissionError, ValueError):
             return None
+
+    @staticmethod
+    def _lock_key(key: Any) -> int:
+        value = getattr(key, "value", str(key)).strip()
+        digest = hashlib.sha256(f"{_SCOPE.value}:{value}".encode()).digest()
+        return int.from_bytes(digest[:8], "big", signed=True)
+
+    def _begin_command(
+        self, session: Session, key: str | IdempotencyKey, fingerprint: IdempotencyFingerprint
+    ) -> tuple[IdempotencyDecision, CommonOutcome | None]:
+        session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": self._lock_key(_key(key))})
+        resolution = self.idempotency.evaluate(
+            session, scope=_SCOPE, key=_key(key), fingerprint=fingerprint, now=_now()
+        )
+        decision = resolution.decision.decision
+        return decision, resolution.outcome if decision is IdempotencyDecision.REPLAY_TERMINAL else None
+
+    def _finish_command(
+        self, session: Session, key: str | IdempotencyKey,
+        fingerprint: IdempotencyFingerprint, result: CommandResult,
+    ) -> CommonOutcome | None:
+        now = _now()
+        recorded = self.idempotency.record_terminal(
+            session, record_id=uuid4(), scope=_SCOPE, key=_key(key), fingerprint=fingerprint,
+            outcome=CommonOutcome(
+                result=Result.SUCCEEDED, reason_code=result.reason_code,
+                details=((str(result.resource_id),) if result.resource_id else ()),
+            ), created_at=now, expires_at=now + timedelta(days=30), now=now,
+        )
+        decision = recorded.decision.decision
+        if decision is IdempotencyDecision.MISMATCH:
+            raise RuntimeError("terminal idempotency mismatch after serialized evaluation")
+        if decision is IdempotencyDecision.RECONCILE_REQUIRED:
+            raise RuntimeError("terminal idempotency reconciliation is required")
+        if decision is IdempotencyDecision.REPLAY_TERMINAL:
+            return recorded.outcome
+        if decision is not IdempotencyDecision.NEW:
+            raise RuntimeError("impossible terminal idempotency decision")
+        return None
 
     @staticmethod
     def _unauthorized(audit_reference: str = "safe-unauthorized") -> CommandResult:
@@ -243,14 +306,20 @@ class EntitlementsBillingRuntime:
     def _terminal(
         self, session: Session, key: str | IdempotencyKey, fingerprint: IdempotencyFingerprint
     ) -> tuple[RuntimeState, UUID | None]:
-        resolution = self.idempotency.evaluate(
-            session, scope=_SCOPE, key=_key(key), fingerprint=fingerprint, now=_now()
+        # The transaction-scoped lock is deliberately acquired before the
+        # terminal lookup.  The caller retains the lock until commit/rollback.
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": self._lock_key(_key(key))},
         )
-        if resolution.decision.decision.value == "REPLAY_TERMINAL":
-            details = resolution.outcome.details if resolution.outcome else ()
+        decision, outcome = self._begin_command(session, key, fingerprint)
+        if decision is IdempotencyDecision.REPLAY_TERMINAL:
+            details = outcome.details if outcome else ()
             return RuntimeState.REPLAYED, UUID(details[0]) if details else None
-        if resolution.decision.decision.value == "MISMATCH":
+        if decision is IdempotencyDecision.MISMATCH:
             return RuntimeState.MISMATCH, None
+        if decision is IdempotencyDecision.RECONCILE_REQUIRED:
+            raise RuntimeError("terminal idempotency reconciliation is required")
         return RuntimeState.RECORDED, None
 
     def _record_terminal(
@@ -260,22 +329,7 @@ class EntitlementsBillingRuntime:
         fingerprint: IdempotencyFingerprint,
         result: CommandResult,
     ) -> None:
-        now = _now()
-        self.idempotency.record_terminal(
-            session,
-            record_id=uuid4(),
-            scope=_SCOPE,
-            key=_key(key),
-            fingerprint=fingerprint,
-            outcome=CommonOutcome(
-                result=Result.SUCCEEDED,
-                reason_code=result.reason_code,
-                details=((str(result.resource_id),) if result.resource_id else ()),
-            ),
-            created_at=now,
-            expires_at=now + timedelta(days=30),
-            now=now,
-        )
+        self._finish_command(session, key, fingerprint, result)
 
     @staticmethod
     def _require_authority(
@@ -292,18 +346,18 @@ class EntitlementsBillingRuntime:
     def bootstrap_tariffs(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         idempotency_key: str,
         *,
         effective_at: datetime,
-        actor_reference: str | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
-        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        resolved = self._resolve(session, actor_reference, target_account_id)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
         denied = self._require_authority(
-            authority, "ENTITLEMENTS_TARIFF_ADMIN", authority.account_id
+            authority, "ENTITLEMENTS_TARIFF_ADMIN", target_account_id
         )
         if denied:
             return denied
@@ -395,30 +449,29 @@ class EntitlementsBillingRuntime:
     def assign_access(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         tariff: TariffName,
         starts_at: datetime,
         ends_at: datetime,
         reason: str,
         idempotency_key: str,
-        actor_reference: str | None = None,
-        target_account_id: UUID | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
-        target = target_account_id or authority.account_id
-        resolved = self._resolve(session, authority, target, actor_reference)
+        target = target_account_id
+        resolved = self._resolve(session, actor_reference, target)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
         denied = self._require_authority(
-            authority, "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN", authority.account_id
+            authority, "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN", target
         )
         if denied:
             return denied
         if ends_at <= starts_at or not reason.strip():
             raise ValueError("closed interval and reason required")
         fingerprint = _fingerprint(
-            ("assign", str(authority.account_id), tariff.value, starts_at, ends_at, reason)
+            ("assign", str(target), tariff.value, starts_at, ends_at, reason)
         )
         state, resource = self._terminal(session, idempotency_key, fingerprint)
         if state is RuntimeState.REPLAYED:
@@ -439,7 +492,7 @@ class EntitlementsBillingRuntime:
         session.execute(
             _GRANTS.insert().values(
                 id=grant_id,
-                account_id=authority.account_id,
+                account_id=target,
                 tariff_id=tariff_row.id,
                 source_code="ASSIGN_ACCESS",
                 valid_from=starts_at,
@@ -463,41 +516,41 @@ class EntitlementsBillingRuntime:
     def manual_renewal(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         starts_at: datetime,
         ends_at: datetime,
         idempotency_key: str,
         reason: str,
-        actor_reference: str | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
         return self.assign_access(
             session,
-            authority,
+            actor_reference,
             tariff=TariffName.BASIC,
             starts_at=starts_at,
             ends_at=ends_at,
             reason=reason,
             idempotency_key=idempotency_key,
-            actor_reference=actor_reference,
+            target_account_id=target_account_id,
         )
 
     def revoke_access(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         grant_id: UUID,
         idempotency_key: str,
         reason: str,
-        actor_reference: str | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
-        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        resolved = self._resolve(session, actor_reference, target_account_id)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
         denied = self._require_authority(
-            authority, "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN", authority.account_id
+            authority, "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN", target_account_id
         )
         if denied:
             return denied
@@ -516,7 +569,7 @@ class EntitlementsBillingRuntime:
             update(_GRANTS)
             .where(
                 _GRANTS.c.id == grant_id,
-                _GRANTS.c.account_id == authority.account_id,
+                _GRANTS.c.account_id == target_account_id,
                 _GRANTS.c.state == "ACTIVE",
             )
             .values(state="REVOKED", updated_at=_now(), row_version=_GRANTS.c.row_version + 1)
@@ -541,31 +594,25 @@ class EntitlementsBillingRuntime:
     def manual_access_create(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         starts_at: datetime,
         ends_at: datetime,
         idempotency_key: str,
         reason: str,
-        capability: str = "ENTITLEMENTS_MANUAL_ACCESS_ADMIN",
-        authorization_capability: str = "ENTITLEMENTS_MANUAL_ACCESS_ADMIN",
-        scope: str = "account_id",
-        target_account_id: UUID | None = None,
-        target_account: UUID | None = None,
+        target_account_id: UUID,
         granted_capability: str | None = None,
         granted_scope: str | None = None,
-        actor_reference: str | None = None,
     ) -> CommandResult:
-        target = target_account_id or target_account or authority.account_id
-        capability = granted_capability or capability
-        scope = granted_scope or scope
-        resolved = self._resolve(session, authority, target, actor_reference)
+        target = target_account_id
+        capability = granted_capability or ""
+        scope = granted_scope or ""
+        resolved = self._resolve(session, actor_reference, target)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
         if (
-            not _authorized(authority, authorization_capability)
-            or authority.scope != scope
+            not _authorized(authority, "ENTITLEMENTS_MANUAL_ACCESS_ADMIN")
             or authority.account_id != target
         ):
             return CommandResult(
@@ -628,14 +675,14 @@ class EntitlementsBillingRuntime:
     def manual_access_revoke(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         grant_id: UUID,
         idempotency_key: str,
         reason: str,
-        actor_reference: str | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
-        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        resolved = self._resolve(session, actor_reference, target_account_id)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
@@ -664,7 +711,7 @@ class EntitlementsBillingRuntime:
             update(_GRANTS)
             .where(
                 _GRANTS.c.id == grant_id,
-                _GRANTS.c.account_id == authority.account_id,
+                _GRANTS.c.account_id == target_account_id,
                 _GRANTS.c.grant_kind == "MANUAL",
                 _GRANTS.c.state == "ACTIVE",
             )
@@ -693,6 +740,9 @@ class EntitlementsBillingRuntime:
         account_id: UUID,
         *,
         at: datetime,
+        requested_capability: str | None = None,
+        requested_scope: str | None = None,
+        requested_interval: tuple[datetime, datetime] | None = None,
         active_beacon_count: int | None = None,
         interval_minutes: int | None = None,
     ) -> EffectiveEntitlement:
@@ -704,8 +754,9 @@ class EntitlementsBillingRuntime:
                     _GRANTS.c.account_id == account_id,
                     _GRANTS.c.state == "ACTIVE",
                     _GRANTS.c.valid_from <= at,
+                    _GRANTS.c.valid_until > at,
                 )
-                .order_by(_GRANTS.c.valid_until.desc())
+                .order_by(_GRANTS.c.grant_kind.asc(), _GRANTS.c.valid_from.desc(), _GRANTS.c.id.asc())
             )
             .mappings()
             .all()
@@ -717,23 +768,32 @@ class EntitlementsBillingRuntime:
                 provenance=("NO_EFFECTIVE_ACCESS",),
             )
         row = rows[0]
-        if row["valid_until"] <= at:
-            return EffectiveEntitlement(
-                status=EntitlementDecisionStatus.EXPIRED,
-                account_id=account_id,
-                tariff=TariffName(row["code"]),
-                grant_id=row["id"],
-                provenance=("PAID_ACCESS_EXPIRED", "FREE_ONLY_SEMANTICS"),
-                free_compliance_required=True,
-                frozen_at_beacon_boundary=True,
-            )
-        if row["grant_kind"] == "MANUAL":
+        matching_manual = [
+            candidate for candidate in rows
+            if candidate["grant_kind"] == "MANUAL"
+            and (requested_capability is None or candidate["granted_capability"] == requested_capability)
+            and (requested_scope is None or candidate["granted_scope"] == requested_scope)
+            and (requested_interval is None or (
+                candidate["valid_from"] <= requested_interval[0]
+                and requested_interval[1] <= candidate["valid_until"]
+            ))
+        ]
+        if matching_manual:
+            row = matching_manual[0]
             return EffectiveEntitlement(
                 status=EntitlementDecisionStatus.ALLOWED,
                 account_id=account_id,
                 grant_id=row["id"],
-                provenance=("MANUAL_ACCESS_GRANT", "CAPABILITY_AND_SCOPE_PERSISTED"),
+                provenance=("MANUAL_ACCESS_GRANT", "EXACT_CAPABILITY_AND_SCOPE_MATCH"),
             )
+        tariff_rows = [candidate for candidate in rows if candidate["grant_kind"] == "TARIFF"]
+        if not tariff_rows:
+            return EffectiveEntitlement(
+                status=EntitlementDecisionStatus.DENIED,
+                account_id=account_id,
+                provenance=("NO_MATCHING_EFFECTIVE_GRANT",),
+            )
+        row = tariff_rows[0]
         tariff = TariffName(row["code"])
         if (
             tariff is TariffName.FREE
@@ -775,10 +835,9 @@ class EntitlementsBillingRuntime:
         evidence: NormalizedPaymentEvidence,
         *,
         idempotency_key: str,
-        authority: AuthorityFacts,
-        actor_reference: str | None = None,
+        actor_reference: str,
     ) -> CommandResult:
-        resolved = self._resolve(session, authority, evidence.account_id, actor_reference)
+        resolved = self._resolve(session, actor_reference, evidence.account_id)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
@@ -807,6 +866,15 @@ class EntitlementsBillingRuntime:
                 evidence.observed_at,
                 safe,
             )
+        )
+        # Provider identity is a second idempotency domain: serialize it
+        # independently of caller keys to close the duplicate-payment race.
+        provider_lock = hashlib.sha256(
+            f"{_SCOPE.value}:provider:{evidence.provider_code}:{evidence.external_payment_id}".encode()
+        ).digest()
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": int.from_bytes(provider_lock[:8], "big", signed=True)},
         )
         state, resource = self._terminal(session, idempotency_key, fingerprint)
         if state is RuntimeState.REPLAYED:
@@ -849,12 +917,14 @@ class EntitlementsBillingRuntime:
                     reason_code="PROVIDER_PAYMENT_EVIDENCE_CONFLICT",
                     audit_reference=authority.audit_reference,
                 )
-            return CommandResult(
+            result = CommandResult(
                 state=RuntimeState.REPLAYED,
                 reason_code="DUPLICATE_PAYMENT_EVIDENCE",
                 resource_id=existing["id"],
                 audit_reference=authority.audit_reference,
             )
+            self._record_terminal(session, idempotency_key, fingerprint, result)
+            return result
         payment_id = uuid4()
         session.execute(
             _PAYMENTS.insert().values(
@@ -891,15 +961,15 @@ class EntitlementsBillingRuntime:
     def reconcile_payment(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         payment_id: UUID,
         state: PaymentState,
         idempotency_key: str,
         observed_at: datetime,
-        actor_reference: str | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
-        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        resolved = self._resolve(session, actor_reference, target_account_id)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
@@ -912,7 +982,7 @@ class EntitlementsBillingRuntime:
         row = (
             session.execute(
                 select(_PAYMENTS).where(
-                    _PAYMENTS.c.id == payment_id, _PAYMENTS.c.account_id == authority.account_id
+                    _PAYMENTS.c.id == payment_id, _PAYMENTS.c.account_id == target_account_id
                 )
             )
             .mappings()
@@ -1007,16 +1077,16 @@ class EntitlementsBillingRuntime:
     def manual_refund_reference(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         payment_id: UUID,
         reference: str,
         idempotency_key: str,
         reason: str,
         reviewed_at: datetime,
-        actor_reference: str | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
-        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        resolved = self._resolve(session, actor_reference, target_account_id)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
@@ -1032,7 +1102,7 @@ class EntitlementsBillingRuntime:
             )
         payment = session.execute(
             select(_PAYMENTS.c.id).where(
-                _PAYMENTS.c.id == payment_id, _PAYMENTS.c.account_id == authority.account_id
+                _PAYMENTS.c.id == payment_id, _PAYMENTS.c.account_id == target_account_id
             )
         ).scalar_one_or_none()
         if payment is None:
@@ -1087,7 +1157,7 @@ class EntitlementsBillingRuntime:
     def consume_usage(
         self,
         session: Session,
-        authority: AuthorityFacts,
+        actor_reference: str,
         *,
         counter_code: str,
         window_start: datetime,
@@ -1096,15 +1166,15 @@ class EntitlementsBillingRuntime:
         idempotency_key: str,
         requester: str = "",
         source_owner: str = "",
-        actor_reference: str | None = None,
+        target_account_id: UUID,
     ) -> CommandResult:
         if counter_code not in {"ACTIVE_BEACON_SLOT", "SCAN_INTERVAL_WINDOW"}:
             return CommandResult(
                 state=RuntimeState.BLOCKED,
                 reason_code="USAGE_COUNTER_FAMILY_NOT_APPROVED",
-                audit_reference=authority.audit_reference,
+                audit_reference="safe-unauthorized",
             )
-        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        resolved = self._resolve(session, actor_reference, target_account_id)
         if resolved is None:
             return self._unauthorized()
         authority = resolved
@@ -1122,7 +1192,7 @@ class EntitlementsBillingRuntime:
         fp = _fingerprint(
             (
                 "usage",
-                authority.account_id,
+                target_account_id,
                 counter_code,
                 window_start,
                 window_end,
@@ -1145,13 +1215,13 @@ class EntitlementsBillingRuntime:
                 audit_reference=authority.audit_reference,
             )
         tariff = self._tariff(session, TariffName.FREE, window_start)
-        effective = self.evaluate_effective(session, authority.account_id, at=window_start)
+        effective = self.evaluate_effective(session, target_account_id, at=window_start)
         if effective.tariff is TariffName.BASIC:
             tariff = self._tariff(session, TariffName.BASIC, window_start)
         derived_limit = (
             1
             if counter_code == "ACTIVE_BEACON_SLOT" and effective.tariff is TariffName.FREE
-            else (None if counter_code == "ACTIVE_BEACON_SLOT" else 0)
+            else (None if counter_code == "ACTIVE_BEACON_SLOT" else 1)
         )
         if counter_code == "ACTIVE_BEACON_SLOT" and effective.tariff is TariffName.BASIC:
             result = CommandResult(
@@ -1184,7 +1254,7 @@ class EntitlementsBillingRuntime:
             session.execute(
                 select(_USAGE)
                 .where(
-                    _USAGE.c.account_id == authority.account_id,
+                    _USAGE.c.account_id == target_account_id,
                     _USAGE.c.counter_code == counter_code,
                     _USAGE.c.window_start == window_start,
                 )
@@ -1198,12 +1268,14 @@ class EntitlementsBillingRuntime:
             session.execute(
                 _USAGE.insert().values(
                     id=ident,
-                    account_id=authority.account_id,
+                    account_id=target_account_id,
                     counter_code=counter_code,
                     window_start=window_start,
                     window_end=window_end,
                     consumed=1,
-                    limit_value=derived_limit if derived_limit is not None else 0,
+                    # BASIC beacon capacity is intentionally unspecified; scan
+                    # windows are one accepted event, never a zero-limit row.
+                    limit_value=derived_limit if derived_limit is not None else 1,
                     created_at=_now(),
                     updated_at=_now(),
                     row_version=1,
@@ -1379,7 +1451,7 @@ class YooKassaSandboxAdapter:
                 str(body.get("confirmation", {}).get("confirmation_url", ""))[:512]
                 or "normalized-provider-response",
             )
-        except httpx.HTTPError, ValueError, KeyError, TypeError:
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return ProviderResponse(
                 PaymentState.AMBIGUOUS, safe_reference="PROVIDER_RESPONSE_UNAVAILABLE"
             )
@@ -1419,7 +1491,7 @@ class YooKassaSandboxAdapter:
                 external_payment_id,
                 "normalized-provider-response",
             )
-        except httpx.HTTPError, ValueError, KeyError, TypeError:
+        except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return ProviderResponse(
                 PaymentState.AMBIGUOUS, external_payment_id, "PROVIDER_RESPONSE_UNAVAILABLE"
             )
@@ -1435,7 +1507,12 @@ class YooKassaSandboxAdapter:
             with client.stream(method, f"{self.api_base}{path}", **request_kwargs) as response:
                 data = bytearray()
                 for chunk in response.iter_bytes():
-                    data.extend(chunk)
+                    remaining = self.max_response_bytes - len(data)
+                    if remaining < 0:
+                        return None
+                    # Read at most one sentinel byte beyond the configured
+                    # bound; never retain an arbitrary transport chunk.
+                    data.extend(chunk[: remaining + 1])
                     if len(data) > self.max_response_bytes:
                         return None
                 body = json.loads(bytes(data))

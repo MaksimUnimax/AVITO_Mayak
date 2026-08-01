@@ -20,6 +20,7 @@ MAX_SCALAR_LENGTH: Final = 256
 
 class TaskAcceptanceVerifierKind(StrEnum):
     RF30_SELF_PROOF = "RF30_SELF_PROOF"
+    RF12_RUNTIME_CLOSURE = "RF12_RUNTIME_CLOSURE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,12 +60,49 @@ def _rf30_self_proof(context: TaskAcceptanceContext) -> TaskAcceptanceEnvelope:
     )
 
 
+def _rf12_runtime_closure(context: TaskAcceptanceContext) -> TaskAcceptanceEnvelope:
+    """Bounded in-image structural gate for the RF-12 package.
+
+    Real PostgreSQL evidence is supplied by the task runner.  This finite
+    in-image route only proves that the image contains the expected additive
+    head and that Module 03 has no direct Platform audit-table write.
+    """
+
+    from pathlib import Path
+
+    root = Path("/opt/mayak")
+    migration = root / "alembic/versions/20260801_RF12_runtime_harden.py"
+    runtime = root / "src/mayak/modules/entitlements_and_billing/runtime.py"
+    checks: dict[str, bool | int | str] = {
+        "fixed_verifier": context.verifier_kind is TaskAcceptanceVerifierKind.RF12_RUNTIME_CLOSURE,
+        "technical_id_bound": context.technical_id.startswith("RF-12-"),
+        "project_bound": context.project.startswith("avito-mayak-acceptance-rf12-"),
+        "migration_present": migration.is_file(),
+        "runtime_present": runtime.is_file(),
+        "no_direct_platform_audit_write": (
+            runtime.is_file()
+            and "_AUDIT.insert" not in runtime.read_text(encoding="utf-8")
+            and 'metadata.tables["mayak.platform_audit_entries"]' not in runtime.read_text(
+                encoding="utf-8"
+            )
+        ),
+    }
+    return TaskAcceptanceEnvelope(
+        technical_id=context.technical_id,
+        project=context.project,
+        verifier_id=context.verifier_kind.value,
+        status="PASS" if all(checks.values()) else "FAIL",
+        checks=checks,
+    )
+
+
 # This literal mapping is the complete executable registry.  It must never be
 # replaced with dynamic loading, plugins, or caller-provided module names.
 _REGISTRY: Final[
     dict[TaskAcceptanceVerifierKind, Callable[[TaskAcceptanceContext], TaskAcceptanceEnvelope]]
 ] = {
     TaskAcceptanceVerifierKind.RF30_SELF_PROOF: _rf30_self_proof,
+    TaskAcceptanceVerifierKind.RF12_RUNTIME_CLOSURE: _rf12_runtime_closure,
 }
 
 

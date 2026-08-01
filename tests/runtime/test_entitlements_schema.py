@@ -216,10 +216,11 @@ def test_foreign_keys_and_indexes() -> None:
         } == expected_fks.get(name, set())
     expected_indexes = {
         "entitlement_tariff_definitions": {"ix_entitlement_tariff_definitions_code_active_from"},
-        "entitlement_access_grants": {
-            "ix_entitlement_access_grants_account_valid_until",
-            "ix_entitlement_access_grants_active",
-        },
+            "entitlement_access_grants": {
+                "ix_entitlement_access_grants_account_valid_until",
+                "ix_entitlement_access_grants_active",
+                "ix_entitlement_access_grants_manual_capability_scope",
+            },
         "entitlement_usage_counters": {"ix_entitlement_usage_counters_account_code_window_end"},
         "billing_payment_records": {
             "ix_billing_payment_records_account_observed_at",

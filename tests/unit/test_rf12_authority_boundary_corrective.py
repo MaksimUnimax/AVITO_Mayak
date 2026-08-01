@@ -8,7 +8,6 @@ from mayak.modules.entitlements_and_billing.runtime import (
     FakeVerifiedIdentityPort,
 )
 
-
 ACCOUNT = UUID("11111111-1111-1111-1111-111111111111")
 ACTOR = UUID("22222222-2222-2222-2222-222222222222")
 

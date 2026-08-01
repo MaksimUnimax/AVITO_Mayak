@@ -334,10 +334,12 @@ def _register_canonical_tables(
         Column("account_id", UUID(as_uuid=True), nullable=False),
         Column("tariff_id", UUID(as_uuid=True), nullable=True),
         Column("source_code", String(64), nullable=False),
-        Column("grant_kind", String(32), nullable=False, server_default=text("'TARIFF'")),
+        # Semantic fields are application-owned after RF12_RUNTIME_HARDEN;
+        # production writes must state the grant kind explicitly.
+        Column("grant_kind", String(32), nullable=False),
         Column("granted_capability", String(128), nullable=True),
         Column("granted_scope", String(128), nullable=True),
-        Column("reason", String(512), nullable=False, server_default=text("'legacy grant'")),
+        Column("reason", String(512), nullable=False),
         Column("valid_from", TIMESTAMP(timezone=True), nullable=False),
         Column("valid_until", TIMESTAMP(timezone=True), nullable=False),
         Column("state", String(64), nullable=False),
@@ -351,14 +353,17 @@ def _register_canonical_tables(
         CheckConstraint("btrim(source_code) <> ''", name="source_code_nonempty"),
         CheckConstraint("grant_kind IN ('TARIFF', 'MANUAL')", name="grant_kind_allowed"),
         CheckConstraint(
-            "grant_kind = 'MANUAL' OR (granted_capability IS NULL AND granted_scope IS NULL)",
+            "grant_kind <> 'TARIFF' OR (tariff_id IS NOT NULL AND granted_capability IS NULL AND granted_scope IS NULL)",
             name="tariff_grant_fields_empty",
         ),
         CheckConstraint(
-            "grant_kind = 'TARIFF' OR (btrim(granted_capability) <> '' AND btrim(granted_scope) <> '')",
+            "grant_kind <> 'MANUAL' OR (tariff_id IS NULL AND granted_capability IS NOT NULL AND btrim(granted_capability) <> '' AND granted_scope IS NOT NULL AND btrim(granted_scope) <> '')",
             name="manual_grant_fields_present",
         ),
-        CheckConstraint("btrim(reason) <> ''", name="reason_nonempty"),
+        CheckConstraint(
+            "reason IS NOT NULL AND btrim(reason) <> '' AND octet_length(reason) <= 512",
+            name="reason_nonempty",
+        ),
         CheckConstraint("btrim(state) <> ''", name="state_nonempty"),
         CheckConstraint("valid_until > valid_from", name="valid_interval"),
         CheckConstraint("row_version > 0", name="row_version_positive"),
@@ -374,6 +379,13 @@ def _register_canonical_tables(
         grants.c.valid_from,
         grants.c.valid_until,
         postgresql_where=text("state = 'ACTIVE'"),
+    )
+    Index(
+        "ix_entitlement_access_grants_manual_capability_scope",
+        grants.c.account_id,
+        grants.c.granted_capability,
+        grants.c.granted_scope,
+        postgresql_where=text("grant_kind = 'MANUAL' AND state = 'ACTIVE'"),
     )
     usage = Table(
         "entitlement_usage_counters",
