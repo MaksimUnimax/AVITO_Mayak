@@ -24,9 +24,7 @@ from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value
 SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
 COLLECTOR_ID: Final = "rf08.producer.observed.typed-docker.v3"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
-TASK_ID: Final = (
-    "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
-)
+TASK_ID: Final = "RF-08-CORRECTIVE-ELIMINATE-HOST-EXECUTABLE-CONTENT-AUTHORITY-20260801-08"
 ALLOWED_SERVICES: Final = frozenset(
     {
         "mayak-api",

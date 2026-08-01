@@ -42,9 +42,7 @@ from scripts.runtime.rf08_safe_foreign_schema import (
     validate_snapshot,
 )
 
-TASK_ID = "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
-BASE = "afd5234ec328c3ec1cdc3672473f1510e44be229"
-TASK_EXPECTED_BASE = "afd5234ec328c3ec1cdc3672473f1510e44be229"
+TASK_ID = "RF-08-CORRECTIVE-ELIMINATE-HOST-EXECUTABLE-CONTENT-AUTHORITY-20260801-08"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -117,7 +115,7 @@ SENSITIVE = re.compile(r"(?i)(-----BEGIN .*PRIVATE KEY-----|postgresql://|passwo
 FOREIGN_SCHEMA_VERSION = "ForeignResourceSnapshotV3"
 INDEPENDENT_COLLECTOR_ID = "rf08.independent.observed.typed-docker.v3"
 TASK_PROJECT = "avito-mayak-rf08-secret-delivery"
-TASK_ID = "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
+TASK_ID = "RF-08-CORRECTIVE-ELIMINATE-HOST-EXECUTABLE-CONTENT-AUTHORITY-20260801-08"
 
 
 def _sha(path: Path) -> str:
@@ -706,8 +704,8 @@ def _canonical(manifest: list[dict[str, str]]) -> bytes:
 
 def _digest(source: Path, manifest: list[dict[str, str]], tree_identity: str) -> str:
     payload = {
-        "schema_version": "rf08-docker-native-context-v1",
-        "expected_base_tree_identity": tree_identity,
+        "schema_version": "rf08-docker-native-context-v2",
+        "candidate_tree_identity": tree_identity,
         "dockerfile_sha256": _sha(source / "Dockerfile"),
         "dockerignore_sha256": _sha(source / ".dockerignore"),
         "normalized_copy_plan": [{"source": a, "destination": b} for a, b in COPY_PLAN],
@@ -1021,12 +1019,37 @@ def verify_evidence(
     candidate_source_sha = subprocess.check_output(
         ["git", "-C", str(source_tree), "rev-parse", "HEAD"], text=True
     ).strip()
+    sha = re.compile(r"^[0-9a-f]{40}$")
+    parent_sha = subprocess.check_output(
+        ["git", "-C", str(source_tree), "rev-parse", "HEAD^"], text=True
+    ).strip()
+    origin_main = subprocess.check_output(
+        ["git", "-C", str(source_tree), "rev-parse", "origin/main"], text=True
+    ).strip()
+    tree_identity = subprocess.check_output(
+        ["git", "-C", str(source_tree), "rev-parse", "HEAD^{tree}"], text=True
+    ).strip()
+    parent_count = len(
+        subprocess.check_output(
+            ["git", "-C", str(source_tree), "rev-list", "--parents", "-n", "1", "HEAD"],
+            text=True,
+        ).split()
+    ) - 1
+    for value in (candidate_source_sha, parent_sha, origin_main):
+        if not sha.fullmatch(value):
+            raise ValueError("SHA syntax mismatch")
     if (
         document.get("technical_id") != TASK_ID
-        or document.get("task_expected_base") != TASK_EXPECTED_BASE
-        or document.get("runtime_image_input_base") != BASE
+        or document.get("candidate_source_sha") != candidate_source_sha
+        or document.get("candidate_parent_sha") != parent_sha
+        or document.get("authoritative_origin_main_sha") != origin_main
+        or parent_count != 1
+        or parent_sha != origin_main
+        or document.get("candidate_tree_sha") != tree_identity
+        or document.get("clean_context_source_sha") != candidate_source_sha
+        or document.get("clean_context_tree_sha") != tree_identity
     ):
-        raise ValueError("identity or base mismatch")
+        raise ValueError("candidate-relative source identity mismatch")
     if document.get("required_stage_order") != list(STAGES) or len(STAGES) != 57:
         raise ValueError("exact stage contract mismatch")
     stages = document.get("stages")
@@ -1074,9 +1097,6 @@ def verify_evidence(
             "__pycache__" in x["path"] or x["path"].endswith((".pyc", ".pyo")) for x in manifest
         ):
             raise ValueError("ignored/generated path in manifest")
-        tree_identity = subprocess.check_output(
-            ["git", "-C", str(source_tree), "rev-parse", "HEAD^{tree}"], text=True
-        ).strip()
         digest = _digest(source, manifest, tree_identity)
         if any(
             document.get(k) != digest
@@ -1100,10 +1120,23 @@ def verify_evidence(
         ):
             raise ValueError("producer/independent equality missing")
         if (
-            document.get("expected_base_tree_identity") != tree_identity
+            document.get("clean_context_tree_sha") != tree_identity
             or document.get("docker_native_effective_manifest_digest") != export["manifest_sha256"]
         ):
             raise ValueError("context identity mismatch")
+        provenance = _stage(document, "APPLICATION_IMAGE_PROVENANCE_VERIFY")["evidence"]
+        if not isinstance(provenance, dict):
+            raise ValueError("image provenance missing")
+        if (
+            document.get("image_tag") != f"avito-mayak:{candidate_source_sha}"
+            or document.get("image_revision_label") != candidate_source_sha
+            or document.get("image_build_input_label") != digest
+            or document.get("lock_identity") != provenance.get("lock_identity")
+            or provenance.get("revision") != candidate_source_sha
+            or provenance.get("build_input_digest") != digest
+            or provenance.get("project_owned") != "true"
+        ):
+            raise ValueError("image candidate provenance mismatch")
         if (
             document.get("excluded_path_count") != 0
             or document.get("untracked_input_count") != 0

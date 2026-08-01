@@ -1,58 +1,26 @@
 {
-  "schema_version": "rf08-protection-scenarios-v3",
+  "schema_version": "rf08-protection-scenarios-v4",
   "invariants": [
-    {"id": "single_transport", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}]},
-    {"id": "closed_authority_adversaries", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_semantic_bypasses_are_rejected"}]},
-    {"id": "rename_invariance", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_renaming_does_not_change_verdict"}]},
-    {"id": "runtime_binding_generation_epoch", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_docker_authority.py::test_issue_execute_and_observe"}]},
-    {"id": "immutable_task_scoped_acceptance_authority", "evidence": [
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_task_scope_accepts_exact_project_and_binds_identity"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_cross_scope_and_binding_mismatches_fail_closed"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_capability_is_bound_to_gateway_and_immutable_technical_id"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_teardown_is_bounded_semantic_command"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}
-    ]},
-    {"id": "task_scope_authority_covers_exact_module14_rf01_rf30_range", "evidence": [
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_task_scope_accepts_entire_mutating_module14_range"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_task_scope_rejects_outside_mutating_module14_range"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_technical_id_accepts_entire_mutating_module14_range"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_technical_id_rejects_outside_mutating_module14_range"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_cross_scope_and_binding_mismatches_fail_closed"}
-    ]},
-    {"id": "task_scope_executable_content_is_source_bound_and_closed_world", "evidence": [
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_bootstrap_is_always_rejected"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_sealed_bootstrap_requires_exact_adapter_and_service"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_verifier_shape_is_fixed_and_source_bound"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_verifier_digest_tamper_rejected_before_transport"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_verifier_execution_clamps_timeout_and_parses_output"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_executable_content_authority_adversaries_fail_closed"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_reduced_closed_world_content_topology_is_accepted"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_content_verdict_is_not_self_authorized_by_names_or_fixture_location"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_passes"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_missing_validation_edge_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_wrong_value_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_issue_only_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_one_read_no_revalidation_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_cached_execute_validator_keeps_dominance_but_lacks_fresh_read"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_unrelated_root_and_digest_operations_do_not_complete_witnesses"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_safe_mode_local_rename_preserves_relation_proof"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_neutral_dynamic_execution_fields_fail_closed"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_safe_and_unsafe_neutral_topologies_are_rename_invariant"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_no_root_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_no_digest_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_one_read_no_revalidation_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_fake_mode_separation_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_dynamic_service_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_dynamic_entrypoint_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_dynamic_user_workdir_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_dynamic_env_argv_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_second_route_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_dead_validator_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_exact_production_identity_validator_after_dispatch_fails"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_structural_mutations.py::test_renamed_unsafe_topology_remains_rejected"},
-      {"kind": "structural-rule", "target": "task_scope_executable_content_is_source_bound_and_closed_world"},
-      {"kind": "structural-rule", "target": "qualified_executable_content_dataflow"},
-      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}
-    ]}
+    {
+      "id": "task_scoped_acceptance_executes_only_built_in_image_code",
+      "evidence": [
+        {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_fixed_in_image_route_has_no_host_content"},
+        {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_unknown_verifier_and_dynamic_registry_fail_closed"},
+        {"kind": "structural-rule", "target": "task_scoped_acceptance_executes_only_built_in_image_code"}
+      ]
+    },
+    {
+      "id": "single_docker_transport",
+      "evidence": [
+        {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"},
+        {"kind": "structural-rule", "target": "single_docker_transport"}
+      ]
+    },
+    {
+      "id": "sealed_bootstrap_remains_distinct",
+      "evidence": [
+        {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_bootstrap_is_rejected_and_sealed_bootstrap_is_preserved"}
+      ]
+    }
   ]
 }

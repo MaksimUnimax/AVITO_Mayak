@@ -12,16 +12,12 @@ def test_rf08_protection_manifest_has_required_semantic_invariants() -> None:
         (root / "scripts/runtime/rf08_protection_manifest.json").read_text(encoding="utf-8")
     )
     required = {
-        "single_transport",
-        "closed_authority_adversaries",
-        "rename_invariance",
-        "runtime_binding_generation_epoch",
-        "immutable_task_scoped_acceptance_authority",
-        "task_scope_authority_covers_exact_module14_rf01_rf30_range",
-        "task_scope_executable_content_is_source_bound_and_closed_world",
+        "task_scoped_acceptance_executes_only_built_in_image_code",
+        "single_docker_transport",
+        "sealed_bootstrap_remains_distinct",
     }
     entries = {entry["id"] for entry in manifest["invariants"]}
-    assert manifest["schema_version"] == "rf08-protection-scenarios-v3"
+    assert manifest["schema_version"] == "rf08-protection-scenarios-v4"
     assert entries == required
     result = resolve_protection_manifest(root)
     assert not result["errors"]

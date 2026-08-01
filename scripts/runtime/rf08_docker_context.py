@@ -24,7 +24,6 @@ from scripts.runtime.rf08_docker_authority import (
     PathCapabilityKind,
 )
 
-EXPECTED_BASE_SHA: Final = "afd5234ec328c3ec1cdc3672473f1510e44be229"
 COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("pyproject.toml", "pyproject.toml"),
     ("uv.lock", "uv.lock"),
@@ -33,7 +32,7 @@ COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("alembic.ini", "alembic.ini"),
     ("alembic", "alembic"),
 )
-SCHEMA_VERSION: Final = "rf08-docker-native-context-v1"
+SCHEMA_VERSION: Final = "rf08-docker-native-context-v2"
 
 
 def _safe_relative(path: str) -> str:
@@ -110,7 +109,11 @@ def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dic
             shutil.copyfile(source_path, target_path)
         else:
             raise ValueError("missing build input")
-    return {"source_sha": source_sha, "tree_identity": tree, "archive_sha256": archive_hash}
+    return {
+        "candidate_source_sha": source_sha,
+        "candidate_tree_identity": tree,
+        "archive_sha256": archive_hash,
+    }
 
 
 def _inspector_file(root: Path) -> Path:
@@ -186,11 +189,13 @@ def canonical_manifest(manifest: tuple[dict[str, str], ...] | list[dict[str, str
 
 
 def build_input_digest(
-    context: Path, manifest: tuple[dict[str, str], ...] | list[dict[str, str]], tree_identity: str
+    context: Path,
+    manifest: tuple[dict[str, str], ...] | list[dict[str, str]],
+    candidate_tree_identity: str,
 ) -> str:
     payload = {
         "schema_version": SCHEMA_VERSION,
-        "expected_base_tree_identity": tree_identity,
+        "candidate_tree_identity": candidate_tree_identity,
         "dockerfile_sha256": hashlib.sha256((context / "Dockerfile").read_bytes()).hexdigest(),
         "dockerignore_sha256": hashlib.sha256((context / ".dockerignore").read_bytes()).hexdigest(),
         "normalized_copy_plan": [{"source": a, "destination": b} for a, b in COPY_PLAN],

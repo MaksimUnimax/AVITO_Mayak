@@ -21,20 +21,19 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, cast
 
-TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
-TECHNICAL_ID: Final = (
-    "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
+from mayak.runtime.task_acceptance import (
+    TaskAcceptanceVerifierKind,
+    registered_verifier,
 )
+
+TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
+TECHNICAL_ID: Final = "RF-08-CORRECTIVE-ELIMINATE-HOST-EXECUTABLE-CONTENT-AUTHORITY-20260801-08"
 COMPOSE_FILE: Final = "compose.yaml"
 RUNTIME_ROOT: Final = Path("/opt/avito-mayak-runtime/rf08-secret-delivery")
 RUNTIME_COMPOSE_FILE: Path = Path(
     "/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml"
 )
 RUNTIME_PROFILE: Final = "runtime-foundation"
-TASK_ACCEPTANCE_VERIFIER_ROOT: Final = (
-    Path(__file__).resolve().parent / "task_acceptance"
-)
-TASK_ACCEPTANCE_VERIFIER_DESTINATION: Final = "/opt/mayak/task_acceptance_verifier.py"
 TASK_ACCEPTANCE_SCHEMA_VERSION: Final = "mayak-task-acceptance-v1"
 TASK_ACCEPTANCE_MAX_STDOUT_BYTES: Final = 16 * 1024
 TASK_ACCEPTANCE_MAX_STDERR_BYTES: Final = 4 * 1024
@@ -74,6 +73,7 @@ def _require_authorized_roadmap_number(match: re.Match[str], *, identity: str) -
     if not _roadmap_number_is_authorized(number):
         raise ValueError(f"{identity} roadmap number is outside the authorized Module-14 range")
     return number
+
 
 _GATEWAY_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "rf08_gateway_token",
@@ -275,11 +275,6 @@ class PathCapability:
         )
 
 
-_VERIFIER_FILE_PATTERN: Final = re.compile(
-    r"^rf(?P<roadmap_number>[0-9]{2})_[a-z0-9]+(?:_[a-z0-9]+)*\.py$"
-)
-
-
 def _verifier_project_number(project_name: str) -> int:
     match = TASK_PROJECT_PATTERN.fullmatch(project_name)
     if match is None:
@@ -287,31 +282,9 @@ def _verifier_project_number(project_name: str) -> int:
     return _require_authorized_roadmap_number(match, identity="task project")
 
 
-def _validate_task_verifier(capability: PathCapability, *, project_name: str) -> str:
-    root = TASK_ACCEPTANCE_VERIFIER_ROOT.resolve(strict=True)
-    path = Path(capability.path)
-    if capability.kind != PathCapabilityKind.FILE:
-        raise ValueError("task verifier must be a file capability")
-    if not path.is_absolute() or path.is_symlink():
-        raise ValueError("task verifier path must be absolute and non-symlinked")
-    if root not in path.parents:
-        raise ValueError("task verifier is outside the canonical verifier root")
-    if any(parent.is_symlink() for parent in path.parents):
-        raise ValueError("task verifier parent traversal mismatch")
-    if not path.exists() or not path.is_file():
-        raise ValueError("task verifier is not an existing regular file")
-    relative = path.relative_to(root)
-    if len(relative.parts) != 1:
-        raise ValueError("task verifier must be directly under the canonical root")
-    match = _VERIFIER_FILE_PATTERN.fullmatch(path.name)
-    if match is None:
-        raise ValueError("task verifier filename is not canonical")
-    number = _require_authorized_roadmap_number(match, identity="verifier")
-    if number != _verifier_project_number(project_name):
-        raise ValueError("verifier roadmap number does not match task project")
-    if capability.digest != _sha_bytes(path.read_bytes()):
-        raise PermissionError("task verifier digest mismatch")
-    return path.stem
+def _validate_task_verifier(verifier_kind: TaskAcceptanceVerifierKind) -> None:
+    """Resolve only the finite in-image registry; caller content is absent."""
+    registered_verifier(verifier_kind)
 
 
 def _validate_sealed_bootstrap(capability: PathCapability, *, service: ComposeService) -> None:
@@ -419,12 +392,12 @@ class BootstrapAction:
 
 @dataclass(frozen=True, slots=True)
 class TaskAcceptanceVerifierAction:
-    """Closed-world task acceptance authority; all execution policy is fixed."""
+    """Typed task acceptance authority; executable content is image-owned."""
 
     binding: ComposeBinding
-    verifier_id: str
-    verifier_path: PathCapability
+    verifier_kind: TaskAcceptanceVerifierKind
     scope_digest: str
+    correlation_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -875,7 +848,11 @@ class GatewayAuthority:
                 semantic.service.value,
                 "-c",
                 payload,
-                *((semantic.correlation_id,) if semantic.probe == ComposeProbeKind.AUTH_REJECTION else ()),  # noqa: E501
+                *(
+                    (semantic.correlation_id,)
+                    if semantic.probe == ComposeProbeKind.AUTH_REJECTION
+                    else ()
+                ),  # noqa: E501
             )
         if isinstance(semantic, ComposeRunAction):
             return (
@@ -889,7 +866,7 @@ class GatewayAuthority:
                 semantic.binding.profile,
                 "run",
                 "--rm",
-                *(('--no-deps',) if semantic.no_deps else ()),
+                *(("--no-deps",) if semantic.no_deps else ()),
                 semantic.service.value,
             )
         if isinstance(semantic, ComposeAction):
@@ -981,14 +958,24 @@ class GatewayAuthority:
                 ):
                     raise ValueError("invalid exact application image build")
                 return (
-                    "docker", "buildx", "build", "--progress=plain",
-                    "--file", semantic.dockerfile.path,
-                    "--platform", "linux/amd64",
-                    "--tag", semantic.tag,
-                    "--build-arg", f"SOURCE_SHA={semantic.source_sha}",
-                    "--build-arg", f"LOCK_IDENTITY={semantic.lock_identity}",
-                    "--build-arg", f"BUILD_INPUT_DIGEST={semantic.build_input_digest}",
-                    "--load", semantic.context.path,
+                    "docker",
+                    "buildx",
+                    "build",
+                    "--progress=plain",
+                    "--file",
+                    semantic.dockerfile.path,
+                    "--platform",
+                    "linux/amd64",
+                    "--tag",
+                    semantic.tag,
+                    "--build-arg",
+                    f"SOURCE_SHA={semantic.source_sha}",
+                    "--build-arg",
+                    f"LOCK_IDENTITY={semantic.lock_identity}",
+                    "--build-arg",
+                    f"BUILD_INPUT_DIGEST={semantic.build_input_digest}",
+                    "--load",
+                    semantic.context.path,
                 )
             if semantic.operation != ImageOperation.BUILDX_MANIFEST:
                 raise ValueError("unsupported image action")
@@ -1059,13 +1046,13 @@ class GatewayAuthority:
                 "/opt/mayak",
                 "--entrypoint",
                 "python",
-                "-v",
-                f"{semantic.verifier_path.path}:{TASK_ACCEPTANCE_VERIFIER_DESTINATION}:ro",
                 ComposeService.API.value,
-                TASK_ACCEPTANCE_VERIFIER_DESTINATION,
+                "-m",
+                "mayak.runtime.task_acceptance",
                 self._scope.technical_id,
                 self._scope.project_name,
-                semantic.verifier_id,
+                semantic.verifier_kind.value,
+                *(("--correlation-id", semantic.correlation_id) if semantic.correlation_id else ()),
             )
         if isinstance(semantic, ObservationRequest):
             if semantic.template == ObservationTemplate.DAEMON_VERSION:
@@ -1146,10 +1133,7 @@ class GatewayAuthority:
                     "-q",
                 )
             if semantic.template == ObservationTemplate.POSTGRES_LOG_TAIL:
-                if (
-                    semantic.compose is None
-                    or semantic.service != ComposeService.POSTGRES
-                ):
+                if semantic.compose is None or semantic.service != ComposeService.POSTGRES:
                     raise ValueError("postgres log binding incomplete")
                 return (
                     "docker",
@@ -1301,9 +1285,11 @@ class GatewayAuthority:
             credential_pattern = re.compile(
                 r"(?i)(password|passwd|secret|token|credential)([=: ]+)[^\s,;]+"
             )
+
             def redact(data: bytes) -> bytes:
                 bounded = data[:8192].decode("utf-8", errors="replace")
                 return credential_pattern.sub(r"\1\2[REDACTED]", bounded).encode()
+
             execution = replace(
                 execution,
                 stdout_bytes=redact(execution.stdout_bytes),
@@ -1318,7 +1304,7 @@ class GatewayAuthority:
                 _compose_diagnostic_stderr(execution.stderr_bytes),
                 technical_id=self._scope.technical_id,
                 project=self._scope.project_name,
-                verifier_id=semantic.verifier_id,
+                verifier_id=semantic.verifier_kind.value,
             )
         return DockerExecution(
             returncode=execution.returncode,
@@ -1367,11 +1353,11 @@ class GatewayAuthority:
             self._validate_binding(semantic.binding)
             if semantic.scope_digest != self._scope.scope_digest:
                 raise PermissionError("task verifier is outside task scope")
-            verifier_id = _validate_task_verifier(
-                semantic.verifier_path, project_name=self._scope.project_name
-            )
-            if semantic.verifier_id != verifier_id:
-                raise ValueError("task verifier identity mismatch")
+            _validate_task_verifier(semantic.verifier_kind)
+            if semantic.correlation_id is not None and (
+                not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", semantic.correlation_id)
+            ):
+                raise ValueError("task verifier correlation identity is not bounded")
             return
         if isinstance(
             semantic,
@@ -1445,7 +1431,8 @@ class GatewayAuthority:
                             TaskAcceptanceVerifierAction,
                             ComposeProjectTeardownAction,
                         ),
-                    ) and semantic.binding is not None
+                    )
+                    and semantic.binding is not None
                     else None,
                 )
                 if cap is not None

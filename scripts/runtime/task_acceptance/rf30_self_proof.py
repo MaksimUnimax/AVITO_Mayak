@@ -1,29 +1,20 @@
-"""RF-08-owned harmless verifier proving the reusable acceptance contract."""
+"""Non-authoritative developer wrapper for the in-image RF30 verifier.
+
+The gateway never mounts or executes this host file. Production task
+acceptance uses ``python -m mayak.runtime.task_acceptance`` from the image.
+"""
 
 from __future__ import annotations
 
-import json
 import sys
+
+from mayak.runtime.task_acceptance import run_task_acceptance
 
 
 def main() -> int:
     if len(sys.argv) != 4:
         return 2
-    technical_id, project, verifier_id = sys.argv[1:]
-    envelope = {
-        "schema_version": "mayak-task-acceptance-v1",
-        "technical_id": technical_id,
-        "project": project,
-        "verifier_id": verifier_id,
-        "status": "PASS",
-        "checks": {
-            "authority": True,
-            "scope_bound": True,
-            "synthetic_only": True,
-        },
-    }
-    sys.stdout.write(json.dumps(envelope, sort_keys=True, separators=(",", ":")) + "\n")
-    return 0
+    return run_task_acceptance(*sys.argv[1:])
 
 
 if __name__ == "__main__":

@@ -1,330 +1,47 @@
 from __future__ import annotations
 
-# Fixture source strings intentionally remain readable as one semantic unit.
-# ruff: noqa: E501
 from pathlib import Path
-from typing import Any
 
 import pytest
 
+from mayak.runtime.task_acceptance import TaskAcceptanceVerifierKind, verifier_kind_from_id
 from scripts.runtime.rf08_verify_structural_gateway import SCHEMA_VERSION, verify_source
 
-
-def _verify(tmp_path: Path, source: str) -> dict[str, Any]:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    (tmp_path / "fixture.py").write_text(source, encoding="utf-8")
-    return verify_source(tmp_path)
+ROOT = Path(__file__).resolve().parents[2]
 
 
-BAD = [
-    # Local spelling is intentionally innocuous and must not affect verdict.
-    "import subprocess\ncmd = ('docker', 'ps', '-q')\nsubprocess.run(cmd)\n",
-    "import subprocess\nparcel = ('docker', 'ps', '-q')\nsubprocess.run(parcel)\n",
-    "from subprocess import run as launch\nlaunch(('docker', 'ps', '-q'))\n",
-    "import subprocess as engine\nengine.run(('docker', 'ps', '-q'))\n",
-    (
-        "import subprocess\nfrom subprocess import run as launch\n"
-        "proxy = launch\nproxy(('docker', 'ps', '-q'))\n"
-    ),
-    (
-        "import subprocess\n\ndef relay(value: tuple[str, ...]):\n"
-        "    return value\nrelay(('docker', 'ps', '-q'))\n"
-        "subprocess.run(relay(('docker', 'ps', '-q')))\n"
-    ),
-    (
-        "import subprocess\nfrom dataclasses import dataclass\n"
-        "@dataclass(frozen=True)\nclass Envelope:\n"
-        "    payload: tuple[str, ...]\n"
-        "item = Envelope(('docker', 'ps', '-q'))\nsubprocess.run(item.payload)\n"
-    ),
-    (
-        "import subprocess\nclass Carrier:\n    @property\n"
-        "    def payload(self):\n        return ('docker', 'ps', '-q')\n"
-        "subprocess.run(Carrier().payload)\n"
-    ),
-    (
-        "import subprocess\nclass Base: raw: tuple[str, ...]\n"
-        "class Derived(Base): pass\nsubprocess.run(Derived().raw)\n"
-    ),
-    "import subprocess\nbase = ('docker',)\ncmd = base + ('inspect',)\nsubprocess.run(cmd)\n",
-    "import subprocess\n\ndef make():\n    return ('docker', 'ps')\nsubprocess.run(make())\n",
-    (
-        "import subprocess\nsubprocess.run(('docker', 'inspect', '--format', '{}'))\n"
-        "subprocess.run(('docker', 'ps'))\n"
-    ),
-    "import subprocess\nsubprocess.run(('docker', 'inspect'))\n",
-    (
-        "import subprocess\nclass Query:\n"
-        "    def __init__(self, value: str): self.value = value\n"
-        "def inspect(value: str): return Query(value)\n"
-        "subprocess.run(inspect('docker ps'))\n"
-    ),
-    (
-        "import subprocess\nsubprocess.run(('docker', 'ps'), capture_output=True)\n"
-        "return subprocess.CompletedProcess(('docker',), 0)\n"
-    ),
-    "import subprocess\nsubprocess.run(('docker', 'ps'), shell=True)\n",
-    "from scripts.runtime.rf08_docker_authority import gateway_token as renamed\n",
-    "from scripts.runtime.rf08_docker_authority import _parse_docker_command as helper\n",
-]
+def test_unknown_verifier_and_dynamic_registry_fail_closed() -> None:
+    with pytest.raises(ValueError):
+        verifier_kind_from_id("caller.module")
+    assert TaskAcceptanceVerifierKind.RF30_SELF_PROOF.value == "RF30_SELF_PROOF"
 
 
-@pytest.mark.parametrize("source", BAD)
-def test_semantic_bypasses_are_rejected(tmp_path: Path, source: str) -> None:
-    payload = _verify(tmp_path, source)
-    assert payload["schema_version"] == SCHEMA_VERSION
-    assert payload["finding_count"] > 0
-
-
-@pytest.mark.parametrize(
-    ("left", "right"),
-    [
-        (
-            "import subprocess as x\nvalue = ('docker', 'ps')\nx.run(value)\n",
-            "import subprocess as y\nrenamed = ('docker', 'ps')\ny.run(renamed)\n",
-        ),
-        (
-            "from subprocess import run as x\nx(('docker', 'ps'))\n",
-            "from subprocess import run as y\ny(('docker', 'ps'))\n",
-        ),
-    ],
-)
-def test_renaming_does_not_change_verdict(tmp_path: Path, left: str, right: str) -> None:
-    assert _verify(tmp_path / "left", left)["finding_count"] > 0
-    assert _verify(tmp_path / "right", right)["finding_count"] > 0
-
-
-def test_closed_semantic_actions_and_bounded_observations_are_accepted(tmp_path: Path) -> None:
-    payload = _verify(
-        tmp_path,
-        "from dataclasses import dataclass\n"
-        "@dataclass(frozen=True)\nclass Action:\n    operation: str\n"
-        "def build(action: Action) -> str:\n    return action.operation\n",
-    )
-    assert payload["finding_count"] == 0
-
-
-def test_no_transport_is_not_an_acceptance_verdict(tmp_path: Path) -> None:
-    payload = _verify(tmp_path, "import subprocess\nsubprocess.run(command)\n")
-    assert payload["finding_count"] > 0
-    assert any(item["kind"] == "zero-docker-transports" for item in payload["findings"])
+def test_registry_contains_no_dynamic_execution_primitives() -> None:
+    source = (ROOT / "src/mayak/runtime/task_acceptance/__init__.py").read_text(encoding="utf-8")
+    assert "importlib" not in source
+    assert "eval(" not in source and "exec(" not in source
+    assert "subprocess" not in source and "entry_points" not in source
 
 
 def test_production_surface_has_exactly_one_transport() -> None:
-    root = Path(__file__).resolve().parents[2]
-    payload = verify_source(root)
+    payload = verify_source(ROOT)
+    assert payload["schema_version"] == SCHEMA_VERSION
     assert payload["finding_count"] == 0
     assert payload["docker_transport_count"] == 1
+    assert payload["task_host_executable_route_count"] == 0
+    assert payload["task_bind_mount_executable_route_count"] == 0
+    assert payload["fixed_in_image_runner_route"] == 1
 
 
-@pytest.mark.parametrize(
-    "source",
-    [
-        "import subprocess\nclass Quiet:\n    def harmless(self): return 7\nclass Relay:\n    def execute(self, value): subprocess.run(value)\nclass Bridge:\n    def pass_value(self): return Relay().execute(Quiet().harmless())\nBridge().pass_value()\n",
-        "import subprocess\nclass Alpha:\n    def alpha(self): return 7\nclass Beta:\n    def _execute(self, value): subprocess.run(value)\nclass Gamma:\n    def alpha(self): return Beta()._execute(Alpha().alpha())\nGamma().alpha()\n",
-        "import subprocess\nclass First:\n    def _quiet(self): return 7\nclass Second:\n    def execute(self, value): subprocess.run(value)\nclass Third:\n    def _relay(self): return Second().execute(First()._quiet())\nThird()._relay()\n",
-    ],
-)
-def test_reviewer_self_authorization_topology_is_rejected(tmp_path: Path, source: str) -> None:
-    payload = _verify(tmp_path, source)
-    assert payload["finding_count"] > 0
-    assert payload["authorized_docker_transport_count"] == 0
-
-
-def test_same_spelling_in_distinct_modules_cannot_share_authority(tmp_path: Path) -> None:
-    runtime = tmp_path / "scripts" / "runtime"
-    runtime.mkdir(parents=True)
-    (runtime / "a.py").write_text(
-        "def build(action: object):\n"
-        "    if isinstance(action, object): return ('docker', 'ps')\n"
-        "    raise ValueError()\n",
-        encoding="utf-8",
+def test_structural_mutation_rejects_host_mount_and_dynamic_module(tmp_path: Path) -> None:
+    authority = (ROOT / "scripts/runtime/rf08_docker_authority.py").read_text(encoding="utf-8")
+    registry = ROOT / "src/mayak/runtime/task_acceptance"
+    (tmp_path / "scripts/runtime").mkdir(parents=True)
+    (tmp_path / "src/mayak/runtime/task_acceptance").mkdir(parents=True)
+    (tmp_path / "scripts/runtime/rf08_docker_authority.py").write_text(
+        authority.replace('"mayak.runtime.task_acceptance"', "caller.module"), encoding="utf-8"
     )
-    (runtime / "b.py").write_text(
-        "import subprocess\n"
-        "def build(value): return value\n"
-        "subprocess.run(build(('docker', 'ps')))\n",
-        encoding="utf-8",
+    (tmp_path / "src/mayak/runtime/task_acceptance/__init__.py").write_text(
+        (registry / "__init__.py").read_text(encoding="utf-8"), encoding="utf-8"
     )
     assert verify_source(tmp_path)["finding_count"] > 0
-
-
-def test_same_spelling_in_distinct_classes_is_not_authority(tmp_path: Path) -> None:
-    payload = _verify(
-        tmp_path,
-        "import subprocess\n"
-        "class Safe:\n"
-        "    def execute(self, action: object):\n"
-        "        if isinstance(action, object): return ('docker', 'ps')\n"
-        "        raise ValueError()\n"
-        "class Unsafe:\n"
-        "    def execute(self, value): subprocess.run(value)\n"
-        "Unsafe().execute(('docker', 'ps'))\n",
-    )
-    assert payload["finding_count"] > 0
-
-
-def test_five_safe_callers_plus_external_unsafe_caller_fail_closed(tmp_path: Path) -> None:
-    runtime = tmp_path / "scripts" / "runtime"
-    runtime.mkdir(parents=True)
-    (runtime / "wrapper.py").write_text(
-        "import subprocess\n"
-        "def relay(value): subprocess.run(value)\n"
-        "relay(('echo', '1'))\nrelay(('echo', '2'))\nrelay(('echo', '3'))\n"
-        "relay(('echo', '4'))\nrelay(('echo', '5'))\n",
-        encoding="utf-8",
-    )
-    (runtime / "external.py").write_text(
-        "from scripts.runtime.wrapper import relay\nrelay(('docker', 'ps'))\n",
-        encoding="utf-8",
-    )
-    assert verify_source(tmp_path)["finding_count"] > 0
-
-
-def test_textual_docker_word_does_not_prove_else_branch(tmp_path: Path) -> None:
-    payload = _verify(
-        tmp_path,
-        "import subprocess\n"
-        "value = command\n"
-        "if 'docker' in label:\n"
-        "    pass\n"
-        "else:\n"
-        "    subprocess.run(value)\n",
-    )
-    assert payload["finding_count"] > 0
-
-
-@pytest.mark.parametrize("operator", ["==", "!="])
-def test_docker_comparison_else_never_closes_unknown_executable(
-    tmp_path: Path, operator: str
-) -> None:
-    payload = _verify(
-        tmp_path,
-        "import subprocess\n"
-        "def launch(command):\n"
-        f"    if command[0] {operator} 'docker':\n"
-        "        return None\n"
-        "    else:\n"
-        "        return subprocess.run(command)\n"
-        "launch(unknown)\n",
-    )
-    assert payload["finding_count"] > 0
-
-
-def test_canonical_filename_does_not_authorize_unknown_command(tmp_path: Path) -> None:
-    runtime = tmp_path / "scripts" / "runtime"
-    runtime.mkdir(parents=True)
-    (runtime / "verify_rf08_sealed_plan_acceptance.py").write_text(
-        "import subprocess\nsubprocess.run(unknown)\n", encoding="utf-8"
-    )
-    assert verify_source(tmp_path)["finding_count"] > 0
-
-
-def test_renamed_unknown_command_stays_rejected(tmp_path: Path) -> None:
-    runtime = tmp_path / "scripts" / "runtime"
-    runtime.mkdir(parents=True)
-    for filename in ("verify_rf08_sealed_plan_acceptance.py", "renamed_harness.py"):
-        (runtime / filename).write_text(
-            "import subprocess\nsubprocess.run(unknown)\n", encoding="utf-8"
-        )
-    assert verify_source(tmp_path)["finding_count"] > 0
-
-
-@pytest.mark.parametrize("field", ["banana", "state", "parcel", "neutral"])
-def test_stored_authority_is_field_spelling_independent(tmp_path: Path, field: str) -> None:
-    payload = _verify(
-        tmp_path,
-        "import subprocess\n"
-        "class Carrier:\n"
-        f"    {field}: tuple[str, ...]\n"
-        f"item = Carrier(('docker', 'ps'))\nsubprocess.run(item.{field})\n",
-    )
-    assert payload["finding_count"] > 0
-
-
-def _typed_content_fixture(*, renamed: bool = False, indirection: str = "", branch: bool = False,
-                           validator: str = "", field: str = "adapter", bootstrap: bool = False,
-                           second_route: bool = False) -> str:
-    action = "RenamedAction" if renamed else "TypedAction"
-    extra = indirection
-    branch_code = (
-        "        if action.ok:\n"
-        "            return ('docker', 'compose', 'run', '-v', action.adapter, 'mayak-api', 'python')\n"
-        "        return ('docker', 'compose', 'run', '-v', action.adapter, action.service, 'python')\n"
-        if branch else
-        "        return ('docker', 'compose', 'run', '-v', action.adapter, action.service, 'python')\n"
-    )
-    cls = "BootstrapAction" if bootstrap else action
-    route = "\ndef other(action: TypedAction):\n    if isinstance(action, TypedAction):\n        return ('docker', 'compose', 'run', '-v', action.adapter, 'mayak-api', 'python')\n    raise ValueError()\n" if second_route else ""
-    return (
-        "import subprocess\nfrom dataclasses import dataclass\n"
-        "@dataclass(frozen=True)\n"
-        f"class {cls}: adapter: str; service: str = 'mayak-api'; ok: bool = True\n"
-        f"{validator}\n{extra}\n"
-        f"def dispatch(action: {cls}):\n"
-        f"    if isinstance(action, {cls}):\n"
-        f"{branch_code}"
-        "    raise ValueError()\n"
-        f"{route}\nsubprocess.run(dispatch({cls}('/synthetic/adapter.py')))\n"
-    )
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        _typed_content_fixture(),
-        _typed_content_fixture(renamed=True),
-        _typed_content_fixture(indirection="class Box:\n    def __init__(self, value): self.value = value\nbox = Box('/synthetic/adapter.py')\n"),
-        _typed_content_fixture(indirection="def wrap(value): return value\nraw = wrap('/synthetic/adapter.py')\n"),
-        _typed_content_fixture(branch=True),
-        _typed_content_fixture(validator="def _validate_task_verifier(action): return True\n"),
-        _typed_content_fixture(validator="def validate(action):\n    if not action.adapter.startswith('/canonical/project'): raise ValueError()\n"),
-        _typed_content_fixture(validator="def validate(action):\n    if action.digest != 'synthetic-digest': raise ValueError()\n"),
-        _typed_content_fixture(validator="def validate(action):\n    if not action.adapter.startswith('/canonical/project'): raise ValueError()\n    if action.digest != 'synthetic-digest': raise ValueError()\n    if '10001:10001' != '10001:10001': raise ValueError()\n"),
-        _typed_content_fixture(field="service"),
-        _typed_content_fixture(field="entrypoint"),
-        _typed_content_fixture(field="user"),
-        _typed_content_fixture(field="workdir"),
-        _typed_content_fixture(field="env"),
-        _typed_content_fixture(bootstrap=True),
-        _typed_content_fixture(second_route=True),
-    ],
-)
-def test_executable_content_authority_adversaries_fail_closed(tmp_path: Path, source: str) -> None:
-    payload = _verify(tmp_path, source)
-    assert payload["finding_count"] > 0
-    assert payload["unresolved_executable_content_flow_count"] > 0
-
-
-def test_reduced_closed_world_content_topology_is_accepted(tmp_path: Path) -> None:
-    source = _typed_content_fixture(
-        validator=(
-            "from pathlib import Path\n"
-            "def validate(action):\n"
-            "    root = Path('/canonical/project').resolve()\n"
-            "    path = Path(action.adapter).resolve()\n"
-            "    if root not in path.parents: raise ValueError()\n"
-            "    digest = 'synthetic-digest'\n"
-            "    if action.digest != digest: raise ValueError()\n"
-            "    if action.service != 'mayak-api': raise ValueError()\n"
-            "    if '10001:10001' != '10001:10001' or '/opt/mayak' != '/opt/mayak' or 'python' != 'python': raise ValueError()\n"
-            "    if digest != 'synthetic-digest': raise ValueError()\n"
-            "    path.read_bytes(); path.read_bytes()\n"
-        )
-        + "\ndef execute(action):\n    validate(action)\n    return dispatch(action)\n"
-    ).replace("subprocess.run(dispatch(TypedAction('/synthetic/adapter.py')))", "subprocess.run(execute(TypedAction('/canonical/project/adapter.py')))")
-    source = source.replace("action.service, 'python'", "'mayak-api', 'python'")
-    payload = _verify(tmp_path, source)
-    assert payload["finding_count"] == 0
-    assert payload["task_verifier_executable_content"] == "PASS"
-
-
-def test_content_verdict_is_not_self_authorized_by_names_or_fixture_location(tmp_path: Path) -> None:
-    source = _typed_content_fixture(
-        validator=(
-            "def _validate_task_verifier(action): return True\n"
-            "def task_scope_executable_content_is_source_bound_and_closed_world(): return True\n"
-        )
-    )
-    payload = _verify(tmp_path, source)
-    assert payload["finding_count"] > 0

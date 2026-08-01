@@ -7,9 +7,11 @@ import hashlib
 import json
 import os
 import secrets
+import subprocess
 from pathlib import Path
 from typing import Any
 
+from mayak.runtime.task_acceptance import TaskAcceptanceVerifierKind
 from scripts.runtime.rf08_docker_authority import (
     RUNTIME_PROFILE,
     TECHNICAL_ID,
@@ -21,16 +23,13 @@ from scripts.runtime.rf08_docker_authority import (
     GatewayAuthority,
     ObservationRequest,
     ObservationTemplate,
-    PathCapability,
-    PathCapabilityKind,
     ResourceKind,
     TaskAcceptanceVerifierAction,
 )
 
-PROJECT = "avito-mayak-acceptance-rf30-scope-20260801-07"
+PROJECT = "avito-mayak-acceptance-rf30-inimage-20260801-08"
 ROOT = Path(__file__).resolve().parents[2]
-RUNTIME_ROOT = Path("/opt/avito-mayak-runtime/rf08-task-scoped-authority-20260801-07")
-PROOF_IMAGE_SOURCE_SHA = "afd5234ec328c3ec1cdc3672473f1510e44be229"
+RUNTIME_ROOT = Path("/opt/avito-mayak-runtime/rf08-inimage-task-acceptance-20260801-08")
 PROOF_IMAGE_DIGEST = "sha256:91070120fe709d63a469b4d16783693ac9afdf88120a4032073aa5eecd6e5eb5"
 SECRET_ROOT = RUNTIME_ROOT / "secrets"
 SECRET_NAMES = (
@@ -56,12 +55,8 @@ def _inventory(gateway: GatewayAuthority) -> dict[str, tuple[str, ...]]:
         "containers": tuple(
             sorted(_observe(gateway, ObservationTemplate.CONTAINER_LIST).splitlines())
         ),
-        "networks": tuple(
-            sorted(_observe(gateway, ObservationTemplate.NETWORK_LIST).splitlines())
-        ),
-        "volumes": tuple(
-            sorted(_observe(gateway, ObservationTemplate.VOLUME_LIST).splitlines())
-        ),
+        "networks": tuple(sorted(_observe(gateway, ObservationTemplate.NETWORK_LIST).splitlines())),
+        "volumes": tuple(sorted(_observe(gateway, ObservationTemplate.VOLUME_LIST).splitlines())),
     }
 
 
@@ -81,11 +76,14 @@ def _write_synthetic_secrets() -> None:
 
 
 def main() -> int:
+    proof_source_sha = subprocess.check_output(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True
+    ).strip()
     _write_synthetic_secrets()
     os.environ.update(
         {
             "MAYAK_SECRETS_ROOT": str(SECRET_ROOT),
-            "MAYAK_SOURCE_SHA": PROOF_IMAGE_SOURCE_SHA,
+            "MAYAK_SOURCE_SHA": proof_source_sha,
             "MAYAK_LOCK_IDENTITY": "rf08-task-scoped-candidate-lock",
             "MAYAK_IMAGE_DIGEST": PROOF_IMAGE_DIGEST,
         }
@@ -166,15 +164,10 @@ def main() -> int:
             "starting",
         }:
             raise RuntimeError("postgres readiness observation failed")
-        verifier_path = ROOT / "scripts/runtime/task_acceptance/rf30_self_proof.py"
         verifier = gateway.issue(
             TaskAcceptanceVerifierAction(
                 binding=binding,
-                verifier_id="rf30_self_proof",
-                verifier_path=PathCapability.from_path(
-                    verifier_path,
-                    kind=PathCapabilityKind.FILE,
-                ),
+                verifier_kind=TaskAcceptanceVerifierKind.RF30_SELF_PROOF,
                 scope_digest=gateway.scope_digest,
             ),
             stage="runtime-task-acceptance-verifier",
@@ -198,8 +191,7 @@ def main() -> int:
         if before != after:
             raise RuntimeError("foreign inventory changed")
         remaining = {
-            key: tuple(item for item in value if PROJECT in item)
-            for key, value in after.items()
+            key: tuple(item for item in value if PROJECT in item) for key, value in after.items()
         }
         if any(remaining.values()):
             raise RuntimeError("task resources remain")

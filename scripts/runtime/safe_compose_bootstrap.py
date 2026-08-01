@@ -62,7 +62,6 @@ from scripts.runtime.rf08_docker_authority import (
 )
 from scripts.runtime.rf08_docker_context import (
     COPY_PLAN,
-    EXPECTED_BASE_SHA,
     docker_native_manifest,
     materialize_clean_context,
 )
@@ -310,15 +309,19 @@ def _compose_dispatch(argv: tuple[str, ...]) -> SemanticDispatch:
             raise ValueError("unsupported compose run command")
         run_index = argv.index("run")
         service = next(
-            (value for value in argv[run_index + 1 :] if value in {item.value for item in ComposeService}),
+            (
+                value
+                for value in argv[run_index + 1 :]
+                if value in {item.value for item in ComposeService}
+            ),
             "",
         )
         if not service:
             raise ValueError("unsupported compose run service")
         command_tail = tuple(argv[-2:])
-        if (
-            service == "mayak-db-bootstrap"
-            and command_tail == ("python", "/opt/mayak/rf09_public_bootstrap_adapter.py")
+        if service == "mayak-db-bootstrap" and command_tail == (
+            "python",
+            "/opt/mayak/rf09_public_bootstrap_adapter.py",
         ):
             env_pairs: dict[str, str] = {}
             for value in pairs.get("-e", []):
@@ -380,7 +383,8 @@ def _compose_dispatch(argv: tuple[str, ...]) -> SemanticDispatch:
         service=ComposeService(service),
         operation=ComposeOperation(command),
         detach=command in {"up", "start"} and "-d" in argv,
-        force=(command == "rm" and "-f" in argv) or (command == "up" and "--force-recreate" in argv),
+        force=(command == "rm" and "-f" in argv)
+        or (command == "up" and "--force-recreate" in argv),
         remove_orphans="--remove-orphans" in argv,
         no_deps="--no-deps" in argv,
         rm_volumes="--volumes" in argv,
@@ -468,15 +472,22 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
             context = argv[-1]
             if "--load" in argv:
                 allowed = {
-                    "build", "--progress=plain", "--file", "--platform", "--tag",
-                    "--build-arg", "--load",
+                    "build",
+                    "--progress=plain",
+                    "--file",
+                    "--platform",
+                    "--tag",
+                    "--build-arg",
+                    "--load",
                 }
                 if any(token.startswith("--") and token not in allowed for token in argv[3:-1]):
                     raise ValueError("arbitrary application build option")
                 platform = pairs.get("--platform", [""])[0]
                 tag = pairs.get("--tag", [""])[0]
                 args = pairs.get("--build-arg", [])
-                values = {item.split("=", 1)[0]: item.split("=", 1)[1] for item in args if "=" in item}
+                values = {
+                    item.split("=", 1)[0]: item.split("=", 1)[1] for item in args if "=" in item
+                }
                 if (
                     platform != "linux/amd64"
                     or not re.fullmatch(r"avito-mayak:[0-9a-f]{40}", tag)
@@ -486,9 +497,17 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
                 return SemanticDispatch(
                     ImageAction(
                         operation=ImageOperation.APPLICATION_BUILD,
-                        context=PathCapability.from_path(context, kind=PathCapabilityKind.DIRECTORY),
-                        dockerfile=PathCapability.from_path(pairs["--file"][0], kind=PathCapabilityKind.FILE),
-                        output=PathCapability.from_path(RUNTIME_ROOT / "application-image-output", kind=PathCapabilityKind.DIRECTORY, require_exists=False),
+                        context=PathCapability.from_path(
+                            context, kind=PathCapabilityKind.DIRECTORY
+                        ),
+                        dockerfile=PathCapability.from_path(
+                            pairs["--file"][0], kind=PathCapabilityKind.FILE
+                        ),
+                        output=PathCapability.from_path(
+                            RUNTIME_ROOT / "application-image-output",
+                            kind=PathCapabilityKind.DIRECTORY,
+                            require_exists=False,
+                        ),
                         tag=tag,
                         source_sha=values["SOURCE_SHA"],
                         lock_identity=values["LOCK_IDENTITY"],
@@ -568,9 +587,9 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
         if not command_tail:
             raise ValueError("unsupported mutation shape")
         image = argv[index]
-        if (
-            image == "mayak-db-bootstrap"
-            and command_tail == ("python", "/opt/mayak/rf09_public_bootstrap_adapter.py")
+        if image == "mayak-db-bootstrap" and command_tail == (
+            "python",
+            "/opt/mayak/rf09_public_bootstrap_adapter.py",
         ):
             env_pairs: dict[str, str] = {}
             for value in pairs.get("-e", []):
@@ -629,15 +648,11 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
     raise ValueError("unknown docker command")
 
 
-TASK_ID: Final = (
-    "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
-)
-EXPECTED_TASK_BASE: Final = "afd5234ec328c3ec1cdc3672473f1510e44be229"
+TASK_ID: Final = "RF-08-CORRECTIVE-ELIMINATE-HOST-EXECUTABLE-CONTENT-AUTHORITY-20260801-08"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
 EXPECTED_LOCK_IDENTITY: Final = "e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6"
-EXPECTED_IMAGE_TAG: Final = "avito-mayak:cffb3f0f123e49ea5d689fe2425e66d04efba436"
 MIGRATION_HEAD: Final = "RF12_MANUAL_GRANT"
 EVIDENCE_PATH: Final = Path(
     "docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json"
@@ -2177,7 +2192,7 @@ def build_input_manifest(tree: Path, *, gateway: GatewayAuthority) -> tuple[dict
 
 def deterministic_build_input_digest(source_tree: Path, *, gateway: GatewayAuthority) -> str:
     manifest, identities = _docker_context_for(source_tree, gateway=gateway)
-    return docker_build_input_digest(source_tree, manifest, identities["tree_identity"])
+    return docker_build_input_digest(source_tree, manifest, identities["candidate_tree_identity"])
 
 
 def _safe_root(root: Path) -> Path:
@@ -2410,6 +2425,12 @@ def _parse_stage_output(
         "APPLICATION_IMAGE_PROVENANCE_VERIFY",
         "APPLICATION_IMAGE_ENVIRONMENT_VERIFY",
     }:
+        if (
+            stage == "APPLICATION_IMAGE_RESOLUTION"
+            and code != 0
+            and re.search(rb"(?i)(no such image|not found|does not exist)", stderr)
+        ):
+            return {"resolution_error": "IMAGE_NOT_FOUND"}
         try:
             doc = json.loads(text)
             if isinstance(doc, list) and not doc:
@@ -2423,12 +2444,17 @@ def _parse_stage_output(
                 "revision": labels.get("org.opencontainers.image.revision"),
                 "lock_identity": labels.get("com.avito-mayak.lock-identity"),
                 "build_input_digest": labels.get("com.avito-mayak.build-input-digest"),
+                "project_owned": labels.get("com.avito-mayak.project-owned"),
                 "user": config.get("User"),
                 "environment_entries": len(config.get("Env", [])),
                 "action": "REUSED",
             }
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            return {"image_id": text}
+            return (
+                {"resolution_error": "OBSERVATION_FAILURE"}
+                if stage == "APPLICATION_IMAGE_RESOLUTION"
+                else {"image_id": text}
+            )
     if stage == "APPLICATION_IMAGE_IMPORT_PROBE":
         return {"imported_package_path": text}
     if stage in {
@@ -2518,27 +2544,31 @@ def _parse_stage_output(
 
 
 def _docker(args: tuple[str, ...]) -> SemanticDispatch:
-    return _dispatch_docker_command((
-        "docker",
-        "compose",
-        "-f",
-        str(RUNTIME_COMPOSE_FILE),
-        "-p",
-        TASK_PROJECT,
-        "--profile",
-        "runtime-foundation",
-        *args,
-    ))
+    return _dispatch_docker_command(
+        (
+            "docker",
+            "compose",
+            "-f",
+            str(RUNTIME_COMPOSE_FILE),
+            "-p",
+            TASK_PROJECT,
+            "--profile",
+            "runtime-foundation",
+            *args,
+        )
+    )
 
 
 def _health() -> CommandRequest:
-    return _request((
-        "docker",
-        "inspect",
-        "--format",
-        "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",  # noqa: E501
-        f"{TASK_PROJECT}-mayak-postgres-1",
-    ))
+    return _request(
+        (
+            "docker",
+            "inspect",
+            "--format",
+            "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",  # noqa: E501
+            f"{TASK_PROJECT}-mayak-postgres-1",
+        )
+    )
 
 
 def _head() -> CommandRequest:
@@ -2582,7 +2612,11 @@ def _bootstrap_generation_for_stage(ctx: Mapping[str, object], stage: str) -> st
         raise ProtocolFailure(stage, "EXACT_GENERATION_BINDING_MISSING")
     if stage != "DATABASE_BOOTSTRAP_ROLLBACK_A" and generation == policy.rollback_a_generation_id:
         raise ProtocolFailure(stage, "ROLLBACK_GENERATION_CROSSED_PHASE")
-    if stage != "DATABASE_BOOTSTRAP_C" and generation == policy.generation_c_id and stage.endswith("_A"):
+    if (
+        stage != "DATABASE_BOOTSTRAP_C"
+        and generation == policy.generation_c_id
+        and stage.endswith("_A")
+    ):
         raise ProtocolFailure(stage, "ROTATION_GENERATION_CROSSED_PHASE")
     return generation
 
@@ -2957,8 +2991,11 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
         transcript = ctx.get("transcript")
         if not isinstance(transcript, ProtocolTranscript):
             ctx["build_context_snapshot"] = {
-                "schema_version": "rf08-docker-native-context-v1",
-                "expected_base_tree_identity": EXPECTED_BASE_SHA,
+                "schema_version": "rf08-docker-native-context-v2",
+                "candidate_source_sha": cast(str, ctx["source_sha"]),
+                "candidate_tree_identity": subprocess.check_output(
+                    ["git", "-C", str(source_tree), "rev-parse", "HEAD^{tree}"], text=True
+                ).strip(),
                 "archive_sha256": "",
                 "docker_native_export_identity": {},
                 "manifest": [],
@@ -2976,10 +3013,13 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             manifest, export_identity = docker_native_manifest(
                 clean_source, context_root, run_id, gateway=gateway
             )
-            digest = docker_build_input_digest(clean_source, manifest, identities["tree_identity"])
+            digest = docker_build_input_digest(
+                clean_source, manifest, identities["candidate_tree_identity"]
+            )
             ctx["build_context_snapshot"] = {
-                "schema_version": "rf08-docker-native-context-v1",
-                "expected_base_tree_identity": identities["tree_identity"],
+                "schema_version": "rf08-docker-native-context-v2",
+                "candidate_source_sha": identities["candidate_source_sha"],
+                "candidate_tree_identity": identities["candidate_tree_identity"],
                 "archive_sha256": identities["archive_sha256"],
                 "docker_native_export_identity": export_identity,
                 "manifest": list(manifest),
@@ -3008,7 +3048,8 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 {
                     "build_input_digest": digest,
                     "manifest": snapshot["manifest"],
-                    "expected_base_tree_identity": snapshot["expected_base_tree_identity"],
+                    "candidate_source_sha": snapshot["candidate_source_sha"],
+                    "candidate_tree_identity": snapshot["candidate_tree_identity"],
                     "docker_native_export_identity": snapshot["docker_native_export_identity"],
                     "clean_context_equal": True,
                     "excluded_path_count": 0,
@@ -3029,9 +3070,31 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
         observed = runner.run(_request(image), stage="APPLICATION_IMAGE_RESOLUTION")
         if observed.exit_code == 0 and observed.parsed.get("image_id"):
             parsed = dict(observed.parsed)
-            parsed["image_available"] = True
+            expected = {
+                "source": EXPECTED_IMAGE_SOURCE,
+                "revision": source_sha,
+                "lock_identity": EXPECTED_LOCK_IDENTITY,
+                "build_input_digest": cast(Mapping[str, object], snapshot)["digest"],
+                "project_owned": "true",
+            }
+            parsed.update(
+                {
+                    "image_available": True,
+                    "resolution": (
+                        "AVAILABLE_EXACT"
+                        if all(parsed.get(key) == value for key, value in expected.items())
+                        else "PROVENANCE_MISMATCH"
+                    ),
+                }
+            )
+        elif observed.parsed.get("resolution_error") == "IMAGE_NOT_FOUND":
+            parsed = {"image_id": "ABSENT", "image_available": False, "resolution": "ABSENT"}
         else:
-            parsed = {"image_id": "ABSENT", "image_available": False}
+            raise ProtocolFailure(
+                "APPLICATION_IMAGE_RESOLUTION",
+                cast(str, observed.parsed.get("resolution_error", "OBSERVATION_FAILURE")),
+            )
+        ctx["application_image_resolution"] = parsed
         return StageResult(
             "APPLICATION_IMAGE_RESOLUTION", "rf08.application_image_resolution", True, 0, parsed
         )
@@ -3048,13 +3111,35 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
 
     def build_exact_candidate_image() -> StageResult:
         snapshot = cast(Mapping[str, object], ctx["build_context_snapshot"])
-        clean_context = RUNTIME_ROOT / "build-context" / cast(str, cast(ProtocolTranscript, ctx["transcript"]).run_id) / "source"
+        resolution = cast(Mapping[str, object], ctx["application_image_resolution"])
+        if resolution.get("resolution") == "AVAILABLE_EXACT":
+            parsed = dict(resolution)
+            parsed.update({"action": "REUSED", "build_input_digest": snapshot["digest"]})
+            return StageResult(
+                "APPLICATION_IMAGE_BUILD_OR_REUSE",
+                "rf08.application_image_build_or_reuse",
+                True,
+                0,
+                parsed,
+            )
+        clean_context = (
+            RUNTIME_ROOT
+            / "build-context"
+            / cast(str, cast(ProtocolTranscript, ctx["transcript"]).run_id)
+            / "source"
+        )
         gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
         action = ImageAction(
             operation=ImageOperation.APPLICATION_BUILD,
             context=PathCapability.from_path(clean_context, kind=PathCapabilityKind.DIRECTORY),
-            dockerfile=PathCapability.from_path(clean_context / "Dockerfile", kind=PathCapabilityKind.FILE),
-            output=PathCapability.from_path(RUNTIME_ROOT / "application-image-output", kind=PathCapabilityKind.DIRECTORY, require_exists=False),
+            dockerfile=PathCapability.from_path(
+                clean_context / "Dockerfile", kind=PathCapabilityKind.FILE
+            ),
+            output=PathCapability.from_path(
+                RUNTIME_ROOT / "application-image-output",
+                kind=PathCapabilityKind.DIRECTORY,
+                require_exists=False,
+            ),
             scope_digest=gateway.scope_digest,
             tag=image_tag,
             source_sha=source_sha,
@@ -3063,27 +3148,58 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             platform="linux/amd64",
         )
         capability = gateway.issue(action, stage="APPLICATION_IMAGE_BUILD_OR_REUSE")
-        built = gateway.execute(capability, stage="APPLICATION_IMAGE_BUILD_OR_REUSE", stdin=subprocess.DEVNULL, timeout=900)
+        built = gateway.execute(
+            capability,
+            stage="APPLICATION_IMAGE_BUILD_OR_REUSE",
+            stdin=subprocess.DEVNULL,
+            timeout=900,
+        )
         if built.returncode != 0:
-            raise ProtocolFailure("APPLICATION_IMAGE_BUILD_OR_REUSE", "APPLICATION_IMAGE_BUILD_FAILED")
+            raise ProtocolFailure(
+                "APPLICATION_IMAGE_BUILD_OR_REUSE", "APPLICATION_IMAGE_BUILD_FAILED"
+            )
         inspected = runner.run(_request(image), stage="APPLICATION_IMAGE_INSPECT")
         parsed = dict(inspected.parsed)
         parsed["action"] = "BUILT"
         parsed["build_input_digest"] = snapshot["digest"]
-        return StageResult("APPLICATION_IMAGE_BUILD_OR_REUSE", "rf08.application_image_build_or_reuse", True, inspected.exit_code, parsed)
+        return StageResult(
+            "APPLICATION_IMAGE_BUILD_OR_REUSE",
+            "rf08.application_image_build_or_reuse",
+            True,
+            inspected.exit_code,
+            parsed,
+        )
 
     specs.append(
         StageSpec(
             "APPLICATION_IMAGE_BUILD_OR_REUSE",
             build_exact_candidate_image,
-            _named_oracle("APPLICATION_IMAGE_BUILD_OR_REUSE", ("image_id", "action", "build_input_digest")),
+            _named_oracle(
+                "APPLICATION_IMAGE_BUILD_OR_REUSE", ("image_id", "action", "build_input_digest")
+            ),
             "parser.application_image_build_or_reuse",
             "oracle.application_image_build_or_reuse",
         )
     )
     specs.append(_command_spec(ctx, "APPLICATION_IMAGE_INSPECT", image, ("image_id",)))
-    specs.append(_command_spec(ctx, "APPLICATION_IMAGE_PROVENANCE_VERIFY", image, ("source", "revision", "lock_identity", "build_input_digest", "user")))
-    specs.append(_command_spec(ctx, "APPLICATION_IMAGE_ENVIRONMENT_VERIFY", image, ("environment_entries",)))
+    specs.append(
+        _command_spec(
+            ctx,
+            "APPLICATION_IMAGE_PROVENANCE_VERIFY",
+            image,
+            (
+                "source",
+                "revision",
+                "lock_identity",
+                "build_input_digest",
+                "project_owned",
+                "user",
+            ),
+        )
+    )
+    specs.append(
+        _command_spec(ctx, "APPLICATION_IMAGE_ENVIRONMENT_VERIFY", image, ("environment_entries",))
+    )
     specs.append(
         _command_spec(
             ctx,
@@ -3533,13 +3649,15 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     raise ProtocolFailure(classify_stage, "MISMATCHED_CORRELATION")
                 client["exit_code"] = client_result.exit_code
                 identity = runner.run(
-                    _request((
-                        "docker",
-                        "inspect",
-                        "--format",
-                        "{{.Id}}",
-                        f"{TASK_PROJECT}-mayak-postgres-1",
-                    )),
+                    _request(
+                        (
+                            "docker",
+                            "inspect",
+                            "--format",
+                            "{{.Id}}",
+                            f"{TASK_PROJECT}-mayak-postgres-1",
+                        )
+                    ),
                     stage="APPLICATION_AUTH_REJECTION_B_POSTGRES_ID",
                 )
                 if identity.exit_code != 0 or not identity.parsed.get("observed"):
@@ -4019,7 +4137,9 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 and not ctx.get("replay_namespace_sanitation_verified")
             ):
                 raise ProtocolFailure(stage, "SANITATION_RECORD_MISSING")
-            command: CommandRequest | tuple[str, ...] | Callable[[], CommandRequest | tuple[str, ...]]
+            command: (
+                CommandRequest | tuple[str, ...] | Callable[[], CommandRequest | tuple[str, ...]]
+            )
             if "POSTGRES" in stage:
                 command = _docker(("up", "-d", "--force-recreate", service))
             elif "DATABASE_BOOTSTRAP" in stage:
@@ -4133,6 +4253,18 @@ def run_protocol(
             transcript.entries,
             {
                 "source_sha": source_sha,
+                "candidate_parent_sha": subprocess.check_output(
+                    ["git", "-C", str(source_tree or Path(__file__).resolve().parents[2]), "rev-parse", "HEAD^"],
+                    text=True,
+                ).strip(),
+                "authoritative_origin_main_sha": subprocess.check_output(
+                    ["git", "-C", str(source_tree or Path(__file__).resolve().parents[2]), "rev-parse", "origin/main"],
+                    text=True,
+                ).strip(),
+                "candidate_tree_sha": subprocess.check_output(
+                    ["git", "-C", str(source_tree or Path(__file__).resolve().parents[2]), "rev-parse", "HEAD^{tree}"],
+                    text=True,
+                ).strip(),
                 "image_id": next(
                     (
                         e.evidence.get("image_id")
@@ -4200,18 +4332,25 @@ def build_evidence(
         {},
     )
     sanitation = cast(Mapping[str, object], record.metadata.get("replay_namespace_sanitation", {}))
+    inspect_evidence = next(
+        (e.evidence for e in record.entries if e.stage == "APPLICATION_IMAGE_INSPECT"), {}
+    )
+    provenance_evidence = next(
+        (e.evidence for e in record.entries if e.stage == "APPLICATION_IMAGE_PROVENANCE_VERIFY"), {}
+    )
     payload: dict[str, object] = {
-        "schema_version": "rf08-authoritative-v2",
+        "schema_version": "rf08-authoritative-v3",
         "technical_id": TASK_ID,
         "candidate_source_sha": record.metadata.get("source_sha"),
-        "expected_base": EXPECTED_BASE_SHA,
-        "task_expected_base": EXPECTED_TASK_BASE,
-        "runtime_image_input_base": EXPECTED_BASE_SHA,
-        "runtime_image_input_tree_identity": context.get("expected_base_tree_identity"),
+        "candidate_parent_sha": record.metadata.get("candidate_parent_sha"),
+        "authoritative_origin_main_sha": record.metadata.get("authoritative_origin_main_sha"),
+        "candidate_tree_sha": record.metadata.get("candidate_tree_sha"),
+        "clean_context_source_sha": context.get("candidate_source_sha"),
+        "clean_context_tree_sha": context.get("candidate_tree_identity"),
+        "runtime_image_input_tree_identity": context.get("candidate_tree_identity"),
         "runtime_image_build_input_digest": digest,
         "runtime_image_manifest_count": len(manifest),
         "build_context_schema_version": context.get("schema_version"),
-        "expected_base_tree_identity": context.get("expected_base_tree_identity"),
         "dockerfile_sha256": context.get("dockerfile_sha256"),
         "dockerignore_sha256": context.get("dockerignore_sha256"),
         "normalized_copy_plan": context.get("copy_plan"),
@@ -4297,6 +4436,10 @@ def build_evidence(
         "build_input_manifest": manifest,
         "build_input_digest": digest,
         "lock_identity": EXPECTED_LOCK_IDENTITY,
+        "image_tag": f"avito-mayak:{record.metadata.get('source_sha')}",
+        "image_id": inspect_evidence.get("image_id"),
+        "image_revision_label": provenance_evidence.get("revision"),
+        "image_build_input_label": provenance_evidence.get("build_input_digest"),
         "required_stage_order": list(REQUIRED_STAGES),
         "stages": [
             {
@@ -4309,7 +4452,6 @@ def build_evidence(
             }
             for e in record.entries
         ],
-        "image_id": record.metadata.get("image_id"),
         "application_probe_contract_id": record.metadata.get("application_probe_contract_id"),
         "application_probe_contract": record.metadata.get("application_probe_contract"),
         "a_b_probe_parity": record.metadata.get("a_b_probe_parity"),
@@ -4409,10 +4551,34 @@ def build_evidence(
     return payload
 
 
-def validate_source_identity(*, origin_main: str, parent_sha: str) -> None:
-    """Require the live origin and candidate parent to share the governed base."""
-    if origin_main != EXPECTED_BASE_SHA or parent_sha != EXPECTED_TASK_BASE:
+def validate_source_identity(
+    *,
+    candidate_sha: str,
+    parent_sha: str,
+    origin_main: str,
+    actual_head: str | None = None,
+    parent_count: int = 1,
+    candidate_tree_sha: str | None = None,
+    context_source_sha: str | None = None,
+    context_tree_sha: str | None = None,
+    actual_tree_sha: str | None = None,
+) -> None:
+    """Validate live candidate-relative Git/context relations."""
+    sha = re.compile(r"^[0-9a-f]{40}$")
+    if any(not sha.fullmatch(value) for value in (candidate_sha, parent_sha, origin_main)):
+        raise ValueError("RF08 source identity syntax mismatch")
+    if actual_head is not None and candidate_sha != actual_head:
+        raise ValueError("RF08 candidate HEAD mismatch")
+    if parent_count != 1 or parent_sha != origin_main:
         raise ValueError("RF08 source identity mismatch")
+    if candidate_tree_sha is not None and actual_tree_sha is not None:
+        if candidate_tree_sha != actual_tree_sha:
+            raise ValueError("RF08 candidate tree mismatch")
+    if context_source_sha is not None and context_source_sha != candidate_sha:
+        raise ValueError("RF08 context source mismatch")
+    if context_tree_sha is not None and candidate_tree_sha is not None:
+        if context_tree_sha != candidate_tree_sha:
+            raise ValueError("RF08 context tree mismatch")
 
 
 def main(args: list[str] | None = None) -> int:
@@ -4430,8 +4596,28 @@ def main(args: list[str] | None = None) -> int:
     parent_sha = subprocess.check_output(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD^"], text=True
     ).strip()
+    candidate_tree_sha = subprocess.check_output(
+        ["git", "-C", str(repo_root), "rev-parse", "HEAD^{tree}"], text=True
+    ).strip()
+    parent_count = (
+        len(
+            subprocess.check_output(
+                ["git", "-C", str(repo_root), "rev-list", "--parents", "-n", "1", "HEAD"],
+                text=True,
+            ).split()
+        )
+        - 1
+    )
     try:
-        validate_source_identity(origin_main=origin_main, parent_sha=parent_sha)
+        validate_source_identity(
+            candidate_sha=source_sha,
+            actual_head=source_sha,
+            parent_sha=parent_sha,
+            origin_main=origin_main,
+            parent_count=parent_count,
+            candidate_tree_sha=candidate_tree_sha,
+            actual_tree_sha=candidate_tree_sha,
+        )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     gateway = GatewayAuthority()
