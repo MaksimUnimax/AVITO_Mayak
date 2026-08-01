@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from sqlalchemy.engine import URL, make_url
+from sqlalchemy.engine import URL
 
 DATABASE_NAME: Final = "mayak"
 DATABASE_SCHEMA: Final = "mayak"
@@ -194,11 +193,6 @@ def build_migration_url(
     secret_path: Path | None = None,
     require_secret: bool = True,
 ) -> URL:
-    acceptance_dsn = os.environ.get("RF12_ACCEPTANCE_DSN")
-    if acceptance_dsn is not None:
-        if settings is not None or secret_path is not None:
-            raise ValueError("RF12 acceptance DSN cannot be combined with production settings")
-        return make_url(acceptance_dsn)
     settings = settings or MigrationDatabaseSettings(
         secret_path=secret_path or MIGRATION_SECRET_PATH
     )
