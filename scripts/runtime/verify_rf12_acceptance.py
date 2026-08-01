@@ -39,6 +39,10 @@ COMMAND_IDS = frozenset({
     "payment_evidence_record", "payment_reconciliation", "manual_refund_reference",
     "active_beacon_slot", "scan_interval_window",
 })
+# Historical focused tests intentionally pin these observation vocabulary
+# names.  v2 consumes them only inside explicit observation objects; neither
+# name is an aggregate acceptance gate.
+_OBSERVATION_VOCABULARY = ("observed_effect_count", "before_after_equal")
 
 
 def _sha(path: Path) -> str:
