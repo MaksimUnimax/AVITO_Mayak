@@ -129,3 +129,78 @@ def test_reviewer_self_authorization_topology_is_rejected(tmp_path: Path, source
     payload = _verify(tmp_path, source)
     assert payload["finding_count"] > 0
     assert payload["authorized_docker_transport_count"] == 0
+
+
+def test_same_spelling_in_distinct_modules_cannot_share_authority(tmp_path: Path) -> None:
+    runtime = tmp_path / "scripts" / "runtime"
+    runtime.mkdir(parents=True)
+    (runtime / "a.py").write_text(
+        "def build(action: object):\n"
+        "    if isinstance(action, object): return ('docker', 'ps')\n"
+        "    raise ValueError()\n",
+        encoding="utf-8",
+    )
+    (runtime / "b.py").write_text(
+        "import subprocess\n"
+        "def build(value): return value\n"
+        "subprocess.run(build(('docker', 'ps')))\n",
+        encoding="utf-8",
+    )
+    assert verify_source(tmp_path)["finding_count"] > 0
+
+
+def test_same_spelling_in_distinct_classes_is_not_authority(tmp_path: Path) -> None:
+    payload = _verify(
+        tmp_path,
+        "import subprocess\n"
+        "class Safe:\n"
+        "    def execute(self, action: object):\n"
+        "        if isinstance(action, object): return ('docker', 'ps')\n"
+        "        raise ValueError()\n"
+        "class Unsafe:\n"
+        "    def execute(self, value): subprocess.run(value)\n"
+        "Unsafe().execute(('docker', 'ps'))\n",
+    )
+    assert payload["finding_count"] > 0
+
+
+def test_five_safe_callers_plus_external_unsafe_caller_fail_closed(tmp_path: Path) -> None:
+    runtime = tmp_path / "scripts" / "runtime"
+    runtime.mkdir(parents=True)
+    (runtime / "wrapper.py").write_text(
+        "import subprocess\n"
+        "def relay(value): subprocess.run(value)\n"
+        "relay(('echo', '1'))\nrelay(('echo', '2'))\nrelay(('echo', '3'))\n"
+        "relay(('echo', '4'))\nrelay(('echo', '5'))\n",
+        encoding="utf-8",
+    )
+    (runtime / "external.py").write_text(
+        "from scripts.runtime.wrapper import relay\nrelay(('docker', 'ps'))\n",
+        encoding="utf-8",
+    )
+    assert verify_source(tmp_path)["finding_count"] > 0
+
+
+def test_textual_docker_word_does_not_prove_else_branch(tmp_path: Path) -> None:
+    payload = _verify(
+        tmp_path,
+        "import subprocess\n"
+        "value = command\n"
+        "if 'docker' in label:\n"
+        "    pass\n"
+        "else:\n"
+        "    subprocess.run(value)\n",
+    )
+    assert payload["finding_count"] > 0
+
+
+@pytest.mark.parametrize("field", ["banana", "state", "parcel", "neutral"])
+def test_stored_authority_is_field_spelling_independent(tmp_path: Path, field: str) -> None:
+    payload = _verify(
+        tmp_path,
+        "import subprocess\n"
+        "class Carrier:\n"
+        f"    {field}: tuple[str, ...]\n"
+        f"item = Carrier(('docker', 'ps'))\nsubprocess.run(item.{field})\n",
+    )
+    assert payload["finding_count"] > 0

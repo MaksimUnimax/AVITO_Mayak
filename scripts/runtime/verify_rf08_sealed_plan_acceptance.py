@@ -108,7 +108,12 @@ def main(argv: list[str] | None = None) -> int:
         and structural.get("finding_count") == 0
         and structural.get("docker_capable_flow_count") == 1
         and structural.get("authorized_docker_transport_count") == 1
+        and structural.get("unauthorized_docker_flow_count") == 0
         and structural.get("unresolved_authority_flow_count") == 0
+        and all(
+            result.get("status") == "PASS" and bool(result.get("digest"))
+            for result in structural.get("analyzer_rule_results", {}).values()
+        )
     )
     gates.append(
         {
@@ -125,9 +130,11 @@ def main(argv: list[str] | None = None) -> int:
                     "docker_capable_flow_count",
                     "authorized_docker_transport_count",
                     "unresolved_authority_flow_count",
+                    "unauthorized_docker_flow_count",
                     "finding_count",
                 )
             },
+            "analyzer_rule_results": structural.get("analyzer_rule_results", {}),
         }
     )
     manifest_gate, targets = _manifest_gate()
