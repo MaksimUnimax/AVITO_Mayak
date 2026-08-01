@@ -1,0 +1,15 @@
+{
+  "schema_version": "rf08-protection-scenarios-v1",
+  "invariants": [
+    {"id": "single_transport", "evidence": ["structural-verifier", "production-surface-test"]},
+    {"id": "no_raw_command_ingress", "evidence": ["dataflow-fixtures", "production-surface-test"]},
+    {"id": "no_stored_executable_authority", "evidence": ["shape-fixtures", "dataflow-fixtures"]},
+    {"id": "no_generic_inspect_query_authority", "evidence": ["dataflow-fixtures"]},
+    {"id": "no_raw_process_result_escape", "evidence": ["result-fixtures"]},
+    {"id": "no_private_execution_bypass", "evidence": ["binding-fixtures"]},
+    {"id": "rename_alias_wrapper_rejection", "evidence": ["metamorphic-fixtures"]},
+    {"id": "runtime_binding_generation_epoch", "evidence": ["existing-rf08-runtime-binding-tests"]},
+    {"id": "cleanup", "evidence": ["existing-rf08-runtime-evidence"]},
+    {"id": "foreign_equality", "evidence": ["existing-rf08-runtime-evidence"]}
+  ]
+}
