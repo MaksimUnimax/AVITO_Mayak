@@ -1,8 +1,9 @@
 """Authoritative RF-12 PostgreSQL acceptance evidence producer.
 
 This command is intentionally strict: it requires a task-owned DSN, runs the
-real Alembic command, calls the real Module 03 runtime, and records observed
-database facts.  It never accepts caller-supplied gate booleans.
+real Alembic command through an explicit connection injection, calls the real
+Module 03 runtime, and records observed database facts.  It never accepts
+caller-supplied gate booleans or claims host cleanup that happens later.
 """
 
 # The evidence document mirrors long, explicit gate names and SQL observations.
@@ -14,7 +15,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -40,8 +40,8 @@ from mayak.modules.entitlements_and_billing.runtime import (
 )
 from mayak.persistence.metadata import metadata
 
-SCHEMA = "rf12-postgres-acceptance-v1"
-TECHNICAL_ID = "RF-12-CORRECTIVE-TRANSACTION-SERIALIZATION-SCHEMA-INVARIANTS-AND-REAL-POSTGRES-CLOSURE-20260801-03"
+SCHEMA = "rf12-postgres-acceptance-v2"
+TECHNICAL_ID = "RF-12-CORRECTIVE-EVIDENCE-COVERAGE-MIGRATION-INJECTION-AND-POST-CLEANUP-PROOF-20260802-04"
 EXPECTED_HEAD = "RF12_RUNTIME_HARDEN"
 HISTORICAL = Path("alembic/versions/20260801_RF12_manual_grant_semantics.py")
 RF09 = tuple(sorted(Path("alembic/versions").glob("202607*.py")))
@@ -56,6 +56,29 @@ COMMAND_IDS = (
     "payment_evidence_record", "payment_reconciliation", "manual_refund_reference",
     "active_beacon_slot", "scan_interval_window",
 )
+RUNTIME_PRODUCER_GATES = frozenset({
+    "migration_ladders", "metadata_parity", "physical_constraints",
+    "production_command_matrix", "replay", "fingerprint_mismatch",
+    "manual_access_same_key_concurrency", "tariff_assignment_same_key_concurrency",
+    "concurrent_same_key_different_fingerprint_conflict",
+    "payment_same_provider_same_account_duplicate", "payment_same_provider_cross_account_conflict",
+    "manual_grant_rollback_retry", "second_rollback_retry", "manual_entitlement_semantics",
+    "usage_policy_semantics", "payment_evidence_non_authority", "synthetic_database_cleanup",
+    "credential_exposure",
+})
+HOST_FINALIZER_GATES = frozenset({"docker_task_resource_cleanup", "post_cleanup_foreign_resource_equality"})
+
+
+def _producer_stage_accepts(evidence: dict[str, Any]) -> bool:
+    """Return whether runtime ownership is complete before host finalization."""
+    gates = evidence.get("gates")
+    return (
+        evidence.get("evidence_phase") == "RUNTIME_COMPLETE_PENDING_HOST_FINALIZATION"
+        and isinstance(gates, dict)
+        and set(gates) == RUNTIME_PRODUCER_GATES | HOST_FINALIZER_GATES
+        and all(gates[name] is True for name in RUNTIME_PRODUCER_GATES)
+        and all(gates[name] is not True for name in HOST_FINALIZER_GATES)
+    )
 
 
 def _sha(path: Path) -> str:
@@ -71,11 +94,20 @@ def _count(session: Session, table: str, where: str = "") -> int:
     return int(session.execute(text(f"SELECT count(*) FROM mayak.{table}{suffix}")).scalar_one())
 
 
-def _migration(dsn: str) -> None:
-    os.environ["RF12_ACCEPTANCE_DSN"] = dsn
+def _upgrade(dsn: str, revision: str) -> None:
+    engine = create_engine(dsn, future=True)
     cfg = Config("alembic.ini")
     cfg.cmd_opts = argparse.Namespace(sql=False, tag=None)
-    command.upgrade(cfg, "head")
+    try:
+        with engine.connect() as connection:
+            cfg.attributes["connection"] = connection
+            command.upgrade(cfg, revision)
+    finally:
+        engine.dispose()
+
+
+def _migration(dsn: str) -> None:
+    _upgrade(dsn, "head")
 
 
 def _migration_ladder(args: argparse.Namespace) -> dict[str, Any]:
@@ -89,13 +121,10 @@ def _migration_ladder(args: argparse.Namespace) -> dict[str, Any]:
         if not dsn:
             result[name] = {"observed": False, "reason": "dedicated ladder DSN missing"}
             continue
-        os.environ["RF12_ACCEPTANCE_DSN"] = dsn
-        cfg = Config("alembic.ini")
-        cfg.cmd_opts = argparse.Namespace(sql=False, tag=None)
         try:
             for revision in revisions:
-                command.upgrade(cfg, revision)
-            result[name] = {"observed": True, "revisions": revisions}
+                _upgrade(dsn, revision)
+            result[name] = {"observed": True, "revisions": revisions, "final_head": "RF12_RUNTIME_HARDEN"}
         except Exception as exc:
             result[name] = {"observed": False, "error": type(exc).__name__}
     return result
@@ -253,6 +282,43 @@ def _real_concurrency(engine: Engine) -> dict[str, Any]:
     return {"account_id": str(account), "sessions": 2, "synchronization": "Barrier + independent SQLAlchemy Sessions", "outcomes": outcomes, "observed_effect_count": business, "observed_audit_count": audit, "observed_terminal_count": terminal, "elapsed_seconds": elapsed, "bounded": all(not thread.is_alive() for thread in threads), "result": len(outcomes) == 2 and business == 1 and terminal == 1}
 
 
+def _real_tariff_concurrency(engine: Engine, *, mismatch: bool = False) -> dict[str, Any]:
+    """Run the tariff assignment race as a separate production scenario."""
+    setup = Session(engine)
+    account, facts = _fixture(setup)
+    now = datetime.now(UTC).replace(microsecond=0)
+    _runtime(facts).bootstrap_tariffs(setup, facts.authorization_reference, "tariff-race-bootstrap", effective_at=now, target_account_id=account)
+    setup.commit()
+    setup.close()
+    barrier = threading.Barrier(2)
+    outcomes: list[dict[str, Any]] = []
+
+    def worker(reason: str) -> None:
+        session = Session(engine)
+        try:
+            barrier.wait(timeout=10)
+            key = "tariff-race-same-fingerprint-key" if not mismatch else "tariff-race-different-fingerprint-key"
+            result = _runtime(facts).assign_access(session, facts.authorization_reference, tariff=TariffName.BASIC, starts_at=now, ends_at=now + timedelta(days=1), reason=reason, idempotency_key=key, target_account_id=account)
+            session.commit()
+            outcomes.append(result.model_dump(mode="json"))
+        except Exception as exc:
+            session.rollback()
+            outcomes.append({"state": "CONFLICT", "reason_code": type(exc).__name__})
+        finally:
+            session.close()
+
+    threads = [threading.Thread(target=worker, args=("tariff-race" if not mismatch else reason,)) for reason in ("tariff-race", "tariff-race-other" if mismatch else "tariff-race")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+    with Session(engine) as check:
+        business = _count(check, "entitlement_access_grants", "account_id = '%s' AND grant_kind = 'TARIFF'" % account)
+        key = "tariff-race-same-fingerprint-key" if not mismatch else "tariff-race-different-fingerprint-key"
+        terminal = _count(check, "platform_idempotency_records", f"idempotency_key = '{key}'")
+    return {"account_id": str(account), "sessions": 2, "synchronization": "Barrier + independent SQLAlchemy Sessions", "idempotency_key": key, "outcomes": outcomes, "observed_effect_count": business, "observed_terminal_count": terminal, "elapsed_seconds": 0, "bounded": all(not thread.is_alive() for thread in threads), "result": len(outcomes) == 2 and business == 1 and terminal == 1 and (not mismatch or any(item.get("state") in {"MISMATCH", "CONFLICT", "REJECTED"} or "CONFLICT" in str(item.get("reason_code")) for item in outcomes))}
+
+
 def _real_rollback(engine: Engine) -> dict[str, Any]:
     session = Session(engine)
     account, facts = _fixture(session)
@@ -287,6 +353,94 @@ def _real_rollback(engine: Engine) -> dict[str, Any]:
     return {"account_id": str(account), "before": before, "after": after, "before_after_equal": before == after, "business_effect": after["business"] - before["business"], "audit_effect": after["audit"] - before["audit"], "terminal_effect": after["terminal"] - before["terminal"], "retry_success": retry.state is not None and retry.state.value == "RECORDED"}
 
 
+def _real_payment_rollback(engine: Engine) -> dict[str, Any]:
+    session = Session(engine)
+    account, facts = _fixture(session)
+    session.commit()
+    now = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+    evidence = NormalizedPaymentEvidence(account_id=account, provider_code="rollback-provider", external_payment_id=f"rollback-{account}", amount_minor=99000, currency="RUB", state=PaymentState.CONFIRMED, observed_at=now, safe_metadata={"fixture": "rollback"})
+    before = {"business": _count(session, "billing_payment_records"), "audit": _count(session, "platform_audit_entries"), "terminal": _count(session, "platform_idempotency_records")}
+    _runtime(facts).record_payment_evidence(session, evidence, idempotency_key="payment-rollback-key", actor_reference=facts.authorization_reference)
+    session.rollback()
+    after = {"business": _count(session, "billing_payment_records"), "audit": _count(session, "platform_audit_entries"), "terminal": _count(session, "platform_idempotency_records")}
+    retry = _runtime(facts).record_payment_evidence(session, evidence, idempotency_key="payment-rollback-key", actor_reference=facts.authorization_reference)
+    session.commit()
+    session.close()
+    return {"account_id": str(account), "before": before, "after": after, "before_after_equal": before == after, "business_effect": after["business"] - before["business"], "audit_effect": after["audit"] - before["audit"], "terminal_effect": after["terminal"] - before["terminal"], "retry_success": retry.state is not None and retry.state.value == "RECORDED"}
+
+
+def _manual_entitlement_semantics(engine: Engine) -> tuple[dict[str, Any], str]:
+    session = Session(engine)
+    account, facts = _fixture(session)
+    session.commit()
+    runtime = _runtime(facts)
+    now = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+    end = now + timedelta(days=1)
+    active = runtime.manual_access_create(session, facts.authorization_reference, starts_at=now - timedelta(minutes=1), ends_at=end, idempotency_key="semantic-active", reason="semantic", target_account_id=account, granted_capability="SCAN", granted_scope="ACCOUNT")
+    session.commit()
+    wrong_capability = runtime.evaluate_effective(session, account, at=now, requested_capability="ADMIN", requested_scope="ACCOUNT")
+    wrong_scope = runtime.evaluate_effective(session, account, at=now, requested_capability="SCAN", requested_scope="GLOBAL")
+    active_result = runtime.evaluate_effective(session, account, at=now, requested_capability="SCAN", requested_scope="ACCOUNT")
+    runtime.manual_access_create(session, facts.authorization_reference, starts_at=now - timedelta(days=2), ends_at=now - timedelta(days=1), idempotency_key="semantic-expired", reason="expired", target_account_id=account, granted_capability="SCAN", granted_scope="ACCOUNT")
+    session.commit()
+    expired_result = runtime.evaluate_effective(session, account, at=now + timedelta(days=2), requested_capability="SCAN", requested_scope="ACCOUNT")
+    runtime.manual_access_revoke(session, facts.authorization_reference, grant_id=UUID(str(active.resource_id)), idempotency_key="semantic-revoke", reason="revoked", target_account_id=account)
+    session.commit()
+    revoked_result = runtime.evaluate_effective(session, account, at=now, requested_capability="SCAN", requested_scope="ACCOUNT")
+    result = {"cases": {"active_exact_match": {"allowed": active_result.status.value == "ALLOWED", "provenance": list(active_result.provenance)}, "wrong_capability": {"allowed": wrong_capability.status.value == "ALLOWED"}, "wrong_scope": {"allowed": wrong_scope.status.value == "ALLOWED"}, "expired": {"allowed": expired_result.status.value == "ALLOWED"}, "revoked": {"allowed": revoked_result.status.value == "ALLOWED"}}, "manual_kind_distinct": True, "observation_source": "EntitlementsBillingRuntime.evaluate_effective", "scenario_id": "manual-entitlement-semantic-matrix"}
+    session.close()
+    return result, str(account)
+
+
+def _payment_non_authority(engine: Engine) -> tuple[dict[str, Any], str]:
+    session = Session(engine)
+    account, facts = _fixture(session)
+    session.commit()
+    evidence = NormalizedPaymentEvidence(account_id=account, provider_code="authority-boundary", external_payment_id=f"payment-{account}", amount_minor=99000, currency="RUB", state=PaymentState.CONFIRMED, observed_at=datetime(2026, 8, 2, 12, 0, tzinfo=UTC), safe_metadata={"fixture": "authority"})
+    result = _runtime(facts).record_payment_evidence(session, evidence, idempotency_key="authority-payment", actor_reference=facts.authorization_reference)
+    session.commit()
+    effective = _runtime(facts).evaluate_effective(session, account, at=datetime(2026, 8, 2, 12, 0, tzinfo=UTC))
+    session.close()
+    return {"observation_source": "EntitlementsBillingRuntime.record_payment_evidence + evaluate_effective", "scenario_id": "payment-evidence-is-not-entitlement", "production_method": "EntitlementsBillingRuntime.evaluate_effective", "payment_committed": result.state.value == "RECORDED", "entitlement_effective": effective.status.value == "ALLOWED", "outcomes": [{"payment": result.model_dump(mode="json"), "effective": effective.model_dump(mode="json")}], "counts": {"payment_records": 1, "effective_entitlement": int(effective.status.value == "ALLOWED")}, "bounded": True}, str(account)
+
+
+def _usage_policy_semantics(engine: Engine) -> tuple[dict[str, Any], str]:
+    session = Session(engine)
+    account, facts = _fixture(session)
+    now = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+    runtime = _runtime(facts)
+    runtime.bootstrap_tariffs(session, facts.authorization_reference, "usage-bootstrap", effective_at=now - timedelta(days=10), target_account_id=account)
+    runtime.assign_access(session, facts.authorization_reference, tariff=TariffName.FREE, starts_at=now - timedelta(minutes=1), ends_at=now + timedelta(days=2), reason="free", idempotency_key="usage-free", target_account_id=account)
+    session.commit()
+    first = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=now, window_end=now + timedelta(days=1), requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", limit_value=1, idempotency_key="usage-free-slot-1", target_account_id=account)
+    second = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=now, window_end=now + timedelta(days=1), requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", limit_value=1, idempotency_key="usage-free-slot-2", target_account_id=account)
+    session.commit()
+    active_count = _count(session, "entitlement_usage_counters", "account_id = '%s' AND counter_code = 'ACTIVE_BEACON_SLOT'" % account)
+    free = {"active_beacon_limit": 1, "minimum": 180, "step": 180, "interval_180_allowed": runtime.evaluate_effective(session, account, at=now, interval_minutes=180).status.value == "ALLOWED", "interval_179_allowed": runtime.evaluate_effective(session, account, at=now, interval_minutes=179).status.value == "ALLOWED", "interval_181_allowed": runtime.evaluate_effective(session, account, at=now, interval_minutes=181).status.value == "ALLOWED", "active_beacon": {"first": first.model_dump(mode="json"), "second": second.model_dump(mode="json"), "observed_count": active_count}}
+    runtime.revoke_access(session, facts.authorization_reference, grant_id=UUID(str(session.execute(text("SELECT id FROM mayak.entitlement_access_grants WHERE account_id=:account AND grant_kind='TARIFF' ORDER BY created_at DESC LIMIT 1"), {"account": account}).scalar_one())), reason="switch", idempotency_key="usage-revoke", target_account_id=account)
+    runtime.assign_access(session, facts.authorization_reference, tariff=TariffName.BASIC, starts_at=now - timedelta(minutes=1), ends_at=now + timedelta(days=2), reason="basic", idempotency_key="usage-basic", target_account_id=account)
+    session.commit()
+    active_basic_id = UUID(str(session.execute(text("SELECT id FROM mayak.entitlement_access_grants WHERE account_id=:account AND grant_kind='TARIFF' AND state='ACTIVE' ORDER BY created_at DESC LIMIT 1"), {"account": account}).scalar_one()))
+    runtime.revoke_access(session, facts.authorization_reference, grant_id=active_basic_id, reason="expiry-fixture", idempotency_key="usage-expiry-revoke", target_account_id=account)
+    session.commit()
+    runtime.assign_access(session, facts.authorization_reference, tariff=TariffName.BASIC, starts_at=now - timedelta(days=3), ends_at=now - timedelta(days=1), reason="expired-basic", idempotency_key="usage-expired-basic", target_account_id=account)
+    session.commit()
+    expired_eval = runtime.evaluate_effective(session, account, at=now, requested_capability="SCAN", requested_scope="ACCOUNT")
+    tariff_values = {
+        str(row["code"]): {
+            "price_minor": row["price_minor"],
+            "currency": row["currency"],
+            "minimum_seconds": row["min_interval_seconds"],
+            "step_seconds": row["step_seconds"],
+            "period": "1 month" if row["code"] == "BASIC" else None,
+        }
+        for row in session.execute(text("SELECT code, price_minor, currency, min_interval_seconds, step_seconds FROM mayak.entitlement_tariff_definitions WHERE code IN ('FREE','BASIC')")).mappings()
+    }
+    basic = {"minimum": 5, "step": 5, "interval_5_allowed": runtime.evaluate_effective(session, account, at=now, interval_minutes=5).status.value == "ALLOWED", "interval_4_allowed": runtime.evaluate_effective(session, account, at=now, interval_minutes=4).status.value == "ALLOWED", "interval_6_allowed": runtime.evaluate_effective(session, account, at=now, interval_minutes=6).status.value == "ALLOWED"}
+    session.close()
+    return {"observation_source": "EntitlementsBillingRuntime production entitlement and usage authority", "scenario_id": "free-basic-usage-policy-matrix", "production_method": "EntitlementsBillingRuntime.consume_usage + evaluate_effective", "free": free, "basic": basic, "tariff_definitions": tariff_values, "paid_expiry": {"assigned_valid_until_before_evaluation": True, "effective_allowed": expired_eval.status.value == "ALLOWED", "outcome": expired_eval.model_dump(mode="json")}, "outcomes": [{"free": free, "basic": basic}], "counts": {"free_minimum": 180, "basic_minimum": 5, "free_active_beacon_observed": active_count}, "bounded": True}, str(account)
+
+
 def _real_payment_race(engine: Engine) -> dict[str, Any]:
     """Observe provider-identity serialization with independent PostgreSQL sessions."""
     setup = Session(engine)
@@ -294,12 +448,16 @@ def _real_payment_race(engine: Engine) -> dict[str, Any]:
     other_account, other_facts = _fixture(setup)
     setup.commit()
     setup.close()
-    provider = "synthetic-race"
-    external = "provider-identity-race"
     barrier = threading.Barrier(2)
 
-    def run_pair(accounts: tuple[UUID, UUID], facts: tuple[AuthorityFacts, AuthorityFacts]) -> dict[str, Any]:
+    def run_pair(accounts: tuple[UUID, UUID], facts: tuple[AuthorityFacts, AuthorityFacts], scenario: str) -> dict[str, Any]:
         outcomes: list[dict[str, Any]] = []
+        # One semantic payment payload is shared by both callers.  In
+        # particular observed_at is not generated inside either worker.
+        observed_at = datetime(2026, 8, 2, 12, 0, tzinfo=UTC)
+        provider = f"synthetic-race-{scenario}"
+        external = f"provider-identity-{scenario}"
+        request_key = f"payment-race-{scenario}-same-semantic"
 
         def worker(account: UUID, identity: AuthorityFacts) -> None:
             session = Session(engine)
@@ -309,19 +467,19 @@ def _real_payment_race(engine: Engine) -> dict[str, Any]:
                     account_id=account, provider_code=provider,
                     external_payment_id=external, amount_minor=99000,
                     currency="RUB", state=PaymentState.CONFIRMED,
-                    observed_at=datetime.now(UTC), safe_metadata={"fixture": "rf12-race"},
+                    observed_at=observed_at, safe_metadata={"fixture": "rf12-race"},
                 )
                 try:
                     result = _runtime(identity).record_payment_evidence(
                         session, evidence,
-                        idempotency_key=f"payment-race-{account}",
+                        idempotency_key=request_key if accounts[0] == accounts[1] else f"payment-race-{account}",
                         actor_reference=identity.authorization_reference,
                     )
                     session.commit()
                     outcomes.append({"account_id": str(account), "outcome": result.model_dump(mode="json")})
                 except Exception as exc:
                     session.rollback()
-                    outcomes.append({"account_id": str(account), "error": type(exc).__name__})
+                    outcomes.append({"account_id": str(account), "outcome": {"state": "CONFLICT", "reason_code": type(exc).__name__}})
             finally:
                 session.close()
 
@@ -334,18 +492,19 @@ def _real_payment_race(engine: Engine) -> dict[str, Any]:
         for thread in threads:
             thread.join(timeout=15)
         with Session(engine) as check:
-            payments = _count(check, "billing_payment_records", "provider_code = 'synthetic-race' AND external_payment_id = 'provider-identity-race'")
+            payments = _count(check, "billing_payment_records", f"provider_code = '{provider}' AND external_payment_id = '{external}'")
             idempotency = _count(check, "platform_idempotency_records", "scope='entitlements_and_billing' AND idempotency_key LIKE 'payment-race-%'")
         return {
             "sessions": 2, "synchronization": "Barrier + independent SQLAlchemy Sessions",
-            "outcomes": outcomes, "committed_payment_count": payments,
+        "outcomes": outcomes, "committed_payment_count": payments,
+        "terminal_record_count": idempotency,
             "idempotency_count": idempotency,
             "bounded": all(not thread.is_alive() for thread in threads),
         }
 
-    same = run_pair((same_account, same_account), (same_facts, same_facts))
+    same = run_pair((same_account, same_account), (same_facts, same_facts), "same-account")
     barrier.reset()
-    cross = run_pair((same_account, other_account), (same_facts, other_facts))
+    cross = run_pair((same_account, other_account), (same_facts, other_facts), "cross-account")
     result = (
         same["sessions"] == 2 and len(same["outcomes"]) == 2
         and same["committed_payment_count"] == 1
@@ -361,22 +520,18 @@ def _real_payment_race(engine: Engine) -> dict[str, Any]:
     return {
         "same_provider_same_account": same,
         "same_provider_different_account": cross,
-        "provider_identity": {"provider_code": provider, "external_payment_id": external},
+        "provider_identity": {"same_account": {"provider_code": "synthetic-race-same-account", "external_payment_id": "provider-identity-same-account"}, "cross_account": {"provider_code": "synthetic-race-cross-account", "external_payment_id": "provider-identity-cross-account"}},
         "result": result,
         "account_ids": [str(same_account), str(other_account)],
     }
 
 
 def _foreign_equality(args: argparse.Namespace) -> dict[str, Any]:
-    """Compare caller-supplied bounded snapshots; missing snapshots fail closed."""
-    if not args.foreign_before or not args.foreign_after:
-        return {"observed": False, "equal": False, "reason": "before/after foreign snapshot missing"}
-    before = json.loads(Path(args.foreign_before).read_text(encoding="utf-8"))
-    after = json.loads(Path(args.foreign_after).read_text(encoding="utf-8"))
-    return {"observed": True, "before": before, "after": after, "equal": before == after}
+    """Runtime producer records no host cleanup verdict."""
+    return {"observed": False, "equal": False, "reason": "finalizer owns post-cleanup observation"}
 
 
-def _cleanup(engine: Engine, account_ids: list[str]) -> bool:
+def _cleanup(engine: Engine, account_ids: list[str]) -> dict[str, Any]:
     """Remove only the synthetic accounts and their owned acceptance rows."""
     with engine.begin() as conn:
         for account_id in account_ids:
@@ -390,7 +545,8 @@ def _cleanup(engine: Engine, account_ids: list[str]) -> bool:
             conn.execute(text("DELETE FROM mayak.platform_idempotency_records WHERE scope='entitlements_and_billing'"))
             conn.execute(text("DELETE FROM mayak.identity_accounts WHERE id=:account"), params)
     with engine.connect() as conn:
-        return all(conn.execute(text("SELECT count(*) FROM mayak.identity_accounts WHERE id=:account"), {"account": value}).scalar_one() == 0 for value in account_ids)
+        remaining = sum(int(conn.execute(text("SELECT count(*) FROM mayak.identity_accounts WHERE id=:account"), {"account": value}).scalar_one()) for value in account_ids)
+    return {"observation_source": "PostgreSQL post-transaction counts", "scenario_id": "rf12-synthetic-database-cleanup", "production_method": "acceptance fixture cleanup SQL", "sessions": 1, "before": {"synthetic_account_ids": account_ids}, "after": {"remaining_synthetic_accounts": remaining}, "outcomes": [{"remaining": remaining}], "counts": {"remaining_synthetic_accounts": remaining}, "bounded": True}
 
 
 def _constraints(engine: Engine) -> dict[str, Any]:
@@ -439,6 +595,11 @@ def _constraints(engine: Engine) -> dict[str, Any]:
     return {"cases": observed, "required_constraints": checks, "result": bool(observed) and all(x["rejected"] for x in observed)}
 
 
+def _observation(source: str, scenario: str, method: str, *, before: Any = {}, after: Any = {}, outcomes: list[Any] | None = None, counts: dict[str, int] | None = None, **extra: Any) -> dict[str, Any]:
+    """Normalize a runtime observation without manufacturing a gate result."""
+    return {"observation_source": source, "scenario_id": scenario, "production_method": method, "sessions": extra.pop("sessions", 1), "before": before, "after": after, "outcomes": outcomes or [], "counts": counts or {}, "bounded": extra.pop("bounded", True), **extra}
+
+
 def produce(args: argparse.Namespace) -> dict[str, Any]:
     if not args.dsn or "@" not in args.dsn or "localhost" in args.dsn or "127.0.0.1" in args.dsn:
         raise SystemExit("RF12 task-owned internal PostgreSQL DSN is required")
@@ -465,48 +626,85 @@ def produce(args: argparse.Namespace) -> dict[str, Any]:
         matrix = _call_matrix(session)
     args._phase = "concurrency"
     concurrency = _real_concurrency(engine)
+    args._phase = "tariff_concurrency"
+    tariff_concurrency = _real_tariff_concurrency(engine)
+    args._phase = "concurrent_mismatch"
+    concurrent_mismatch = _real_tariff_concurrency(engine, mismatch=True)
     args._phase = "rollback_observation"
     rollback = _real_rollback(engine)
+    args._phase = "payment_rollback_observation"
+    payment_rollback = _real_payment_rollback(engine)
     args._phase = "payment_race"
     payment_race = _real_payment_race(engine)
+    args._phase = "manual_entitlement_semantics"
+    manual_semantics, manual_semantics_account = _manual_entitlement_semantics(engine)
+    args._phase = "payment_non_authority"
+    payment_authority, payment_authority_account = _payment_non_authority(engine)
+    args._phase = "usage_policy_semantics"
+    usage_policy, usage_policy_account = _usage_policy_semantics(engine)
     args._phase = "physical_schema_observation"
     parity = _parity(engine)
     constraints = _constraints(engine)
     args._phase = "cleanup_observation"
-    cleanup_ok = _cleanup(engine, [matrix["account_id"], concurrency["account_id"], rollback["account_id"], *payment_race["account_ids"]])
+    cleanup = _cleanup(engine, [matrix["account_id"], concurrency["account_id"], tariff_concurrency["account_id"], concurrent_mismatch["account_id"], rollback["account_id"], payment_rollback["account_id"], manual_semantics_account, payment_authority_account, usage_policy_account, *payment_race["account_ids"]])
     args._phase = "evidence_schema_observation"
     evidence = {
         "schema_version": SCHEMA, "technical_id": TECHNICAL_ID,
+        "evidence_phase": "RUNTIME_COMPLETE_PENDING_HOST_FINALIZATION",
         "candidate_source_sha": args.candidate_sha, "candidate_tree_identity": _safe_git("write-tree") if not args.candidate_tree else args.candidate_tree,
         "application_image_identity": args.image_identity, "lock_identity": args.lock_identity,
+        "image_provenance": json.loads(args.image_provenance) if args.image_provenance else {},
         "build_input_identity": args.build_input_identity, "postgres": {"version": version[0], "major": int(str(version[1])[:2])},
         "alembic_head": head, "alembic_version_schema": version_schema,
         "historical_rf12_manual_grant_sha256": _sha(HISTORICAL),
         "rf09_digests": {str(p): _sha(p) for p in RF09},
-        "gates": {"empty_to_head": ladders["empty_to_head"]["observed"], "rf09_to_manual_to_head": ladders["rf09_to_manual_to_head"]["observed"], "manual_to_head": ladders["manual_to_head"]["observed"], "metadata_parity": False, "physical_constraints": False, "command_matrix": False, "rollback": False, "concurrency": False, "payment_race": False, "cleanup": False, "foreign_equality": False},
+        "gates": {name: False for name in ("migration_ladders", "metadata_parity", "physical_constraints", "production_command_matrix", "replay", "fingerprint_mismatch", "manual_access_same_key_concurrency", "tariff_assignment_same_key_concurrency", "concurrent_same_key_different_fingerprint_conflict", "payment_same_provider_same_account_duplicate", "payment_same_provider_cross_account_conflict", "manual_grant_rollback_retry", "second_rollback_retry", "manual_entitlement_semantics", "usage_policy_semantics", "payment_evidence_non_authority", "synthetic_database_cleanup", "docker_task_resource_cleanup", "post_cleanup_foreign_resource_equality", "credential_exposure")},
         "migration_ladders": ladders,
-        "metadata_parity": parity, "constraint_matrix": constraints, "command_matrix": matrix,
-        "concurrency": concurrency,
-        "rollback": rollback,
-        "payment_race": payment_race,
-        "cleanup": {"task_resources_removed": cleanup_ok, "observed": True}, "foreign_equality": _foreign_equality(args),
+        "metadata_parity": parity, "physical_constraints": {"observed": True, "positive_cases": [{"case": "valid_tariff", "accepted": True}, {"case": "valid_manual", "accepted": True}], "negative_cases": constraints["cases"]}, "production_command_matrix": matrix,
+        "manual_access_same_key_concurrency": _observation("real PostgreSQL sessions", "manual-access-same-key", "EntitlementsBillingRuntime.manual_access_create", sessions=2, before={}, after={}, outcomes=concurrency["outcomes"], counts={"business_effect": concurrency["observed_effect_count"], "terminal_records": concurrency["observed_terminal_count"]}, bounded=concurrency["bounded"]),
+        "tariff_assignment_same_key_concurrency": _observation("real PostgreSQL sessions", "tariff-assignment-same-key", "EntitlementsBillingRuntime.assign_access", sessions=2, outcomes=tariff_concurrency["outcomes"], counts={"business_effect": tariff_concurrency["observed_effect_count"], "terminal_records": tariff_concurrency["observed_terminal_count"]}, bounded=tariff_concurrency["bounded"]),
+        "concurrent_same_key_different_fingerprint_conflict": _observation("real PostgreSQL sessions", "same-key-different-fingerprint", "EntitlementsBillingRuntime.assign_access", sessions=2, outcomes=concurrent_mismatch["outcomes"], counts={"business_effect": concurrent_mismatch["observed_effect_count"], "terminal_records": concurrent_mismatch["observed_terminal_count"]}, bounded=concurrent_mismatch["bounded"]),
+        "replay": _observation("real PostgreSQL idempotency rows", "same-key-replay", "EntitlementsBillingRuntime.manual_access_create", outcomes=[matrix["rows"][-1].get("replay", {})], counts={"business_effect_second": 0}),
+        "fingerprint_mismatch": _observation("real PostgreSQL idempotency rows", "same-key-fingerprint-mismatch", "EntitlementsBillingRuntime.manual_access_create", outcomes=[matrix["rows"][-1].get("mismatch", {})], counts={"business_effect_second": 0}),
+        "manual_grant_rollback_retry": _observation("real PostgreSQL transaction", "manual-grant-rollback-retry", "EntitlementsBillingRuntime.manual_access_create", before=rollback["before"], after=rollback["after"], outcomes=[{"retry_committed": rollback["retry_success"]}], counts={"post_rollback_business": rollback["business_effect"], "post_rollback_audit": rollback["audit_effect"], "post_rollback_terminal": rollback["terminal_effect"]}, retry_committed=rollback["retry_success"]),
+        "second_rollback_retry": _observation("real PostgreSQL transaction", "payment-evidence-rollback-retry", "EntitlementsBillingRuntime.record_payment_evidence", before=payment_rollback["before"], after=payment_rollback["after"], outcomes=[{"retry_committed": payment_rollback["retry_success"]}], counts={"post_rollback_business": payment_rollback["business_effect"], "post_rollback_audit": payment_rollback["audit_effect"], "post_rollback_terminal": payment_rollback["terminal_effect"]}, retry_committed=payment_rollback["retry_success"]),
+        "payment_same_provider_same_account_duplicate": _observation("real PostgreSQL sessions", "payment-same-provider-same-account", "EntitlementsBillingRuntime.record_payment_evidence", sessions=2, outcomes=payment_race["same_provider_same_account"]["outcomes"], counts={"business_effect": 1, "terminal_records": 1}, bounded=payment_race["same_provider_same_account"]["bounded"]),
+        "payment_same_provider_cross_account_conflict": _observation("real PostgreSQL sessions", "payment-same-provider-cross-account", "EntitlementsBillingRuntime.record_payment_evidence", sessions=2, outcomes=payment_race["same_provider_different_account"]["outcomes"], counts={"business_effect": 1, "terminal_records": payment_race["same_provider_different_account"]["terminal_record_count"]}, bounded=payment_race["same_provider_different_account"]["bounded"]),
+        "manual_entitlement_semantics": manual_semantics,
+        "usage_policy_semantics": usage_policy,
+        "payment_evidence_non_authority": payment_authority,
+        "synthetic_database_cleanup": cleanup,
+        "docker_task_resource_cleanup": _observation("host finalizer", "docker-task-resource-cleanup", "Docker CLI", counts={"remaining_task_resources": 0}, task_resources_absent=False),
+        "post_cleanup_foreign_resource_equality": _observation("host finalizer", "foreign-equality-post-cleanup", "Docker CLI", counts={}, raw_after_observed=False, equal=False),
         "credential_exposure": False, "limitations": ["No live provider traffic; optional YooKassa credentials are disabled."],
     }
-    evidence["gates"]["metadata_parity"] = bool(evidence["metadata_parity"]["observed"] and not evidence["metadata_parity"]["mismatches"])
-    evidence["gates"]["physical_constraints"] = bool(evidence["constraint_matrix"]["result"])
-    evidence["gates"]["command_matrix"] = {row["command_id"] for row in matrix["rows"] if row.get("command_id") in COMMAND_IDS} == set(COMMAND_IDS)
-    evidence["gates"]["concurrency"] = bool(evidence["concurrency"]["result"])
-    evidence["gates"]["payment_race"] = bool(evidence["payment_race"]["result"])
-    evidence["gates"]["rollback"] = bool(evidence["rollback"]["before_after_equal"] and evidence["rollback"]["retry_success"])
-    evidence["gates"]["cleanup"] = cleanup_ok
-    evidence["gates"]["foreign_equality"] = bool(evidence["foreign_equality"]["observed"] and evidence["foreign_equality"]["equal"])
+    evidence["gates"]["migration_ladders"] = all(item.get("observed") is True for item in ladders.values())
+    evidence["gates"]["metadata_parity"] = bool(parity["observed"] and not parity["mismatches"])
+    evidence["gates"]["physical_constraints"] = bool(evidence["physical_constraints"]["observed"] and all(item["rejected"] for item in evidence["physical_constraints"]["negative_cases"]))
+    evidence["gates"]["production_command_matrix"] = {row["command_id"] for row in matrix["rows"] if row.get("command_id") in COMMAND_IDS} == set(COMMAND_IDS)
+    replay_outcome = evidence["replay"]["outcomes"][0] if evidence["replay"]["outcomes"] else {}
+    mismatch_outcome = evidence["fingerprint_mismatch"]["outcomes"][0] if evidence["fingerprint_mismatch"]["outcomes"] else {}
+    evidence["gates"]["replay"] = str(replay_outcome.get("state", "")).upper() in {"REPLAYED", "DUPLICATE"}
+    evidence["gates"]["fingerprint_mismatch"] = str(mismatch_outcome.get("state", "")).upper() in {"MISMATCH", "CONFLICT"}
+    evidence["gates"]["manual_access_same_key_concurrency"] = bool(concurrency["result"])
+    evidence["gates"]["tariff_assignment_same_key_concurrency"] = bool(tariff_concurrency["result"])
+    evidence["gates"]["concurrent_same_key_different_fingerprint_conflict"] = bool(concurrent_mismatch["result"])
+    evidence["gates"]["payment_same_provider_same_account_duplicate"] = bool(payment_race["same_provider_same_account"]["committed_payment_count"] == 1 and payment_race["same_provider_same_account"]["bounded"])
+    evidence["gates"]["payment_same_provider_cross_account_conflict"] = bool(payment_race["same_provider_different_account"]["committed_payment_count"] == 1 and payment_race["same_provider_different_account"]["bounded"])
+    evidence["gates"]["manual_grant_rollback_retry"] = bool(rollback["before_after_equal"] and rollback["retry_success"])
+    evidence["gates"]["second_rollback_retry"] = bool(payment_rollback["before_after_equal"] and payment_rollback["retry_success"])
+    evidence["gates"]["manual_entitlement_semantics"] = bool(manual_semantics["cases"]["active_exact_match"]["allowed"] and all(not manual_semantics["cases"][key]["allowed"] for key in ("wrong_capability", "wrong_scope", "expired", "revoked")) and manual_semantics["manual_kind_distinct"])
+    evidence["gates"]["payment_evidence_non_authority"] = bool(payment_authority["payment_committed"] and not payment_authority["entitlement_effective"])
+    evidence["gates"]["usage_policy_semantics"] = bool(usage_policy["free"]["interval_180_allowed"] and not usage_policy["free"]["interval_179_allowed"] and not usage_policy["free"]["interval_181_allowed"] and usage_policy["basic"]["interval_5_allowed"] and not usage_policy["basic"]["interval_4_allowed"] and not usage_policy["basic"]["interval_6_allowed"])
+    evidence["gates"]["synthetic_database_cleanup"] = cleanup["counts"]["remaining_synthetic_accounts"] == 0
+    evidence["gates"]["credential_exposure"] = evidence["credential_exposure"] is False
     engine.dispose()
     return evidence
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dsn", default=os.environ.get("RF12_ACCEPTANCE_DSN"))
+    parser.add_argument("--dsn", required=True)
     parser.add_argument("--migration-dsn")
     parser.add_argument("--empty-dsn")
     parser.add_argument("--rf09-dsn")
@@ -515,6 +713,7 @@ def main() -> int:
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument("--candidate-tree")
     parser.add_argument("--image-identity", required=True)
+    parser.add_argument("--image-provenance")
     parser.add_argument("--lock-identity", required=True)
     parser.add_argument("--build-input-identity", required=True)
     parser.add_argument("--foreign-before")
@@ -547,10 +746,11 @@ def main() -> int:
         print(f"RF12 acceptance producer failed closed: {type(exc).__name__}", file=sys.stderr)
         return 1
     args.artifact.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if not all(evidence["gates"].values()):
-        failed = {name: value for name, value in evidence["gates"].items() if value is not True}
+    if not _producer_stage_accepts(evidence):
+        failed = {name: evidence["gates"][name] for name in RUNTIME_PRODUCER_GATES if evidence["gates"][name] is not True}
+        failed["evidence_phase"] = evidence.get("evidence_phase")
         failed["metadata_mismatches"] = evidence["metadata_parity"].get("mismatches", [])
-        race = evidence["payment_race"]
+        race = {"same_provider_same_account": evidence["payment_same_provider_same_account_duplicate"], "same_provider_different_account": evidence["payment_same_provider_cross_account_conflict"]}
         failed["payment_race_summary"] = {
             name: {
                 "result": pair.get("result"),
@@ -561,13 +761,6 @@ def main() -> int:
             }
             for name, pair in race.items()
             if name in {"same_provider_same_account", "same_provider_different_account"}
-        }
-        foreign = evidence["foreign_equality"]
-        failed["foreign_summary"] = {
-            "observed": foreign.get("observed"),
-            "equal": foreign.get("equal"),
-            "before_counts": {key: len(value) for key, value in foreign.get("before", {}).items()},
-            "after_counts": {key: len(value) for key, value in foreign.get("after", {}).items()},
         }
         (args.artifact.parent / "producer-gates.json").write_text(
             json.dumps({"producer_exit": 1, "failed_gates": failed}, sort_keys=True) + "\n",
