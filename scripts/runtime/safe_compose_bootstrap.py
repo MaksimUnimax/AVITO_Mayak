@@ -586,7 +586,11 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
                 raise ValueError("incomplete bootstrap mutation shape")
             return SemanticDispatch(
                 BootstrapAction(
-                    binding=None,
+                    binding=ComposeBinding.from_path(
+                        Path(__file__).resolve().parents[2] / COMPOSE_FILE,
+                        project_name=TASK_PROJECT,
+                        profile=RUNTIME_PROFILE,
+                    ),
                     service=ComposeService.DB_BOOTSTRAP,
                     run_id=run_id,
                     recovered_generation_id=recovered_generation_id,
@@ -628,7 +632,7 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
 TASK_ID: Final = (
     "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
 )
-EXPECTED_TASK_BASE: Final = "cffb3f0f123e49ea5d689fe2425e66d04efba436"
+EXPECTED_TASK_BASE: Final = "afd5234ec328c3ec1cdc3672473f1510e44be229"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"

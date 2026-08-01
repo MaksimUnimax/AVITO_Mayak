@@ -18,6 +18,14 @@
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_technical_id_accepts_entire_mutating_module14_range"},
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_technical_id_rejects_outside_mutating_module14_range"},
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_cross_scope_and_binding_mismatches_fail_closed"}
+    ]},
+    {"id": "task_scope_executable_content_is_source_bound_and_closed_world", "evidence": [
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_bootstrap_is_always_rejected"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_sealed_bootstrap_requires_exact_adapter_and_service"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_verifier_shape_is_fixed_and_source_bound"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_verifier_digest_tamper_rejected_before_transport"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_verifier_execution_clamps_timeout_and_parses_output"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}
     ]}
   ]
 }

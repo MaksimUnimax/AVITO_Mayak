@@ -21,12 +21,17 @@ from scripts.runtime.rf08_docker_authority import (
     GatewayAuthority,
     ObservationRequest,
     ObservationTemplate,
+    PathCapability,
+    PathCapabilityKind,
     ResourceKind,
+    TaskAcceptanceVerifierAction,
 )
 
 PROJECT = "avito-mayak-acceptance-rf30-scope-20260801-07"
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_ROOT = Path("/opt/avito-mayak-runtime/rf08-task-scoped-authority-20260801-07")
+PROOF_IMAGE_SOURCE_SHA = "afd5234ec328c3ec1cdc3672473f1510e44be229"
+PROOF_IMAGE_DIGEST = "sha256:91070120fe709d63a469b4d16783693ac9afdf88120a4032073aa5eecd6e5eb5"
 SECRET_ROOT = RUNTIME_ROOT / "secrets"
 SECRET_NAMES = (
     "mayak_postgres_bootstrap_password_postgres",
@@ -80,9 +85,9 @@ def main() -> int:
     os.environ.update(
         {
             "MAYAK_SECRETS_ROOT": str(SECRET_ROOT),
-            "MAYAK_SOURCE_SHA": "rf08-task-scoped-candidate",
+            "MAYAK_SOURCE_SHA": PROOF_IMAGE_SOURCE_SHA,
             "MAYAK_LOCK_IDENTITY": "rf08-task-scoped-candidate-lock",
-            "MAYAK_IMAGE_DIGEST": "sha256:" + ("0" * 64),
+            "MAYAK_IMAGE_DIGEST": PROOF_IMAGE_DIGEST,
         }
     )
     gateway = GatewayAuthority.for_task_scope(
@@ -161,6 +166,26 @@ def main() -> int:
             "starting",
         }:
             raise RuntimeError("postgres readiness observation failed")
+        verifier_path = ROOT / "scripts/runtime/task_acceptance/rf30_self_proof.py"
+        verifier = gateway.issue(
+            TaskAcceptanceVerifierAction(
+                binding=binding,
+                verifier_id="rf30_self_proof",
+                verifier_path=PathCapability.from_path(
+                    verifier_path,
+                    kind=PathCapabilityKind.FILE,
+                ),
+                scope_digest=gateway.scope_digest,
+            ),
+            stage="runtime-task-acceptance-verifier",
+        )
+        verifier_execution = gateway.execute(
+            verifier, stage="runtime-task-acceptance-verifier-execute", timeout=120
+        )
+        if verifier_execution.returncode != 0 or verifier_execution.payload is None:
+            raise RuntimeError("task acceptance verifier failed")
+        if verifier_execution.payload.status != "PASS":
+            raise RuntimeError("task acceptance verifier did not pass")
         teardown = gateway.issue(
             ComposeProjectTeardownAction(binding),
             stage="runtime-teardown",

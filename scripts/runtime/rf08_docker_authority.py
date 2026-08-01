@@ -31,6 +31,18 @@ RUNTIME_COMPOSE_FILE: Path = Path(
     "/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml"
 )
 RUNTIME_PROFILE: Final = "runtime-foundation"
+TASK_ACCEPTANCE_VERIFIER_ROOT: Final = (
+    Path(__file__).resolve().parent / "task_acceptance"
+)
+TASK_ACCEPTANCE_VERIFIER_DESTINATION: Final = "/opt/mayak/task_acceptance_verifier.py"
+TASK_ACCEPTANCE_SCHEMA_VERSION: Final = "mayak-task-acceptance-v1"
+TASK_ACCEPTANCE_MAX_STDOUT_BYTES: Final = 16 * 1024
+TASK_ACCEPTANCE_MAX_STDERR_BYTES: Final = 4 * 1024
+TASK_ACCEPTANCE_MAX_TIMEOUT_SECONDS: Final = 60.0
+SEALED_BOOTSTRAP_SERVICE: Final = "mayak-db-bootstrap"
+SEALED_BOOTSTRAP_SOURCE: Final = (
+    Path(__file__).resolve().parent / "rf09_public_bootstrap_adapter.py"
+)
 ALLOWED_SERVICES: Final = frozenset(
     {
         "mayak-api",
@@ -247,6 +259,8 @@ class PathCapability:
         candidate = Path(path).expanduser()
         if not candidate.is_absolute():
             raise ValueError("path capability must be absolute")
+        if candidate.is_symlink() or any(parent.is_symlink() for parent in candidate.parents):
+            raise ValueError("path capability traversal mismatch")
         resolved = candidate.resolve(strict=require_exists)
         digest: str | None
         if resolved.exists() and resolved.is_file():
@@ -259,6 +273,64 @@ class PathCapability:
             identity=_sha_text(f"{kind.value}:{resolved}"),
             digest=digest,
         )
+
+
+_VERIFIER_FILE_PATTERN: Final = re.compile(
+    r"^rf(?P<roadmap_number>[0-9]{2})_[a-z0-9]+(?:_[a-z0-9]+)*\.py$"
+)
+
+
+def _verifier_project_number(project_name: str) -> int:
+    match = TASK_PROJECT_PATTERN.fullmatch(project_name)
+    if match is None:
+        raise ValueError("task project is not canonical")
+    return _require_authorized_roadmap_number(match, identity="task project")
+
+
+def _validate_task_verifier(capability: PathCapability, *, project_name: str) -> str:
+    root = TASK_ACCEPTANCE_VERIFIER_ROOT.resolve(strict=True)
+    path = Path(capability.path)
+    if capability.kind != PathCapabilityKind.FILE:
+        raise ValueError("task verifier must be a file capability")
+    if not path.is_absolute() or path.is_symlink():
+        raise ValueError("task verifier path must be absolute and non-symlinked")
+    if root not in path.parents:
+        raise ValueError("task verifier is outside the canonical verifier root")
+    if any(parent.is_symlink() for parent in path.parents):
+        raise ValueError("task verifier parent traversal mismatch")
+    if not path.exists() or not path.is_file():
+        raise ValueError("task verifier is not an existing regular file")
+    relative = path.relative_to(root)
+    if len(relative.parts) != 1:
+        raise ValueError("task verifier must be directly under the canonical root")
+    match = _VERIFIER_FILE_PATTERN.fullmatch(path.name)
+    if match is None:
+        raise ValueError("task verifier filename is not canonical")
+    number = _require_authorized_roadmap_number(match, identity="verifier")
+    if number != _verifier_project_number(project_name):
+        raise ValueError("verifier roadmap number does not match task project")
+    if capability.digest != _sha_bytes(path.read_bytes()):
+        raise PermissionError("task verifier digest mismatch")
+    return path.stem
+
+
+def _validate_sealed_bootstrap(capability: PathCapability, *, service: ComposeService) -> None:
+    if service.value != SEALED_BOOTSTRAP_SERVICE:
+        raise ValueError("sealed bootstrap service mismatch")
+    if capability.kind != PathCapabilityKind.FILE:
+        raise ValueError("sealed bootstrap adapter must be a file")
+    path = Path(capability.path)
+    source = SEALED_BOOTSTRAP_SOURCE.resolve(strict=True)
+    runtime = RUNTIME_ROOT / source.name
+    accepted = path == source or path == runtime
+    if not accepted or path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+        raise ValueError("sealed bootstrap adapter path mismatch")
+    if not path.exists() or not path.is_file():
+        raise ValueError("sealed bootstrap adapter is not a regular file")
+    if capability.digest != _sha_bytes(source.read_bytes()):
+        raise PermissionError("sealed bootstrap adapter digest mismatch")
+    if _sha_bytes(path.read_bytes()) != capability.digest:
+        raise PermissionError("sealed bootstrap adapter was changed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,6 +415,102 @@ class BootstrapAction:
     recovered_generation_id: str
     adapter: PathCapability
     scope_digest: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TaskAcceptanceVerifierAction:
+    """Closed-world task acceptance authority; all execution policy is fixed."""
+
+    binding: ComposeBinding
+    verifier_id: str
+    verifier_path: PathCapability
+    scope_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class TaskAcceptanceResult:
+    schema_version: str
+    technical_id: str
+    project: str
+    verifier_id: str
+    status: str
+    checks: dict[str, bool | int | str]
+
+
+def parse_task_acceptance_output(
+    stdout: bytes | str,
+    stderr: bytes | str,
+    *,
+    technical_id: str,
+    project: str,
+    verifier_id: str,
+) -> TaskAcceptanceResult:
+    raw_stdout = stdout.encode("utf-8") if isinstance(stdout, str) else stdout
+    raw_stderr = stderr.encode("utf-8") if isinstance(stderr, str) else stderr
+    if len(raw_stdout) > TASK_ACCEPTANCE_MAX_STDOUT_BYTES:
+        raise ValueError("task acceptance stdout exceeds the hard bound")
+    if len(raw_stderr) > TASK_ACCEPTANCE_MAX_STDERR_BYTES:
+        raise ValueError("task acceptance stderr exceeds the hard bound")
+    if raw_stderr:
+        raise ValueError("task acceptance emitted unexpected stderr")
+    try:
+        text = raw_stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("task acceptance output is not UTF-8") from exc
+    if not text.endswith("\n") or text.count("\n") != 1:
+        raise ValueError("task acceptance output must be one newline-terminated object")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("task acceptance output is not JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("task acceptance envelope must be an object")
+    expected_keys = {"schema_version", "technical_id", "project", "verifier_id", "status", "checks"}
+    if set(parsed) != expected_keys:
+        raise ValueError("task acceptance envelope has unknown or missing fields")
+    if (
+        parsed["schema_version"] != TASK_ACCEPTANCE_SCHEMA_VERSION
+        or parsed["technical_id"] != technical_id
+        or parsed["project"] != project
+        or parsed["verifier_id"] != verifier_id
+        or parsed["status"] not in {"PASS", "FAIL"}
+    ):
+        raise ValueError("task acceptance envelope identity or status mismatch")
+    checks = parsed["checks"]
+    if not isinstance(checks, dict) or not checks or len(checks) > 32:
+        raise ValueError("task acceptance checks are not bounded")
+    for key, value in checks.items():
+        if not isinstance(key, str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,47}", key):
+            raise ValueError("task acceptance check key is not canonical")
+        if isinstance(value, bool):
+            continue
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and -1_000_000 <= value <= 1_000_000
+        ):
+            continue
+        if isinstance(value, str) and value in {"PASS", "FAIL", "ACCEPTED", "REJECTED"}:
+            continue
+        raise ValueError("task acceptance check value is not an approved bounded type")
+    return TaskAcceptanceResult(
+        schema_version=str(parsed["schema_version"]),
+        technical_id=str(parsed["technical_id"]),
+        project=str(parsed["project"]),
+        verifier_id=str(parsed["verifier_id"]),
+        status=str(parsed["status"]),
+        checks=cast(dict[str, bool | int | str], checks),
+    )
+
+
+def _compose_diagnostic_stderr(value: bytes) -> bytes:
+    """Remove bounded Docker Compose progress lines, never arbitrary diagnostics."""
+    allowed = re.compile(
+        rb"^(?:\s*(?:Network|Volume|Container) [^\r\n]{1,240} "
+        rb"(?:Creating|Created|Removing|Removed|Starting|Started|Stopping|Stopped)\s*)$"
+    )
+    kept = [line for line in value.splitlines() if line and not allowed.fullmatch(line)]
+    return b"\n".join(kept) + (b"\n" if kept else b"")
 
 
 @dataclass(frozen=True, slots=True)
@@ -850,20 +1018,7 @@ class GatewayAuthority:
             )
         if isinstance(semantic, BootstrapAction):
             if semantic.binding is None:
-                return (
-                    "docker",
-                    "run",
-                    "--rm",
-                    "-e",
-                    f"RF08_RUN_ID={semantic.run_id}",
-                    "-e",
-                    f"RF08_RECOVERED_GENERATION_ID={semantic.recovered_generation_id}",
-                    "-v",
-                    f"{semantic.adapter.path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
-                    semantic.service.value,
-                    "python",
-                    "/opt/mayak/rf09_public_bootstrap_adapter.py",
-                )
+                raise ValueError("sealed bootstrap requires exact compose binding")
             return (
                 "docker",
                 "compose",
@@ -884,6 +1039,33 @@ class GatewayAuthority:
                 semantic.service.value,
                 "python",
                 "/opt/mayak/rf09_public_bootstrap_adapter.py",
+            )
+        if isinstance(semantic, TaskAcceptanceVerifierAction):
+            return (
+                "docker",
+                "compose",
+                "-f",
+                semantic.binding.compose_file,
+                "-p",
+                semantic.binding.project_name,
+                "--profile",
+                semantic.binding.profile,
+                "run",
+                "--rm",
+                "--no-deps",
+                "--user",
+                "10001:10001",
+                "--workdir",
+                "/opt/mayak",
+                "--entrypoint",
+                "python",
+                "-v",
+                f"{semantic.verifier_path.path}:{TASK_ACCEPTANCE_VERIFIER_DESTINATION}:ro",
+                ComposeService.API.value,
+                TASK_ACCEPTANCE_VERIFIER_DESTINATION,
+                self._scope.technical_id,
+                self._scope.project_name,
+                semantic.verifier_id,
             )
         if isinstance(semantic, ObservationRequest):
             if semantic.template == ObservationTemplate.DAEMON_VERSION:
@@ -1130,6 +1312,14 @@ class GatewayAuthority:
         payload: Any = None
         if isinstance(semantic, ObservationRequest):
             payload = self._parse_observation_payload(semantic, execution.stdout_bytes)
+        elif isinstance(semantic, TaskAcceptanceVerifierAction):
+            payload = parse_task_acceptance_output(
+                execution.stdout_bytes,
+                _compose_diagnostic_stderr(execution.stderr_bytes),
+                technical_id=self._scope.technical_id,
+                project=self._scope.project_name,
+                verifier_id=semantic.verifier_id,
+            )
         return DockerExecution(
             returncode=execution.returncode,
             stdout_bytes=execution.stdout_bytes,
@@ -1155,6 +1345,7 @@ class GatewayAuthority:
             accepted_source = accepted_source or (
                 binding.compose_capability == ComposeSourceCapability.GENERATED
                 and Path(binding.compose_file).resolve() == runtime
+                and binding.compose_file_digest == _sha_bytes(runtime.read_bytes())
             )
         if not accepted_source:
             raise ValueError("compose source identity mismatch")
@@ -1162,6 +1353,26 @@ class GatewayAuthority:
     def _validate_semantic_scope(self, semantic: object) -> None:
         task_mode = self._scope.mode == AuthorityMode.TASK_SCOPED_ACCEPTANCE
         binding = getattr(semantic, "binding", None)
+        if isinstance(semantic, BootstrapAction):
+            if task_mode:
+                raise PermissionError("BootstrapAction is sealed RF-08-only")
+            if semantic.binding is None:
+                raise ValueError("sealed bootstrap requires exact compose binding")
+            self._validate_binding(semantic.binding)
+            _validate_sealed_bootstrap(semantic.adapter, service=semantic.service)
+            return
+        if isinstance(semantic, TaskAcceptanceVerifierAction):
+            if not task_mode:
+                raise PermissionError("task acceptance verifier requires task scope")
+            self._validate_binding(semantic.binding)
+            if semantic.scope_digest != self._scope.scope_digest:
+                raise PermissionError("task verifier is outside task scope")
+            verifier_id = _validate_task_verifier(
+                semantic.verifier_path, project_name=self._scope.project_name
+            )
+            if semantic.verifier_id != verifier_id:
+                raise ValueError("task verifier identity mismatch")
+            return
         if isinstance(
             semantic,
             (ComposeAction, ComposeRunAction, ComposeProbeAction, ComposeProjectTeardownAction),
@@ -1194,11 +1405,7 @@ class GatewayAuthority:
                 or ".." in semantic.name
             ):
                 raise ValueError("resource name is outside task namespace")
-        elif isinstance(semantic, (ImageAction, ProbeAction, BootstrapAction)):
-            if isinstance(semantic, BootstrapAction) and semantic.binding is None:
-                raise ValueError("task bootstrap requires compose binding")
-            if isinstance(semantic, BootstrapAction):
-                self._validate_binding(cast(ComposeBinding, semantic.binding))
+        elif isinstance(semantic, (ImageAction, ProbeAction)):
             if isinstance(semantic, ImageAction) and (
                 semantic.operation == ImageOperation.APPLICATION_BUILD
             ):
@@ -1235,6 +1442,7 @@ class GatewayAuthority:
                             ComposeRunAction,
                             ComposeProbeAction,
                             BootstrapAction,
+                            TaskAcceptanceVerifierAction,
                             ComposeProjectTeardownAction,
                         ),
                     ) and semantic.binding is not None
@@ -1295,12 +1503,20 @@ class GatewayAuthority:
         if capability.consumed:
             raise PermissionError("capability already consumed")
         semantic = capability.semantic_action
+        self._validate_semantic_scope(semantic)
         if (
             isinstance(semantic, ResourceLifecycleAction)
             and semantic.operation == ResourceOperation.REMOVE
             and not semantic.inspected_capability
         ):
             raise PermissionError("remove actions require a prior typed capability")
+        effective_timeout = timeout
+        if isinstance(semantic, TaskAcceptanceVerifierAction):
+            effective_timeout = (
+                TASK_ACCEPTANCE_MAX_TIMEOUT_SECONDS
+                if timeout is None
+                else min(timeout, TASK_ACCEPTANCE_MAX_TIMEOUT_SECONDS)
+            )
         execution = self._execute_with_transport(
             semantic,
             stage=stage,
@@ -1308,7 +1524,7 @@ class GatewayAuthority:
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            timeout=timeout,
+            timeout=effective_timeout,
         )
         self._record(
             kind="RESULT",

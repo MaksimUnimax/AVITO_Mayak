@@ -18,6 +18,7 @@ def test_rf08_protection_manifest_has_required_semantic_invariants() -> None:
         "runtime_binding_generation_epoch",
         "immutable_task_scoped_acceptance_authority",
         "task_scope_authority_covers_exact_module14_rf01_rf30_range",
+        "task_scope_executable_content_is_source_bound_and_closed_world",
     }
     entries = {entry["id"] for entry in manifest["invariants"]}
     assert manifest["schema_version"] == "rf08-protection-scenarios-v3"
