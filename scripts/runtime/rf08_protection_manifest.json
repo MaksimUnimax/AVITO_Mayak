@@ -25,6 +25,11 @@
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_verifier_shape_is_fixed_and_source_bound"},
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_task_verifier_digest_tamper_rejected_before_transport"},
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_acceptance_authority.py::test_verifier_execution_clamps_timeout_and_parses_output"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_executable_content_authority_adversaries_fail_closed"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_reduced_closed_world_content_topology_is_accepted"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_content_verdict_is_not_self_authorized_by_names_or_fixture_location"},
+      {"kind": "structural-rule", "target": "task_scope_executable_content_is_source_bound_and_closed_world"},
+      {"kind": "structural-rule", "target": "qualified_executable_content_dataflow"},
       {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}
     ]}
   ]

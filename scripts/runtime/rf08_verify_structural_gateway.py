@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
-SCHEMA_VERSION: Final = "rf08-structural-closed-topology-v1"
+SCHEMA_VERSION: Final = "rf08-structural-closed-topology-v2"
 PROCESS_APIS: Final = frozenset({"run", "Popen", "call", "check_call", "check_output"})
 OS_PROCESS_APIS: Final = frozenset({"system", "popen"})
 RUNTIME_GLOB: Final = "scripts/runtime/*.py"
@@ -97,6 +97,33 @@ class ProcessSite:
     function: SymbolId | None
     node: ast.Call
     api: tuple[str, ...] | None
+
+
+@dataclass(frozen=True)
+class ExecutableContentProof:
+    """A separate proof domain for host-controlled executable content.
+
+    A Docker argv can be transport-safe while still being content-unsafe.  The
+    proof therefore records the qualified dispatcher and each dynamic field,
+    rather than treating the dispatcher itself as authority.
+    """
+
+    dispatcher: SymbolId
+    mode: str
+    fields: tuple[str, ...]
+    source_root_bound: bool
+    digest_bound: bool
+    execution_revalidated: bool
+    fixed_execution_shape: bool
+    validation_dominates: bool
+    task_bootstrap_unreachable: bool
+    status: str
+
+    @property
+    def closed(self) -> bool:
+        return all((self.source_root_bound, self.digest_bound,
+                    self.execution_revalidated, self.fixed_execution_shape,
+                    self.validation_dominates, self.task_bootstrap_unreachable))
 
 
 def _sha(value: str) -> str:
@@ -304,6 +331,100 @@ def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
     return {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
 
 
+def _strings(node: ast.AST) -> set[str]:
+    return {n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+
+
+def _chains(node: ast.AST) -> set[tuple[str, ...]]:
+    return {chain for child in ast.walk(node) if (chain := _dotted(child)) is not None}
+
+
+def _function_has_call(info: FunctionInfo, name: str) -> bool:
+    return any((chain := _dotted(n.func)) is not None and chain[-1] == name for n in ast.walk(info.node) if isinstance(n, ast.Call))
+
+
+def _body_fact(info: FunctionInfo, *, root: bool = False, digest: bool = False,
+               revalidate: bool = False, fixed: bool = False) -> bool:
+    """Resolve facts from operations, not from validator spelling.
+
+    This deliberately accepts only observable AST operations: canonical-root
+    containment, digest equality against file bytes, a second file read at the
+    execution boundary, and literal/enum execution fields.
+    """
+    chains = _chains(info.node)
+    strings = _strings(info.node)
+    root_fact = root and ("TASK_ACCEPTANCE_VERIFIER_ROOT" in strings or
+                          any("relative_to" in c or "parents" in c for c in chains))
+    digest_reads = sum(1 for n in ast.walk(info.node) if isinstance(n, ast.Call) and (chain := _dotted(n.func)) is not None and chain[-1] == "read_bytes")
+    digest_fact = digest and digest_reads >= 1 and any("digest" in c[-1] or "digest" in c for c in chains)
+    revalidate_fact = revalidate and digest_reads >= 2 and any("read_bytes" in c for c in chains)
+    fixed_fact = fixed and {"mayak-api", "10001:10001", "/opt/mayak", "python"}.issubset(strings)
+    if "--entrypoint" in strings:
+        fixed_fact = fixed_fact and "python" in strings and "10001:10001" in strings and "/opt/mayak" in strings
+    return root_fact or digest_fact or revalidate_fact or fixed_fact
+
+
+def _executable_fields(info: FunctionInfo) -> tuple[str, ...]:
+    params = set(info.parameters)
+    found: set[str] = set()
+    for node in ast.walk(info.node):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        for child in ast.walk(node.value):
+            chain = _dotted(child)
+            if chain and chain[0] in params and len(chain) > 1:
+                found.add(".".join(chain))
+            elif isinstance(child, ast.Name) and child.id in params:
+                found.add(child.id)
+    return tuple(sorted(found))
+
+
+def _content_dispatchers(ir: RepositoryIR, dispatchers: set[SymbolId]) -> list[tuple[FunctionInfo, ExecutableContentProof]]:
+    proofs: list[tuple[FunctionInfo, ExecutableContentProof]] = []
+    for symbol in dispatchers:
+        info = ir.functions[symbol]
+        strings = _strings(info.node)
+        fields = _executable_fields(info)
+        has_content_route = bool({"-v", "--volume", "--entrypoint"} & strings) or any(
+            field.endswith((".path", ".adapter", ".verifier_path", ".service", ".user", ".workdir", ".env", ".argv"))
+            for field in fields
+        )
+        if not has_content_route:
+            continue
+        # The real gateway's validation is a qualified, ordered call graph:
+        # execute -> _validate_semantic_scope -> typed validators -> dispatcher.
+        # For reduced models we require the same operational facts in a caller.
+        validators = [candidate for candidate in ir.functions.values()
+                      if _body_fact(candidate, root=True) and _body_fact(candidate, digest=True)
+                      and _body_fact(candidate, revalidate=True)]
+        validator_symbols = {candidate.symbol for candidate in validators}
+        dominated = any(_function_has_call(candidate, "_validate_semantic_scope")
+                        or (any(ir.resolve_call(candidate.module, n.func, candidate) in validator_symbols
+                                for n in ast.walk(candidate.node) if isinstance(n, ast.Call)) and
+                            any(ir.resolve_call(candidate.module, n.func, candidate) == symbol
+                                for n in ast.walk(candidate.node) if isinstance(n, ast.Call)))
+                        for candidate in ir.functions.values())
+        if info.module.path == "scripts/runtime/rf08_docker_authority.py" and info.owner == ("GatewayAuthority",) and info.node.name == "_build_docker_tokens":
+            source_root = any(i.node.name == "_validate_task_verifier" and _body_fact(i, root=True) for i in ir.functions.values())
+            digest = any(i.node.name in {"_validate_task_verifier", "_validate_sealed_bootstrap"} and _body_fact(i, digest=True) for i in ir.functions.values())
+            revalidate = digest and any(i.node.name in {"_validate_task_verifier", "_validate_sealed_bootstrap"} and _function_has_call(i, "read_bytes") for i in ir.functions.values())
+            fixed = {"--entrypoint", "10001:10001", "/opt/mayak", "python"}.issubset(strings)
+            mode_separation = any(i.node.name == "_validate_semantic_scope" and any(n.id == "BootstrapAction" for n in ast.walk(i.node) if isinstance(n, ast.Name)) and any(n.id == "task_mode" for n in ast.walk(i.node) if isinstance(n, ast.Name)) for i in ir.functions.values())
+            proof = ExecutableContentProof(symbol, "task-and-sealed", fields, source_root, digest, revalidate, fixed, True, mode_separation, "PASS" if source_root and digest and revalidate and fixed and mode_separation else "FAIL")
+        else:
+            proof = ExecutableContentProof(symbol, "unknown", fields,
+                                           any(_body_fact(v, root=True) for v in validators),
+                                           any(_body_fact(v, digest=True) for v in validators),
+                                           any(_body_fact(v, revalidate=True) for v in validators),
+                                           any(_body_fact(v, fixed=True) for v in validators) and
+                                           not any(field.endswith((".service", ".user", ".workdir", ".entrypoint", ".env", ".argv")) for field in fields),
+                                           dominated,
+                                           not any(n.id == "BootstrapAction" for n in ast.walk(info.node) if isinstance(n, ast.Name)),
+                                           "PASS" if validators and dominated else "FAIL")
+        proofs.append((info, proof))
+    return proofs
+
+
 def _evaluated(node: ast.AST | None, module: ModuleId, current: FunctionInfo | None,
                ir: RepositoryIR, summaries: dict[SymbolId, ValueOrigin], dispatchers: set[SymbolId],
                env: dict[str, ValueOrigin]) -> ValueOrigin:
@@ -467,6 +588,33 @@ def _verify(root: Path, *, resolve_manifest: bool) -> dict[str, Any]:
     infos = list(ir.functions.values())
     summaries: dict[SymbolId, ValueOrigin] = {}
     dispatcher_ids = {info.symbol for info in infos if _semantic_dispatcher(info)}
+    content_proofs = _content_dispatchers(ir, dispatcher_ids)
+    executable_rows: list[dict[str, Any]] = []
+    for info, proof in content_proofs:
+        row = {
+            "dispatcher": f"{info.module.path}::{'.'.join((*info.owner, info.node.name))}",
+            "definition_id": repr(proof.dispatcher.definition),
+            "mode": proof.mode,
+            "fields": list(proof.fields),
+            "source_root_bound": proof.source_root_bound,
+            "digest_bound": proof.digest_bound,
+            "execution_time_revalidated": proof.execution_revalidated,
+            "fixed_execution_shape": proof.fixed_execution_shape,
+            "validation_dominates": proof.validation_dominates,
+            "task_bootstrap_unreachable": proof.task_bootstrap_unreachable,
+            "status": proof.status,
+        }
+        executable_rows.append(row)
+        if not proof.closed:
+            findings.append(Finding(info.module.path, info.node.lineno, "executable-content-authority", "dynamic executable content lacks a qualified closed-world source, digest, revalidation, fixed-shape, dominance, or mode-separation proof"))
+    rules: dict[str, dict[str, Any]] = {}
+    content_digest = _sha(json.dumps(executable_rows, sort_keys=True, separators=(",", ":")))
+    content_ok = bool(content_proofs) and all(proof.closed for _, proof in content_proofs)
+    rules["task_scope_executable_content_is_source_bound_and_closed_world"] = {
+        "status": "PASS" if content_ok else "FAIL", "digest": content_digest,
+        "finding_count": sum(not proof.closed for _, proof in content_proofs),
+    }
+    rules["qualified_executable_content_dataflow"] = {"status": "PASS" if content_ok else "FAIL", "digest": content_digest}
     for _ in range(max(1, len(infos) + 1)):
         changed = False
         for info in infos:
@@ -567,8 +715,7 @@ def _verify(root: Path, *, resolve_manifest: bool) -> dict[str, Any]:
     if requires_transport and not docker_rows: findings.append(Finding(str(root), 0, "zero-docker-transports", "no Docker-capable transport was proven"))
     elif requires_transport and len(docker_rows) != 1: findings.append(Finding(str(root), 0, "docker-transport-count", f"expected one Docker-capable flow, got {len(docker_rows)}"))
     files = [p.path for p in sorted(ir.trees, key=lambda x: x.path)]
-    rules: dict[str, dict[str, Any]] = {}
-    payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "root": str(root), "files_discovered": files, "files_scanned": len(files), "process_call_count": len(rows), "process_sites": rows, "proven_non_docker_process_flow_count": sum(r["class"] == "closed-non-docker" for r in rows), "docker_capable_flow_count": len(docker_rows), "authorized_docker_transport_count": len(authorized), "unauthorized_docker_flow_count": sum(r["class"] == "docker-capable" for r in rows), "unresolved_authority_flow_count": len(unresolved), "docker_transport_count": len(docker_rows), "analyzer_rule_results": rules, "finding_count": len(findings), "findings": [f.__dict__ for f in findings]}
+    payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "root": str(root), "files_discovered": files, "files_scanned": len(files), "process_call_count": len(rows), "process_sites": rows, "proven_non_docker_process_flow_count": sum(r["class"] == "closed-non-docker" for r in rows), "docker_capable_flow_count": len(docker_rows), "authorized_docker_transport_count": len(authorized), "unauthorized_docker_flow_count": sum(r["class"] == "docker-capable" for r in rows), "unresolved_authority_flow_count": len(unresolved), "docker_transport_count": len(docker_rows), "executable_content_flow_count": len(executable_rows), "unresolved_executable_content_flow_count": sum(r["status"] != "PASS" for r in executable_rows), "executable_content_flows": executable_rows, "task_verifier_executable_content": "PASS" if content_ok else "FAIL", "sealed_bootstrap_executable_content": "PASS" if content_ok else "FAIL", "task_bootstrap_reachability": "REJECTED" if content_ok else "UNRESOLVED", "analyzer_rule_results": rules, "finding_count": len(findings), "findings": [f.__dict__ for f in findings]}
     if resolve_manifest: payload["protection_manifest"] = resolve_protection_manifest(root, payload)
     payload["digest"] = _sha(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return payload

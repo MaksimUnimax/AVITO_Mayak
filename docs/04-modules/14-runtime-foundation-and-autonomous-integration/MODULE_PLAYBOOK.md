@@ -389,7 +389,7 @@ Current RF-04 evidence comprises `PHYSICAL_DATA_MODEL_v1.0.md`, `TRANSACTION_AND
 
 Runtime, dependency, CI, Docker, database, migration, API, worker, scheduler, Web, Admin, provider, service, port and secret mutations require the applicable later RF prerequisite and one exact gated task.
 
-Module 14 completes only after all applicable RF-00–RF-30 and corrective steps are independently accepted, deployed acceptance evidence passes, the operator pack exists and the final verdict is `READY_FOR_OPERATOR_ACCEPTANCE`.
+Module 14 completes only after all applicable RF-00–RF-30 and corrective steps are independently accepted, deployed acceptance evidence passes, the operator pack exists and the final verdict is `READY_FOR_OPERATOR_ACCEPTANCE`. RF-08 structural acceptance additionally requires the independent executable-content provenance gate and its adversarial mutation matrix; unchanged runtime evidence may be reused when the Docker authority surface is unchanged.
 
 The module must not claim `PRODUCTION_READY`.
 

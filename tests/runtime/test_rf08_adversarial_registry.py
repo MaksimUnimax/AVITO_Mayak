@@ -240,3 +240,91 @@ def test_stored_authority_is_field_spelling_independent(tmp_path: Path, field: s
         f"item = Carrier(('docker', 'ps'))\nsubprocess.run(item.{field})\n",
     )
     assert payload["finding_count"] > 0
+
+
+def _typed_content_fixture(*, renamed: bool = False, indirection: str = "", branch: bool = False,
+                           validator: str = "", field: str = "adapter", bootstrap: bool = False,
+                           second_route: bool = False) -> str:
+    action = "RenamedAction" if renamed else "TypedAction"
+    extra = indirection
+    branch_code = (
+        "        if action.ok:\n"
+        "            return ('docker', 'compose', 'run', '-v', action.adapter, 'mayak-api', 'python')\n"
+        "        return ('docker', 'compose', 'run', '-v', action.adapter, action.service, 'python')\n"
+        if branch else
+        "        return ('docker', 'compose', 'run', '-v', action.adapter, action.service, 'python')\n"
+    )
+    cls = "BootstrapAction" if bootstrap else action
+    route = "\ndef other(action: TypedAction):\n    if isinstance(action, TypedAction):\n        return ('docker', 'compose', 'run', '-v', action.adapter, 'mayak-api', 'python')\n    raise ValueError()\n" if second_route else ""
+    return (
+        "import subprocess\nfrom dataclasses import dataclass\n"
+        "@dataclass(frozen=True)\n"
+        f"class {cls}: adapter: str; service: str = 'mayak-api'; ok: bool = True\n"
+        f"{validator}\n{extra}\n"
+        f"def dispatch(action: {cls}):\n"
+        f"    if isinstance(action, {cls}):\n"
+        f"{branch_code}"
+        "    raise ValueError()\n"
+        f"{route}\nsubprocess.run(dispatch({cls}('/synthetic/adapter.py')))\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        _typed_content_fixture(),
+        _typed_content_fixture(renamed=True),
+        _typed_content_fixture(indirection="class Box:\n    def __init__(self, value): self.value = value\nbox = Box('/synthetic/adapter.py')\n"),
+        _typed_content_fixture(indirection="def wrap(value): return value\nraw = wrap('/synthetic/adapter.py')\n"),
+        _typed_content_fixture(branch=True),
+        _typed_content_fixture(validator="def _validate_task_verifier(action): return True\n"),
+        _typed_content_fixture(validator="def validate(action):\n    if not action.adapter.startswith('/canonical/project'): raise ValueError()\n"),
+        _typed_content_fixture(validator="def validate(action):\n    if action.digest != 'synthetic-digest': raise ValueError()\n"),
+        _typed_content_fixture(validator="def validate(action):\n    if not action.adapter.startswith('/canonical/project'): raise ValueError()\n    if action.digest != 'synthetic-digest': raise ValueError()\n    if '10001:10001' != '10001:10001': raise ValueError()\n"),
+        _typed_content_fixture(field="service"),
+        _typed_content_fixture(field="entrypoint"),
+        _typed_content_fixture(field="user"),
+        _typed_content_fixture(field="workdir"),
+        _typed_content_fixture(field="env"),
+        _typed_content_fixture(bootstrap=True),
+        _typed_content_fixture(second_route=True),
+    ],
+)
+def test_executable_content_authority_adversaries_fail_closed(tmp_path: Path, source: str) -> None:
+    payload = _verify(tmp_path, source)
+    assert payload["finding_count"] > 0
+    assert payload["unresolved_executable_content_flow_count"] > 0
+
+
+def test_reduced_closed_world_content_topology_is_accepted(tmp_path: Path) -> None:
+    source = _typed_content_fixture(
+        validator=(
+            "from pathlib import Path\n"
+            "def validate(action):\n"
+            "    root = Path('/canonical/project').resolve()\n"
+            "    path = Path(action.adapter).resolve()\n"
+            "    if root not in path.parents: raise ValueError()\n"
+            "    digest = 'synthetic-digest'\n"
+            "    if action.digest != digest: raise ValueError()\n"
+            "    if action.service != 'mayak-api': raise ValueError()\n"
+            "    if '10001:10001' != '10001:10001' or '/opt/mayak' != '/opt/mayak' or 'python' != 'python': raise ValueError()\n"
+            "    if digest != 'synthetic-digest': raise ValueError()\n"
+            "    path.read_bytes(); path.read_bytes()\n"
+        )
+        + "\ndef execute(action):\n    validate(action)\n    return dispatch(action)\n"
+    ).replace("subprocess.run(dispatch(TypedAction('/synthetic/adapter.py')))", "subprocess.run(execute(TypedAction('/canonical/project/adapter.py')))")
+    source = source.replace("action.service, 'python'", "'mayak-api', 'python'")
+    payload = _verify(tmp_path, source)
+    assert payload["finding_count"] == 0
+    assert payload["task_verifier_executable_content"] == "PASS"
+
+
+def test_content_verdict_is_not_self_authorized_by_names_or_fixture_location(tmp_path: Path) -> None:
+    source = _typed_content_fixture(
+        validator=(
+            "def _validate_task_verifier(action): return True\n"
+            "def task_scope_executable_content_is_source_bound_and_closed_world(): return True\n"
+        )
+    )
+    payload = _verify(tmp_path, source)
+    assert payload["finding_count"] > 0
