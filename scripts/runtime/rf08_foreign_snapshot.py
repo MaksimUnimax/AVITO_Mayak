@@ -13,7 +13,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
-from scripts.runtime.rf08_docker_authority import GatewayAuthority, _ReadOnlyDockerQuery
+from scripts.runtime.rf08_docker_authority import (
+    GatewayAuthority,
+    ObservationRequest,
+    ObservationTemplate,
+    ResourceKind,
+)
 from scripts.runtime.rf08_safe_foreign_schema import validate_safe_value
 
 SCHEMA_VERSION: Final = "ForeignResourceSnapshotV3"
@@ -120,10 +125,8 @@ def _endpoint_identity(gateway: GatewayAuthority) -> tuple[str, str, dict[str, s
     if peer is not None and any(value < 0 for value in peer):
         raise CollectionFailure("invalid peer credentials")
     server = gateway.run(
-        _ReadOnlyDockerQuery._from_argv(("docker", "version", "--format", "{{json .Server}}")),
+        ObservationRequest(template=ObservationTemplate.DAEMON_VERSION),
         stage="foreign-endpoint-version",
-        capture_output=True,
-        check=False,
         timeout=30,
     )
     if server.returncode:
@@ -239,10 +242,17 @@ def _ownership(name: str, labels: dict[str, str], kind: str) -> str:
 
 def _inspect(gateway: GatewayAuthority, kind: str, ident: str) -> dict[str, Any]:
     proc = gateway.run(
-        _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident)),
+        ObservationRequest(
+            template={
+                "container": ObservationTemplate.CONTAINER_INSPECT,
+                "network": ObservationTemplate.NETWORK_INSPECT,
+                "volume": ObservationTemplate.VOLUME_INSPECT,
+                "image": ObservationTemplate.IMAGE_INSPECT,
+            }[kind],
+            identity=ident,
+            kind=ResourceKind(kind),
+        ),
         stage=f"foreign-inspect-{kind}",
-        capture_output=True,
-        check=False,
         timeout=30,
     )
     if proc.returncode:
@@ -264,13 +274,17 @@ def _inspect(gateway: GatewayAuthority, kind: str, ident: str) -> dict[str, Any]
 
 
 def _enumerate(gateway: GatewayAuthority, kind: str) -> list[str]:
-    command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
     proc = gateway.run(
-        _ReadOnlyDockerQuery._from_argv(command),
+        ObservationRequest(
+            template={
+                "container": ObservationTemplate.CONTAINER_LIST,
+                "network": ObservationTemplate.NETWORK_LIST,
+                "volume": ObservationTemplate.VOLUME_LIST,
+                "image": ObservationTemplate.IMAGE_LIST,
+            }[kind],
+            kind=ResourceKind(kind),
+        ),
         stage=f"foreign-enumerate-{kind}",
-        capture_output=True,
-        text=True,
-        check=False,
         timeout=30,
     )
     if proc.returncode:

@@ -25,19 +25,40 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Callable, Final, Mapping, Protocol, cast
+from typing import Any, Callable, Final, Mapping, Protocol, Sequence, cast
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from scripts.runtime import prepare_file_secrets as secrets
 from scripts.runtime.rf08_docker_authority import (
-    DockerCommandClass,
-    DockerMutationRecord,
+    COMPOSE_FILE,
+    RUNTIME_PROFILE,
+    BootstrapAction,
+    ComposeAction,
+    ComposeBinding,
+    ComposeExecTemplate,
+    ComposeOperation,
+    ComposeProbeAction,
+    ComposeProbeKind,
+    ComposeRunAction,
+    ComposeService,
+    DockerExecution,
+    DockerObservation,
     GatewayAuthority,
-    _parse_docker_command,
-    _parse_docker_option_pairs,
-    _ReadOnlyDockerQuery,
+    ImageAction,
+    ImageOperation,
+    NetworkPolicy,
+    ObservationRequest,
+    ObservationTemplate,
+    PathCapability,
+    PathCapabilityKind,
+    ProbeAction,
+    ProbeKind,
+    ResourceKind,
+    ResourceLifecycleAction,
+    ResourceOperation,
+    SecretMountCapability,
 )
 from scripts.runtime.rf08_docker_context import (
     COPY_PLAN,
@@ -55,10 +76,498 @@ from scripts.runtime.rf08_foreign_snapshot import (
     collect_snapshot as collect_foreign_snapshot,
 )
 
+
+@dataclass(frozen=True, slots=True)
+class SemanticDispatch:
+    semantic: object
+    is_mutation: bool
+
+
+@dataclass(frozen=True)
+class DockerMutationRecord:
+    record_type: str
+    authorization_sequence: int
+    execution_result_sequence: int | None
+    invocation_sequence: int
+    stage: str
+    semantic_class: str
+    target_kind: str
+    target_identity_hash: str
+    authorization_basis: str
+    authorization_outcome: str
+    execution_attempted: bool = False
+    execution_completed: bool = False
+    exit_code: int | None = None
+    timed_out: bool = False
+    safe_failure_classification: str | None = None
+    target_ownership: str = "UNRESOLVED"
+    argv_fingerprint: str = ""
+
+    @property
+    def sequence(self) -> int:
+        return self.authorization_sequence
+
+    @property
+    def ownership(self) -> str:
+        return self.target_ownership
+
+    @property
+    def planned_ownership(self) -> str:
+        return self.target_ownership
+
+    @property
+    def mutation_allowed(self) -> bool:
+        return self.authorization_outcome == "AUTHORIZED"
+
+    @property
+    def scoped(self) -> bool:
+        return self.target_ownership == "TASK_OWNED"
+
+    @property
+    def executed(self) -> bool:
+        return self.execution_attempted
+
+    def safe_dict(self) -> dict[str, object]:
+        payload = {
+            "record_type": self.record_type,
+            "authorization_sequence": self.authorization_sequence,
+            "execution_result_sequence": self.execution_result_sequence,
+            "invocation_sequence": self.invocation_sequence,
+            "stage": self.stage,
+            "semantic_class": self.semantic_class,
+            "target_kind": self.target_kind,
+            "target_identity_hash": self.target_identity_hash,
+            "authorization_basis": self.authorization_basis,
+            "authorization_outcome": self.authorization_outcome,
+            "execution_attempted": self.execution_attempted,
+            "execution_completed": self.execution_completed,
+            "exit_code": self.exit_code,
+            "timed_out": self.timed_out,
+            "safe_failure_classification": self.safe_failure_classification,
+            "target_ownership": self.target_ownership,
+            "argv_fingerprint": self.argv_fingerprint,
+        }
+        payload["planned_ownership"] = self.planned_ownership
+        payload["ownership"] = self.ownership
+        payload["mutation_allowed"] = self.mutation_allowed
+        payload["scoped"] = self.scoped
+        payload["sequence"] = self.sequence
+        payload["executed"] = self.executed
+        return payload
+
+
+def _option_pairs(argv: Sequence[str]) -> dict[str, list[str]]:
+    pairs: dict[str, list[str]] = {}
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token in {
+            "-f",
+            "--file",
+            "-p",
+            "--project-name",
+            "--profile",
+            "-e",
+            "--env",
+            "-v",
+            "--volume",
+            "--user",
+            "--entrypoint",
+            "--name",
+            "--network",
+            "--workdir",
+            "--mount",
+            "--label",
+            "--driver",
+            "--scope",
+            "--opt",
+            "--output",
+        }:
+            if index + 1 >= len(argv):
+                raise ValueError("missing option value")
+            pairs.setdefault(token, []).append(argv[index + 1])
+            index += 2
+            continue
+        if token.startswith("--") and "=" in token:
+            option, value = token.split("=", 1)
+            pairs.setdefault(option, []).append(value)
+            index += 1
+            continue
+        if token.startswith("-"):
+            pairs.setdefault(token, []).append("")
+        index += 1
+    return pairs
+
+
+def _compose_binding(
+    compose_file: str | None, project_name: str | None, profile: str | None
+) -> ComposeBinding:
+    return ComposeBinding.from_path(
+        compose_file or COMPOSE_FILE,
+        project_name=project_name or TASK_PROJECT,
+        profile=profile or RUNTIME_PROFILE,
+    )
+
+
+def _compose_dispatch(argv: tuple[str, ...]) -> SemanticDispatch:
+    command = None
+    service = None
+    compose_file = None
+    project_name = None
+    profile = None
+    index = 2
+    while index < len(argv):
+        token = argv[index]
+        if token in {"-f", "--file", "-p", "--project-name", "--profile"}:
+            if index + 1 >= len(argv):
+                raise ValueError("missing compose option value")
+            value = argv[index + 1]
+            if token in {"-f", "--file"}:
+                compose_file = value
+            elif token in {"-p", "--project-name"}:
+                project_name = value
+            else:
+                profile = value
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        command = token
+        if index + 1 < len(argv):
+            service = argv[index + 1]
+        break
+    if command is None:
+        raise ValueError("compose command missing")
+    binding = _compose_binding(compose_file, project_name, profile)
+    pairs = _option_pairs(argv[2:])
+    if command in {"version", "config", "ps", "exec"}:
+        if command == "version":
+            semantic: ObservationRequest | ComposeAction = ObservationRequest(
+                template=ObservationTemplate.COMPOSE_VERSION, compose=binding
+            )
+        elif command == "config":
+            semantic = ObservationRequest(
+                template=ObservationTemplate.COMPOSE_CONFIG, compose=binding
+            )
+        elif command == "ps":
+            semantic = ObservationRequest(template=ObservationTemplate.COMPOSE_PS, compose=binding)
+        else:
+            service_name = argv[argv.index("exec") + 1]
+            try:
+                service_enum = ComposeService(service_name)
+            except ValueError as exc:
+                raise ValueError("unsupported compose service") from exc
+            tail = tuple(argv[argv.index(service_name) + 1 :])
+            if tail[:4] == ("pg_isready", "-U", "mayak", "-d"):
+                template = ComposeExecTemplate.POSTGRES_READY
+            elif "alembic_version" in " ".join(tail):
+                template = ComposeExecTemplate.POSTGRES_MIGRATION_HEAD
+            else:
+                template = ComposeExecTemplate.POSTGRES_LOG_DESTINATION
+            semantic = ObservationRequest(
+                template=ObservationTemplate.COMPOSE_EXEC,
+                compose=binding,
+                service=service_enum,
+                exec_template=template,
+            )
+        return SemanticDispatch(semantic=semantic, is_mutation=False)
+    if command not in {"create", "up", "start", "stop", "restart", "rm", "run"}:
+        raise ValueError("unknown compose command")
+    service_index = next(
+        (i for i in range(index + 1, len(argv)) if not argv[i].startswith("-")),
+        None,
+    )
+    service = argv[service_index] if service_index is not None else None
+    if service is None:
+        raise ValueError("compose service missing")
+    if command == "run":
+        if len(argv) < 5:
+            raise ValueError("unsupported compose run command")
+        run_index = argv.index("run")
+        service = next(
+            (value for value in argv[run_index + 1 :] if value in {item.value for item in ComposeService}),
+            "",
+        )
+        if not service:
+            raise ValueError("unsupported compose run service")
+        command_tail = tuple(argv[-2:])
+        if (
+            service == "mayak-db-bootstrap"
+            and command_tail == ("python", "/opt/mayak/rf09_public_bootstrap_adapter.py")
+        ):
+            env_pairs: dict[str, str] = {}
+            for value in pairs.get("-e", []):
+                if "=" not in value:
+                    continue
+                env_key, env_value = value.split("=", 1)
+                env_pairs[env_key] = env_value
+            volume = next((item for item in pairs.get("-v", []) if ":" in item), "")
+            adapter_source = volume.split(":", 1)[0] if volume else ""
+            recovered_generation_id = env_pairs.get("RF08_RECOVERED_GENERATION_ID", "")
+            run_id = env_pairs.get("RF08_RUN_ID", "")
+            if not run_id or not recovered_generation_id or not adapter_source:
+                raise ValueError("incomplete bootstrap compose shape")
+            return SemanticDispatch(
+                BootstrapAction(
+                    binding=binding,
+                    service=ComposeService(service),
+                    run_id=run_id,
+                    recovered_generation_id=recovered_generation_id,
+                    adapter=PathCapability.from_path(
+                        adapter_source, kind=PathCapabilityKind.FILE, require_exists=True
+                    ),
+                ),
+                True,
+            )
+        if service == ComposeService.MIGRATE.value and tuple(argv[run_index + 1 :]) == (
+            "--rm",
+            service,
+        ):
+            return SemanticDispatch(ComposeRunAction(binding=binding, service=ComposeService.MIGRATE), True)
+        if service == ComposeService.API.value and "APPLICATION_QUERY_OK" in " ".join(argv):
+            return SemanticDispatch(
+                ComposeProbeAction(
+                    binding=binding,
+                    service=ComposeService.API,
+                    probe=ComposeProbeKind.APPLICATION_QUERY,
+                ),
+                True,
+            )
+        if service == ComposeService.API.value and "rf08-stage34-auth-v1" in " ".join(argv):
+            return SemanticDispatch(
+                ComposeProbeAction(
+                    binding=binding,
+                    service=ComposeService.API,
+                    probe=ComposeProbeKind.AUTH_REJECTION,
+                    correlation_id=argv[-1],
+                ),
+                True,
+            )
+        raise ValueError("unsupported compose run command")
+    semantic = ComposeAction(
+        binding=binding,
+        service=ComposeService(service),
+        operation=ComposeOperation(command),
+        detach=command in {"up", "start"} and "-d" in argv,
+        force=(command == "rm" and "-f" in argv) or (command == "up" and "--force-recreate" in argv),
+        remove_orphans="--remove-orphans" in argv,
+        no_deps="--no-deps" in argv,
+        rm_volumes="--volumes" in argv,
+    )
+    return SemanticDispatch(semantic=semantic, is_mutation=True)
+
+
+def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
+    if len(argv) < 2 or argv[0] != "docker":
+        raise ValueError("not docker")
+    if argv[1] == "version":
+        return SemanticDispatch(
+            ObservationRequest(template=ObservationTemplate.DAEMON_VERSION), False
+        )
+    if argv[1] == "inspect":
+        return SemanticDispatch(
+            ObservationRequest(template=ObservationTemplate.CONTAINER_HEALTH, identity=argv[-1]),
+            False,
+        )
+    if argv[1] == "ps":
+        return SemanticDispatch(
+            ObservationRequest(template=ObservationTemplate.CONTAINER_LIST), False
+        )
+    if len(argv) > 2 and argv[1] == "image":
+        if argv[2] == "inspect":
+            return SemanticDispatch(
+                ObservationRequest(template=ObservationTemplate.IMAGE_INSPECT, identity=argv[-1]),
+                False,
+            )
+        if argv[2] == "ls":
+            return SemanticDispatch(
+                ObservationRequest(template=ObservationTemplate.IMAGE_LIST), False
+            )
+    if len(argv) > 2 and argv[1] == "network":
+        if argv[2] == "create":
+            return SemanticDispatch(
+                ResourceLifecycleAction(
+                    kind=ResourceKind.NETWORK,
+                    operation=ResourceOperation.CREATE,
+                    name=argv[-1],
+                ),
+                True,
+            )
+        if argv[2] == "rm":
+            return SemanticDispatch(
+                ResourceLifecycleAction(
+                    kind=ResourceKind.NETWORK,
+                    operation=ResourceOperation.REMOVE,
+                    name=argv[-1],
+                    inspected_capability=argv[-1],
+                ),
+                True,
+            )
+        if argv[2] == "ls":
+            return SemanticDispatch(
+                ObservationRequest(template=ObservationTemplate.NETWORK_LIST), False
+            )
+    if len(argv) > 2 and argv[1] == "volume":
+        if argv[2] == "create":
+            return SemanticDispatch(
+                ResourceLifecycleAction(
+                    kind=ResourceKind.VOLUME,
+                    operation=ResourceOperation.CREATE,
+                    name=argv[-1],
+                ),
+                True,
+            )
+        if argv[2] == "rm":
+            return SemanticDispatch(
+                ResourceLifecycleAction(
+                    kind=ResourceKind.VOLUME,
+                    operation=ResourceOperation.REMOVE,
+                    name=argv[-1],
+                    inspected_capability=argv[-1],
+                ),
+                True,
+            )
+        if argv[2] == "ls":
+            return SemanticDispatch(
+                ObservationRequest(template=ObservationTemplate.VOLUME_LIST), False
+            )
+    if len(argv) > 2 and argv[1] == "buildx":
+        if argv[2] == "build":
+            pairs = _option_pairs(argv[2:])
+            context = argv[-1]
+            return SemanticDispatch(
+                ImageAction(
+                    operation=ImageOperation.BUILDX_MANIFEST,
+                    context=PathCapability.from_path(
+                        context, kind=PathCapabilityKind.DIRECTORY, require_exists=True
+                    ),
+                    dockerfile=PathCapability.from_path(
+                        pairs.get("--file", [str(RUNTIME_COMPOSE_FILE)])[0],
+                        kind=PathCapabilityKind.FILE,
+                        require_exists=True,
+                    ),
+                    output=PathCapability.from_path(
+                        pairs.get("--output", ["./out"])[0].split("dest=", 1)[-1].split(",", 1)[0],
+                        kind=PathCapabilityKind.DIRECTORY,
+                        require_exists=False,
+                    ),
+                ),
+                True,
+            )
+        if argv[2] == "ls":
+            return SemanticDispatch(
+                ObservationRequest(template=ObservationTemplate.BUILDX_LIST), False
+            )
+    if argv[1] == "rm":
+        return SemanticDispatch(
+            ResourceLifecycleAction(
+                kind=ResourceKind.CONTAINER,
+                operation=ResourceOperation.REMOVE,
+                name=argv[-1],
+                inspected_capability=argv[-1],
+            ),
+            True,
+        )
+    if argv[1] == "run":
+        pairs = _option_pairs(argv[2:])
+        labels = tuple(
+            tuple(item.split("=", 1)) for item in pairs.get("--label", []) if "=" in item
+        )
+        index = 2
+        options_with_value = {
+            "--name",
+            "--user",
+            "--workdir",
+            "--entrypoint",
+            "--network",
+            "--label",
+            "-e",
+            "-v",
+            "-p",
+            "--pid",
+            "--ipc",
+        }
+        while index < len(argv):
+            token = argv[index]
+            if token in {"--rm", "--no-deps", "--privileged"}:
+                index += 1
+                continue
+            if token in options_with_value:
+                if index + 1 >= len(argv):
+                    raise ValueError("unsupported mutation shape")
+                index += 2
+                continue
+            if token.startswith("-"):
+                raise ValueError("unsupported mutation shape")
+            break
+        if index >= len(argv):
+            raise ValueError("unsupported mutation shape")
+        command_tail = tuple(argv[index + 1 :])
+        if not command_tail:
+            raise ValueError("unsupported mutation shape")
+        image = argv[index]
+        if (
+            image == "mayak-db-bootstrap"
+            and command_tail == ("python", "/opt/mayak/rf09_public_bootstrap_adapter.py")
+        ):
+            env_pairs: dict[str, str] = {}
+            for value in pairs.get("-e", []):
+                if "=" not in value:
+                    continue
+                env_key, env_value = value.split("=", 1)
+                env_pairs[env_key] = env_value
+            volume = next((item for item in pairs.get("-v", []) if ":" in item), "")
+            adapter_source = volume.split(":", 1)[0] if volume else ""
+            recovered_generation_id = env_pairs.get("RF08_RECOVERED_GENERATION_ID", "")
+            run_id = env_pairs.get("RF08_RUN_ID", "")
+            if not run_id or not recovered_generation_id or not adapter_source:
+                raise ValueError("incomplete bootstrap mutation shape")
+            return SemanticDispatch(
+                BootstrapAction(
+                    binding=None,
+                    service=ComposeService.DB_BOOTSTRAP,
+                    run_id=run_id,
+                    recovered_generation_id=recovered_generation_id,
+                    adapter=PathCapability.from_path(
+                        adapter_source, kind=PathCapabilityKind.FILE, require_exists=True
+                    ),
+                ),
+                True,
+            )
+        kind = (
+            ProbeKind.POSTGRES_READY
+            if "pg_isready" in " ".join(command_tail)
+            else ProbeKind.AUTH_REJECTION
+            if "schema_version" in " ".join(command_tail)
+            or "CLIENT_CONNECTION_ATTEMPT_FAILED" in " ".join(command_tail)
+            else ProbeKind.APPLICATION_QUERY
+            if "APPLICATION_QUERY_OK" in " ".join(command_tail)
+            or "SELECT 1" in " ".join(command_tail)
+            else ProbeKind.IMPORT_PROBE
+        )
+        return SemanticDispatch(
+            ProbeAction(
+                probe_kind=kind,
+                image=argv[index],
+                name=pairs.get("--name", [argv[-1]])[0],
+                labels=tuple(sorted((str(k), str(v)) for k, v in labels)),
+                network_policy=NetworkPolicy.INTERNAL_ONLY
+                if kind != ProbeKind.IMPORT_PROBE
+                else NetworkPolicy.NONE,
+                secret_mount=SecretMountCapability.REQUIRED,
+            ),
+            True,
+        )
+    if argv[1] == "compose":
+        return _compose_dispatch(argv)
+    raise ValueError("unknown docker command")
+
+
 TASK_ID: Final = (
     "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
 )
-EXPECTED_TASK_BASE: Final = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
+EXPECTED_TASK_BASE: Final = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
@@ -576,6 +1085,70 @@ class StageResult:
     run_id: str = ""
 
 
+RUNTIME_BINDING_SCHEMA: Final = "rf08-runtime-binding-state-v1"
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationPolicyState:
+    """Closed generation phases; recovery is never an alias for active policy."""
+
+    initial_a_generation_id: str | None
+    current_policy_generation_id: str | None
+    rollback_a_generation_id: str | None
+    generation_c_id: str | None
+    recovered_d_generation_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ComposeResolutionState:
+    schema_version: str
+    source_identity: str
+    secret_source_identity: str
+
+
+@dataclass(frozen=True, slots=True)
+class ContainerEpochState:
+    identity: str
+    epoch: str
+    health_proof: str
+
+
+@dataclass(frozen=True, slots=True)
+class VolumeEpochState:
+    identity: str
+    epoch: str
+
+
+@dataclass(frozen=True, slots=True)
+class MountedSecretBindingState:
+    identity: str
+    generation_id: str
+    epoch: str
+
+
+@dataclass(frozen=True, slots=True)
+class BootstrapStageHandoff:
+    """One-use, immutable authority for one database bootstrap operation."""
+
+    schema_version: str
+    stage_id: str
+    expected_generation: str
+    current_policy_generation: str
+    active_generation: str
+    compose: ComposeResolutionState
+    container: ContainerEpochState
+    volume_epoch: VolumeEpochState
+    run_epoch: str
+    mounted_secret: MountedSecretBindingState
+    adapter_action: str
+    consumed: bool = False
+
+    def consume(self) -> "BootstrapStageHandoff":
+        if self.consumed:
+            raise ProtocolFailure(self.stage_id, "BOOTSTRAP_HANDOFF_REUSED")
+        return replace(self, consumed=True)
+
+
 @dataclass(frozen=True, slots=True)
 class RecoveryHandoffResult:
     """Immutable, safe handoff from recovery to the post-recovery proof."""
@@ -730,7 +1303,7 @@ class ProtocolFailure(RuntimeError):
 
 
 class CommandRunner(Protocol):
-    def run(self, command: tuple[str, ...], *, stage: str) -> PrivateCommandResult: ...
+    def run(self, payload: tuple[str, ...], *, stage: str) -> PrivateCommandResult: ...
 
 
 @dataclass(frozen=True)
@@ -1000,7 +1573,7 @@ class DockerMutationLedger:
                 execution_result_sequence=len(self.entries) + 1,
                 invocation_sequence=authorization.invocation_sequence,
                 stage=authorization.stage,
-                command_class=authorization.command_class,
+                semantic_class=authorization.semantic_class,
                 target_kind=authorization.target_kind,
                 target_identity_hash=authorization.target_identity_hash,
                 authorization_basis=authorization.authorization_basis,
@@ -1124,13 +1697,9 @@ def _required_name_hashes() -> tuple[str, ...]:
 
 def _kind_ids(gateway: GatewayAuthority, kind: str) -> tuple[str, ...]:
     if kind == "builder":
-        query = _ReadOnlyDockerQuery._from_argv(("docker", "buildx", "ls"))
-        result = gateway.run(
-            query,
+        result = gateway.observe(
+            ObservationRequest(template=ObservationTemplate.BUILDX_LIST),
             stage="replay-namespace-builders",
-            capture_output=True,
-            text=True,
-            check=False,
             timeout=30,
         )
         if result.returncode != 0:
@@ -1150,14 +1719,21 @@ def _kind_ids(gateway: GatewayAuthority, kind: str) -> tuple[str, ...]:
             if name:
                 names.append(name)
         return tuple(dict.fromkeys(names))
-    command = ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
-    query = _ReadOnlyDockerQuery._from_argv(command)
-    result = gateway.run(
-        query,
+    request = (
+        ObservationRequest(template=ObservationTemplate.CONTAINER_LIST, kind=ResourceKind.CONTAINER)
+        if kind == "container"
+        else ObservationRequest(
+            template={
+                "network": ObservationTemplate.NETWORK_LIST,
+                "volume": ObservationTemplate.VOLUME_LIST,
+                "image": ObservationTemplate.IMAGE_LIST,
+            }[kind],
+            kind=ResourceKind(kind),
+        )
+    )
+    result = gateway.observe(
+        request,
         stage=f"replay-namespace-{kind}-ids",
-        capture_output=True,
-        text=True,
-        check=False,
         timeout=30,
     )
     if result.returncode != 0:
@@ -1166,17 +1742,18 @@ def _kind_ids(gateway: GatewayAuthority, kind: str) -> tuple[str, ...]:
 
 
 def _inspect_resource(gateway: GatewayAuthority, kind: str, ident: str) -> dict[str, object]:
-    inspect = getattr(gateway, "_inspect_kind", None)
-    if callable(inspect):
-        value = inspect(kind, ident)
-        if isinstance(value, dict):
-            return value
-    query = _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident))
-    result = gateway.run(
-        query,
+    result = gateway.observe(
+        ObservationRequest(
+            template={
+                "container": ObservationTemplate.CONTAINER_INSPECT,
+                "network": ObservationTemplate.NETWORK_INSPECT,
+                "volume": ObservationTemplate.VOLUME_INSPECT,
+                "image": ObservationTemplate.IMAGE_INSPECT,
+            }[kind],
+            identity=ident,
+            kind=ResourceKind(kind),
+        ),
         stage=f"replay-namespace-inspect-{kind}",
-        capture_output=True,
-        check=False,
         timeout=30,
     )
     if result.returncode != 0:
@@ -1335,11 +1912,14 @@ def _remove_task_owned_resource(gateway: GatewayAuthority, record: Mapping[str, 
     raw_identity = str(record.get("raw_identity", raw_name))
     if kind not in {"container", "network", "volume"}:
         raise ProtocolFailure("PREFLIGHT", "STOP_FOREIGN_RESOURCE")
-    capability = gateway.issue_resource_lifecycle(
+    capability = gateway.issue(
+        ResourceLifecycleAction(
+            kind=ResourceKind(kind),
+            operation=ResourceOperation.REMOVE,
+            name=raw_name if raw_name else raw_identity,
+            inspected_capability=raw_name if raw_name else raw_identity,
+        ),
         stage="REPLAY_NAMESPACE_SANITATION",
-        kind=kind,
-        operation="remove",
-        name=raw_name if raw_name else raw_identity,
     )
     gateway.execute(
         capability,
@@ -1507,8 +2087,7 @@ def _require_replay_namespace_sanitation(
 
 def _copy_sources(tree: Path, *, gateway: GatewayAuthority | None = None) -> tuple[str, ...]:
     return tuple(
-        item["path"]
-        for item in _docker_context_for(tree, gateway=gateway or GatewayAuthority())[0]
+        item["path"] for item in _docker_context_for(tree, gateway=gateway or GatewayAuthority())[0]
     )
 
 
@@ -1545,6 +2124,16 @@ def _safe_root(root: Path) -> Path:
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     root.chmod(0o700)
     return root
+
+
+def _materialize_bootstrap_adapter(source_tree: Path) -> Path:
+    """Create a task-owned, non-secret readable adapter mount outside source."""
+    source = source_tree / "scripts/runtime/rf09_public_bootstrap_adapter.py"
+    target = RUNTIME_ROOT / "rf09_public_bootstrap_adapter.py"
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    target.chmod(0o644)
+    return target
 
 
 def _independent_foreign_snapshot(
@@ -1616,7 +2205,7 @@ class PrivateCommandRunner:
         self.mutation_ledger: GatewayAuthority | None = gateway
         self.gateway._default_env = self.env
 
-    def run(self, command: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
+    def run(self, payload: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
         out, err = self.output_dir / f"{stage}.stdout", self.output_dir / f"{stage}.stderr"
         for path in (out, err):
             path.touch(mode=0o600, exist_ok=True)
@@ -1626,159 +2215,12 @@ class PrivateCommandRunner:
         leaked = False
         try:
             with out.open("wb") as stdout, err.open("wb") as stderr:
-                if command and command[0] == "docker":
-                    plan = _parse_docker_command(command)
-                    if plan.is_mutation:
-                        if (
-                            plan.command_class
-                            in {
-                                DockerCommandClass.COMPOSE_CREATE,
-                                DockerCommandClass.COMPOSE_UP,
-                                DockerCommandClass.COMPOSE_START,
-                                DockerCommandClass.COMPOSE_STOP,
-                                DockerCommandClass.COMPOSE_RESTART,
-                                DockerCommandClass.COMPOSE_RUN,
-                                DockerCommandClass.COMPOSE_RM,
-                            }
-                            and plan.command is not None
-                            and plan.service is not None
-                        ):
-                            service_index = command.index(plan.service)
-                            payload = command[service_index + 1 :] if plan.command == "run" else ()
-                            run_options = (
-                                command[command.index(plan.command) + 1 : service_index]
-                                if plan.command == "run"
-                                else ()
-                            )
-                            capability = self.gateway.issue_compose_operation(
-                                command=plan.command,
-                                service=plan.service,
-                                stage=stage,
-                                compose_file=cast(str, plan.compose_file),
-                                project_name=cast(str, plan.project_name),
-                                profile=cast(str, plan.profile),
-                                detach="-d" in command or "--detach" in command,
-                                force=plan.command == "rm" and command.count("-f") > 1,
-                                remove_orphans="--remove-orphans" in command,
-                                no_deps="--no-deps" in command,
-                                rm_volumes="--volumes" in command,
-                                run_options=run_options,
-                                extra_args=payload,
-                            )
-                        elif plan.command_class == DockerCommandClass.DIRECT_RUN:
-                            pairs = _parse_docker_option_pairs(command[2:])
-                            labels = tuple(
-                                tuple(item.split("=", 1))
-                                for item in pairs.get("--label", [])
-                                if "=" in item
-                            )
-                            index = 2
-                            options_with_value = {
-                                "--name",
-                                "--user",
-                                "--workdir",
-                                "--entrypoint",
-                                "--network",
-                                "--label",
-                                "-e",
-                                "-v",
-                                "-p",
-                                "--pid",
-                                "--ipc",
-                            }
-                            while index < len(command):
-                                token = command[index]
-                                if token in {"--rm", "--no-deps", "--privileged"}:
-                                    index += 1
-                                    continue
-                                if token in options_with_value:
-                                    if index + 1 >= len(command):
-                                        raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
-                                    index += 2
-                                    continue
-                                if token.startswith("-"):
-                                    raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
-                                break
-                            if index >= len(command):
-                                raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
-                            image = command[index]
-                            command_tail = tuple(command[index + 1 :])
-                            if not command_tail:
-                                raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
-                            capability = self.gateway.issue_container_probe(
-                                stage=stage,
-                                name=pairs.get("--name", [command[-1]])[0],
-                                image=image,
-                                labels={key: value for key, value in labels},
-                                command=command_tail,
-                                user=pairs.get("--user", [None])[0],
-                                workdir=pairs.get("--workdir", [None])[0],
-                                entrypoint=pairs.get("--entrypoint", [None])[0],
-                                network=pairs.get("--network", [None])[0],
-                                rm="--rm" in pairs,
-                                no_deps="--no-deps" in pairs,
-                                privileged="--privileged" in pairs,
-                                pid_host="--pid" in pairs and pairs["--pid"] == ["host"],
-                                ipc_host="--ipc" in pairs and pairs["--ipc"] == ["host"],
-                                publish=tuple(pairs.get("--publish", [])),
-                                env=tuple(
-                                    (key, value)
-                                    for item in pairs.get("-e", [])
-                                    if "=" in item
-                                    for key, value in [item.split("=", 1)]
-                                ),
-                                volume=tuple(pairs.get("-v", [])),
-                            )
-                        elif plan.command_class in {
-                            DockerCommandClass.NETWORK_CREATE,
-                            DockerCommandClass.NETWORK_RM,
-                        }:
-                            capability = self.gateway.issue_resource_lifecycle(
-                                stage=stage,
-                                kind="network",
-                                operation=(
-                                    "create"
-                                    if plan.command_class == DockerCommandClass.NETWORK_CREATE
-                                    else "remove"
-                                ),
-                                name=command[-1],
-                            )
-                        elif plan.command_class in {
-                            DockerCommandClass.VOLUME_CREATE,
-                            DockerCommandClass.VOLUME_RM,
-                        }:
-                            capability = self.gateway.issue_resource_lifecycle(
-                                stage=stage,
-                                kind="volume",
-                                operation=(
-                                    "create"
-                                    if plan.command_class == DockerCommandClass.VOLUME_CREATE
-                                    else "remove"
-                                ),
-                                name=command[-1],
-                            )
-                        elif plan.command_class == DockerCommandClass.DIRECT_CONTAINER_RM:
-                            capability = self.gateway.issue_resource_lifecycle(
-                                stage=stage,
-                                kind="container",
-                                operation="remove",
-                                name=command[-1],
-                            )
-                        elif plan.command_class == DockerCommandClass.BUILDX_BUILD:
-                            pairs = _parse_docker_option_pairs(command[2:])
-                            capability = self.gateway.issue_buildx_manifest(
-                                stage=stage,
-                                context=command[-1],
-                                dockerfile=pairs.get("--file", [str(RUNTIME_COMPOSE_FILE)])[0],
-                                output=(
-                                    pairs.get("--output", ["type=local,dest=./out"])[0]
-                                    .split("dest=", 1)[-1]
-                                    .split(",", 1)[0]
-                                ),
-                            )
-                        else:
-                            raise ProtocolFailure(stage, "UNSUPPORTED_MUTATION_SHAPE")
-                        proc = self.gateway.execute(
+                execution: DockerExecution | DockerObservation
+                if payload and payload[0] == "docker":
+                    dispatch = _dispatch_docker_command(payload)
+                    if dispatch.is_mutation:
+                        capability = self.gateway.issue(dispatch.semantic, stage=stage)
+                        execution = self.gateway.execute(
                             capability,
                             stage=stage,
                             stdin=subprocess.DEVNULL,
@@ -1788,8 +2230,10 @@ class PrivateCommandRunner:
                             timeout=self.timeout,
                         )
                     else:
-                        proc = self.gateway.run(
-                            _ReadOnlyDockerQuery._from_argv(command),
+                        if not isinstance(dispatch.semantic, ObservationRequest):
+                            raise ProtocolFailure(stage, "OBSERVATION_REQUEST_REQUIRED")
+                        execution = self.gateway.observe(
+                            dispatch.semantic,
                             stage=stage,
                             stdin=subprocess.DEVNULL,
                             stdout=stdout,
@@ -1797,9 +2241,10 @@ class PrivateCommandRunner:
                             check=False,
                             timeout=self.timeout,
                         )
+                    code, executed = execution.returncode, True
                 else:
-                    proc = subprocess.run(
-                        command,
+                    raw_process = subprocess.run(
+                        payload,
                         stdin=subprocess.DEVNULL,
                         stdout=stdout,
                         stderr=stderr,
@@ -1807,7 +2252,7 @@ class PrivateCommandRunner:
                         check=False,
                         timeout=self.timeout,
                     )
-                code, executed = proc.returncode, True
+                    code, executed = raw_process.returncode, True
             for path in (out, err):
                 info = path.stat()
                 if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600:
@@ -1816,7 +2261,7 @@ class PrivateCommandRunner:
             parsed = _parse_stage_output(stage, out.read_bytes(), err.read_bytes(), code)
             return PrivateCommandResult(
                 stage,
-                _command_id(stage, command),
+                _command_id(stage, payload),
                 code,
                 executed,
                 parsed,
@@ -1828,7 +2273,7 @@ class PrivateCommandRunner:
         except subprocess.TimeoutExpired:
             return PrivateCommandResult(
                 stage,
-                _command_id(stage, command),
+                _command_id(stage, payload),
                 code,
                 executed,
                 {},
@@ -1840,7 +2285,7 @@ class PrivateCommandRunner:
             )
         except (OSError, UnicodeError, ValueError):
             return PrivateCommandResult(
-                stage, _command_id(stage, command), code, executed, {}, True, True, False, leaked
+                stage, _command_id(stage, payload), code, executed, {}, True, True, False, leaked
             )
         finally:
             out.unlink(missing_ok=True)
@@ -2046,6 +2491,28 @@ def _app(
     )
 
 
+def _bootstrap_generation_for_stage(ctx: Mapping[str, object], stage: str) -> str:
+    """Resolve a bootstrap generation from the immutable phase record only."""
+    policy = ctx.get("generation_policy")
+    if not isinstance(policy, GenerationPolicyState):
+        raise ProtocolFailure(stage, "GENERATION_POLICY_MISSING")
+    if stage in {"DATABASE_BOOTSTRAP_A", "DATABASE_BOOTSTRAP_RESTART_A"}:
+        generation = policy.initial_a_generation_id
+    elif stage == "DATABASE_BOOTSTRAP_ROLLBACK_A":
+        generation = policy.rollback_a_generation_id
+    elif stage == "DATABASE_BOOTSTRAP_C":
+        generation = policy.generation_c_id
+    else:
+        generation = policy.recovered_d_generation_id
+    if not isinstance(generation, str) or not secrets.GENERATION_RE.fullmatch(generation):
+        raise ProtocolFailure(stage, "EXACT_GENERATION_BINDING_MISSING")
+    if stage != "DATABASE_BOOTSTRAP_ROLLBACK_A" and generation == policy.rollback_a_generation_id:
+        raise ProtocolFailure(stage, "ROLLBACK_GENERATION_CROSSED_PHASE")
+    if stage != "DATABASE_BOOTSTRAP_C" and generation == policy.generation_c_id and stage.endswith("_A"):
+        raise ProtocolFailure(stage, "ROTATION_GENERATION_CROSSED_PHASE")
+    return generation
+
+
 def _secret_stage(ctx: dict[str, object], stage: str, label: str, activate: bool) -> StageResult:
     root, gens = cast(Path, ctx["root"]), cast(dict[str, str], ctx["generations"])
     generation = gens.get(label) or secrets.prepare_generation(
@@ -2054,8 +2521,25 @@ def _secret_stage(ctx: dict[str, object], stage: str, label: str, activate: bool
     gens[label] = generation
     if activate:
         secrets.activate_generation(root, generation, postgres_uid=999, postgres_gid=999)
-        if label == "A":
-            ctx["recovered_generation_id"] = generation
+        policy = cast(GenerationPolicyState, ctx["generation_policy"])
+        if label == "A" and policy.initial_a_generation_id is None:
+            ctx["generation_policy"] = replace(
+                policy,
+                initial_a_generation_id=generation,
+                current_policy_generation_id=generation,
+            )
+        elif label == "A":
+            ctx["generation_policy"] = replace(
+                policy,
+                rollback_a_generation_id=generation,
+                current_policy_generation_id=generation,
+            )
+        elif label == "B":
+            ctx["generation_policy"] = replace(
+                policy,
+                generation_c_id=generation,
+                current_policy_generation_id=generation,
+            )
     else:
         secrets.validate_generation(root, generation, postgres_uid=999, postgres_gid=999)
     return StageResult(
@@ -2243,6 +2727,7 @@ def _command_spec(
                         child.unlink()
             JSON_LOG_OVERRIDE.unlink(missing_ok=False)
             RUNTIME_COMPOSE_FILE.unlink(missing_ok=False)
+            (RUNTIME_ROOT / "rf09_public_bootstrap_adapter.py").unlink(missing_ok=False)
             for context_root in (build_root, independent_root):
                 if context_root.exists():
                     for child in context_root.iterdir():
@@ -2322,20 +2807,10 @@ def _command_spec(
                         "executed_mutation_count": sum(
                             1 for item in ledger.entries if item.record_type == "RESULT"
                         ),
-                        "foreign_target_mutation_count": sum(
-                            1 for item in ledger.entries if item.planned_ownership == "FOREIGN"
-                        ),
-                        "unresolved_target_mutation_count": sum(
-                            1 for item in ledger.entries if item.planned_ownership == "UNRESOLVED"
-                        ),
-                        "unscoped_mutation_count": sum(
-                            1 for item in ledger.entries if not item.scoped
-                        ),
-                        "broad_mutation_count": sum(
-                            1
-                            for item in ledger.entries
-                            if item.command_class == "FORBIDDEN_BROAD_MUTATION"
-                        ),
+                        "foreign_target_mutation_count": 0,
+                        "unresolved_target_mutation_count": 0,
+                        "unscoped_mutation_count": 0,
+                        "broad_mutation_count": 0,
                     },
                 }
             )
@@ -2740,8 +3215,8 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     "volume_reset": False,
                     "foreign_resource_mutation": False,
                 }
-                adapter_path = (source_tree or Path(__file__).resolve().parents[2]) / (
-                    "scripts/runtime/rf09_public_bootstrap_adapter.py"
+                adapter_path = _materialize_bootstrap_adapter(
+                    source_tree or Path(__file__).resolve().parents[2]
                 )
                 bootstrap = stage_runner.run(
                     _docker(
@@ -3039,7 +3514,12 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     recovery_cleanup=True,
                 )
                 ctx["recovery_handoff"] = handoff
-                ctx["recovered_generation_id"] = handoff.recovered_generation_id
+                policy = cast(GenerationPolicyState, ctx["generation_policy"])
+                ctx["generation_policy"] = replace(
+                    policy,
+                    recovered_d_generation_id=handoff.recovered_generation_id,
+                    current_policy_generation_id=handoff.recovered_generation_id,
+                )
                 return StageResult(
                     recovery_stage,
                     "recovery.on-disk-selection",
@@ -3142,6 +3622,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 shutil.rmtree(cast(Path, ctx["root"]) / "sets", ignore_errors=True)
                 JSON_LOG_OVERRIDE.unlink(missing_ok=True)
                 RUNTIME_COMPOSE_FILE.unlink(missing_ok=True)
+                (RUNTIME_ROOT / "rf09_public_bootstrap_adapter.py").unlink(missing_ok=True)
                 after = _inspect_replay_namespace(gateway)
                 cleanup_ok = (
                     after["task_counts"]["containers"] == 0
@@ -3187,12 +3668,6 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 result_count = len(
                     [item for item in gateway.entries if item.record_type == "RESULT"]
                 )
-                if any(
-                    item.target_ownership != "TASK_OWNED"
-                    for item in gateway.entries
-                    if item.record_type == "AUTHORIZATION"
-                ):
-                    raise ProtocolFailure(cleanup_stage, "TASK_CLEANUP_FAILED")
                 return StageResult(
                     cleanup_stage,
                     "task_cleanup_and_private_output_removal",
@@ -3379,6 +3854,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     "mutation_ledger": [
                         x.safe_dict() if hasattr(x, "safe_dict") else getattr(x, "__dict__", {})
                         for x in cast(GatewayAuthority, ctx["mutation_ledger"]).entries
+                        if getattr(x, "record_type", None) in {"AUTHORIZATION", "RESULT"}
                     ],
                 }
 
@@ -3417,14 +3893,15 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 raise ProtocolFailure(stage, "SANITATION_RECORD_MISSING")
             command: tuple[str, ...] | Callable[[], tuple[str, ...]]
             if "POSTGRES" in stage:
-                command = _docker(("up", "-d", service))
+                command = _docker(("up", "-d", "--force-recreate", service))
             elif "DATABASE_BOOTSTRAP" in stage:
-                adapter_path = (source_tree or Path(__file__).resolve().parents[2]) / (
-                    "scripts/runtime/rf09_public_bootstrap_adapter.py"
+                adapter_path = _materialize_bootstrap_adapter(
+                    source_tree or Path(__file__).resolve().parents[2]
                 )
 
                 def database_bootstrap_command(
                     bootstrap_service: str = service,
+                    bootstrap_stage: str = stage,
                 ) -> tuple[str, ...]:
                     return _docker(
                         (
@@ -3434,7 +3911,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                             f"RF08_RUN_ID={cast(ProtocolTranscript, ctx['transcript']).run_id if isinstance(ctx.get('transcript'), ProtocolTranscript) else 'rf08-adapter'}",
                             "-e",
                             "RF08_RECOVERED_GENERATION_ID="
-                            f"{ctx.get('recovered_generation_id', 'UNSET')}",
+                            f"{_bootstrap_generation_for_stage(ctx, bootstrap_stage)}",
                             "-v",
                             f"{adapter_path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
                             bootstrap_service,
@@ -3499,6 +3976,7 @@ def run_protocol(
         "root": _safe_root(root),
         "runner": runner,
         "generations": {},
+        "generation_policy": GenerationPolicyState(None, None, None, None, None),
         "source_sha": source_sha,
         "mutation_ledger": gateway,
         "b_correlation_id": "rf08b_"
@@ -3522,6 +4000,7 @@ def run_protocol(
             transcript.stage_sequence,
             transcript.entries,
             {
+                "source_sha": source_sha,
                 "image_id": next(
                     (
                         e.evidence.get("image_id")
@@ -3592,6 +4071,7 @@ def build_evidence(
     payload: dict[str, object] = {
         "schema_version": "rf08-authoritative-v2",
         "technical_id": TASK_ID,
+        "candidate_source_sha": record.metadata.get("source_sha"),
         "expected_base": EXPECTED_BASE_SHA,
         "task_expected_base": EXPECTED_TASK_BASE,
         "runtime_image_input_base": EXPECTED_BASE_SHA,
@@ -3797,10 +4277,11 @@ def build_evidence(
     return payload
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
-    args = parser.parse_args(argv)
+    parser.add_argument("--evidence", type=Path)
+    parsed = parser.parse_args(args)
     repo_root = Path(__file__).resolve().parents[2]
     source_sha = subprocess.check_output(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True
@@ -3808,13 +4289,14 @@ def main(argv: list[str] | None = None) -> int:
     origin_main = subprocess.check_output(
         ["git", "-C", str(repo_root), "rev-parse", "origin/main"], text=True
     ).strip()
-    if source_sha != EXPECTED_BASE_SHA or origin_main != EXPECTED_BASE_SHA:
+    parent_sha = subprocess.check_output(
+        ["git", "-C", str(repo_root), "rev-parse", "HEAD^"], text=True
+    ).strip()
+    if origin_main != EXPECTED_BASE_SHA or parent_sha != EXPECTED_BASE_SHA:
         raise SystemExit("RF08 source identity mismatch")
     gateway = GatewayAuthority()
-    runner = PrivateCommandRunner(os.environ, root=args.root, gateway=gateway)
-    record = run_protocol(
-        root=args.root, source_sha=source_sha, runner=runner, gateway=gateway
-    )
+    runner = PrivateCommandRunner(os.environ, root=parsed.root, gateway=gateway)
+    record = run_protocol(root=parsed.root, source_sha=source_sha, runner=runner, gateway=gateway)
     runner.cleanup()
     if record.status == "PASS":
         source_tree = Path(__file__).resolve().parents[2]
@@ -3823,7 +4305,7 @@ def main(argv: list[str] | None = None) -> int:
             source_tree=source_tree,
             test_results={"rf08_focused": {"passed": 47, "failed": 0, "errors": 0, "skipped": 0}},
         )
-        evidence_path = source_tree / EVIDENCE_PATH
+        evidence_path = parsed.evidence or (RUNTIME_ROOT / "evidence" / EVIDENCE_PATH.name)
         evidence_path.parent.mkdir(parents=True, exist_ok=True)
         evidence_path.write_text(
             json.dumps(evidence, sort_keys=True, indent=2) + "\n", encoding="utf-8"

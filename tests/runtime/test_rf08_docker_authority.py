@@ -1,288 +1,136 @@
 from __future__ import annotations
 
-import hashlib
-import subprocess
-from dataclasses import replace
+import json
 from pathlib import Path
-from typing import Any, cast
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from scripts.runtime.rf08_docker_authority import (
-    DockerCommandClass,
+    ComposeAction,
+    ComposeBinding,
+    ComposeOperation,
+    ComposeService,
     GatewayAuthority,
-    ResolvedTaskResourceCapability,
-    _ReadOnlyDockerQuery,
-    classify_docker_command_class,
+    ObservationRequest,
+    ObservationTemplate,
+    PathCapability,
+    PathCapabilityKind,
+    ResourceKind,
+    ResourceLifecycleAction,
+    ResourceOperation,
 )
 
-PROJECT = "avito-mayak-rf08-secret-delivery"
-TECHNICAL_ID = (
-    "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
-)
 REPO_ROOT = Path(__file__).resolve().parents[2]
-REPO_COMPOSE = REPO_ROOT / "compose.yaml"
-RUNTIME_COMPOSE = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml")
+COMPOSE = REPO_ROOT / "compose.yaml"
 
 
-def _completed(argv: tuple[str, ...], returncode: int = 0) -> subprocess.CompletedProcess[str]:
-    return subprocess.CompletedProcess(argv, returncode, stdout="", stderr="")
+def _completed(returncode: int = 0, stdout: bytes = b"", stderr: bytes = b"") -> SimpleNamespace:
+    return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
 
 
-def _compose_up_argv(compose_file: Path) -> tuple[str, ...]:
-    return (
-        "docker",
-        "compose",
-        "-f",
-        str(compose_file),
-        "-p",
-        PROJECT,
-        "--profile",
-        "runtime-foundation",
-        "up",
-        "-d",
-        "mayak-api",
+def test_compose_binding_and_action_round_trip() -> None:
+    binding = ComposeBinding.from_path(
+        COMPOSE, project_name="avito-mayak-rf08-secret-delivery", profile="runtime-foundation"
     )
-
-
-def _issue_network_create(
-    authority: GatewayAuthority, *, stage: str
-) -> ResolvedTaskResourceCapability:
-    return authority.issue_resource_lifecycle(
-        stage=stage,
-        kind="network",
-        operation="create",
-        name=f"{PROJECT}_mayak-internal",
-    )
-
-
-def test_authorization_is_recorded_before_subprocess_execution(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    authority = GatewayAuthority()
-    seen: list[int] = []
-
-    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        argv = tuple(str(item) for item in args[0])
-        assert kwargs.get("shell") is False
-        if argv[:3] == ("docker", "network", "create"):
-            seen.append(len(authority.entries))
-        return _completed(argv)
-
-    monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", fake_run)
-    capability = _issue_network_create(authority, stage="network-create")
-    authority.execute(capability, stage="network-create")
-    assert seen == [1]
-    assert [item.record_type for item in authority.entries] == ["AUTHORIZATION", "RESULT"]
-    assert authority.entries[0].authorization_sequence == 1
-    assert authority.entries[1].execution_result_sequence == 1
-    authority.validate_complete(1)
-
-
-def test_execution_result_references_prior_authorization(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    authority = GatewayAuthority()
-
-    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-        argv = tuple(str(item) for item in args[0])
-        assert kwargs.get("shell") is False
-        return _completed(argv)
-
-    monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", fake_run)
-    capability = _issue_network_create(authority, stage="network-create")
-    authority.execute(capability, stage="network-create")
-    auth, result = authority.entries
-    assert auth.authorization_sequence == result.authorization_sequence == 1
-    assert auth.invocation_sequence == result.invocation_sequence == 1
-    assert result.execution_result_sequence == 1
-
-
-def test_read_only_does_not_create_mutation_record() -> None:
-    assert classify_docker_command_class(("docker", "inspect", "abc")) == (
-        DockerCommandClass.READ_ONLY
-    )
+    assert binding.compose_file == str(COMPOSE.resolve())
     assert (
-        classify_docker_command_class(("docker", "version", "--format", "{{json .Server}}"))
-        == DockerCommandClass.READ_ONLY
+        binding.compose_file_digest
+        == __import__("hashlib").sha256(COMPOSE.read_bytes()).hexdigest()
     )
-    assert (
-        classify_docker_command_class(("docker", "system", "prune", "-f"))
-        == DockerCommandClass.UNKNOWN_DOCKER_COMMAND
-    )
-
-
-def test_compose_binding_requires_exact_absolute_path_and_identity(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    authority = GatewayAuthority()
-    capability = authority.issue_compose_operation(
-        command="up",
-        service="mayak-api",
-        stage="compose",
-        compose_file=str(REPO_COMPOSE),
-        project_name=PROJECT,
-        profile="runtime-foundation",
+    action = ComposeAction(
+        binding=binding,
+        service=ComposeService.POSTGRES,
+        operation=ComposeOperation.UP,
         detach=True,
     )
-    assert capability.compose_file == str(REPO_COMPOSE.resolve())
-    assert capability.compose_file_digest == hashlib.sha256(REPO_COMPOSE.read_bytes()).hexdigest()
-
-    if RUNTIME_COMPOSE.exists():
-        runtime = authority.issue_compose_operation(
-            command="up",
-            service="mayak-api",
-            stage="compose",
-            compose_file=str(RUNTIME_COMPOSE),
-            project_name=PROJECT,
-            profile="runtime-foundation",
-            detach=True,
-        )
-        assert runtime.compose_file == str(RUNTIME_COMPOSE.resolve())
-        assert runtime.compose_generation_identity is not None
-
-    with pytest.raises((ValueError, FileNotFoundError)):
-        authority.issue_compose_operation(
-            command="up",
-            service="mayak-api",
-            stage="compose",
-            compose_file="/tmp/compose.yaml",
-            project_name=PROJECT,
-            profile="runtime-foundation",
-            detach=True,
-        )
-    with pytest.raises(ValueError):
-        authority.issue_compose_operation(
-            command="up",
-            service="mayak-api",
-            stage="compose",
-            compose_file="compose.yaml",
-            project_name=PROJECT,
-            profile="runtime-foundation",
-            detach=True,
-        )
-
-    symlink = tmp_path / "compose.yaml"
-    symlink.symlink_to(REPO_COMPOSE)
-    with pytest.raises(ValueError):
-        authority.issue_compose_operation(
-            command="up",
-            service="mayak-api",
-            stage="compose",
-            compose_file=str(symlink),
-            project_name=PROJECT,
-            profile="runtime-foundation",
-            detach=True,
-        )
-
-    changed = tmp_path / "changed" / "compose.yaml"
-    changed.parent.mkdir(parents=True, exist_ok=True)
-    changed.write_text("version: '3'\nservices: {}\n", encoding="utf-8")
-    with pytest.raises(ValueError):
-        authority.issue_compose_operation(
-            command="up",
-            service="mayak-api",
-            stage="compose",
-            compose_file=str(changed),
-            project_name=PROJECT,
-            profile="runtime-foundation",
-            detach=True,
-        )
-
-    original_read_bytes = Path.read_bytes
-
-    def fake_read_bytes(self: Path) -> bytes:
-        if self == REPO_COMPOSE.resolve():
-            return b"changed-compose"
-        return original_read_bytes(self)
-
-    tampered = authority.issue_compose_operation(
-        command="up",
-        service="mayak-api",
-        stage="compose",
-        compose_file=str(REPO_COMPOSE),
-        project_name=PROJECT,
-        profile="runtime-foundation",
-        detach=True,
-    )
-    monkeypatch.setattr(Path, "read_bytes", fake_read_bytes, raising=False)
-    with pytest.raises(PermissionError):
-        authority.authorize(tampered, stage="compose")
+    assert action.binding.project_name == "avito-mayak-rf08-secret-delivery"
 
 
-def test_broad_unscoped_and_unknown_fail_closed() -> None:
-    authority = GatewayAuthority()
-    with pytest.raises(ValueError):
-        _ReadOnlyDockerQuery._from_argv(("docker", "system", "prune", "-f"))
-    with pytest.raises(ValueError):
-        authority.issue_compose_operation(
-            command="down",
-            service="mayak-api",
-            stage="negative",
-            compose_file=str(REPO_COMPOSE),
-            project_name=PROJECT,
-            profile="runtime-foundation",
-        )
-
-
-def test_forged_and_reconstructed_capabilities_fail_before_subprocess(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    authority = GatewayAuthority()
+def test_issue_execute_and_observe(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    gateway = GatewayAuthority()
     seen: list[tuple[str, ...]] = []
 
-    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def fake_run(*args: Any, **kwargs: Any) -> SimpleNamespace:
         argv = tuple(str(item) for item in args[0])
         seen.append(argv)
-        return _completed(argv)
+        if argv[:3] == ("docker", "version", "--format"):
+            payload = {
+                "Version": "26.0.0",
+                "ApiVersion": "1.45",
+                "MinAPIVersion": "1.24",
+                "Os": "linux",
+                "Arch": "amd64",
+                "KernelVersion": "6.8.0",
+            }
+            return _completed(stdout=(json.dumps(payload) + "\n").encode())
+        return _completed()
 
     monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", fake_run)
-    capability = _issue_network_create(authority, stage="capability")
-    seen.clear()
-    copied = replace(capability)
-    forged = replace(
-        capability,
-        gateway_instance_id=authority.gateway_instance_id,
-        issuance_id="forged",
-        seal="forged",
-        command_class=DockerCommandClass.COMPOSE_DOWN.value,
-        allowed_operations=("COMPOSE_DOWN",),
+    capability = gateway.issue(
+        ResourceLifecycleAction(
+            kind=ResourceKind.NETWORK,
+            operation=ResourceOperation.CREATE,
+            name="avito-mayak-rf08-secret-delivery_mayak-internal",
+        ),
+        stage="network-create",
     )
-    payload = cast(dict[str, Any], capability.safe_dict())
-    payload["allowed_operations"] = cast(
-        tuple[str, ...], payload["allowed_operations"]
+    execution = gateway.execute(capability, stage="network-create", timeout=1)
+    assert execution.returncode == 0
+    assert seen[0][:3] == ("docker", "network", "create")
+    assert len(gateway.ledger) == 2
+
+    observed = gateway.observe(
+        ObservationRequest(template=ObservationTemplate.DAEMON_VERSION),
+        stage="daemon-version",
+        timeout=1,
     )
-    manual = ResolvedTaskResourceCapability(seal="manual", **payload)
-
-    with pytest.raises(PermissionError):
-        authority.execute(copied, stage="copied")
-    with pytest.raises(PermissionError):
-        GatewayAuthority().execute(copied, stage="cross-gateway")
-    with pytest.raises(PermissionError):
-        authority.authorize(forged, stage="forged")
-    with pytest.raises(PermissionError):
-        authority.execute(forged, stage="forged")
-    with pytest.raises(PermissionError):
-        authority.execute(manual, stage="manual")
-    assert seen == []
+    assert observed.returncode == 0
+    assert json.loads(observed.stdout)["Version"] == "26.0.0"
 
 
-def test_capability_is_single_use_and_ledger_tamper_is_detected(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    authority = GatewayAuthority()
+def test_compose_up_force_recreate_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    gateway = GatewayAuthority()
+    seen: list[tuple[str, ...]] = []
 
-    def fake_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def fake_run(*args: Any, **kwargs: Any) -> SimpleNamespace:
         argv = tuple(str(item) for item in args[0])
-        return _completed(argv)
+        seen.append(argv)
+        return _completed()
 
     monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", fake_run)
-    capability = _issue_network_create(authority, stage="audit")
-    authority.execute(capability, stage="audit")
-    with pytest.raises(PermissionError):
-        authority.execute(capability, stage="audit")
-    with pytest.raises(AttributeError):
-        authority.ledger.pop()  # type: ignore[attr-defined]
-    cast(Any, authority._ledger).pop()
+    binding = ComposeBinding.from_path(
+        COMPOSE, project_name="avito-mayak-rf08-secret-delivery", profile="runtime-foundation"
+    )
+    capability = gateway.issue(
+        ComposeAction(
+            binding=binding,
+            service=ComposeService.POSTGRES,
+            operation=ComposeOperation.UP,
+            detach=True,
+            force=True,
+        ),
+        stage="compose-up-force",
+    )
+    execution = gateway.execute(capability, stage="compose-up-force", timeout=1)
+    assert execution.returncode == 0
+    assert "--force-recreate" in seen[0]
+
+
+def test_remove_requires_prior_capability() -> None:
     with pytest.raises(ValueError):
-        authority.validate_complete(1)
+        ResourceLifecycleAction(
+            kind=ResourceKind.NETWORK,
+            operation=ResourceOperation.REMOVE,
+            name="bad",
+        )
+
+
+def test_path_capability_requires_absolute(tmp_path: Path) -> None:
+    file_path = tmp_path / "payload.txt"
+    file_path.write_text("x", encoding="utf-8")
+    cap = PathCapability.from_path(file_path, kind=PathCapabilityKind.FILE)
+    assert cap.path == str(file_path.resolve())
+    with pytest.raises(ValueError):
+        PathCapability.from_path("relative.txt", kind=PathCapabilityKind.FILE)

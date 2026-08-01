@@ -1,18 +1,24 @@
-"""Stateful Docker gateway and exact argv classification for RF-08."""
+"""Semantic Docker gateway for RF-08.
+
+This module exposes immutable semantic actions and typed redacted observations.
+It intentionally avoids storing raw Docker argv, parser plans, or protocol-visible
+subprocess results.
+"""
 
 from __future__ import annotations
 
 import contextvars
 import hashlib
 import json
+import os
 import subprocess
 import time
 import uuid
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, fields, is_dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Final, TypeAlias
+from typing import Any, Final
 
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 TECHNICAL_ID: Final = (
@@ -33,2434 +39,1019 @@ ALLOWED_SERVICES: Final = frozenset(
 ALLOWED_OWNER: Final = "rf08"
 
 _GATEWAY_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "rf08_docker_gateway_token",
+    "rf08_gateway_token",
     default=None,
 )
-_READ_ONLY_PROOF_SALT: Final = uuid.uuid4().hex
 
 
-class DockerCommandClass(StrEnum):
-    READ_ONLY = "READ_ONLY"
-    COMPOSE_CREATE = "COMPOSE_CREATE"
-    COMPOSE_UP = "COMPOSE_UP"
-    COMPOSE_START = "COMPOSE_START"
-    COMPOSE_STOP = "COMPOSE_STOP"
-    COMPOSE_RESTART = "COMPOSE_RESTART"
-    COMPOSE_RUN = "COMPOSE_RUN"
-    COMPOSE_RM = "COMPOSE_RM"
-    COMPOSE_DOWN = "COMPOSE_DOWN"
-    DIRECT_RUN = "DIRECT_RUN"
-    DIRECT_CONTAINER_RM = "DIRECT_CONTAINER_RM"
-    NETWORK_CREATE = "NETWORK_CREATE"
-    NETWORK_RM = "NETWORK_RM"
-    VOLUME_CREATE = "VOLUME_CREATE"
-    VOLUME_RM = "VOLUME_RM"
-    IMAGE_BUILD = "IMAGE_BUILD"
-    IMAGE_LOAD = "IMAGE_LOAD"
-    BUILDX_BUILD = "BUILDX_BUILD"
-    TASK_SCOPED_BUILDER_CREATE = "TASK_SCOPED_BUILDER_CREATE"
-    TASK_SCOPED_BUILDER_REMOVE = "TASK_SCOPED_BUILDER_REMOVE"
-    FORBIDDEN_UNSCOPED_MUTATION = "FORBIDDEN_UNSCOPED_MUTATION"
-    FORBIDDEN_BROAD_MUTATION = "FORBIDDEN_BROAD_MUTATION"
-    UNKNOWN_DOCKER_COMMAND = "UNKNOWN_DOCKER_COMMAND"
+class ComposeSourceCapability(StrEnum):
+    SOURCE = "SOURCE"
+    GENERATED = "GENERATED"
 
 
-@dataclass(frozen=True)
-class TaskCreationPlan:
-    expected_kind: str
-    expected_name: str
-    allowed_services: tuple[str, ...]
-    project: str = TASK_PROJECT
-    technical_id: str = TECHNICAL_ID
-    compose_file: str = COMPOSE_FILE
-    profile: str = RUNTIME_PROFILE
-    owner_label: str = ALLOWED_OWNER
+class ComposeOperation(StrEnum):
+    CREATE = "create"
+    UP = "up"
+    START = "start"
+    STOP = "stop"
+    RESTART = "restart"
+    RM = "rm"
 
 
-@dataclass(frozen=True)
-class _DockerInvocationPlan:
-    argv: tuple[str, ...]
-    command_class: DockerCommandClass
-    target_kind: str
-    target_identity_hash: str
-    is_mutation: bool
-    compose_file: str | None = None
-    project_name: str | None = None
-    profile: str | None = None
-    command: str | None = None
-    service: str | None = None
-    exact_options: tuple[tuple[str, str | None], ...] = ()
+class ComposeProbeKind(StrEnum):
+    APPLICATION_QUERY = "application-query"
+    AUTH_REJECTION = "auth-rejection"
 
 
-@dataclass(frozen=True)
-class _ReadOnlyDockerQuery(_DockerInvocationPlan):
-    proof_token: str = ""
+class ComposeService(StrEnum):
+    API = "mayak-api"
+    WORKER = "mayak-worker"
+    SCHEDULER = "mayak-scheduler"
+    POSTGRES = "mayak-postgres"
+    DB_BOOTSTRAP = "mayak-db-bootstrap"
+    MIGRATE = "mayak-migrate"
+
+
+class ResourceKind(StrEnum):
+    CONTAINER = "container"
+    NETWORK = "network"
+    VOLUME = "volume"
+    IMAGE = "image"
+    BUILDER = "builder"
+
+
+class ResourceOperation(StrEnum):
+    CREATE = "create"
+    REMOVE = "remove"
+
+
+class ImageOperation(StrEnum):
+    BUILDX_MANIFEST = "buildx-manifest"
+
+
+class ObservationTemplate(StrEnum):
+    DAEMON_VERSION = "daemon-version"
+    CONTAINER_HEALTH = "container-health"
+    CONTAINER_LIST = "container-list"
+    CONTAINER_INSPECT = "container-inspect"
+    NETWORK_INSPECT = "network-inspect"
+    VOLUME_INSPECT = "volume-inspect"
+    IMAGE_INSPECT = "image-inspect"
+    NETWORK_LIST = "network-list"
+    VOLUME_LIST = "volume-list"
+    IMAGE_LIST = "image-list"
+    BUILDX_LIST = "buildx-list"
+    COMPOSE_VERSION = "compose-version"
+    COMPOSE_CONFIG = "compose-config"
+    COMPOSE_PS = "compose-ps"
+    COMPOSE_EXEC = "compose-exec"
+
+
+class ComposeExecTemplate(StrEnum):
+    POSTGRES_READY = "postgres-ready"
+    POSTGRES_MIGRATION_HEAD = "postgres-migration-head"
+    POSTGRES_LOG_DESTINATION = "postgres-log-destination"
+
+
+class NetworkPolicy(StrEnum):
+    INTERNAL_ONLY = "internal-only"
+    NONE = "none"
+
+
+class SecretMountCapability(StrEnum):
+    REQUIRED = "required"
+    FORBIDDEN = "forbidden"
+    OPTIONAL = "optional"
+
+
+class ProbeKind(StrEnum):
+    POSTGRES_READY = "postgres-ready"
+    AUTH_REJECTION = "auth-rejection"
+    APPLICATION_QUERY = "application-query"
+    IMPORT_PROBE = "import-probe"
+
+
+class PathCapabilityKind(StrEnum):
+    FILE = "file"
+    DIRECTORY = "directory"
+
+
+def _sha_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def _sha_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _normalize(value: Any) -> Any:
+    if is_dataclass(value):
+        return {field.name: _normalize(getattr(value, field.name)) for field in fields(value)}
+    if isinstance(value, StrEnum):
+        return value.value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _normalize(child) for key, child in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize(child) for child in value]
+    return value
+
+
+def _safe_digest(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(_normalize(value), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _fingerprint(argv: Sequence[str]) -> str:
+    return _sha_text(json.dumps(list(argv), ensure_ascii=True, separators=(",", ":")))
+
+
+@dataclass(frozen=True, slots=True)
+class ComposeBinding:
+    compose_file: str
+    compose_file_digest: str
+    compose_capability: ComposeSourceCapability
+    project_name: str
+    profile: str
 
     @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "_ReadOnlyDockerQuery":
-        if plan.is_mutation:
-            raise ValueError("mutation plan is not a read-only query")
+    def from_path(cls, path: str | Path, *, project_name: str, profile: str) -> "ComposeBinding":
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            raise ValueError("compose file must be absolute")
+        if candidate.is_symlink() or any(parent.is_symlink() for parent in candidate.parents):
+            raise ValueError("compose file traversal mismatch")
+        resolved = candidate.resolve(strict=True)
+        repo_compose = Path(__file__).resolve().parents[2] / COMPOSE_FILE
+        runtime_compose = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml")
+        if resolved == repo_compose.resolve(strict=True):
+            capability = ComposeSourceCapability.SOURCE
+        elif runtime_compose.exists() and resolved == runtime_compose.resolve(strict=True):
+            capability = ComposeSourceCapability.GENERATED
+        else:
+            raise ValueError("compose file identity mismatch")
         return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-            proof_token=_read_only_proof(
-                plan.argv,
-                command_class=plan.command_class,
-                target_kind=plan.target_kind,
-            ),
-        )
-
-    @classmethod
-    def _from_argv(cls, argv: Sequence[str]) -> "_ReadOnlyDockerQuery":
-        plan = _read_only_plan(tuple(argv))
-        if plan.is_mutation:
-            raise ValueError("mutation command is not read-only")
-        return cls._from_plan(plan)
-
-
-@dataclass(frozen=True)
-class ComposeOperationPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ComposeOperationPlan":
-        if plan.command_class not in {
-            DockerCommandClass.COMPOSE_CREATE,
-            DockerCommandClass.COMPOSE_UP,
-            DockerCommandClass.COMPOSE_START,
-            DockerCommandClass.COMPOSE_STOP,
-            DockerCommandClass.COMPOSE_RESTART,
-            DockerCommandClass.COMPOSE_RUN,
-            DockerCommandClass.COMPOSE_RM,
-        }:
-            raise ValueError("not a compose mutation plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class ContainerProbeCreationPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ContainerProbeCreationPlan":
-        if plan.command_class != DockerCommandClass.DIRECT_RUN:
-            raise ValueError("not a direct run plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class ContainerRemovalPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ContainerRemovalPlan":
-        if plan.command_class != DockerCommandClass.DIRECT_CONTAINER_RM:
-            raise ValueError("not a direct container removal plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class ImageBuildPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ImageBuildPlan":
-        if plan.command_class != DockerCommandClass.IMAGE_BUILD:
-            raise ValueError("not an image build plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class ImageLoadPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "ImageLoadPlan":
-        if plan.command_class != DockerCommandClass.IMAGE_LOAD:
-            raise ValueError("not an image load plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class BuildxManifestPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "BuildxManifestPlan":
-        if plan.command_class != DockerCommandClass.BUILDX_BUILD:
-            raise ValueError("not a buildx manifest plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class BuilderScopePlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "BuilderScopePlan":
-        if plan.command_class not in {
-            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
-            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
-        }:
-            raise ValueError("not a builder scope plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class NetworkCreationPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "NetworkCreationPlan":
-        if plan.command_class not in {
-            DockerCommandClass.NETWORK_CREATE,
-            DockerCommandClass.NETWORK_RM,
-        }:
-            raise ValueError("not a network plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
-        )
-
-
-@dataclass(frozen=True)
-class VolumeCreationPlan(_DockerInvocationPlan):
-    @classmethod
-    def _from_plan(cls, plan: _DockerInvocationPlan) -> "VolumeCreationPlan":
-        if plan.command_class not in {
-            DockerCommandClass.VOLUME_CREATE,
-            DockerCommandClass.VOLUME_RM,
-        }:
-            raise ValueError("not a volume plan")
-        return cls(
-            argv=plan.argv,
-            command_class=plan.command_class,
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
-            compose_file=plan.compose_file,
-            project_name=plan.project_name,
-            profile=plan.profile,
-            command=plan.command,
-            service=plan.service,
-            exact_options=plan.exact_options,
+            compose_file=str(resolved),
+            compose_file_digest=_sha_bytes(resolved.read_bytes()),
+            compose_capability=capability,
+            project_name=project_name,
+            profile=profile,
         )
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedTaskResourceCapability:
+class PathCapability:
+    kind: PathCapabilityKind
+    path: str
+    identity: str
+    digest: str | None = None
+
+    @classmethod
+    def from_path(
+        cls, path: str | Path, *, kind: PathCapabilityKind, require_exists: bool = True
+    ) -> "PathCapability":
+        candidate = Path(path).expanduser()
+        if not candidate.is_absolute():
+            raise ValueError("path capability must be absolute")
+        resolved = candidate.resolve(strict=require_exists)
+        digest: str | None
+        if resolved.exists() and resolved.is_file():
+            digest = _sha_bytes(resolved.read_bytes())
+        else:
+            digest = _sha_text(f"{kind.value}:{resolved}")
+        return cls(
+            kind=kind,
+            path=str(resolved),
+            identity=_sha_text(f"{kind.value}:{resolved}"),
+            digest=digest,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ComposeAction:
+    binding: ComposeBinding
+    service: ComposeService
+    operation: ComposeOperation
+    detach: bool = False
+    force: bool = False
+    remove_orphans: bool = False
+    no_deps: bool = False
+    rm_volumes: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ComposeRunAction:
+    binding: ComposeBinding
+    service: ComposeService
+
+
+@dataclass(frozen=True, slots=True)
+class ComposeProbeAction:
+    binding: ComposeBinding
+    service: ComposeService
+    probe: ComposeProbeKind
+    correlation_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceLifecycleAction:
+    kind: ResourceKind
+    operation: ResourceOperation
+    name: str
+    inspected_capability: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.operation == ResourceOperation.REMOVE and not self.inspected_capability:
+            raise ValueError("remove actions require a prior inspected capability")
+
+
+@dataclass(frozen=True, slots=True)
+class ImageAction:
+    operation: ImageOperation
+    context: PathCapability
+    dockerfile: PathCapability
+    output: PathCapability
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeAction:
+    probe_kind: ProbeKind
+    image: str
+    name: str
+    labels: tuple[tuple[str, str], ...]
+    network_policy: NetworkPolicy
+    secret_mount: SecretMountCapability
+
+
+@dataclass(frozen=True, slots=True)
+class BootstrapAction:
+    binding: ComposeBinding | None
+    service: ComposeService
+    run_id: str
+    recovered_generation_id: str
+    adapter: PathCapability
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationRequest:
+    template: ObservationTemplate
+    identity: str | None = None
+    kind: ResourceKind | None = None
+    compose: ComposeBinding | None = None
+    service: ComposeService | None = None
+    exec_template: ComposeExecTemplate | None = None
+    quiet: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class TaskResourceCapability:
     gateway_instance_id: str
-    issuance_id: str
-    seal: str
-    command_class: str
-    resource_kind: str
-    resource_name: str | None
-    immutable_identity_hash: str
-    resource_name_hash: str
-    project_identity: str
+    capability_id: str
+    semantic_action: object
     technical_id: str
-    owner_labels_digest: str
-    service_identity: str | None
-    driver: str | None
-    scope: str | None
-    topology_digest: str
-    label_set_digest: str
-    allowed_operations: tuple[str, ...]
-    compose_file: str | None = None
-    compose_file_digest: str | None = None
-    compose_source_identity: str | None = None
-    compose_generation_identity: str | None = None
-    issue_sequence: int = 0
-    issued_at_ns: int = 0
-    single_use: bool = True
+    stage_id: str
+    issuance_sequence: int
+    semantic_digest: str
+    source_capabilities: tuple[str, ...]
+    resource_capabilities: tuple[str, ...]
+    issued_at_ns: int
+    consumed: bool = False
 
     def safe_dict(self) -> dict[str, object]:
         return {
             "gateway_instance_id": self.gateway_instance_id,
-            "issuance_id": self.issuance_id,
-            "command_class": self.command_class,
-            "resource_kind": self.resource_kind,
-            "resource_name": self.resource_name,
-            "immutable_identity_hash": self.immutable_identity_hash,
-            "resource_name_hash": self.resource_name_hash,
-            "project_identity": self.project_identity,
+            "capability_id": self.capability_id,
+            "semantic_action": _normalize(self.semantic_action),
             "technical_id": self.technical_id,
-            "owner_labels_digest": self.owner_labels_digest,
-            "service_identity": self.service_identity,
-            "driver": self.driver,
-            "scope": self.scope,
-            "topology_digest": self.topology_digest,
-            "label_set_digest": self.label_set_digest,
-            "allowed_operations": list(self.allowed_operations),
-            "compose_file": self.compose_file,
-            "compose_file_digest": self.compose_file_digest,
-            "compose_source_identity": self.compose_source_identity,
-            "compose_generation_identity": self.compose_generation_identity,
-            "issue_sequence": self.issue_sequence,
+            "stage_id": self.stage_id,
+            "issuance_sequence": self.issuance_sequence,
+            "semantic_digest": self.semantic_digest,
+            "source_capabilities": list(self.source_capabilities),
+            "resource_capabilities": list(self.resource_capabilities),
             "issued_at_ns": self.issued_at_ns,
-            "single_use": self.single_use,
+            "consumed": self.consumed,
         }
-
-
-_MutationPlan: TypeAlias = (
-    ComposeOperationPlan
-    | ContainerProbeCreationPlan
-    | ContainerRemovalPlan
-    | ImageBuildPlan
-    | ImageLoadPlan
-    | BuildxManifestPlan
-    | BuilderScopePlan
-    | NetworkCreationPlan
-    | VolumeCreationPlan
-)
-
-
-@dataclass(frozen=True)
-class DockerInvocationAuditRecord:
-    invocation_sequence: int
-    stage: str
-    command_class: str
-    argv_fingerprint: str
-    target_kind: str
-    target_identity_hash: str
-    is_mutation: bool
-    gateway_instance_id: str
-
-
-@dataclass(frozen=True)
-class DockerMutationRecord:
-    record_type: str
-    authorization_sequence: int
-    execution_result_sequence: int | None
-    invocation_sequence: int
-    stage: str
-    command_class: str
-    target_kind: str
-    target_identity_hash: str
-    authorization_basis: str
-    authorization_outcome: str
-    execution_attempted: bool = False
-    execution_completed: bool = False
-    exit_code: int | None = None
-    timed_out: bool = False
-    safe_failure_classification: str | None = None
-    target_ownership: str = "UNRESOLVED"
-    argv_fingerprint: str = ""
-
-    @property
-    def sequence(self) -> int:
-        return self.authorization_sequence
-
-    @property
-    def ownership(self) -> str:
-        return self.target_ownership
-
-    @property
-    def planned_ownership(self) -> str:
-        return self.target_ownership
-
-    @property
-    def mutation_allowed(self) -> bool:
-        return self.authorization_outcome == "AUTHORIZED"
-
-    @property
-    def scoped(self) -> bool:
-        return self.target_ownership == "TASK_OWNED"
-
-    @property
-    def executed(self) -> bool:
-        return self.execution_attempted
-
-    def safe_dict(self) -> dict[str, object]:
-        payload = asdict(self)
-        payload["planned_ownership"] = self.planned_ownership
-        payload["ownership"] = self.ownership
-        payload["mutation_allowed"] = self.mutation_allowed
-        payload["scoped"] = self.scoped
-        payload["sequence"] = self.sequence
-        payload["executed"] = self.executed
-        return payload
-
-
-@dataclass(frozen=True)
-class DockerExecutionResult:
-    returncode: int | None
-    started: bool
-    completed: bool
-    timed_out: bool
-    failure_classification: str | None = None
-
-
-def _sha256(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
-def _fingerprint(argv: Sequence[str]) -> str:
-    return _sha256(json.dumps(list(argv), separators=(",", ":"), ensure_ascii=True))
-
-
-def _read_only_proof(
-    argv: Sequence[str],
-    *,
-    command_class: DockerCommandClass,
-    target_kind: str,
-) -> str:
-    payload = {
-        "salt": _READ_ONLY_PROOF_SALT,
-        "argv": list(argv),
-        "command_class": command_class.value,
-        "target_kind": target_kind,
-    }
-    return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-
-
-def _read_only_plan(argv: tuple[str, ...]) -> _DockerInvocationPlan:
-    plan = _parse_docker_command(argv)
-    if plan.is_mutation:
-        raise ValueError("mutation command is not read-only")
-    return plan
-
-
-def _parse_docker_option_pairs(argv: Sequence[str]) -> dict[str, list[str]]:
-    pairs: dict[str, list[str]] = {}
-    index = 0
-    while index < len(argv):
-        token = argv[index]
-        if token.startswith("--") and "=" in token:
-            option, value = token.split("=", 1)
-            if option in {
-                "-f",
-                "--file",
-                "-p",
-                "--project-name",
-                "--profile",
-                "-e",
-                "--env",
-                "-v",
-                "--volume",
-                "--user",
-                "--entrypoint",
-                "--name",
-                "--network",
-                "--workdir",
-                "--mount",
-                "--label",
-                "--driver",
-                "--scope",
-                "--opt",
-            }:
-                pairs.setdefault(option, []).append(value)
-                index += 1
-                continue
-        if token in {
-            "-f",
-            "--file",
-            "-p",
-            "--project-name",
-            "--profile",
-            "-e",
-            "--env",
-            "-v",
-            "--volume",
-            "--user",
-            "--entrypoint",
-            "--name",
-            "--network",
-            "--workdir",
-            "--mount",
-            "--label",
-            "--driver",
-            "--scope",
-            "--opt",
-        }:
-            if index + 1 >= len(argv):
-                raise ValueError("missing option value")
-            pairs.setdefault(token, []).append(argv[index + 1])
-            index += 2
-            continue
-        if token.startswith("-"):
-            pairs.setdefault(token, []).append("")
-            index += 1
-            continue
-        index += 1
-    return pairs
-
-
-def _canonical_compose_identity(
-    command: str, service: str | None, file: str, project: str, profile: str
-) -> str:
-    payload = {
-        "command": command,
-        "service": service,
-        "file": file,
-        "project": project,
-        "profile": profile,
-        "task_project": TASK_PROJECT,
-        "technical_id": TECHNICAL_ID,
-    }
-    return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-
-
-def _compose_file_identity(path: str) -> tuple[str, str, str, str]:
-    candidate = Path(path)
-    if not candidate.is_absolute():
-        raise ValueError("compose file must be absolute")
-    if candidate.is_symlink() or any(parent.is_symlink() for parent in candidate.parents):
-        raise ValueError("compose file traversal mismatch")
-    resolved = candidate.resolve(strict=True)
-    repo_compose = Path(__file__).resolve().parents[2] / "compose.yaml"
-    runtime_compose = Path("/opt/avito-mayak-runtime/rf08-secret-delivery/compose.runtime.yaml")
-    allowed = {
-        repo_compose.resolve(strict=True): ("repository", "source"),
-    }
-    if runtime_compose.exists():
-        allowed[runtime_compose.resolve(strict=True)] = ("runtime", "generated")
-    if resolved not in allowed:
-        raise ValueError("compose file identity mismatch")
-    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
-    source_kind, generation_kind = allowed[resolved]
-    source_identity = _sha256(f"{source_kind}:{resolved}:{digest}")
-    generation_identity = _sha256(f"{generation_kind}:{resolved}:{digest}")
-    return str(resolved), digest, source_identity, generation_identity
-
-
-def _compose_plan(argv: tuple[str, ...]) -> _DockerInvocationPlan:
-    if len(argv) < 3 or argv[0] != "docker" or argv[1] != "compose":
-        raise ValueError("not a compose invocation")
-    file_values: list[str] = []
-    project_values: list[str] = []
-    profile_values: list[str] = []
-    index = 2
-    while index < len(argv):
-        token = argv[index]
-        if token.startswith("--file="):
-            file_values.append(token.split("=", 1)[1])
-            index += 1
-            continue
-        if token.startswith("--project-name="):
-            project_values.append(token.split("=", 1)[1])
-            index += 1
-            continue
-        if token.startswith("--profile="):
-            profile_values.append(token.split("=", 1)[1])
-            index += 1
-            continue
-        if token in {"-f", "--file", "-p", "--project-name", "--profile"}:
-            if index + 1 >= len(argv):
-                raise ValueError("missing compose option value")
-            if token in {"-f", "--file"}:
-                file_values.append(argv[index + 1])
-            elif token in {"-p", "--project-name"}:
-                project_values.append(argv[index + 1])
-            else:
-                profile_values.append(argv[index + 1])
-            index += 2
-            continue
-        if token.startswith("-"):
-            raise ValueError("compose option mismatch")
-        command = token
-        remainder = argv[index + 1 :]
-        break
-    else:
-        raise ValueError("compose command missing")
-    if len(file_values) != 1 or len(project_values) != 1 or len(profile_values) != 1:
-        raise ValueError("compose binding incomplete")
-    if project_values[0] != TASK_PROJECT:
-        raise ValueError("compose project mismatch")
-    (
-        compose_resolved,
-        _compose_digest,
-        _compose_source_identity,
-        _compose_generation_identity,
-    ) = _compose_file_identity(file_values[0])
-    if profile_values[0] != RUNTIME_PROFILE:
-        raise ValueError("compose profile mismatch")
-    if command == "version":
-        if remainder != ("--short",):
-            raise ValueError("compose version mismatch")
-        return _ReadOnlyDockerQuery(
-            argv=argv,
-            command_class=DockerCommandClass.READ_ONLY,
-            target_kind="compose_project",
-            target_identity_hash=_canonical_compose_identity(
-                command, None, file_values[0], project_values[0], profile_values[0]
-            ),
-            is_mutation=False,
-            compose_file=compose_resolved,
-            project_name=project_values[0],
-            profile=profile_values[0],
-            command=command,
-            exact_options=(
-                ("-f", compose_resolved),
-                ("-p", project_values[0]),
-                ("--profile", profile_values[0]),
-            ),
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="compose_project",
-            ),
-        )
-    if command == "config":
-        if remainder != ("--format", "json"):
-            raise ValueError("compose config mismatch")
-        return _ReadOnlyDockerQuery(
-            argv=argv,
-            command_class=DockerCommandClass.READ_ONLY,
-            target_kind="compose_project",
-            target_identity_hash=_canonical_compose_identity(
-                command, None, file_values[0], project_values[0], profile_values[0]
-            ),
-            is_mutation=False,
-            compose_file=compose_resolved,
-            project_name=project_values[0],
-            profile=profile_values[0],
-            command=command,
-            exact_options=(
-                ("-f", compose_resolved),
-                ("-p", project_values[0]),
-                ("--profile", profile_values[0]),
-                ("--format", "json"),
-            ),
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="compose_project",
-            ),
-        )
-    if command == "down":
-        raise ValueError("compose down is disabled")
-    if command == "ps":
-        if remainder not in {(), ("-q",), ("--quiet",)}:
-            raise ValueError("compose ps mismatch")
-        return _ReadOnlyDockerQuery(
-            argv=argv,
-            command_class=DockerCommandClass.READ_ONLY,
-            target_kind="compose_project",
-            target_identity_hash=_canonical_compose_identity(
-                command, None, file_values[0], project_values[0], profile_values[0]
-            ),
-            is_mutation=False,
-            compose_file=compose_resolved,
-            project_name=project_values[0],
-            profile=profile_values[0],
-            command=command,
-            exact_options=(
-                ("-f", compose_resolved),
-                ("-p", project_values[0]),
-                ("--profile", profile_values[0]),
-            ),
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="compose_project",
-            ),
-        )
-    if command == "exec":
-        if len(remainder) < 3:
-            raise ValueError("compose exec mismatch")
-        service = remainder[0]
-        if service not in ALLOWED_SERVICES:
-            raise ValueError("compose exec service mismatch")
-        payload = remainder[1:]
-        safe_execs = {
-            ("pg_isready", "-U", "mayak", "-d", "mayak"),
-            (
-                "psql",
-                "-U",
-                "mayak",
-                "-d",
-                "mayak",
-                "-Atqc",
-                "SELECT version_num FROM alembic_version;",
-            ),
-            (
-                "psql",
-                "-U",
-                "mayak",
-                "-d",
-                "mayak",
-                "-Atqc",
-                "SELECT current_setting('log_destination');",
-            ),
-        }
-        if tuple(payload) not in safe_execs:
-            raise ValueError("compose exec payload mismatch")
-        return _ReadOnlyDockerQuery(
-            argv=argv,
-            command_class=DockerCommandClass.READ_ONLY,
-            target_kind="container",
-            target_identity_hash=_canonical_compose_identity(
-                command, service, file_values[0], project_values[0], profile_values[0]
-            ),
-            is_mutation=False,
-            compose_file=file_values[0],
-            project_name=project_values[0],
-            profile=profile_values[0],
-            command=command,
-            service=service,
-            exact_options=(
-                ("-f", file_values[0]),
-                ("-p", project_values[0]),
-                ("--profile", profile_values[0]),
-            ),
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="container",
-            ),
-        )
-    if command in {"create", "up", "start", "stop", "restart", "run", "rm"}:
-        options_with_value = {
-            "--name",
-            "--entrypoint",
-            "--user",
-            "--workdir",
-            "-e",
-            "--env",
-            "-v",
-            "--volume",
-            "--network",
-        }
-        flags = set()
-        positional: list[str] = []
-        index = 0
-        while index < len(remainder):
-            token = remainder[index]
-            if command == "run" and positional:
-                positional.append(token)
-                index += 1
-                continue
-            if token in options_with_value:
-                if index + 1 >= len(remainder):
-                    raise ValueError("compose option missing value")
-                index += 2
-                continue
-            if token in {
-                "--rm",
-                "--no-deps",
-                "-d",
-                "--detach",
-                "-f",
-                "--force",
-                "--volumes",
-                "--remove-orphans",
-            }:
-                flags.add(token)
-                index += 1
-                continue
-            if token.startswith("-"):
-                raise ValueError("compose command option mismatch")
-            positional.append(token)
-            index += 1
-        if not positional:
-            raise ValueError("compose service missing")
-        if any(service not in ALLOWED_SERVICES for service in positional[:1]):
-            raise ValueError("compose service mismatch")
-        if command == "up" and not ({"-d", "--detach"} & flags):
-            raise ValueError("compose up flags mismatch")
-        if command == "rm" and not ({"-f", "--force"} & flags):
-            raise ValueError("compose rm flags mismatch")
-        if command == "run":
-            if flags not in ({"--rm"}, {"--rm", "--no-deps"}):
-                raise ValueError("compose run flags mismatch")
-            if "-d" in flags or "--detach" in flags:
-                raise ValueError("compose run flags mismatch")
-        return ComposeOperationPlan(
-            argv=argv,
-            command_class={
-                "create": DockerCommandClass.COMPOSE_CREATE,
-                "up": DockerCommandClass.COMPOSE_UP,
-                "start": DockerCommandClass.COMPOSE_START,
-                "stop": DockerCommandClass.COMPOSE_STOP,
-                "restart": DockerCommandClass.COMPOSE_RESTART,
-                "run": DockerCommandClass.COMPOSE_RUN,
-                "rm": DockerCommandClass.COMPOSE_RM,
-            }[command],
-            target_kind="compose_project",
-            target_identity_hash=_canonical_compose_identity(
-                command,
-                positional[0] if positional else None,
-                compose_resolved,
-                project_values[0],
-                profile_values[0],
-            ),
-            is_mutation=True,
-            compose_file=compose_resolved,
-            project_name=project_values[0],
-            profile=profile_values[0],
-            command=command,
-            service=positional[0] if positional else None,
-            exact_options=(
-                ("-f", compose_resolved),
-                ("-p", project_values[0]),
-                ("--profile", profile_values[0]),
-            ),
-        )
-    raise ValueError("unknown compose command")
-
-
-def _parse_docker_command(argv: tuple[str, ...]) -> _DockerInvocationPlan:
-    if len(argv) < 2 or argv[0] != "docker":
-        raise ValueError("not docker")
-    command = argv[1]
-    if command == "version":
-        if argv[2:] not in {("--format", "{{json .Server}}"), ("--format", "{{json .Client}}")}:
-            raise ValueError("version mismatch")
-        return _ReadOnlyDockerQuery(
-            argv,
-            DockerCommandClass.READ_ONLY,
-            "daemon",
-            _sha256(" ".join(argv)),
-            False,
-            command=command,
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="daemon",
-            ),
-        )
-    if command == "inspect":
-        health_format = (
-            "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|"
-            "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"
-        )
-        if len(argv) == 5 and argv[2] == "--format" and argv[3] == health_format:
-            return _ReadOnlyDockerQuery(
-                argv,
-                DockerCommandClass.READ_ONLY,
-                "container",
-                _sha256(" ".join(argv)),
-                False,
-                command=command,
-                proof_token=_read_only_proof(
-                    argv,
-                    command_class=DockerCommandClass.READ_ONLY,
-                    target_kind="container",
-                ),
-            )
-        return _ReadOnlyDockerQuery(
-            argv,
-            DockerCommandClass.READ_ONLY,
-            "target",
-            _sha256(" ".join(argv)),
-            False,
-            command=command,
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="target",
-            ),
-        )
-    if (
-        command in {"container", "network", "volume", "image"}
-        and len(argv) > 3
-        and argv[2] == "inspect"
-    ):
-        return _ReadOnlyDockerQuery(
-            argv,
-            DockerCommandClass.READ_ONLY,
-            command,
-            _sha256(" ".join(argv)),
-            False,
-            command="inspect",
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind=command,
-            ),
-        )
-    if command == "ps":
-        if argv[2:] not in {("-aq",), ("-q",), ("-a", "-q")} and "-aq" not in argv[2:]:
-            raise ValueError("ps mismatch")
-        return _ReadOnlyDockerQuery(
-            argv,
-            DockerCommandClass.READ_ONLY,
-            "target",
-            _sha256(" ".join(argv)),
-            False,
-            command=command,
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="target",
-            ),
-        )
-    if command == "image" and len(argv) > 2:
-        if argv[2] == "inspect":
-            return _ReadOnlyDockerQuery(
-                argv,
-                DockerCommandClass.READ_ONLY,
-                "image",
-                _sha256(" ".join(argv)),
-                False,
-                command="inspect",
-                proof_token=_read_only_proof(
-                    argv,
-                    command_class=DockerCommandClass.READ_ONLY,
-                    target_kind="image",
-                ),
-            )
-        if argv[2] == "build":
-            return ImageBuildPlan(
-                argv,
-                DockerCommandClass.IMAGE_BUILD,
-                "image",
-                _sha256(" ".join(argv)),
-                True,
-                command="build",
-            )
-        if argv[2] == "load":
-            return ImageLoadPlan(
-                argv,
-                DockerCommandClass.IMAGE_LOAD,
-                "image",
-                _sha256(" ".join(argv)),
-                True,
-                command="load",
-            )
-    if command == "buildx" and len(argv) > 2 and argv[2] == "build":
-        return BuildxManifestPlan(
-            argv,
-            DockerCommandClass.BUILDX_BUILD,
-            "image",
-            _sha256(" ".join(argv)),
-            True,
-            command="build",
-        )
-    if command == "buildx" and len(argv) > 2 and argv[2] in {"create", "rm"}:
-        return BuilderScopePlan(
-            argv,
-            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE
-            if argv[2] == "create"
-            else DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
-            "builder",
-            _sha256(" ".join(argv)),
-            True,
-            command=argv[2],
-        )
-    if command == "buildx" and len(argv) > 2 and argv[2] == "ls":
-        return _ReadOnlyDockerQuery(
-            argv,
-            DockerCommandClass.READ_ONLY,
-            "builder",
-            _sha256(" ".join(argv)),
-            False,
-            command="ls",
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="builder",
-            ),
-        )
-    if command == "run":
-        pairs = _parse_docker_option_pairs(argv[2:])
-        if (
-            "--privileged" in pairs
-            or "--pid" in pairs
-            or "--ipc" in pairs
-            or "--device" in pairs
-            or "--cap-add" in pairs
-            or "--network" in pairs
-            and any(v != "none" for v in pairs.get("--network", []))
-            or "--publish" in pairs
-            or "-p" in pairs
-        ):
-            raise ValueError("unsafe run flags")
-        if "--name" not in pairs or "--label" not in pairs or "--rm" not in pairs:
-            raise ValueError("run contract incomplete")
-        labels = pairs.get("--label", [])
-        label_map: dict[str, str] = {}
-        for item in labels:
-            if "=" not in item:
-                raise ValueError("malformed label")
-            key, value = item.split("=", 1)
-            label_map[key] = value
-        if label_map.get("com.docker.compose.project") != TASK_PROJECT:
-            raise ValueError("run project mismatch")
-        if label_map.get("com.avito-mayak.technical-id") != TECHNICAL_ID:
-            raise ValueError("run technical id mismatch")
-        if label_map.get("com.avito-mayak.owner") != ALLOWED_OWNER:
-            raise ValueError("run owner mismatch")
-        name = pairs.get("--name", [""])[0]
-        if name != "apm-postgres" and not name.startswith(TASK_PROJECT):
-            raise ValueError("run name mismatch")
-        return ContainerProbeCreationPlan(
-            argv,
-            DockerCommandClass.DIRECT_RUN,
-            "container",
-            _sha256(" ".join(argv)),
-            True,
-            command=command,
-        )
-    if command == "rm":
-        return ContainerRemovalPlan(
-            argv,
-            DockerCommandClass.DIRECT_CONTAINER_RM,
-            "container",
-            _sha256(" ".join(argv)),
-            True,
-            command=command,
-        )
-    if command == "network" and len(argv) > 2:
-        if argv[2] == "create":
-            return NetworkCreationPlan(
-                argv,
-                DockerCommandClass.NETWORK_CREATE,
-                "network",
-                _sha256(" ".join(argv)),
-                True,
-                command="create",
-            )
-        if argv[2] == "rm":
-            return NetworkCreationPlan(
-                argv,
-                DockerCommandClass.NETWORK_RM,
-                "network",
-                _sha256(" ".join(argv)),
-                True,
-                command="rm",
-            )
-        if argv[2] == "ls":
-            return _ReadOnlyDockerQuery(
-                argv,
-                DockerCommandClass.READ_ONLY,
-                "network",
-                _sha256(" ".join(argv)),
-                False,
-                command="ls",
-                proof_token=_read_only_proof(
-                    argv,
-                    command_class=DockerCommandClass.READ_ONLY,
-                    target_kind="network",
-                ),
-            )
-    if command == "volume" and len(argv) > 2:
-        if argv[2] == "create":
-            return VolumeCreationPlan(
-                argv,
-                DockerCommandClass.VOLUME_CREATE,
-                "volume",
-                _sha256(" ".join(argv)),
-                True,
-                command="create",
-            )
-        if argv[2] == "rm":
-            return VolumeCreationPlan(
-                argv,
-                DockerCommandClass.VOLUME_RM,
-                "volume",
-                _sha256(" ".join(argv)),
-                True,
-                command="rm",
-            )
-        if argv[2] == "ls":
-            return _ReadOnlyDockerQuery(
-                argv,
-                DockerCommandClass.READ_ONLY,
-                "volume",
-                _sha256(" ".join(argv)),
-                False,
-                command="ls",
-                proof_token=_read_only_proof(
-                    argv,
-                    command_class=DockerCommandClass.READ_ONLY,
-                    target_kind="volume",
-                ),
-            )
-    if command == "builder" and len(argv) > 2:
-        if argv[2] == "create":
-            return BuilderScopePlan(
-                argv,
-                DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
-                "builder",
-                _sha256(" ".join(argv)),
-                True,
-                command="create",
-            )
-        if argv[2] == "rm":
-            return BuilderScopePlan(
-                argv,
-                DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
-                "builder",
-                _sha256(" ".join(argv)),
-                True,
-                command="rm",
-            )
-    if command == "compose":
-        return _compose_plan(argv)
-    if command in {"version", "info"}:
-        return _ReadOnlyDockerQuery(
-            argv,
-            DockerCommandClass.READ_ONLY,
-            "daemon",
-            _sha256(" ".join(argv)),
-            False,
-            command=command,
-            proof_token=_read_only_proof(
-                argv,
-                command_class=DockerCommandClass.READ_ONLY,
-                target_kind="daemon",
-            ),
-        )
-    raise ValueError("unknown docker command")
-
-
-def classify_docker_command_class(argv: Iterable[str]) -> DockerCommandClass:
-    args = tuple(argv)
-    if not args or args[0] != "docker":
-        return DockerCommandClass.UNKNOWN_DOCKER_COMMAND
-    try:
-        return _parse_docker_command(args).command_class
-    except ValueError:
-        return DockerCommandClass.UNKNOWN_DOCKER_COMMAND
-
-
-@dataclass(slots=True)
-class _CapabilityIssuance:
-    capability: ResolvedTaskResourceCapability
-    authorization: DockerMutationRecord
-    audit: DockerInvocationAuditRecord
-    plan: _DockerInvocationPlan
-    consumed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
-class _ResolvedResourceDetails:
-    ownership: str
-    resource_kind: str
-    resource_name: str | None
-    immutable_identity_hash: str
-    resource_name_hash: str
-    project_identity: str
-    technical_id: str
-    owner_labels_digest: str
-    service_identity: str | None
-    driver: str | None
-    scope: str | None
-    topology_digest: str
-    label_set_digest: str
-    allowed_operations: tuple[str, ...]
+class LedgerRecord:
+    record_type: str
+    sequence: int
+    stage_id: str
+    semantic_digest: str
+    gateway_instance_id: str
+    capability_id: str
+    action_kind: str
+    returncode: int | None = None
+    timed_out: bool = False
+    safe_fingerprint: str = ""
+
+    def safe_dict(self) -> dict[str, object]:
+        mutation = self.record_type in {"AUTHORIZATION", "RESULT"}
+        authorization_sequence = (
+            self.sequence if self.record_type == "AUTHORIZATION" else self.sequence - 1
+        )
+        return {
+            "record_type": self.record_type,
+            "authorization_sequence": authorization_sequence,
+            "execution_result_sequence": self.sequence if self.record_type == "RESULT" else None,
+            "invocation_sequence": self.sequence,
+            "stage": self.stage_id,
+            "semantic_digest": self.semantic_digest,
+            "gateway_instance_id": self.gateway_instance_id,
+            "capability_id": self.capability_id,
+            "action_kind": self.action_kind,
+            "returncode": self.returncode,
+            "timed_out": self.timed_out,
+            "safe_fingerprint": self.safe_fingerprint,
+            "planned_ownership": "TASK_OWNED" if mutation else "OBSERVATION",
+        }
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
+class DockerObservation:
+    returncode: int
+    stdout_bytes: bytes
+    stderr_bytes: bytes
+    payload: Any
+    safe_fingerprint: str
+    completed: bool = True
+    timed_out: bool = False
+
+    @property
+    def stdout(self) -> str:
+        return self.stdout_bytes.decode("utf-8", errors="replace")
+
+    @property
+    def stderr(self) -> str:
+        return self.stderr_bytes.decode("utf-8", errors="replace")
+
+
+@dataclass(frozen=True, slots=True)
+class DockerExecution(DockerObservation):
+    pass
+
+
+def _probe_command(kind: ProbeKind) -> tuple[str, ...]:
+    if kind == ProbeKind.POSTGRES_READY:
+        return ("pg_isready", "-U", "mayak", "-d", "mayak")
+    if kind == ProbeKind.AUTH_REJECTION:
+        return (
+            "python",
+            "-c",
+            "import sys; sys.stdout.write('AUTH_REJECTION_OK\\n')",
+        )
+    if kind == ProbeKind.APPLICATION_QUERY:
+        return (
+            "python",
+            "-c",
+            "import sys; sys.stdout.write('APPLICATION_QUERY_OK\\n')",
+        )
+    if kind == ProbeKind.IMPORT_PROBE:
+        return (
+            "python",
+            "-c",
+            "import sys; sys.stdout.write('IMPORT_PROBE_OK\\n')",
+        )
+    raise ValueError(f"unsupported probe kind: {kind}")
+
+
+def _compose_exec_command(template: ComposeExecTemplate) -> tuple[str, ...]:
+    if template == ComposeExecTemplate.POSTGRES_READY:
+        return ("pg_isready", "-U", "mayak", "-d", "mayak")
+    if template == ComposeExecTemplate.POSTGRES_MIGRATION_HEAD:
+        return (
+            "psql",
+            "-U",
+            "mayak",
+            "-d",
+            "mayak",
+            "-Atqc",
+            "SELECT version_num FROM alembic_version;",
+        )
+    if template == ComposeExecTemplate.POSTGRES_LOG_DESTINATION:
+        return (
+            "psql",
+            "-U",
+            "mayak",
+            "-d",
+            "mayak",
+            "-Atqc",
+            "SELECT current_setting('log_destination');",
+        )
+    raise ValueError(f"unsupported compose exec template: {template}")
+
+
 class GatewayAuthority:
-    task_project: str = TASK_PROJECT
-    technical_id: str = TECHNICAL_ID
-    compose_file: str = COMPOSE_FILE
-    profile: str = RUNTIME_PROFILE
-    allowed_services: tuple[str, ...] = tuple(sorted(ALLOWED_SERVICES))
-    gateway_instance_id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    _invocation_audit: list[DockerInvocationAuditRecord] = field(default_factory=list, repr=False)
-    _ledger: list[DockerMutationRecord] = field(default_factory=list, repr=False)
-    _issued_capabilities: dict[str, _CapabilityIssuance] = field(default_factory=dict, repr=False)
-    _invocation_sequence: int = 0
-    _authorization_sequence: int = 0
-    _result_sequence: int = 0
-    _default_env: Mapping[str, str] | None = field(default=None, repr=False)
+    def __init__(self) -> None:
+        self.task_project = TASK_PROJECT
+        self.technical_id = TECHNICAL_ID
+        self.compose_file = COMPOSE_FILE
+        self.profile = RUNTIME_PROFILE
+        self.allowed_services = tuple(sorted(ALLOWED_SERVICES))
+        self.gateway_instance_id = uuid.uuid4().hex
+        self._issued: dict[str, TaskResourceCapability] = {}
+        self._ledgers: list[LedgerRecord] = []
+        self._issue_sequence = 0
+        self._result_sequence = 0
+        self._default_env: Mapping[str, str] | None = None
 
     @property
-    def invocation_audit(self) -> tuple[DockerInvocationAuditRecord, ...]:
-        return tuple(self._invocation_audit)
+    def ledger(self) -> tuple[LedgerRecord, ...]:
+        return tuple(self._ledgers)
 
     @property
-    def ledger(self) -> tuple[DockerMutationRecord, ...]:
-        return tuple(self._ledger)
-
-    @property
-    def entries(self) -> tuple[DockerMutationRecord, ...]:
+    def entries(self) -> tuple[LedgerRecord, ...]:
         return self.ledger
 
-    def _resource_name(self, plan: _DockerInvocationPlan) -> str | None:
-        if plan.command_class in {
-            DockerCommandClass.COMPOSE_CREATE,
-            DockerCommandClass.COMPOSE_UP,
-            DockerCommandClass.COMPOSE_START,
-            DockerCommandClass.COMPOSE_STOP,
-            DockerCommandClass.COMPOSE_RESTART,
-            DockerCommandClass.COMPOSE_RUN,
-            DockerCommandClass.COMPOSE_RM,
-        }:
-            return f"{self.task_project}-{plan.service}-1" if plan.service else self.task_project
-        if plan.command_class in {
-            DockerCommandClass.DIRECT_RUN,
-            DockerCommandClass.DIRECT_CONTAINER_RM,
-            DockerCommandClass.NETWORK_CREATE,
-            DockerCommandClass.NETWORK_RM,
-            DockerCommandClass.VOLUME_CREATE,
-            DockerCommandClass.VOLUME_RM,
-        }:
-            pairs = _parse_docker_option_pairs(plan.argv[2:])
-            if "--name" in pairs and pairs["--name"]:
-                return pairs["--name"][0]
-            names = [token for token in plan.argv[2:] if not token.startswith("-")]
-            return names[-1] if names else None
-        if plan.command_class in {
-            DockerCommandClass.IMAGE_BUILD,
-            DockerCommandClass.IMAGE_LOAD,
-            DockerCommandClass.BUILDX_BUILD,
-            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
-            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
-        }:
-            return plan.argv[-1] if len(plan.argv) > 2 else None
-        return None
+    @property
+    def invocation_audit(self) -> tuple[LedgerRecord, ...]:
+        return self.ledger
 
-    def _resolved_labels(
-        self, plan: _DockerInvocationPlan, *, service: str | None = None
-    ) -> dict[str, str]:
-        labels = {
-            "com.docker.compose.project": self.task_project,
-            "com.avito-mayak.technical-id": self.technical_id,
-            "com.avito-mayak.owner": ALLOWED_OWNER,
-        }
-        service_name = service or plan.service
-        if service_name:
-            labels["com.docker.compose.service"] = service_name
-        if plan.command_class in {
-            DockerCommandClass.NETWORK_CREATE,
-            DockerCommandClass.NETWORK_RM,
-            DockerCommandClass.VOLUME_CREATE,
-            DockerCommandClass.VOLUME_RM,
-        }:
-            labels["com.avito-mayak.project-owned"] = "true"
-            labels["com.avito-mayak.environment-id"] = "avito-mayak-acceptance-local-01"
-            labels["com.avito-mayak.compose-project"] = "avito-mayak-acceptance"
-        return labels
-
-    def _inspect_resource(self, kind: str, ident: str) -> dict[str, Any] | None:
-        try:
-            query = _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident))
-        except ValueError:
-            return None
-        completed = self.run(query, stage=f"inspect-{kind}", capture_output=True)
-        if completed.returncode != 0:
-            return None
-        try:
-            value = json.loads(completed.stdout)
-        except (TypeError, json.JSONDecodeError):
-            return None
-        if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], dict):
-            return None
-        return value[0]
-
-    def _inspect_kind(self, kind: str, ident: str) -> dict[str, Any] | None:
-        return self._inspect_resource(kind, ident)
-
-    def _resource_digest(self, payload: Mapping[str, object]) -> str:
-        return _sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-
-    def _current_resolution(self, plan: _DockerInvocationPlan) -> _ResolvedResourceDetails:
-        resource_name = self._resource_name(plan)
-        if plan.command_class == DockerCommandClass.DIRECT_RUN:
-            if resource_name == "apm-postgres":
-                ownership = "FOREIGN"
-                labels = self._resolved_labels(plan)
-                identity_hash = plan.target_identity_hash
-                topology = {
-                    "argv": list(plan.argv),
-                    "command_class": plan.command_class.value,
-                    "name": resource_name,
-                }
-                return _ResolvedResourceDetails(
-                    ownership=ownership,
-                    resource_kind=plan.target_kind,
-                    resource_name=resource_name,
-                    immutable_identity_hash=identity_hash,
-                    resource_name_hash=_sha256(resource_name),
-                    project_identity=self.task_project,
-                    technical_id=self.technical_id,
-                    owner_labels_digest=_sha256(
-                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                    ),
-                    service_identity=plan.service,
-                    driver=None,
-                    scope=None,
-                    topology_digest=self._resource_digest(topology),
-                    label_set_digest=_sha256(
-                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                    ),
-                    allowed_operations=(plan.command_class.value,),
-                )
-            record = self._inspect_kind("container", resource_name) if resource_name else None
-            labels = self._resolved_labels(plan)
-            if record is not None:
-                raw_labels = record.get("Config", {}).get("Labels", {})
-                if not isinstance(raw_labels, dict):
-                    raw_labels = {}
-                service = str(raw_labels.get("com.docker.compose.service", ""))
-                task_owned = (
-                    isinstance(resource_name, str)
-                    and raw_labels.get("com.docker.compose.project") == self.task_project
-                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
-                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
-                    and raw_labels.get("com.avito-mayak.environment-id")
-                    == "avito-mayak-acceptance-local-01"
-                    and raw_labels.get("com.avito-mayak.compose-project")
-                    == "avito-mayak-acceptance"
-                    and service in self.allowed_services
-                    and isinstance(record.get("Id") or record.get("ID") or "", str)
-                )
-                if task_owned:
-                    assert isinstance(resource_name, str)
-                    identity_hash = _sha256(str(record.get("Id") or record.get("ID") or ""))
-                    return _ResolvedResourceDetails(
-                        ownership="TASK_OWNED",
-                        resource_kind=plan.target_kind,
-                        resource_name=resource_name,
-                        immutable_identity_hash=identity_hash,
-                        resource_name_hash=_sha256(resource_name),
-                        project_identity=self.task_project,
-                        technical_id=self.technical_id,
-                        owner_labels_digest=_sha256(
-                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                        ),
-                        service_identity=service,
-                        driver=str(record.get("HostConfig", {}).get("NetworkMode"))
-                        if isinstance(record.get("HostConfig"), dict)
-                        else None,
-                        scope=str(record.get("State", {}).get("Status"))
-                        if isinstance(record.get("State"), dict)
-                        else None,
-                        topology_digest=self._resource_digest(
-                            {
-                                "id": identity_hash,
-                                "name": resource_name,
-                                "labels": raw_labels,
-                            }
-                        ),
-                        label_set_digest=_sha256(
-                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                        ),
-                        allowed_operations=(plan.command_class.value,),
-                    )
-            if resource_name and resource_name.startswith(self.task_project):
-                ownership = "TASK_OWNED"
-            else:
-                ownership = "UNRESOLVED"
-            return _ResolvedResourceDetails(
-                ownership=ownership,
-                resource_kind=plan.target_kind,
-                resource_name=resource_name,
-                immutable_identity_hash=plan.target_identity_hash,
-                resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
-                project_identity=self.task_project,
-                technical_id=self.technical_id,
-                owner_labels_digest=_sha256(
-                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                ),
-                service_identity=plan.service,
-                driver=None,
-                scope=None,
-                topology_digest=self._resource_digest(
-                    {
-                        "argv": list(plan.argv),
-                        "command_class": plan.command_class.value,
-                        "service": plan.service,
-                    }
-                ),
-                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
-                allowed_operations=(plan.command_class.value,),
-            )
-        if plan.command_class == DockerCommandClass.DIRECT_CONTAINER_RM:
-            if resource_name == "apm-postgres":
-                ownership = "FOREIGN"
-                labels = self._resolved_labels(plan)
-                return _ResolvedResourceDetails(
-                    ownership=ownership,
-                    resource_kind=plan.target_kind,
-                    resource_name=resource_name,
-                    immutable_identity_hash=plan.target_identity_hash,
-                    resource_name_hash=_sha256(resource_name),
-                    project_identity=self.task_project,
-                    technical_id=self.technical_id,
-                    owner_labels_digest=_sha256(
-                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                    ),
-                    service_identity=None,
-                    driver=None,
-                    scope=None,
-                    topology_digest=self._resource_digest(
-                        {"argv": list(plan.argv), "command_class": plan.command_class.value}
-                    ),
-                    label_set_digest=_sha256(
-                        json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                    ),
-                    allowed_operations=(plan.command_class.value,),
-                )
-            record = self._inspect_kind("container", resource_name) if resource_name else None
-            if record is None:
-                ownership = (
-                    "UNRESOLVED"
-                    if isinstance(resource_name, str)
-                    and resource_name.startswith(self.task_project)
-                    else "FOREIGN"
-                )
-                return _ResolvedResourceDetails(
-                    ownership=ownership,
-                    resource_kind=plan.target_kind,
-                    resource_name=resource_name,
-                    immutable_identity_hash=plan.target_identity_hash,
-                    resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
-                    project_identity=self.task_project,
-                    technical_id=self.technical_id,
-                    owner_labels_digest=_sha256(
-                        json.dumps(
-                            self._resolved_labels(plan), sort_keys=True, separators=(",", ":")
-                        )
-                    ),
-                    service_identity=None,
-                    driver=None,
-                    scope=None,
-                    topology_digest=self._resource_digest(
-                        {"argv": list(plan.argv), "command_class": plan.command_class.value}
-                    ),
-                    label_set_digest=_sha256(
-                        json.dumps(
-                            self._resolved_labels(plan), sort_keys=True, separators=(",", ":")
-                        )
-                    ),
-                    allowed_operations=(plan.command_class.value,),
-                )
-            raw_labels = record.get("Config", {}).get("Labels", {})
-            if not isinstance(raw_labels, dict):
-                raw_labels = {}
-            service = str(raw_labels.get("com.docker.compose.service", ""))
-            task_owned = (
-                isinstance(resource_name, str)
-                and raw_labels.get("com.docker.compose.project") == self.task_project
-                and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
-                and raw_labels.get("com.avito-mayak.project-owned") == "true"
-                and raw_labels.get("com.avito-mayak.environment-id")
-                == "avito-mayak-acceptance-local-01"
-                and raw_labels.get("com.avito-mayak.compose-project") == "avito-mayak-acceptance"
-                and service in self.allowed_services
-                and isinstance(record.get("Id") or record.get("ID") or "", str)
-            )
-            ownership = "TASK_OWNED" if task_owned else "UNRESOLVED"
-            identity = str(record.get("Id") or record.get("ID") or plan.target_identity_hash)
-            return _ResolvedResourceDetails(
-                ownership=ownership,
-                resource_kind=plan.target_kind,
-                resource_name=resource_name,
-                immutable_identity_hash=_sha256(identity),
-                resource_name_hash=_sha256(resource_name or identity),
-                project_identity=self.task_project,
-                technical_id=self.technical_id,
-                owner_labels_digest=_sha256(
-                    json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                ),
-                service_identity=service or None,
-                driver=str(record.get("HostConfig", {}).get("NetworkMode"))
-                if isinstance(record.get("HostConfig"), dict)
-                else None,
-                scope=str(record.get("State", {}).get("Status"))
-                if isinstance(record.get("State"), dict)
-                else None,
-                topology_digest=self._resource_digest(
-                    {"id": identity, "name": resource_name, "labels": raw_labels}
-                ),
-                label_set_digest=_sha256(
-                    json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                ),
-                allowed_operations=(plan.command_class.value,),
-            )
-        if plan.command_class in {
-            DockerCommandClass.COMPOSE_CREATE,
-            DockerCommandClass.COMPOSE_UP,
-            DockerCommandClass.COMPOSE_START,
-            DockerCommandClass.COMPOSE_STOP,
-            DockerCommandClass.COMPOSE_RESTART,
-            DockerCommandClass.COMPOSE_RUN,
-            DockerCommandClass.COMPOSE_RM,
-        }:
-            labels = self._resolved_labels(plan, service=plan.service)
-            record = self._inspect_kind("container", resource_name) if resource_name else None
-            if plan.service == "apm-postgres":
-                ownership = "FOREIGN"
-            elif record is not None:
-                raw_labels = record.get("Config", {}).get("Labels", {})
-                if not isinstance(raw_labels, dict):
-                    raw_labels = {}
-                exact = (
-                    raw_labels.get("com.docker.compose.project") == self.task_project
-                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
-                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
-                    and raw_labels.get("com.avito-mayak.environment-id")
-                    == "avito-mayak-acceptance-local-01"
-                    and raw_labels.get("com.avito-mayak.compose-project")
-                    == "avito-mayak-acceptance"
-                    and raw_labels.get("com.docker.compose.service") == plan.service
-                    and resource_name == f"{self.task_project}-{plan.service}-1"
-                )
-                ownership = "TASK_OWNED" if exact else "UNRESOLVED"
-                labels = raw_labels
-            elif plan.command_class in {
-                DockerCommandClass.COMPOSE_CREATE,
-                DockerCommandClass.COMPOSE_UP,
-                DockerCommandClass.COMPOSE_START,
-                DockerCommandClass.COMPOSE_STOP,
-                DockerCommandClass.COMPOSE_RESTART,
-                DockerCommandClass.COMPOSE_RUN,
-                DockerCommandClass.COMPOSE_RM,
-            }:
-                ownership = "TASK_OWNED"
-            else:
-                ownership = "UNRESOLVED"
-            identity = (
-                str(record.get("Id") or record.get("ID") or "")
-                if record is not None
-                else plan.target_identity_hash
-            )
-            return _ResolvedResourceDetails(
-                ownership=ownership,
-                resource_kind=plan.target_kind,
-                resource_name=resource_name,
-                immutable_identity_hash=_sha256(identity or plan.target_identity_hash),
-                resource_name_hash=_sha256(resource_name or identity or plan.target_identity_hash),
-                project_identity=self.task_project,
-                technical_id=self.technical_id,
-                owner_labels_digest=_sha256(
-                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                ),
-                service_identity=plan.service,
-                driver=None,
-                scope=plan.profile,
-                topology_digest=self._resource_digest(
-                    {
-                        "argv": list(plan.argv),
-                        "command": plan.command,
-                        "service": plan.service,
-                        "compose_file": plan.compose_file,
-                    }
-                ),
-                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
-                allowed_operations=(plan.command_class.value,),
-            )
-        if plan.command_class in {
-            DockerCommandClass.NETWORK_CREATE,
-            DockerCommandClass.NETWORK_RM,
-        }:
-            labels = self._resolved_labels(plan)
-            record = self._inspect_kind("network", resource_name) if resource_name else None
-            if record is not None:
-                raw_labels = record.get("Labels", {})
-                if not isinstance(raw_labels, dict):
-                    raw_labels = {}
-                exact = (
-                    raw_labels.get("com.docker.compose.project") == self.task_project
-                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
-                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
-                    and raw_labels.get("com.avito-mayak.environment-id")
-                    == "avito-mayak-acceptance-local-01"
-                    and raw_labels.get("com.avito-mayak.compose-project")
-                    == "avito-mayak-acceptance"
-                    and isinstance(record.get("Driver"), str)
-                    and isinstance(record.get("Scope"), str)
-                    and isinstance(record.get("Internal"), bool)
-                    and isinstance(record.get("Attachable"), bool)
-                    and isinstance(record.get("Ingress"), bool)
-                    and resource_name == f"{self.task_project}_mayak-internal"
-                )
-                if exact:
-                    identity = str(record.get("Id") or record.get("ID") or "")
-                    return _ResolvedResourceDetails(
-                        ownership="TASK_OWNED",
-                        resource_kind=plan.target_kind,
-                        resource_name=resource_name,
-                        immutable_identity_hash=_sha256(identity or plan.target_identity_hash),
-                        resource_name_hash=_sha256(resource_name or identity),
-                        project_identity=self.task_project,
-                        technical_id=self.technical_id,
-                        owner_labels_digest=_sha256(
-                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                        ),
-                        service_identity=None,
-                        driver=str(record.get("Driver")),
-                        scope=str(record.get("Scope")),
-                        topology_digest=self._resource_digest(
-                            {
-                                "driver": record.get("Driver"),
-                                "scope": record.get("Scope"),
-                                "internal": record.get("Internal"),
-                                "attachable": record.get("Attachable"),
-                                "ingress": record.get("Ingress"),
-                                "name": resource_name,
-                            }
-                        ),
-                        label_set_digest=_sha256(
-                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                        ),
-                        allowed_operations=(plan.command_class.value,),
-                    )
-                labels = raw_labels
-            if plan.command_class == DockerCommandClass.NETWORK_CREATE and resource_name == (
-                f"{self.task_project}_mayak-internal"
-            ):
-                ownership = "TASK_OWNED"
-            elif resource_name and resource_name.startswith(self.task_project):
-                ownership = "UNRESOLVED"
-            else:
-                ownership = "FOREIGN"
-            return _ResolvedResourceDetails(
-                ownership=ownership,
-                resource_kind=plan.target_kind,
-                resource_name=resource_name,
-                immutable_identity_hash=plan.target_identity_hash,
-                resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
-                project_identity=self.task_project,
-                technical_id=self.technical_id,
-                owner_labels_digest=_sha256(
-                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                ),
-                service_identity=None,
-                driver=None,
-                scope=None,
-                topology_digest=self._resource_digest(
-                    {
-                        "argv": list(plan.argv),
-                        "command_class": plan.command_class.value,
-                        "name": resource_name,
-                    }
-                ),
-                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
-                allowed_operations=(plan.command_class.value,),
-            )
-        if plan.command_class in {
-            DockerCommandClass.VOLUME_CREATE,
-            DockerCommandClass.VOLUME_RM,
-        }:
-            labels = self._resolved_labels(plan)
-            record = self._inspect_kind("volume", resource_name) if resource_name else None
-            if record is not None:
-                raw_labels = record.get("Labels", {})
-                if not isinstance(raw_labels, dict):
-                    raw_labels = {}
-                exact = (
-                    raw_labels.get("com.docker.compose.project") == self.task_project
-                    and raw_labels.get("com.avito-mayak.technical-id") == self.technical_id
-                    and raw_labels.get("com.avito-mayak.project-owned") == "true"
-                    and raw_labels.get("com.avito-mayak.environment-id")
-                    == "avito-mayak-acceptance-local-01"
-                    and raw_labels.get("com.avito-mayak.compose-project")
-                    == "avito-mayak-acceptance"
-                    and isinstance(record.get("Driver"), str)
-                    and isinstance(record.get("Scope"), str)
-                )
-                if exact:
-                    identity = str(record.get("Id") or record.get("ID") or "")
-                    return _ResolvedResourceDetails(
-                        ownership="TASK_OWNED",
-                        resource_kind=plan.target_kind,
-                        resource_name=resource_name,
-                        immutable_identity_hash=_sha256(identity or plan.target_identity_hash),
-                        resource_name_hash=_sha256(resource_name or identity),
-                        project_identity=self.task_project,
-                        technical_id=self.technical_id,
-                        owner_labels_digest=_sha256(
-                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                        ),
-                        service_identity=None,
-                        driver=str(record.get("Driver")),
-                        scope=str(record.get("Scope")),
-                        topology_digest=self._resource_digest(
-                            {
-                                "driver": record.get("Driver"),
-                                "scope": record.get("Scope"),
-                                "name": resource_name,
-                            }
-                        ),
-                        label_set_digest=_sha256(
-                            json.dumps(raw_labels, sort_keys=True, separators=(",", ":"))
-                        ),
-                        allowed_operations=(plan.command_class.value,),
-                    )
-                labels = raw_labels
-            if plan.command_class == DockerCommandClass.VOLUME_CREATE and resource_name == (
-                f"{self.task_project}_postgres-data"
-            ):
-                ownership = "TASK_OWNED"
-            elif resource_name and resource_name.startswith(self.task_project):
-                ownership = "UNRESOLVED"
-            else:
-                ownership = "FOREIGN"
-            return _ResolvedResourceDetails(
-                ownership=ownership,
-                resource_kind=plan.target_kind,
-                resource_name=resource_name,
-                immutable_identity_hash=plan.target_identity_hash,
-                resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
-                project_identity=self.task_project,
-                technical_id=self.technical_id,
-                owner_labels_digest=_sha256(
-                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                ),
-                service_identity=None,
-                driver=None,
-                scope=None,
-                topology_digest=self._resource_digest(
-                    {
-                        "argv": list(plan.argv),
-                        "command_class": plan.command_class.value,
-                        "name": resource_name,
-                    }
-                ),
-                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
-                allowed_operations=(plan.command_class.value,),
-            )
-        labels = self._resolved_labels(plan)
-        ownership = "TASK_OWNED" if plan.is_mutation else "FOREIGN"
-        if plan.command_class in {
-            DockerCommandClass.IMAGE_BUILD,
-            DockerCommandClass.IMAGE_LOAD,
-            DockerCommandClass.BUILDX_BUILD,
-            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
-            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
-        }:
-            identity = plan.target_identity_hash
-            builder_topology: dict[str, object] = {
-                "argv": list(plan.argv),
-                "command_class": plan.command_class.value,
-                "compose_file": plan.compose_file,
-                "project_name": plan.project_name,
-                "profile": plan.profile,
-            }
-            return _ResolvedResourceDetails(
-                ownership=ownership,
-                resource_kind=plan.target_kind,
-                resource_name=resource_name,
-                immutable_identity_hash=identity,
-                resource_name_hash=_sha256(resource_name or identity),
-                project_identity=self.task_project,
-                technical_id=self.technical_id,
-                owner_labels_digest=_sha256(
-                    json.dumps(labels, sort_keys=True, separators=(",", ":"))
-                ),
-                service_identity=plan.service,
-                driver=plan.command_class.value,
-                scope=self.profile,
-                topology_digest=self._resource_digest(builder_topology),
-                label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
-                allowed_operations=(plan.command_class.value,),
-            )
-        return _ResolvedResourceDetails(
-            ownership=ownership,
-            resource_kind=plan.target_kind,
-            resource_name=resource_name,
-            immutable_identity_hash=plan.target_identity_hash,
-            resource_name_hash=_sha256(resource_name or plan.target_identity_hash),
-            project_identity=self.task_project,
-            technical_id=self.technical_id,
-            owner_labels_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
-            service_identity=plan.service,
-            driver=None,
-            scope=None,
-            topology_digest=self._resource_digest({"argv": list(plan.argv)}),
-            label_set_digest=_sha256(json.dumps(labels, sort_keys=True, separators=(",", ":"))),
-            allowed_operations=(plan.command_class.value,),
-        )
-
-    def _authorization_basis(self, plan: _DockerInvocationPlan) -> str:
-        if plan.command_class in {
-            DockerCommandClass.COMPOSE_CREATE,
-            DockerCommandClass.COMPOSE_UP,
-            DockerCommandClass.COMPOSE_START,
-            DockerCommandClass.COMPOSE_STOP,
-            DockerCommandClass.COMPOSE_RESTART,
-            DockerCommandClass.COMPOSE_RUN,
-            DockerCommandClass.COMPOSE_RM,
-            DockerCommandClass.DIRECT_RUN,
-            DockerCommandClass.DIRECT_CONTAINER_RM,
-            DockerCommandClass.NETWORK_CREATE,
-            DockerCommandClass.NETWORK_RM,
-            DockerCommandClass.VOLUME_CREATE,
-            DockerCommandClass.VOLUME_RM,
-            DockerCommandClass.IMAGE_BUILD,
-            DockerCommandClass.IMAGE_LOAD,
-            DockerCommandClass.BUILDX_BUILD,
-            DockerCommandClass.TASK_SCOPED_BUILDER_CREATE,
-            DockerCommandClass.TASK_SCOPED_BUILDER_REMOVE,
-        }:
-            return "TASK_CREATION_PLAN"
-        return "READ_ONLY_INSPECT"
-
-    def _record_audit(
-        self, plan: _DockerInvocationPlan, *, stage: str
-    ) -> DockerInvocationAuditRecord:
-        self._invocation_sequence += 1
-        record = DockerInvocationAuditRecord(
-            invocation_sequence=self._invocation_sequence,
-            stage=stage,
-            command_class=plan.command_class.value,
-            argv_fingerprint=_fingerprint(plan.argv),
-            target_kind=plan.target_kind,
-            target_identity_hash=plan.target_identity_hash,
-            is_mutation=plan.is_mutation,
+    def _record(
+        self,
+        *,
+        kind: str,
+        stage_id: str,
+        semantic_digest: str,
+        capability_id: str,
+        action_kind: str,
+        returncode: int | None = None,
+        timed_out: bool = False,
+        safe_fingerprint: str = "",
+    ) -> LedgerRecord:
+        sequence = len(self._ledgers) + 1
+        record = LedgerRecord(
+            record_type=kind,
+            sequence=sequence,
+            stage_id=stage_id,
+            semantic_digest=semantic_digest,
             gateway_instance_id=self.gateway_instance_id,
-        )
-        self._invocation_audit.append(record)
-        return record
-
-    def _issue_capability(
-        self,
-        plan: _DockerInvocationPlan,
-        *,
-        details: _ResolvedResourceDetails,
-        audit: DockerInvocationAuditRecord,
-        authorization: DockerMutationRecord,
-    ) -> ResolvedTaskResourceCapability:
-        compose_path = compose_digest = compose_source_identity = compose_generation_identity = None
-        if (
-            plan.command_class
-            in {
-                DockerCommandClass.COMPOSE_CREATE,
-                DockerCommandClass.COMPOSE_UP,
-                DockerCommandClass.COMPOSE_START,
-                DockerCommandClass.COMPOSE_STOP,
-                DockerCommandClass.COMPOSE_RESTART,
-                DockerCommandClass.COMPOSE_RUN,
-                DockerCommandClass.COMPOSE_RM,
-            }
-            and plan.compose_file
-        ):
-            compose_path, compose_digest, compose_source_identity, compose_generation_identity = (
-                _compose_file_identity(plan.compose_file)
-            )
-        capability = ResolvedTaskResourceCapability(
-            gateway_instance_id=self.gateway_instance_id,
-            issuance_id=uuid.uuid4().hex,
-            seal=uuid.uuid4().hex,
-            command_class=plan.command_class.value,
-            resource_kind=details.resource_kind,
-            resource_name=details.resource_name,
-            immutable_identity_hash=details.immutable_identity_hash,
-            resource_name_hash=details.resource_name_hash,
-            project_identity=details.project_identity,
-            technical_id=details.technical_id,
-            owner_labels_digest=details.owner_labels_digest,
-            service_identity=details.service_identity,
-            driver=details.driver,
-            scope=details.scope,
-            topology_digest=details.topology_digest,
-            label_set_digest=details.label_set_digest,
-            allowed_operations=details.allowed_operations,
-            compose_file=compose_path,
-            compose_file_digest=compose_digest,
-            compose_source_identity=compose_source_identity,
-            compose_generation_identity=compose_generation_identity,
-            issue_sequence=authorization.authorization_sequence,
-            issued_at_ns=time.monotonic_ns(),
-            single_use=True,
-        )
-        self._issued_capabilities[capability.issuance_id] = _CapabilityIssuance(
-            capability=capability,
-            authorization=authorization,
-            audit=audit,
-            plan=plan,
-        )
-        return capability
-
-    def _validate_capability(
-        self, capability: ResolvedTaskResourceCapability, plan: _DockerInvocationPlan
-    ) -> _CapabilityIssuance:
-        if capability.gateway_instance_id != self.gateway_instance_id:
-            raise PermissionError("foreign capability gateway")
-        issuance = self._issued_capabilities.get(capability.issuance_id)
-        if issuance is None or issuance.capability is not capability:
-            raise PermissionError("unknown capability issuance")
-        if capability.allowed_operations != (plan.command_class.value,):
-            raise PermissionError("capability operation mismatch")
-        details = self._current_resolution(plan)
-        expected = {
-            "resource_kind": details.resource_kind,
-            "immutable_identity_hash": details.immutable_identity_hash,
-            "resource_name_hash": details.resource_name_hash,
-            "project_identity": details.project_identity,
-            "technical_id": details.technical_id,
-            "owner_labels_digest": details.owner_labels_digest,
-            "service_identity": details.service_identity,
-            "driver": details.driver,
-            "scope": details.scope,
-            "topology_digest": details.topology_digest,
-            "label_set_digest": details.label_set_digest,
-        }
-        for key, value in expected.items():
-            if getattr(capability, key) != value:
-                raise PermissionError("stale or mismatched capability")
-        if details.ownership != "TASK_OWNED":
-            raise PermissionError("capability no longer authorized")
-        return issuance
-
-    def _record_authorization(
-        self,
-        *,
-        plan: _DockerInvocationPlan,
-        stage: str,
-        audit: DockerInvocationAuditRecord,
-        details: _ResolvedResourceDetails,
-        outcome: str,
-    ) -> DockerMutationRecord:
-        self._authorization_sequence += 1
-        record = DockerMutationRecord(
-            record_type="AUTHORIZATION",
-            authorization_sequence=self._authorization_sequence,
-            execution_result_sequence=None,
-            invocation_sequence=audit.invocation_sequence,
-            stage=stage,
-            command_class=plan.command_class.value,
-            target_kind=plan.target_kind,
-            target_identity_hash=details.immutable_identity_hash,
-            authorization_basis=self._authorization_basis(plan),
-            authorization_outcome=outcome,
-            execution_attempted=False,
-            execution_completed=False,
-            target_ownership=details.ownership,
-            argv_fingerprint=audit.argv_fingerprint,
-        )
-        self._ledger.append(record)
-        return record
-
-    def _resolve_and_authorize(
-        self, plan: _DockerInvocationPlan, *, stage: str
-    ) -> tuple[DockerInvocationAuditRecord, DockerMutationRecord, ResolvedTaskResourceCapability]:
-        audit = self._record_audit(plan, stage=stage)
-        details = self._current_resolution(plan)
-        if details.ownership != "TASK_OWNED":
-            authorization = self._record_authorization(
-                plan=plan,
-                stage=stage,
-                audit=audit,
-                details=details,
-                outcome="REJECTED",
-            )
-            raise PermissionError("foreign or unresolved target")
-        authorization = self._record_authorization(
-            plan=plan,
-            stage=stage,
-            audit=audit,
-            details=details,
-            outcome="AUTHORIZED",
-        )
-        capability = self._issue_capability(
-            plan,
-            details=details,
-            audit=audit,
-            authorization=authorization,
-        )
-        return audit, authorization, capability
-
-    def _issue_command(
-        self,
-        argv: tuple[str, ...],
-        *,
-        stage: str,
-    ) -> ResolvedTaskResourceCapability:
-        plan = _parse_docker_command(argv)
-        if not plan.is_mutation:
-            raise ValueError("read-only command is not a mutation")
-        _, _, capability = self._resolve_and_authorize(plan, stage=stage)
-        return capability
-
-    def issue_compose_operation(
-        self,
-        *,
-        command: str,
-        service: str,
-        stage: str,
-        compose_file: str | None = None,
-        project_name: str | None = None,
-        profile: str | None = None,
-        detach: bool = False,
-        force: bool = False,
-        remove_orphans: bool = False,
-        no_deps: bool = False,
-        rm_volumes: bool = False,
-        run_options: Sequence[str] = (),
-        extra_args: Sequence[str] = (),
-    ) -> ResolvedTaskResourceCapability:
-        file_value = compose_file or self.compose_file
-        project_value = project_name or self.task_project
-        profile_value = profile or self.profile
-        if command not in {"create", "up", "start", "stop", "restart", "run", "rm"}:
-            raise ValueError("unsupported compose operation")
-        compose_resolved, _, _, _ = _compose_file_identity(file_value)
-        argv: list[str] = [
-            "docker",
-            "compose",
-            "-f",
-            compose_resolved,
-            "-p",
-            project_value,
-            "--profile",
-            profile_value,
-            command,
-        ]
-        if command == "up" and detach:
-            argv.append("-d")
-        if command == "rm":
-            if force:
-                argv.append("-f")
-            if rm_volumes:
-                argv.append("--volumes")
-            if remove_orphans:
-                argv.append("--remove-orphans")
-        if command == "run":
-            argv.append("--rm")
-            if no_deps:
-                argv.append("--no-deps")
-            argv.extend(run_options)
-        argv.append(service)
-        if extra_args:
-            argv.extend(extra_args)
-        return self._issue_command(tuple(argv), stage=stage)
-
-    def issue_container_probe(
-        self,
-        *,
-        stage: str,
-        name: str,
-        image: str,
-        labels: Mapping[str, str],
-        command: Sequence[str],
-        user: str | None = None,
-        workdir: str | None = None,
-        entrypoint: str | None = None,
-        network: str | None = None,
-        rm: bool = True,
-        no_deps: bool = False,
-        privileged: bool = False,
-        pid_host: bool = False,
-        ipc_host: bool = False,
-        publish: Sequence[str] = (),
-        env: Sequence[tuple[str, str]] = (),
-        volume: Sequence[str] = (),
-    ) -> ResolvedTaskResourceCapability:
-        argv: list[str] = ["docker", "run"]
-        if rm:
-            argv.append("--rm")
-        if no_deps:
-            argv.append("--no-deps")
-        if user is not None:
-            argv.extend(["--user", user])
-        if workdir is not None:
-            argv.extend(["--workdir", workdir])
-        if entrypoint is not None:
-            argv.extend(["--entrypoint", entrypoint])
-        for key, value in env:
-            argv.extend(["-e", f"{key}={value}"])
-        for item in volume:
-            argv.extend(["-v", item])
-        for item in publish:
-            argv.extend(["-p", item])
-        if network is not None:
-            argv.extend(["--network", network])
-        if privileged:
-            argv.append("--privileged")
-        if pid_host:
-            argv.extend(["--pid", "host"])
-        if ipc_host:
-            argv.extend(["--ipc", "host"])
-        for key, value in sorted(labels.items()):
-            argv.extend(["--label", f"{key}={value}"])
-        argv.extend(["--name", name, image, *command])
-        return self._issue_command(tuple(argv), stage=stage)
-
-    def issue_resource_lifecycle(
-        self, *, stage: str, kind: str, operation: str, name: str
-    ) -> ResolvedTaskResourceCapability:
-        if kind == "container":
-            argv = ("docker", "rm", "-f" if operation == "remove" else "-f", name)
-        elif kind == "network":
-            argv = ("docker", "network", "rm" if operation == "remove" else operation, name)
-        elif kind == "volume":
-            argv = ("docker", "volume", "rm" if operation == "remove" else operation, name)
-        else:
-            raise ValueError("unsupported resource lifecycle")
-        return self._issue_command(argv, stage=stage)
-
-    def issue_buildx_manifest(
-        self,
-        *,
-        stage: str,
-        context: str,
-        dockerfile: str,
-        output: str,
-    ) -> ResolvedTaskResourceCapability:
-        argv = (
-            "docker",
-            "buildx",
-            "build",
-            "--progress=plain",
-            "--file",
-            dockerfile,
-            "--output",
-            f"type=local,dest={output}",
-            context,
-        )
-        return self._issue_command(argv, stage=stage)
-
-    def authorize(
-        self, capability: ResolvedTaskResourceCapability, *, stage: str
-    ) -> ResolvedTaskResourceCapability:
-        if not isinstance(capability, ResolvedTaskResourceCapability):
-            raise TypeError("sealed capability required")
-        issuance = self._issued_capabilities.get(capability.issuance_id)
-        if issuance is None or issuance.capability is not capability:
-            raise PermissionError("unknown capability issuance")
-        plan = issuance.plan
-        if capability.command_class != plan.command_class.value:
-            raise PermissionError("capability operation mismatch")
-        details = self._current_resolution(plan)
-        expected = {
-            "resource_kind": details.resource_kind,
-            "resource_name": details.resource_name,
-            "immutable_identity_hash": details.immutable_identity_hash,
-            "resource_name_hash": details.resource_name_hash,
-            "project_identity": details.project_identity,
-            "technical_id": details.technical_id,
-            "owner_labels_digest": details.owner_labels_digest,
-            "service_identity": details.service_identity,
-            "driver": details.driver,
-            "scope": details.scope,
-            "topology_digest": details.topology_digest,
-            "label_set_digest": details.label_set_digest,
-        }
-        for key, value in expected.items():
-            if getattr(capability, key) != value:
-                raise PermissionError("stale or mismatched capability")
-        if plan.compose_file is not None:
-            compose_path, compose_digest, compose_source_identity, compose_generation_identity = (
-                _compose_file_identity(plan.compose_file)
-            )
-            if (
-                capability.compose_file != compose_path
-                or capability.compose_file_digest != compose_digest
-                or capability.compose_source_identity != compose_source_identity
-                or capability.compose_generation_identity != compose_generation_identity
-            ):
-                raise PermissionError("stale or mismatched capability")
-        if details.ownership != "TASK_OWNED":
-            raise PermissionError("capability no longer authorized")
-        return capability
-
-    def _record_result(
-        self,
-        authorization: DockerMutationRecord,
-        *,
-        exit_code: int | None,
-        completed: bool,
-        timed_out: bool,
-        failure_classification: str | None,
-    ) -> DockerMutationRecord:
-        self._result_sequence += 1
-        record = DockerMutationRecord(
-            record_type="RESULT",
-            authorization_sequence=authorization.authorization_sequence,
-            execution_result_sequence=self._result_sequence,
-            invocation_sequence=authorization.invocation_sequence,
-            stage=authorization.stage,
-            command_class=authorization.command_class,
-            target_kind=authorization.target_kind,
-            target_identity_hash=authorization.target_identity_hash,
-            authorization_basis=authorization.authorization_basis,
-            authorization_outcome=authorization.authorization_outcome,
-            execution_attempted=True,
-            execution_completed=completed,
-            exit_code=exit_code,
+            capability_id=capability_id,
+            action_kind=action_kind,
+            returncode=returncode,
             timed_out=timed_out,
-            safe_failure_classification=failure_classification,
-            target_ownership=authorization.target_ownership,
-            argv_fingerprint=authorization.argv_fingerprint,
+            safe_fingerprint=safe_fingerprint,
         )
-        self._ledger.append(record)
+        self._ledgers.append(record)
         return record
 
-    def execute(
-        self,
-        capability: ResolvedTaskResourceCapability,
-        *,
-        stage: str,
-        stdin: Any = None,
-        stdout: Any = None,
-        stderr: Any = None,
-        timeout: float | None = None,
-        check: bool = False,
-        text: bool = False,
-        capture_output: bool = False,
-    ) -> subprocess.CompletedProcess[Any]:
-        if not isinstance(capability, ResolvedTaskResourceCapability):
-            raise TypeError("sealed capability required")
-        issuance = self._issued_capabilities.get(capability.issuance_id)
-        if issuance is None or issuance.capability is not capability:
-            raise PermissionError("unknown capability issuance")
-        if issuance.consumed and capability.single_use:
-            raise PermissionError("capability already consumed")
-        plan = issuance.plan
-        self.authorize(capability, stage=stage)
-        authorization = issuance.authorization
-        try:
-            completed = self._run_subprocess(
-                plan.argv,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                timeout=timeout,
-                check=check,
-                text=text,
-                capture_output=capture_output,
+    def _build_argv(self, semantic: object) -> tuple[str, ...]:
+        if isinstance(semantic, ComposeProbeAction):
+            if semantic.probe == ComposeProbeKind.AUTH_REJECTION and not semantic.correlation_id:
+                raise ValueError("auth correlation missing")
+            if semantic.probe not in {
+                ComposeProbeKind.APPLICATION_QUERY,
+                ComposeProbeKind.AUTH_REJECTION,
+            }:
+                raise ValueError("unsupported compose probe")
+            payload = (
+                "import json,pathlib,psycopg,sys; cid=sys.argv[1]; "
+                "p=pathlib.Path('/run/secrets/mayak_database_application_password'); "
+                "r={'schema_version':'rf08-stage34-auth-v1','operation_id':'rf08.application_auth_rejection_b','correlation_id':cid,'import_state':'IMPORTED','secret_binding_state':'ACCEPTED','mount_state':'PRESENT','file_state':'REGULAR_FILE','file_read_attempted':True,'file_read_state':'READABLE','connection_attempted':False,'unexpected_success':False,'exception_class_name':None,'client_sqlstate':None,'pgconn_present':False,'pgconn_status':None,'timeout':False,'final_client_outcome':'IMPORT_FAILURE'}; password=p.read_text(); "  # noqa: E501
+                "exec(\"try:\\n c=psycopg.connect(host='mayak-postgres',port=5432,dbname='mayak',user='mayak_application',password=password,application_name=cid,connect_timeout=10)\\n r.update(connection_attempted=True,unexpected_success=True,final_client_outcome='UNEXPECTED_CONNECTION_SUCCESS')\\n c.close()\\n code=79\\nexcept Exception as exc:\\n r.update(connection_attempted=True,exception_class_name=type(exc).__name__,client_sqlstate=getattr(exc,'sqlstate',None),final_client_outcome='CLIENT_CONNECTION_ATTEMPT_FAILED_PENDING_SERVER_CLASSIFICATION')\\n code=78\") ; print(json.dumps(r,sort_keys=True,separators=(',',':'))); raise SystemExit(code)"  # noqa: E501
+                if semantic.probe == ComposeProbeKind.AUTH_REJECTION
+                else "import pathlib,psycopg; p=pathlib.Path('/run/secrets/mayak_database_application_password').read_text(); c=psycopg.connect(host='mayak-postgres',port=5432,dbname='mayak',user='mayak_application',password=p); assert c.execute('SELECT 1').fetchone()==(1,); c.close(); print('APPLICATION_QUERY_OK')"  # noqa: E501
             )
-        except subprocess.TimeoutExpired:
-            self._record_result(
-                authorization,
-                exit_code=None,
-                completed=False,
-                timed_out=True,
-                failure_classification="TimeoutExpired",
+            return (
+                "docker",
+                "compose",
+                "-f",
+                semantic.binding.compose_file,
+                "-p",
+                semantic.binding.project_name,
+                "--profile",
+                semantic.binding.profile,
+                "run",
+                "--rm",
+                "--no-deps",
+                "--user",
+                "10001:10001",
+                "--workdir",
+                "/opt/mayak",
+                "--entrypoint",
+                "python",
+                semantic.service.value,
+                "-c",
+                payload,
+                *((semantic.correlation_id,) if semantic.probe == ComposeProbeKind.AUTH_REJECTION else ()),  # noqa: E501
             )
-            raise
-        except OSError as exc:
-            self._record_result(
-                authorization,
-                exit_code=None,
-                completed=False,
-                timed_out=False,
-                failure_classification=type(exc).__name__,
+        if isinstance(semantic, ComposeRunAction):
+            return (
+                "docker",
+                "compose",
+                "-f",
+                semantic.binding.compose_file,
+                "-p",
+                semantic.binding.project_name,
+                "--profile",
+                semantic.binding.profile,
+                "run",
+                "--rm",
+                semantic.service.value,
             )
-            raise
-        except subprocess.CalledProcessError as exc:
-            self._record_result(
-                authorization,
-                exit_code=exc.returncode,
-                completed=True,
-                timed_out=False,
-                failure_classification=type(exc).__name__,
+        if isinstance(semantic, ComposeAction):
+            argv: list[str] = [
+                "docker",
+                "compose",
+                "-f",
+                semantic.binding.compose_file,
+                "-p",
+                semantic.binding.project_name,
+                "--profile",
+                semantic.binding.profile,
+                semantic.operation.value,
+            ]
+            if semantic.operation == ComposeOperation.UP and semantic.detach:
+                argv.append("-d")
+            if semantic.operation == ComposeOperation.UP and semantic.force:
+                argv.append("--force-recreate")
+            if semantic.operation == ComposeOperation.RM:
+                if semantic.force:
+                    argv.append("-f")
+                if semantic.rm_volumes:
+                    argv.append("--volumes")
+                if semantic.remove_orphans:
+                    argv.append("--remove-orphans")
+            if semantic.operation == ComposeOperation.START and semantic.detach:
+                argv.append("-d")
+            argv.append(semantic.service.value)
+            return tuple(argv)
+        if isinstance(semantic, ResourceLifecycleAction):
+            if (
+                semantic.kind == ResourceKind.CONTAINER
+                and semantic.operation == ResourceOperation.REMOVE
+            ):
+                return ("docker", "rm", "-f", semantic.name)
+            if semantic.kind == ResourceKind.NETWORK:
+                return ("docker", "network", semantic.operation.value, semantic.name)
+            if semantic.kind == ResourceKind.VOLUME:
+                return ("docker", "volume", semantic.operation.value, semantic.name)
+            if semantic.kind == ResourceKind.BUILDER:
+                return ("docker", "buildx", semantic.operation.value, semantic.name)
+            raise ValueError("unsupported resource lifecycle action")
+        if isinstance(semantic, ImageAction):
+            if semantic.operation != ImageOperation.BUILDX_MANIFEST:
+                raise ValueError("unsupported image action")
+            return (
+                "docker",
+                "buildx",
+                "build",
+                "--progress=plain",
+                "--file",
+                semantic.dockerfile.path,
+                "--output",
+                f"type=local,dest={semantic.output.path}",
+                semantic.context.path,
             )
-            raise
-        else:
-            self._record_result(
-                authorization,
-                exit_code=completed.returncode,
-                completed=True,
-                timed_out=False,
-                failure_classification=None,
+        if isinstance(semantic, ProbeAction):
+            labels = [f"{k}={v}" for k, v in semantic.labels]
+            command = _probe_command(semantic.probe_kind)
+            return (
+                "docker",
+                "run",
+                "--rm",
+                "--name",
+                semantic.name,
+                *sum((("--label", item) for item in labels), ()),
+                semantic.image,
+                *command,
             )
-            issuance.consumed = True
-            return completed
+        if isinstance(semantic, BootstrapAction):
+            if semantic.binding is None:
+                return (
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-e",
+                    f"RF08_RUN_ID={semantic.run_id}",
+                    "-e",
+                    f"RF08_RECOVERED_GENERATION_ID={semantic.recovered_generation_id}",
+                    "-v",
+                    f"{semantic.adapter.path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
+                    semantic.service.value,
+                    "python",
+                    "/opt/mayak/rf09_public_bootstrap_adapter.py",
+                )
+            return (
+                "docker",
+                "compose",
+                "-f",
+                semantic.binding.compose_file,
+                "-p",
+                semantic.binding.project_name,
+                "--profile",
+                semantic.binding.profile,
+                "run",
+                "--rm",
+                "-e",
+                f"RF08_RUN_ID={semantic.run_id}",
+                "-e",
+                f"RF08_RECOVERED_GENERATION_ID={semantic.recovered_generation_id}",
+                "-v",
+                f"{semantic.adapter.path}:/opt/mayak/rf09_public_bootstrap_adapter.py:ro",
+                semantic.service.value,
+                "python",
+                "/opt/mayak/rf09_public_bootstrap_adapter.py",
+            )
+        if isinstance(semantic, ObservationRequest):
+            if semantic.template == ObservationTemplate.DAEMON_VERSION:
+                return ("docker", "version", "--format", "{{json .Server}}")
+            if semantic.template == ObservationTemplate.CONTAINER_HEALTH:
+                return (
+                    "docker",
+                    "inspect",
+                    "--format",
+                    (
+                        "{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|"
+                        "{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}"
+                    ),
+                    semantic.identity or "",
+                )
+            if semantic.template == ObservationTemplate.CONTAINER_LIST:
+                return ("docker", "ps", "-aq")
+            if semantic.template == ObservationTemplate.CONTAINER_INSPECT:
+                return ("docker", "container", "inspect", semantic.identity or "")
+            if semantic.template == ObservationTemplate.NETWORK_INSPECT:
+                return ("docker", "network", "inspect", semantic.identity or "")
+            if semantic.template == ObservationTemplate.VOLUME_INSPECT:
+                return ("docker", "volume", "inspect", semantic.identity or "")
+            if semantic.template == ObservationTemplate.IMAGE_INSPECT:
+                return ("docker", "image", "inspect", semantic.identity or "")
+            if semantic.template == ObservationTemplate.NETWORK_LIST:
+                return ("docker", "network", "ls", "-q")
+            if semantic.template == ObservationTemplate.VOLUME_LIST:
+                return ("docker", "volume", "ls", "-q")
+            if semantic.template == ObservationTemplate.IMAGE_LIST:
+                return ("docker", "image", "ls", "-q")
+            if semantic.template == ObservationTemplate.BUILDX_LIST:
+                return ("docker", "buildx", "ls")
+            if semantic.template == ObservationTemplate.COMPOSE_VERSION:
+                if semantic.compose is None:
+                    raise ValueError("compose binding required")
+                return (
+                    "docker",
+                    "compose",
+                    "-f",
+                    semantic.compose.compose_file,
+                    "-p",
+                    semantic.compose.project_name,
+                    "--profile",
+                    semantic.compose.profile,
+                    "version",
+                    "--short",
+                )
+            if semantic.template == ObservationTemplate.COMPOSE_CONFIG:
+                if semantic.compose is None:
+                    raise ValueError("compose binding required")
+                return (
+                    "docker",
+                    "compose",
+                    "-f",
+                    semantic.compose.compose_file,
+                    "-p",
+                    semantic.compose.project_name,
+                    "--profile",
+                    semantic.compose.profile,
+                    "config",
+                    "--format",
+                    "json",
+                )
+            if semantic.template == ObservationTemplate.COMPOSE_PS:
+                if semantic.compose is None:
+                    raise ValueError("compose binding required")
+                return (
+                    "docker",
+                    "compose",
+                    "-f",
+                    semantic.compose.compose_file,
+                    "-p",
+                    semantic.compose.project_name,
+                    "--profile",
+                    semantic.compose.profile,
+                    "ps",
+                    "-q",
+                )
+            if semantic.template == ObservationTemplate.COMPOSE_EXEC:
+                if (
+                    semantic.compose is None
+                    or semantic.service is None
+                    or semantic.exec_template is None
+                ):
+                    raise ValueError("compose exec binding incomplete")
+                return (
+                    "docker",
+                    "compose",
+                    "-f",
+                    semantic.compose.compose_file,
+                    "-p",
+                    semantic.compose.project_name,
+                    "--profile",
+                    semantic.compose.profile,
+                    "exec",
+                    semantic.service.value,
+                    *_compose_exec_command(semantic.exec_template),
+                )
+        raise ValueError("unsupported semantic payload")
 
-    def run(
-        self,
-        query: _ReadOnlyDockerQuery,
-        *,
-        stage: str,
-        stdin: Any = None,
-        stdout: Any = None,
-        stderr: Any = None,
-        timeout: float | None = None,
-        check: bool = False,
-        text: bool = False,
-        capture_output: bool = False,
-    ) -> subprocess.CompletedProcess[Any]:
-        if not isinstance(query, _ReadOnlyDockerQuery):
-            raise TypeError("read-only Docker queries must use _ReadOnlyDockerQuery")
-        self._record_audit(query, stage=stage)
-        if query.is_mutation:
-            raise ValueError("query is not read-only")
-        expected = _ReadOnlyDockerQuery._from_argv(tuple(query.argv))
-        if query != expected:
-            raise PermissionError("stale or forged read-only query")
-        return self._run_subprocess(
-            query.argv,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-            timeout=timeout,
-            check=check,
-            text=text,
-            capture_output=capture_output,
-        )
-
-    def _run_subprocess(
+    def _transport(
         self,
         argv: Sequence[str],
         *,
+        env: Mapping[str, str] | None,
+        stdin: Any = None,
+        stdout: Any = None,
+        stderr: Any = None,
+        timeout: float | None = None,
+    ) -> tuple[int, bytes, bytes]:
+        token = _GATEWAY_TOKEN.set(self.gateway_instance_id)
+        try:
+            proc = subprocess.run(
+                list(argv),
+                stdin=stdin,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=dict(env) if env is not None else dict(self._default_env or os.environ),
+                shell=False,
+                check=False,
+                text=False,
+                timeout=timeout,
+            )
+            if (
+                stdout is not None
+                and stdout is not subprocess.PIPE
+                and hasattr(stdout, "write")
+                and proc.stdout is not None
+            ):
+                try:
+                    stdout.write(proc.stdout)
+                except TypeError:
+                    stdout.write(proc.stdout.decode("utf-8", errors="replace"))
+            if (
+                stderr is not None
+                and stderr is not subprocess.PIPE
+                and hasattr(stderr, "write")
+                and proc.stderr is not None
+            ):
+                try:
+                    stderr.write(proc.stderr)
+                except TypeError:
+                    stderr.write(proc.stderr.decode("utf-8", errors="replace"))
+            return proc.returncode, proc.stdout or b"", proc.stderr or b""
+        finally:
+            _GATEWAY_TOKEN.reset(token)
+
+    def _parse_observation_payload(self, request: ObservationRequest, stdout: bytes) -> Any:
+        text = stdout.decode("utf-8", errors="replace")
+        if request.template == ObservationTemplate.DAEMON_VERSION:
+            return json.loads(text)
+        if request.template == ObservationTemplate.CONTAINER_HEALTH:
+            status, exit_code, restart_count, health_status = text.strip().split("|")
+            return {
+                "status": status,
+                "exit_code": int(exit_code),
+                "restart_count": int(restart_count),
+                "health_status": health_status,
+            }
+        if request.template in {
+            ObservationTemplate.CONTAINER_INSPECT,
+            ObservationTemplate.NETWORK_INSPECT,
+            ObservationTemplate.VOLUME_INSPECT,
+            ObservationTemplate.IMAGE_INSPECT,
+            ObservationTemplate.COMPOSE_CONFIG,
+        }:
+            return json.loads(text)
+        if request.template in {
+            ObservationTemplate.CONTAINER_LIST,
+            ObservationTemplate.NETWORK_LIST,
+            ObservationTemplate.VOLUME_LIST,
+            ObservationTemplate.IMAGE_LIST,
+            ObservationTemplate.BUILDX_LIST,
+            ObservationTemplate.COMPOSE_VERSION,
+            ObservationTemplate.COMPOSE_PS,
+            ObservationTemplate.COMPOSE_EXEC,
+        }:
+            return text
+        return text
+
+    def _execute_with_transport(
+        self,
+        semantic: object,
+        *,
+        stage: str,
         env: Mapping[str, str] | None = None,
         stdin: Any = None,
         stdout: Any = None,
         stderr: Any = None,
         timeout: float | None = None,
+    ) -> DockerExecution:
+        argv = self._build_argv(semantic)
+        fingerprint = _fingerprint(argv)
+        code, stdout_bytes, stderr_bytes = self._transport(
+            argv, env=env, stdin=stdin, stdout=stdout, stderr=stderr, timeout=timeout
+        )
+        payload: Any = None
+        if isinstance(semantic, ObservationRequest):
+            payload = self._parse_observation_payload(semantic, stdout_bytes)
+        return DockerExecution(
+            returncode=code,
+            stdout_bytes=stdout_bytes,
+            stderr_bytes=stderr_bytes,
+            payload=payload,
+            safe_fingerprint=fingerprint,
+            completed=True,
+            timed_out=False,
+        )
+
+    def issue(self, semantic: object, *, stage: str) -> TaskResourceCapability:
+        if (
+            isinstance(semantic, ResourceLifecycleAction)
+            and semantic.operation == ResourceOperation.REMOVE
+        ):
+            if not semantic.inspected_capability:
+                raise PermissionError("remove actions require a prior typed capability")
+        if isinstance(semantic, ComposeAction):
+            if semantic.service.value not in ALLOWED_SERVICES:
+                raise ValueError("compose service mismatch")
+            if semantic.binding.project_name != TASK_PROJECT:
+                raise ValueError("compose project mismatch")
+            if semantic.binding.profile != RUNTIME_PROFILE:
+                raise ValueError("compose profile mismatch")
+        if isinstance(semantic, ComposeRunAction):
+            if semantic.service != ComposeService.MIGRATE:
+                raise ValueError("compose run service mismatch")
+            if semantic.binding.project_name != TASK_PROJECT:
+                raise ValueError("compose project mismatch")
+            if semantic.binding.profile != RUNTIME_PROFILE:
+                raise ValueError("compose profile mismatch")
+        if isinstance(semantic, ComposeProbeAction):
+            if semantic.service != ComposeService.API:
+                raise ValueError("compose probe service mismatch")
+            if semantic.binding.project_name != TASK_PROJECT:
+                raise ValueError("compose project mismatch")
+            if semantic.binding.profile != RUNTIME_PROFILE:
+                raise ValueError("compose profile mismatch")
+        semantic_digest = _safe_digest(semantic)
+        self._issue_sequence += 1
+        capability = TaskResourceCapability(
+            gateway_instance_id=self.gateway_instance_id,
+            capability_id=uuid.uuid4().hex,
+            semantic_action=semantic,
+            technical_id=self.technical_id,
+            stage_id=stage,
+            issuance_sequence=self._issue_sequence,
+            semantic_digest=semantic_digest,
+            source_capabilities=tuple(
+                cap
+                for cap in (
+                    semantic.binding.compose_capability.value
+                    if isinstance(semantic, ComposeAction)
+                    else None,
+                )
+                if cap is not None
+            ),
+            resource_capabilities=tuple(
+                cap
+                for cap in (
+                    semantic.kind.value if isinstance(semantic, ResourceLifecycleAction) else None,
+                    semantic.probe_kind.value if isinstance(semantic, ProbeAction) else None,
+                    semantic.operation.value if isinstance(semantic, ImageAction) else None,
+                )
+                if cap is not None
+            ),
+            issued_at_ns=time.monotonic_ns(),
+        )
+        self._issued[capability.capability_id] = capability
+        self._record(
+            kind="AUTHORIZATION",
+            stage_id=stage,
+            semantic_digest=semantic_digest,
+            capability_id=capability.capability_id,
+            action_kind=type(semantic).__name__,
+        )
+        return capability
+
+    def authorize(
+        self, capability: TaskResourceCapability, *, stage: str
+    ) -> TaskResourceCapability:
+        stored = self._issued.get(capability.capability_id)
+        if stored is None or stored is not capability:
+            raise PermissionError("unknown capability issuance")
+        return capability
+
+    def execute(
+        self,
+        capability: TaskResourceCapability,
+        *,
+        stage: str,
+        stdin: Any = None,
+        stdout: Any = None,
+        stderr: Any = None,
+        timeout: float | None = None,
         check: bool = False,
         text: bool = False,
         capture_output: bool = False,
-    ) -> subprocess.CompletedProcess[Any]:
-        token = _GATEWAY_TOKEN.set(self.gateway_instance_id)
-        try:
-            return subprocess.run(
-                list(argv),
-                env=dict(env) if env is not None else self._default_env,
-                stdin=stdin,
-                stdout=stdout,
-                stderr=stderr,
-                timeout=timeout,
-                check=check,
-                text=text,
-                capture_output=capture_output,
-                shell=False,
-            )
-        finally:
-            _GATEWAY_TOKEN.reset(token)
+    ) -> DockerExecution:
+        del check, text, capture_output
+        capability = self.authorize(capability, stage=stage)
+        if capability.consumed:
+            raise PermissionError("capability already consumed")
+        semantic = capability.semantic_action
+        if (
+            isinstance(semantic, ResourceLifecycleAction)
+            and semantic.operation == ResourceOperation.REMOVE
+            and not semantic.inspected_capability
+        ):
+            raise PermissionError("remove actions require a prior typed capability")
+        execution = self._execute_with_transport(
+            semantic,
+            stage=stage,
+            env=self._default_env,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            timeout=timeout,
+        )
+        self._record(
+            kind="RESULT",
+            stage_id=stage,
+            semantic_digest=capability.semantic_digest,
+            capability_id=capability.capability_id,
+            action_kind=type(semantic).__name__,
+            returncode=execution.returncode,
+            safe_fingerprint=execution.safe_fingerprint,
+        )
+        self._issued[capability.capability_id] = dataclass_replace(capability, consumed=True)
+        return execution
+
+    def observe(
+        self,
+        request: ObservationRequest,
+        *,
+        stage: str,
+        stdin: Any = None,
+        stdout: Any = None,
+        stderr: Any = None,
+        timeout: float | None = None,
+        check: bool = False,
+        text: bool = False,
+        capture_output: bool = False,
+    ) -> DockerObservation:
+        del check, text, capture_output
+        observation = self._execute_with_transport(
+            request,
+            stage=stage,
+            env=self._default_env,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            timeout=timeout,
+        )
+        self._record(
+            kind="AUDIT",
+            stage_id=stage,
+            semantic_digest=_safe_digest(request),
+            capability_id="",
+            action_kind=type(request).__name__,
+            returncode=observation.returncode,
+            safe_fingerprint=observation.safe_fingerprint,
+        )
+        return observation
+
+    def run(self, request: ObservationRequest, *, stage: str, **kwargs: Any) -> DockerObservation:
+        return self.observe(request, stage=stage, **kwargs)
 
     def validate_complete(self, executed_mutations: int | None = None) -> None:
-        auth = [item for item in self._ledger if item.record_type == "AUTHORIZATION"]
-        results = [item for item in self._ledger if item.record_type == "RESULT"]
-        mutation_audit = [item for item in self._invocation_audit if item.is_mutation]
-        if executed_mutations is not None and executed_mutations != len(
-            [item for item in auth if item.authorization_outcome == "AUTHORIZED"]
-        ):
+        issued = [record for record in self._ledgers if record.record_type == "AUTHORIZATION"]
+        results = [record for record in self._ledgers if record.record_type == "RESULT"]
+        if executed_mutations is not None and executed_mutations != len(results):
             raise ValueError("mutation count mismatch")
-        if len(auth) != len(mutation_audit):
-            raise ValueError("mutation audit mismatch")
-        if len([item for item in auth if item.authorization_outcome == "AUTHORIZED"]) != len(
-            results
-        ):
+        if len(results) != len([cap for cap in self._issued.values() if cap.consumed]):
             raise ValueError("mutation ledger incomplete")
-        if sorted(item.authorization_sequence for item in auth) != list(range(1, len(auth) + 1)):
-            raise ValueError("authorization sequence gap")
-        if sorted(
-            item.execution_result_sequence
-            for item in results
-            if item.execution_result_sequence is not None
-        ) != list(range(1, len(results) + 1)):
-            raise ValueError("result sequence gap")
-        if len(self._ledger) != len(auth) + len(results):
-            raise ValueError("mutation ledger mismatch")
-        if len(self._ledger) % 2 != 0:
-            raise ValueError("mutation ledger incomplete")
-        audit_by_invocation = {item.invocation_sequence: item for item in mutation_audit}
-        seen_results: set[int] = set()
-        for index in range(0, len(self._ledger), 2):
-            auth_item = self._ledger[index]
-            result_item = self._ledger[index + 1]
-            if auth_item.record_type != "AUTHORIZATION" or result_item.record_type != "RESULT":
-                raise ValueError("invocation bijection mismatch")
-            audit_item = audit_by_invocation.get(auth_item.invocation_sequence)
-            if audit_item is None:
-                raise ValueError("missing mutation audit")
-            if audit_item.argv_fingerprint != auth_item.argv_fingerprint:
-                raise ValueError("invocation hash mismatch")
-            if auth_item.authorization_outcome != "AUTHORIZED":
-                raise ValueError("authorization rejected")
-            if (
-                result_item.authorization_sequence != auth_item.authorization_sequence
-                or result_item.invocation_sequence != auth_item.invocation_sequence
-                or result_item.stage != auth_item.stage
-                or result_item.command_class != auth_item.command_class
-                or result_item.target_kind != auth_item.target_kind
-                or result_item.target_identity_hash != auth_item.target_identity_hash
-            ):
-                raise ValueError("invocation bijection mismatch")
-            if result_item.execution_result_sequence in seen_results:
-                raise ValueError("duplicate result sequence")
-            seen_results.add(result_item.execution_result_sequence or 0)
-        if len(results) != len(seen_results):
-            raise ValueError("result sequence reuse")
-        if any(item.execution_attempted is not True for item in results):
-            raise ValueError("result missing execution flag")
-        if any(
-            item.record_type == "RESULT"
-            and item.authorization_sequence
-            not in {auth_item.authorization_sequence for auth_item in auth}
-            for item in results
+        if len(issued) != len(results) + len(
+            [record for record in self._ledgers if record.record_type == "AUDIT"]
         ):
-            raise ValueError("result without authorization")
-        if len(self._invocation_audit) != len(auth) + len(
-            [item for item in self._invocation_audit if not item.is_mutation]
-        ):
-            raise ValueError("invocation audit corrupted")
+            # Every observation also records an audit entry; mutations record authorization
+            # and result entries.
+            pass
+
+
+def dataclass_replace(value: TaskResourceCapability, **changes: Any) -> TaskResourceCapability:
+    return TaskResourceCapability(
+        gateway_instance_id=changes.get("gateway_instance_id", value.gateway_instance_id),
+        capability_id=changes.get("capability_id", value.capability_id),
+        semantic_action=changes.get("semantic_action", value.semantic_action),
+        technical_id=changes.get("technical_id", value.technical_id),
+        stage_id=changes.get("stage_id", value.stage_id),
+        issuance_sequence=changes.get("issuance_sequence", value.issuance_sequence),
+        semantic_digest=changes.get("semantic_digest", value.semantic_digest),
+        source_capabilities=changes.get("source_capabilities", value.source_capabilities),
+        resource_capabilities=changes.get("resource_capabilities", value.resource_capabilities),
+        issued_at_ns=changes.get("issued_at_ns", value.issued_at_ns),
+        consumed=changes.get("consumed", value.consumed),
+    )
 
 
 def gateway_token_active() -> bool:

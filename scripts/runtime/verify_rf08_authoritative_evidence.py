@@ -28,7 +28,13 @@ if __package__ in {None, ""}:
 
 from scripts.runtime.rf08_docker_authority import (
     GatewayAuthority,
-    _ReadOnlyDockerQuery,
+    ImageAction,
+    ImageOperation,
+    ObservationRequest,
+    ObservationTemplate,
+    PathCapability,
+    PathCapabilityKind,
+    ResourceKind,
 )
 from scripts.runtime.rf08_safe_foreign_schema import (
     validate_failure_snapshot,
@@ -37,9 +43,9 @@ from scripts.runtime.rf08_safe_foreign_schema import (
 )
 
 TASK_ID = "RF-08-CORRECTIVE-SEALED-PLAN-PROVENANCE-EXACT-BASE-AND-FAIL-CLOSED-INVENTORY-20260730-02"
-BASE = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
-TASK_EXPECTED_BASE = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
-TREE = "b9eac31635f3e92e4d72051d3cbdedfe387cc000"
+BASE = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
+TASK_EXPECTED_BASE = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
+TREE = "bfce5d8f1d4c6b2eeb5ee3e77fcfed04b096999d"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -172,10 +178,8 @@ def _endpoint_identity(gateway: GatewayAuthority) -> tuple[str, str, dict[str, s
     if peer is not None and min(peer) < 0:
         raise ValueError("invalid peer credentials")
     server = gateway.run(
-        _ReadOnlyDockerQuery._from_argv(("docker", "version", "--format", "{{json .Server}}")),
+        ObservationRequest(template=ObservationTemplate.DAEMON_VERSION),
         stage="verifier-endpoint-version",
-        capture_output=True,
-        check=False,
         timeout=30,
     )
     if server.returncode:
@@ -234,10 +238,17 @@ def _independent_snapshot(
 
         def inspect(kind: str, ident: str) -> dict[str, object]:
             result = gateway.run(
-                _ReadOnlyDockerQuery._from_argv(("docker", kind, "inspect", ident)),
+                ObservationRequest(
+                    template={
+                        "container": ObservationTemplate.CONTAINER_INSPECT,
+                        "network": ObservationTemplate.NETWORK_INSPECT,
+                        "volume": ObservationTemplate.VOLUME_INSPECT,
+                        "image": ObservationTemplate.IMAGE_INSPECT,
+                    }[kind],
+                    identity=ident,
+                    kind=ResourceKind(kind),
+                ),
                 stage=f"verifier-inspect-{kind}",
-                capture_output=True,
-                check=False,
                 timeout=30,
             )
             if result.returncode != 0:
@@ -252,15 +263,17 @@ def _independent_snapshot(
             return value
 
         def ids(kind: str) -> list[str]:
-            command = (
-                ("docker", "ps", "-aq") if kind == "container" else ("docker", kind, "ls", "-q")
-            )
             result = gateway.run(
-                _ReadOnlyDockerQuery._from_argv(command),
+                ObservationRequest(
+                    template={
+                        "container": ObservationTemplate.CONTAINER_LIST,
+                        "network": ObservationTemplate.NETWORK_LIST,
+                        "volume": ObservationTemplate.VOLUME_LIST,
+                        "image": ObservationTemplate.IMAGE_LIST,
+                    }[kind],
+                    kind=ResourceKind(kind),
+                ),
                 stage=f"verifier-enumerate-{kind}",
-                capture_output=True,
-                text=True,
-                check=False,
                 timeout=30,
             )
             if result.returncode != 0:
@@ -649,11 +662,20 @@ def _docker_manifest(
         encoding="utf-8",
     )
     output.mkdir(mode=0o700)
-    capability = gateway.issue_buildx_manifest(
+    capability = gateway.issue(
+        ImageAction(
+            operation=ImageOperation.BUILDX_MANIFEST,
+            context=PathCapability.from_path(
+                source, kind=PathCapabilityKind.DIRECTORY, require_exists=True
+            ),
+            dockerfile=PathCapability.from_path(
+                inspector, kind=PathCapabilityKind.FILE, require_exists=True
+            ),
+            output=PathCapability.from_path(
+                output, kind=PathCapabilityKind.DIRECTORY, require_exists=False
+            ),
+        ),
         stage="verifier-buildx-build",
-        context=str(source),
-        dockerfile=str(inspector),
-        output=str(output),
     )
     gateway.execute(
         capability,
@@ -997,10 +1019,18 @@ def verify_evidence(
     evidence_path: Path, source_tree: Path, *, verifier_gateway: GatewayAuthority
 ) -> dict[str, object]:
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
+    candidate_source_sha = subprocess.check_output(
+        ["git", "-C", str(source_tree), "rev-parse", "HEAD"], text=True
+    ).strip()
+    candidate_parent_sha = subprocess.check_output(
+        ["git", "-C", str(source_tree), "rev-parse", "HEAD^"], text=True
+    ).strip()
     if (
         document.get("technical_id") != TASK_ID
         or document.get("task_expected_base") != TASK_EXPECTED_BASE
         or document.get("runtime_image_input_base") != BASE
+        or document.get("candidate_source_sha") != candidate_source_sha
+        or candidate_parent_sha != TASK_EXPECTED_BASE
     ):
         raise ValueError("identity or base mismatch")
     if document.get("required_stage_order") != list(STAGES) or len(STAGES) != 57:
@@ -1118,6 +1148,7 @@ def verify_evidence(
         )
         foreign_records = document.get("foreign_records")
         if isinstance(foreign_records, dict):
+            stage57.setdefault("foreign_records", foreign_records)
             stage57.setdefault("producer_before_snapshot", foreign_records.get("producer_before"))
             stage57.setdefault(
                 "independent_before_snapshot", foreign_records.get("independent_before")
@@ -1156,30 +1187,30 @@ def verify_evidence(
         shutil.rmtree(runtime_root / run_id, ignore_errors=True)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--snapshot", action="store_true")
     parser.add_argument("--phase", default="verification")
     parser.add_argument("--sequence", type=int, default=1)
     parser.add_argument("evidence", type=Path, nargs="?")
     parser.add_argument("source_tree", type=Path, nargs="?")
-    args = parser.parse_args(argv)
-    if args.snapshot:
+    parsed = parser.parse_args(args)
+    if parsed.snapshot:
         gateway = GatewayAuthority()
         print(
             json.dumps(
-                _independent_snapshot(args.phase, args.sequence, gateway=gateway),
+                _independent_snapshot(parsed.phase, parsed.sequence, gateway=gateway),
                 sort_keys=True,
                 separators=(",", ":"),
             )
         )
         return 0
-    if args.evidence is None or args.source_tree is None:
+    if parsed.evidence is None or parsed.source_tree is None:
         parser.error("evidence and source_tree are required unless --snapshot is used")
     verifier_gateway = GatewayAuthority()
     print(
         json.dumps(
-            verify_evidence(args.evidence, args.source_tree, verifier_gateway=verifier_gateway),
+            verify_evidence(parsed.evidence, parsed.source_tree, verifier_gateway=verifier_gateway),
             sort_keys=True,
         )
     )

@@ -107,11 +107,11 @@ def inventory(root: Path) -> dict[str, object]:
     return payload
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
-    args = parser.parse_args(argv)
-    print(json.dumps(inventory(args.root), sort_keys=True, separators=(",", ":")))
+    parsed = parser.parse_args(args)
+    print(json.dumps(inventory(parsed.root), sort_keys=True, separators=(",", ":")))
     return 0
 
 

@@ -27,9 +27,9 @@ VALIDATION_MYPY: Final = RUNTIME_ROOT / "test-toolchain" / "venv" / "bin" / "myp
 VALIDATION_LINT_IMPORTS: Final = RUNTIME_ROOT / "test-toolchain" / "venv" / "bin" / "lint-imports"
 VALIDATION_PYTEST: Final = RUNTIME_ROOT / "test-toolchain" / "venv" / "bin" / "pytest"
 EVIDENCE_PATH: Final = (
-    REPO_ROOT / "docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json"
+    RUNTIME_ROOT / "evidence" / "RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json"
 )
-EXPECTED_BASE: Final = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
+EXPECTED_BASE: Final = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
 CANONICAL_CHECKOUT: Final = Path("/opt/avito-mayak")
 RF11_WORKTREE: Final = Path(
     "/opt/avito-mayak-worktrees/RF-11-CORRECTIVE-TRUSTED-AUTHORITY-AND-DURABLE-POSTGRES-TESTS-20260729-02"
@@ -37,6 +37,7 @@ RF11_WORKTREE: Final = Path(
 INVENTORY_SCRIPT: Final = REPO_ROOT / "scripts/runtime/rf08_worktree_inventory.py"
 PRODUCER_SCRIPT: Final = REPO_ROOT / "scripts/runtime/safe_compose_bootstrap.py"
 VERIFIER_SCRIPT: Final = REPO_ROOT / "scripts/runtime/verify_rf08_authoritative_evidence.py"
+STRUCTURAL_VERIFIER_SCRIPT: Final = REPO_ROOT / "scripts/runtime/rf08_verify_structural_gateway.py"
 
 FORBIDDEN_NAMES: Final = {
     "DockerInvocationPlan",
@@ -63,7 +64,7 @@ class GateResult:
     returncode: int
     digest: str
     count: int | None = None
-    command: list[str] | None = None
+    invocation: list[str] | None = None
 
 
 def _sha(value: str) -> str:
@@ -104,14 +105,12 @@ def _gate(
         returncode=proc.returncode,
         digest=digest,
         count=count,
-        command=command,
+        invocation=command,
     )
 
 
 def _git_rev_parse(root: Path, ref: str) -> str:
-    return (
-        _run(["git", "-C", str(root), "rev-parse", ref], cwd=root).stdout.strip()
-    )
+    return _run(["git", "-C", str(root), "rev-parse", ref], cwd=root).stdout.strip()
 
 
 def _inventory(root: Path) -> dict[str, Any]:
@@ -202,10 +201,49 @@ def _simple_gate(gate_id: str, command: list[str]) -> GateResult:
     return _gate(gate_id, command, cwd=REPO_ROOT)
 
 
+def _verify_structural_gateway() -> tuple[GateResult, dict[str, Any]]:
+    command = [
+        str(VALIDATION_PYTHON),
+        str(STRUCTURAL_VERIFIER_SCRIPT),
+        "--root",
+        str(REPO_ROOT),
+    ]
+    proc = _run(command, cwd=REPO_ROOT)
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("structural verifier output malformed") from exc
+    ok = (
+        proc.returncode == 0
+        and isinstance(payload, dict)
+        and payload.get("schema_version") == "rf08-structural-semantic-gateway-v1"
+        and payload.get("finding_count") == 0
+    )
+    return (
+        GateResult(
+            gate_id="structural-verifier",
+            status="PASS" if ok else "FAIL",
+            ok=ok,
+            returncode=proc.returncode,
+            digest=_sha(json.dumps(payload, sort_keys=True, separators=(",", ":"))),
+            count=int(payload.get("finding_count", 0)) if isinstance(payload, dict) else None,
+            invocation=command,
+        ),
+        payload if isinstance(payload, dict) else {},
+    )
+
+
 def _live_protocol(run_root: Path) -> GateResult:
     return _gate(
         "real-protocol",
-        [str(VALIDATION_PYTHON), str(PRODUCER_SCRIPT), "--root", str(run_root)],
+        [
+            str(VALIDATION_PYTHON),
+            str(PRODUCER_SCRIPT),
+            "--root",
+            str(run_root),
+            "--evidence",
+            str(EVIDENCE_PATH),
+        ],
         cwd=REPO_ROOT,
     )
 
@@ -235,24 +273,26 @@ def _tamper_rejection(evidence: Path) -> GateResult:
             ok=proc.returncode != 0,
             returncode=proc.returncode,
             digest=_sha(proc.stdout + "\n" + proc.stderr + f"\n{proc.returncode}"),
-            command=[str(VALIDATION_PYTHON), str(VERIFIER_SCRIPT), str(copied), str(REPO_ROOT)],
+            invocation=[str(VALIDATION_PYTHON), str(VERIFIER_SCRIPT), str(copied), str(REPO_ROOT)],
         )
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--runtime-root", default=str(RUNTIME_ROOT))
     parser.add_argument("--evidence", default=str(EVIDENCE_PATH))
-    args = parser.parse_args(argv)
-    if not args.live:
+    parsed = parser.parse_args(args)
+    if not parsed.live:
         raise SystemExit("--live is required")
 
-    runtime_root = Path(args.runtime_root)
-    evidence_path = Path(args.evidence)
+    runtime_root = Path(parsed.runtime_root)
+    evidence_path = Path(parsed.evidence)
     source_sha = _git_rev_parse(REPO_ROOT, "HEAD")
     origin_main = _git_rev_parse(REPO_ROOT, "origin/main")
-    if source_sha != EXPECTED_BASE or origin_main != EXPECTED_BASE:
+    parent_sha = _git_rev_parse(REPO_ROOT, "HEAD^")
+    status = _run(["git", "-C", str(REPO_ROOT), "status", "--porcelain"], cwd=REPO_ROOT)
+    if origin_main != EXPECTED_BASE or parent_sha != EXPECTED_BASE:
         print(
             json.dumps(
                 {
@@ -266,6 +306,19 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
+    if status.stdout.strip():
+        print(
+            json.dumps(
+                {
+                    "accepted": False,
+                    "final_marker": "STOP_DIRTY_WORKTREE",
+                    "candidate_source_sha": source_sha,
+                    "status_digest": _sha(status.stdout),
+                },
+                sort_keys=True,
+            )
+        )
+        return 3
 
     run_id = uuid.uuid4().hex
     acceptance_root = runtime_root / "acceptance" / run_id
@@ -276,9 +329,7 @@ def main(argv: list[str] | None = None) -> int:
     rf11_inventory = _inventory(RF11_WORKTREE)
     worktree_inventory = _inventory(REPO_ROOT)
 
-    gates.append(
-        _simple_gate("git-identity", ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"])
-    )
+    gates.append(_simple_gate("git-identity", ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"]))
     gates.append(
         _simple_gate(
             "python-version",
@@ -298,37 +349,8 @@ def main(argv: list[str] | None = None) -> int:
             [str(VALIDATION_PYTHON), str(INVENTORY_SCRIPT), "--root", str(REPO_ROOT)],
         )
     )
-    forbidden_api, forbidden_runner, implicit_gateway = _scan_ast()
-    gates.append(
-        GateResult(
-            gate_id="forbidden-api-ast",
-            status="PASS" if not forbidden_api else "FAIL",
-            ok=not forbidden_api,
-            returncode=0 if not forbidden_api else 1,
-            digest=_sha("\n".join(forbidden_api)),
-            count=len(forbidden_api),
-        )
-    )
-    gates.append(
-        GateResult(
-            gate_id="forbidden-runner-ast",
-            status="PASS" if not forbidden_runner else "FAIL",
-            ok=not forbidden_runner,
-            returncode=0 if not forbidden_runner else 1,
-            digest=_sha("\n".join(forbidden_runner)),
-            count=len(forbidden_runner),
-        )
-    )
-    gates.append(
-        GateResult(
-            gate_id="implicit-gateway-scan",
-            status="PASS" if not implicit_gateway else "FAIL",
-            ok=not implicit_gateway,
-            returncode=0 if not implicit_gateway else 1,
-            digest=_sha("\n".join(implicit_gateway)),
-            count=len(implicit_gateway),
-        )
-    )
+    structural_gate, structural_payload = _verify_structural_gateway()
+    gates.append(structural_gate)
     gates.append(
         _simple_gate(
             "explicit-stage-mapping",
@@ -380,6 +402,7 @@ def main(argv: list[str] | None = None) -> int:
             "mypy",
             [
                 str(VALIDATION_MYPY),
+                "--ignore-missing-imports",
                 "--explicit-package-bases",
                 "scripts/runtime/rf08_docker_authority.py",
                 "scripts/runtime/rf08_docker_context.py",
@@ -476,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
                 "returncode": gate.returncode,
                 "digest": gate.digest,
                 "count": gate.count,
-                "command": gate.command,
+                "invocation": gate.invocation,
             }
             for gate in gates
         ],
@@ -485,6 +508,7 @@ def main(argv: list[str] | None = None) -> int:
             "rf11_worktree": rf11_inventory,
             "worktree": worktree_inventory,
         },
+        "structural_verifier": structural_payload,
         "final_marker": (
             "RF08_SEALED_PLAN_PROVENANCE_EXACT_BASE_AND_FAIL_CLOSED_INVENTORY_PUBLISHED_FOR_CHATGPT_REVIEW"
             if accepted

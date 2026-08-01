@@ -16,9 +16,15 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from scripts.runtime.rf08_docker_authority import GatewayAuthority
+from scripts.runtime.rf08_docker_authority import (
+    GatewayAuthority,
+    ImageAction,
+    ImageOperation,
+    PathCapability,
+    PathCapabilityKind,
+)
 
-EXPECTED_BASE_SHA: Final = "2df3f029d20015e1c2221949b65160ca3ecf49e7"
+EXPECTED_BASE_SHA: Final = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
 COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("pyproject.toml", "pyproject.toml"),
     ("uv.lock", "uv.lock"),
@@ -108,11 +114,20 @@ def docker_native_manifest(
     output = run_root / "docker-native-output"
     inspector = _inspector_file(run_root)
     output.mkdir(mode=0o700, parents=True)
-    capability = gateway.issue_buildx_manifest(
+    capability = gateway.issue(
+        ImageAction(
+            operation=ImageOperation.BUILDX_MANIFEST,
+            context=PathCapability.from_path(
+                context, kind=PathCapabilityKind.DIRECTORY, require_exists=True
+            ),
+            dockerfile=PathCapability.from_path(
+                inspector, kind=PathCapabilityKind.FILE, require_exists=True
+            ),
+            output=PathCapability.from_path(
+                output, kind=PathCapabilityKind.DIRECTORY, require_exists=False
+            ),
+        ),
         stage="docker-native-manifest",
-        context=str(context),
-        dockerfile=str(inspector),
-        output=str(output),
     )
     gateway.execute(
         capability,

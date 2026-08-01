@@ -64,7 +64,7 @@ class _Stage34Runner:
         self.result = result
         self.env: dict[str, str] = {}
 
-    def run(self, command: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
+    def run(self, payload: tuple[str, ...], *, stage: str) -> PrivateCommandResult:
         assert stage == "APPLICATION_AUTH_REJECTION_B"
         return self.result
 
