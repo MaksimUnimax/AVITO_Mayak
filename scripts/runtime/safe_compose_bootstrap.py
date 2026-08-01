@@ -628,12 +628,12 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
 TASK_ID: Final = (
     "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
 )
-EXPECTED_TASK_BASE: Final = "a15b8288fb6640a786aab38ec9b940473b35c377"
+EXPECTED_TASK_BASE: Final = "cffb3f0f123e49ea5d689fe2425e66d04efba436"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
 EXPECTED_LOCK_IDENTITY: Final = "e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6"
-EXPECTED_IMAGE_TAG: Final = "avito-mayak:a15b8288fb6640a786aab38ec9b940473b35c377"
+EXPECTED_IMAGE_TAG: Final = "avito-mayak:cffb3f0f123e49ea5d689fe2425e66d04efba436"
 MIGRATION_HEAD: Final = "RF12_MANUAL_GRANT"
 EVIDENCE_PATH: Final = Path(
     "docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json"

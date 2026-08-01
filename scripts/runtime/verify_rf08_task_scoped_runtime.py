@@ -24,7 +24,7 @@ from scripts.runtime.rf08_docker_authority import (
     ResourceKind,
 )
 
-PROJECT = "avito-mayak-acceptance-rf08-scope-20260801-07"
+PROJECT = "avito-mayak-acceptance-rf30-scope-20260801-07"
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_ROOT = Path("/opt/avito-mayak-runtime/rf08-task-scoped-authority-20260801-07")
 SECRET_ROOT = RUNTIME_ROOT / "secrets"

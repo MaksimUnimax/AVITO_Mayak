@@ -38,7 +38,7 @@ from scripts.runtime.verify_rf08_authoritative_evidence import STAGES, verify_ev
 
 
 def test_source_identity_contract_rejects_historical_parent_and_accepts_exact_shape() -> None:
-    expected = "a15b8288fb6640a786aab38ec9b940473b35c377"
+    expected = "cffb3f0f123e49ea5d689fe2425e66d04efba436"
     historical = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
     with pytest.raises(ValueError, match="source identity mismatch"):
         validate_source_identity(origin_main=historical, parent_sha=expected)
@@ -47,7 +47,7 @@ def test_source_identity_contract_rejects_historical_parent_and_accepts_exact_sh
 
 def test_candidate_source_identity_is_not_parent_identity() -> None:
     candidate = "6d1a3522fb14d79ada5e26f85bd38ec2b5e92dd3"
-    expected = "a15b8288fb6640a786aab38ec9b940473b35c377"
+    expected = "cffb3f0f123e49ea5d689fe2425e66d04efba436"
     assert candidate != expected
 
 

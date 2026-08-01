@@ -65,6 +65,55 @@ def test_task_scope_accepts_exact_project_and_binds_identity() -> None:
     assert capability.semantic_action.binding.project_name == TASK_PROJECT
 
 
+@pytest.mark.parametrize("roadmap_number", (1, 14, 15, 29, 30))
+def test_task_scope_accepts_entire_mutating_module14_range(roadmap_number: int) -> None:
+    project = f"avito-mayak-acceptance-rf{roadmap_number:02d}-range"
+    gateway = _gateway(project=project, technical_id=f"RF-{roadmap_number:02d}-RANGE")
+    assert gateway.scope.project_name == project
+    assert gateway.technical_id == f"RF-{roadmap_number:02d}-RANGE"
+
+
+@pytest.mark.parametrize("roadmap_number", (0, 31, 99))
+def test_task_scope_rejects_outside_mutating_module14_range(roadmap_number: int) -> None:
+    project = f"avito-mayak-acceptance-rf{roadmap_number:02d}-range"
+    with pytest.raises(ValueError):
+        _gateway(project=project, technical_id=f"RF-{roadmap_number:02d}-RANGE")
+
+
+@pytest.mark.parametrize("roadmap_number", (1, 14, 15, 30))
+def test_technical_id_accepts_entire_mutating_module14_range(roadmap_number: int) -> None:
+    _gateway(technical_id=f"RF-{roadmap_number:02d}-RANGE")
+
+
+@pytest.mark.parametrize("roadmap_number", (0, 31, 99))
+def test_technical_id_rejects_outside_mutating_module14_range(roadmap_number: int) -> None:
+    with pytest.raises(ValueError):
+        _gateway(technical_id=f"RF-{roadmap_number:02d}-RANGE")
+
+
+@pytest.mark.parametrize(
+    "project",
+    [
+        "avito-mayak-acceptance-rf1-range",
+        "avito-mayak-acceptance-rf001-range",
+        "avito-mayak-acceptance-rf30--range",
+        "avito-mayak-acceptance-rf30-../range",
+        "--avito-mayak-acceptance-rf30-range",
+    ],
+)
+def test_task_scope_rejects_malformed_bounded_project_identities(project: str) -> None:
+    with pytest.raises(ValueError):
+        _gateway(project)
+
+
+@pytest.mark.parametrize(
+    "technical_id", ["rf-15-RANGE", "RF-1-RANGE", "RF-015-RANGE", "RF-15-range"]
+)
+def test_task_scope_rejects_malformed_bounded_technical_ids(technical_id: str) -> None:
+    with pytest.raises(ValueError):
+        _gateway(technical_id=technical_id)
+
+
 @pytest.mark.parametrize(
     "project",
     [
@@ -92,6 +141,17 @@ def test_cross_scope_and_binding_mismatches_fail_closed() -> None:
         gateway.issue(_action(TASK_PROJECT, "wrong-profile"), stage="profile")
     with pytest.raises(ValueError):
         gateway.issue(ComposeRunAction(_binding(), ComposeService.API), stage="service")
+    rf30_gateway = _gateway("avito-mayak-acceptance-rf30-range", TASK_ID)
+    with pytest.raises(ValueError):
+        rf30_gateway.issue(
+            _action("avito-mayak-acceptance-rf15-range"), stage="project-cross-scope"
+        )
+    other_id_gateway = _gateway(TASK_PROJECT, "RF-30-RANGE")
+    capability = gateway.issue(_action(), stage="scope-digest")
+    assert gateway.scope_digest != rf30_gateway.scope_digest
+    assert gateway.scope_digest != other_id_gateway.scope_digest
+    with pytest.raises(PermissionError):
+        other_id_gateway.execute(capability, stage="technical-id-cross-scope")
 
 
 def test_capability_is_bound_to_gateway_and_immutable_technical_id() -> None:

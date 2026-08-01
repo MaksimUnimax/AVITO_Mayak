@@ -43,8 +43,8 @@ from scripts.runtime.rf08_safe_foreign_schema import (
 )
 
 TASK_ID = "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
-BASE = "a15b8288fb6640a786aab38ec9b940473b35c377"
-TASK_EXPECTED_BASE = "a15b8288fb6640a786aab38ec9b940473b35c377"
+BASE = "cffb3f0f123e49ea5d689fe2425e66d04efba436"
+TASK_EXPECTED_BASE = "cffb3f0f123e49ea5d689fe2425e66d04efba436"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),

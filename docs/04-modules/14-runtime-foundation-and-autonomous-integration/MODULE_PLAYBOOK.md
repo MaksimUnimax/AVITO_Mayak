@@ -345,6 +345,10 @@ CLI does not choose the next roadmap step.
 
 ## 19. Current gate
 
+### RF-08 reusable task-scoped acceptance range
+
+Task-scoped Compose mutation is limited to the exact current Module-14 roadmap range RF-01 through RF-30. RF-00 is read-only and remains outside this authority; RF-31 and later are rejected. The project grammar and Technical-ID grammar use exact two-digit RF identities and one shared parsed-number policy. This range is an executable security invariant, including the RF-14→RF-15 transition and RF-30 upper boundary. Sealed RF-08 authority remains an explicit separate mode.
+
 RF-00 current-state, GitHub and server verification is accepted at baseline `315d8c63bccc870a8c55bac0cd3896a687597177` with 4511 passing tests.
 
 RF-01 governance capture and Module 14 registration are accepted.

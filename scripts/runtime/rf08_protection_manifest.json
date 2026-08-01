@@ -11,6 +11,13 @@
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_capability_is_bound_to_gateway_and_immutable_technical_id"},
       {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_teardown_is_bounded_semantic_command"},
       {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}
+    ]},
+    {"id": "task_scope_authority_covers_exact_module14_rf01_rf30_range", "evidence": [
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_task_scope_accepts_entire_mutating_module14_range"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_task_scope_rejects_outside_mutating_module14_range"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_technical_id_accepts_entire_mutating_module14_range"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_technical_id_rejects_outside_mutating_module14_range"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_cross_scope_and_binding_mismatches_fail_closed"}
     ]}
   ]
 }

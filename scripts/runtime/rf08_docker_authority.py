@@ -44,9 +44,24 @@ ALLOWED_SERVICES: Final = frozenset(
 ALLOWED_OWNER: Final = "rf08"
 EXPECTED_LOCK_IDENTITY: Final = "e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6"
 TASK_PROJECT_PATTERN: Final = re.compile(
-    r"^avito-mayak-acceptance-rf(?:0[1-9]|1[0-4])-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    r"^avito-mayak-acceptance-rf(?P<roadmap_number>[0-9]{2})-[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
-TECHNICAL_ID_PATTERN: Final = re.compile(r"^RF-[0-9]{2}-[A-Z0-9][A-Z0-9-]{0,119}$")
+TECHNICAL_ID_PATTERN: Final = re.compile(
+    r"^RF-(?P<roadmap_number>[0-9]{2})-[A-Z0-9][A-Z0-9-]{0,119}$"
+)
+MODULE14_MUTATING_RF_MIN: Final = 1
+MODULE14_MUTATING_RF_MAX: Final = 30
+
+
+def _roadmap_number_is_authorized(number: int) -> bool:
+    return MODULE14_MUTATING_RF_MIN <= number <= MODULE14_MUTATING_RF_MAX
+
+
+def _require_authorized_roadmap_number(match: re.Match[str], *, identity: str) -> int:
+    number = int(match.group("roadmap_number"))
+    if not _roadmap_number_is_authorized(number):
+        raise ValueError(f"{identity} roadmap number is outside the authorized Module-14 range")
+    return number
 
 _GATEWAY_TOKEN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "rf08_gateway_token",
@@ -363,10 +378,14 @@ class TaskScope:
         project_name: str,
         compose_file: str | Path,
     ) -> "TaskScope":
-        if not TECHNICAL_ID_PATTERN.fullmatch(technical_id):
+        technical_match = TECHNICAL_ID_PATTERN.fullmatch(technical_id)
+        if technical_match is None:
             raise ValueError("technical ID is not canonical")
-        if not TASK_PROJECT_PATTERN.fullmatch(project_name) or len(project_name) > 63:
+        _require_authorized_roadmap_number(technical_match, identity="technical ID")
+        project_match = TASK_PROJECT_PATTERN.fullmatch(project_name)
+        if project_match is None or len(project_name) > 63:
             raise ValueError("task project is not canonical")
+        _require_authorized_roadmap_number(project_match, identity="task project")
         binding = ComposeBinding.from_path(
             compose_file, project_name=project_name, profile=RUNTIME_PROFILE
         )
