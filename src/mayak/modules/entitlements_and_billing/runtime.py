@@ -265,7 +265,6 @@ class EntitlementsBillingRuntime:
     def _begin_command(
         self, session: Session, key: str | IdempotencyKey, fingerprint: IdempotencyFingerprint
     ) -> tuple[IdempotencyDecision, CommonOutcome | None]:
-        session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": self._lock_key(_key(key))})
         resolution = self.idempotency.evaluate(
             session, scope=_SCOPE, key=_key(key), fingerprint=fingerprint, now=_now()
         )
@@ -495,6 +494,10 @@ class EntitlementsBillingRuntime:
                 account_id=target,
                 tariff_id=tariff_row.id,
                 source_code="ASSIGN_ACCESS",
+                grant_kind="TARIFF",
+                granted_capability=None,
+                granted_scope=None,
+                reason=reason[:512],
                 valid_from=starts_at,
                 valid_until=ends_at,
                 state="ACTIVE",
