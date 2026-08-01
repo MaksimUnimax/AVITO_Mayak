@@ -183,6 +183,8 @@ class _Providers(BaseModel):
     max_enabled: bool = False
     max_update_mode: ProviderUpdateMode = ProviderUpdateMode.DISABLED
     yookassa_enabled: bool = False
+    yookassa_api_base: HttpUrl = HttpUrl("https://api.yookassa.ru/v3")
+    yookassa_secret_file: Path = Path("/run/secrets/mayak_yookassa_secret")
     egress_agent_enabled: bool = False
 
 
@@ -320,6 +322,11 @@ _IDENTITY_RUNTIME_ENV_KEYS = {
     "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED",
 }
 
+_RF12_PROVIDER_ENV_KEYS = {
+    "MAYAK_YOOKASSA_API_BASE",
+    "MAYAK_YOOKASSA_SECRET_FILE",
+}
+
 
 def _error(reason: str, fields: list[str]) -> RuntimeConfigurationError:
     return RuntimeConfigurationError(reason, tuple(fields))
@@ -386,6 +393,7 @@ def compose_runtime_settings(values: Mapping[str, str]) -> MayakRuntimeSettings:
         if key.startswith("MAYAK_")
         and key not in CANONICAL_NON_SECRET_ENV_KEYS
         and key not in _IDENTITY_RUNTIME_ENV_KEYS
+        and key not in _RF12_PROVIDER_ENV_KEYS
     )
     if unknown:
         raise _error("UNKNOWN_MAYAK_KEYS", unknown)
@@ -511,6 +519,12 @@ def compose_runtime_settings(values: Mapping[str, str]) -> MayakRuntimeSettings:
                         _text(copied, "MAYAK_MAX_UPDATE_MODE", "disabled")
                     ),
                     "yookassa_enabled": _bool(copied, "MAYAK_YOOKASSA_ENABLED", False),
+                    "yookassa_api_base": _text(
+                        copied, "MAYAK_YOOKASSA_API_BASE", "https://api.yookassa.ru/v3"
+                    ),
+                    "yookassa_secret_file": _path(
+                        copied, "MAYAK_YOOKASSA_SECRET_FILE", "/run/secrets/mayak_yookassa_secret"
+                    ),
                     "egress_agent_enabled": _bool(copied, "MAYAK_EGRESS_AGENT_ENABLED", False),
                 },
             ),
