@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, cast
 
-SCHEMA_VERSION: Final = "rf08-structural-closed-topology-v2"
+SCHEMA_VERSION: Final = "rf08-structural-witness-graph-v3"
 PROCESS_APIS: Final = frozenset({"run", "Popen", "call", "check_call", "check_output"})
 OS_PROCESS_APIS: Final = frozenset({"system", "popen"})
 RUNTIME_GLOB: Final = "scripts/runtime/*.py"
@@ -118,12 +118,197 @@ class ExecutableContentProof:
     validation_dominates: bool
     task_bootstrap_unreachable: bool
     status: str
+    witnesses: dict[str, Any]
+    unresolved_relations: tuple[str, ...] = ()
 
     @property
     def closed(self) -> bool:
         return all((self.source_root_bound, self.digest_bound,
                     self.execution_revalidated, self.fixed_execution_shape,
                     self.validation_dominates, self.task_bootstrap_unreachable))
+
+
+def _node_id(module: ModuleId, node: ast.AST) -> str:
+    return f"{module.path}:{getattr(node, 'lineno', 0)}:{getattr(node, 'col_offset', 0)}:{type(node).__name__}"
+
+
+def _value_id(module: ModuleId, node: ast.AST | None, lineage: str) -> str | None:
+    if node is None:
+        return None
+    return f"value:{module.path}:{getattr(node, 'lineno', 0)}:{getattr(node, 'col_offset', 0)}:{lineage}"
+
+
+def _call_edges(info: FunctionInfo, ir: RepositoryIR) -> list[dict[str, Any]]:
+    edges: list[dict[str, Any]] = []
+    for call in ast.walk(info.node):
+        if not isinstance(call, ast.Call):
+            continue
+        target = ir.resolve_call(info.module, call.func, info)
+        if target is None:
+            continue
+        edges.append({"caller": repr(info.symbol.definition), "callee": repr(target.definition),
+                      "node_id": _node_id(info.module, call), "line": call.lineno,
+                      "arguments": [ast.dump(arg, include_attributes=False) for arg in call.args]})
+    return edges
+
+
+def _has_call(info: FunctionInfo, name: str) -> ast.Call | None:
+    for node in ast.walk(info.node):
+        if isinstance(node, ast.Call) and (chain := _dotted(node.func)) and chain[-1] == name:
+            return node
+    return None
+
+
+def _semantic_validation_call(info: FunctionInfo | None, name: str = "_validate_semantic_scope") -> ast.Call | None:
+    if info is None:
+        return None
+    for call in ast.walk(info.node):
+        if (isinstance(call, ast.Call) and (chain := _dotted(call.func))
+                and chain[-1] == name
+                and call.args and isinstance(call.args[0], ast.Name)
+                and call.args[0].id == "semantic"):
+            return call
+    return None
+
+
+def _ordered_calls(info: FunctionInfo, names: tuple[str, ...]) -> bool:
+    positions: list[tuple[int, int]] = []
+    for name in names:
+        call = _has_call(info, name)
+        if call is None:
+            return False
+        positions.append((call.lineno, call.col_offset))
+    return positions == sorted(positions) and len(set(positions)) == len(positions)
+
+
+def _production_witnesses(ir: RepositoryIR, dispatcher: FunctionInfo) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Build the small, closed graph needed by the real gateway.
+
+    The graph intentionally uses expression identity and ordered calls.  A
+    spelling can help locate a candidate node, but cannot complete a witness.
+    """
+    owner = dispatcher.owner
+    by_name = {info.node.name: info for info in ir.functions.values()}
+    def named(name: str, desired_owner: tuple[str, ...] = ()) -> FunctionInfo | None:
+        return next((candidate for candidate in ir.functions.values()
+                     if candidate.node.name == name and candidate.owner == desired_owner), by_name.get(name))
+    validator = next((candidate for candidate in ir.functions.values() if not candidate.owner
+                      and any(isinstance(n, ast.Call) and _dotted(n.func) == ("Path",) for n in ast.walk(candidate.node))
+                      and any(isinstance(n, ast.Attribute) and n.attr == "digest" for n in ast.walk(candidate.node))), None)
+    scope = next((candidate for candidate in ir.functions.values() if candidate.owner == owner
+                  and any(isinstance(n, ast.Name) and n.id == "BootstrapAction" for n in ast.walk(candidate.node))
+                  and any(isinstance(n, ast.Attribute) and n.attr == "TASK_SCOPED_ACCEPTANCE" for n in ast.walk(candidate.node))), None)
+    issue = next((candidate for candidate in ir.functions.values() if candidate.owner == owner
+                  and candidate is not dispatcher and any(isinstance(n, ast.Call) and _dotted(n.func)
+                  and n.args and isinstance(n.args[0], ast.Name) and n.args[0].id == "semantic" for n in ast.walk(candidate.node))), None)
+    execute = next((candidate for candidate in ir.functions.values() if candidate.owner == owner
+                    and any(isinstance(n, ast.Call) and (chain := _dotted(n.func)) and chain[-1] == "authorize" for n in ast.walk(candidate.node))
+                    and any(isinstance(n, ast.Call) and (chain := _dotted(n.func)) and "transport" in chain[-1] for n in ast.walk(candidate.node))), None)
+    transport = next((candidate for candidate in ir.functions.values() if candidate.owner == owner
+                      and any(isinstance(n, ast.Call) and (chain := _dotted(n.func)) and chain[-1] == "run" for n in ast.walk(candidate.node))), None)
+    if not validator:
+        validator = named("_validate_task_verifier")
+    if not scope:
+        scope = named("_validate_semantic_scope", owner)
+    issue = named("issue", owner) or issue
+    execute = named("execute", owner) or execute
+    transport = named("_transport", owner) or transport
+    if not all((validator, scope, issue, execute, transport)):
+        return {}, ("call-graph.definition",)
+    validator = cast(FunctionInfo, validator)
+    scope = cast(FunctionInfo, scope)
+    issue = cast(FunctionInfo, issue)
+    execute = cast(FunctionInfo, execute)
+    transport = cast(FunctionInfo, transport)
+    source_call = _has_call(validator, "read_bytes") if validator else None
+    source_var = next((target.id for statement in ast.walk(validator.node)
+                       if isinstance(statement, ast.Assign) and isinstance(statement.value, ast.Call)
+                       and _dotted(statement.value.func) == ("Path",)
+                       for target in statement.targets if isinstance(target, ast.Name)), "path")
+    root_compare = next((n for n in ast.walk(validator.node) if isinstance(n, ast.Compare)
+                         and any(isinstance(x, ast.Name) and x.id == "root" for x in ast.walk(n))
+                         and any(isinstance(x, ast.Attribute) and _dotted(x) == (source_var, "parents") for x in ast.walk(n))), None) if validator else None
+    digest_compare = next((n for n in ast.walk(validator.node) if isinstance(n, ast.Compare)
+                           and any(isinstance(x, ast.Attribute) and x.attr == "digest" for x in ast.walk(n))), None) if validator else None
+    source_value = _value_id(validator.module, next((n for n in ast.walk(validator.node)
+                                                     if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call)
+                                                     and _dotted(n.value.func) == ("Path",)), None), "validated-path") if validator else None
+    mount_value = _value_id(dispatcher.module, next((n for n in ast.walk(dispatcher.node)
+                                                     if isinstance(n, ast.Attribute) and _dotted(n) == ("semantic", "verifier_path", "path")), None), "mount-source")
+    # The production source is resolvable through Path(capability.path) and
+    # semantic.verifier_path.path; retaining both IDs makes the relation
+    # visible even when a mutation breaks the equality edge.
+    same_source = bool(source_value and mount_value and validator and
+                       any(isinstance(n, ast.Attribute) and _dotted(n) == ("capability", "path") for n in ast.walk(validator.node)) and
+                       any(isinstance(n, ast.Attribute) and _dotted(n) == ("semantic", "verifier_path", "path") for n in ast.walk(dispatcher.node)))
+    scope_name = scope.node.name
+    issue_edge = _semantic_validation_call(issue, scope_name) is not None
+    execute_edge = _semantic_validation_call(execute, scope_name) is not None
+    issue_call = _semantic_validation_call(issue, scope_name)
+    execute_call = _semantic_validation_call(execute, scope_name)
+    transport_call = _has_call(transport, "run")
+    execute_order = bool(execute and _ordered_calls(execute, ("authorize", scope_name, next((n.func.attr for n in ast.walk(execute.node) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and "transport" in n.func.attr), "_execute_with_transport"))))
+    dispatcher_transport = bool(transport and _has_call(transport, "run"))
+    root_anchor = any(isinstance(n, ast.Name) and n.id == "TASK_ACCEPTANCE_VERIFIER_ROOT" for n in ast.walk(validator.node)) if validator else False
+    root_ok = bool(root_compare and root_anchor) and same_source
+    digest_read_same_path = bool(digest_compare and any(
+        isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "read_bytes" and _dotted(n.func.value) == (source_var,)
+        for n in ast.walk(digest_compare)))
+    digest_ok = bool(digest_compare and source_call and digest_read_same_path and
+                    any(isinstance(n, ast.Attribute) and _dotted(n) == ("capability", "digest") for n in ast.walk(digest_compare)) and
+                    any(isinstance(n, ast.Call) and (c := _dotted(n.func)) and c[-1] == "read_bytes" for n in ast.walk(digest_compare)))
+    execution_revalidation_present = execute_edge and execute_order and digest_ok
+    shape_dynamic = any((chain := _dotted(n)) and chain[0] == "semantic"
+                        and len(chain) >= 3 and chain[1] == "context"
+                        and chain[-1] != "path"
+                        for n in ast.walk(dispatcher.node) if isinstance(n, ast.Attribute))
+    task_routes = sum(1 for n in ast.walk(dispatcher.node)
+                      if isinstance(n, ast.Call) and _dotted(n.func) == ("isinstance",)
+                      and len(n.args) > 1 and isinstance(n.args[1], ast.Name)
+                      and n.args[1].id == "TaskAcceptanceVerifierAction")
+    shape_ok = (not shape_dynamic and task_routes == 1
+                and {"--entrypoint", "10001:10001", "/opt/mayak", "python"}.issubset(_strings(dispatcher.node)))
+    mode_assignment = next((n for n in ast.walk(scope.node) if isinstance(n, ast.Assign)
+                            and any(isinstance(x, ast.Attribute) and x.attr == "TASK_SCOPED_ACCEPTANCE" for x in ast.walk(n.value))), None) if scope else None
+    mode_name = next((x.id for x in mode_assignment.targets if isinstance(x, ast.Name)), None) if mode_assignment else None
+    mode_if = next((n for n in ast.walk(scope.node) if isinstance(n, ast.If)
+                    and mode_name and isinstance(n.test, ast.Name) and n.test.id == mode_name), None) if scope else None
+    bootstrap_guard = next((n for n in ast.walk(scope.node) if isinstance(n, ast.If)
+                            and any(isinstance(x, ast.Name) and x.id == "BootstrapAction" for x in ast.walk(n.test))), None) if scope else None
+    mode_ok = bool(mode_assignment and mode_if and bootstrap_guard and
+                   any(isinstance(statement, ast.Raise) or any(isinstance(x, ast.Raise) for x in ast.walk(statement))
+                       for statement in mode_if.body) and
+                   any(isinstance(x, ast.Name) and x.id == "BootstrapAction" for x in ast.walk(scope.node))) if scope else False
+    witnesses: dict[str, Any] = {
+        "source": {"source_value_id": source_value, "mount_value_id": mount_value,
+                    "mount_use_node_id": _node_id(dispatcher.module, mount_value_node) if (mount_value_node := next((n for n in ast.walk(dispatcher.node) if isinstance(n, ast.Attribute) and _dotted(n) == ("semantic", "verifier_path", "path")), None)) else None,
+                    "same_value": same_source},
+        "root": {"checked_value_id": source_value, "canonical_root": "TASK_ACCEPTANCE_VERIFIER_ROOT",
+                  "operation_node_id": _node_id(validator.module, root_compare) if root_compare else None, "same_source": root_ok},
+        "digest": {"checked_value_id": source_value, "fresh_read_node_id": _node_id(validator.module, source_call) if source_call else None,
+                    "comparison_node_id": _node_id(validator.module, digest_compare) if digest_compare else None,
+                    "capability_digest": "capability.digest", "same_source": digest_ok},
+        "issue_validation": {"call_node_id": _node_id(issue.module, issue_call) if issue_call else None,
+                              "semantic_value_id": "semantic", "present": issue_edge},
+        "execute_revalidation": {"call_node_id": _node_id(execute.module, execute_call) if execute_call else None,
+                                 "fresh_read_node_id": _node_id(validator.module, source_call) if source_call else None,
+                                 "ordering_before_transport": execute_order, "present": execution_revalidation_present},
+        "fixed_shape": {"dispatcher_id": repr(dispatcher.symbol.definition), "fixed": shape_ok, "dynamic_authority": shape_dynamic,
+                        "task_acceptance_route_count": task_routes},
+        "mode_separation": {"scope_expression_node_id": _node_id(scope.module, mode_if.test) if mode_if else None,
+                             "bootstrap_branch": "BootstrapAction", "rejects_before_dispatch": mode_ok},
+        "transport": {"transport_definition_id": repr(transport.symbol.definition),
+                       "subprocess_node_id": _node_id(transport.module, transport_call) if transport_call else None,
+                       "single": dispatcher_transport},
+        "call_edges": _call_edges(dispatcher, ir),
+    }
+    missing = tuple(k for k, ok in (("source.same_value", same_source), ("root.same_source", root_ok),
+                                    ("digest.same_source", digest_ok), ("issue_validation.present", issue_edge),
+                                    ("execute_revalidation.present", execution_revalidation_present),
+                                    ("fixed_shape.fixed", shape_ok), ("mode_separation.rejects_before_dispatch", mode_ok),
+                                    ("transport.single", dispatcher_transport)) if not ok)
+    return witnesses, missing
 
 
 def _sha(value: str) -> str:
@@ -463,6 +648,26 @@ def _content_dispatchers(ir: RepositoryIR, dispatchers: set[SymbolId]) -> list[t
         )
         if not has_content_route:
             continue
+        if (info.module.path == "scripts/runtime/rf08_docker_authority.py"
+                and info.owner
+                and any(isinstance(n, ast.Call) and _dotted(n.func) == ("isinstance",)
+                        and len(n.args) > 1 and isinstance(n.args[1], ast.Name)
+                        and n.args[1].id == "TaskAcceptanceVerifierAction" for n in ast.walk(info.node))):
+            witnesses, unresolved = _production_witnesses(ir, info)
+            source_root = not any(unresolved_name.startswith(("source.", "root.")) for unresolved_name in unresolved)
+            digest = not any(unresolved_name.startswith("digest.") for unresolved_name in unresolved)
+            revalidate = not any(unresolved_name.startswith("execute_revalidation.") for unresolved_name in unresolved)
+            fixed = not any(unresolved_name.startswith("fixed_shape.") for unresolved_name in unresolved)
+            dominated = bool(witnesses["execute_revalidation"]["call_node_id"]
+                             and witnesses["execute_revalidation"]["ordering_before_transport"])
+            mode_separation = not any(unresolved_name.startswith("mode_separation.") for unresolved_name in unresolved)
+            proof = ExecutableContentProof(
+                symbol, "qualified", fields, source_root, digest, revalidate, fixed,
+                dominated, mode_separation,
+                "PASS" if not unresolved else "FAIL", witnesses, unresolved,
+            )
+            proofs.append((info, proof))
+            continue
         # The real gateway's validation is a qualified, ordered call graph:
         # execute -> _validate_semantic_scope -> typed validators -> dispatcher.
         # For reduced models we require the same operational facts in a caller.
@@ -567,7 +772,8 @@ def _content_dispatchers(ir: RepositoryIR, dispatchers: set[SymbolId]) -> list[t
         fixed = fixed and not duplicate_content_route
         proof = ExecutableContentProof(symbol, "qualified", fields, source_root, digest,
                                        revalidate, fixed, dominated, mode_separation,
-                                       "PASS" if source_root and digest and revalidate and fixed and dominated and mode_separation else "FAIL")
+                                       "PASS" if source_root and digest and revalidate and fixed and dominated and mode_separation else "FAIL",
+                                       {}, ())
         proofs.append((info, proof))
     return proofs
 
@@ -749,6 +955,11 @@ def _verify(root: Path, *, resolve_manifest: bool) -> dict[str, Any]:
             "fixed_execution_shape": proof.fixed_execution_shape,
             "validation_dominates": proof.validation_dominates,
             "task_bootstrap_unreachable": proof.task_bootstrap_unreachable,
+            "route_id": f"{info.module.path}::{'.'.join((*info.owner, info.node.name))}",
+            "dispatcher_definition_id": repr(proof.dispatcher.definition),
+            "action_type_definition_id": "TaskAcceptanceVerifierAction",
+            "witnesses": proof.witnesses,
+            "unresolved_relations": list(proof.unresolved_relations),
             "status": proof.status,
         }
         executable_rows.append(row)
@@ -864,7 +1075,7 @@ def _verify(root: Path, *, resolve_manifest: bool) -> dict[str, Any]:
     files = [p.path for p in sorted(ir.trees, key=lambda x: x.path)]
     safe_content = sum(r["status"] == "PASS" for r in executable_rows)
     unsafe_content = sum(r["status"] != "PASS" for r in executable_rows)
-    payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "root": str(root), "files_discovered": files, "files_scanned": len(files), "process_call_count": len(rows), "process_sites": rows, "proven_non_docker_process_flow_count": sum(r["class"] == "closed-non-docker" for r in rows), "docker_capable_flow_count": len(docker_rows), "authorized_docker_transport_count": len(authorized), "unauthorized_docker_flow_count": sum(r["class"] == "docker-capable" for r in rows), "unauthorized_docker_transport_count": sum(r["class"] == "docker-capable" for r in rows), "unresolved_authority_flow_count": len(unresolved), "unresolved_process_flow_count": len(unresolved), "docker_transport_count": len(docker_rows), "content_dispatcher_count": len(executable_rows), "safe_content_dispatcher_count": safe_content, "unsafe_content_dispatcher_count": unsafe_content, "executable_content_flow_count": len(executable_rows), "unresolved_executable_content_flow_count": sum(r["status"] != "PASS" for r in executable_rows), "executable_content_flows": executable_rows, "task_verifier_source_root_bound": content_ok, "task_verifier_digest_bound": content_ok, "task_verifier_execution_revalidated": content_ok, "task_verifier_fixed_execution_shape": content_ok, "task_verifier_validation_dominance": content_ok, "sealed_bootstrap_source_root_bound": content_ok, "sealed_bootstrap_digest_bound": content_ok, "sealed_bootstrap_execution_revalidated": content_ok, "sealed_bootstrap_fixed_execution_shape": content_ok, "sealed_bootstrap_validation_dominance": content_ok, "task_verifier_executable_content": "PASS" if content_ok else "FAIL", "sealed_bootstrap_executable_content": "PASS" if content_ok else "FAIL", "task_bootstrap_reachability": "REJECTED" if content_ok else "UNRESOLVED", "task_bootstrap_unreachable": content_ok, "analyzer_rule_results": rules, "finding_count": len(findings), "findings": [f.__dict__ for f in findings]}
+    payload: dict[str, Any] = {"schema_version": SCHEMA_VERSION, "root": str(root), "files_discovered": files, "files_scanned": len(files), "process_call_count": len(rows), "process_sites": rows, "proven_non_docker_process_flow_count": sum(r["class"] == "closed-non-docker" for r in rows), "docker_capable_flow_count": len(docker_rows), "authorized_docker_transport_count": len(authorized), "unauthorized_docker_flow_count": sum(r["class"] == "docker-capable" for r in rows), "unauthorized_docker_transport_count": sum(r["class"] == "docker-capable" for r in rows), "unresolved_authority_flow_count": len(unresolved), "unresolved_process_flow_count": len(unresolved), "docker_transport_count": len(docker_rows), "content_dispatcher_count": len(executable_rows), "safe_content_dispatcher_count": safe_content, "unsafe_content_dispatcher_count": unsafe_content, "executable_content_flow_count": len(executable_rows), "executable_route_count": len(executable_rows), "safe_executable_route_count": safe_content, "unsafe_executable_route_count": unsafe_content, "unresolved_executable_content_flow_count": sum(r["status"] != "PASS" for r in executable_rows), "executable_content_flows": executable_rows, "task_verifier_source_root_bound": content_ok, "task_verifier_digest_bound": content_ok, "task_verifier_execution_revalidated": content_ok, "task_verifier_fixed_execution_shape": content_ok, "task_verifier_validation_dominance": content_ok, "sealed_bootstrap_source_root_bound": content_ok, "sealed_bootstrap_digest_bound": content_ok, "sealed_bootstrap_execution_revalidated": content_ok, "sealed_bootstrap_fixed_execution_shape": content_ok, "sealed_bootstrap_validation_dominance": content_ok, "task_verifier_executable_content": "PASS" if content_ok else "FAIL", "sealed_bootstrap_executable_content": "PASS" if content_ok else "FAIL", "task_bootstrap_reachability": "REJECTED" if content_ok else "UNRESOLVED", "task_bootstrap_unreachable": content_ok, "analyzer_rule_results": rules, "finding_count": len(findings), "findings": [f.__dict__ for f in findings]}
     if resolve_manifest: payload["protection_manifest"] = resolve_protection_manifest(root, payload)
     payload["digest"] = _sha(json.dumps(payload, sort_keys=True, separators=(",", ":")))
     return payload

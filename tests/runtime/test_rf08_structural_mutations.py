@@ -46,10 +46,19 @@ def _fails(mutator: Callable[[str], str]) -> None:
     assert payload["unresolved_executable_content_flow_count"] > 0
 
 
+def _route(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload["executable_content_flows"][0]
+
+
 def test_exact_production_identity_passes() -> None:
     payload = _result(lambda value: value)
     assert payload["finding_count"] == 0
     assert payload["task_verifier_executable_content"] == "PASS"
+    route = _route(payload)
+    assert route["unresolved_relations"] == []
+    assert all(route["witnesses"][name] for name in
+               ("source", "root", "digest", "issue_validation", "execute_revalidation",
+                "fixed_shape", "mode_separation", "transport"))
 
 
 def test_exact_production_identity_missing_validation_edge_fails() -> None:
@@ -73,7 +82,91 @@ def test_exact_production_identity_issue_only_fails() -> None:
 
 
 def test_exact_production_identity_one_read_no_revalidation_fails() -> None:
-    _fails(lambda value: _replace_execute(value, "        self._validate_semantic_scope(semantic)\n", "        self._validate_binding(cast(ComposeBinding, semantic.binding))\n"))
+    payload = _result(lambda value: _replace_execute(value, "        self._validate_semantic_scope(semantic)\n", "        self._validate_binding(cast(ComposeBinding, semantic.binding))\n"))
+    assert _route(payload)["witnesses"]["execute_revalidation"]["present"] is False
+    assert _route(payload)["witnesses"]["root"]["same_source"] is True
+    assert _route(payload)["witnesses"]["digest"]["same_source"] is True
+    assert payload["finding_count"] > 0
+
+
+def test_unrelated_root_and_digest_operations_do_not_complete_witnesses() -> None:
+    root_payload = _result(lambda value: value.replace(
+        "    if root not in path.parents:\n",
+        "    if root not in Path('/tmp/rf08-unrelated-b').parents:\n", 1))
+    digest_payload = _result(lambda value: value.replace(
+        "    if capability.digest != _sha_bytes(path.read_bytes()):",
+        "    if capability.digest != _sha_bytes(Path('/tmp/rf08-unrelated-b').read_bytes()):", 1))
+    self_payload = _result(lambda value: value.replace(
+        "    if capability.digest != _sha_bytes(path.read_bytes()):",
+        "    if capability.digest != capability.digest:", 1))
+    assert _route(root_payload)["witnesses"]["root"]["same_source"] is False
+    assert _route(digest_payload)["witnesses"]["digest"]["same_source"] is False
+    assert _route(self_payload)["witnesses"]["digest"]["same_source"] is False
+    assert all(p["finding_count"] > 0 for p in (root_payload, digest_payload, self_payload))
+
+
+def test_cached_execute_validator_keeps_dominance_but_lacks_fresh_read() -> None:
+    payload = _result(lambda value: value.replace(
+        "_sha_bytes(path.read_bytes())", "_sha_bytes(cached_bytes)", 1))
+    route = _route(payload)
+    assert route["validation_dominates"] is True
+    assert route["witnesses"]["execute_revalidation"]["ordering_before_transport"] is True
+    assert route["witnesses"]["execute_revalidation"]["present"] is False
+    assert payload["finding_count"] > 0
+
+
+def test_safe_mode_local_rename_preserves_relation_proof() -> None:
+    payload = _result(lambda value: value.replace("task_mode", "neutral_mode"))
+    assert payload["finding_count"] == 0
+    assert _route(payload)["witnesses"]["mode_separation"]["rejects_before_dispatch"] is True
+
+
+def test_neutral_dynamic_execution_fields_fail_closed() -> None:
+    mutations = (
+        ("semantic.service.value,", "semantic.context.alpha,"),
+        ('                "python",', "                semantic.context.beta,"),
+        ('"10001:10001",', "semantic.context.gamma,"),
+        ('"/opt/mayak",', "semantic.context.delta,"),
+        ("*((semantic.correlation_id,) if semantic.probe == ComposeProbeKind.AUTH_REJECTION else ()),", "*semantic.context.epsilon,"),
+    )
+    for old, new in mutations:
+        def mutation(value: str, old: str = old, new: str = new) -> str:
+            return value.replace(old, new, 1)
+
+        payload = _result(mutation)
+        route = _route(payload)
+        assert route["witnesses"]["fixed_shape"]["fixed"] is False
+        assert "fixed_shape.fixed" in route["unresolved_relations"]
+        assert payload["finding_count"] > 0
+
+
+def test_safe_and_unsafe_neutral_topologies_are_rename_invariant() -> None:
+    source = AUTHORITY.read_text(encoding="utf-8")
+    safe = (source.replace("GatewayAuthority", "NeutralAuthority")
+            .replace("_build_docker_tokens", "assemble_tokens")
+            .replace("_validate_task_verifier", "check_source")
+            .replace("_validate_semantic_scope", "check_scope")
+            .replace("task_mode", "mode_flag")
+            .replace("path = Path(capability.path)", "candidate = Path(capability.path)")
+            .replace("path.parents", "candidate.parents")
+            .replace("path.read_bytes()", "candidate.read_bytes()"))
+    unsafe = safe.replace(
+        "if capability.digest != _sha_bytes(candidate.read_bytes()):",
+        "if capability.digest != capability.digest:", 1)
+    def safe_mutation(_value: str) -> str:
+        return safe
+
+    def unsafe_mutation(_value: str) -> str:
+        return unsafe
+
+    safe_payload = _result(safe_mutation)
+    unsafe_payload = _result(unsafe_mutation)
+    assert safe_payload["finding_count"] == 0
+    assert _route(safe_payload)["status"] == "PASS"
+    assert _route(safe_payload)["witnesses"]["digest"]["same_source"] is True
+    assert unsafe_payload["finding_count"] > 0
+    assert _route(unsafe_payload)["status"] == "FAIL"
+    assert "digest.same_source" in _route(unsafe_payload)["unresolved_relations"]
 
 
 def test_exact_production_identity_fake_mode_separation_fails() -> None:
