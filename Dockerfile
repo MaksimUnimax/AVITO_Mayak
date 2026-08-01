@@ -9,6 +9,8 @@ WORKDIR /opt/mayak
 RUN test -n "${SOURCE_SHA}" && test "$(printf '%s' "${SOURCE_SHA}" | tr -d '0-9a-f')" = "" && test "${#SOURCE_SHA}" = 40 && test -n "${LOCK_IDENTITY}" && test "$(printf '%s' "${LOCK_IDENTITY}" | tr -d '0-9a-f')" = "" && test "${#LOCK_IDENTITY}" = 64 && test -n "${BUILD_INPUT_DIGEST}" && test "$(printf '%s' "${BUILD_INPUT_DIGEST}" | tr -d '0-9a-f')" = "" && test "${#BUILD_INPUT_DIGEST}" = 64 && python -m pip install --no-cache-dir --disable-pip-version-check uv==0.11.31
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+COPY scripts/runtime/run_rf12_postgres_acceptance.py ./scripts/runtime/run_rf12_postgres_acceptance.py
+COPY scripts/runtime/verify_rf12_acceptance.py ./scripts/runtime/verify_rf12_acceptance.py
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 RUN test "$(sha256sum uv.lock | cut -d' ' -f1)" = "${LOCK_IDENTITY}" \
