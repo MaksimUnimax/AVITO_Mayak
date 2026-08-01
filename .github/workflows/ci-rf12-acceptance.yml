@@ -1,0 +1,278 @@
+name: RF-12 Hosted PostgreSQL Acceptance
+
+on:
+  push:
+    branches:
+      - 'rf12-acceptance/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rf12-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONNOUSERSITE: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  LC_ALL: C.UTF-8
+  LANG: C.UTF-8
+  NO_COLOR: "1"
+  UV_NO_SYSTEM_CONFIG: "1"
+  UV_PROJECT_ENVIRONMENT: .venv
+  PG_IMAGE: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+
+jobs:
+  rf12-runtime-closure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact event commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: false
+          lfs: false
+
+      - name: Prove push identity and collect runner capacity
+        run: |
+          test "${{ github.sha }}" = "$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          mkdir -p ci-evidence/rf12
+          {
+            echo "workflow_run=${{ github.run_id }}"
+            echo "event=${{ github.event_name }}"
+            echo "candidate_sha=${{ github.sha }}"
+            echo "candidate_tree=$(git rev-parse HEAD^{tree})"
+            echo "free_bytes=$(df -B1 --output=avail . | tail -1 | tr -d ' ')"
+            echo "free_inodes=$(df -Pi . | awk 'NR==2 {print $4}')"
+            echo "docker_root=$(docker info --format '{{.DockerRootDir}}')"
+            docker system df
+            docker info --format 'docker_server={{.ServerVersion}}'
+          } > ci-evidence/rf12/runner-capacity.txt
+          test "$(df -B1 --output=avail . | tail -1 | tr -d ' ')" -ge 1934900000
+          test "$(df -Pi . | awk 'NR==2 {print $4}')" -ge 100000
+          docker system df >> ci-evidence/rf12/runner-capacity.txt
+
+      - name: Setup pinned Python and uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.31
+          python-version: 3.14.6
+          activate-environment: true
+          venv-path: .venv
+          enable-cache: false
+
+      - name: Sync locked environment
+        run: uv sync --frozen --all-groups --python 3.14.6
+
+      - name: Verify immutable dependency identity
+        run: |
+          test "$(sha256sum pyproject.toml | cut -d' ' -f1)" = 5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7d
+          test "$(sha256sum uv.lock | cut -d' ' -f1)" = e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
+          test "$(python --version)" = "Python 3.14.6"
+          test "$(uv --version | awk '{print $2}')" = "0.11.31"
+
+      - name: Compile RF-12 sources
+        run: python -m compileall -q src scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py
+
+      - name: Run RF-12 focused unit tests
+        run: uv run pytest -q tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py
+
+      - name: Run RF-12 Ruff gate
+        run: uv run ruff check scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py src/mayak/modules/entitlements_and_billing/runtime.py tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py
+
+      - name: Run RF-12 mypy gate
+        run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/entitlements_and_billing/runtime.py scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py
+
+      - name: Run import-linter gate
+        run: uv run lint-imports
+
+      - name: Build exactly one candidate application image
+        run: |
+          LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
+          BUILD_INPUT_DIGEST="$(git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)"
+          echo "LOCK_IDENTITY=$LOCK_IDENTITY" >> "$GITHUB_ENV"
+          echo "BUILD_INPUT_DIGEST=$BUILD_INPUT_DIGEST" >> "$GITHUB_ENV"
+          docker build --pull=false --tag rf12-candidate:${{ github.sha }} \
+            --build-arg SOURCE_SHA=${{ github.sha }} \
+            --build-arg LOCK_IDENTITY="$LOCK_IDENTITY" \
+            --build-arg BUILD_INPUT_DIGEST="$BUILD_INPUT_DIGEST" .
+          docker image inspect rf12-candidate:${{ github.sha }} --format '{{json .Id}} {{json .Config.Labels}}' > ci-evidence/rf12/image-identity.txt
+
+      - name: Record normalized foreign Docker snapshot before task resources
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          def rows(command):
+              out = subprocess.check_output(command, text=True)
+              return sorted((json.loads(line) for line in out.splitlines() if line.strip()), key=lambda item: json.dumps(item, sort_keys=True))
+          snapshot = {
+              "containers": rows(["docker", "ps", "-a", "--format", "{{json .}}"]),
+              "networks": rows(["docker", "network", "ls", "--format", "{{json .}}"]),
+              "volumes": rows(["docker", "volume", "ls", "--format", "{{json .}}"]),
+          }
+          json.dump(snapshot, open("ci-evidence/rf12/foreign-before.json", "w"), sort_keys=True)
+          PY
+
+      - name: Start one private PostgreSQL 18 cluster
+        run: |
+          docker network create rf12-acceptance-network
+          docker volume create rf12-acceptance-pgdata
+          docker run --detach --name rf12-acceptance-postgres --network rf12-acceptance-network \
+            --volume rf12-acceptance-pgdata:/var/lib/postgresql \
+            --env POSTGRES_USER=rf12 --env POSTGRES_PASSWORD=rf12 --env POSTGRES_DB=postgres "$PG_IMAGE"
+          ready=0
+          for i in $(seq 1 180); do
+            if docker exec rf12-acceptance-postgres pg_isready -h 127.0.0.1 -U rf12; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            docker ps -a --no-trunc
+            docker inspect rf12-acceptance-postgres --format '{{json .State}}'
+            docker logs rf12-acceptance-postgres
+            exit 1
+          fi
+          for db in rf12_empty rf12_rf09 rf12_manual rf12_final; do
+            docker exec rf12-acceptance-postgres createdb -U rf12 "$db"
+          done
+          DB_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(24))')"
+          echo "::add-mask::$DB_PASSWORD"
+          echo "DB_PASSWORD=$DB_PASSWORD" >> "$GITHUB_ENV"
+          docker exec rf12-acceptance-postgres psql -U rf12 -d postgres -v ON_ERROR_STOP=1 \
+            -v pw="$DB_PASSWORD" \
+            -c "CREATE ROLE mayak_migration LOGIN PASSWORD '$DB_PASSWORD'" \
+            -c "CREATE ROLE mayak_application LOGIN PASSWORD '$DB_PASSWORD'"
+          for db in rf12_empty rf12_rf09 rf12_manual rf12_final; do
+            docker exec rf12-acceptance-postgres psql -U rf12 -d "$db" -v ON_ERROR_STOP=1 \
+              -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration'
+          done
+
+      - name: Record observed foreign snapshot after task allocation
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          def rows(command):
+              out = subprocess.check_output(command, text=True)
+              return sorted((json.loads(line) for line in out.splitlines() if line.strip()), key=lambda item: json.dumps(item, sort_keys=True))
+          def foreign(items):
+              return [item for item in items if not item.get("Name", "").startswith("rf12-acceptance") and not item.get("Names", "").startswith("/rf12-acceptance")]
+          snapshot = {
+              "containers": foreign(rows(["docker", "ps", "-a", "--format", "{{json .}}"])),
+              "networks": foreign(rows(["docker", "network", "ls", "--format", "{{json .}}"])),
+              "volumes": foreign(rows(["docker", "volume", "ls", "--format", "{{json .}}"])),
+          }
+          before = json.load(open("ci-evidence/rf12/foreign-before.json"))
+          before = {key: foreign(value) for key, value in before.items()}
+          json.dump(before, open("ci-evidence/rf12/foreign-before.json", "w"), sort_keys=True)
+          json.dump(snapshot, open("ci-evidence/rf12/foreign-after.json", "w"), sort_keys=True)
+          PY
+
+      - name: Preflight candidate image to PostgreSQL
+        run: |
+          DB_DSN="postgresql+psycopg://mayak_migration:${DB_PASSWORD}@rf12-acceptance-postgres:5432/rf12_final"
+          docker run --rm --network rf12-acceptance-network \
+            --env RF12_PREFLIGHT_DSN="$DB_DSN" \
+            rf12-candidate:${{ github.sha }} \
+            python - <<'PY'
+          import json, os, psycopg
+          try:
+              psycopg.connect(os.environ["RF12_PREFLIGHT_DSN"]).close()
+          except Exception as exc:
+              print("::error title=RF12 preflight::" + json.dumps({"exception_type": type(exc).__name__, "sqlstate": getattr(exc, "sqlstate", None)}, sort_keys=True))
+              raise
+          PY
+
+      - name: Run real RF-12 PostgreSQL acceptance producer
+        run: |
+          chmod 0777 ci-evidence/rf12
+          DB_DSN="postgresql+psycopg://mayak_migration:${DB_PASSWORD}@rf12-acceptance-postgres:5432"
+          set +e
+          docker run --rm --network rf12-acceptance-network \
+            --volume "$PWD/ci-evidence/rf12:/evidence" \
+            rf12-candidate:${{ github.sha }} \
+            python /opt/mayak/scripts/runtime/run_rf12_postgres_acceptance.py \
+            --dsn "${DB_DSN}/rf12_final" \
+            --migration-dsn "${DB_DSN}/rf12_final" \
+            --empty-dsn "${DB_DSN}/rf12_empty" \
+            --rf09-dsn "${DB_DSN}/rf12_rf09" \
+            --manual-dsn "${DB_DSN}/rf12_manual" \
+            --artifact /evidence/rf12-acceptance.json \
+            --candidate-sha "${{ github.sha }}" \
+            --candidate-tree "$(git rev-parse HEAD^{tree})" \
+            --image-identity "$(docker image inspect rf12-candidate:${{ github.sha }} --format '{{.Id}}')" \
+            --lock-identity "$LOCK_IDENTITY" \
+            --build-input-identity "$BUILD_INPUT_DIGEST" \
+            --foreign-before /evidence/foreign-before.json \
+            --foreign-after /evidence/foreign-after.json
+          producer_status=$?
+          set -e
+          if [ "$producer_status" -ne 0 ]; then
+            echo "::error title=RF12 producer container exit::exit_code=$producer_status"
+            exit "$producer_status"
+          fi
+
+      - name: Publish safe producer diagnostic
+        if: always()
+        run: |
+          if [ -f ci-evidence/rf12/producer-failure.json ]; then
+            cat ci-evidence/rf12/producer-failure.json
+            cat ci-evidence/rf12/producer-failure.json >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=RF12 producer diagnostic::$(tr -d '\n' < ci-evidence/rf12/producer-failure.json)"
+          fi
+
+      - name: Run independent verifier inside candidate image
+        run: |
+          docker run --rm --volume "$PWD/ci-evidence/rf12:/evidence:ro" \
+            rf12-candidate:${{ github.sha }} \
+            python /opt/mayak/scripts/runtime/verify_rf12_acceptance.py /opt/mayak /evidence/rf12-acceptance.json "${{ github.sha }}" \
+            2>&1 | tee ci-evidence/rf12/verifier.txt
+
+      - name: Run mandatory tamper-negative verifier cases
+        run: |
+          python - <<'PY'
+          import copy, json, subprocess
+          source = json.load(open("ci-evidence/rf12/rf12-acceptance.json"))
+          cases = {}
+          def reject(name, value):
+              path = f"ci-evidence/rf12/tamper-{name}.json"
+              json.dump(value, open(path, "w"), sort_keys=True)
+              result = subprocess.run(["python", "scripts/runtime/verify_rf12_acceptance.py", ".", path, "${{ github.sha }}"])
+              cases[name] = result.returncode != 0
+          value = copy.deepcopy(source); value["candidate_source_sha"] = "0" * 40; reject("candidate-sha", value)
+          value = copy.deepcopy(source); value["historical_rf12_manual_grant_sha256"] = "0" * 64; reject("historical-digest", value)
+          value = copy.deepcopy(source); value["gates"]["metadata_parity"] = True; value["metadata_parity"] = {}; reject("missing-migration-observation", value)
+          value = copy.deepcopy(source); value["gates"]["payment_race"] = True; value["payment_race"] = {}; reject("payment-race", value)
+          value = copy.deepcopy(source); value["gates"]["foreign_equality"] = True; value["foreign_equality"] = {"equal": True}; reject("foreign-equality", value)
+          value = copy.deepcopy(source); value["concurrency"]["sessions"] = 1; reject("one-session-concurrency", value)
+          value = copy.deepcopy(source); value["rollback"].pop("after", None); reject("rollback-after", value)
+          value = copy.deepcopy(source); value["command_matrix"]["rows"][0].pop("production_method", None); reject("command-method", value)
+          value = copy.deepcopy(source); value["cleanup"]["task_resources_removed"] = False; reject("cleanup", value)
+          assert all(cases.values()), cases
+          json.dump({"cases": cases, "result": True}, open("ci-evidence/rf12/tamper-negative.json", "w"), sort_keys=True)
+          PY
+
+      - name: Remove task resources and prove cleanup
+        if: always()
+        run: |
+          docker rm -f rf12-acceptance-postgres 2>/dev/null || true
+          docker volume rm rf12-acceptance-pgdata 2>/dev/null || true
+          docker network rm rf12-acceptance-network 2>/dev/null || true
+          docker image rm rf12-candidate:${{ github.sha }} 2>/dev/null || true
+          docker ps -a --format '{{.Names}}' | grep -q '^rf12-acceptance-' && exit 1 || true
+
+      - name: Publish bounded safe RF-12 evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rf12-acceptance-${{ github.sha }}
+          path: ci-evidence/rf12/
+          retention-days: 30
+          include-hidden-files: false
+          if-no-files-found: error
