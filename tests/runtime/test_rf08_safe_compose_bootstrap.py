@@ -38,7 +38,7 @@ from scripts.runtime.verify_rf08_authoritative_evidence import STAGES, verify_ev
 
 
 def test_source_identity_contract_rejects_historical_parent_and_accepts_exact_shape() -> None:
-    expected = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
+    expected = "a15b8288fb6640a786aab38ec9b940473b35c377"
     historical = "6b2ab627327b5352e930fa0059224c3bdfa1a823"
     with pytest.raises(ValueError, match="source identity mismatch"):
         validate_source_identity(origin_main=historical, parent_sha=expected)
@@ -47,7 +47,7 @@ def test_source_identity_contract_rejects_historical_parent_and_accepts_exact_sh
 
 def test_candidate_source_identity_is_not_parent_identity() -> None:
     candidate = "6d1a3522fb14d79ada5e26f85bd38ec2b5e92dd3"
-    expected = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
+    expected = "a15b8288fb6640a786aab38ec9b940473b35c377"
     assert candidate != expected
 
 
@@ -191,6 +191,12 @@ def test_prepare_jsonlog_runtime_keeps_repo_compose_immutable(
     assert scb.RUNTIME_COMPOSE_FILE.exists()
     assert scb.RUNTIME_COMPOSE_FILE.is_file()
     assert not scb.RUNTIME_COMPOSE_FILE.is_symlink()
+    override_text = scb.JSON_LOG_OVERRIDE.read_text(encoding="ascii")
+    assert "log_connections=on" in override_text
+    assert "log_connections=all" not in override_text
+    runtime_text = scb.RUNTIME_COMPOSE_FILE.read_text(encoding="utf-8")
+    assert runtime_text.count("log_connections=on") == 1
+    assert "log_connections=all" not in runtime_text
     assert scb.RUNTIME_COMPOSE_FILE.resolve() != repo_compose.resolve()
     assert hashlib.sha256(repo_compose.read_bytes()).hexdigest() == before_digest
     assert (

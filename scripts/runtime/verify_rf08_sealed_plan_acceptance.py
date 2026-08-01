@@ -163,8 +163,10 @@ def main(argv: list[str] | None = None) -> int:
         "scripts/runtime/verify_rf08_authoritative_evidence.py",
         "scripts/runtime/verify_rf08_sealed_plan_acceptance.py",
         "scripts/runtime/rf08_protection_manifest.json",
+        "scripts/runtime/verify_rf08_task_scoped_runtime.py",
         "tests/runtime/test_rf08_adversarial_registry.py",
         "tests/runtime/test_rf08_protection_manifest.py",
+        "tests/runtime/test_rf08_task_scoped_authority.py",
         "tests/runtime/test_rf08_safe_compose_bootstrap.py",
     ]
     changed_python = [path for path in changed if path.endswith(".py")]

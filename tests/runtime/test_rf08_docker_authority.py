@@ -21,6 +21,7 @@ from scripts.runtime.rf08_docker_authority import (
     ResourceLifecycleAction,
     ResourceOperation,
 )
+from scripts.runtime.safe_compose_bootstrap import _compose_dispatch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = REPO_ROOT / "compose.yaml"
@@ -116,6 +117,43 @@ def test_compose_up_force_recreate_is_bounded(monkeypatch: pytest.MonkeyPatch) -
     execution = gateway.execute(capability, stage="compose-up-force", timeout=1)
     assert execution.returncode == 0
     assert "--force-recreate" in seen[0]
+
+
+def test_postgres_log_tail_is_exact_and_bounded() -> None:
+    binding = ComposeBinding.from_path(
+        COMPOSE, project_name="avito-mayak-rf08-secret-delivery", profile="runtime-foundation"
+    )
+    gateway = GatewayAuthority()
+    request = ObservationRequest(
+        template=ObservationTemplate.POSTGRES_LOG_TAIL,
+        compose=binding,
+        service=ComposeService.POSTGRES,
+    )
+    assert gateway._build_docker_tokens(request)[-5:] == (
+        "logs", "--no-color", "--tail", "64", "mayak-postgres"
+    )  # noqa: SLF001
+    dispatch = _compose_dispatch(
+        ("docker", "compose", "-f", str(COMPOSE), "-p", binding.project_name,
+         "--profile", binding.profile, "logs", "--no-color", "--tail", "64", "mayak-postgres")
+    )
+    assert dispatch.semantic.template == ObservationTemplate.POSTGRES_LOG_TAIL
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        ("--no-color", "--tail", "65", "mayak-postgres"),
+        ("--no-color", "--tail", "64", "foreign-service"),
+        ("--tail", "64", "mayak-postgres", "--timestamps"),
+    ],
+)
+def test_postgres_log_tail_rejects_foreign_or_unbounded_shape(tail: tuple[str, ...]) -> None:
+    with pytest.raises(ValueError):
+        _compose_dispatch(
+            ("docker", "compose", "-f", str(COMPOSE),
+             "-p", "avito-mayak-rf08-secret-delivery", "--profile", "runtime-foundation",
+             "logs", *tail)
+        )
 
 
 def test_remove_requires_prior_capability() -> None:

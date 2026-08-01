@@ -256,7 +256,7 @@ def _compose_dispatch(argv: tuple[str, ...]) -> SemanticDispatch:
         raise ValueError("compose command missing")
     binding = _compose_binding(compose_file, project_name, profile)
     pairs = _option_pairs(argv[2:])
-    if command in {"version", "config", "ps", "exec"}:
+    if command in {"version", "config", "ps", "exec", "logs"}:
         if command == "version":
             semantic: ObservationRequest | ComposeAction = ObservationRequest(
                 template=ObservationTemplate.COMPOSE_VERSION, compose=binding
@@ -267,7 +267,7 @@ def _compose_dispatch(argv: tuple[str, ...]) -> SemanticDispatch:
             )
         elif command == "ps":
             semantic = ObservationRequest(template=ObservationTemplate.COMPOSE_PS, compose=binding)
-        else:
+        elif command == "exec":
             service_name = argv[argv.index("exec") + 1]
             try:
                 service_enum = ComposeService(service_name)
@@ -285,6 +285,15 @@ def _compose_dispatch(argv: tuple[str, ...]) -> SemanticDispatch:
                 compose=binding,
                 service=service_enum,
                 exec_template=template,
+            )
+        else:
+            log_tokens = tuple(argv[argv.index("logs") + 1 :])
+            if log_tokens != ("--no-color", "--tail", "64", ComposeService.POSTGRES.value):
+                raise ValueError("unsupported bounded postgres log observation")
+            semantic = ObservationRequest(
+                template=ObservationTemplate.POSTGRES_LOG_TAIL,
+                compose=binding,
+                service=ComposeService.POSTGRES,
             )
         return SemanticDispatch(semantic=semantic, is_mutation=False)
     if command not in {"create", "up", "start", "stop", "restart", "rm", "run"}:
@@ -457,6 +466,37 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
         if argv[2] == "build":
             pairs = _option_pairs(argv[2:])
             context = argv[-1]
+            if "--load" in argv:
+                allowed = {
+                    "build", "--progress=plain", "--file", "--platform", "--tag",
+                    "--build-arg", "--load",
+                }
+                if any(token.startswith("--") and token not in allowed for token in argv[3:-1]):
+                    raise ValueError("arbitrary application build option")
+                platform = pairs.get("--platform", [""])[0]
+                tag = pairs.get("--tag", [""])[0]
+                args = pairs.get("--build-arg", [])
+                values = {item.split("=", 1)[0]: item.split("=", 1)[1] for item in args if "=" in item}
+                if (
+                    platform != "linux/amd64"
+                    or not re.fullmatch(r"avito-mayak:[0-9a-f]{40}", tag)
+                    or set(values) != {"SOURCE_SHA", "LOCK_IDENTITY", "BUILD_INPUT_DIGEST"}
+                ):
+                    raise ValueError("non-exact application build")
+                return SemanticDispatch(
+                    ImageAction(
+                        operation=ImageOperation.APPLICATION_BUILD,
+                        context=PathCapability.from_path(context, kind=PathCapabilityKind.DIRECTORY),
+                        dockerfile=PathCapability.from_path(pairs["--file"][0], kind=PathCapabilityKind.FILE),
+                        output=PathCapability.from_path(RUNTIME_ROOT / "application-image-output", kind=PathCapabilityKind.DIRECTORY, require_exists=False),
+                        tag=tag,
+                        source_sha=values["SOURCE_SHA"],
+                        lock_identity=values["LOCK_IDENTITY"],
+                        build_input_digest=values["BUILD_INPUT_DIGEST"],
+                        platform=platform,
+                    ),
+                    True,
+                )
             return SemanticDispatch(
                 ImageAction(
                     operation=ImageOperation.BUILDX_MANIFEST,
@@ -586,15 +626,15 @@ def _dispatch_docker_command(argv: tuple[str, ...]) -> SemanticDispatch:
 
 
 TASK_ID: Final = (
-    "RF-08-CORRECTIVE-MECHANICALLY-VERIFIABLE-AUTHORITY-TOPOLOGY-20260801-06"
+    "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
 )
-EXPECTED_TASK_BASE: Final = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
+EXPECTED_TASK_BASE: Final = "a15b8288fb6640a786aab38ec9b940473b35c377"
 CANONICAL_PROJECT: Final = "avito-mayak-acceptance"
 TASK_PROJECT: Final = "avito-mayak-rf08-secret-delivery"
 EXPECTED_IMAGE_SOURCE: Final = "https://github.com/MaksimUnimax/AVITO_Mayak"
 EXPECTED_LOCK_IDENTITY: Final = "e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6"
-EXPECTED_IMAGE_TAG: Final = "avito-mayak:7d53282d08095669b38547571aba9d15464aff20"
-MIGRATION_HEAD: Final = "RF09_FINALIZE"
+EXPECTED_IMAGE_TAG: Final = "avito-mayak:a15b8288fb6640a786aab38ec9b940473b35c377"
+MIGRATION_HEAD: Final = "RF12_MANUAL_GRANT"
 EVIDENCE_PATH: Final = Path(
     "docs/07-quality/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json"
 )
@@ -878,7 +918,7 @@ def _jsonlog_override(run_id: str, log_dir: Path) -> str:
       - -c
       - log_file_mode=0600
       - -c
-      - log_connections=all
+      - log_connections=on
       - -c
       - log_error_verbosity=verbose
       - -c
@@ -927,7 +967,7 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
       - -c
       - log_filename=postgresql.json
       - -c
-      - log_connections=all
+      - log_connections=on
       - -c
       - log_error_verbosity=verbose
       - -c
@@ -961,14 +1001,14 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
     labels:
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
-      com.avito-mayak.compose-project: avito-mayak-acceptance
+      com.avito-mayak.compose-family: acceptance
       com.avito-mayak.process-kind: mayak-postgres
 """
     result = text[:start] + block + text[end:]
     label_block = (
         '      com.avito-mayak.project-owned: "true"\n'
         "      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01\n"
-        "      com.avito-mayak.compose-project: avito-mayak-acceptance\n"
+        "      com.avito-mayak.compose-family: acceptance\n"
     )
     result = result.replace(
         label_block,
@@ -2378,6 +2418,7 @@ def _parse_stage_output(
                 "source": labels.get("org.opencontainers.image.source"),
                 "revision": labels.get("org.opencontainers.image.revision"),
                 "lock_identity": labels.get("com.avito-mayak.lock-identity"),
+                "build_input_digest": labels.get("com.avito-mayak.build-input-digest"),
                 "user": config.get("User"),
                 "environment_entries": len(config.get("Env", [])),
                 "action": "REUSED",
@@ -2444,12 +2485,16 @@ def _parse_stage_output(
     if stage == "SECRET_UNINTENDED_DENIAL_A":
         return {"observed": "permission_denied" if code == 1 else text}
     if "HEALTH" in stage:
-        return {
-            "container_state": "running",
-            "container_exit_code": 0,
-            "restart_count": 0,
-            "health_status": "healthy",
-        }
+        try:
+            state, exit_code, restart_count, health_status = text.split("|", 3)
+            return {
+                "container_state": state,
+                "container_exit_code": int(exit_code),
+                "restart_count": int(restart_count),
+                "health_status": health_status,
+            }
+        except (TypeError, ValueError):
+            return {}
     if stage == "ABRUPT_ACTIVATION_D_EXIT_70":
         return {"child_exit_code": code, "stdout_scanned": True, "stderr_scanned": True}
     if stage == "TASK_CLEANUP_AND_PRIVATE_OUTPUT_REMOVAL":
@@ -2972,16 +3017,69 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
             "oracle.image_input_digest",
         )
     )
-    image_tag = EXPECTED_IMAGE_TAG
+    source_sha = cast(str, ctx["source_sha"])
+    image_tag = f"avito-mayak:{source_sha}"
     image = ("docker", "image", "inspect", image_tag)
-    for stage, required in (
-        ("APPLICATION_IMAGE_RESOLUTION", ("image_id",)),
-        ("APPLICATION_IMAGE_BUILD_OR_REUSE", ("image_id", "action")),
-        ("APPLICATION_IMAGE_INSPECT", ("image_id",)),
-        ("APPLICATION_IMAGE_PROVENANCE_VERIFY", ("source", "revision", "lock_identity", "user")),
-        ("APPLICATION_IMAGE_ENVIRONMENT_VERIFY", ("environment_entries",)),
-    ):
-        specs.append(_command_spec(ctx, stage, image, required))
+
+    def resolve_candidate_image() -> StageResult:
+        observed = runner.run(_request(image), stage="APPLICATION_IMAGE_RESOLUTION")
+        if observed.exit_code == 0 and observed.parsed.get("image_id"):
+            parsed = dict(observed.parsed)
+            parsed["image_available"] = True
+        else:
+            parsed = {"image_id": "ABSENT", "image_available": False}
+        return StageResult(
+            "APPLICATION_IMAGE_RESOLUTION", "rf08.application_image_resolution", True, 0, parsed
+        )
+
+    specs.append(
+        StageSpec(
+            "APPLICATION_IMAGE_RESOLUTION",
+            resolve_candidate_image,
+            _named_oracle("APPLICATION_IMAGE_RESOLUTION", ("image_id",)),
+            "parser.application_image_resolution",
+            "oracle.application_image_resolution",
+        )
+    )
+
+    def build_exact_candidate_image() -> StageResult:
+        snapshot = cast(Mapping[str, object], ctx["build_context_snapshot"])
+        clean_context = RUNTIME_ROOT / "build-context" / cast(str, cast(ProtocolTranscript, ctx["transcript"]).run_id) / "source"
+        gateway = cast(GatewayAuthority, ctx["mutation_ledger"])
+        action = ImageAction(
+            operation=ImageOperation.APPLICATION_BUILD,
+            context=PathCapability.from_path(clean_context, kind=PathCapabilityKind.DIRECTORY),
+            dockerfile=PathCapability.from_path(clean_context / "Dockerfile", kind=PathCapabilityKind.FILE),
+            output=PathCapability.from_path(RUNTIME_ROOT / "application-image-output", kind=PathCapabilityKind.DIRECTORY, require_exists=False),
+            scope_digest=gateway.scope_digest,
+            tag=image_tag,
+            source_sha=source_sha,
+            lock_identity=EXPECTED_LOCK_IDENTITY,
+            build_input_digest=cast(str, snapshot["digest"]),
+            platform="linux/amd64",
+        )
+        capability = gateway.issue(action, stage="APPLICATION_IMAGE_BUILD_OR_REUSE")
+        built = gateway.execute(capability, stage="APPLICATION_IMAGE_BUILD_OR_REUSE", stdin=subprocess.DEVNULL, timeout=900)
+        if built.returncode != 0:
+            raise ProtocolFailure("APPLICATION_IMAGE_BUILD_OR_REUSE", "APPLICATION_IMAGE_BUILD_FAILED")
+        inspected = runner.run(_request(image), stage="APPLICATION_IMAGE_INSPECT")
+        parsed = dict(inspected.parsed)
+        parsed["action"] = "BUILT"
+        parsed["build_input_digest"] = snapshot["digest"]
+        return StageResult("APPLICATION_IMAGE_BUILD_OR_REUSE", "rf08.application_image_build_or_reuse", True, inspected.exit_code, parsed)
+
+    specs.append(
+        StageSpec(
+            "APPLICATION_IMAGE_BUILD_OR_REUSE",
+            build_exact_candidate_image,
+            _named_oracle("APPLICATION_IMAGE_BUILD_OR_REUSE", ("image_id", "action", "build_input_digest")),
+            "parser.application_image_build_or_reuse",
+            "oracle.application_image_build_or_reuse",
+        )
+    )
+    specs.append(_command_spec(ctx, "APPLICATION_IMAGE_INSPECT", image, ("image_id",)))
+    specs.append(_command_spec(ctx, "APPLICATION_IMAGE_PROVENANCE_VERIFY", image, ("source", "revision", "lock_identity", "build_input_digest", "user")))
+    specs.append(_command_spec(ctx, "APPLICATION_IMAGE_ENVIRONMENT_VERIFY", image, ("environment_entries",)))
     specs.append(
         _command_spec(
             ctx,

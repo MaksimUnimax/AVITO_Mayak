@@ -4,6 +4,13 @@
     {"id": "single_transport", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}]},
     {"id": "closed_authority_adversaries", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_semantic_bypasses_are_rejected"}]},
     {"id": "rename_invariance", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_renaming_does_not_change_verdict"}]},
-    {"id": "runtime_binding_generation_epoch", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_docker_authority.py::test_issue_execute_and_observe"}]}
+    {"id": "runtime_binding_generation_epoch", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_docker_authority.py::test_issue_execute_and_observe"}]},
+    {"id": "immutable_task_scoped_acceptance_authority", "evidence": [
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_task_scope_accepts_exact_project_and_binds_identity"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_cross_scope_and_binding_mismatches_fail_closed"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_capability_is_bound_to_gateway_and_immutable_technical_id"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_task_scoped_authority.py::test_teardown_is_bounded_semantic_command"},
+      {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}
+    ]}
   ]
 }

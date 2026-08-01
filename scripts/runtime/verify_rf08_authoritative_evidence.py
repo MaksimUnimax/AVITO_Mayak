@@ -42,10 +42,9 @@ from scripts.runtime.rf08_safe_foreign_schema import (
     validate_snapshot,
 )
 
-TASK_ID = "RF-08-CORRECTIVE-MECHANICALLY-VERIFIABLE-AUTHORITY-TOPOLOGY-20260801-06"
-BASE = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
-TASK_EXPECTED_BASE = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
-TREE = "6995fc52cc232a18579cd51d5e4587c1ed8aa318"
+TASK_ID = "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
+BASE = "a15b8288fb6640a786aab38ec9b940473b35c377"
+TASK_EXPECTED_BASE = "a15b8288fb6640a786aab38ec9b940473b35c377"
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -118,7 +117,7 @@ SENSITIVE = re.compile(r"(?i)(-----BEGIN .*PRIVATE KEY-----|postgresql://|passwo
 FOREIGN_SCHEMA_VERSION = "ForeignResourceSnapshotV3"
 INDEPENDENT_COLLECTOR_ID = "rf08.independent.observed.typed-docker.v3"
 TASK_PROJECT = "avito-mayak-rf08-secret-delivery"
-TASK_ID = "RF-08-CORRECTIVE-MECHANICALLY-VERIFIABLE-AUTHORITY-TOPOLOGY-20260801-06"
+TASK_ID = "RF-08-CORRECTIVE-REUSABLE-TASK-SCOPED-ACCEPTANCE-COMPOSE-AUTHORITY-20260801-07"
 
 
 def _sha(path: Path) -> str:
@@ -619,7 +618,7 @@ def _clean_context(
     archive = run_root / "source.tar"
     with archive.open("wb") as stream:
         subprocess.run(
-            ["git", "-C", str(repo), "archive", "--format=tar", BASE],
+            ["git", "-C", str(repo), "archive", "--format=tar", "HEAD"],
             stdout=stream,
             stderr=subprocess.DEVNULL,
             check=True,
@@ -705,10 +704,10 @@ def _canonical(manifest: list[dict[str, str]]) -> bytes:
     return json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
 
 
-def _digest(source: Path, manifest: list[dict[str, str]]) -> str:
+def _digest(source: Path, manifest: list[dict[str, str]], tree_identity: str) -> str:
     payload = {
         "schema_version": "rf08-docker-native-context-v1",
-        "expected_base_tree_identity": TREE,
+        "expected_base_tree_identity": tree_identity,
         "dockerfile_sha256": _sha(source / "Dockerfile"),
         "dockerignore_sha256": _sha(source / ".dockerignore"),
         "normalized_copy_plan": [{"source": a, "destination": b} for a, b in COPY_PLAN],
@@ -757,7 +756,7 @@ def _verify_stage55(evidence: dict[str, object]) -> None:
         "handoff_accepted": True,
         "bootstrap_envelope": True,
         "bootstrap_outcome": "RF09_BOOTSTRAP_SUCCESS",
-        "observed_migration_head": "RF09_FINALIZE",
+        "observed_migration_head": "RF12_MANUAL_GRANT",
         "application_marker": "APPLICATION_QUERY_OK",
         "adapter_exit": 0,
     }
@@ -1075,7 +1074,10 @@ def verify_evidence(
             "__pycache__" in x["path"] or x["path"].endswith((".pyc", ".pyo")) for x in manifest
         ):
             raise ValueError("ignored/generated path in manifest")
-        digest = _digest(source, manifest)
+        tree_identity = subprocess.check_output(
+            ["git", "-C", str(source_tree), "rev-parse", "HEAD^{tree}"], text=True
+        ).strip()
+        digest = _digest(source, manifest, tree_identity)
         if any(
             document.get(k) != digest
             for k in (
@@ -1098,7 +1100,7 @@ def verify_evidence(
         ):
             raise ValueError("producer/independent equality missing")
         if (
-            document.get("expected_base_tree_identity") != TREE
+            document.get("expected_base_tree_identity") != tree_identity
             or document.get("docker_native_effective_manifest_digest") != export["manifest_sha256"]
         ):
             raise ValueError("context identity mismatch")

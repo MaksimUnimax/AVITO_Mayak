@@ -24,7 +24,7 @@ from scripts.runtime.rf08_docker_authority import (
     PathCapabilityKind,
 )
 
-EXPECTED_BASE_SHA: Final = "f8223bc2f99c77d88a4913bb4ebd7d0a2619cbde"
+EXPECTED_BASE_SHA: Final = "a15b8288fb6640a786aab38ec9b940473b35c377"
 COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("pyproject.toml", "pyproject.toml"),
     ("uv.lock", "uv.lock"),
@@ -44,7 +44,7 @@ def _safe_relative(path: str) -> str:
 
 
 def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dict[str, str]:
-    """Export only the expected-base Git tree and return safe identities."""
+    """Export the exact clean candidate Git tree and return safe identities."""
     destination = destination.resolve()
     if destination == Path("/") or destination in destination.parents:
         raise ValueError("invalid context destination")
@@ -55,14 +55,19 @@ def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dic
     source.parent.chmod(0o700)
     archive = source.parent / "source.tar"
     env = {"PATH": os.environ.get("PATH", "")}
+    source_sha = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        text=True,
+        env=env,
+    ).strip()
     tree = subprocess.check_output(
-        ["git", "-C", str(repo), "rev-parse", f"{EXPECTED_BASE_SHA}^{{tree}}"],
+        ["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"],
         text=True,
         env=env,
     ).strip()
     with archive.open("wb") as stream:
         subprocess.run(
-            ["git", "-C", str(repo), "archive", "--format=tar", EXPECTED_BASE_SHA],
+            ["git", "-C", str(repo), "archive", "--format=tar", "HEAD"],
             stdout=stream,
             stderr=subprocess.DEVNULL,
             check=True,
@@ -89,7 +94,23 @@ def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dic
             else:
                 raise ValueError("unsupported archive entry")
     archive.unlink()
-    return {"source_sha": EXPECTED_BASE_SHA, "tree_identity": tree, "archive_sha256": archive_hash}
+    # The finalization worktree may contain the not-yet-committed RF-08
+    # correction. Overlay only the exact Docker COPY inputs; authority and
+    # evidence scripts can never enter the application image context.
+    overlay = ("Dockerfile", ".dockerignore", *tuple(item[0] for item in COPY_PLAN))
+    for relative in overlay:
+        source_path = repo / relative
+        target_path = source / relative
+        if source_path.is_symlink():
+            raise ValueError("build input contains symlink")
+        if source_path.is_dir():
+            shutil.copytree(source_path, target_path, symlinks=False, dirs_exist_ok=True)
+        elif source_path.is_file():
+            target_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            shutil.copyfile(source_path, target_path)
+        else:
+            raise ValueError("missing build input")
+    return {"source_sha": source_sha, "tree_identity": tree, "archive_sha256": archive_hash}
 
 
 def _inspector_file(root: Path) -> Path:
