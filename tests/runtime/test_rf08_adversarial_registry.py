@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# Fixture source strings intentionally remain readable as one semantic unit.
+# ruff: noqa: E501
 from pathlib import Path
 from typing import Any
 
@@ -113,3 +115,17 @@ def test_production_surface_has_exactly_one_transport() -> None:
     payload = verify_source(root)
     assert payload["finding_count"] == 0
     assert payload["docker_transport_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import subprocess\nclass Quiet:\n    def harmless(self): return 7\nclass Relay:\n    def execute(self, value): subprocess.run(value)\nclass Bridge:\n    def pass_value(self): return Relay().execute(Quiet().harmless())\nBridge().pass_value()\n",
+        "import subprocess\nclass Alpha:\n    def alpha(self): return 7\nclass Beta:\n    def _execute(self, value): subprocess.run(value)\nclass Gamma:\n    def alpha(self): return Beta()._execute(Alpha().alpha())\nGamma().alpha()\n",
+        "import subprocess\nclass First:\n    def _quiet(self): return 7\nclass Second:\n    def execute(self, value): subprocess.run(value)\nclass Third:\n    def _relay(self): return Second().execute(First()._quiet())\nThird()._relay()\n",
+    ],
+)
+def test_reviewer_self_authorization_topology_is_rejected(tmp_path: Path, source: str) -> None:
+    payload = _verify(tmp_path, source)
+    assert payload["finding_count"] > 0
+    assert payload["authorized_docker_transport_count"] == 0

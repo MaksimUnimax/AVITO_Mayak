@@ -1,15 +1,15 @@
 {
-  "schema_version": "rf08-protection-scenarios-v1",
+  "schema_version": "rf08-protection-scenarios-v2",
   "invariants": [
-    {"id": "single_transport", "evidence": ["structural-verifier", "production-surface-test"]},
-    {"id": "no_raw_command_ingress", "evidence": ["dataflow-fixtures", "production-surface-test"]},
-    {"id": "no_stored_executable_authority", "evidence": ["shape-fixtures", "dataflow-fixtures"]},
-    {"id": "no_generic_inspect_query_authority", "evidence": ["dataflow-fixtures"]},
-    {"id": "no_raw_process_result_escape", "evidence": ["result-fixtures"]},
-    {"id": "no_private_execution_bypass", "evidence": ["binding-fixtures"]},
-    {"id": "rename_alias_wrapper_rejection", "evidence": ["metamorphic-fixtures"]},
-    {"id": "runtime_binding_generation_epoch", "evidence": ["existing-rf08-runtime-binding-tests"]},
-    {"id": "cleanup", "evidence": ["existing-rf08-runtime-evidence"]},
-    {"id": "foreign_equality", "evidence": ["existing-rf08-runtime-evidence"]}
+    {"id": "single_transport", "evidence": [{"kind": "structural", "target": "single_transport"}, {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_production_surface_has_exactly_one_transport"}]},
+    {"id": "no_raw_command_ingress", "evidence": [{"kind": "structural", "target": "no_raw_command_ingress"}, {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_semantic_bypasses_are_rejected"}]},
+    {"id": "no_stored_executable_authority", "evidence": [{"kind": "structural", "target": "no_stored_executable_authority"}, {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_semantic_bypasses_are_rejected"}]},
+    {"id": "no_generic_inspect_query_authority", "evidence": [{"kind": "structural", "target": "no_generic_inspect_query_authority"}, {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_semantic_bypasses_are_rejected"}]},
+    {"id": "no_raw_process_result_escape", "evidence": [{"kind": "structural", "target": "no_raw_process_result_escape"}, {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_semantic_bypasses_are_rejected"}]},
+    {"id": "no_private_execution_bypass", "evidence": [{"kind": "structural", "target": "no_private_execution_bypass"}, {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_semantic_bypasses_are_rejected"}]},
+    {"id": "rename_alias_wrapper_rejection", "evidence": [{"kind": "structural", "target": "rename_alias_wrapper_rejection"}, {"kind": "pytest", "target": "tests/runtime/test_rf08_adversarial_registry.py::test_renaming_does_not_change_verdict"}]},
+    {"id": "runtime_binding_generation_epoch", "evidence": [{"kind": "pytest", "target": "tests/runtime/test_rf08_docker_authority.py::test_issue_execute_and_observe"}]},
+    {"id": "cleanup", "evidence": [{"kind": "runtime-evidence", "target": {"evidence": "/opt/avito-mayak-runtime/rf08-secret-delivery/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json", "production_path": "scripts/runtime/safe_compose_bootstrap.py", "sha256": "005d90c32dd36bfa6e4016c7ba90317fc896782332040aa8393adc8abbf3335f"}}]},
+    {"id": "foreign_equality", "evidence": [{"kind": "runtime-evidence", "target": {"evidence": "/opt/avito-mayak-runtime/rf08-secret-delivery/evidence/RF08_AUTHORITATIVE_SECRET_LIFECYCLE_PROOF_v1.json", "production_path": "compose.yaml", "sha256": "e1f34c4bd09365580cecd32880126ae572b3ecf418fc19f2c78037c814127870"}}]}
   ]
 }
