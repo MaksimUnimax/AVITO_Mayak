@@ -84,3 +84,68 @@ RF-08: `INDEPENDENTLY_ACCEPTED`<br>
 RF-11: `INDEPENDENTLY_ACCEPTED`<br>
 RF-12: `PUBLISHED_FOR_CHATGPT_REVIEW`<br>
 RF-13: `NOT_STARTED`
+
+## RF-12 corrective package — 2026-08-01
+
+The previously published candidate at `fedccb12…` was corrective-required.
+The rejected defects were caller-created authority facts at protected command
+boundaries; manual access collapsed into BASIC/`ASSIGN_ACCESS`; a physical
+grant mapping that could not preserve capability and scope; unused payment and
+usage idempotency keys; caller-controlled usage limits; anonymous repeated
+reconciliations; wrong YooKassa Basic Auth; incomplete redirect create wire;
+post-materialization response bounds; and insufficient committed regression
+coverage.
+
+Protected production commands now resolve immutable facts through the narrow
+`VerifiedIdentityPort` using actor reference and target account. Fabricated
+facts, wrong actor, wrong target, missing capability and cross-account calls
+fail closed before domain mutation, terminal success or audit mutation. The
+acceptance fake is test-only and no Identity tables are accessed directly.
+
+Manual access has an explicit target account, authorization capability, granted
+capability, granted scope, closed interval, reason, idempotency key and audit
+reference. Its create/revoke/effective/expiry/replay/mismatch/rollback history
+is separate from FREE, BASIC, BASIC renewal and payment evidence.
+
+Migration decision is corrected from `NONE` to additive Module-03-owned schema
+evolution. Revision `RF12_MANUAL_GRANT` follows previous head `RF09_FINALIZE`.
+`entitlement_access_grants` maps legacy rows to `grant_kind=TARIFF`; manual
+rows map `account_id` (target), `grant_kind=MANUAL`, `granted_capability`,
+`granted_scope`, `valid_from`, `valid_until`, `state`, and bounded `reason`.
+`tariff_id` is nullable only for manual rows. Capability/scope are separately
+queryable and constrained; no opaque source string is used.
+
+Mutation inventory covers tariff bootstrap/publish, tariff assignment, manual
+renewal, access revoke, manual create/revoke, usage observation, payment
+evidence, payment operation/reconciliation and manual refund reference. Each
+idempotent mutation fingerprints all semantic inputs, replays terminal results,
+rejects same-key/different-fingerprint requests, and serializes races through
+the terminal repository. Provider identity duplicates are same-account
+replays/conflicts and cross-account requests fail closed without UUID leakage.
+Reconciliation uses a concrete payment operation identity; ambiguity remains
+reconcile-required, confirmation/rejection is evidence-only, and repeated
+legitimate reconciliation does not depend on anonymous NULL operation rows.
+
+Usage is limited to `ACTIVE_BEACON_SLOT` from Beacon Management and
+`SCAN_INTERVAL_WINDOW` from Scan Orchestration. Requester/source-owner facts
+are required; limits/floor/step derive from the persisted approved tariff.
+FREE is one active Beacon, BASIC Beacon numeric limit remains unspecified, and
+scan floor/step remain exact. No payment or notification quota exists.
+
+YooKassa uses `MAYAK_YOOKASSA_SHOP_ID` plus the outside-Git
+`MAYAK_YOOKASSA_SECRET_FILE`; HTTP Basic Auth is `(shopId, secret)`. Create is
+`POST /v3/payments` with `Idempotence-Key`, amount, `capture=true`, and explicit
+redirect confirmation/absolute return URL. Retrieve is exact payment ID.
+2xx succeeded/canceled/pending, 4xx, 401/403, 404, 429/5xx/transport and
+malformed bodies are classified without granting entitlement. Provider bodies
+are streamed with a bounded sentinel and never persisted; injected clients
+remain caller-owned and internally created clients close deterministically.
+The refund API remains blocked; manual review/reference is the only refund path.
+Live YooKassa calls: `NO`.
+
+Corrective evidence includes focused RF-12 tests, schema/signature tests,
+authority/idempotency/provider regression tests and static compilation/Ruff
+checks. PostgreSQL 18 migration/runtime and concurrency evidence is required
+for publication acceptance; this document records no `PRODUCTION_READY` claim.
+Security, foreign equality, rollback/roll-forward and cleanup requirements
+remain as above. RF-13 remains untouched and `NOT_STARTED`.

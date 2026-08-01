@@ -76,8 +76,8 @@ def test_module_12_and_graph_boundary() -> None:
         for table in metadata.tables.values()
     )
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert len(list(scripts.walk_revisions())) == 14
-    assert scripts.get_heads() == ["RF09_FINALIZE"]
+    assert len(list(scripts.walk_revisions())) == 15
+    assert scripts.get_heads() == ["RF12_MANUAL_GRANT"]
     assert scripts.get_revision("RF09_FINALIZE").down_revision == "RF09_M11"
     with pytest.raises(CommandError):
         scripts.get_revision("RF09_M12")

@@ -94,11 +94,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260728_RF09_M09_telegram_adapter.py",
         "20260728_RF09_M10_max_adapter.py",
         "20260728_RF09_M11_admin_support.py",
+        "20260801_RF12_manual_grant_semantics.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 14
-    assert scripts.get_heads() == ["RF09_FINALIZE"]
+    assert len(revisions) == 15
+    assert scripts.get_heads() == ["RF12_MANUAL_GRANT"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")

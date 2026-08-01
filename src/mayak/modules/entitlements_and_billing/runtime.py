@@ -4,6 +4,8 @@ The module owns only the six Module 03 tables.  Callers own the transaction:
 these methods never commit, rollback, or touch foreign-module tables.
 """
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import hashlib
@@ -218,6 +220,26 @@ class EntitlementsBillingRuntime:
         self.identity = identity
         self.idempotency = PostgresTerminalIdempotencyRepository()
 
+    def _resolve(
+        self, session: Session, authority: AuthorityFacts, target: UUID, actor_reference: str | None
+    ) -> AuthorityFacts | None:
+        if self.identity is None:
+            return None
+        try:
+            return self.identity.authority(
+                session, actor_reference or authority.authorization_reference, target
+            )
+        except PermissionError, ValueError:
+            return None
+
+    @staticmethod
+    def _unauthorized(audit_reference: str = "safe-unauthorized") -> CommandResult:
+        return CommandResult(
+            state=RuntimeState.UNAUTHORIZED,
+            reason_code="VERIFIED_AUTHORITY_REQUIRED",
+            audit_reference=audit_reference,
+        )
+
     def _terminal(
         self, session: Session, key: str | IdempotencyKey, fingerprint: IdempotencyFingerprint
     ) -> tuple[RuntimeState, UUID | None]:
@@ -274,7 +296,12 @@ class EntitlementsBillingRuntime:
         idempotency_key: str,
         *,
         effective_at: datetime,
+        actor_reference: str | None = None,
     ) -> CommandResult:
+        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
         denied = self._require_authority(
             authority, "ENTITLEMENTS_TARIFF_ADMIN", authority.account_id
         )
@@ -375,7 +402,14 @@ class EntitlementsBillingRuntime:
         ends_at: datetime,
         reason: str,
         idempotency_key: str,
+        actor_reference: str | None = None,
+        target_account_id: UUID | None = None,
     ) -> CommandResult:
+        target = target_account_id or authority.account_id
+        resolved = self._resolve(session, authority, target, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
         denied = self._require_authority(
             authority, "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN", authority.account_id
         )
@@ -435,6 +469,7 @@ class EntitlementsBillingRuntime:
         ends_at: datetime,
         idempotency_key: str,
         reason: str,
+        actor_reference: str | None = None,
     ) -> CommandResult:
         return self.assign_access(
             session,
@@ -444,6 +479,7 @@ class EntitlementsBillingRuntime:
             ends_at=ends_at,
             reason=reason,
             idempotency_key=idempotency_key,
+            actor_reference=actor_reference,
         )
 
     def revoke_access(
@@ -454,7 +490,12 @@ class EntitlementsBillingRuntime:
         grant_id: UUID,
         idempotency_key: str,
         reason: str,
+        actor_reference: str | None = None,
     ) -> CommandResult:
+        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
         denied = self._require_authority(
             authority, "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN", authority.account_id
         )
@@ -506,26 +547,83 @@ class EntitlementsBillingRuntime:
         ends_at: datetime,
         idempotency_key: str,
         reason: str,
+        capability: str = "ENTITLEMENTS_MANUAL_ACCESS_ADMIN",
+        authorization_capability: str = "ENTITLEMENTS_MANUAL_ACCESS_ADMIN",
+        scope: str = "account_id",
+        target_account_id: UUID | None = None,
+        target_account: UUID | None = None,
+        granted_capability: str | None = None,
+        granted_scope: str | None = None,
+        actor_reference: str | None = None,
     ) -> CommandResult:
-        if not _authorized(authority, "ENTITLEMENTS_MANUAL_ACCESS_ADMIN"):
+        target = target_account_id or target_account or authority.account_id
+        capability = granted_capability or capability
+        scope = granted_scope or scope
+        resolved = self._resolve(session, authority, target, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
+        if (
+            not _authorized(authority, authorization_capability)
+            or authority.scope != scope
+            or authority.account_id != target
+        ):
             return CommandResult(
                 state=RuntimeState.UNAUTHORIZED,
                 reason_code="MANUAL_ACCESS_CAPABILITY_REQUIRED",
                 audit_reference=authority.audit_reference,
             )
-        return self.assign_access(
-            session,
-            authority.model_copy(
-                update={
-                    "capabilities": authority.capabilities | {"ENTITLEMENTS_TARIFF_ASSIGN_ADMIN"}
-                }
-            ),
-            tariff=TariffName.BASIC,
-            starts_at=starts_at,
-            ends_at=ends_at,
-            reason=reason,
-            idempotency_key=idempotency_key,
+        if ends_at <= starts_at or not reason.strip() or len(capability) > 128 or len(scope) > 128:
+            return CommandResult(
+                state=RuntimeState.REJECTED,
+                reason_code="INVALID_MANUAL_GRANT",
+                audit_reference=authority.audit_reference,
+            )
+        fp = _fingerprint(
+            ("manual-create", str(target), capability, scope, starts_at, ends_at, reason)
         )
+        state, resource = self._terminal(session, idempotency_key, fp)
+        if state is RuntimeState.REPLAYED:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_REPLAY",
+                resource_id=resource,
+                audit_reference=authority.audit_reference,
+            )
+        if state is RuntimeState.MISMATCH:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_FINGERPRINT_MISMATCH",
+                audit_reference=authority.audit_reference,
+            )
+        grant_id = uuid4()
+        session.execute(
+            _GRANTS.insert().values(
+                id=grant_id,
+                account_id=target,
+                tariff_id=None,
+                source_code="MANUAL_ACCESS",
+                grant_kind="MANUAL",
+                granted_capability=capability,
+                granted_scope=scope,
+                reason=reason[:512],
+                valid_from=starts_at,
+                valid_until=ends_at,
+                state="ACTIVE",
+                created_at=_now(),
+                updated_at=_now(),
+                row_version=1,
+            )
+        )
+        _audit(session, authority, action="MANUAL_ACCESS_CREATE", target=grant_id, reason=reason)
+        result = CommandResult(
+            state=RuntimeState.RECORDED,
+            reason_code="MANUAL_ACCESS_CREATED",
+            resource_id=grant_id,
+            audit_reference=authority.audit_reference,
+        )
+        self._record_terminal(session, idempotency_key, fp, result)
+        return result
 
     def manual_access_revoke(
         self,
@@ -535,24 +633,59 @@ class EntitlementsBillingRuntime:
         grant_id: UUID,
         idempotency_key: str,
         reason: str,
+        actor_reference: str | None = None,
     ) -> CommandResult:
+        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
         if not _authorized(authority, "ENTITLEMENTS_MANUAL_ACCESS_ADMIN"):
             return CommandResult(
                 state=RuntimeState.UNAUTHORIZED,
                 reason_code="MANUAL_ACCESS_CAPABILITY_REQUIRED",
                 audit_reference=authority.audit_reference,
             )
-        return self.revoke_access(
-            session,
-            authority.model_copy(
-                update={
-                    "capabilities": authority.capabilities | {"ENTITLEMENTS_TARIFF_ASSIGN_ADMIN"}
-                }
-            ),
-            grant_id=grant_id,
-            idempotency_key=idempotency_key,
-            reason=reason,
+        fp = _fingerprint(("manual-revoke", str(grant_id), reason))
+        state, resource = self._terminal(session, idempotency_key, fp)
+        if state is RuntimeState.REPLAYED:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_REPLAY",
+                resource_id=resource,
+                audit_reference=authority.audit_reference,
+            )
+        if state is RuntimeState.MISMATCH:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_FINGERPRINT_MISMATCH",
+                audit_reference=authority.audit_reference,
+            )
+        update_result = session.execute(
+            update(_GRANTS)
+            .where(
+                _GRANTS.c.id == grant_id,
+                _GRANTS.c.account_id == authority.account_id,
+                _GRANTS.c.grant_kind == "MANUAL",
+                _GRANTS.c.state == "ACTIVE",
+            )
+            .values(state="REVOKED", updated_at=_now(), row_version=_GRANTS.c.row_version + 1)
         )
+        changed = int(getattr(update_result, "rowcount", 0) or 0)
+        if changed != 1:
+            return CommandResult(
+                state=RuntimeState.REJECTED,
+                reason_code="MANUAL_GRANT_NOT_ACTIVE_OR_NOT_OWNED",
+                audit_reference=authority.audit_reference,
+            )
+        _audit(session, authority, action="MANUAL_ACCESS_REVOKE", target=grant_id, reason=reason)
+        result = CommandResult(
+            state=RuntimeState.RECORDED,
+            reason_code="MANUAL_ACCESS_REVOKED",
+            resource_id=grant_id,
+            audit_reference=authority.audit_reference,
+        )
+        self._record_terminal(session, idempotency_key, fp, result)
+        return result
 
     def evaluate_effective(
         self,
@@ -566,7 +699,7 @@ class EntitlementsBillingRuntime:
         rows = (
             session.execute(
                 select(_GRANTS, _TARIFFS.c.code)
-                .join(_TARIFFS, _TARIFFS.c.id == _GRANTS.c.tariff_id)
+                .outerjoin(_TARIFFS, _TARIFFS.c.id == _GRANTS.c.tariff_id)
                 .where(
                     _GRANTS.c.account_id == account_id,
                     _GRANTS.c.state == "ACTIVE",
@@ -593,6 +726,13 @@ class EntitlementsBillingRuntime:
                 provenance=("PAID_ACCESS_EXPIRED", "FREE_ONLY_SEMANTICS"),
                 free_compliance_required=True,
                 frozen_at_beacon_boundary=True,
+            )
+        if row["grant_kind"] == "MANUAL":
+            return EffectiveEntitlement(
+                status=EntitlementDecisionStatus.ALLOWED,
+                account_id=account_id,
+                grant_id=row["id"],
+                provenance=("MANUAL_ACCESS_GRANT", "CAPABILITY_AND_SCOPE_PERSISTED"),
             )
         tariff = TariffName(row["code"])
         if (
@@ -636,25 +776,83 @@ class EntitlementsBillingRuntime:
         *,
         idempotency_key: str,
         authority: AuthorityFacts,
+        actor_reference: str | None = None,
     ) -> CommandResult:
+        resolved = self._resolve(session, authority, evidence.account_id, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
         if authority.account_id != evidence.account_id:
             return CommandResult(
                 state=RuntimeState.UNAUTHORIZED,
                 reason_code="ACCOUNT_SCOPE_MISMATCH",
                 audit_reference=authority.audit_reference,
             )
-        safe = _safe_metadata(evidence.safe_metadata)
-        existing = session.execute(
-            select(_PAYMENTS.c.id).where(
-                _PAYMENTS.c.provider_code == evidence.provider_code,
-                _PAYMENTS.c.external_payment_id == evidence.external_payment_id,
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
+        if not _authorized(authority, "ENTITLEMENTS_TARIFF_ADMIN"):
             return CommandResult(
-                state=RuntimeState.RECORDED,
+                state=RuntimeState.UNAUTHORIZED,
+                reason_code="PAYMENT_EVIDENCE_CAPABILITY_REQUIRED",
+                audit_reference=authority.audit_reference,
+            )
+        safe = _safe_metadata(evidence.safe_metadata)
+        fingerprint = _fingerprint(
+            (
+                "payment-evidence",
+                evidence.account_id,
+                evidence.provider_code,
+                evidence.external_payment_id,
+                evidence.amount_minor,
+                evidence.currency.upper(),
+                evidence.state.value,
+                evidence.observed_at,
+                safe,
+            )
+        )
+        state, resource = self._terminal(session, idempotency_key, fingerprint)
+        if state is RuntimeState.REPLAYED:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_REPLAY",
+                resource_id=resource,
+                audit_reference=authority.audit_reference,
+            )
+        if state is RuntimeState.MISMATCH:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_FINGERPRINT_MISMATCH",
+                audit_reference=authority.audit_reference,
+            )
+        existing = (
+            session.execute(
+                select(_PAYMENTS).where(
+                    _PAYMENTS.c.provider_code == evidence.provider_code,
+                    _PAYMENTS.c.external_payment_id == evidence.external_payment_id,
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if existing is not None:
+            if existing["account_id"] != evidence.account_id:
+                return CommandResult(
+                    state=RuntimeState.REJECTED,
+                    reason_code="PROVIDER_PAYMENT_ACCOUNT_CONFLICT",
+                    audit_reference=authority.audit_reference,
+                )
+            if (existing["amount_minor"], existing["currency"], existing["state"]) != (
+                evidence.amount_minor,
+                evidence.currency.upper(),
+                evidence.state.value,
+            ):
+                return CommandResult(
+                    state=RuntimeState.CONFLICT,
+                    reason_code="PROVIDER_PAYMENT_EVIDENCE_CONFLICT",
+                    audit_reference=authority.audit_reference,
+                )
+            return CommandResult(
+                state=RuntimeState.REPLAYED,
                 reason_code="DUPLICATE_PAYMENT_EVIDENCE",
-                resource_id=existing,
+                resource_id=existing["id"],
                 audit_reference=authority.audit_reference,
             )
         payment_id = uuid4()
@@ -681,12 +879,14 @@ class EntitlementsBillingRuntime:
             target=payment_id,
             reason="normalized payment evidence",
         )
-        return CommandResult(
+        result = CommandResult(
             state=RuntimeState.RECORDED,
             reason_code="PAYMENT_EVIDENCE_RECORDED",
             resource_id=payment_id,
             audit_reference=authority.audit_reference,
         )
+        self._record_terminal(session, idempotency_key, fingerprint, result)
+        return result
 
     def reconcile_payment(
         self,
@@ -697,7 +897,18 @@ class EntitlementsBillingRuntime:
         state: PaymentState,
         idempotency_key: str,
         observed_at: datetime,
+        actor_reference: str | None = None,
     ) -> CommandResult:
+        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
+        if not _authorized(authority, "ENTITLEMENTS_TARIFF_ADMIN"):
+            return CommandResult(
+                state=RuntimeState.UNAUTHORIZED,
+                reason_code="RECONCILIATION_CAPABILITY_REQUIRED",
+                audit_reference=authority.audit_reference,
+            )
         row = (
             session.execute(
                 select(_PAYMENTS).where(
@@ -713,13 +924,30 @@ class EntitlementsBillingRuntime:
                 reason_code="PAYMENT_NOT_FOUND",
                 audit_reference=authority.audit_reference,
             )
-        if state in {PaymentState.AMBIGUOUS, PaymentState.RECONCILE_REQUIRED}:
+        fp = _fingerprint(("reconcile", str(payment_id), state.value, observed_at))
+        idem_state, prior = self._terminal(session, idempotency_key, fp)
+        if idem_state is RuntimeState.REPLAYED:
             return CommandResult(
+                state=idem_state,
+                reason_code="IDEMPOTENCY_REPLAY",
+                resource_id=prior,
+                audit_reference=authority.audit_reference,
+            )
+        if idem_state is RuntimeState.MISMATCH:
+            return CommandResult(
+                state=idem_state,
+                reason_code="IDEMPOTENCY_FINGERPRINT_MISMATCH",
+                audit_reference=authority.audit_reference,
+            )
+        if state in {PaymentState.AMBIGUOUS, PaymentState.RECONCILE_REQUIRED}:
+            result = CommandResult(
                 state=RuntimeState.RECONCILE_REQUIRED,
                 reason_code="UNKNOWN_EFFECT_REQUIRES_RECONCILIATION",
                 resource_id=payment_id,
                 audit_reference=authority.audit_reference,
             )
+            self._record_terminal(session, idempotency_key, fp, result)
+            return result
         session.execute(
             update(_PAYMENTS)
             .where(_PAYMENTS.c.id == payment_id)
@@ -730,12 +958,28 @@ class EntitlementsBillingRuntime:
                 row_version=_PAYMENTS.c.row_version + 1,
             )
         )
+        operation_id = uuid4()
+        session.execute(
+            _OPERATIONS.insert().values(
+                id=operation_id,
+                payment_record_id=payment_id,
+                operation_code="RECONCILE_PAYMENT",
+                idempotency_key=_key(idempotency_key).value,
+                request_fingerprint=fp.value,
+                state="CONFIRMED" if state is PaymentState.CONFIRMED else state.value,
+                attempt_count=0,
+                next_due_at=None,
+                created_at=observed_at,
+                updated_at=observed_at,
+                row_version=1,
+            )
+        )
         recon_id = uuid4()
         session.execute(
             _RECONCILIATIONS.insert().values(
                 id=recon_id,
                 payment_record_id=payment_id,
-                operation_id=None,
+                operation_id=operation_id,
                 state=state.value,
                 due_at=observed_at,
                 resolved_at=observed_at,
@@ -751,12 +995,14 @@ class EntitlementsBillingRuntime:
             target=recon_id,
             reason="reconciliation evidence only",
         )
-        return CommandResult(
+        result = CommandResult(
             state=RuntimeState.RECORDED,
             reason_code="RECONCILIATION_EVIDENCE_ONLY",
             resource_id=recon_id,
             audit_reference=authority.audit_reference,
         )
+        self._record_terminal(session, idempotency_key, fp, result)
+        return result
 
     def manual_refund_reference(
         self,
@@ -768,7 +1014,12 @@ class EntitlementsBillingRuntime:
         idempotency_key: str,
         reason: str,
         reviewed_at: datetime,
+        actor_reference: str | None = None,
     ) -> CommandResult:
+        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
         if (
             not _authorized(authority, "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN")
             or not reason.strip()
@@ -841,8 +1092,11 @@ class EntitlementsBillingRuntime:
         counter_code: str,
         window_start: datetime,
         window_end: datetime,
-        limit_value: int,
+        limit_value: int | None = None,
         idempotency_key: str,
+        requester: str = "",
+        source_owner: str = "",
+        actor_reference: str | None = None,
     ) -> CommandResult:
         if counter_code not in {"ACTIVE_BEACON_SLOT", "SCAN_INTERVAL_WINDOW"}:
             return CommandResult(
@@ -850,8 +1104,82 @@ class EntitlementsBillingRuntime:
                 reason_code="USAGE_COUNTER_FAMILY_NOT_APPROVED",
                 audit_reference=authority.audit_reference,
             )
-        if limit_value < 0 or window_end <= window_start:
-            raise ValueError("bounded nonnegative counter and closed window required")
+        resolved = self._resolve(session, authority, authority.account_id, actor_reference)
+        if resolved is None:
+            return self._unauthorized()
+        authority = resolved
+        expected_owner = (
+            "BEACON_MANAGEMENT" if counter_code == "ACTIVE_BEACON_SLOT" else "SCAN_ORCHESTRATION"
+        )
+        if requester != expected_owner or source_owner != expected_owner:
+            return CommandResult(
+                state=RuntimeState.UNAUTHORIZED,
+                reason_code="USAGE_SOURCE_OWNER_REQUIRED",
+                audit_reference=authority.audit_reference,
+            )
+        if window_end <= window_start:
+            raise ValueError("closed window required")
+        fp = _fingerprint(
+            (
+                "usage",
+                authority.account_id,
+                counter_code,
+                window_start,
+                window_end,
+                requester,
+                source_owner,
+            )
+        )
+        state, resource = self._terminal(session, idempotency_key, fp)
+        if state is RuntimeState.REPLAYED:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_REPLAY",
+                resource_id=resource,
+                audit_reference=authority.audit_reference,
+            )
+        if state is RuntimeState.MISMATCH:
+            return CommandResult(
+                state=state,
+                reason_code="IDEMPOTENCY_FINGERPRINT_MISMATCH",
+                audit_reference=authority.audit_reference,
+            )
+        tariff = self._tariff(session, TariffName.FREE, window_start)
+        effective = self.evaluate_effective(session, authority.account_id, at=window_start)
+        if effective.tariff is TariffName.BASIC:
+            tariff = self._tariff(session, TariffName.BASIC, window_start)
+        derived_limit = (
+            1
+            if counter_code == "ACTIVE_BEACON_SLOT" and effective.tariff is TariffName.FREE
+            else (None if counter_code == "ACTIVE_BEACON_SLOT" else 0)
+        )
+        if counter_code == "ACTIVE_BEACON_SLOT" and effective.tariff is TariffName.BASIC:
+            result = CommandResult(
+                state=RuntimeState.RECORDED,
+                reason_code="BASIC_BEACON_LIMIT_UNSPECIFIED",
+                audit_reference=authority.audit_reference,
+            )
+            self._record_terminal(session, idempotency_key, fp, result)
+            return result
+        if counter_code == "SCAN_INTERVAL_WINDOW":
+            if window_end - window_start < timedelta(seconds=int(tariff["min_interval_seconds"])):
+                return CommandResult(
+                    state=RuntimeState.REJECTED,
+                    reason_code="SCAN_INTERVAL_FLOOR_REJECTED",
+                    audit_reference=authority.audit_reference,
+                )
+            if (window_end - window_start).total_seconds() % int(tariff["step_seconds"]) != 0:
+                return CommandResult(
+                    state=RuntimeState.REJECTED,
+                    reason_code="SCAN_INTERVAL_STEP_REJECTED",
+                    audit_reference=authority.audit_reference,
+                )
+        if limit_value is not None and derived_limit is not None and limit_value != derived_limit:
+            return CommandResult(
+                state=RuntimeState.REJECTED,
+                reason_code="CALLER_POLICY_AUTHORITY_FORBIDDEN",
+                audit_reference=authority.audit_reference,
+            )
         row = (
             session.execute(
                 select(_USAGE)
@@ -875,7 +1203,7 @@ class EntitlementsBillingRuntime:
                     window_start=window_start,
                     window_end=window_end,
                     consumed=1,
-                    limit_value=limit_value,
+                    limit_value=derived_limit if derived_limit is not None else 0,
                     created_at=_now(),
                     updated_at=_now(),
                     row_version=1,
@@ -888,12 +1216,14 @@ class EntitlementsBillingRuntime:
                 target=ident,
                 reason="bounded approved usage family",
             )
-            return CommandResult(
+            result = CommandResult(
                 state=RuntimeState.RECORDED,
                 reason_code="USAGE_RECORDED",
                 resource_id=ident,
                 audit_reference=authority.audit_reference,
             )
+            self._record_terminal(session, idempotency_key, fp, result)
+            return result
         if row["consumed"] >= row["limit_value"]:
             return CommandResult(
                 state=RuntimeState.REJECTED,
@@ -917,12 +1247,14 @@ class EntitlementsBillingRuntime:
             target=row["id"],
             reason="bounded approved usage family",
         )
-        return CommandResult(
+        result = CommandResult(
             state=RuntimeState.RECORDED,
             reason_code="USAGE_RECORDED",
             resource_id=row["id"],
             audit_reference=authority.audit_reference,
         )
+        self._record_terminal(session, idempotency_key, fp, result)
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -966,6 +1298,7 @@ class YooKassaSandboxAdapter:
         self,
         *,
         enabled: bool = False,
+        shop_id: str | None = None,
         api_base: str = "https://api.yookassa.ru/v3",
         secret_file: Path | None = None,
         timeout: httpx.Timeout | None = None,
@@ -973,6 +1306,7 @@ class YooKassaSandboxAdapter:
         client: httpx.Client | None = None,
     ) -> None:
         self.enabled = enabled
+        self.shop_id = shop_id.strip() if shop_id else None
         self.api_base = api_base.rstrip("/")
         self.secret_file = secret_file
         self.timeout = timeout or httpx.Timeout(connect=5, read=30, write=30, pool=5)
@@ -988,56 +1322,95 @@ class YooKassaSandboxAdapter:
         return ProviderResponse(PaymentState.REJECTED, safe_reference="PROVIDER_DISABLED_CONTINUE")
 
     def create_payment(
-        self, *, idempotency_key: str, amount_minor: int, currency: str
+        self,
+        *,
+        idempotency_key: str,
+        amount_minor: int,
+        currency: str,
+        return_url: str | None = None,
+        description: str | None = None,
     ) -> ProviderResponse:
         secret = self._secret()
-        if secret is None:
+        if secret is None or not self.shop_id:
             return self._disabled()
+        if not return_url or not return_url.startswith(("https://", "http://")):
+            return ProviderResponse(
+                PaymentState.REJECTED, safe_reference="REDIRECT_RETURN_URL_REQUIRED"
+            )
+        if amount_minor <= 0 or len(idempotency_key) == 0:
+            return ProviderResponse(PaymentState.REJECTED, safe_reference="INVALID_CREATE_REQUEST")
         payload = {
             "amount": {"value": f"{amount_minor / 100:.2f}", "currency": currency},
             "capture": True,
+            "confirmation": {"type": "redirect", "return_url": return_url},
         }
+        if description:
+            payload["description"] = description[:128]
         try:
-            response = (self.client or httpx.Client(timeout=self.timeout)).post(
-                f"{self.api_base}/payments",
+            response = self._request(
+                "POST",
+                "/payments",
+                secret,
                 json=payload,
-                auth=(secret, ""),
                 headers={"Idempotence-Key": idempotency_key},
             )
-            if len(response.content) > self.max_response_bytes:
-                return ProviderResponse(PaymentState.AMBIGUOUS, safe_reference="RESPONSE_TOO_LARGE")
-            if response.status_code >= 500:
+            if response is None:
                 return ProviderResponse(
-                    PaymentState.AMBIGUOUS, safe_reference="TRANSPORT_OR_PROVIDER_UNKNOWN"
+                    PaymentState.AMBIGUOUS, safe_reference="PROVIDER_RESPONSE_UNAVAILABLE"
                 )
-            body = response.json()
+            status_code, body = response
+            if status_code in {429} or status_code >= 500:
+                return ProviderResponse(PaymentState.AMBIGUOUS, safe_reference="RECONCILE_REQUIRED")
+            if status_code in {401, 403}:
+                return ProviderResponse(
+                    PaymentState.REJECTED, safe_reference="PROVIDER_CREDENTIALS_BLOCKED"
+                )
+            if 400 <= status_code < 500:
+                return ProviderResponse(
+                    PaymentState.REJECTED, safe_reference="PROVIDER_REQUEST_REJECTED"
+                )
             payment_id = body.get("id") if isinstance(body, dict) else None
             status = body.get("status") if isinstance(body, dict) else None
             return ProviderResponse(
                 PaymentState.CONFIRMED
                 if status == "succeeded"
-                else PaymentState.RECONCILE_REQUIRED,
+                else (PaymentState.REJECTED if status == "canceled" else PaymentState.UNRESOLVED),
                 payment_id,
-                "normalized-provider-response",
+                str(body.get("confirmation", {}).get("confirmation_url", ""))[:512]
+                or "normalized-provider-response",
             )
-        except httpx.HTTPError, ValueError:
+        except httpx.HTTPError, ValueError, KeyError, TypeError:
             return ProviderResponse(
                 PaymentState.AMBIGUOUS, safe_reference="PROVIDER_RESPONSE_UNAVAILABLE"
             )
 
     def retrieve_payment(self, *, external_payment_id: str) -> ProviderResponse:
         secret = self._secret()
-        if secret is None:
+        if secret is None or not self.shop_id:
             return self._disabled()
         try:
-            response = (self.client or httpx.Client(timeout=self.timeout)).get(
-                f"{self.api_base}/payments/{external_payment_id}", auth=(secret, "")
-            )
-            if len(response.content) > self.max_response_bytes:
+            response = self._request("GET", f"/payments/{external_payment_id}", secret)
+            if response is None:
                 return ProviderResponse(
-                    PaymentState.AMBIGUOUS, external_payment_id, "RESPONSE_TOO_LARGE"
+                    PaymentState.AMBIGUOUS, external_payment_id, "PROVIDER_RESPONSE_UNAVAILABLE"
                 )
-            body = response.json()
+            status_code, body = response
+            if status_code in {429} or status_code >= 500:
+                return ProviderResponse(
+                    PaymentState.AMBIGUOUS, external_payment_id, "RECONCILE_REQUIRED"
+                )
+            if status_code in {401, 403}:
+                return ProviderResponse(
+                    PaymentState.REJECTED, external_payment_id, "PROVIDER_CREDENTIALS_BLOCKED"
+                )
+            if status_code == 404:
+                return ProviderResponse(
+                    PaymentState.REJECTED, external_payment_id, "PAYMENT_NOT_FOUND"
+                )
+            if 400 <= status_code < 500:
+                return ProviderResponse(
+                    PaymentState.REJECTED, external_payment_id, "PROVIDER_REQUEST_REJECTED"
+                )
             status = body.get("status") if isinstance(body, dict) else None
             return ProviderResponse(
                 PaymentState.CONFIRMED
@@ -1046,10 +1419,32 @@ class YooKassaSandboxAdapter:
                 external_payment_id,
                 "normalized-provider-response",
             )
-        except httpx.HTTPError, ValueError:
+        except httpx.HTTPError, ValueError, KeyError, TypeError:
             return ProviderResponse(
                 PaymentState.AMBIGUOUS, external_payment_id, "PROVIDER_RESPONSE_UNAVAILABLE"
             )
+
+    def _request(
+        self, method: str, path: str, secret: str, **kwargs: Any
+    ) -> tuple[int, dict[str, Any]] | None:
+        headers = dict(kwargs.pop("headers", {}))
+        request_kwargs = {"auth": (self.shop_id, secret), "headers": headers, **kwargs}
+        owned = self.client is None
+        client = self.client or httpx.Client(timeout=self.timeout)
+        try:
+            with client.stream(method, f"{self.api_base}{path}", **request_kwargs) as response:
+                data = bytearray()
+                for chunk in response.iter_bytes():
+                    data.extend(chunk)
+                    if len(data) > self.max_response_bytes:
+                        return None
+                body = json.loads(bytes(data))
+                if not isinstance(body, dict):
+                    return None
+                return response.status_code, body
+        finally:
+            if owned:
+                client.close()
 
     def refund_payment(self, *args: Any, **kwargs: Any) -> ProviderResponse:
         raise RuntimeError("provider refund API is blocked")

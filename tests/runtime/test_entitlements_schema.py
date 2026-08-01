@@ -62,6 +62,10 @@ def test_exact_tables_and_columns() -> None:
                     "account_id",
                     "tariff_id",
                     "source_code",
+                    "grant_kind",
+                    "granted_capability",
+                    "granted_scope",
+                    "reason",
                     "valid_from",
                     "valid_until",
                     "state",
@@ -347,52 +351,52 @@ def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
                 options(table.dialect_options),
                 repr(table.info),
                 tuple(
-                (
-                    id(column),
-                    column.name,
-                    repr(column.type),
                     (
-                        type(column.type).__module__,
-                        type(column.type).__name__,
-                        str(column.type.compile(dialect=postgresql.dialect())),
-                        tuple(
-                            (name, str(getattr(column.type, name)))
-                            for name in (
-                                "length",
-                                "precision",
-                                "scale",
-                                "timezone",
-                                "as_uuid",
-                                "collation",
-                                "none_as_null",
-                                "hashable",
-                                "should_evaluate_none",
-                            )
-                            if hasattr(column.type, name)
+                        id(column),
+                        column.name,
+                        repr(column.type),
+                        (
+                            type(column.type).__module__,
+                            type(column.type).__name__,
+                            str(column.type.compile(dialect=postgresql.dialect())),
+                            tuple(
+                                (name, str(getattr(column.type, name)))
+                                for name in (
+                                    "length",
+                                    "precision",
+                                    "scale",
+                                    "timezone",
+                                    "as_uuid",
+                                    "collation",
+                                    "none_as_null",
+                                    "hashable",
+                                    "should_evaluate_none",
+                                )
+                                if hasattr(column.type, name)
+                            ),
                         ),
-                    ),
-                    column.nullable,
-                    column.primary_key,
-                    str(getattr(column.server_default, "arg", column.server_default))
-                    if column.server_default is not None
-                    else None,
-                    str(getattr(column.default, "arg", column.default))
-                    if column.default is not None
-                    else None,
-                    str(getattr(column.onupdate, "arg", column.onupdate))
-                    if column.onupdate is not None
-                    else None,
-                    str(getattr(column.server_onupdate, "arg", column.server_onupdate))
-                    if column.server_onupdate is not None
-                    else None,
-                    column.autoincrement,
-                    column.unique,
-                    column.index,
-                    column.comment,
-                    column.system,
-                    repr(column.identity),
-                    repr(column.computed),
-                )
+                        column.nullable,
+                        column.primary_key,
+                        str(getattr(column.server_default, "arg", column.server_default))
+                        if column.server_default is not None
+                        else None,
+                        str(getattr(column.default, "arg", column.default))
+                        if column.default is not None
+                        else None,
+                        str(getattr(column.onupdate, "arg", column.onupdate))
+                        if column.onupdate is not None
+                        else None,
+                        str(getattr(column.server_onupdate, "arg", column.server_onupdate))
+                        if column.server_onupdate is not None
+                        else None,
+                        column.autoincrement,
+                        column.unique,
+                        column.index,
+                        column.comment,
+                        column.system,
+                        repr(column.identity),
+                        repr(column.computed),
+                    )
                     for column in table.columns
                 ),
                 tuple(
@@ -402,9 +406,7 @@ def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
                             type(constraint).__module__,
                             type(constraint).__name__,
                             constraint.name,
-                            tuple(
-                                column.name for column in getattr(constraint, "columns", ())
-                            ),
+                            tuple(column.name for column in getattr(constraint, "columns", ())),
                             str(constraint.sqltext)
                             if isinstance(constraint, CheckConstraint)
                             else None,
@@ -447,8 +449,7 @@ def _safe_snapshot(isolated: MetaData) -> tuple[object, ...]:
                             type(index).__name__,
                             index.name,
                             tuple(
-                                getattr(column, "name", str(column))
-                                for column in index.expressions
+                                getattr(column, "name", str(column)) for column in index.expressions
                             ),
                             index.unique,
                             predicate(index),

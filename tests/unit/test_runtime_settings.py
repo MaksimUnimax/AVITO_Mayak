@@ -58,8 +58,8 @@ def test_public_runtime_package_exports_settings_api() -> None:
 
 
 def test_canonical_non_secret_environment_keys_are_exact_and_ordered() -> None:
-    assert len(CANONICAL_NON_SECRET_ENV_KEYS) == 42
-    assert len(set(CANONICAL_NON_SECRET_ENV_KEYS)) == 42
+    assert len(CANONICAL_NON_SECRET_ENV_KEYS) == 44
+    assert len(set(CANONICAL_NON_SECRET_ENV_KEYS)) == 44
     assert CANONICAL_NON_SECRET_ENV_KEYS[0] == "MAYAK_ENVIRONMENT_ID"
     assert CANONICAL_NON_SECRET_ENV_KEYS[-1] == "MAYAK_SECRETS_DIR"
 

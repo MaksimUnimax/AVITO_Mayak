@@ -1,4 +1,8 @@
-"""Module 03 Entitlements & Billing physical table registrations."""
+"""Module 03 Entitlements & Billing physical table registrations.
+
+"""
+
+# ruff: noqa: E501
 
 from __future__ import annotations
 
@@ -159,9 +163,7 @@ def _column_property_signature(column: Column[object]) -> tuple[object, ...]:
         )
         if identity is not None
         else None,
-        (_normalized_sql(computed.sqltext), computed.persisted)
-        if computed is not None
-        else None,
+        (_normalized_sql(computed.sqltext), computed.persisted) if computed is not None else None,
     )
 
 
@@ -330,8 +332,12 @@ def _register_canonical_tables(
         target_metadata,
         Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
         Column("account_id", UUID(as_uuid=True), nullable=False),
-        Column("tariff_id", UUID(as_uuid=True), nullable=False),
+        Column("tariff_id", UUID(as_uuid=True), nullable=True),
         Column("source_code", String(64), nullable=False),
+        Column("grant_kind", String(32), nullable=False, server_default=text("'TARIFF'")),
+        Column("granted_capability", String(128), nullable=True),
+        Column("granted_scope", String(128), nullable=True),
+        Column("reason", String(512), nullable=False, server_default=text("'legacy grant'")),
         Column("valid_from", TIMESTAMP(timezone=True), nullable=False),
         Column("valid_until", TIMESTAMP(timezone=True), nullable=False),
         Column("state", String(64), nullable=False),
@@ -343,6 +349,16 @@ def _register_canonical_tables(
             ["tariff_id"], ["mayak.entitlement_tariff_definitions.id"], ondelete="RESTRICT"
         ),
         CheckConstraint("btrim(source_code) <> ''", name="source_code_nonempty"),
+        CheckConstraint("grant_kind IN ('TARIFF', 'MANUAL')", name="grant_kind_allowed"),
+        CheckConstraint(
+            "grant_kind = 'MANUAL' OR (granted_capability IS NULL AND granted_scope IS NULL)",
+            name="tariff_grant_fields_empty",
+        ),
+        CheckConstraint(
+            "grant_kind = 'TARIFF' OR (btrim(granted_capability) <> '' AND btrim(granted_scope) <> '')",
+            name="manual_grant_fields_present",
+        ),
+        CheckConstraint("btrim(reason) <> ''", name="reason_nonempty"),
         CheckConstraint("btrim(state) <> ''", name="state_nonempty"),
         CheckConstraint("valid_until > valid_from", name="valid_interval"),
         CheckConstraint("row_version > 0", name="row_version_positive"),

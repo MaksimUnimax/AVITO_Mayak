@@ -221,6 +221,8 @@ def test_no_forbidden_columns_or_database_uuid_defaults() -> None:
                 "attempt_count",
                 "consumed",
                 "row_version",
+                "grant_kind",
+                "reason",
             }
             assert column.name in {
                 "lease_token",

@@ -50,6 +50,8 @@ CANONICAL_NON_SECRET_ENV_KEYS = (
     "MAYAK_MAX_ENABLED",
     "MAYAK_MAX_UPDATE_MODE",
     "MAYAK_YOOKASSA_ENABLED",
+    "MAYAK_YOOKASSA_SHOP_ID",
+    "MAYAK_YOOKASSA_SECRET_FILE",
     "MAYAK_EGRESS_AGENT_ENABLED",
     "MAYAK_OTEL_ENABLED",
     "MAYAK_OTEL_EXPORTER_ENDPOINT",
@@ -183,6 +185,7 @@ class _Providers(BaseModel):
     max_enabled: bool = False
     max_update_mode: ProviderUpdateMode = ProviderUpdateMode.DISABLED
     yookassa_enabled: bool = False
+    yookassa_shop_id: str | None = None
     yookassa_api_base: HttpUrl = HttpUrl("https://api.yookassa.ru/v3")
     yookassa_secret_file: Path = Path("/run/secrets/mayak_yookassa_secret")
     egress_agent_enabled: bool = False
@@ -337,6 +340,11 @@ def _text(values: Mapping[str, str], key: str, default: str | None = None) -> st
     if value is None or not isinstance(value, str) or not value or value != value.strip():
         raise ValueError(key)
     return value
+
+
+def _optional_text(values: Mapping[str, str], key: str) -> str | None:
+    value = values.get(key, "").strip()
+    return value or None
 
 
 def _int(values: Mapping[str, str], key: str, default: int) -> int:
@@ -519,6 +527,7 @@ def compose_runtime_settings(values: Mapping[str, str]) -> MayakRuntimeSettings:
                         _text(copied, "MAYAK_MAX_UPDATE_MODE", "disabled")
                     ),
                     "yookassa_enabled": _bool(copied, "MAYAK_YOOKASSA_ENABLED", False),
+                    "yookassa_shop_id": _optional_text(copied, "MAYAK_YOOKASSA_SHOP_ID"),
                     "yookassa_api_base": _text(
                         copied, "MAYAK_YOOKASSA_API_BASE", "https://api.yookassa.ru/v3"
                     ),
