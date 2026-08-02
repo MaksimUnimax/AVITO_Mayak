@@ -166,6 +166,8 @@ def _safe(value: Any) -> Any:
         return value.model_dump(mode="json")
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
+    if isinstance(value, datetime):
+        return value.isoformat()
     if isinstance(value, UUID):
         return str(value)
     if isinstance(value, (list, tuple)):
@@ -173,6 +175,10 @@ def _safe(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _safe(item) for key, item in value.items()}
     return repr(value)[:200]
+
+
+def _safe_row(row: Any) -> dict[str, Any]:
+    return {str(key): _safe(value) for key, value in row.items()}
 
 
 def _operation(
@@ -276,12 +282,12 @@ def _physical(connection: Any) -> dict[str, Any]:
         "work_ids": [row["id"] for row in work],
         "run_ids": [row["id"] for row in runs],
         "event_ids": [str(value) for value in events],
-        "schedule_rows": [dict(row) for row in schedules],
-        "work_rows": [dict(row) for row in work],
-        "run_rows": [dict(row) for row in runs],
+        "schedule_rows": [_safe_row(row) for row in schedules],
+        "work_rows": [_safe_row(row) for row in work],
+        "run_rows": [_safe_row(row) for row in runs],
         "listing_ids": [row["id"] for row in listings],
-        "listing_rows": [dict(row) for row in listings],
-        "anchor_rows": [dict(row) for row in anchors],
+        "listing_rows": [_safe_row(row) for row in listings],
+        "anchor_rows": [_safe_row(row) for row in anchors],
     }
 
 
