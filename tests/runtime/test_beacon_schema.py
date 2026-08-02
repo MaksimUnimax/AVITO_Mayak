@@ -90,6 +90,7 @@ def test_canonical_order_and_global_shape() -> None:
                 "id",
                 "account_id",
                 "name",
+                "source_url",
                 "current_revision_no",
                 "current_revision_id",
                 "state",
@@ -237,7 +238,7 @@ def test_immediate_fks_and_checks() -> None:
     )
     for fragment in (
         "btrim(name)",
-        "current_revision_no > 0",
+        "current_revision_no IS NULL OR current_revision_no > 0",
         "filter_candidate IS NULL",
         "accepted_filter",
         "octet_length(value",
