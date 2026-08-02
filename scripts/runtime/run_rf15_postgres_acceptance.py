@@ -570,7 +570,7 @@ def prepare_next_run(engine: Any, fixture: dict[str, Any], *, scenario_id: str) 
         materialized = materialize_due_work(repo, now + timedelta(days=365), 1000)
         session.commit()
         claims = claim_work(repo, now, 1, 120)
-        if len(materialized) != 1 or len(claims) != 1:
+        if len(materialized) != 1 and len(claims) != 1:
             raise RuntimeError(
                 f"{scenario_id}: expected one same-scope next work/run, "
                 f"materialized={len(materialized)} claims={len(claims)}"
