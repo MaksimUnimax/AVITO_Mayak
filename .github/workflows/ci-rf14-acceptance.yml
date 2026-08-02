@@ -1,0 +1,70 @@
+name: RF-14 Hosted PostgreSQL Acceptance
+
+on:
+  push:
+    branches: ["rf14-acceptance/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_NO_SYSTEM_CONFIG: "1"
+  UV_PROJECT_ENVIRONMENT: .venv
+  RF14_TECHNICAL_ID: RF-14-AVITO-PARSER-ADAPTER-RUNTIME-POSTGRES-20260802-01
+
+jobs:
+  rf14-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env: {POSTGRES_PASSWORD: rf14, POSTGRES_USER: rf14, POSTGRES_DB: rf14}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rf14 -d rf14"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {fetch-depth: 0, persist-credentials: false}
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with: {version: 0.11.31, python-version: 3.14.6, activate-environment: true}
+      - run: uv sync --frozen --all-groups --python 3.14.6
+      - run: uv run lint-imports
+      - name: Create migration boundary
+        env: {PGPASSWORD: rf14}
+        run: |
+          psql postgresql://rf14@127.0.0.1:5432/rf14 -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf14migration'" \
+            -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf14application'" \
+            -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration"
+      - name: Produce raw observations
+        env: {PGPASSWORD: rf14}
+        run: |
+          mkdir -p ci-evidence/rf14
+          set +e
+          uv run python scripts/runtime/run_rf14_postgres_acceptance.py \
+            --dsn postgresql+psycopg://mayak_migration:rf14migration@127.0.0.1:5432/rf14 \
+            --output ci-evidence/rf14/acceptance.json \
+            --technical-id "$RF14_TECHNICAL_ID" --candidate-sha "${{ github.sha }}" \
+            >ci-evidence/rf14/producer.stdout 2>ci-evidence/rf14/producer.stderr
+          producer_status=$?
+          cat ci-evidence/rf14/producer.stdout
+          cat ci-evidence/rf14/producer.stderr >&2
+          if [ "$producer_status" -ne 0 ]; then
+            error_line=$(tail -n 20 ci-evidence/rf14/producer.stderr | tr '\n' ' ' | cut -c1-1800 | sed -E 's#(postgresql\+psycopg://[^:]+:)[^@]+@#\1***@#g')
+            echo "::error file=scripts/runtime/run_rf14_postgres_acceptance.py::$error_line"
+            exit "$producer_status"
+          fi
+      - name: Verify raw observations independently
+        run: |
+          uv run python scripts/runtime/verify_rf14_acceptance.py . ci-evidence/rf14/acceptance.json "${{ github.sha }}" \
+            >ci-evidence/rf14/verifier.stdout 2>ci-evidence/rf14/verifier.stderr
+          test "$(cat ci-evidence/rf14/verifier.stdout)" = "RF14_ACCEPTANCE_VERIFIED"
+          test "$(grep -o RF14_ACCEPTANCE_VERIFIED ci-evidence/rf14/verifier.stdout | wc -l)" = "1"
+          test "$(grep -c RF14_ACCEPTANCE_VERIFIED ci-evidence/rf14/verifier.stderr || true)" = "0"
+      - name: Upload RF14 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with: {name: rf14-postgres-acceptance, path: ci-evidence/rf14}

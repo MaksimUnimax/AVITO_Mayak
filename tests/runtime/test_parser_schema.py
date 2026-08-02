@@ -208,7 +208,7 @@ def test_global_metadata_totals_and_parser_counts() -> None:
     parser = metadata.tables["mayak.parser_outcomes"]
     assert (
         len(metadata.tables) == 51
-        and sum(len(item.indexes) for item in metadata.tables.values()) == 72
+        and sum(len(item.indexes) for item in metadata.tables.values()) == 73
     )
     assert len(parser.indexes) == 2 and len(fks(parser)) == 3
 
