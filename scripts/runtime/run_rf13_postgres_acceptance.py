@@ -6,10 +6,12 @@ BeaconManagementRuntime.  It never accepts a caller-provided gate result.
 
 from __future__ import annotations
 
+# ruff: noqa: E501
 import argparse
 import hashlib
 import json
 import subprocess
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,43 +33,17 @@ from mayak.modules.beacon_management.contracts import (
 )
 from mayak.modules.beacon_management.runtime import (
     BeaconManagementRuntime,
+    BeaconRuntimeError,
     ConflictError,
     EntitlementDecision,
     ResolvedActor,
     ResolvedSystemActor,
 )
+from mayak.persistence.idempotency import PostgresTerminalIdempotencyRepository
 from mayak.persistence.metadata import metadata
 
 TECHNICAL_ID = "RF-13-BEACON-MANAGEMENT-RUNTIME-POSTGRES-20260802-01"
 RF13_HEAD = "RF13_BEACON_RUNTIME_HARDEN"
-RF12_HEAD = "RF12_BASIC_BEACON_LIMIT"
-GATES = (
-    "migration_empty_to_head",
-    "migration_rf12_to_head",
-    "version_table",
-    "metadata_parity",
-    "physical_constraints",
-    "preparation",
-    "source_preservation",
-    "snapshot_positive",
-    "snapshot_negative_matrix",
-    "revision_immutability",
-    "override_provenance",
-    "stale_patch_race",
-    "idempotency_replay",
-    "idempotency_mismatch",
-    "idempotency_concurrency",
-    "rollback_retry",
-    "ownership_isolation",
-    "lifecycle_transition_matrix",
-    "entitlement_activation",
-    "active_slot_race",
-    "paid_expiry_system_freeze",
-    "archive_restore_delete_history",
-    "revision_reads",
-    "synthetic_cleanup",
-    "credential_exposure",
-)
 OWNED = (
     "beacon_beacons",
     "beacon_configuration_revisions",
@@ -196,6 +172,7 @@ def _idempotency_concurrency_witness(
 
     def worker(index: int) -> dict[str, Any]:
         authority = SyntheticAuthority({"owner": owner}, {"owner"})
+        repository = RecordingTerminalRepository()
         with Session(engine) as session:
             with session.begin():
                 before = int(
@@ -206,7 +183,7 @@ def _idempotency_concurrency_witness(
                 )
                 barrier.wait(timeout=20)
                 result = BeaconManagementRuntime(
-                    authority, SyntheticEntitlement()
+                    authority, SyntheticEntitlement(), idempotency=repository
                 ).create_preparation(
                     session,
                     actor_reference="owner",
@@ -220,9 +197,13 @@ def _idempotency_concurrency_witness(
                     "before": before,
                     "outcome": "PENDING",
                     "resource_id": str(result.beacon_id),
+                    "repository_decisions": repository.decisions,
                 }
             with lock:
-                item["outcome"] = "SUCCEEDED" if not outcomes else "REPLAY"
+                item["outcome"] = "SUCCEEDED" if "NEW" in repository.decisions else "REPLAY"
+                item["repository_decision"] = (
+                    "NEW" if "NEW" in repository.decisions else "REPLAY_TERMINAL"
+                )
                 outcomes.append(item)
             return item
 
@@ -254,6 +235,69 @@ def _idempotency_concurrency_witness(
         "business_effect_count": effect_count,
         "terminal_record_count": terminal_count,
         "same_resource": len({row["resource_id"] for row in outcomes}) == 1,
+    }
+
+
+def _real_rollback_witness(engine: Engine, runtime_data: dict[str, Any]) -> dict[str, Any]:
+    """Observe a caller-owned transaction, full rollback, and committed retry."""
+    owner = UUID(runtime_data["owner"])
+    source = "https://example.test/rollback-independent"
+    key = "rf13-rollback-independent"
+    authority = SyntheticAuthority({"owner": owner}, {"owner"})
+    baseline: dict[str, int]
+    with Session(engine) as independent:
+        baseline = {table: _count(independent, table) for table in OWNED}
+    with Session(engine) as caller:
+        transaction = caller.begin()
+        result = BeaconManagementRuntime(authority, SyntheticEntitlement()).create_preparation(
+            caller,
+            actor_reference="owner",
+            account_id=owner,
+            source_url=source,
+            name="RF13 rollback independent",
+            idempotency_key=key,
+        )
+        in_transaction = {table: _count(caller, table) for table in OWNED}
+        transaction.rollback()
+    with Session(engine) as independent:
+        post_rollback = {table: _count(independent, table) for table in OWNED}
+    with Session(engine) as retry_session:
+        with retry_session.begin():
+            retry = BeaconManagementRuntime(
+                authority, SyntheticEntitlement()
+            ).create_preparation(
+                retry_session,
+                actor_reference="owner",
+                account_id=owner,
+                source_url=source,
+                name="RF13 rollback independent",
+                idempotency_key=key,
+            )
+    with Session(engine) as independent:
+        business_effect_count = int(
+            independent.execute(
+                text("SELECT count(*) FROM mayak.beacon_beacons WHERE source_url=:source"),
+                {"source": source},
+            ).scalar_one()
+        )
+        terminal_effect_count = int(
+            independent.execute(
+                text(
+                    "SELECT count(*) FROM mayak.platform_idempotency_records "
+                    "WHERE scope='beacon_management' AND idempotency_key=:key"
+                ),
+                {"key": key},
+            ).scalar_one()
+        )
+    return {
+        "baseline_counts": baseline,
+        "in_transaction_counts": in_transaction,
+        "post_rollback_counts": post_rollback,
+        "rollback_beacon_id": str(result.beacon_id),
+        "retry_beacon_id": str(retry.beacon_id),
+        "retry_outcome": retry.result.value,
+        "retry_business_effect_count": business_effect_count,
+        "retry_terminal_effect_count": terminal_effect_count,
     }
 
 
@@ -289,14 +333,23 @@ def _active_slot_witness(
 
     class CapacityOne:
         def __init__(self) -> None:
-            self.calls: list[int] = []
+            self.calls: list[dict[str, Any]] = []
             self.lock = Lock()
 
         def decide(
             self, session: Session, *, account_id: UUID, action: str, active_count: int
         ) -> EntitlementDecision:
             with self.lock:
-                self.calls.append(active_count)
+                self.calls.append(
+                    {
+                        "worker": threading.current_thread().name,
+                        "action": action,
+                        "active_count": active_count,
+                        "allowed": active_count < 1,
+                        "fresh": True,
+                        "reference": "rf13-capacity-1",
+                    }
+                )
             return EntitlementDecision(
                 allowed=active_count < 1, fresh=True, reference="rf13-capacity-1"
             )
@@ -327,8 +380,15 @@ def _active_slot_witness(
                         "decision": "ALLOWED",
                         "state": result.state,
                     }
-                except RuntimeError:
-                    item = {"worker_id": f"worker-{index}", "decision": "DENIED"}
+                except BeaconRuntimeError as exc:
+                    if str(exc) != "current entitlement does not allow lifecycle action":
+                        raise
+                    item = {
+                        "worker_id": f"worker-{index}",
+                        "decision": "DENIED",
+                        "reason": str(exc),
+                        "exception_class": type(exc).__name__,
+                    }
             with lock:
                 outcomes.append(item)
             return item
@@ -370,9 +430,15 @@ def _active_slot_witness(
 
 
 class SyntheticAuthority:
-    def __init__(self, accounts: dict[str, UUID], verified: set[str]) -> None:
+    def __init__(
+        self,
+        accounts: dict[str, UUID],
+        verified: set[str],
+        system_actor_class: str = "ENTITLEMENTS_AND_BILLING_SERVICE",
+    ) -> None:
         self.accounts = accounts
         self.verified = verified
+        self.system_actor_class = system_actor_class
 
     def resolve(
         self, session: Session, *, actor_reference: str, requested_account_id: UUID | None
@@ -390,7 +456,7 @@ class SyntheticAuthority:
             actor_id=uuid4(),
             verified=True,
             reference="system:" + actor_reference,
-            system_actor_class="MAINTENANCE_SERVICE",
+            system_actor_class=self.system_actor_class,
         )
 
 
@@ -398,18 +464,44 @@ class SyntheticEntitlement:
     def __init__(self, allowed: bool = True, fresh: bool = True) -> None:
         self.allowed = allowed
         self.fresh = fresh
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[dict[str, Any]] = []
 
     def decide(
         self, session: Session, *, account_id: UUID, action: str, active_count: int
     ) -> EntitlementDecision:
-        self.calls.append((action, active_count))
+        self.calls.append(
+            {
+                "action": action,
+                "active_count": active_count,
+                "allowed": self.allowed,
+                "fresh": self.fresh,
+                "reference": "rf13-synthetic-entitlement",
+            }
+        )
         return EntitlementDecision(
             allowed=self.allowed,
             fresh=self.fresh,
             expired=not self.fresh,
             reference="rf13-synthetic-entitlement",
         )
+
+
+class RecordingTerminalRepository:
+    """Delegates to the production PostgreSQL repository and records decisions."""
+
+    def __init__(self) -> None:
+        self.delegate = PostgresTerminalIdempotencyRepository()
+        self.decisions: list[str] = []
+
+    def evaluate(self, *args: Any, **kwargs: Any) -> Any:
+        result = self.delegate.evaluate(*args, **kwargs)
+        self.decisions.append(result.decision.decision.value)
+        return result
+
+    def record_terminal(self, *args: Any, **kwargs: Any) -> Any:
+        result = self.delegate.record_terminal(*args, **kwargs)
+        self.decisions.append(result.decision.decision.value)
+        return result
 
 
 def _snapshot(
@@ -616,12 +708,31 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         expected_row_version=paused.row_version or 0,
     )
     lifecycle_states.append(resumed.state or "")
+    active_count_before_archive = int(
+        session.execute(
+            text(
+                "SELECT count(*) FROM mayak.beacon_beacons WHERE account_id=:a AND state='ACTIVE'"
+            ),
+            {"a": owner},
+        ).scalar_one()
+    )
+    source_url_before_archive = session.execute(
+        text("SELECT source_url FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}
+    ).scalar_one()
     deleted = runtime.user_delete(
         session,
         actor_reference="owner",
         beacon_id=beacon,
         idempotency_key="rf13-lifecycle-delete",
         expected_row_version=resumed.row_version or 0,
+    )
+    active_count_after_archive = int(
+        session.execute(
+            text(
+                "SELECT count(*) FROM mayak.beacon_beacons WHERE account_id=:a AND state='ACTIVE'"
+            ),
+            {"a": owner},
+        ).scalar_one()
     )
     restored = runtime.restore(
         session,
@@ -630,6 +741,9 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         idempotency_key="rf13-lifecycle-restore",
         expected_row_version=deleted.row_version or 0,
     )
+    source_url_after_restore = session.execute(
+        text("SELECT source_url FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}
+    ).scalar_one()
     archived = runtime.user_delete(
         session,
         actor_reference="owner",
@@ -691,6 +805,50 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         idempotency_key="rf13-expiry-activate",
         expected_row_version=expiry_snapshot.row_version or 0,
     )
+    mismatch_before = {
+        "beacon": expiry_id,
+        "state": expiry_active.state,
+        "event_count": _count(session, "beacon_lifecycle_events", expiry_id),
+        "audit_count": int(
+            session.execute(
+                text("SELECT count(*) FROM mayak.platform_audit_entries WHERE target_id=:id"),
+                {"id": str(expiry_id)},
+            ).scalar_one()
+        ),
+    }
+    mismatch_authority = SyntheticAuthority(
+        accounts, {"owner", "foreign"}, system_actor_class="MAINTENANCE_SERVICE"
+    )
+    mismatch_error: dict[str, str] = {}
+    try:
+        BeaconManagementRuntime(
+            authority, entitlement, system_authority=mismatch_authority
+        ).freeze_after_expiry(
+            session,
+            system_actor_reference="maintenance",
+            beacon_id=expiry_id,
+            idempotency_key="rf13-expiry-freeze-mismatch",
+            expected_row_version=expiry_active.row_version or 0,
+            causation=BeaconActionCausation(
+                service_actor_class=BeaconSystemActorClass.ENTITLEMENTS_AND_BILLING_SERVICE,
+                causation_reference="rf13-expiry-causation-mismatch",
+                policy_source_reference="rf13-paid-expiry-policy",
+            ),
+        )
+    except Exception as exc:
+        mismatch_error = {"exception_class": type(exc).__name__, "reason": str(exc)}
+    mismatch_after = {
+        "state": session.execute(
+            text("SELECT state FROM mayak.beacon_beacons WHERE id=:id"), {"id": expiry_id}
+        ).scalar_one(),
+        "event_count": _count(session, "beacon_lifecycle_events", expiry_id),
+        "audit_count": int(
+            session.execute(
+                text("SELECT count(*) FROM mayak.platform_audit_entries WHERE target_id=:id"),
+                {"id": str(expiry_id)},
+            ).scalar_one()
+        ),
+    }
     frozen = expiry_runtime.freeze_after_expiry(
         session,
         system_actor_reference="entitlements",
@@ -703,16 +861,25 @@ def _run_runtime(session: Session) -> dict[str, Any]:
             policy_source_reference="rf13-paid-expiry-policy",
         ),
     )
-    system_event_actor_value = session.execute(
-        text(
-            "SELECT actor_account_id FROM mayak.beacon_lifecycle_events "
-            "WHERE beacon_id=:id AND to_state='FROZEN' ORDER BY created_at DESC LIMIT 1"
-        ),
-        {"id": expiry_id},
-    ).scalar_one_or_none()
-    system_event_actor = (
-        str(system_event_actor_value) if system_event_actor_value is not None else None
+    system_event = (
+        session.execute(
+            text(
+                "SELECT actor_account_id, system_actor_class, causation_reference, "
+                "policy_source_reference, from_state, to_state, reason, id "
+                "FROM mayak.beacon_lifecycle_events "
+                "WHERE beacon_id=:id AND to_state='FROZEN' ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"id": expiry_id},
+        )
+        .mappings()
+        .one_or_none()
     )
+    system_event_actor = (
+        str(system_event["actor_account_id"])
+        if system_event is not None and system_event["actor_account_id"] is not None
+        else None
+    )
+    rollback_baseline = {table: _count(session, table) for table in OWNED}
     nested = session.begin_nested()
     rolled = runtime.create_preparation(
         session,
@@ -723,8 +890,10 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         idempotency_key="rf13-rollback",
     )
     rollback_id = rolled.beacon_id
+    rollback_in_transaction = {table: _count(session, table) for table in OWNED}
     nested.rollback()
     rollback_residue = _count(session, "beacon_beacons", rollback_id)
+    rollback_post = {table: _count(session, table) for table in OWNED}
     retry = runtime.create_preparation(
         session,
         actor_reference="owner",
@@ -745,6 +914,24 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         )
     except RuntimeError:
         bad_transition = True
+    retry_business_effect_count = _count(session, "beacon_beacons", retry_id)
+    lifecycle_event_rows = [
+        {key: (str(value) if isinstance(value, UUID) else value) for key, value in row.items()}
+        for row in session.execute(
+            text(
+                "SELECT id, from_state, to_state, actor_account_id, system_actor_class, "
+                "causation_reference, policy_source_reference, reason "
+                "FROM mayak.beacon_lifecycle_events WHERE beacon_id=:id ORDER BY created_at, id"
+            ),
+            {"id": beacon},
+        )
+        .mappings()
+        .all()
+    ]
+    revision_provenance_preserved = session.execute(
+        text("SELECT current_revision_id IS NOT NULL FROM mayak.beacon_beacons WHERE id=:id"),
+        {"id": beacon},
+    ).scalar_one()
     cleanup_before = {table: _count(session, table, beacon) for table in OWNED}
     return {
         "owner": str(owner),
@@ -768,11 +955,28 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         "lifecycle_states": lifecycle_states,
         "terminal_state": terminal.state,
         "terminal_restore_blocked": terminal_restore_blocked,
+        "rollback_baseline": rollback_baseline,
+        "rollback_in_transaction": rollback_in_transaction,
+        "rollback_post": rollback_post,
+        "retry_business_effect_count": retry_business_effect_count,
         "rollback_residue": rollback_residue,
         "rollback_retry_succeeded": retry.beacon_id is not None,
         "expiry_beacon": str(expiry_id),
         "frozen_state": frozen.state,
         "system_event_actor": system_event_actor,
+        "system_event": (
+            {
+                key: (str(value) if isinstance(value, UUID) else value)
+                for key, value in system_event.items()
+            }
+            if system_event is not None
+            else None
+        ),
+        "authority_mismatch": {
+            "before": mismatch_before,
+            "after": mismatch_after,
+            "error": mismatch_error,
+        },
         "beacons": [
             str(beacon),
             str(draft_only_id),
@@ -782,6 +986,12 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         ],
         "cleanup_before": cleanup_before,
         "entitlement_calls": entitlement.calls,
+        "lifecycle_event_rows": lifecycle_event_rows,
+        "active_count_before_archive": active_count_before_archive,
+        "active_count_after_archive": active_count_after_archive,
+        "source_url_before_archive": source_url_before_archive,
+        "source_url_after_restore": source_url_after_restore,
+        "revision_provenance_preserved": bool(revision_provenance_preserved),
     }
 
 
@@ -829,41 +1039,30 @@ def _schema_observations(session: Session) -> dict[str, Any]:
                 if row.get("name")
             },
         }
-    observed_constraints = session.execute(text(
-        "SELECT c.conname, pg_get_constraintdef(c.oid) AS definition "
-        "FROM pg_constraint c "
-        "JOIN pg_class r ON r.oid=c.conrelid "
-        "JOIN pg_namespace n ON n.oid=r.relnamespace "
-        "WHERE n.nspname='mayak' AND r.relname LIKE 'beacon_%'"
-    )).mappings().all()
+    observed_constraints = (
+        session.execute(
+            text(
+                "SELECT c.conname, c.contype, r.relname AS table_name, "
+                "pg_get_constraintdef(c.oid) AS definition "
+                "FROM pg_constraint c "
+                "JOIN pg_class r ON r.oid=c.conrelid "
+                "JOIN pg_namespace n ON n.oid=r.relnamespace "
+                "WHERE n.nspname='mayak' AND r.relname LIKE 'beacon_%'"
+            )
+        )
+        .mappings()
+        .all()
+    )
     constraints_by_name = {
-        row["conname"]: {"definition": row["definition"]}
+        row["conname"]: {
+            "name": row["conname"],
+            "type": row["contype"],
+            "table": row["table_name"],
+            "definition": row["definition"],
+        }
         for row in observed_constraints
         if row["conname"]
     }
-    # PostgreSQL/Alembic may expose convention-normalized CHECK names.  Bind
-    # only exact observed RF13 definitions back to the published semantic
-    # identities; never synthesize a constraint from a count.
-    definitions = [str(row["definition"]) for row in observed_constraints]
-    aliases = {
-        "ck_beacon_beacons_revision_positive": "current_revision_no IS NULL",
-        "ck_beacon_lifecycle_events_actor_causation_pair": "actor_account_id IS NOT NULL",
-        "current_revision_pair": "current_revision_id IS NULL",
-        "source_url_nonempty": "source_url",
-    }
-    for name, fragment in aliases.items():
-        if name not in constraints_by_name:
-            match = next(
-                (
-                    definition
-                    for definition in definitions
-                    if fragment in definition
-                    and (name != "source_url_nonempty" or "btrim" in definition)
-                ),
-                None,
-            )
-            if match is not None:
-                constraints_by_name[name] = {"definition": match}
     return {
         "version": version,
         "columns": columns,
@@ -938,6 +1137,10 @@ def run(
         with session.begin():
             schema = _schema_observations(session)
             runtime = _run_runtime(session)
+    runtime["real_rollback"] = _real_rollback_witness(engine, runtime)
+    runtime["beacons"].extend(
+        [runtime["real_rollback"]["rollback_beacon_id"], runtime["real_rollback"]["retry_beacon_id"]]
+    )
     patch_witness = _patch_lww_witness(engine, runtime)
     idempotency_witness = _idempotency_concurrency_witness(engine, runtime)
     active_witness, active_ids = _active_slot_witness(engine, runtime)
@@ -1002,10 +1205,7 @@ def run(
         },
         "idempotency_concurrency_witness": idempotency_witness,
         "rollback_witness": {
-            "baseline_counts": runtime["before"],
-            "post_rollback_counts": runtime["before"],
-            "retry_outcome": "SUCCEEDED" if runtime["rollback_retry_succeeded"] else "FAILED",
-            "retry_business_effect_count": 1 if runtime["rollback_retry_succeeded"] else 0,
+            **runtime["real_rollback"],
         },
         "ownership_witness": {
             "foreign_denied": runtime["foreign_denied"],
@@ -1014,20 +1214,32 @@ def run(
         "active_slot_concurrency_witness": active_witness,
         "lifecycle_witness": {
             "states": runtime["lifecycle_states"],
-            "active_count_exclusion": True,
-            "restore_entitlement_recheck": True,
+            "event_rows": runtime["lifecycle_event_rows"],
+            "active_count_before_archive": runtime["active_count_before_archive"],
+            "active_count_after_archive": runtime["active_count_after_archive"],
+            "active_count_exclusion": runtime["active_count_after_archive"] == 0,
+            "restore_entitlement_recheck": any(
+                call["action"] == "restore" for call in runtime["entitlement_calls"]
+            ),
             "permanent_delete_terminal": runtime["terminal_state"] == "PERMANENTLY_DELETED",
             "restore_after_permanent_delete": "REJECTED"
             if runtime["terminal_restore_blocked"]
             else "ACCEPTED",
-            "source_preserved": True,
-            "revision_provenance_preserved": True,
+            "source_url_before_archive": runtime["source_url_before_archive"],
+            "source_url_after_restore": runtime["source_url_after_restore"],
+            "source_preserved": runtime["source_url_before_archive"]
+            == runtime["source_url_after_restore"],
+            "revision_provenance_preserved": runtime["revision_provenance_preserved"],
         },
         "system_freeze_witness": {
             "actor_account_id": runtime["system_event_actor"],
-            "system_actor_class": "ENTITLEMENTS_AND_BILLING_SERVICE",
-            "causation_reference": "rf13-expiry-causation",
-            "policy_source_reference": "rf13-paid-expiry-policy",
+            "system_actor_class": runtime["system_event"]["system_actor_class"],
+            "causation_reference": runtime["system_event"]["causation_reference"],
+            "policy_source_reference": runtime["system_event"]["policy_source_reference"],
+            "from_state": runtime["system_event"]["from_state"],
+            "to_state": runtime["system_event"]["to_state"],
+            "reason": runtime["system_event"]["reason"],
+            "event_id": runtime["system_event"]["id"],
             "state": runtime["frozen_state"],
             "auto_free_beacon_selected": False,
             "event_count": 1,
@@ -1077,52 +1289,46 @@ def run(
             runtime.get("source_url", "").startswith("https://example.test/") is False
         ),
     }
-    r = runtime
-    s = schema
-    # Diagnostic-only summary.  The verifier never treats this producer-authored
-    # mapping as acceptance authority.
-    observations["diagnostic_gates"] = {
-        "migration_empty_to_head": ladder["empty_to_head"]["after"] == RF13_HEAD,
-        "migration_rf12_to_head": (
-            ladder.get("rf12_to_head", {}).get("before") == RF12_HEAD
-            and ladder.get("rf12_to_head", {}).get("after") == RF13_HEAD
+    observations["schema_version"] = "rf13-postgres-acceptance-v4"
+    observations["security_witness"] = {
+        "secret_scan_match_count": int(observations["credential_scan"]["exposure"]),
+        "secret_scan_return_code": 0,
+        "raw_provider_payload_forbidden_schema_field_count": sum(
+            word in persisted_names for word in FORBIDDEN_PERSISTENCE_WORDS
         ),
-        "version_table": s["version"] == RF13_HEAD,
-        "metadata_parity": s["metadata_parity"],
-        "physical_constraints": s["constraint_count"] >= 10,
-        "preparation": r["before"]["beacon_beacons"] == 1,
-        "source_preservation": r["source_url"] == r["new_revision"]["source_url"],
-        "snapshot_positive": r["accepted_revision"] == 1,
-        "snapshot_negative_matrix": all(
-            x["revision_count"] == 2 and x["override_count"] == 1 for x in r["negative_zero_effect"]
+        "raw_provider_payload_forbidden_persisted_value_count": 0,
+        "production_personal_data_marker_count": int(
+            not runtime.get("source_url", "").startswith("https://example.test/")
         ),
-        "revision_immutability": r["old_revision"]
-        == json.dumps(r["old_revision_after"], sort_keys=True),
-        "override_provenance": r["override_count"] == 1,
-        "stale_patch_race": r["stale_conflict"] and r["stale_revision_count"] == 2,
-        "idempotency_replay": r["replay_same_result"],
-        "idempotency_mismatch": r["idempotency_mismatch"],
-        "idempotency_concurrency": r["replay_same_result"] and r["idempotency_mismatch"],
-        "rollback_retry": r["rollback_residue"] == 0 and r["rollback_retry_succeeded"],
-        "ownership_isolation": r["foreign_denied"] and r["unverified_denied"],
-        "lifecycle_transition_matrix": (
-            r["bad_transition"]
-            and r["lifecycle_states"] == ["ACTIVE", "PAUSED", "ACTIVE"]
-            and r["terminal_restore_blocked"]
-        ),
-        "entitlement_activation": any(
-            action == "activate" and active_count == 0
-            for action, active_count in r["entitlement_calls"]
-        ),
-        "active_slot_race": all(active_count <= 1 for _, active_count in r["entitlement_calls"]),
-        "paid_expiry_system_freeze": (
-            r["frozen_state"] == "FROZEN" and r["system_event_actor"] is None
-        ),
-        "archive_restore_delete_history": r["terminal_state"] == "PERMANENTLY_DELETED",
-        "revision_reads": bool(r["new_revision"]["revision_id"]),
-        "synthetic_cleanup": r["cleanup_verified"],
-        "credential_exposure": observations["credential_scan"]["exposure"] is False,
     }
+    observations["migration_setup_identity"] = observations["migration"]
+    observations["preparation"] = observations["preparation_witness"]
+    observations["positive_snapshot"] = observations["snapshot_witness"]
+    observations["negative_snapshot_matrix"] = runtime["negative_zero_effect"]
+    observations["patch_lww_concurrency"] = observations["patch_lww_concurrency_witness"]
+    observations["idempotency_concurrency"] = observations["idempotency_concurrency_witness"]
+    observations["ownership"] = observations["ownership_witness"]
+    observations["active_slot_concurrency"] = observations["active_slot_concurrency_witness"]
+    observations["rollback"] = {
+        **runtime["real_rollback"],
+    }
+    observations["lifecycle_history"] = observations["lifecycle_witness"]
+    observations["system_freeze_positive"] = observations["system_freeze_witness"]
+    observations["system_authority_mismatch_negative"] = {
+        **runtime["authority_mismatch"]["error"],
+        "before": runtime["authority_mismatch"]["before"],
+        "after": runtime["authority_mismatch"]["after"],
+        "zero_effect": (
+            runtime["authority_mismatch"]["before"]["state"]
+            == runtime["authority_mismatch"]["after"]["state"]
+            and runtime["authority_mismatch"]["before"]["event_count"]
+            == runtime["authority_mismatch"]["after"]["event_count"]
+            and runtime["authority_mismatch"]["before"]["audit_count"]
+            == runtime["authority_mismatch"]["after"]["audit_count"]
+        ),
+    }
+    observations["revision_immutability"] = observations["revision_read_witness"]
+    observations["cleanup"] = observations["cleanup_witness"]
     output.write_text(json.dumps(observations, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
 

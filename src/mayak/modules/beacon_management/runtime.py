@@ -32,6 +32,7 @@ from .contracts import (
     BeaconActionCausation,
     BeaconLifecycleState,
     BeaconParserOutcomeStatus,
+    BeaconSystemActorClass,
     ExtractedSearchConfigurationSnapshot,
 )
 
@@ -292,7 +293,9 @@ class BeaconManagementRuntime:
     ) -> None:
         correlation = CorrelationContext(correlation_id=CorrelationId(value=str(uuid4())))
         context = AuditContext(
-            actor_category=AuditActorCategory.OPERATOR,
+            actor_category=(
+                AuditActorCategory.SERVICE if system_actor else AuditActorCategory.OPERATOR
+            ),
             operation=AuditOperation(value=action),
             module_id=AuditModuleIdentifier(value="04-beacon-management"),
             target_scope=AuditTargetScope(value="beacon"),
@@ -728,11 +731,10 @@ class BeaconManagementRuntime:
             session.execute(
                 select(_ACCOUNTS).where(_ACCOUNTS.c.id == actor.account_id).with_for_update()
             ).one()
-        row = (
-            session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id).with_for_update())
-            .mappings()
-            .one_or_none()
-        )
+        beacon_query = select(_BEACONS).where(_BEACONS.c.id == beacon_id)
+        if isinstance(actor, ResolvedActor):
+            beacon_query = beacon_query.with_for_update()
+        row = session.execute(beacon_query).mappings().one_or_none()
         if row is None or (
             isinstance(actor, ResolvedActor) and row["account_id"] != actor.account_id
         ):
@@ -805,9 +807,7 @@ class BeaconManagementRuntime:
             # active count.  This is the database fact used by Module 04's
             # capacity decision and prevents a final-slot snapshot race.
             session.execute(
-                select(_BEACONS)
-                .where(_BEACONS.c.account_id == account_id)
-                .with_for_update()
+                select(_BEACONS).where(_BEACONS.c.account_id == account_id).with_for_update()
             ).all()
             count = session.execute(
                 select(func.count())
@@ -1006,6 +1006,13 @@ class BeaconManagementRuntime:
         if causation.service_actor_class.value == "":
             raise BeaconRuntimeError("system causation is required")
         actor = self._system_authority(session, system_actor_reference)
+        if actor.system_actor_class != causation.service_actor_class.value:
+            raise BeaconRuntimeError("system authority class does not match causation")
+        if (
+            causation.service_actor_class
+            is not BeaconSystemActorClass.ENTITLEMENTS_AND_BILLING_SERVICE
+        ):
+            raise BeaconRuntimeError("paid expiry requires entitlements and billing authority")
         result = self._transition_as_actor(
             session,
             actor=actor,
