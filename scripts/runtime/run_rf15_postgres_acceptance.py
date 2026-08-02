@@ -81,7 +81,11 @@ def main() -> int:
         )
         indexes = {
             name: tuple(
-                sorted(item["name"] for item in inspector.get_indexes(name, schema="mayak"))
+                sorted(
+                    str(item["name"])
+                    for item in inspector.get_indexes(name, schema="mayak")
+                    if item.get("name")
+                )
             )
             for name in tables
         }
