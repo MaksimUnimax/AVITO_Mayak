@@ -610,7 +610,8 @@ def verify(data: dict[str, Any], output_dir: Path) -> None:
         try:
             _require_raw_dependencies(data, requirement)
             original_vector = {
-                checker_id: bool(checker(data)) for checker_id, checker in BEHAVIORAL_CHECKERS.items()
+                checker_id: bool(checker(data))
+                for checker_id, checker in BEHAVIORAL_CHECKERS.items()
             }
             if not original_vector[requirement]:
                 raise ValueError(f"requirement failed: {requirement}")
