@@ -17,6 +17,7 @@ from .runtime import (
     EntitlementDecision,
     EntitlementPort,
     ResolvedActor,
+    ResolvedSystemActor,
     SystemAuthorityPort,
 )
 
@@ -36,5 +37,6 @@ __all__ = (
     "EntitlementDecision",
     "EntitlementPort",
     "ResolvedActor",
+    "ResolvedSystemActor",
     "SystemAuthorityPort",
 )
