@@ -86,6 +86,13 @@ def _tamper_matrix(data: dict[str, Any], checks: dict[str, bool]) -> list[dict[s
             target[field] = original + 1
         elif isinstance(original, list):
             target[field] = []
+        elif isinstance(original, dict):
+            target[field] = dict(original)
+            if target[field]:
+                first_key = next(iter(target[field]))
+                target[field][first_key] = 1
+            else:
+                target[field]["tampered"] = 1
         else:
             target[field] = "tampered"
         after = _checks(tampered)[requirement_id]
