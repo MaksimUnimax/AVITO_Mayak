@@ -56,12 +56,15 @@ jobs:
       - run: uv run pytest -q tests/runtime/test_scan_schema.py
       - run: uv run pytest -q tests/unit/test_rf15_scan_contracts.py
       - run: uv run pytest -q tests/architecture/test_import_boundaries.py
-      - run: uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_DSN" --output rf15-evidence.json
+      - run: |
+          set -o pipefail
+          uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_DSN" --output rf15-evidence.json 2>&1 | tee rf15-producer.log
       - run: |
           uv run python scripts/runtime/verify_rf15_acceptance.py rf15-evidence.json > verifier.stdout 2> verifier.stderr
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stderr || true)" -eq 0
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: rf15-postgres-acceptance
           path: |
@@ -70,3 +73,4 @@ jobs:
             rf15-tamper-matrix.json
             verifier.stdout
             verifier.stderr
+            rf15-producer.log
