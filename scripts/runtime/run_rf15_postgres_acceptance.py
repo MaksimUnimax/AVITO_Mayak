@@ -293,14 +293,18 @@ def _case(
     before: dict[str, Any] | None = None,
     after: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    observed_before = before if before is not None else _physical(connection)
+    def snapshot() -> dict[str, Any]:
+        with connection.engine.connect() as probe:
+            return _physical(probe)
+
+    observed_before = before if before is not None else snapshot()
     operation = _operation(
         connection,
         f"mayak.modules.scan_orchestration.{name}",
         {"scenario_id": f"rf15-{name}"},
         operation,
     )
-    observed_after = after if after is not None else _physical(connection)
+    observed_after = after if after is not None else snapshot()
     return {
         "operation": operation,
         "physical_before": observed_before,
@@ -525,28 +529,30 @@ def scenario_parser_failure_no_advance(connection: Any) -> dict[str, Any]:
                     provenance_fingerprint=_digest({"status": status}),
                 )
             )
-            before = _physical(session.connection())
-            attempts.append(
-                {
-                    "operation": _operation(
-                        session.connection(),
-                        "mayak.modules.scan_orchestration.commit_comparison",
-                        {"status": status, "ordinal": ordinal, "run_id": str(run.run_id)},
-                        lambda: commit_comparison(
-                            repo,
-                            run,
-                            outcome_id,
-                            beacon,
-                            SyntheticEntitlementPort(),
-                            parser,
-                            f"rf15-parser-failure-{ordinal}",
+            with engine.connect() as probe:
+                before = _physical(probe)
+            with engine.connect() as operation_connection:
+                attempts.append(
+                    {
+                        "operation": _operation(
+                            operation_connection,
+                            "mayak.modules.scan_orchestration.commit_comparison",
+                            {"status": status, "ordinal": ordinal, "run_id": str(run.run_id)},
+                            lambda: commit_comparison(
+                                repo,
+                                run,
+                                outcome_id,
+                                beacon,
+                                SyntheticEntitlementPort(),
+                                parser,
+                                f"rf15-parser-failure-{ordinal}",
+                            ),
                         ),
-                    ),
-                    "physical_before": before,
-                    "physical_after": _physical(session.connection()),
-                    "authority_history": parser.history,
-                }
-            )
+                        "physical_before": before,
+                        "physical_after": _physical(operation_connection),
+                        "authority_history": parser.history,
+                    }
+                )
     before = attempts[0]["physical_before"]
     after = attempts[-1]["physical_after"]
     return _case(
@@ -708,15 +714,23 @@ def scenario_concurrent(connection: Any, name: str) -> dict[str, Any]:
 
 
 def _due_work_family(connection: Any, name: str) -> dict[str, Any]:
-    before = _physical(connection)
-    case = _case(
-        connection,
-        name,
-        lambda: materialize_due_work(ScanRepository(Session(bind=connection)), _now(), 10),
-        before=before,
-    )
-    case["physical_after"] = _physical(connection)
+    with connection.engine.connect() as probe:
+        before = _physical(probe)
+    with connection.engine.connect() as operation_connection:
+        case = _case(
+            operation_connection,
+            name,
+            lambda: _materialize_on_engine(connection.engine),
+            before=before,
+        )
+    with connection.engine.connect() as probe:
+        case["physical_after"] = _physical(probe)
     return case
+
+
+def _materialize_on_engine(engine: Any) -> list[UUID]:
+    with Session(engine) as session:
+        return materialize_due_work(ScanRepository(session), _now(), 10)
 
 
 def _schedule_family(connection: Any, name: str) -> dict[str, Any]:
@@ -751,15 +765,23 @@ def _schedule_family(connection: Any, name: str) -> dict[str, Any]:
 
 
 def _claim_family(connection: Any, name: str) -> dict[str, Any]:
-    before = _physical(connection)
-    case = _case(
-        connection,
-        name,
-        lambda: claim_work(ScanRepository(Session(bind=connection)), _now(), 1, 120),
-        before=before,
-    )
-    case["physical_after"] = _physical(connection)
+    with connection.engine.connect() as probe:
+        before = _physical(probe)
+    with connection.engine.connect() as operation_connection:
+        case = _case(
+            operation_connection,
+            name,
+            lambda: _claim_on_engine(connection.engine),
+            before=before,
+        )
+    with connection.engine.connect() as probe:
+        case["physical_after"] = _physical(probe)
     return case
+
+
+def _claim_on_engine(engine: Any) -> list[Any]:
+    with Session(engine) as session:
+        return claim_work(ScanRepository(session), _now(), 1, 120)
 
 
 def _comparison_family(connection: Any, name: str) -> dict[str, Any]:
@@ -788,22 +810,25 @@ def _comparison_family(connection: Any, name: str) -> dict[str, Any]:
                 provenance_fingerprint=_digest({"scenario": name, "run": str(run.run_id)}),
             )
         )
-        before = _physical(session.connection())
-        case = _case(
-            session.connection(),
-            name,
-            lambda: commit_comparison(
-                repo,
-                run,
-                outcome_id,
-                beacon,
-                SyntheticEntitlementPort(),
-                parser,
-                f"rf15-{name}-{uuid4()}",
-            ),
-            before=before,
-        )
-        case["physical_after"] = _physical(session.connection())
+        with engine.connect() as probe:
+            before = _physical(probe)
+        with engine.connect() as operation_connection:
+            case = _case(
+                operation_connection,
+                name,
+                lambda: commit_comparison(
+                    repo,
+                    run,
+                    outcome_id,
+                    beacon,
+                    SyntheticEntitlementPort(),
+                    parser,
+                    f"rf15-{name}-{uuid4()}",
+                ),
+                before=before,
+            )
+        with engine.connect() as probe:
+            case["physical_after"] = _physical(probe)
         case["authority_history"] = parser.history
         return case
 
