@@ -40,13 +40,13 @@ jobs:
           install -d -m 700 /run/secrets
           umask 077
           printf '%s' 'rf15migration' > /run/secrets/mayak_database_migration_password
-          postgres_container=$(docker ps --format '{{.ID}} {{.Image}}' | awk '$2 ~ /^postgres:18/ {print $1; exit}')
+          postgres_container=$(docker ps -q | head -1)
           if [ -z "$postgres_container" ]; then
             echo '::error title=RF15 database boundary::postgres:18 service container was not discoverable'
             exit 1
           fi
           set +e
-          boundary_output=$(docker exec "$postgres_container" psql postgresql://mayak:mayak@127.0.0.1:5432/mayak -v ON_ERROR_STOP=1 \
+          boundary_output=$(docker exec "$postgres_container" psql -U mayak -d mayak -v ON_ERROR_STOP=1 \
             -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'" \
             -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'" \
             -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration" 2>&1)
