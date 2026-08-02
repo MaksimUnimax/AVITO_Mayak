@@ -13,6 +13,7 @@ from mayak.persistence.metadata import metadata
 
 from .contracts import (
     BeaconPort,
+    ComparisonResult,
     EntitlementPort,
     LeaseConflict,
     ParserOutcomePort,
@@ -219,7 +220,7 @@ class ScanRepository:
         parser: ParserOutcomePort,
         idempotency_key: str,
         now: datetime,
-    ):
+    ) -> ComparisonResult:
         from .services import commit_comparison
 
         return commit_comparison(
