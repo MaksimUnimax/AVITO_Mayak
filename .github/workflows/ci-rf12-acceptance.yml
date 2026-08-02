@@ -22,6 +22,7 @@ env:
   UV_NO_SYSTEM_CONFIG: "1"
   UV_PROJECT_ENVIRONMENT: .venv
   PG_IMAGE: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+  RF12_TECHNICAL_ID: RF-12-CORRECTIVE-VERIFIER-FAIL-CLOSED-AND-EVIDENCE-IDENTITY-CLOSURE-20260802-08
 
 jobs:
   rf12-runtime-closure:
@@ -186,6 +187,7 @@ jobs:
             --runtime-harden-dsn "${DB_DSN}/rf12_runtime_harden" \
             --artifact /evidence/rf12-acceptance.json \
             --candidate-sha "${{ github.sha }}" \
+            --technical-id "$RF12_TECHNICAL_ID" \
             --candidate-tree "$(git rev-parse HEAD^{tree})" \
             --image-identity "$(docker image inspect rf12-candidate:${{ github.sha }} --format '{{.Id}}')" \
             --image-provenance "$(cat ci-evidence/rf12/image-identity.json)" \
@@ -259,8 +261,21 @@ jobs:
       - name: Run final independent verifier and tamper-negative matrix
         if: success()
         run: |
-          python scripts/runtime/verify_rf12_acceptance.py . ci-evidence/rf12/rf12-acceptance.json "${{ github.sha }}" | tee ci-evidence/rf12/verifier.txt
-          python scripts/runtime/run_rf12_tamper_matrix.py . ci-evidence/rf12/rf12-acceptance.json ci-evidence/rf12/tamper-negative.json "${{ github.sha }}"
+          set -o pipefail
+          python scripts/runtime/verify_rf12_acceptance.py . ci-evidence/rf12/rf12-acceptance.json "${{ github.sha }}" "$RF12_TECHNICAL_ID" 2>&1 | tee ci-evidence/rf12/verifier.txt
+          grep -Fxq 'RF12_ACCEPTANCE_VERIFIED' ci-evidence/rf12/verifier.txt
+          python scripts/runtime/run_rf12_tamper_matrix.py . ci-evidence/rf12/rf12-acceptance.json ci-evidence/rf12/tamper-negative.json "${{ github.sha }}" "$RF12_TECHNICAL_ID"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('ci-evidence/rf12/tamper-negative.json').read_text())
+          assert result['pristine_accepted'] is True
+          assert result['pristine_return_code'] == 0
+          assert result['pristine_marker'] == 'RF12_ACCEPTANCE_VERIFIED'
+          assert result['expected_technical_id'] == 'RF-12-CORRECTIVE-VERIFIER-FAIL-CLOSED-AND-EVIDENCE-IDENTITY-CLOSURE-20260802-08'
+          assert result['expected_candidate_sha'] == '${{ github.sha }}'
+          assert result['all_rejected'] is True
+          PY
 
       - name: Publish bounded safe RF-12 evidence
         if: always()
