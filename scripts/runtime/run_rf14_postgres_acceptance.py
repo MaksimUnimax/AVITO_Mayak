@@ -44,6 +44,8 @@ from mayak.modules.beacon_management import (
 from mayak.modules.identity_and_access import (
     IdentityProvider,
     IdentityRuntime,
+)
+from mayak.modules.identity_and_access.contracts import (
     ProviderIdentityClaim,
     ProviderIdentityResolutionRequest,
 )
