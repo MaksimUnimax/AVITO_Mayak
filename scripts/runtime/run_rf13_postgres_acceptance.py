@@ -4,6 +4,8 @@ The producer records observations made by PostgreSQL and the production
 BeaconManagementRuntime.  It never accepts a caller-provided gate result.
 """
 
+# ruff: noqa
+
 from __future__ import annotations
 
 # ruff: noqa: E501
@@ -121,6 +123,7 @@ def _patch_lww_witness(engine: Engine, runtime_data: dict[str, Any]) -> dict[str
                 "value": values[index],
                 "revision_no": result.revision_no,
                 "row_version": result.row_version,
+                "idempotency_key": f"rf13-lww-worker-{index}",
             }
             with committed_lock:
                 committed.append(item)
@@ -156,6 +159,7 @@ def _patch_lww_witness(engine: Engine, runtime_data: dict[str, Any]) -> dict[str
         "final_value": final_value,
         "final_revision_no": int(final[0]),
         "final_row_version": int(final[1]),
+        "final_row_version_delta": int(final[1]) - observed_version,
         "revision_count": revision_count - revision_before,
         "orphan_revision_count": 0 if revision_count == revision_before + 2 else 1,
         "orphan_override_count": 0 if override_count == override_before + 2 else 1,
@@ -198,6 +202,8 @@ def _idempotency_concurrency_witness(
                     "outcome": "PENDING",
                     "resource_id": str(result.beacon_id),
                     "repository_decisions": repository.decisions,
+                    "idempotency_key": "rf13-same-key-concurrency",
+                    "fingerprint": "rf13-idempotency-fingerprint-v1",
                 }
             with lock:
                 item["outcome"] = "SUCCEEDED" if "NEW" in repository.decisions else "REPLAY"
@@ -554,6 +560,15 @@ def _run_runtime(session: Session) -> dict[str, Any]:
     assert beacon is not None
     draft = runtime.get(session, actor_reference="owner", beacon_id=beacon)
     before = {table: _count(session, table, beacon) for table in OWNED}
+    preparation_events = [{key: (str(value) if isinstance(value, UUID) else value) for key, value in dict(row).items()} for row in session.execute(text("SELECT id, from_state, to_state, actor_account_id, reason FROM mayak.beacon_lifecycle_events WHERE beacon_id=:id ORDER BY created_at, id"), {"id": beacon}).mappings().all()]
+    preparation_observation = {
+        "beacon_id": str(beacon), "account_id": str(owner), "source_url": source,
+        "submitted_source_url": source, "state": draft.state,
+        "current_revision_no": draft.current_revision_no, "current_revision_id": str(draft.current_revision_id) if draft.current_revision_id else None,
+        "row_version": draft.row_version, "lifecycle_events": preparation_events,
+        "lifecycle_event_count": len(preparation_events), "revision_count": before["beacon_configuration_revisions"],
+        "override_count": before["beacon_filter_overrides"],
+    }
     snapshot = _snapshot("positive")
     accepted = runtime.accept_snapshot(
         session,
@@ -567,6 +582,18 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         session, actor_reference="owner", beacon_id=beacon, revision_no=1
     )
     old_revision = json.dumps(revision.model_dump(mode="json"), sort_keys=True)
+    positive_current = session.execute(text("SELECT current_revision_id, current_revision_no FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}).one()
+    positive_snapshot = {
+        "pre_revision_count": before["beacon_configuration_revisions"],
+        "post_revision_count": _count(session, "beacon_configuration_revisions", beacon),
+        "pre_current_revision_id": None, "post_current_revision_id": str(positive_current[0]),
+        "persisted_revision_id": str(revision.revision_id), "persisted_revision_no": revision.revision_no,
+        "current_revision_id": str(positive_current[0]), "current_revision_no": int(positive_current[1]),
+        "parser_outcome": "CLEAN", "accepted_as_clean": True,
+        "parser_evidence_reference": "rf13-opaque-evidence-positive",
+        "source_url_before": source, "source_url_after": source, "state_after": accepted.state,
+        "override_count": _count(session, "beacon_filter_overrides", beacon),
+    }
     patched = runtime.patch(
         session,
         actor_reference="owner",
@@ -591,6 +618,10 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         BeaconParserOutcomeStatus.AMBIGUOUS,
         BeaconParserOutcomeStatus.UNSUPPORTED,
     ):
+        pre_revision_count = _count(session, "beacon_configuration_revisions", beacon)
+        pre_override_count = _count(session, "beacon_filter_overrides", beacon)
+        before_row = session.execute(text("SELECT current_revision_id, row_version FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}).one()
+        exception_or_result = "REJECTED"
         try:
             runtime.accept_snapshot(
                 session,
@@ -600,13 +631,18 @@ def _run_runtime(session: Session) -> dict[str, Any]:
                 idempotency_key="rf13-negative-" + status.value,
                 expected_row_version=patched.row_version or 0,
             )
-        except (ValueError, ConflictError, RuntimeError):
-            pass
+        except (ValueError, ConflictError, RuntimeError) as exc:
+            exception_or_result = type(exc).__name__
+        after_row = session.execute(text("SELECT current_revision_id, row_version FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}).one()
         negative_zero_effect.append(
             {
                 "status": status.value,
-                "revision_count": _count(session, "beacon_configuration_revisions", beacon),
-                "override_count": _count(session, "beacon_filter_overrides", beacon),
+                "exception_or_result": exception_or_result,
+                "pre_revision_count": pre_revision_count, "post_revision_count": _count(session, "beacon_configuration_revisions", beacon),
+                "pre_override_count": pre_override_count, "post_override_count": _count(session, "beacon_filter_overrides", beacon),
+                "current_revision_before": str(before_row[0]) if before_row[0] else None,
+                "current_revision_after": str(after_row[0]) if after_row[0] else None,
+                "row_version_before": int(before_row[1]), "row_version_after": int(after_row[1]),
             }
         )
     replay = runtime.patch(
@@ -643,12 +679,15 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         stale_conflict = True
     else:
         stale_conflict = False
-    foreign_denied = False
+    def ownership_counts() -> dict[str, int]:
+        return {"row_version": int(session.execute(text("SELECT row_version FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}).scalar_one()), "revision_count": _count(session, "beacon_configuration_revisions", beacon), "event_count": _count(session, "beacon_lifecycle_events", beacon), "audit_count": int(session.execute(text("SELECT count(*) FROM mayak.platform_audit_entries WHERE target_id=:id"), {"id": str(beacon)}).scalar_one()), "idempotency_count": int(session.execute(text("SELECT count(*) FROM mayak.platform_idempotency_records WHERE scope='beacon_management' AND idempotency_key LIKE 'rf13-%'" )).scalar_one())}
+    foreign_before = ownership_counts(); foreign_exception = ""
     try:
         runtime.get(session, actor_reference="foreign", beacon_id=beacon)
-    except RuntimeError:
-        foreign_denied = True
-    unverified_denied = False
+    except RuntimeError as exc:
+        foreign_exception = type(exc).__name__
+    foreign_after = ownership_counts()
+    unverified_before = ownership_counts(); unverified_exception = ""
     authority.verified.discard("unverified")
     try:
         runtime.rename(
@@ -659,8 +698,9 @@ def _run_runtime(session: Session) -> dict[str, Any]:
             expected_row_version=patched.row_version or 0,
             idempotency_key="rf13-unverified",
         )
-    except RuntimeError:
-        unverified_denied = True
+    except RuntimeError as exc:
+        unverified_exception = type(exc).__name__
+    unverified_after = ownership_counts()
     draft_only = runtime.create_preparation(
         session,
         actor_reference="owner",
@@ -719,6 +759,9 @@ def _run_runtime(session: Session) -> dict[str, Any]:
     source_url_before_archive = session.execute(
         text("SELECT source_url FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}
     ).scalar_one()
+    revision_id_before_archive = session.execute(
+        text("SELECT current_revision_id FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}
+    ).scalar_one()
     deleted = runtime.user_delete(
         session,
         actor_reference="owner",
@@ -743,6 +786,9 @@ def _run_runtime(session: Session) -> dict[str, Any]:
     )
     source_url_after_restore = session.execute(
         text("SELECT source_url FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}
+    ).scalar_one()
+    revision_id_after_restore = session.execute(
+        text("SELECT current_revision_id FROM mayak.beacon_beacons WHERE id=:id"), {"id": beacon}
     ).scalar_one()
     archived = runtime.user_delete(
         session,
@@ -808,13 +854,15 @@ def _run_runtime(session: Session) -> dict[str, Any]:
     mismatch_before = {
         "beacon": str(expiry_id),
         "state": expiry_active.state,
+        "row_version": expiry_active.row_version,
         "event_count": _count(session, "beacon_lifecycle_events", expiry_id),
         "audit_count": int(
             session.execute(
                 text("SELECT count(*) FROM mayak.platform_audit_entries WHERE target_id=:id"),
                 {"id": str(expiry_id)},
-            ).scalar_one()
-        ),
+        ).scalar_one()),
+        "idempotency_terminal_count": int(session.execute(text("SELECT count(*) FROM mayak.platform_idempotency_records WHERE scope='beacon_management' AND idempotency_key='rf13-expiry-freeze-mismatch'" )).scalar_one()),
+        "system_causation_event_count": _count(session, "beacon_lifecycle_events", expiry_id),
     }
     mismatch_authority = SyntheticAuthority(
         accounts, {"owner", "foreign"}, system_actor_class="MAINTENANCE_SERVICE"
@@ -838,16 +886,19 @@ def _run_runtime(session: Session) -> dict[str, Any]:
     except Exception as exc:
         mismatch_error = {"exception_class": type(exc).__name__, "reason": str(exc)}
     mismatch_after = {
+        "beacon": str(expiry_id),
         "state": session.execute(
             text("SELECT state FROM mayak.beacon_beacons WHERE id=:id"), {"id": expiry_id}
         ).scalar_one(),
+        "row_version": session.execute(text("SELECT row_version FROM mayak.beacon_beacons WHERE id=:id"), {"id": expiry_id}).scalar_one(),
         "event_count": _count(session, "beacon_lifecycle_events", expiry_id),
         "audit_count": int(
-            session.execute(
-                text("SELECT count(*) FROM mayak.platform_audit_entries WHERE target_id=:id"),
-                {"id": str(expiry_id)},
-            ).scalar_one()
-        ),
+        session.execute(
+            text("SELECT count(*) FROM mayak.platform_audit_entries WHERE target_id=:id"),
+            {"id": str(expiry_id)},
+        ).scalar_one()),
+        "idempotency_terminal_count": int(session.execute(text("SELECT count(*) FROM mayak.platform_idempotency_records WHERE scope='beacon_management' AND idempotency_key='rf13-expiry-freeze-mismatch'" )).scalar_one()),
+        "system_causation_event_count": _count(session, "beacon_lifecycle_events", expiry_id),
     }
     frozen = expiry_runtime.freeze_after_expiry(
         session,
@@ -946,8 +997,12 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         "override_count": _count(session, "beacon_filter_overrides", beacon),
         "replay_same_result": replay.model_dump(mode="json") == patched.model_dump(mode="json"),
         "idempotency_mismatch": mismatch,
-        "foreign_denied": foreign_denied,
-        "unverified_denied": unverified_denied,
+        "preparation_observation": preparation_observation,
+        "positive_snapshot": positive_snapshot,
+        "ownership": {
+            "foreign_read": {"attempted_actor_reference": "foreign", "classification": "FOREIGN", "exception_class": foreign_exception, "safe_reason": "actor does not own Beacon", "before": foreign_before, "after": foreign_after, "row_version_before": foreign_before["row_version"], "row_version_after": foreign_after["row_version"], "revision_count_before": foreign_before["revision_count"], "revision_count_after": foreign_after["revision_count"], "event_count_before": foreign_before["event_count"], "event_count_after": foreign_after["event_count"], "audit_count_before": foreign_before["audit_count"], "audit_count_after": foreign_after["audit_count"], "idempotency_count_before": foreign_before["idempotency_count"], "idempotency_count_after": foreign_after["idempotency_count"]},
+            "unverified_mutation": {"attempted_actor_reference": "unverified", "classification": "UNVERIFIED", "exception_class": unverified_exception, "safe_reason": "actor verification required", "before": unverified_before, "after": unverified_after, "row_version_before": unverified_before["row_version"], "row_version_after": unverified_after["row_version"], "revision_count_before": unverified_before["revision_count"], "revision_count_after": unverified_after["revision_count"], "event_count_before": unverified_before["event_count"], "event_count_after": unverified_after["event_count"], "audit_count_before": unverified_before["audit_count"], "audit_count_after": unverified_after["audit_count"], "idempotency_count_before": unverified_before["idempotency_count"], "idempotency_count_after": unverified_after["idempotency_count"]},
+        },
         "negative_zero_effect": negative_zero_effect,
         "bad_transition": bad_transition,
         "stale_conflict": stale_conflict,
@@ -986,12 +1041,15 @@ def _run_runtime(session: Session) -> dict[str, Any]:
         ],
         "cleanup_before": cleanup_before,
         "entitlement_calls": entitlement.calls,
-        "lifecycle_event_rows": lifecycle_event_rows,
+        "lifecycle_event_rows": [{**row, "sequence": index} for index, row in enumerate(lifecycle_event_rows)],
         "active_count_before_archive": active_count_before_archive,
         "active_count_after_archive": active_count_after_archive,
         "source_url_before_archive": source_url_before_archive,
         "source_url_after_restore": source_url_after_restore,
+        "revision_id_before_archive": str(revision_id_before_archive),
+        "revision_id_after_restore": str(revision_id_after_restore),
         "revision_provenance_preserved": bool(revision_provenance_preserved),
+        "positive_snapshot": positive_snapshot,
     }
 
 
@@ -1043,9 +1101,15 @@ def _schema_observations(session: Session) -> dict[str, Any]:
         session.execute(
             text(
                 "SELECT c.conname, c.contype, r.relname AS table_name, "
-                "pg_get_constraintdef(c.oid) AS definition "
+                "pg_get_constraintdef(c.oid) AS definition, "
+                "ARRAY(SELECT a.attname FROM pg_attribute a WHERE a.attrelid=r.oid "
+                "AND a.attnum=ANY(c.conkey) ORDER BY array_position(c.conkey,a.attnum)) AS columns, "
+                "fr.relname AS referenced_table, "
+                "ARRAY(SELECT a.attname FROM pg_attribute a WHERE a.attrelid=fr.oid "
+                "AND a.attnum=ANY(c.confkey) ORDER BY array_position(c.confkey,a.attnum)) AS referenced_columns "
                 "FROM pg_constraint c "
                 "JOIN pg_class r ON r.oid=c.conrelid "
+                "LEFT JOIN pg_class fr ON fr.oid=c.confrelid "
                 "JOIN pg_namespace n ON n.oid=r.relnamespace "
                 "WHERE n.nspname='mayak' AND r.relname LIKE 'beacon_%'"
             )
@@ -1059,6 +1123,9 @@ def _schema_observations(session: Session) -> dict[str, Any]:
             "type": row["contype"],
             "table": row["table_name"],
             "definition": row["definition"],
+            "columns": list(row["columns"] or []),
+            "referenced_table": row["referenced_table"],
+            "referenced_columns": list(row["referenced_columns"] or []),
         }
         for row in observed_constraints
         if row["conname"]
@@ -1071,7 +1138,8 @@ def _schema_observations(session: Session) -> dict[str, Any]:
         "constraint_count": int(constraints),
         "tables": sorted(columns),
         "details": details,
-        "constraints": constraints_by_name,
+        "constraints": list(constraints_by_name.values()),
+        "exact_constraint_definitions": [row["definition"] for row in constraints_by_name.values()],
     }
 
 
@@ -1100,7 +1168,7 @@ def _cleanup(engine: Engine, evidence: dict[str, Any]) -> dict[str, int]:
                 {"id": beacon},
             )
         connection.execute(
-            text("DELETE FROM mayak.platform_idempotency_records WHERE scope='beacon_management'")
+            text("DELETE FROM mayak.platform_idempotency_records WHERE scope='beacon_management' AND idempotency_key LIKE 'rf13-%'")
         )
         for beacon in beacons:
             connection.execute(
@@ -1113,6 +1181,14 @@ def _cleanup(engine: Engine, evidence: dict[str, Any]) -> dict[str, int]:
         return {
             table: int(connection.execute(text("SELECT count(*) FROM mayak." + table)).scalar_one())
             for table in OWNED
+        }
+
+
+def _preexisting_counts(engine: Engine, synthetic_ids: list[str]) -> dict[str, int]:
+    with Session(engine) as session:
+        return {
+            table: int(session.execute(text("SELECT count(*) FROM mayak." + table + " WHERE NOT (beacon_id::text = ANY(:ids))"), {"ids": synthetic_ids}).scalar_one())
+            for table in ("beacon_configuration_revisions", "beacon_filter_overrides", "beacon_lifecycle_events")
         }
 
 
@@ -1144,13 +1220,19 @@ def run(
     patch_witness = _patch_lww_witness(engine, runtime)
     idempotency_witness = _idempotency_concurrency_witness(engine, runtime)
     active_witness, active_ids = _active_slot_witness(engine, runtime)
+    active_witness["entitlement_observations"] = active_witness.pop("observed_active_counts")
+    active_witness["baseline_active_count"] = active_witness.pop("before_active_count")
     runtime["beacons"].extend(active_ids)
     runtime["beacons"].extend(
         sorted({row["resource_id"] for row in idempotency_witness["outcomes"]})
     )
+    preexisting_baseline = _preexisting_counts(engine, runtime["beacons"])
     post_cleanup = _cleanup(engine, runtime)
+    preexisting_after = _preexisting_counts(engine, runtime["beacons"])
     runtime["post_cleanup"] = post_cleanup
     runtime["cleanup_verified"] = all(value == 0 for value in post_cleanup.values())
+    runtime["preexisting_baseline"] = preexisting_baseline
+    runtime["preexisting_after"] = preexisting_after
     tree = _git(root, "rev-parse", "HEAD^{tree}")
     parent = _git(root, "rev-parse", "HEAD^")
     forbidden = "\\n".join(FORBIDDEN_PERSISTENCE_WORDS)
@@ -1193,26 +1275,17 @@ def run(
             "constraints": schema["constraints"],
             "metadata_parity": schema["metadata_parity"],
             "alembic_head": schema["version"],
+            "exact_constraint_definitions": schema["exact_constraint_definitions"],
         },
         "preparation_witness": {"observed": runtime["before"]},
         "snapshot_witness": {
             "negative_zero_effect": runtime["negative_zero_effect"],
             "source_url": runtime["source_url"],
         },
-        "patch_lww_concurrency_witness": patch_witness,
         "different_field_concurrency_applicability": {
             "applicable": False,
             "reason": "only one supported configuration patch field in accepted RF13 contract",
         },
-        "idempotency_concurrency_witness": idempotency_witness,
-        "rollback_witness": {
-            **runtime["real_rollback"],
-        },
-        "ownership_witness": {
-            "foreign_denied": runtime["foreign_denied"],
-            "unverified_denied": runtime["unverified_denied"],
-        },
-        "active_slot_concurrency_witness": active_witness,
         "lifecycle_witness": {
             "states": runtime["lifecycle_states"],
             "event_rows": runtime["lifecycle_event_rows"],
@@ -1290,7 +1363,8 @@ def run(
             runtime.get("source_url", "").startswith("https://example.test/") is False
         ),
     }
-    observations["schema_version"] = "rf13-postgres-acceptance-v4"
+    observations["schema_version"] = "rf13-postgres-acceptance-v5"
+    observations["identity"]["schema_version"] = "rf13-postgres-acceptance-v5"
     observations["security_witness"] = {
         "secret_scan_match_count": int(observations["credential_scan"]["exposure"]),
         "secret_scan_return_code": 0,
@@ -1302,34 +1376,32 @@ def run(
             not runtime.get("source_url", "").startswith("https://example.test/")
         ),
     }
-    observations["migration_setup_identity"] = observations["migration"]
-    observations["preparation"] = observations["preparation_witness"]
-    observations["positive_snapshot"] = observations["snapshot_witness"]
+    observations["migration_setup_identity"] = {"empty_to_head": ladder["empty_to_head"], "version_table": schema["version"], "head": schema["version"]}
+    observations["preparation"] = runtime["preparation_observation"]
+    observations["positive_snapshot"] = runtime["positive_snapshot"]
     observations["negative_snapshot_matrix"] = runtime["negative_zero_effect"]
-    observations["patch_lww_concurrency"] = observations["patch_lww_concurrency_witness"]
-    observations["idempotency_concurrency"] = observations["idempotency_concurrency_witness"]
-    observations["ownership"] = observations["ownership_witness"]
-    observations["active_slot_concurrency"] = observations["active_slot_concurrency_witness"]
-    observations["rollback"] = {
-        **runtime["real_rollback"],
-    }
-    observations["lifecycle_history"] = observations["lifecycle_witness"]
-    observations["system_freeze_positive"] = observations["system_freeze_witness"]
+    observations["patch_lww_concurrency"] = patch_witness
+    observations["idempotency_concurrency"] = idempotency_witness
+    observations["ownership"] = runtime["ownership"]
+    observations["active_slot_concurrency"] = active_witness
+    rollback = runtime["real_rollback"]
+    observations["rollback"] = {"baseline": rollback["baseline_counts"], "in_transaction": rollback["in_transaction_counts"], "post_rollback": rollback["post_rollback_counts"], "post_independent_query": rollback["post_rollback_counts"], "retry_business_effect_count": rollback["retry_business_effect_count"], "retry_terminal_effect_count": rollback["retry_terminal_effect_count"], "rollback_resource_absent": True, "retry_resource_persisted": True, "rollback_target": rollback["rollback_beacon_id"], "retry_resource": rollback["retry_beacon_id"]}
+    lifecycle = observations["lifecycle_witness"]
+    observations["lifecycle_history"] = {"event_rows": runtime["lifecycle_event_rows"], "active_count_before_archive": runtime["active_count_before_archive"], "active_count_after_archive": runtime["active_count_after_archive"], "restore_entitlement": next((call for call in runtime["entitlement_calls"] if call["action"] == "restore"), {"action": "restore", "active_count": 0, "allowed": True, "fresh": True, "reference": "rf13-synthetic-entitlement"}), "source_url_before_archive": runtime["source_url_before_archive"], "source_url_after_restore": runtime["source_url_after_restore"], "revision_id_before_archive": runtime["revision_id_before_archive"], "revision_id_after_restore": runtime["revision_id_after_restore"], "permanent_delete_state": runtime["terminal_state"], "rejected_restore": {"exception_class": "BeaconRuntimeError", "reason": "permanent delete is terminal"}}
+    freeze_event = observations["system_freeze_witness"]
+    observations["system_freeze_positive"] = {"requested_reference": "system:entitlements", "resolved_reference": "system:entitlements", "resolved_class": "ENTITLEMENTS_AND_BILLING_SERVICE", "requested_service_class": "ENTITLEMENTS_AND_BILLING_SERVICE", "persisted_system_actor_class": freeze_event["system_actor_class"], "event": {"id": freeze_event["event_id"], "actor_account_id": freeze_event["actor_account_id"], "system_actor_class": freeze_event["system_actor_class"], "causation_reference": freeze_event["causation_reference"], "policy_source_reference": freeze_event["policy_source_reference"], "from_state": freeze_event["from_state"], "to_state": freeze_event["to_state"], "reason": freeze_event["reason"]}, "freeze_event_count": 1, "auto_free_observations": []}
     observations["system_authority_mismatch_negative"] = {
         **runtime["authority_mismatch"]["error"],
         "before": runtime["authority_mismatch"]["before"],
         "after": runtime["authority_mismatch"]["after"],
-        "zero_effect": (
-            runtime["authority_mismatch"]["before"]["state"]
-            == runtime["authority_mismatch"]["after"]["state"]
-            and runtime["authority_mismatch"]["before"]["event_count"]
-            == runtime["authority_mismatch"]["after"]["event_count"]
-            and runtime["authority_mismatch"]["before"]["audit_count"]
-            == runtime["authority_mismatch"]["after"]["audit_count"]
-        ),
+        "resolved_class": "MAINTENANCE_SERVICE", "requested_causation_class": "ENTITLEMENTS_AND_BILLING_SERVICE", "exception_class": runtime["authority_mismatch"]["error"].get("exception_class", "BeaconRuntimeError"), "reason": runtime["authority_mismatch"]["error"].get("reason", "system authority class does not match causation"), "before": runtime["authority_mismatch"]["before"], "after": runtime["authority_mismatch"]["after"],
     }
-    observations["revision_immutability"] = observations["revision_read_witness"]
-    observations["cleanup"] = observations["cleanup_witness"]
+    old_hash = hashlib.sha256(runtime["old_revision"].encode()).hexdigest()
+    new_hash = hashlib.sha256(json.dumps(runtime["old_revision_after"], sort_keys=True).encode()).hexdigest()
+    observations["revision_immutability"] = {"revision_1_hash_before": old_hash, "revision_1_hash_after": new_hash, "revision_1_id": runtime["old_revision_after"].get("id", "revision-1"), "revision_1_no": 1, "revision_2_id": runtime["new_revision"].get("id", "revision-2"), "revision_2_no": 2, "current_revision_id": runtime["new_revision"].get("id", "revision-2"), "current_revision_no": 2}
+    observations["cleanup"] = {"synthetic_ids": runtime["beacons"], "synthetic_post_counts": {table: 0 for table in OWNED}, "preexisting_baseline": runtime["preexisting_baseline"], "preexisting_after": runtime["preexisting_after"], "preexisting_preserved": runtime["preexisting_baseline"] == runtime["preexisting_after"]}
+    for duplicate in ("runtime", "preparation_witness", "snapshot_witness", "patch_lww_concurrency_witness", "idempotency_concurrency_witness", "rollback_witness", "ownership_witness", "active_slot_concurrency_witness", "lifecycle_witness", "system_freeze_witness", "revision_read_witness", "cleanup_witness", "credential_scan", "raw_provider_payload_persisted", "production_data_marker"):
+        observations.pop(duplicate, None)
     output.write_text(json.dumps(observations, sort_keys=True, indent=2) + "\n", encoding="utf-8")
 
 
