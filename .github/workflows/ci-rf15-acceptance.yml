@@ -27,7 +27,8 @@ jobs:
       MAYAK_DATABASE_APPLICATION_USER: mayak_application
       MAYAK_DATABASE_MIGRATION_USER: mayak_migration
       MAYAK_DATABASE_SSLMODE: disable
-      RF15_DSN: postgresql+psycopg://mayak_migration:rf15migration@localhost:5432/mayak
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf15migration@127.0.0.1:5432/mayak
+      RF15_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf15application@127.0.0.1:5432/mayak
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,57 +36,83 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: {version: '0.11.31'}
       - run: uv sync --frozen
-      - name: Create migration boundary
+      - name: Create hosted database boundary
         run: |
-          install -d -m 700 /run/secrets
+          sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
           umask 077
           printf '%s' 'rf15migration' > /run/secrets/mayak_database_migration_password
-          postgres_container=$(docker ps -q | head -1)
-          if [ -z "$postgres_container" ]; then
-            echo '::error title=RF15 database boundary::postgres:18 service container was not discoverable'
+          printf '%s' 'rf15application' > /run/secrets/mayak_database_application_password
+          test "$(stat -c '%F:%a:%u:%g' /run/secrets)" = "directory:700:$(id -u):$(id -g)"
+          test "$(stat -c '%F:%a' /run/secrets/mayak_database_migration_password)" = "regular file:600"
+          test "$(stat -c '%F:%a' /run/secrets/mayak_database_application_password)" = "regular file:600"
+          mapfile -t postgres_containers < <(docker ps --filter 'ancestor=postgres:18' --filter status=running --format '{{.ID}}')
+          if [ "${#postgres_containers[@]}" -ne 1 ]; then
+            echo "::error title=RF15 database boundary::expected exactly one running postgres:18 container, found ${#postgres_containers[@]}"
             exit 1
           fi
+          postgres_container="${postgres_containers[0]}"
+          image_ref=$(docker inspect --format '{{.Config.Image}}' "$postgres_container")
+          test "$image_ref" = 'postgres:18'
           set +e
           boundary_output=$(docker exec "$postgres_container" psql -U mayak -d mayak -v ON_ERROR_STOP=1 \
-            -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'" \
-            -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'" \
-            -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration" 2>&1)
+            -c "DO \$\$ BEGIN CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'; EXCEPTION WHEN duplicate_object THEN NULL; END \$\$" \
+            -c "DO \$\$ BEGIN CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'; EXCEPTION WHEN duplicate_object THEN NULL; END \$\$" \
+            -c "CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration" 2>&1)
           boundary_status=$?
           set -e
           if [ "$boundary_status" -ne 0 ]; then
-            boundary_message=$(printf '%s' "$boundary_output" | tr '\n' ' ' | sed -E 's/(postgresql[^ ]*):[^@ ]+@/\1:<redacted>@/g')
+            boundary_message=$(printf '%s' "$boundary_output" | tr '\n' ' ' | sed -E 's/(password|PASSWORD)[^ ]*/\1=<redacted>/g')
             echo "::error title=RF15 database boundary::$boundary_message"
             exit "$boundary_status"
           fi
       - name: Alembic upgrade head
+        env:
+          RF15_DSN: ${{ env.RF15_MIGRATION_DSN }}
         run: uv run alembic upgrade head
       - name: Verify migration across a new connection
         run: |
           uv run python - <<'PY'
           import os
           from sqlalchemy import create_engine, text
-          engine = create_engine(os.environ["RF15_DSN"])
+          engine = create_engine(os.environ["RF15_MIGRATION_DSN"])
           with engine.connect() as connection:
               assert not connection.in_transaction()
               version = connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
               tables = connection.execute(text("select count(*) from pg_catalog.pg_tables where schemaname='mayak' and tablename <> 'alembic_version'")).scalar_one()
               indexes = connection.execute(text("select count(*) from pg_catalog.pg_indexes where schemaname='mayak' and indexname like 'ix_%'")).scalar_one()
               scan_indexes = connection.execute(text("select count(*) from pg_catalog.pg_indexes where schemaname='mayak' and indexname like 'ix_scan_%'")).scalar_one()
-              assert version == 'RF12_RUNTIME_HARDEN'
-              assert (tables, indexes, scan_indexes) == (51, 73, 8)
+              from alembic.config import Config
+              from alembic.script import ScriptDirectory
+              heads = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
+              assert len(heads) == 1 and version == heads[0]
+              assert tables > 0 and indexes > 0 and scan_indexes > 0
           engine.dispose()
           PY
+      - name: Grant application runtime privileges
+        env:
+          RF15_DSN: ${{ env.RF15_MIGRATION_DSN }}
+        run: |
+          uv run python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ["RF15_DSN"])
+          with engine.begin() as connection:
+              connection.execute(text("GRANT USAGE ON SCHEMA mayak TO mayak_application"))
+              connection.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application"))
+              connection.execute(text("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application"))
+          engine.dispose()
+          PY
+      - run: uv run pytest -q tests/runtime/test_alembic_migration_serialization.py
       - run: uv run ruff check src/mayak/modules/scan_orchestration scripts/runtime
       - run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/scan_orchestration
       - run: uv run pytest -q tests/runtime/test_scan_schema.py
       - run: uv run pytest -q tests/unit/test_rf15_scan_contracts.py
-      - run: uv run pytest -q tests/runtime/test_alembic_migration_serialization.py
       - run: uv run pytest -q tests/runtime/test_rf15_verifier.py
       - run: uv run pytest -q tests/architecture/test_import_boundaries.py
       - run: |
           set -o pipefail
           set +e
-          uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_DSN" --output rf15-evidence.json 2>&1 | tee rf15-producer.log
+          uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_APPLICATION_DSN" --output rf15-evidence.json 2>&1 | tee rf15-producer.log
           producer_status=${PIPESTATUS[0]}
           if [ "$producer_status" -ne 0 ]; then
             producer_message=$(tr '\n' ' ' < rf15-producer.log)

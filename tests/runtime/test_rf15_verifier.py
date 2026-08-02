@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -9,222 +10,259 @@ import pytest
 SPEC = importlib.util.spec_from_file_location(
     "rf15_verifier", Path(__file__).parents[2] / "scripts/runtime/verify_rf15_acceptance.py"
 )
-assert SPEC is not None and SPEC.loader is not None
-VERIFIER = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(VERIFIER)
+assert SPEC and SPEC.loader
+V = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(V)
 
 
-def _timeline() -> dict[str, str]:
-    base = datetime(2026, 8, 2, tzinfo=UTC)
-    return {
-        "start_a": base.isoformat(),
-        "start_b": (base + timedelta(seconds=1)).isoformat(),
-        "end_a": (base + timedelta(seconds=4)).isoformat(),
-        "end_b": (base + timedelta(seconds=5)).isoformat(),
+def _op(
+    pid: int, result: object = None, *, exception: object | None = None, offset: int = 0
+) -> dict:
+    base = datetime(2026, 8, 2, tzinfo=UTC) + timedelta(seconds=offset)
+    value = {
+        "callable": "mayak.synthetic.target",
+        "input": {"scenario": "rf15-test"},
+        "started_at": base.isoformat(),
+        "finished_at": (base + timedelta(seconds=2)).isoformat(),
+        "backend_pid": pid,
     }
+    value["exception" if exception is not None else "result"] = (
+        exception if exception is not None else result
+    )
+    return value
 
 
-def _evidence() -> dict:
+def _case() -> dict:
+    op = _op(10, {})
     c = {
-        "cadence_policy": {
-            "basic_minimum": 300,
-            "basic_step": 300,
-            "free_minimum": 10800,
-            "free_step": 10800,
-            "invalid_rejected": True,
-            "caller_override_rejected": True,
-        },
-        "schedule_uniqueness": {
-            "physical_rows": 1,
-            "beacon_ids": ["a"],
-            "distinct_beacon_ids": ["a"],
-        },
-        "due_work_current_slot": {
-            "work_due_at": "2026-08-01T00:00:00+00:00",
-            "now": "2026-08-02T00:00:00+00:00",
-            "next_due_at": "2026-08-02T01:00:00+00:00",
-        },
-        "due_work_coalescing": {
-            "missed_periods": 3,
-            "created_rows": 1,
-            "now": "2026-08-02T00:00:00+00:00",
-            "next_due_at": "2026-08-02T01:00:00+00:00",
-        },
-        "recovery_blocks_backlog": {
-            "unresolved_state": "PENDING_RECONCILIATION",
-            "created_rows": 0,
-        },
-        "due_materialization_concurrency": {
-            **_timeline(),
-            "backend_pid_a": 10,
-            "backend_pid_b": 11,
-            "physical_work_rows": 1,
-        },
-        "claim_exclusivity": {
-            **_timeline(),
-            "backend_pid_a": 12,
-            "backend_pid_b": 13,
-            "successful_claims": 1,
-            "physical_claimed_rows": 1,
-        },
-        "expired_claim_reconciliation": {
-            "state_after": "PENDING_RECONCILIATION",
-            "ordinary_claim_rows": 0,
-        },
-        "lease_guard": {
-            "wrong_token_committed": False,
-            "expired_token_committed": False,
-            "lost_token_committed": False,
-        },
-        "run_revision_pin": {
-            "revision_before": 1,
-            "revision_pinned": 1,
-            "substitution_committed": False,
-        },
-        "run_replay": {"physical_run_rows": 1, "first_run_id": "r1", "replayed_run_id": "r1"},
-        "baseline_no_event": {"baseline_recorded": True, "event_delta": 0},
-        "empty_baseline_durable": {
-            "durable_baseline": True,
-            "listing_rows": 0,
-            "event_delta": 0,
-            "fake_listing_rows": 0,
-        },
-        "parser_failure_no_advance": {
-            "statuses": sorted(VERIFIER.PARSER_FAILURES),
-            "baseline_before": "b",
-            "baseline_after": "b",
-            "anchor_before": "a",
-            "anchor_after": "a",
-            "listing_before": ["x"],
-            "listing_after": ["x"],
-            "event_delta": 0,
-        },
-        "new_listing_exactly_once": {
-            "unseen_keys": ["l1"],
-            "listing_key": "l1",
-            "event_physical_rows": 1,
-            "returned_event_ids": ["e1"],
-            "persisted_event_ids": ["e1"],
-        },
-        "price_change_no_event": {
-            "event_delta": 0,
-            "price_event_delta": 0,
-            "snapshot_updated": True,
-        },
-        "duplicate_within_run_exactly_once": {
-            "candidate_keys": ["l1", "l1"],
-            "physical_listing_rows": 1,
-            "semantic_effects": 1,
-        },
-        "beacon_isolation": {
-            "beacon_a_keys": ["a"],
-            "beacon_b_keys": [],
-            "cross_beacon_substitution_committed": False,
-        },
-        "absence_no_removal": {
-            "prior_listing_present": True,
-            "post_listing_present": True,
-            "removal_inferred": False,
-        },
-        "authority_recheck": {
-            "lifecycle_denied_committed": False,
-            "entitlement_denied_committed": False,
-            "revision_denied_committed": False,
-            "parser_denied_committed": False,
-        },
-        "idempotency_replay_and_mismatch": {
-            "same_fingerprint_effects": 1,
-            "replay_returns_original": True,
-            "mismatch_new_effects": 0,
-            "retention_days": 14,
-        },
-        "concurrent_idempotency": {
-            **_timeline(),
-            "backend_pid_a": 20,
-            "backend_pid_b": 21,
-            "physical_terminal_rows": 1,
-            "physical_effects": 1,
-            "returned_ids": ["e1"],
-            "persisted_ids": ["e1"],
-        },
-        "concurrent_baseline_serialization": {
-            **_timeline(),
-            "backend_pid_a": 22,
-            "backend_pid_b": 23,
-            "physical_effects": 1,
-        },
-        "concurrent_new_listing_serialization": {
-            **_timeline(),
-            "backend_pid_a": 24,
-            "backend_pid_b": 25,
-            "physical_effects": 1,
-        },
-        "restart_durability": {
-            "before_identity": "b1",
-            "after_identity": "b1",
-            "after_state": "SUCCEEDED_DIFFERENCE",
-        },
-        "foreign_state_witness": {
-            "before": {"identity": ["i"]},
-            "after": {"identity": ["i"]},
-            "before_digest": "same",
-            "after_digest": "same",
-            "capture_a": "FOREIGN_BASELINE_AFTER_FIXTURES_BEFORE_SCAN",
-            "capture_b": "FOREIGN_AFTER_SCAN",
-            "platform_effects": {"allowed_only": True},
-        },
-        "raw_payload_snapshot_boundary": {
-            "persisted_raw_payload": False,
-            "rejected_fields": ["raw", "headers"],
-            "max_utf8_bytes": 32768,
-            "recursive_rejection": True,
-        },
-        "platform_event_identity": {
-            "returned_event_id": "e1",
-            "persisted_event_id": "e1",
-            "notification_delta": 0,
-            "egress_delta": 0,
-        },
-        "no_foreign_domain_effect": {
-            "foreign_before_digest": "same",
-            "foreign_after_digest": "same",
-            "notification_writes": 0,
-            "egress_writes": 0,
-        },
+        name: {
+            "operation": deepcopy(op),
+            "physical_before": {"ids": []},
+            "physical_after": {"ids": []},
+        }
+        for name in V.REQUIREMENT_IDS
     }
+    c["cadence_policy"].update(
+        {
+            "operation": _op(10, {"basic": [300, 300], "free": [10800, 10800]}),
+            "attempts": [
+                {"operation": _op(11, exception={"class": "CadenceRejected"}, offset=i)}
+                for i in range(6)
+            ],
+        }
+    )
+    c["schedule_uniqueness"]["physical_after"] = {"schedule_ids": ["s1"], "beacon_ids": ["b1"]}
+    c["due_work_current_slot"]["physical_after"] = {
+        "due_at": "2026-08-01T00:00:00+00:00",
+        "now": "2026-08-02T00:00:00+00:00",
+        "next_due_at": "2026-08-02T01:00:00+00:00",
+    }
+    c["due_work_coalescing"].update(
+        {
+            "physical_before": {"work_ids": []},
+            "physical_after": {"work_ids": ["w1"], "missed_intervals": 3},
+        }
+    )
+    c["recovery_blocks_backlog"].update(
+        {
+            "physical_before": {"work_ids": ["w1"]},
+            "physical_after": {"work_ids": ["w1"], "state": "PENDING_RECONCILIATION"},
+        }
+    )
+    for name in (
+        "due_materialization_concurrency",
+        "concurrent_baseline_serialization",
+        "concurrent_new_listing_serialization",
+    ):
+        c[name].update(
+            {
+                "operation_a": _op(20, {}, offset=0),
+                "operation_b": _op(21, {}, offset=1),
+                "physical_before": {"work_ids": [], "effect_ids": []},
+                "physical_after": {"work_ids": ["w1"], "effect_ids": ["e1"]},
+            }
+        )
+    c["claim_exclusivity"].update(
+        {
+            "operation_a": _op(22, {"claim": True}),
+            "operation_b": _op(23, {"claim": False}, offset=1),
+            "results": [True, False],
+            "physical_before": {"work_id": "w1"},
+            "physical_after": {"work_id": "w1", "state": "CLAIMED"},
+        }
+    )
+    c["expired_claim_reconciliation"]["physical_after"] = {
+        "state": "PENDING_RECONCILIATION",
+        "claimable": False,
+    }
+    c["lease_guard"].update(
+        {"attempts": [{"exception": {"class": "LeaseConflict"}} for _ in range(3)]}
+    )
+    c["run_revision_pin"].update(
+        {
+            "operation": _op(30, {"run_id": "r1", "revision_no": 2}),
+            "physical_before": {"revision_no": 2},
+            "physical_after": {"revision_no": 2},
+        }
+    )
+    c["run_replay"].update(
+        {"returned_run_ids": ["r1", "r1"], "physical_after": {"run_ids": ["r1"]}}
+    )
+    c["baseline_no_event"].update(
+        {
+            "physical_before": {"baseline_id": None, "event_ids": []},
+            "physical_after": {"baseline_id": "a1", "event_ids": []},
+        }
+    )
+    c["empty_baseline_durable"].update(
+        {
+            "physical_before": {"event_ids": []},
+            "physical_after": {"anchor_id": "a1", "listing_ids": [], "event_ids": []},
+        }
+    )
+    c["parser_failure_no_advance"].update(
+        {
+            "statuses": sorted(V.PARSER_FAILURES),
+            "physical_before": {"state": "b", "listing_ids": [], "event_ids": []},
+            "physical_after": {"state": "b", "listing_ids": [], "event_ids": []},
+        }
+    )
+    c["new_listing_exactly_once"].update(
+        {
+            "operation": _op(40, {"event_ids": ["e1"]}),
+            "physical_after": {"listing_ids": ["l1"], "event_ids": ["e1"]},
+        }
+    )
+    c["price_change_no_event"].update(
+        {
+            "physical_before": {"snapshot": {"price": 1}, "event_ids": []},
+            "physical_after": {"snapshot": {"price": 2}, "event_ids": []},
+        }
+    )
+    c["duplicate_within_run_exactly_once"].update(
+        {
+            "input": {"candidate_keys": ["l1", "l1"]},
+            "physical_after": {"listing_key": "l1", "listing_ids": ["l1"]},
+        }
+    )
+    c["beacon_isolation"]["physical_after"] = {
+        "beacon_a": ["l1"],
+        "beacon_b": ["l2"],
+        "beacon_b_foreign_rows": [],
+    }
+    c["absence_no_removal"].update(
+        {
+            "physical_before": {"listing_ids": ["l1"], "event_ids": []},
+            "physical_after": {"listing_ids": ["l1"], "event_ids": []},
+        }
+    )
+    c["authority_recheck"].update(
+        {"attempts": [{"exception": {"class": "DependencyBlocked"}} for _ in range(4)]}
+    )
+    c["idempotency_replay_and_mismatch"].update(
+        {
+            "returned_results": ["r1", "r1"],
+            "physical_before": {"effect_ids": [], "terminal_ids": []},
+            "physical_after": {"effect_ids": [], "terminal_ids": ["t1"]},
+        }
+    )
+    c["concurrent_idempotency"].update(
+        {
+            "operation_a": _op(50, {}),
+            "operation_b": _op(51, {}, offset=1),
+            "physical_before": {"effect_ids": [], "terminal_ids": []},
+            "physical_after": {"effect_ids": ["e1"], "terminal_ids": ["t1"]},
+        }
+    )
+    c["restart_durability"].update(
+        {
+            "physical_before": {"identity": "r1"},
+            "physical_after": {"identity": "r1", "state": "SUCCEEDED_DIFFERENCE"},
+        }
+    )
+    c["foreign_state_witness"].update(
+        {
+            "physical_before": {"capture_id": "a", "digest": "d", "semantic": {"x": 1}},
+            "physical_after": {"capture_id": "b", "digest": "d", "semantic": {"x": 1}},
+        }
+    )
+    c["raw_payload_snapshot_boundary"].update(
+        {
+            "input": {"descriptors": ["raw", "headers", "cookies", "token", "phone"]},
+            "physical_after": {"unsafe_fields": [], "max_utf8_bytes": 32768},
+        }
+    )
+    c["platform_event_identity"].update(
+        {
+            "operation": _op(60, {"event_ids": ["e1"]}),
+            "physical_after": {"event_ids": ["e1"], "notification_ids": [], "egress_ids": []},
+        }
+    )
+    c["no_foreign_domain_effect"].update(
+        {
+            "physical_before": {"digest": "d"},
+            "physical_after": {"digest": "d", "notification_ids": [], "egress_ids": []},
+        }
+    )
+    return c
+
+
+def evidence() -> dict:
     return {
-        "identity": {"technical_id": VERIFIER.TECHNICAL_ID},
-        "migration": {"table_count": 51, "global_index_count": 73, "scan_index_count": 8},
-        "behavioral_cases": c,
+        "identity": {"technical_id": V.TECHNICAL_ID},
+        "migration": {"head": "current", "independent_connection": True},
+        "behavioral_cases": _case(),
     }
 
 
-def test_registry_and_every_causal_tamper() -> None:
-    evidence = _evidence()
-    assert set(VERIFIER.BEHAVIORAL_CHECKERS) == set(VERIFIER.REQUIREMENT_IDS)
-    for requirement, checker in VERIFIER.BEHAVIORAL_CHECKERS.items():
-        assert checker(evidence), requirement
-        tampered, paths = VERIFIER.BEHAVIORAL_TAMPERS[requirement](evidence)
+def test_all_raw_checkers_and_causal_tampers() -> None:
+    data = evidence()
+    assert set(V.REQUIREMENT_IDS) == set(V.BEHAVIORAL_CHECKERS) == set(V.BEHAVIORAL_TAMPERS)
+    for name, checker in V.BEHAVIORAL_CHECKERS.items():
+        assert checker(data), name
+        mutated, paths = V.BEHAVIORAL_TAMPERS[name](data)
         assert paths
-        assert not checker(tampered), requirement
-        assert tampered is not evidence
+        try:
+            assert not checker(mutated), name
+        except (KeyError, TypeError, ValueError, IndexError):
+            pass
 
 
-def test_missing_and_malformed_evidence_fail_closed(tmp_path: Path) -> None:
-    evidence = _evidence()
-    evidence["behavioral_cases"].pop("run_replay")
+def test_missing_malformed_and_impossible_evidence_fail_closed(tmp_path: Path) -> None:
+    data = evidence()
+    data["behavioral_cases"].pop("run_replay")
     with pytest.raises(ValueError):
-        VERIFIER.verify(evidence, tmp_path)
-    malformed = _evidence()
-    malformed["behavioral_cases"]["due_work_current_slot"]["now"] = "not-a-time"
+        V.verify(data, tmp_path)
+    data = evidence()
+    data["behavioral_cases"]["due_work_current_slot"]["physical_after"]["now"] = "bad"
     with pytest.raises(ValueError):
-        VERIFIER.verify(malformed, tmp_path)
+        V.verify(data, tmp_path)
 
 
-def test_foreign_witness_is_two_captures() -> None:
-    evidence = _evidence()
-    assert VERIFIER.check_foreign_state_witness(evidence)
-    evidence["behavioral_cases"]["foreign_state_witness"]["after"] = evidence["behavioral_cases"][
-        "foreign_state_witness"
-    ]["before"]
-    assert not VERIFIER.check_foreign_state_witness(evidence)
+def test_verifier_does_not_accept_fake_conclusions_or_schema_witness() -> None:
+    data = evidence()
+    data["behavioral_cases"]["baseline_no_event"]["baseline_recorded"] = True
+    data["behavioral_cases"]["baseline_no_event"]["physical_after"] = {"event_ids": []}
+    assert not V.check_baseline_no_event(data)
+    data = evidence()
+    data["behavioral_cases"]["foreign_state_witness"]["physical_before"] = {"columns": ["id"]}
+    assert not V.check_foreign_state_witness(data)
+
+
+def test_producer_static_false_green_guard() -> None:
+    source = (
+        Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    ).read_text()
+    forbidden = (
+        "invalid_rejected",
+        "successful_claims",
+        "event_delta",
+        "semantic_effects",
+        "no-run-fixture",
+        "recorded-id",
+        "information_schema",
+        "read_session",
+        "max(",
+        "min(",
+    )
+    assert not [token for token in forbidden if token in source]

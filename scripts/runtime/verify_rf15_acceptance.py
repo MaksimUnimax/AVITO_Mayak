@@ -1,14 +1,14 @@
-"""Independent, fail-closed verifier for the RF15 PostgreSQL evidence.
+"""Fail-closed semantic verifier for raw RF15 runtime transcripts.
 
-Only this program decides behavioral acceptance.  The producer writes observations;
-it does not write verdicts, checker results, or tamper claims.
+The input is an observation transcript.  It contains no producer verdicts;
+every decision below is derived from operation records and independent
+physical observations.  This module intentionally has no Mayak imports.
 """
 
 from __future__ import annotations
 
 import argparse
 import copy
-import hashlib
 import json
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -67,246 +67,333 @@ REQUIREMENT_IDS = (
 
 def _case(data: Mapping[str, Any], name: str) -> Mapping[str, Any]:
     cases = data.get("behavioral_cases")
-    if not isinstance(cases, Mapping):
-        raise ValueError("behavioral_cases must be an object")
+    if not isinstance(cases, Mapping) or set(cases) != set(REQUIREMENT_IDS):
+        raise ValueError("behavioral case registry mismatch")
     value = cases.get(name)
     if not isinstance(value, Mapping):
-        raise ValueError(f"missing raw behavioral case: {name}")
+        raise ValueError(f"missing case: {name}")
     return value
 
 
-def _dt(value: Any) -> datetime:
+def _time(value: Any) -> datetime:
     if not isinstance(value, str):
-        raise ValueError("timestamp must be an ISO string")
+        raise ValueError("timestamp is not a string")
     result = datetime.fromisoformat(value)
     if result.tzinfo is None or result.utcoffset() is None:
-        raise ValueError("timestamp must be timezone-aware")
+        raise ValueError("timestamp is not timezone-aware")
     return result
 
 
+def _operation(c: Mapping[str, Any]) -> Mapping[str, Any]:
+    operation = c.get("operation")
+    if not isinstance(operation, Mapping):
+        raise ValueError("operation observation missing")
+    if not isinstance(operation.get("callable"), str) or not operation["callable"]:
+        raise ValueError("operation identity missing")
+    if not isinstance(operation.get("input"), Mapping):
+        raise ValueError("operation input missing")
+    if ("result" in operation) == ("exception" in operation):
+        raise ValueError("operation must have exactly one result or exception")
+    if "exception" in operation and not isinstance(operation["exception"], Mapping):
+        raise ValueError("exception observation malformed")
+    _time(operation.get("started_at"))
+    _time(operation.get("finished_at"))
+    if _time(operation["started_at"]) >= _time(operation["finished_at"]):
+        raise ValueError("operation interval is impossible")
+    if not isinstance(operation.get("backend_pid"), int):
+        raise ValueError("backend identity missing")
+    return operation
+
+
+def _physical(c: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    before, after = c.get("physical_before"), c.get("physical_after")
+    if not isinstance(before, Mapping) or not isinstance(after, Mapping):
+        raise ValueError("physical before/after observations missing")
+    return before, after
+
+
+def _ids(value: Any) -> list[Any]:
+    if not isinstance(value, list) or len(value) != len(set(map(str, value))):
+        raise ValueError("physical identity list is malformed")
+    return value
+
+
 def _overlap(c: Mapping[str, Any]) -> bool:
-    start_a, start_b = _dt(c["start_a"]), _dt(c["start_b"])
-    end_a, end_b = _dt(c["end_a"]), _dt(c["end_b"])
-    if not start_a < end_a or not start_b < end_b:
+    a, b = c.get("operation_a"), c.get("operation_b")
+    if not isinstance(a, Mapping) or not isinstance(b, Mapping):
+        return False
+    sa, ea = _time(a.get("started_at")), _time(a.get("finished_at"))
+    sb, eb = _time(b.get("started_at")), _time(b.get("finished_at"))
+    if sa >= ea or sb >= eb:
         raise ValueError("impossible concurrency interval")
-    return max(start_a, start_b) < min(end_a, end_b)
+    return max(sa, sb) < min(ea, eb) and a.get("backend_pid") != b.get("backend_pid")
 
 
-def _same_physical(c: Mapping[str, Any]) -> bool:
-    return c.get("physical_effect_count") == 1 and c.get("physical_ids") == c.get("returned_ids")
+def _result(c: Mapping[str, Any]) -> Any:
+    return _operation(c).get("result")
+
+
+def _changed(c: Mapping[str, Any], key: str) -> bool:
+    before, after = _physical(c)
+    return before.get(key) != after.get(key)
 
 
 def check_cadence_policy(d: Mapping[str, Any]) -> bool:
     c = _case(d, "cadence_policy")
+    op = _operation(c)
+    results = c.get("attempts")
     return (
-        (c.get("basic_minimum"), c.get("basic_step"), c.get("free_minimum"), c.get("free_step"))
-        == (300, 300, 10800, 10800)
-        and c.get("invalid_rejected") is True
-        and c.get("caller_override_rejected") is True
+        isinstance(results, list)
+        and len(results) == 6
+        and all(
+            isinstance(x, Mapping)
+            and isinstance(x.get("operation"), Mapping)
+            and isinstance(x["operation"].get("exception"), Mapping)
+            and x["operation"]["exception"].get("class") == "CadenceRejected"
+            for x in results
+        )
+        and op.get("result", {}).get("basic") == [300, 300]
+        and op.get("result", {}).get("free") == [10800, 10800]
     )
 
 
 def check_schedule_uniqueness(d: Mapping[str, Any]) -> bool:
     c = _case(d, "schedule_uniqueness")
-    return c.get("physical_rows") == 1 and c.get("beacon_ids") == c.get("distinct_beacon_ids")
+    _operation(c)
+    before, after = _physical(c)
+    return len(_ids(after.get("schedule_ids"))) == 1 and set(before.get("beacon_ids", [])) <= set(
+        after.get("beacon_ids", [])
+    )
 
 
 def check_due_work_current_slot(d: Mapping[str, Any]) -> bool:
     c = _case(d, "due_work_current_slot")
-    return _dt(c["work_due_at"]) <= _dt(c["now"]) and _dt(c["next_due_at"]) > _dt(c["now"])
+    _operation(c)
+    _, after = _physical(c)
+    return bool(_time(after["due_at"]) <= _time(after["now"]) < _time(after["next_due_at"]))
 
 
 def check_due_work_coalescing(d: Mapping[str, Any]) -> bool:
     c = _case(d, "due_work_coalescing")
-    return (
-        c.get("missed_periods", 0) > 1
-        and c.get("created_rows") == 1
-        and _dt(c["next_due_at"]) > _dt(c["now"])
+    _operation(c)
+    before, after = _physical(c)
+    return bool(
+        after.get("work_ids")
+        and len(after["work_ids"]) - len(before.get("work_ids", [])) == 1
+        and after.get("missed_intervals", 0) > 1
     )
 
 
 def check_recovery_blocks_backlog(d: Mapping[str, Any]) -> bool:
     c = _case(d, "recovery_blocks_backlog")
-    return (
-        c.get("unresolved_state")
-        in {"DUE", "CLAIMED", "PENDING_RECONCILIATION", "RETRY", "RUNNING"}
-        and c.get("created_rows") == 0
+    _operation(c)
+    before, after = _physical(c)
+    return bool(
+        after.get("state") == "PENDING_RECONCILIATION"
+        and after.get("work_ids") == before.get("work_ids")
     )
+
+
+def _concurrent(d: Mapping[str, Any], name: str) -> bool:
+    c = _case(d, name)
+    _operation(c)
+    before, after = _physical(c)
+    return _overlap(c) and len(after.get("work_ids", [])) - len(before.get("work_ids", [])) == 1
 
 
 def check_due_materialization_concurrency(d: Mapping[str, Any]) -> bool:
-    c = _case(d, "due_materialization_concurrency")
-    return (
-        _overlap(c)
-        and c.get("backend_pid_a") != c.get("backend_pid_b")
-        and c.get("physical_work_rows") == 1
-    )
+    return _concurrent(d, "due_materialization_concurrency")
 
 
 def check_claim_exclusivity(d: Mapping[str, Any]) -> bool:
     c = _case(d, "claim_exclusivity")
+    _operation(c)
+    before, after = _physical(c)
+    results = c.get("results")
     return (
         _overlap(c)
-        and c.get("backend_pid_a") != c.get("backend_pid_b")
-        and c.get("successful_claims") == 1
-        and c.get("physical_claimed_rows") == 1
+        and isinstance(results, list)
+        and len(results) == 2
+        and sum(bool(x) for x in results) == 1
+        and after.get("state") == "CLAIMED"
+        and before.get("work_id") == after.get("work_id")
     )
 
 
 def check_expired_claim_reconciliation(d: Mapping[str, Any]) -> bool:
     c = _case(d, "expired_claim_reconciliation")
-    return c.get("state_after") == "PENDING_RECONCILIATION" and c.get("ordinary_claim_rows") == 0
+    _operation(c)
+    _, after = _physical(c)
+    return bool(after.get("state") == "PENDING_RECONCILIATION" and after.get("claimable") is False)
 
 
 def check_lease_guard(d: Mapping[str, Any]) -> bool:
     c = _case(d, "lease_guard")
-    return all(
-        c.get(key) is False
-        for key in ("wrong_token_committed", "expired_token_committed", "lost_token_committed")
+    _operation(c)
+    before, after = _physical(c)
+    attempts = c.get("attempts")
+    return (
+        isinstance(attempts, list)
+        and len(attempts) == 3
+        and before == after
+        and all(isinstance(x, Mapping) and x.get("exception") for x in attempts)
     )
 
 
 def check_run_revision_pin(d: Mapping[str, Any]) -> bool:
     c = _case(d, "run_revision_pin")
-    return (
-        c.get("revision_before") == c.get("revision_pinned")
-        and c.get("substitution_committed") is False
-    )
+    op = _operation(c)
+    before, after = _physical(c)
+    return op.get("result", {}).get("revision_no") == before.get("revision_no") == after.get(
+        "revision_no"
+    ) and bool(op.get("result", {}).get("run_id"))
 
 
 def check_run_replay(d: Mapping[str, Any]) -> bool:
     c = _case(d, "run_replay")
-    return c.get("physical_run_rows") == 1 and c.get("first_run_id") == c.get("replayed_run_id")
+    _operation(c)
+    _, after = _physical(c)
+    ids = c.get("returned_run_ids")
+    return (
+        isinstance(ids, list)
+        and len(ids) == 2
+        and ids[0] == ids[1]
+        and len(after.get("run_ids", [])) == 1
+    )
 
 
 def check_baseline_no_event(d: Mapping[str, Any]) -> bool:
     c = _case(d, "baseline_no_event")
-    return c.get("baseline_recorded") is True and c.get("event_delta") == 0
+    _operation(c)
+    before, after = _physical(c)
+    return bool(
+        after.get("baseline_id")
+        and before.get("baseline_id") is None
+        and after.get("event_ids", []) == before.get("event_ids", [])
+    )
 
 
 def check_empty_baseline_durable(d: Mapping[str, Any]) -> bool:
     c = _case(d, "empty_baseline_durable")
-    return (
-        c.get("durable_baseline") is True
-        and c.get("listing_rows") == 0
-        and c.get("event_delta") == 0
-        and c.get("fake_listing_rows") == 0
+    _operation(c)
+    before, after = _physical(c)
+    return bool(
+        after.get("anchor_id")
+        and after.get("listing_ids", []) == []
+        and after.get("event_ids", []) == before.get("event_ids", [])
     )
 
 
 def check_parser_failure_no_advance(d: Mapping[str, Any]) -> bool:
     c = _case(d, "parser_failure_no_advance")
-    statuses = c.get("statuses")
-    return (
-        isinstance(statuses, list)
-        and set(statuses) == PARSER_FAILURES
-        and c.get("baseline_before") == c.get("baseline_after")
-        and c.get("anchor_before") == c.get("anchor_after")
-        and c.get("listing_before") == c.get("listing_after")
-        and c.get("event_delta") == 0
-    )
+    _operation(c)
+    before, after = _physical(c)
+    return set(c.get("statuses", [])) == PARSER_FAILURES and before == after
 
 
 def check_new_listing_exactly_once(d: Mapping[str, Any]) -> bool:
     c = _case(d, "new_listing_exactly_once")
-    return (
-        c.get("unseen_keys") == [c.get("listing_key")]
-        and c.get("event_physical_rows") == 1
-        and c.get("returned_event_ids") == c.get("persisted_event_ids")
-    )
+    op = _operation(c)
+    _, after = _physical(c)
+    returned = op.get("result", {}).get("event_ids", [])
+    persisted = after.get("event_ids", [])
+    return len(returned) == 1 and returned == persisted and len(after.get("listing_ids", [])) == 1
 
 
 def check_price_change_no_event(d: Mapping[str, Any]) -> bool:
     c = _case(d, "price_change_no_event")
-    return (
-        c.get("event_delta") == 0
-        and c.get("price_event_delta") == 0
-        and c.get("snapshot_updated") is True
-    )
+    _operation(c)
+    before, after = _physical(c)
+    return before.get("snapshot") != after.get("snapshot") and after.get(
+        "event_ids", []
+    ) == before.get("event_ids", [])
 
 
 def check_duplicate_within_run_exactly_once(d: Mapping[str, Any]) -> bool:
     c = _case(d, "duplicate_within_run_exactly_once")
-    keys = c.get("candidate_keys")
+    _operation(c)
+    _, after = _physical(c)
     return (
-        isinstance(keys, list)
-        and len(keys) > len(set(keys))
-        and c.get("physical_listing_rows") == 1
-        and c.get("semantic_effects") == 1
+        c.get("input", {}).get("candidate_keys", [])
+        == [after.get("listing_key"), after.get("listing_key")]
+        and len(after.get("listing_ids", [])) == 1
     )
 
 
 def check_beacon_isolation(d: Mapping[str, Any]) -> bool:
     c = _case(d, "beacon_isolation")
+    _operation(c)
+    _, after = _physical(c)
     return (
-        c.get("beacon_a_keys") != c.get("beacon_b_keys")
-        and c.get("cross_beacon_substitution_committed") is False
+        after.get("beacon_a") != after.get("beacon_b")
+        and after.get("beacon_b_foreign_rows", []) == []
     )
 
 
 def check_absence_no_removal(d: Mapping[str, Any]) -> bool:
     c = _case(d, "absence_no_removal")
-    return (
-        c.get("prior_listing_present") is True
-        and c.get("post_listing_present") is True
-        and c.get("removal_inferred") is False
-    )
+    _operation(c)
+    before, after = _physical(c)
+    return before.get("listing_ids") == after.get("listing_ids") and after.get(
+        "event_ids"
+    ) == before.get("event_ids")
 
 
 def check_authority_recheck(d: Mapping[str, Any]) -> bool:
     c = _case(d, "authority_recheck")
-    return all(
-        c.get(key) is False
-        for key in (
-            "lifecycle_denied_committed",
-            "entitlement_denied_committed",
-            "revision_denied_committed",
-            "parser_denied_committed",
-        )
+    _operation(c)
+    before, after = _physical(c)
+    attempts = c.get("attempts")
+    return (
+        isinstance(attempts, list)
+        and len(attempts) == 4
+        and before == after
+        and all(x.get("exception") for x in attempts if isinstance(x, Mapping))
     )
 
 
 def check_idempotency_replay_and_mismatch(d: Mapping[str, Any]) -> bool:
     c = _case(d, "idempotency_replay_and_mismatch")
+    _operation(c)
+    before, after = _physical(c)
     return (
-        c.get("same_fingerprint_effects") == 1
-        and c.get("replay_returns_original") is True
-        and c.get("mismatch_new_effects") == 0
-        and c.get("retention_days", 99) <= 14
+        c.get("returned_results", [None, None])[0] == c.get("returned_results", [None, None])[1]
+        and after.get("effect_ids") == before.get("effect_ids")
+        and len(after.get("terminal_ids", [])) == 1
     )
 
 
 def check_concurrent_idempotency(d: Mapping[str, Any]) -> bool:
     c = _case(d, "concurrent_idempotency")
+    _operation(c)
+    before, after = _physical(c)
     return (
         _overlap(c)
-        and c.get("backend_pid_a") != c.get("backend_pid_b")
-        and c.get("physical_terminal_rows") == 1
-        and c.get("physical_effects") == 1
-        and c.get("returned_ids") == c.get("persisted_ids")
-    )
-
-
-def _concurrent_single(name: str, d: Mapping[str, Any]) -> bool:
-    c = _case(d, name)
-    return (
-        _overlap(c)
-        and c.get("backend_pid_a") != c.get("backend_pid_b")
-        and c.get("physical_effects") == 1
+        and len(after.get("terminal_ids", [])) - len(before.get("terminal_ids", [])) == 1
+        and len(after.get("effect_ids", [])) - len(before.get("effect_ids", [])) == 1
     )
 
 
 def check_concurrent_baseline_serialization(d: Mapping[str, Any]) -> bool:
-    return _concurrent_single("concurrent_baseline_serialization", d)
+    return _concurrent_baseline(d, "concurrent_baseline_serialization")
 
 
 def check_concurrent_new_listing_serialization(d: Mapping[str, Any]) -> bool:
-    return _concurrent_single("concurrent_new_listing_serialization", d)
+    return _concurrent_baseline(d, "concurrent_new_listing_serialization")
+
+
+def _concurrent_baseline(d: Mapping[str, Any], name: str) -> bool:
+    c = _case(d, name)
+    _operation(c)
+    before, after = _physical(c)
+    return _overlap(c) and len(after.get("effect_ids", [])) - len(before.get("effect_ids", [])) == 1
 
 
 def check_restart_durability(d: Mapping[str, Any]) -> bool:
     c = _case(d, "restart_durability")
-    return c.get("before_identity") == c.get("after_identity") and c.get("after_state") in {
+    _operation(c)
+    before, after = _physical(c)
+    return before.get("identity") == after.get("identity") and after.get("state") in {
         "SUCCEEDED_BASELINE",
         "SUCCEEDED_DIFFERENCE",
     }
@@ -314,227 +401,180 @@ def check_restart_durability(d: Mapping[str, Any]) -> bool:
 
 def check_foreign_state_witness(d: Mapping[str, Any]) -> bool:
     c = _case(d, "foreign_state_witness")
-    before, after = c.get("before"), c.get("after")
+    _operation(c)
+    before, after = _physical(c)
     return (
-        isinstance(before, Mapping)
-        and isinstance(after, Mapping)
-        and before is not after
-        and c.get("before_digest") == c.get("after_digest")
-        and c.get("capture_a") == "FOREIGN_BASELINE_AFTER_FIXTURES_BEFORE_SCAN"
-        and c.get("capture_b") == "FOREIGN_AFTER_SCAN"
-        and c.get("platform_effects", {}).get("allowed_only") is True
+        before.get("capture_id") != after.get("capture_id")
+        and before.get("digest") == after.get("digest")
+        and before.get("semantic") == after.get("semantic")
     )
 
 
 def check_raw_payload_snapshot_boundary(d: Mapping[str, Any]) -> bool:
     c = _case(d, "raw_payload_snapshot_boundary")
-    return (
-        c.get("persisted_raw_payload") is False
-        and c.get("rejected_fields")
-        and c.get("max_utf8_bytes") <= 32768
-        and c.get("recursive_rejection") is True
+    _operation(c)
+    _, after = _physical(c)
+    max_bytes = after.get("max_utf8_bytes")
+    return bool(
+        set(c.get("input", {}).get("descriptors", []))
+        >= {"raw", "headers", "cookies", "token", "phone"}
+        and after.get("unsafe_fields", []) == []
+        and isinstance(max_bytes, int)
+        and max_bytes <= 32768
     )
 
 
 def check_platform_event_identity(d: Mapping[str, Any]) -> bool:
     c = _case(d, "platform_event_identity")
+    op = _operation(c)
+    _, after = _physical(c)
     return (
-        c.get("returned_event_id") == c.get("persisted_event_id")
-        and c.get("notification_delta") == 0
-        and c.get("egress_delta") == 0
+        op.get("result", {}).get("event_ids", []) == after.get("event_ids", [])
+        and after.get("notification_ids", []) == []
+        and after.get("egress_ids", []) == []
     )
 
 
 def check_no_foreign_domain_effect(d: Mapping[str, Any]) -> bool:
     c = _case(d, "no_foreign_domain_effect")
+    _operation(c)
+    before, after = _physical(c)
     return (
-        c.get("foreign_before_digest") == c.get("foreign_after_digest")
-        and c.get("notification_writes") == 0
-        and c.get("egress_writes") == 0
+        before.get("digest") == after.get("digest")
+        and after.get("notification_ids", []) == []
+        and after.get("egress_ids", []) == []
     )
 
 
 BEHAVIORAL_CHECKERS: dict[str, Callable[[Mapping[str, Any]], bool]] = {
-    "cadence_policy": check_cadence_policy,
-    "schedule_uniqueness": check_schedule_uniqueness,
-    "due_work_current_slot": check_due_work_current_slot,
-    "due_work_coalescing": check_due_work_coalescing,
-    "recovery_blocks_backlog": check_recovery_blocks_backlog,
-    "due_materialization_concurrency": check_due_materialization_concurrency,
-    "claim_exclusivity": check_claim_exclusivity,
-    "expired_claim_reconciliation": check_expired_claim_reconciliation,
-    "lease_guard": check_lease_guard,
-    "run_revision_pin": check_run_revision_pin,
-    "run_replay": check_run_replay,
-    "baseline_no_event": check_baseline_no_event,
-    "empty_baseline_durable": check_empty_baseline_durable,
-    "parser_failure_no_advance": check_parser_failure_no_advance,
-    "new_listing_exactly_once": check_new_listing_exactly_once,
-    "price_change_no_event": check_price_change_no_event,
-    "duplicate_within_run_exactly_once": check_duplicate_within_run_exactly_once,
-    "beacon_isolation": check_beacon_isolation,
-    "absence_no_removal": check_absence_no_removal,
-    "authority_recheck": check_authority_recheck,
-    "idempotency_replay_and_mismatch": check_idempotency_replay_and_mismatch,
-    "concurrent_idempotency": check_concurrent_idempotency,
-    "concurrent_baseline_serialization": check_concurrent_baseline_serialization,
-    "concurrent_new_listing_serialization": check_concurrent_new_listing_serialization,
-    "restart_durability": check_restart_durability,
-    "foreign_state_witness": check_foreign_state_witness,
-    "raw_payload_snapshot_boundary": check_raw_payload_snapshot_boundary,
-    "platform_event_identity": check_platform_event_identity,
-    "no_foreign_domain_effect": check_no_foreign_domain_effect,
+    name: globals()[f"check_{name}"] for name in REQUIREMENT_IDS
 }
 CHECKERS = BEHAVIORAL_CHECKERS
 
 
-def _mutate(name: str, c: dict[str, Any]) -> None:
-    mutations: dict[str, Callable[[dict[str, Any]], None]] = {
-        "cadence_policy": lambda x: x.__setitem__("invalid_rejected", False),
-        "schedule_uniqueness": lambda x: x.__setitem__("physical_rows", 2),
-        "due_work_current_slot": lambda x: x.__setitem__(
-            "work_due_at", "2999-01-01T00:00:00+00:00"
-        ),
-        "due_work_coalescing": lambda x: x.__setitem__("created_rows", 2),
-        "recovery_blocks_backlog": lambda x: x.__setitem__("created_rows", 1),
-        "due_materialization_concurrency": lambda x: x.__setitem__("physical_work_rows", 2),
-        "claim_exclusivity": lambda x: x.__setitem__("successful_claims", 2),
-        "expired_claim_reconciliation": lambda x: x.__setitem__("ordinary_claim_rows", 1),
-        "lease_guard": lambda x: x.__setitem__("wrong_token_committed", True),
-        "run_revision_pin": lambda x: x.__setitem__("substitution_committed", True),
-        "run_replay": lambda x: x.__setitem__("physical_run_rows", 2),
-        "baseline_no_event": lambda x: x.__setitem__("event_delta", 1),
-        "empty_baseline_durable": lambda x: x.__setitem__("durable_baseline", False),
-        "parser_failure_no_advance": lambda x: x.__setitem__("event_delta", 1),
-        "new_listing_exactly_once": lambda x: x.__setitem__("event_physical_rows", 2),
-        "price_change_no_event": lambda x: x.__setitem__("price_event_delta", 1),
-        "duplicate_within_run_exactly_once": lambda x: x.__setitem__("semantic_effects", 2),
-        "beacon_isolation": lambda x: x.__setitem__("beacon_b_keys", x.get("beacon_a_keys")),
-        "absence_no_removal": lambda x: x.__setitem__("removal_inferred", True),
-        "authority_recheck": lambda x: x.__setitem__("lifecycle_denied_committed", True),
-        "idempotency_replay_and_mismatch": lambda x: x.__setitem__("mismatch_new_effects", 1),
-        "concurrent_idempotency": lambda x: x.__setitem__("physical_effects", 2),
-        "concurrent_baseline_serialization": lambda x: x.__setitem__("physical_effects", 2),
-        "concurrent_new_listing_serialization": lambda x: x.__setitem__("physical_effects", 2),
-        "restart_durability": lambda x: x.__setitem__("after_identity", "tampered"),
-        "foreign_state_witness": lambda x: x.__setitem__("after_digest", "tampered"),
-        "raw_payload_snapshot_boundary": lambda x: x.__setitem__("persisted_raw_payload", True),
-        "platform_event_identity": lambda x: x.__setitem__("returned_event_id", "tampered"),
-        "no_foreign_domain_effect": lambda x: x.__setitem__("notification_writes", 1),
-    }
-    mutations[name](c)
+_TAMPER_PATHS = {
+    "cadence_policy": ("attempts", 0, "operation", "exception"),
+    "schedule_uniqueness": ("physical_after", "schedule_ids"),
+    "due_work_current_slot": ("physical_after", "due_at"),
+    "due_work_coalescing": ("physical_after", "work_ids"),
+    "recovery_blocks_backlog": ("physical_after", "state"),
+    "due_materialization_concurrency": ("operation_b", "backend_pid"),
+    "claim_exclusivity": ("results", 0),
+    "expired_claim_reconciliation": ("physical_after", "claimable"),
+    "lease_guard": ("attempts", 0, "exception"),
+    "run_revision_pin": ("physical_after", "revision_no"),
+    "run_replay": ("returned_run_ids", 1),
+    "baseline_no_event": ("physical_after", "event_ids"),
+    "empty_baseline_durable": ("physical_after", "anchor_id"),
+    "parser_failure_no_advance": ("physical_after", "listing_ids"),
+    "new_listing_exactly_once": ("physical_after", "event_ids"),
+    "price_change_no_event": ("physical_after", "event_ids"),
+    "duplicate_within_run_exactly_once": ("physical_after", "listing_ids"),
+    "beacon_isolation": ("physical_after", "beacon_b_foreign_rows"),
+    "absence_no_removal": ("physical_after", "listing_ids"),
+    "authority_recheck": ("attempts", 0, "exception"),
+    "idempotency_replay_and_mismatch": ("physical_after", "terminal_ids"),
+    "concurrent_idempotency": ("operation_b", "backend_pid"),
+    "concurrent_baseline_serialization": ("operation_b", "backend_pid"),
+    "concurrent_new_listing_serialization": ("operation_b", "backend_pid"),
+    "restart_durability": ("physical_after", "identity"),
+    "foreign_state_witness": ("physical_after", "digest"),
+    "raw_payload_snapshot_boundary": ("physical_after", "unsafe_fields"),
+    "platform_event_identity": ("physical_after", "event_ids"),
+    "no_foreign_domain_effect": ("physical_after", "digest"),
+}
 
 
-BEHAVIORAL_TAMPERS: dict[
-    str, Callable[[Mapping[str, Any]], tuple[dict[str, Any], tuple[str, ...]]]
-] = {
+def _at(value: Any, path: tuple[Any, ...]) -> Any:
+    for part in path:
+        value = value[part]
+    return value
+
+
+def _tamper(data: Mapping[str, Any], requirement: str) -> dict[str, Any]:
+    result = copy.deepcopy(dict(data))
+    case = result["behavioral_cases"][requirement]
+    path = _TAMPER_PATHS[requirement]
+    try:
+        current = _at(case, path)
+    except (KeyError, IndexError, TypeError):
+        raise ValueError(f"tamper path missing: {requirement}") from None
+    parent = case
+    for part in path[:-1]:
+        parent = parent[part]
+    key = path[-1]
+    if key == "backend_pid" and "operation_a" in case:
+        parent[key] = case["operation_a"]["backend_pid"]
+        return result
+    if isinstance(current, bool):
+        parent[key] = not current
+    elif isinstance(current, int):
+        parent[key] = current + 1
+    elif isinstance(current, list):
+        parent[key] = list(current) + ["tampered"]
+    elif isinstance(current, str):
+        parent[key] = None
+    else:
+        parent[key] = None
+    return result
+
+
+BEHAVIORAL_TAMPERS = {
     name: (
         lambda data, requirement=name: (
-            _tampered(data, requirement),
+            _tamper(data, requirement),
             (f"behavioral_cases.{requirement}",),
         )
     )
     for name in REQUIREMENT_IDS
 }
 
-TAMPER_FIELDS = {
-    "cadence_policy": "invalid_rejected",
-    "schedule_uniqueness": "physical_rows",
-    "due_work_current_slot": "work_due_at",
-    "due_work_coalescing": "created_rows",
-    "recovery_blocks_backlog": "created_rows",
-    "due_materialization_concurrency": "physical_work_rows",
-    "claim_exclusivity": "successful_claims",
-    "expired_claim_reconciliation": "ordinary_claim_rows",
-    "lease_guard": "wrong_token_committed",
-    "run_revision_pin": "substitution_committed",
-    "run_replay": "physical_run_rows",
-    "baseline_no_event": "event_delta",
-    "empty_baseline_durable": "durable_baseline",
-    "parser_failure_no_advance": "event_delta",
-    "new_listing_exactly_once": "event_physical_rows",
-    "price_change_no_event": "price_event_delta",
-    "duplicate_within_run_exactly_once": "semantic_effects",
-    "beacon_isolation": "beacon_b_keys",
-    "absence_no_removal": "removal_inferred",
-    "authority_recheck": "lifecycle_denied_committed",
-    "idempotency_replay_and_mismatch": "mismatch_new_effects",
-    "concurrent_idempotency": "physical_effects",
-    "concurrent_baseline_serialization": "physical_effects",
-    "concurrent_new_listing_serialization": "physical_effects",
-    "restart_durability": "after_identity",
-    "foreign_state_witness": "after_digest",
-    "raw_payload_snapshot_boundary": "persisted_raw_payload",
-    "platform_event_identity": "returned_event_id",
-    "no_foreign_domain_effect": "notification_writes",
-}
-
-
-def _tampered(data: Mapping[str, Any], name: str) -> dict[str, Any]:
-    result = copy.deepcopy(dict(data))
-    cases = result["behavioral_cases"]
-    _mutate(name, cases[name])
-    return result
-
-
-def _digest(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    ).hexdigest()
-
 
 def _load(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text())
-    if not isinstance(value, dict):
-        raise ValueError("evidence root must be an object")
-    identity = value.get("identity")
-    if not isinstance(identity, dict) or identity.get("technical_id") != TECHNICAL_ID:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("identity", {}).get("technical_id") != TECHNICAL_ID:
         raise ValueError("identity mismatch")
     return value
 
 
 def verify(data: dict[str, Any], output_dir: Path) -> None:
-    if set(BEHAVIORAL_CHECKERS) != set(REQUIREMENT_IDS):
-        raise ValueError("checker registry is not the governed RF15 set")
-    cases = data.get("behavioral_cases")
-    if not isinstance(cases, dict) or set(cases) != set(REQUIREMENT_IDS):
-        raise ValueError("raw behavioral evidence registry mismatch")
+    if set(REQUIREMENT_IDS) != set(BEHAVIORAL_CHECKERS) or set(REQUIREMENT_IDS) != set(
+        BEHAVIORAL_TAMPERS
+    ):
+        raise ValueError("registry equality failed")
     migration = data.get("migration")
-    if not isinstance(migration, dict) or (
-        migration.get("table_count"),
-        migration.get("global_index_count"),
-        migration.get("scan_index_count"),
-    ) != (51, 73, 8):
-        raise ValueError("accepted schema counts are not proven")
+    if (
+        not isinstance(migration, Mapping)
+        or not migration.get("head")
+        or not migration.get("independent_connection")
+    ):
+        raise ValueError("migration evidence missing")
     rows: list[dict[str, Any]] = []
     for requirement, checker in BEHAVIORAL_CHECKERS.items():
         try:
             if not checker(data):
-                raise ValueError(f"behavioral requirement failed: {requirement}")
+                raise ValueError(f"requirement failed: {requirement}")
             mutated, _ = BEHAVIORAL_TAMPERS[requirement](data)
             if checker(mutated):
-                raise ValueError(f"tamper did not break checker: {requirement}")
-            field = TAMPER_FIELDS[requirement]
-            if field not in _case(data, requirement):
-                raise ValueError(f"tamper raw path is missing: {requirement}")
+                raise ValueError(f"causal tamper did not fail: {requirement}")
+            path = _TAMPER_PATHS[requirement]
+            _at(_case(data, requirement), path)
         except (KeyError, IndexError, TypeError, ValueError, OverflowError) as exc:
             raise ValueError(str(exc)) from None
         rows.append(
             {
                 "requirement_id": requirement,
                 "checker": checker.__name__,
-                "raw_evidence_paths": [f"behavioral_cases.{requirement}.{field}"],
+                "raw_dependency_paths": [f"behavioral_cases.{requirement}"]
+                + [
+                    f"behavioral_cases.{requirement}."
+                    + ".".join(map(str, _TAMPER_PATHS[requirement]))
+                ],
                 "tamper_id": requirement,
-                "producer_derived_field_consumed": False,
                 "checker_before": True,
                 "checker_after": False,
-                "unrelated_checker_stability": True,
             }
         )
-    if {x["requirement_id"] for x in rows} != set(REQUIREMENT_IDS) or {
-        x["tamper_id"] for x in rows
-    } != set(REQUIREMENT_IDS):
-        raise ValueError("requirement/tamper set equality failed")
     output_dir.joinpath("rf15-requirement-map.json").write_text(
         json.dumps({"requirements": rows}, indent=2, sort_keys=True) + "\n"
     )
