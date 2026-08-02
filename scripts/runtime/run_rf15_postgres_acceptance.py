@@ -681,7 +681,8 @@ def scenario_concurrent(connection: Any, name: str) -> dict[str, Any]:
     def worker(label: str) -> None:
         with connection.engine.connect() as independent:
             barrier.wait()
-            before = _physical(independent)
+            with connection.engine.connect() as probe:
+                before = _physical(probe)
 
             def recorder() -> list[UUID]:
                 with Session(bind=independent) as session:
@@ -690,7 +691,8 @@ def scenario_concurrent(connection: Any, name: str) -> dict[str, Any]:
             operation = _operation(
                 independent, "materialize_due_work", {"scenario_id": name}, recorder
             )
-            after = _physical(independent)
+            with connection.engine.connect() as probe:
+                after = _physical(probe)
             records.append(
                 {
                     "label": label,
