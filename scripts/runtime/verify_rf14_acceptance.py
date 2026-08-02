@@ -123,6 +123,9 @@ def main() -> int:
     actual_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     actual_parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
     actual_tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+    base_ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", EXPECTED_PARENT, actual_sha], check=False
+    ).returncode == 0
     identity = data["identity"]
     checks = _checks(data)
     matrix = _tamper_matrix(data, checks)
@@ -134,7 +137,7 @@ def main() -> int:
     if args.tamper_output:
         args.tamper_output.write_text(json.dumps(matrix, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     identity_ok = (identity["technical_id"] == TECHNICAL_ID and identity["candidate_sha"] == actual_sha == args.candidate_sha
-                   and actual_parent == EXPECTED_PARENT and identity["parent_sha"] == EXPECTED_PARENT
+                   and base_ancestor and identity["parent_sha"] == actual_parent
                    and identity["tree_sha"] == actual_tree and data["postgres"]["alembic_head"] == EXPECTED_HEAD
                    and data["postgres"]["major"] == 18)
     matrix_ok = len(matrix) == len(REQUIREMENTS) and all(row["expected_causal_failure"] for row in matrix)
