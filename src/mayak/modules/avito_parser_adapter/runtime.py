@@ -413,7 +413,7 @@ class HttpxLiveAdapter:
         binding, authority_reason = self._authority.resolve_with_reason(source, profile)
         if binding is None:
             return _classification(
-                "live-authority-rejected",
+                authority_reason,
                 TransportOutcomeStatus.NOT_SENT,
                 explanation=authority_reason,
                 evidence=(ref,),
