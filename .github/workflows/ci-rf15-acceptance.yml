@@ -59,6 +59,12 @@ jobs:
       - run: |
           set -o pipefail
           uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_DSN" --output rf15-evidence.json 2>&1 | tee rf15-producer.log
+          producer_status=${PIPESTATUS[0]}
+          if [ "$producer_status" -ne 0 ]; then
+            producer_message=$(tr '\n' ' ' < rf15-producer.log)
+            echo "::error title=RF15 producer diagnostic::$producer_message"
+            exit "$producer_status"
+          fi
       - run: |
           uv run python scripts/runtime/verify_rf15_acceptance.py rf15-evidence.json > verifier.stdout 2> verifier.stderr
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
