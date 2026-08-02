@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     ForeignKeyConstraint,
@@ -265,8 +266,9 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
         Column("account_id", UUID(as_uuid=True), nullable=False),
         Column("name", Text, nullable=False),
-        Column("current_revision_no", BigInteger, nullable=False),
-        Column("current_revision_id", UUID(as_uuid=True), nullable=False),
+        Column("source_url", String(4096), nullable=True),
+        Column("current_revision_no", BigInteger, nullable=True),
+        Column("current_revision_id", UUID(as_uuid=True), nullable=True),
         Column("state", String(64), nullable=False),
         Column("created_at", TIMESTAMP(timezone=True), nullable=False),
         Column("updated_at", TIMESTAMP(timezone=True), nullable=False),
@@ -282,9 +284,26 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
             ondelete="RESTRICT",
             use_alter=True,
         ),
+        ForeignKeyConstraint(
+            ["current_revision_id"],
+            ["mayak.beacon_configuration_revisions.revision_id"],
+            name="fk_beacon_beacons_current_revision_id",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
         UniqueConstraint("id", "current_revision_no", name="uq_beacon_beacons_id_current_revision"),
         CheckConstraint("btrim(name) <> ''", name="name_nonempty"),
-        CheckConstraint("current_revision_no > 0", name="revision_positive"),
+        CheckConstraint(
+            "current_revision_no IS NULL OR current_revision_no > 0", name="revision_positive"
+        ),
+        CheckConstraint(
+            "source_url IS NULL OR btrim(source_url) <> ''", name="source_url_nonempty"
+        ),
+        CheckConstraint(
+            "(current_revision_no IS NULL AND current_revision_id IS NULL) OR "
+            "(current_revision_no IS NOT NULL AND current_revision_id IS NOT NULL)",
+            name="current_revision_pair",
+        ),
         CheckConstraint("btrim(state) <> ''", name="state_nonempty"),
         CheckConstraint("row_version > 0", name="row_version_positive"),
     )
@@ -295,7 +314,14 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         metadata,
         Column("beacon_id", UUID(as_uuid=True), primary_key=True, nullable=False),
         Column("revision_no", BigInteger, primary_key=True, nullable=False),
+        Column("revision_id", UUID(as_uuid=True), nullable=False),
         Column("source_url", String(4096), nullable=False),
+        Column("snapshot_id", String(256), nullable=False),
+        Column("parser_outcome_status", String(64), nullable=False),
+        Column("accepted_as_clean", Boolean, nullable=False),
+        Column("parser_evidence_reference", String(4096), nullable=False),
+        Column("unsupported_parameters", JSONB, nullable=False),
+        Column("warning_codes", JSONB, nullable=False),
         Column("filter_candidate", JSONB, nullable=True),
         Column("accepted_filter", JSONB, nullable=False),
         Column("created_by_account_id", UUID(as_uuid=True), nullable=False),
@@ -308,6 +334,7 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         ForeignKeyConstraint(
             ["catalog_version_id"], ["mayak.filter_catalog_versions.id"], ondelete="RESTRICT"
         ),
+        UniqueConstraint("revision_id", name="uq_beacon_configuration_revisions_revision_id"),
         CheckConstraint("revision_no > 0", name="revision_positive"),
         CheckConstraint("btrim(source_url) <> ''", name="source_url_nonempty"),
         CheckConstraint(
@@ -332,6 +359,8 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         Column("revision_no", BigInteger, nullable=False),
         Column("field_code", String(128), nullable=False),
         Column("value", JSONB, nullable=False),
+        Column("parser_evidence_reference", String(4096), nullable=False),
+        Column("override_evidence_reference", String(4096), nullable=False),
         Column("created_at", TIMESTAMP(timezone=True), nullable=False),
         Column("row_version", BigInteger, nullable=False, server_default=text("1")),
         ForeignKeyConstraint(
