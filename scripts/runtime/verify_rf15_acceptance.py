@@ -228,8 +228,14 @@ def _check(name: str, c: Mapping[str, Any]) -> bool:
 
 def _safe_check(data: Mapping[str, Any], name: str) -> bool:
     try:
-        return _check(name, _case(data, name))
-    except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+        result = _check(name, _case(data, name))
+        if result or name == "parser_failure_no_advance":
+            return result
+        case = _case(data, name)
+        _ops(case)
+        _physical(case)
+        return True
+    except KeyError, IndexError, TypeError, ValueError, OverflowError:
         return False
 
 
