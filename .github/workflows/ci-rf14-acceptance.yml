@@ -36,12 +36,15 @@ jobs:
       - run: uv run mypy src/mayak/modules/avito_parser_adapter
       - run: uv run lint-imports
       - name: Create migration boundary
-        env: {PGPASSWORD: rf14}
         run: |
-          psql postgresql://rf14@postgres:5432/rf14 -v ON_ERROR_STOP=1 \
-            -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf14migration'" \
-            -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf14application'" \
-            -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration"
+          uv run python - <<'PY'
+          import psycopg
+          with psycopg.connect("postgresql://rf14@postgres:5432/rf14", autocommit=True) as connection:
+              with connection.cursor() as cursor:
+                  cursor.execute("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf14migration'")
+                  cursor.execute("CREATE ROLE mayak_application LOGIN PASSWORD 'rf14application'")
+                  cursor.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+          PY
       - name: Produce raw observations
         env: {PGPASSWORD: rf14}
         run: |
