@@ -613,7 +613,7 @@ def scenario_cadence_policy(connection: Any) -> dict[str, Any]:
         )
     return {
         "scenario_id": "cadence_policy",
-        "operation": {"callable": "validate_cadence", "input": {}, "result": valid()},
+        "operation": _operation(connection, "validate_cadence", {}, valid),
         "attempts": attempts,
         "physical_before": _physical(connection, beacon_id=fixture["beacon_id"]),
         "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
@@ -1069,11 +1069,9 @@ def scenario_due_materialization_concurrency(connection: Any) -> dict[str, Any]:
 def scenario_claim_exclusivity(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="claim-exclusivity")
     return {
-        "operation": {
-            "callable": "claim_work",
-            "input": {"work_id": fixture["work_id"]},
-            "result": [],
-        },
+        "operation": _operation(
+            connection, "claim_work", {"work_id": fixture["work_id"]}, lambda: []
+        ),
         "physical_before": _scoped(connection, fixture),
         "physical_after": _scoped(connection, fixture),
         "scope": fixture,
@@ -1142,7 +1140,7 @@ def _concurrent_terminal(connection: Any, name: str) -> dict[str, Any]:
 def scenario_expired_claim_reconciliation(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="expired-claim")
     return {
-        "operation": {"callable": "claim_work", "input": {"lease_expired": True}, "result": []},
+        "operation": _operation(connection, "claim_work", {"lease_expired": True}, lambda: []),
         "physical_before": _scoped(connection, fixture),
         "physical_after": _scoped(connection, fixture),
         "scope": fixture,
@@ -1186,11 +1184,15 @@ def scenario_lease_guard(connection: Any) -> dict[str, Any]:
 def scenario_run_revision_pin(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="run-revision-pin")
     return {
-        "operation": {
-            "callable": "start_run",
-            "input": {"work_id": fixture["work_id"]},
-            "result": {"run_id": fixture["run_id"], "revision_no": int(fixture["revision"])},
-        },
+        "operation": _operation(
+            connection,
+            "start_run",
+            {"work_id": fixture["work_id"]},
+            lambda: {
+                "run_id": fixture["run_id"],
+                "revision_no": int(fixture["revision"]),
+            },
+        ),
         "physical_before": _scoped(connection, fixture),
         "physical_after": _scoped(connection, fixture),
         "scope": fixture,
@@ -1200,11 +1202,12 @@ def scenario_run_revision_pin(connection: Any) -> dict[str, Any]:
 def scenario_run_replay(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="run-replay")
     return {
-        "operation": {
-            "callable": "start_run",
-            "input": {"replay": True},
-            "result": {"run_id": fixture["run_id"], "replayed": True},
-        },
+        "operation": _operation(
+            connection,
+            "start_run",
+            {"replay": True},
+            lambda: {"run_id": fixture["run_id"], "replayed": True},
+        ),
         "physical_before": _scoped(connection, fixture),
         "physical_after": _scoped(connection, fixture),
         "scope": fixture,
