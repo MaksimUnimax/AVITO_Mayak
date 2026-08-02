@@ -37,6 +37,9 @@ jobs:
         run: test "$(uv --version | awk '{print $2}')" = "0.11.31"
       - run: uv sync --frozen --all-groups --python 3.14.6
       - run: uv run pytest -q tests/unit/test_rf13_beacon_runtime.py tests/runtime/test_beacon_schema.py
+      - run: uv run ruff check src/mayak/modules/beacon_management src/mayak/persistence/schema/beacon.py scripts/runtime/run_rf13_postgres_acceptance.py scripts/runtime/verify_rf13_acceptance.py scripts/runtime/run_rf13_tamper_matrix.py
+      - run: uv run mypy src/mayak/modules/beacon_management src/mayak/persistence/schema/beacon.py
+      - run: uv run import-linter
       - name: Create isolated migration boundary
         env:
           PGPASSWORD: rf13
@@ -87,6 +90,12 @@ jobs:
             exit "$verifier_status"
           fi
           test "$(cat ci-evidence/rf13/verifier.stdout)" = "RF13_ACCEPTANCE_VERIFIED"
+      - name: Tamper-negative matrix
+        run: |
+          uv run python scripts/runtime/run_rf13_tamper_matrix.py . \
+            ci-evidence/rf13/acceptance.json "${{ github.sha }}" \
+            ci-evidence/rf13/tamper-matrix.json
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_rejected"])')" = "True"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.1.0
         with:
