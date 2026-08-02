@@ -51,8 +51,11 @@ jobs:
           for attempt in range(1, 31):
               try:
                   with engine.begin() as connection:
-                      connection.execute(text("DO $$ BEGIN CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'; EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
-                      connection.execute(text("DO $$ BEGIN CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'; EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+                      roles = set(connection.execute(text("select rolname from pg_roles")).scalars())
+                      if "mayak_migration" not in roles:
+                          connection.execute(text("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'"))
+                      if "mayak_application" not in roles:
+                          connection.execute(text("CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'"))
                       connection.execute(text("CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration"))
                   break
               except Exception as exc:
