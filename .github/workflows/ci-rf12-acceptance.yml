@@ -77,16 +77,16 @@ jobs:
           test "$(uv --version | awk '{print $2}')" = "0.11.31"
 
       - name: Compile RF-12 sources
-        run: python -m compileall -q src scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py
+        run: python -m compileall -q src scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py scripts/runtime/finalize_rf12_acceptance_evidence.py scripts/runtime/run_rf12_tamper_matrix.py
 
       - name: Run RF-12 focused unit tests
-        run: uv run pytest -q tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py
+        run: uv run pytest -q tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py tests/runtime/test_rf12_persistence_injection.py tests/runtime/test_rf12_finalizer.py tests/runtime/test_rf12_verifier_schema.py tests/runtime/test_rf12_tamper_matrix.py tests/runtime/test_rf12_phase_ownership.py tests/runtime/test_rf12_usage_policy_contract.py tests/runtime/test_rf12_workflow_inventory.py
 
       - name: Run RF-12 Ruff gate
-        run: uv run ruff check scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py src/mayak/modules/entitlements_and_billing/runtime.py tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py
+        run: uv run ruff check scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py scripts/runtime/finalize_rf12_acceptance_evidence.py scripts/runtime/run_rf12_tamper_matrix.py src/mayak/modules/entitlements_and_billing/runtime.py src/mayak/persistence/config.py alembic/env.py tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py tests/runtime/test_rf12_persistence_injection.py tests/runtime/test_rf12_finalizer.py tests/runtime/test_rf12_verifier_schema.py tests/runtime/test_rf12_tamper_matrix.py tests/runtime/test_rf12_phase_ownership.py tests/runtime/test_rf12_usage_policy_contract.py tests/runtime/test_rf12_workflow_inventory.py
 
       - name: Run RF-12 mypy gate
-        run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/entitlements_and_billing/runtime.py scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py
+        run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/entitlements_and_billing/runtime.py src/mayak/persistence/config.py scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py scripts/runtime/finalize_rf12_acceptance_evidence.py scripts/runtime/run_rf12_tamper_matrix.py
 
       - name: Run import-linter gate
         run: uv run lint-imports
@@ -101,12 +101,12 @@ jobs:
             --build-arg SOURCE_SHA=${{ github.sha }} \
             --build-arg LOCK_IDENTITY="$LOCK_IDENTITY" \
             --build-arg BUILD_INPUT_DIGEST="$BUILD_INPUT_DIGEST" .
-          docker image inspect rf12-candidate:${{ github.sha }} --format '{{json .Id}} {{json .Config.Labels}}' > ci-evidence/rf12/image-identity.txt
+          docker image inspect rf12-candidate:${{ github.sha }} --format '{{json .}}' | python -c 'import json,sys; x=json.load(sys.stdin); print(json.dumps({"id":x["Id"],"labels":x["Config"]["Labels"]},sort_keys=True))' > ci-evidence/rf12/image-identity.json
 
       - name: Record normalized foreign Docker snapshot before task resources
         run: |
           python - <<'PY'
-          import json, subprocess
+          import json, os, subprocess
           def rows(command):
               out = subprocess.check_output(command, text=True)
               return sorted((json.loads(line) for line in out.splitlines() if line.strip()), key=lambda item: json.dumps(item, sort_keys=True))
@@ -154,26 +154,6 @@ jobs:
               -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration'
           done
 
-      - name: Record observed foreign snapshot after task allocation
-        run: |
-          python - <<'PY'
-          import json, subprocess
-          def rows(command):
-              out = subprocess.check_output(command, text=True)
-              return sorted((json.loads(line) for line in out.splitlines() if line.strip()), key=lambda item: json.dumps(item, sort_keys=True))
-          def foreign(items):
-              return [item for item in items if not item.get("Name", "").lstrip("/").startswith("rf12-acceptance") and not item.get("Names", "").lstrip("/").startswith("rf12-acceptance")]
-          snapshot = {
-              "containers": foreign(rows(["docker", "ps", "-a", "--format", "{{json .}}"])),
-              "networks": foreign(rows(["docker", "network", "ls", "--format", "{{json .}}"])),
-              "volumes": foreign(rows(["docker", "volume", "ls", "--format", "{{json .}}"])),
-          }
-          before = json.load(open("ci-evidence/rf12/foreign-before.json"))
-          before = {key: foreign(value) for key, value in before.items()}
-          json.dump(before, open("ci-evidence/rf12/foreign-before.json", "w"), sort_keys=True)
-          json.dump(snapshot, open("ci-evidence/rf12/foreign-after.json", "w"), sort_keys=True)
-          PY
-
       - name: Preflight candidate image to PostgreSQL
         run: |
           DB_DSN="postgresql+psycopg://mayak_migration:${DB_PASSWORD}@rf12-acceptance-postgres:5432/rf12_final"
@@ -207,10 +187,10 @@ jobs:
             --candidate-sha "${{ github.sha }}" \
             --candidate-tree "$(git rev-parse HEAD^{tree})" \
             --image-identity "$(docker image inspect rf12-candidate:${{ github.sha }} --format '{{.Id}}')" \
+            --image-provenance "$(cat ci-evidence/rf12/image-identity.json)" \
             --lock-identity "$LOCK_IDENTITY" \
             --build-input-identity "$BUILD_INPUT_DIGEST" \
-            --foreign-before /evidence/foreign-before.json \
-            --foreign-after /evidence/foreign-after.json 2>&1)"
+            2>&1)"
           producer_status=$?
           printf '%s\n' "$producer_output"
           set -e
@@ -230,45 +210,56 @@ jobs:
             echo "::error title=RF12 producer diagnostic::$(tr -d '\n' < ci-evidence/rf12/producer-failure.json)"
           fi
 
-      - name: Run independent verifier inside candidate image
-        run: |
-          docker run --rm --volume "$PWD/ci-evidence/rf12:/evidence:ro" \
-            rf12-candidate:${{ github.sha }} \
-            python /opt/mayak/scripts/runtime/verify_rf12_acceptance.py /opt/mayak /evidence/rf12-acceptance.json "${{ github.sha }}" \
-            2>&1 | tee ci-evidence/rf12/verifier.txt
-
-      - name: Run mandatory tamper-negative verifier cases
-        run: |
-          python - <<'PY'
-          import copy, json, subprocess
-          source = json.load(open("ci-evidence/rf12/rf12-acceptance.json"))
-          cases = {}
-          def reject(name, value):
-              path = f"ci-evidence/rf12/tamper-{name}.json"
-              json.dump(value, open(path, "w"), sort_keys=True)
-              result = subprocess.run(["python", "scripts/runtime/verify_rf12_acceptance.py", ".", path, "${{ github.sha }}"])
-              cases[name] = result.returncode != 0
-          value = copy.deepcopy(source); value["candidate_source_sha"] = "0" * 40; reject("candidate-sha", value)
-          value = copy.deepcopy(source); value["historical_rf12_manual_grant_sha256"] = "0" * 64; reject("historical-digest", value)
-          value = copy.deepcopy(source); value["gates"]["metadata_parity"] = True; value["metadata_parity"] = {}; reject("missing-migration-observation", value)
-          value = copy.deepcopy(source); value["gates"]["payment_race"] = True; value["payment_race"] = {}; reject("payment-race", value)
-          value = copy.deepcopy(source); value["gates"]["foreign_equality"] = True; value["foreign_equality"] = {"equal": True}; reject("foreign-equality", value)
-          value = copy.deepcopy(source); value["concurrency"]["sessions"] = 1; reject("one-session-concurrency", value)
-          value = copy.deepcopy(source); value["rollback"].pop("after", None); reject("rollback-after", value)
-          value = copy.deepcopy(source); value["command_matrix"]["rows"][0].pop("production_method", None); reject("command-method", value)
-          value = copy.deepcopy(source); value["cleanup"]["task_resources_removed"] = False; reject("cleanup", value)
-          assert all(cases.values()), cases
-          json.dump({"cases": cases, "result": True}, open("ci-evidence/rf12/tamper-negative.json", "w"), sort_keys=True)
-          PY
-
       - name: Remove task resources and prove cleanup
         if: always()
         run: |
+          docker inspect rf12-acceptance-postgres > ci-evidence/rf12/task-container-before.json 2>/dev/null || true
+          docker network inspect rf12-acceptance-network > ci-evidence/rf12/task-network-before.json 2>/dev/null || true
+          docker volume inspect rf12-acceptance-pgdata > ci-evidence/rf12/task-volume-before.json 2>/dev/null || true
+          docker image inspect rf12-candidate:${{ github.sha }} > ci-evidence/rf12/task-image-before.json 2>/dev/null || true
           docker rm -f rf12-acceptance-postgres 2>/dev/null || true
           docker volume rm rf12-acceptance-pgdata 2>/dev/null || true
           docker network rm rf12-acceptance-network 2>/dev/null || true
           docker image rm rf12-candidate:${{ github.sha }} 2>/dev/null || true
-          docker ps -a --format '{{.Names}}' | grep -q '^rf12-acceptance-' && exit 1 || true
+          python - <<'PY'
+          import json, os, subprocess
+          def rows(command):
+              out = subprocess.check_output(command, text=True)
+              return sorted((json.loads(line) for line in out.splitlines() if line.strip()), key=lambda item: json.dumps(item, sort_keys=True))
+          snapshot = {
+              "containers": rows(["docker", "ps", "-a", "--format", "{{json .}}"]),
+              "networks": rows(["docker", "network", "ls", "--format", "{{json .}}"]),
+              "volumes": rows(["docker", "volume", "ls", "--format", "{{json .}}"]),
+          }
+          task = [item for values in snapshot.values() for item in values if "rf12-acceptance" in json.dumps(item)]
+          json.dump(snapshot, open("ci-evidence/rf12/foreign-after.json", "w"), sort_keys=True)
+          inspect = lambda args: subprocess.run(args, capture_output=True, text=True).returncode != 0
+          image_tag_absent = inspect(["docker", "image", "inspect", "rf12-candidate:${{ github.sha }}"])
+          before_image = json.load(open("ci-evidence/rf12/task-image-before.json"))[0] if os.path.isfile("ci-evidence/rf12/task-image-before.json") and os.path.getsize("ci-evidence/rf12/task-image-before.json") else {}
+          image_id = before_image.get("Id", "")
+          retained = any(image_id == row.split()[0] for row in subprocess.check_output(["docker", "images", "--no-trunc", "--format", "{{.ID}} {{.Repository}}:{{.Tag}}"], text=True).splitlines() if row.split())
+          container_absent = inspect(["docker", "inspect", "rf12-acceptance-postgres"])
+          network_absent = inspect(["docker", "network", "inspect", "rf12-acceptance-network"])
+          volume_absent = inspect(["docker", "volume", "inspect", "rf12-acceptance-pgdata"])
+          json.dump({"task_resources_absent": not task, "remaining_task_resources": len(task), "container_name": "rf12-acceptance-postgres", "network_name": "rf12-acceptance-network", "volume_name": "rf12-acceptance-pgdata", "candidate_image_tag": "rf12-candidate:${{ github.sha }}", "candidate_image_id": image_id, "container_absent": container_absent, "container_remaining_count": int(not container_absent), "network_absent": network_absent, "network_remaining_count": int(not network_absent), "volume_absent": volume_absent, "volume_remaining_count": int(not volume_absent), "image_tag_absent": image_tag_absent, "image_tag_remaining_count": int(not image_tag_absent), "image_id_not_retained": not retained, "image_id_remaining_count": int(retained)}, open("ci-evidence/rf12/task-resource-absence.json", "w"), sort_keys=True)
+          PY
+
+      - name: Finalize post-cleanup RF-12 evidence
+        if: success()
+        run: |
+          python scripts/runtime/finalize_rf12_acceptance_evidence.py \
+            --runtime ci-evidence/rf12/rf12-acceptance.json \
+            --before ci-evidence/rf12/foreign-before.json \
+            --after ci-evidence/rf12/foreign-after.json \
+            --absence ci-evidence/rf12/task-resource-absence.json \
+            --output ci-evidence/rf12/rf12-acceptance-final.json
+          mv ci-evidence/rf12/rf12-acceptance-final.json ci-evidence/rf12/rf12-acceptance.json
+
+      - name: Run final independent verifier and tamper-negative matrix
+        if: success()
+        run: |
+          python scripts/runtime/verify_rf12_acceptance.py . ci-evidence/rf12/rf12-acceptance.json "${{ github.sha }}" | tee ci-evidence/rf12/verifier.txt
+          python scripts/runtime/run_rf12_tamper_matrix.py . ci-evidence/rf12/rf12-acceptance.json ci-evidence/rf12/tamper-negative.json "${{ github.sha }}"
 
       - name: Publish bounded safe RF-12 evidence
         if: always()
