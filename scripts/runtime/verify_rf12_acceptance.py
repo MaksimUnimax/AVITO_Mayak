@@ -20,7 +20,7 @@ from typing import Any
 
 EXPECTED_SCHEMA = "rf12-postgres-acceptance-v2"
 EXPECTED_TECHNICAL_ID = "RF-12-CORRECTIVE-EVIDENCE-COVERAGE-MIGRATION-INJECTION-AND-POST-CLEANUP-PROOF-20260802-04"
-EXPECTED_HEAD = "RF12_RUNTIME_HARDEN"
+EXPECTED_HEAD = "RF12_BASIC_BEACON_LIMIT"
 EXPECTED_PHASE = "FINALIZED"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 SHA1 = re.compile(r"^[0-9a-f]{40}$")
@@ -162,6 +162,9 @@ def verify(root: Path, evidence_path: Path, expected_candidate_sha: str | None =
     historical = root / "alembic/versions/20260801_RF12_manual_grant_semantics.py"
     if evidence.get("historical_rf12_manual_grant_sha256") != _sha(historical):
         _fail("historical RF12 migration integrity evidence is invalid")
+    historical_harden = root / "alembic/versions/20260801_RF12_runtime_harden.py"
+    if evidence.get("historical_rf12_runtime_harden_sha256") != _sha(historical_harden):
+        _fail("historical RF12 runtime hardening migration integrity evidence is invalid")
     rf09 = evidence.get("rf09_digests")
     if not isinstance(rf09, dict) or not rf09:
         _fail("RF09 migration identity evidence is absent")
@@ -173,7 +176,7 @@ def verify(root: Path, evidence_path: Path, expected_candidate_sha: str | None =
     if not isinstance(gates, dict) or frozenset(gates) != REQUIRED_GATES or any(gates[key] is not True for key in REQUIRED_GATES):
         _fail("RF12 acceptance gate set is incomplete, extra, or failed")
     ladders = evidence.get("migration_ladders")
-    if not isinstance(ladders, dict) or set(ladders) != {"empty_to_head", "rf09_to_manual_to_head", "manual_to_head"}:
+    if not isinstance(ladders, dict) or set(ladders) != {"empty_to_head", "rf09_to_manual_to_head", "manual_to_head", "runtime_harden_to_head"}:
         _fail("RF12 migration ladder set is incomplete")
     if any(not isinstance(item, dict) or item.get("observed") is not True or item.get("final_head") != EXPECTED_HEAD for item in ladders.values()):
         _fail("RF12 migration ladder observation is incomplete")
@@ -216,13 +219,13 @@ def verify(root: Path, evidence_path: Path, expected_candidate_sha: str | None =
     if cases["active_exact_match"].get("allowed") is not True or any(cases[key].get("allowed") is not False for key in ("wrong_capability", "wrong_scope", "expired", "revoked")) or manual.get("manual_kind_distinct") is not True:
         _fail("RF12 manual entitlement semantics are invalid")
     usage = evidence.get("usage_policy_semantics")
-    if not isinstance(usage, dict) or usage.get("free", {}).get("minimum") != 180 or usage.get("free", {}).get("step") != 180 or usage.get("basic", {}).get("minimum") != 5 or usage.get("basic", {}).get("step") != 5 or usage.get("free", {}).get("active_beacon_limit") != 1 or "active_beacon_limit" in usage.get("basic", {}):
+    if not isinstance(usage, dict) or usage.get("free", {}).get("minimum") != 180 or usage.get("free", {}).get("step") != 180 or usage.get("basic", {}).get("minimum") != 5 or usage.get("basic", {}).get("step") != 5 or usage.get("free", {}).get("active_beacon_limit") != 1 or usage.get("basic", {}).get("active_beacon_limit") != 5:
         _fail("RF12 usage policy semantics are invalid")
     tariffs = usage.get("tariff_definitions", {})
     free_tariff, basic_tariff = tariffs.get("FREE", {}), tariffs.get("BASIC", {})
-    if free_tariff.get("price_minor") != 0 or free_tariff.get("currency") != "RUB" or free_tariff.get("minimum_seconds") != 10800 or free_tariff.get("step_seconds") != 10800:
+    if free_tariff.get("price_minor") != 0 or free_tariff.get("currency") != "RUB" or free_tariff.get("minimum_seconds") != 10800 or free_tariff.get("step_seconds") != 10800 or free_tariff.get("active_beacon_limit") != 1:
         _fail("RF12 persisted Free tariff authority is invalid")
-    if basic_tariff.get("price_minor") != 99000 or basic_tariff.get("currency") != "RUB" or basic_tariff.get("minimum_seconds") != 300 or basic_tariff.get("step_seconds") != 300 or basic_tariff.get("active_from") is None:
+    if basic_tariff.get("price_minor") != 99000 or basic_tariff.get("currency") != "RUB" or basic_tariff.get("minimum_seconds") != 300 or basic_tariff.get("step_seconds") != 300 or basic_tariff.get("active_beacon_limit") != 5 or basic_tariff.get("active_from") is None:
         _fail("RF12 persisted Basic tariff authority is invalid")
     active_froms = [free_tariff.get("active_from"), basic_tariff.get("active_from")]
     if any(not isinstance(value, str) for value in active_froms):
@@ -234,15 +237,21 @@ def verify(root: Path, evidence_path: Path, expected_candidate_sha: str | None =
     if not (authority_at <= datetime.fromisoformat(free_interval["valid_from"]) < datetime.fromisoformat(free_interval["valid_until"]) and datetime.fromisoformat(free_interval["valid_from"]) <= evaluation_at < datetime.fromisoformat(free_interval["valid_until"])):
         _fail("RF12 Free grant chronology is invalid")
     active = usage["free"].get("active_beacon", {})
-    if not isinstance(active, dict) or active.get("observed_count") != 1 or len(active.get("usage_rows", [])) != 1 or active.get("persisted_consumed") != 1 or active.get("persisted_limit") != 1:
+    if not isinstance(active, dict) or active.get("observed_count") != 0 or len(active.get("usage_rows", [])) != 0:
         _fail("RF12 Free active-Beacon count was not observed exactly")
     first_state = str(active.get("first", {}).get("state", "")).upper()
     second_state = str(active.get("second", {}).get("state", "")).upper()
-    if first_state != "RECORDED" or active.get("first", {}).get("reason_code") != "USAGE_RECORDED" or second_state != "REJECTED" or active.get("second", {}).get("reason_code") != "USAGE_LIMIT_REACHED":
+    if first_state != "RECORDED" or active.get("first", {}).get("reason_code") != "ACTIVE_BEACON_SLOT_ALLOWED" or second_state != "REJECTED" or active.get("second", {}).get("reason_code") != "USAGE_LIMIT_REACHED":
         _fail("RF12 Free active-Beacon two-use proof is invalid")
+    if active.get("requester") != "BEACON_MANAGEMENT" or active.get("source_owner") != "BEACON_MANAGEMENT" or active.get("reset_window") is not False:
+        _fail("RF12 active-Beacon ownership/reset semantics are invalid")
+    if active.get("caller_limit_override", {}).get("reason_code") != "CALLER_POLICY_AUTHORITY_FORBIDDEN":
+        _fail("RF12 caller-supplied active-Beacon limit was accepted")
     basic = usage["basic"]
-    if basic.get("interval_5_allowed") is not True or basic.get("interval_4_allowed") is not False or basic.get("interval_6_allowed") is not False or basic.get("numeric_beacon_limit_present") is not False:
+    if basic.get("interval_5_allowed") is not True or basic.get("interval_4_allowed") is not False or basic.get("interval_6_allowed") is not False or basic.get("active_beacon_limit") != 5:
         _fail("RF12 active Basic interval policy is invalid")
+    if basic.get("active_beacon", {}).get("count_4", {}).get("state") != "RECORDED" or basic.get("active_beacon", {}).get("count_5", {}).get("reason_code") != "USAGE_LIMIT_REACHED":
+        _fail("RF12 Basic active-Beacon source-facts boundaries are invalid")
     basic_from = datetime.fromisoformat(basic["valid_from"])
     basic_until = datetime.fromisoformat(basic["valid_until"])
     if not (authority_at <= basic_from <= evaluation_at < basic_until):

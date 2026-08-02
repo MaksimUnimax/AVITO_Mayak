@@ -22,11 +22,11 @@ def _observation() -> dict:
     return {
         "evaluation_at": evaluation_at,
         "tariff_definitions": {
-            "FREE": {"price_minor": 0, "currency": "RUB", "minimum_seconds": 10800, "step_seconds": 10800, "active_from": active_from},
-            "BASIC": {"price_minor": 99000, "currency": "RUB", "minimum_seconds": 300, "step_seconds": 300, "active_from": active_from},
+            "FREE": {"price_minor": 0, "currency": "RUB", "minimum_seconds": 10800, "step_seconds": 10800, "active_beacon_limit": 1, "active_from": active_from},
+            "BASIC": {"price_minor": 99000, "currency": "RUB", "minimum_seconds": 300, "step_seconds": 300, "active_beacon_limit": 5, "active_from": active_from},
         },
-        "free": {"minimum": 180, "step": 180, "active_beacon_limit": 1, "interval_180_allowed": True, "interval_179_allowed": False, "interval_181_allowed": False, "active_beacon": {"first": {"state": "RECORDED", "reason_code": "USAGE_RECORDED"}, "second": {"state": "REJECTED", "reason_code": "USAGE_LIMIT_REACHED"}, "usage_rows": [{"consumed": 1, "limit_value": 1}], "persisted_consumed": 1, "persisted_limit": 1}, "grant_interval": {"valid_from": evaluation_at, "valid_until": (datetime.fromisoformat(evaluation_at) + timedelta(days=1)).isoformat()}},
-        "basic": {"minimum": 5, "step": 5, "valid_from": active_from, "valid_until": (datetime.fromisoformat(evaluation_at) + timedelta(days=1)).isoformat(), "interval_5_allowed": True, "interval_4_allowed": False, "interval_6_allowed": False, "numeric_beacon_limit_present": False},
+        "free": {"minimum": 180, "step": 180, "active_beacon_limit": 1, "interval_180_allowed": True, "interval_179_allowed": False, "interval_181_allowed": False, "active_beacon": {"requester": "BEACON_MANAGEMENT", "source_owner": "BEACON_MANAGEMENT", "reset_window": False, "first": {"state": "RECORDED", "reason_code": "ACTIVE_BEACON_SLOT_ALLOWED"}, "second": {"state": "REJECTED", "reason_code": "USAGE_LIMIT_REACHED"}, "caller_limit_override": {"reason_code": "CALLER_POLICY_AUTHORITY_FORBIDDEN"}, "usage_rows": [], "observed_count": 0}, "grant_interval": {"valid_from": evaluation_at, "valid_until": (datetime.fromisoformat(evaluation_at) + timedelta(days=1)).isoformat()}},
+        "basic": {"minimum": 5, "step": 5, "active_beacon_limit": 5, "valid_from": active_from, "valid_until": (datetime.fromisoformat(evaluation_at) + timedelta(days=1)).isoformat(), "interval_5_allowed": True, "interval_4_allowed": False, "interval_6_allowed": False, "active_beacon": {"count_4": {"state": "RECORDED"}, "count_5": {"reason_code": "USAGE_LIMIT_REACHED"}}},
         "paid_expiry": {"expired_valid_from": active_from, "expired_valid_until": evaluation_at, "pre_expiry_allowed": True, "effective_allowed": False, "payment_recorded": True, "post_payment_allowed": False},
     }
 
@@ -34,7 +34,7 @@ def _observation() -> dict:
 def test_usage_gate_requires_each_observed_contract_fact() -> None:
     observation = _observation()
     assert _usage_policy_gate(observation)
-    for path in (("free", "interval_180_allowed"), ("free", "active_beacon", "persisted_consumed"), ("basic", "interval_5_allowed"), ("paid_expiry", "post_payment_allowed")):
+    for path in (("free", "interval_180_allowed"), ("free", "active_beacon", "observed_count"), ("basic", "interval_5_allowed"), ("paid_expiry", "post_payment_allowed")):
         changed = observation
         target = changed
         for key in path[:-1]:

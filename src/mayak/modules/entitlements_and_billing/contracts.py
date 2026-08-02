@@ -120,7 +120,7 @@ class TariffDefinition(BaseModel):
     billing_period_label: str | None = None
     scan_interval_floor_minutes: int = Field(gt=0)
     scan_interval_step_minutes: int = Field(gt=0)
-    active_beacon_limit: int | None = Field(default=None, ge=1)
+    active_beacon_limit: int = Field(gt=0)
     feature_notes: str | None = None
     mechanism_notes: str | None = None
 
@@ -150,8 +150,8 @@ class TariffDefinition(BaseModel):
                 raise ValueError("Basic tariff scan interval floor must be 5 minutes")
             if self.scan_interval_step_minutes != 5:
                 raise ValueError("Basic tariff scan interval step must be 5 minutes")
-            if self.active_beacon_limit is not None:
-                raise ValueError("Basic tariff active beacon limit is not approved")
+            if self.active_beacon_limit != 5:
+                raise ValueError("Basic tariff active beacon limit must be five")
             if self.feature_notes is not None:
                 raise ValueError("Basic tariff must not predeclare extra feature notes")
             if self.mechanism_notes is not None:

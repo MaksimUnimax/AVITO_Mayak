@@ -80,7 +80,7 @@ jobs:
         run: python -m compileall -q src scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py scripts/runtime/finalize_rf12_acceptance_evidence.py scripts/runtime/run_rf12_tamper_matrix.py
 
       - name: Run RF-12 focused unit tests
-        run: uv run pytest -q tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py tests/runtime/test_rf12_persistence_injection.py tests/runtime/test_rf12_finalizer.py tests/runtime/test_rf12_verifier_schema.py tests/runtime/test_rf12_tamper_matrix.py tests/runtime/test_rf12_phase_ownership.py tests/runtime/test_rf12_usage_policy_contract.py tests/runtime/test_rf12_workflow_inventory.py
+        run: uv run pytest -q tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py tests/runtime/test_rf12_persistence_injection.py tests/runtime/test_rf12_finalizer.py tests/runtime/test_rf12_verifier_schema.py tests/runtime/test_rf12_tamper_matrix.py tests/runtime/test_rf12_phase_ownership.py tests/runtime/test_rf12_usage_policy_contract.py tests/runtime/test_rf12_workflow_inventory.py tests/unit/test_entitlements_and_billing_contracts.py tests/unit/test_usage_consumption_semantics.py tests/runtime/test_entitlements_schema.py
 
       - name: Run RF-12 Ruff gate
         run: uv run ruff check scripts/runtime/run_rf12_postgres_acceptance.py scripts/runtime/verify_rf12_acceptance.py scripts/runtime/finalize_rf12_acceptance_evidence.py scripts/runtime/run_rf12_tamper_matrix.py src/mayak/modules/entitlements_and_billing/runtime.py src/mayak/persistence/config.py alembic/env.py tests/runtime/test_rf12_command_matrix.py tests/runtime/test_rf12_runtime_postgres.py tests/runtime/test_rf12_persistence_injection.py tests/runtime/test_rf12_finalizer.py tests/runtime/test_rf12_verifier_schema.py tests/runtime/test_rf12_tamper_matrix.py tests/runtime/test_rf12_phase_ownership.py tests/runtime/test_rf12_usage_policy_contract.py tests/runtime/test_rf12_workflow_inventory.py
@@ -139,7 +139,7 @@ jobs:
             docker logs rf12-acceptance-postgres
             exit 1
           fi
-          for db in rf12_empty rf12_rf09 rf12_manual rf12_final; do
+          for db in rf12_empty rf12_rf09 rf12_manual rf12_runtime_harden rf12_final; do
             docker exec rf12-acceptance-postgres createdb -U rf12 "$db"
           done
           DB_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(24))')"
@@ -149,7 +149,7 @@ jobs:
             -v pw="$DB_PASSWORD" \
             -c "CREATE ROLE mayak_migration LOGIN PASSWORD '$DB_PASSWORD'" \
             -c "CREATE ROLE mayak_application LOGIN PASSWORD '$DB_PASSWORD'"
-          for db in rf12_empty rf12_rf09 rf12_manual rf12_final; do
+          for db in rf12_empty rf12_rf09 rf12_manual rf12_runtime_harden rf12_final; do
             docker exec rf12-acceptance-postgres psql -U rf12 -d "$db" -v ON_ERROR_STOP=1 \
               -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration'
           done
@@ -183,6 +183,7 @@ jobs:
             --empty-dsn "${DB_DSN}/rf12_empty" \
             --rf09-dsn "${DB_DSN}/rf12_rf09" \
             --manual-dsn "${DB_DSN}/rf12_manual" \
+            --runtime-harden-dsn "${DB_DSN}/rf12_runtime_harden" \
             --artifact /evidence/rf12-acceptance.json \
             --candidate-sha "${{ github.sha }}" \
             --candidate-tree "$(git rev-parse HEAD^{tree})" \

@@ -309,6 +309,7 @@ def _register_canonical_tables(
         Column("currency", CHAR(3), nullable=False),
         Column("min_interval_seconds", BigInteger, nullable=False),
         Column("step_seconds", BigInteger, nullable=False),
+        Column("active_beacon_limit", BigInteger, nullable=False),
         Column("active_from", TIMESTAMP(timezone=True), nullable=False),
         Column("active_until", TIMESTAMP(timezone=True), nullable=True),
         Column("created_at", TIMESTAMP(timezone=True), nullable=False),
@@ -317,6 +318,7 @@ def _register_canonical_tables(
         CheckConstraint("price_minor >= 0", name="price_nonnegative"),
         CheckConstraint("min_interval_seconds > 0", name="min_interval_positive"),
         CheckConstraint("step_seconds > 0", name="step_positive"),
+        CheckConstraint("active_beacon_limit > 0", name="active_beacon_limit_positive"),
         CheckConstraint(
             "currency !~ '\\s' AND char_length(currency) = 3", name="currency_iso_length"
         ),

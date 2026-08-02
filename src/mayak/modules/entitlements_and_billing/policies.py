@@ -27,7 +27,7 @@ BASIC_TARIFF_POLICY: Final[TariffDefinition] = TariffDefinition(
     billing_period_label="1 month",
     scan_interval_floor_minutes=5,
     scan_interval_step_minutes=5,
-    active_beacon_limit=None,
+    active_beacon_limit=5,
     feature_notes=None,
     mechanism_notes=None,
 )

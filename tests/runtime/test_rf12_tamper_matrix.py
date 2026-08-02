@@ -12,7 +12,7 @@ REQUIRED_TAMPER_CASE_IDS = _MODULE.REQUIRED_TAMPER_CASE_IDS
 
 
 def test_rf12_tamper_registry_is_exact_and_nonempty() -> None:
-    assert len(REQUIRED_TAMPER_CASE_IDS) == 66
+    assert len(REQUIRED_TAMPER_CASE_IDS) == 80
     assert len(set(REQUIRED_TAMPER_CASE_IDS)) == len(REQUIRED_TAMPER_CASE_IDS)
     assert {"technical-id", "free-active-beacon-second-allowed", "build-input-identity-altered"} <= set(
         REQUIRED_TAMPER_CASE_IDS

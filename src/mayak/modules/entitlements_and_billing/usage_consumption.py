@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Final
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from mayak.platform.idempotency import IdempotencyFingerprint, IdempotencyKey
 
@@ -80,12 +80,15 @@ BLOCKED_USAGE_COUNTER_FAMILIES: Final[tuple[UsageCounterFamily, ...]] = (
 
 
 class ActiveBeaconSlotEvidence(BaseModel):
-    """Synthetic snapshot/evidence for ACTIVE_BEACON_SLOT decisions."""
+    """Beacon Management's current active count before one proposed activation."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
     snapshot_reference: str = Field(min_length=1)
-    snapshot_active_beacon_count: int = Field(ge=0)
+    current_active_beacon_count: StrictInt | None = Field(default=None, ge=0)
+    # Historical names remain parseable for old evidence, but are never the
+    # authority for the corrected ACTIVE_BEACON_SLOT decision.
+    snapshot_active_beacon_count: int | None = Field(default=None, ge=0)
     source_fact_reference: str | None = None
     source_fact_active_beacon_count: int | None = Field(default=None, ge=0)
 
@@ -269,9 +272,16 @@ def _evaluate_active_beacon_slot(
             current_tariff_name=tariff_definition.tariff_name.value,
         )
 
-    if evidence.source_fact_active_beacon_count is not None and (
-        evidence.source_fact_active_beacon_count != evidence.snapshot_active_beacon_count
-    ):
+    current_count = evidence.current_active_beacon_count
+    if current_count is None:
+        return _build_decision(
+            request,
+            outcome=UsageConsumptionOutcome.UNAVAILABLE,
+            reason_code="ACTIVE_BEACON_COUNT_REQUIRED",
+            reason="Beacon Management current_active_beacon_count is required before activation.",
+            current_tariff_name=tariff_definition.tariff_name.value,
+        )
+    if evidence.source_fact_active_beacon_count is not None and evidence.source_fact_active_beacon_count != current_count:
         return _build_decision(
             request,
             outcome=UsageConsumptionOutcome.CONFLICT,
@@ -282,37 +292,27 @@ def _evaluate_active_beacon_slot(
         )
 
     active_beacon_limit = tariff_definition.active_beacon_limit
-    if active_beacon_limit is None:
-        return _build_decision(
-            request,
-            outcome=UsageConsumptionOutcome.BLOCKED,
-            reason_code="ACTIVE_BEACON_LIMIT_GATED",
-            reason="The active Beacon numeric limit is still gated for this tariff definition.",
-            source_references=(tariff_definition.tariff_name.value,),
-            current_tariff_name=tariff_definition.tariff_name.value,
-        )
-
-    if evidence.snapshot_active_beacon_count > active_beacon_limit:
+    if current_count >= active_beacon_limit:
         return _build_decision(
             request,
             outcome=UsageConsumptionOutcome.DENIED,
-            reason_code="ACTIVE_BEACON_SLOT_EXCEEDED",
-            reason="The synthetic Beacon snapshot exceeds the approved active Beacon limit.",
+            reason_code="USAGE_LIMIT_REACHED",
+            reason="The current Beacon Management count leaves no active slot for the proposed activation.",
             source_references=(evidence.snapshot_reference, tariff_definition.tariff_name.value),
             current_tariff_name=tariff_definition.tariff_name.value,
             active_beacon_limit=active_beacon_limit,
-            active_beacon_count=evidence.snapshot_active_beacon_count,
+            active_beacon_count=current_count,
         )
 
     return _build_decision(
         request,
         outcome=UsageConsumptionOutcome.ACCEPTED,
         reason_code="ACTIVE_BEACON_SLOT_ACCEPTED",
-        reason="The synthetic Beacon snapshot stays within the approved active Beacon limit.",
+        reason="The current Beacon Management count leaves an active slot for the proposed activation.",
         source_references=(evidence.snapshot_reference, tariff_definition.tariff_name.value),
         current_tariff_name=tariff_definition.tariff_name.value,
         active_beacon_limit=active_beacon_limit,
-        active_beacon_count=evidence.snapshot_active_beacon_count,
+        active_beacon_count=current_count,
     )
 
 

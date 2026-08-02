@@ -26,6 +26,11 @@ REQUIRED_TAMPER_CASE_IDS = (
     "free-active-beacon-first-denied", "free-active-beacon-second-allowed", "free-active-beacon-count-over-one",
     "free-minimum-altered", "free-step-altered", "free-179-allowed", "free-181-allowed", "basic-minimum-altered",
     "basic-step-altered", "basic-4-allowed", "basic-6-allowed", "invented-basic-active-beacon-limit",
+    "basic-active-limit-missing", "basic-active-limit-four", "basic-active-limit-six", "free-active-limit-two",
+    "persisted-basic-limit-conflict", "producer-basic-limit-without-persisted-observation",
+    "basic-count-five-allowed", "basic-count-four-denied", "free-count-one-allowed",
+    "active-slot-counter-created", "caller-limit-overrides-persisted", "active-slot-wrong-owner",
+    "stale-basic-limit-unspecified", "runtime-head-reverted",
     "paid-expired-basic-allowed", "basic-price-altered", "synthetic-cleanup-residual", "docker-container-absence-false",
     "docker-network-absence-false", "docker-volume-absence-false", "candidate-image-absence-false",
     "post-cleanup-raw-snapshot-absent", "foreign-snapshots-differ", "foreign-equal-flag-false", "credential-exposure",
@@ -101,6 +106,19 @@ def _mutate(source: dict[str, Any], case: str) -> dict[str, Any]:
     elif case in {"free-minimum-altered", "free-step-altered", "free-179-allowed", "free-181-allowed"}: obj("usage_policy_semantics")["free"]["minimum" if case.endswith("minimum-altered") else "step" if case.endswith("step-altered") else "interval_179_allowed" if case.endswith("179-allowed") else "interval_181_allowed"] = 1
     elif case in {"basic-minimum-altered", "basic-step-altered", "basic-4-allowed", "basic-6-allowed"}: obj("usage_policy_semantics")["basic"]["minimum" if case.endswith("minimum-altered") else "step" if case.endswith("step-altered") else "interval_4_allowed" if case.endswith("4-allowed") else "interval_6_allowed"] = 1
     elif case == "invented-basic-active-beacon-limit": obj("usage_policy_semantics")["basic"]["active_beacon_limit"] = 1
+    elif case == "basic-active-limit-missing": obj("usage_policy_semantics")["basic"].pop("active_beacon_limit", None)
+    elif case == "basic-active-limit-four": obj("usage_policy_semantics")["basic"]["active_beacon_limit"] = 4
+    elif case == "basic-active-limit-six": obj("usage_policy_semantics")["basic"]["active_beacon_limit"] = 6
+    elif case == "free-active-limit-two": obj("usage_policy_semantics")["free"]["active_beacon_limit"] = 2
+    elif case in {"persisted-basic-limit-conflict", "producer-basic-limit-without-persisted-observation"}: obj("usage_policy_semantics")["tariff_definitions"]["BASIC"]["active_beacon_limit"] = 4
+    elif case == "basic-count-five-allowed": obj("usage_policy_semantics")["basic"]["active_beacon"]["count_5"]["reason_code"] = "ACTIVE_BEACON_SLOT_ALLOWED"
+    elif case == "basic-count-four-denied": obj("usage_policy_semantics")["basic"]["active_beacon"]["count_4"]["state"] = "REJECTED"
+    elif case == "free-count-one-allowed": obj("usage_policy_semantics")["free"]["active_beacon"]["second"]["reason_code"] = "ACTIVE_BEACON_SLOT_ALLOWED"
+    elif case == "active-slot-counter-created": obj("usage_policy_semantics")["free"]["active_beacon"]["observed_count"] = 1
+    elif case == "caller-limit-overrides-persisted": obj("usage_policy_semantics")["free"]["active_beacon"]["caller_limit_override"]["reason_code"] = "ACTIVE_BEACON_SLOT_ALLOWED"
+    elif case == "active-slot-wrong-owner": obj("usage_policy_semantics")["free"]["active_beacon"]["source_owner"] = "ENTITLEMENTS"
+    elif case == "stale-basic-limit-unspecified": obj("usage_policy_semantics")["basic"]["active_beacon"]["count_5"]["reason_code"] = "BASIC_BEACON_LIMIT_UNSPECIFIED"
+    elif case == "runtime-head-reverted": item["alembic_head"] = "RF12_RUNTIME_HARDEN"
     elif case == "paid-expired-basic-allowed": obj("usage_policy_semantics")["paid_expiry"]["effective_allowed"] = True
     elif case == "basic-price-altered": obj("usage_policy_semantics")["tariff_definitions"]["BASIC"]["price_minor"] = 1
     elif case == "synthetic-cleanup-residual": obj("synthetic_database_cleanup")["counts"]["remaining_synthetic_accounts"] = 1

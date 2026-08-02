@@ -42,9 +42,10 @@ from mayak.modules.entitlements_and_billing.runtime import (
 from mayak.persistence.metadata import metadata
 
 SCHEMA = "rf12-postgres-acceptance-v2"
-TECHNICAL_ID = "RF-12-CORRECTIVE-EVIDENCE-COVERAGE-MIGRATION-INJECTION-AND-POST-CLEANUP-PROOF-20260802-04"
-EXPECTED_HEAD = "RF12_RUNTIME_HARDEN"
+TECHNICAL_ID = "RF-12-CORRECTIVE-BASIC-BEACON-LIMIT-AND-ACTIVE-SLOT-AUTHORITY-20260802-05"
+EXPECTED_HEAD = "RF12_BASIC_BEACON_LIMIT"
 HISTORICAL = Path("alembic/versions/20260801_RF12_manual_grant_semantics.py")
+HISTORICAL_HARDEN = Path("alembic/versions/20260801_RF12_runtime_harden.py")
 RF09 = tuple(sorted(Path("alembic/versions").glob("202607*.py")))
 OWNED_TABLES = (
     "entitlement_tariff_definitions", "entitlement_access_grants",
@@ -120,6 +121,7 @@ def _migration_ladder(args: argparse.Namespace) -> dict[str, Any]:
         "empty_to_head": (args.empty_dsn, ("head",)),
         "rf09_to_manual_to_head": (args.rf09_dsn, ("RF09_FINALIZE", "RF12_MANUAL_GRANT", "head")),
         "manual_to_head": (args.manual_dsn, ("RF12_MANUAL_GRANT", "head")),
+        "runtime_harden_to_head": (args.runtime_harden_dsn, ("RF12_RUNTIME_HARDEN", "head")),
     }
     result: dict[str, Any] = {}
     for name, (dsn, revisions) in ladders.items():
@@ -129,7 +131,7 @@ def _migration_ladder(args: argparse.Namespace) -> dict[str, Any]:
         try:
             for revision in revisions:
                 _upgrade(dsn, revision)
-            result[name] = {"observed": True, "revisions": revisions, "final_head": "RF12_RUNTIME_HARDEN"}
+            result[name] = {"observed": True, "revisions": revisions, "final_head": EXPECTED_HEAD}
         except Exception as exc:
             result[name] = {"observed": False, "error": type(exc).__name__}
     return result
@@ -201,7 +203,7 @@ def _call_matrix(session: Session) -> dict[str, Any]:
     payment_id = UUID(payment["invocation"]["resource_id"])
     rows.append(execute("payment_reconciliation", runtime.reconcile_payment, "matrix-reconcile", payment_id=payment_id, state=PaymentState.CONFIRMED, observed_at=now,))
     rows.append(execute("manual_refund_reference", runtime.manual_refund_reference, "matrix-refund", payment_id=payment_id, reference="manual-ref-1", reason="operator review", reviewed_at=now))
-    rows.append(execute("active_beacon_slot", runtime.consume_usage, "matrix-beacon", counter_code="ACTIVE_BEACON_SLOT", window_start=now, window_end=end, requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", limit_value=1))
+    rows.append(execute("active_beacon_slot", runtime.consume_usage, "matrix-beacon", counter_code="ACTIVE_BEACON_SLOT", window_start=now, window_end=end, requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", current_active_beacon_count=0))
     rows.append(execute("scan_interval_window", runtime.consume_usage, "matrix-scan", counter_code="SCAN_INTERVAL_WINDOW", window_start=now, window_end=now + timedelta(minutes=5), requester="SCAN_ORCHESTRATION", source_owner="SCAN_ORCHESTRATION"))
     session.commit()
 
@@ -420,7 +422,7 @@ def _usage_policy_semantics(engine: Engine) -> tuple[dict[str, Any], str]:
     tariff_rows = {
         str(row["code"]): dict(row)
         for row in session.execute(text(
-            "SELECT code, price_minor, currency, min_interval_seconds, step_seconds, active_from, active_until "
+            "SELECT code, price_minor, currency, min_interval_seconds, step_seconds, active_beacon_limit, active_from, active_until "
             "FROM mayak.entitlement_tariff_definitions WHERE code IN ('FREE', 'BASIC') ORDER BY code"
         )).mappings()
     }
@@ -432,17 +434,20 @@ def _usage_policy_semantics(engine: Engine) -> tuple[dict[str, Any], str]:
     free_end = evaluation_at + timedelta(days=2)
     runtime.assign_access(session, facts.authorization_reference, tariff=TariffName.FREE, starts_at=free_start, ends_at=free_end, reason="free", idempotency_key="usage-free", target_account_id=account)
     session.commit()
-    first = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=evaluation_at, window_end=evaluation_at + timedelta(days=1), requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", limit_value=1, idempotency_key="usage-free-slot-1", target_account_id=account)
-    second = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=evaluation_at, window_end=evaluation_at + timedelta(days=1), requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", limit_value=1, idempotency_key="usage-free-slot-2", target_account_id=account)
+    first = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=evaluation_at, window_end=evaluation_at, requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", current_active_beacon_count=0, idempotency_key="usage-free-slot-1", target_account_id=account)
+    second = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=evaluation_at, window_end=evaluation_at, requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", current_active_beacon_count=1, idempotency_key="usage-free-slot-2", target_account_id=account)
+    caller_override = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=evaluation_at, window_end=evaluation_at, requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", current_active_beacon_count=0, limit_value=2, idempotency_key="usage-caller-limit-override", target_account_id=account)
     session.commit()
-    usage_rows = [{**dict(row), "window_start": _iso(row["window_start"]), "window_end": _iso(row["window_end"])} for row in session.execute(text("SELECT consumed, limit_value, window_start, window_end FROM mayak.entitlement_usage_counters WHERE account_id=:account AND counter_code='ACTIVE_BEACON_SLOT' AND window_start=:window_start"), {"account": account, "window_start": evaluation_at}).mappings()]
-    free = {"price_minor": free_authority["price_minor"], "currency": free_authority["currency"], "minimum": 180, "step": 180, "active_beacon_limit": 1, "interval_180_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=180).status.value == "ALLOWED", "interval_179_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=179).status.value == "ALLOWED", "interval_181_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=181).status.value == "ALLOWED", "active_beacon": {"first": first.model_dump(mode="json"), "second": second.model_dump(mode="json"), "usage_rows": usage_rows, "observed_count": len(usage_rows), "persisted_consumed": usage_rows[0]["consumed"] if len(usage_rows) == 1 else None, "persisted_limit": usage_rows[0]["limit_value"] if len(usage_rows) == 1 else None}}
+    usage_rows = [{**dict(row)} for row in session.execute(text("SELECT id FROM mayak.entitlement_usage_counters WHERE account_id=:account AND counter_code='ACTIVE_BEACON_SLOT'"), {"account": account}).mappings()]
+    free = {"price_minor": free_authority["price_minor"], "currency": free_authority["currency"], "minimum": 180, "step": 180, "active_beacon_limit": free_authority["active_beacon_limit"], "interval_180_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=180).status.value == "ALLOWED", "interval_179_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=179).status.value == "ALLOWED", "interval_181_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=181).status.value == "ALLOWED", "active_beacon": {"requester": "BEACON_MANAGEMENT", "source_owner": "BEACON_MANAGEMENT", "reset_window": False, "first": first.model_dump(mode="json"), "second": second.model_dump(mode="json"), "caller_limit_override": caller_override.model_dump(mode="json"), "usage_rows": usage_rows, "observed_count": 0}}
     runtime.revoke_access(session, facts.authorization_reference, grant_id=UUID(str(session.execute(text("SELECT id FROM mayak.entitlement_access_grants WHERE account_id=:account AND grant_kind='TARIFF' ORDER BY created_at DESC LIMIT 1"), {"account": account}).scalar_one())), reason="switch", idempotency_key="usage-revoke", target_account_id=account)
     active_basic_start = authority_at + timedelta(minutes=2)
     active_basic_end = evaluation_at + timedelta(days=2)
     runtime.assign_access(session, facts.authorization_reference, tariff=TariffName.BASIC, starts_at=active_basic_start, ends_at=active_basic_end, reason="basic", idempotency_key="usage-basic", target_account_id=account)
     session.commit()
-    active_basic = {"valid_from": _iso(active_basic_start), "valid_until": _iso(active_basic_end), "evaluation_at": _iso(evaluation_at), "interval_5_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=5).status.value == "ALLOWED", "interval_4_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=4).status.value == "ALLOWED", "interval_6_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=6).status.value == "ALLOWED"}
+    basic_four = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=evaluation_at, window_end=evaluation_at, requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", current_active_beacon_count=4, idempotency_key="usage-basic-slot-4", target_account_id=account)
+    basic_five = runtime.consume_usage(session, facts.authorization_reference, counter_code="ACTIVE_BEACON_SLOT", window_start=evaluation_at, window_end=evaluation_at, requester="BEACON_MANAGEMENT", source_owner="BEACON_MANAGEMENT", current_active_beacon_count=5, idempotency_key="usage-basic-slot-5", target_account_id=account)
+    active_basic = {"valid_from": _iso(active_basic_start), "valid_until": _iso(active_basic_end), "evaluation_at": _iso(evaluation_at), "interval_5_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=5).status.value == "ALLOWED", "interval_4_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=4).status.value == "ALLOWED", "interval_6_allowed": runtime.evaluate_effective(session, account, at=evaluation_at, interval_minutes=6).status.value == "ALLOWED", "active_beacon": {"count_4": basic_four.model_dump(mode="json"), "count_5": basic_five.model_dump(mode="json")}}
     active_basic_id = UUID(str(session.execute(text("SELECT id FROM mayak.entitlement_access_grants WHERE account_id=:account AND grant_kind='TARIFF' AND state='ACTIVE' ORDER BY created_at DESC LIMIT 1"), {"account": account}).scalar_one()))
     runtime.revoke_access(session, facts.authorization_reference, grant_id=active_basic_id, reason="expiry-fixture", idempotency_key="usage-expiry-revoke", target_account_id=account)
     session.commit()
@@ -462,12 +467,13 @@ def _usage_policy_semantics(engine: Engine) -> tuple[dict[str, Any], str]:
             "currency": row["currency"],
             "minimum_seconds": row["min_interval_seconds"],
             "step_seconds": row["step_seconds"],
+            "active_beacon_limit": row["active_beacon_limit"],
             "period": "1 month" if row["code"] == "BASIC" else None,
             "active_from": _iso(row["active_from"]),
         }
-        for row in session.execute(text("SELECT code, price_minor, currency, min_interval_seconds, step_seconds, active_from FROM mayak.entitlement_tariff_definitions WHERE code IN ('FREE','BASIC')")).mappings()
+        for row in session.execute(text("SELECT code, price_minor, currency, min_interval_seconds, step_seconds, active_beacon_limit, active_from FROM mayak.entitlement_tariff_definitions WHERE code IN ('FREE','BASIC')")).mappings()
     }
-    basic = {"price_minor": basic_authority["price_minor"], "currency": basic_authority["currency"], "minimum": 5, "step": 5, "numeric_beacon_limit_present": False, **active_basic}
+    basic = {"price_minor": basic_authority["price_minor"], "currency": basic_authority["currency"], "minimum": 5, "step": 5, "active_beacon_limit": basic_authority["active_beacon_limit"], **active_basic}
     session.close()
     return {"observation_source": "EntitlementsBillingRuntime production entitlement and usage authority", "scenario_id": "free-basic-usage-policy-matrix", "production_method": "EntitlementsBillingRuntime.consume_usage + evaluate_effective", "evaluation_at": _iso(evaluation_at), "free": {**free, "grant_interval": {"valid_from": _iso(free_start), "valid_until": _iso(free_end), "evaluation_at": _iso(evaluation_at)}}, "basic": basic, "tariff_definitions": tariff_values, "paid_expiry": {"expired_valid_from": _iso(expired_start), "expired_valid_until": _iso(expired_end), "assigned_valid_until_before_evaluation": expired_end <= evaluation_at, "pre_expiry_allowed": pre_expiry_eval.status.value == "ALLOWED", "effective_allowed": expired_eval.status.value == "ALLOWED", "payment_recorded": payment_result.state.value == "RECORDED", "post_payment_allowed": post_payment_eval.status.value == "ALLOWED", "outcome": expired_eval.model_dump(mode="json")}, "outcomes": [{"free": free, "basic": basic}], "counts": {"free_minimum": 180, "basic_minimum": 5, "free_active_beacon_observed": len(usage_rows)}, "bounded": True}, str(account)
 
@@ -582,7 +588,7 @@ def _cleanup(engine: Engine, account_ids: list[str]) -> dict[str, Any]:
 
 def _constraints(engine: Engine) -> dict[str, Any]:
     # Execute the physical invariant matrix against a real final-head database.
-    checks = ["grant_kind_allowed", "tariff_grant_fields_empty", "manual_grant_fields_present", "reason_nonempty", "valid_interval", "row_version_positive"]
+    checks = ["grant_kind_allowed", "tariff_grant_fields_empty", "manual_grant_fields_present", "reason_nonempty", "valid_interval", "row_version_positive", "active_beacon_limit_positive"]
     observed: list[dict[str, Any]] = []
     with engine.begin() as conn:
         account = conn.execute(text("SELECT id FROM mayak.identity_accounts LIMIT 1")).scalar_one()
@@ -609,6 +615,14 @@ def _constraints(engine: Engine) -> dict[str, Any]:
             "bad_interval": {"end": now},
             "bad_row_version": {"row_version": 0},
         }
+        savepoint = conn.begin_nested()
+        try:
+            conn.execute(text("UPDATE mayak.entitlement_tariff_definitions SET active_beacon_limit=0 WHERE code='BASIC'"))
+            savepoint.rollback()
+            observed.append({"case": "active_beacon_limit_positive", "rejected": False, "constraint": None})
+        except Exception:
+            savepoint.rollback()
+            observed.append({"case": "active_beacon_limit_positive", "rejected": True, "constraint": "active_beacon_limit_positive"})
         for label, overrides in cases.items():
             candidate = dict(values)
             candidate.update(overrides)
@@ -654,20 +668,26 @@ def _usage_policy_gate(usage: dict[str, Any]) -> bool:
         tariffs.get("FREE", {}).get("currency") == "RUB",
         tariffs.get("FREE", {}).get("minimum_seconds") == 10800,
         tariffs.get("FREE", {}).get("step_seconds") == 10800,
+        tariffs.get("FREE", {}).get("active_beacon_limit") == 1,
         tariffs.get("BASIC", {}).get("price_minor") == 99000,
         tariffs.get("BASIC", {}).get("currency") == "RUB",
         tariffs.get("BASIC", {}).get("minimum_seconds") == 300,
         tariffs.get("BASIC", {}).get("step_seconds") == 300,
+        tariffs.get("BASIC", {}).get("active_beacon_limit") == 5,
         tariffs.get("FREE", {}).get("active_from") is not None and tariffs.get("BASIC", {}).get("active_from") is not None,
         free.get("minimum") == 180 and free.get("step") == 180 and free.get("active_beacon_limit") == 1,
         free.get("interval_180_allowed") is True and free.get("interval_179_allowed") is False and free.get("interval_181_allowed") is False,
         str(active.get("first", {}).get("state", "")).upper() == "RECORDED",
         str(active.get("second", {}).get("state", "")).upper() == "REJECTED",
         active.get("second", {}).get("reason_code") == "USAGE_LIMIT_REACHED",
-        len(rows) == 1 and active.get("persisted_consumed") == 1 and active.get("persisted_limit") == 1,
+        len(rows) == 0 and active.get("observed_count") == 0,
         basic.get("minimum") == 5 and basic.get("step") == 5,
         basic.get("interval_5_allowed") is True and basic.get("interval_4_allowed") is False and basic.get("interval_6_allowed") is False,
-        "active_beacon_limit" not in basic and basic.get("numeric_beacon_limit_present") is False,
+        basic.get("active_beacon_limit") == 5,
+        basic.get("active_beacon", {}).get("count_4", {}).get("state") == "RECORDED" and basic.get("active_beacon", {}).get("count_5", {}).get("reason_code") == "USAGE_LIMIT_REACHED",
+        free.get("active_beacon", {}).get("first", {}).get("reason_code") == "ACTIVE_BEACON_SLOT_ALLOWED" and free.get("active_beacon", {}).get("second", {}).get("reason_code") == "USAGE_LIMIT_REACHED",
+        active.get("requester") == "BEACON_MANAGEMENT" and active.get("source_owner") == "BEACON_MANAGEMENT" and active.get("reset_window") is False,
+        active.get("caller_limit_override", {}).get("reason_code") == "CALLER_POLICY_AUTHORITY_FORBIDDEN",
         usage.get("paid_expiry", {}).get("pre_expiry_allowed") is True,
         usage.get("paid_expiry", {}).get("effective_allowed") is False,
         usage.get("paid_expiry", {}).get("payment_recorded") is True,
@@ -741,6 +761,7 @@ def produce(args: argparse.Namespace) -> dict[str, Any]:
         "build_input_identity": args.build_input_identity, "postgres": {"version": version[0], "major": int(str(version[1])[:2])},
         "alembic_head": head, "alembic_version_schema": version_schema,
         "historical_rf12_manual_grant_sha256": _sha(HISTORICAL),
+        "historical_rf12_runtime_harden_sha256": _sha(HISTORICAL_HARDEN),
         "rf09_digests": {str(p): _sha(p) for p in RF09},
         "gates": {name: False for name in ("migration_ladders", "metadata_parity", "physical_constraints", "production_command_matrix", "replay", "fingerprint_mismatch", "manual_access_same_key_concurrency", "tariff_assignment_same_key_concurrency", "concurrent_same_key_different_fingerprint_conflict", "payment_same_provider_same_account_duplicate", "payment_same_provider_cross_account_conflict", "manual_grant_rollback_retry", "second_rollback_retry", "manual_entitlement_semantics", "usage_policy_semantics", "payment_evidence_non_authority", "synthetic_database_cleanup", "docker_task_resource_cleanup", "post_cleanup_foreign_resource_equality", "credential_exposure")},
         "migration_ladders": ladders,
@@ -793,6 +814,7 @@ def main() -> int:
     parser.add_argument("--empty-dsn")
     parser.add_argument("--rf09-dsn")
     parser.add_argument("--manual-dsn")
+    parser.add_argument("--runtime-harden-dsn")
     parser.add_argument("--artifact", type=Path, required=True)
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument("--candidate-tree")

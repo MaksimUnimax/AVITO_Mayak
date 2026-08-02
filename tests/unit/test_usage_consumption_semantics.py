@@ -49,6 +49,7 @@ def _active_beacon_request(
         current_tariff_definition=tariff_definition,
         active_beacon_slot_evidence=ActiveBeaconSlotEvidence(
             snapshot_reference="beacon-snapshot-eb06-001",
+            current_active_beacon_count=active_beacon_count,
             snapshot_active_beacon_count=active_beacon_count,
             source_fact_reference="beacon-source-eb06-001"
             if source_fact_active_beacon_count is not None
@@ -127,12 +128,12 @@ def test_eb06_usage_counter_families_and_blocked_families_are_represented_001() 
     assert BEACON_MANAGEMENT_MODULE_LABEL == "Beacon Management"
     assert SCAN_ORCHESTRATION_MODULE_LABEL == "Scan Orchestration"
     assert FREE_TARIFF_POLICY.active_beacon_limit == ACTIVE_BEACON_LIMIT_ONE
-    assert BASIC_TARIFF_POLICY.active_beacon_limit is None
+    assert BASIC_TARIFF_POLICY.active_beacon_limit == 5
 
 
 def test_eb06_usage_active_beacon_slot_free_accepted_001() -> None:
     request = _active_beacon_request(
-        active_beacon_count=1,
+        active_beacon_count=0,
         idempotency_key=IdempotencyKey(value="idem-eb06-active-free-001"),
     )
     decision = evaluate_usage_consumption(request)
@@ -140,20 +141,20 @@ def test_eb06_usage_active_beacon_slot_free_accepted_001() -> None:
     assert decision.outcome is UsageConsumptionOutcome.ACCEPTED
     assert decision.reason_code == "ACTIVE_BEACON_SLOT_ACCEPTED"
     assert decision.active_beacon_limit == 1
-    assert decision.active_beacon_count == 1
+    assert decision.active_beacon_count == 0
 
 
 def test_eb06_usage_active_beacon_slot_free_denied_001() -> None:
     request = _active_beacon_request(
-        active_beacon_count=2,
+        active_beacon_count=1,
         idempotency_key=IdempotencyKey(value="idem-eb06-active-free-002"),
     )
     decision = evaluate_usage_consumption(request)
 
     assert decision.outcome is UsageConsumptionOutcome.DENIED
-    assert decision.reason_code == "ACTIVE_BEACON_SLOT_EXCEEDED"
+    assert decision.reason_code == "USAGE_LIMIT_REACHED"
     assert decision.active_beacon_limit == 1
-    assert decision.active_beacon_count == 2
+    assert decision.active_beacon_count == 1
 
 
 def test_eb06_usage_active_beacon_slot_basic_limit_gated_001() -> None:
@@ -164,8 +165,8 @@ def test_eb06_usage_active_beacon_slot_basic_limit_gated_001() -> None:
     )
     decision = evaluate_usage_consumption(request)
 
-    assert decision.outcome is UsageConsumptionOutcome.BLOCKED
-    assert decision.reason_code == "ACTIVE_BEACON_LIMIT_GATED"
+    assert decision.outcome is UsageConsumptionOutcome.ACCEPTED
+    assert decision.reason_code == "ACTIVE_BEACON_SLOT_ACCEPTED"
     assert decision.current_tariff_name == "BASIC"
 
 
@@ -382,5 +383,4 @@ def test_eb06_od010_od011_od013_remain_gated_001() -> None:
 
     assert blocked_decision.outcome is UsageConsumptionOutcome.BLOCKED
     assert blocked_decision.reason_code == "OD011_SAFETY_REQUIRED"
-    assert BASIC_TARIFF_POLICY.active_beacon_limit is None
-
+    assert BASIC_TARIFF_POLICY.active_beacon_limit == 5

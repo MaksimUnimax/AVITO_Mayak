@@ -182,13 +182,14 @@ def _tariff_id(code: str, version: int) -> UUID:
     return uuid5(_TARIFF_NAMESPACE, f"{code}:{version}")
 
 
-def _policy_values(code: TariffName) -> tuple[int, int, int, str]:
+def _policy_values(code: TariffName) -> tuple[int, int, int, str, int]:
     policy = FREE_TARIFF_POLICY if code is TariffName.FREE else BASIC_TARIFF_POLICY
     return (
         policy.price_rub * 100,
         policy.scan_interval_floor_minutes * 60,
         policy.scan_interval_step_minutes * 60,
         "RUB",
+        policy.active_beacon_limit,
     )
 
 
@@ -376,7 +377,7 @@ class EntitlementsBillingRuntime:
                 audit_reference=authority.audit_reference,
             )
         for code in (TariffName.FREE, TariffName.BASIC):
-            price, floor, step, currency = _policy_values(code)
+            price, floor, step, currency, active_limit = _policy_values(code)
             tariff_id = _tariff_id(code.value, 1)
             existing = (
                 session.execute(
@@ -385,12 +386,14 @@ class EntitlementsBillingRuntime:
                         _TARIFFS.c.price_minor,
                         _TARIFFS.c.min_interval_seconds,
                         _TARIFFS.c.step_seconds,
+                        _TARIFFS.c.currency,
+                        _TARIFFS.c.active_beacon_limit,
                     ).where(_TARIFFS.c.code == code.value, _TARIFFS.c.version == 1)
                 )
                 .mappings()
                 .one_or_none()
             )
-            if existing is not None and tuple(existing.values())[1:] != (price, floor, step):
+            if existing is not None and tuple(existing.values())[1:] != (price, floor, step, currency, active_limit):
                 return CommandResult(
                     state=RuntimeState.CONFLICT,
                     reason_code="TARIFF_AUTHORITY_CONFLICT",
@@ -406,6 +409,7 @@ class EntitlementsBillingRuntime:
                         currency=currency,
                         min_interval_seconds=floor,
                         step_seconds=step,
+                        active_beacon_limit=active_limit,
                         active_from=effective_at,
                         active_until=None,
                         created_at=effective_at,
@@ -812,6 +816,23 @@ class EntitlementsBillingRuntime:
                 user_choice_required=True,
             )
         policy = FREE_TARIFF_POLICY if tariff is TariffName.FREE else BASIC_TARIFF_POLICY
+        if active_beacon_count is not None and active_beacon_count >= policy.active_beacon_limit:
+            if tariff is TariffName.FREE:
+                return EffectiveEntitlement(
+                    status=EntitlementDecisionStatus.USER_CHOICE_REQUIRED,
+                    account_id=account_id,
+                    tariff=tariff,
+                    grant_id=row["id"],
+                    provenance=("FREE_ONE_BEACON_LIMIT", "NO_AUTOMATIC_SELECTION"),
+                    user_choice_required=True,
+                )
+            return EffectiveEntitlement(
+                status=EntitlementDecisionStatus.DENIED,
+                account_id=account_id,
+                tariff=tariff,
+                grant_id=row["id"],
+                provenance=("BASIC_ACTIVE_BEACON_LIMIT_REACHED", "PERSISTED_TARIFF_AUTHORITY"),
+            )
         if interval_minutes is not None and (
             interval_minutes < policy.scan_interval_floor_minutes
             or (interval_minutes - policy.scan_interval_floor_minutes)
@@ -1169,6 +1190,7 @@ class EntitlementsBillingRuntime:
         idempotency_key: str,
         requester: str = "",
         source_owner: str = "",
+        current_active_beacon_count: int | None = None,
         target_account_id: UUID,
     ) -> CommandResult:
         if counter_code not in {"ACTIVE_BEACON_SLOT", "SCAN_INTERVAL_WINDOW"}:
@@ -1190,7 +1212,7 @@ class EntitlementsBillingRuntime:
                 reason_code="USAGE_SOURCE_OWNER_REQUIRED",
                 audit_reference=authority.audit_reference,
             )
-        if window_end <= window_start:
+        if counter_code != "ACTIVE_BEACON_SLOT" and window_end <= window_start:
             raise ValueError("closed window required")
         fp = _fingerprint(
             (
@@ -1201,6 +1223,7 @@ class EntitlementsBillingRuntime:
                 window_end,
                 requester,
                 source_owner,
+                current_active_beacon_count,
             )
         )
         state, resource = self._terminal(session, idempotency_key, fp)
@@ -1221,19 +1244,37 @@ class EntitlementsBillingRuntime:
         effective = self.evaluate_effective(session, target_account_id, at=window_start)
         if effective.tariff is TariffName.BASIC:
             tariff = self._tariff(session, TariffName.BASIC, window_start)
-        derived_limit = (
-            1
-            if counter_code == "ACTIVE_BEACON_SLOT" and effective.tariff is TariffName.FREE
-            else (None if counter_code == "ACTIVE_BEACON_SLOT" else 1)
-        )
-        if counter_code == "ACTIVE_BEACON_SLOT" and effective.tariff is TariffName.BASIC:
+        if counter_code == "ACTIVE_BEACON_SLOT":
+            if (
+                not isinstance(current_active_beacon_count, int)
+                or isinstance(current_active_beacon_count, bool)
+                or current_active_beacon_count < 0
+            ):
+                return CommandResult(
+                    state=RuntimeState.REJECTED,
+                    reason_code="ACTIVE_BEACON_COUNT_REQUIRED",
+                    audit_reference=authority.audit_reference,
+                )
+            if limit_value is not None and limit_value != int(tariff["active_beacon_limit"]):
+                return CommandResult(
+                    state=RuntimeState.REJECTED,
+                    reason_code="CALLER_POLICY_AUTHORITY_FORBIDDEN",
+                    audit_reference=authority.audit_reference,
+                )
+            if current_active_beacon_count >= int(tariff["active_beacon_limit"]):
+                return CommandResult(
+                    state=RuntimeState.REJECTED,
+                    reason_code="USAGE_LIMIT_REACHED",
+                    audit_reference=authority.audit_reference,
+                )
             result = CommandResult(
                 state=RuntimeState.RECORDED,
-                reason_code="BASIC_BEACON_LIMIT_UNSPECIFIED",
+                reason_code="ACTIVE_BEACON_SLOT_ALLOWED",
                 audit_reference=authority.audit_reference,
             )
             self._record_terminal(session, idempotency_key, fp, result)
             return result
+        derived_limit = 1
         if counter_code == "SCAN_INTERVAL_WINDOW":
             if window_end - window_start < timedelta(seconds=int(tariff["min_interval_seconds"])):
                 return CommandResult(

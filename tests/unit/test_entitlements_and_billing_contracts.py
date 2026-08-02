@@ -43,7 +43,7 @@ def test_approved_tariff_values_are_exact_and_versioned() -> None:
     assert BASIC_TARIFF_POLICY.billing_period_label == "1 month"
     assert BASIC_TARIFF_POLICY.scan_interval_floor_minutes == 5
     assert BASIC_TARIFF_POLICY.scan_interval_step_minutes == 5
-    assert BASIC_TARIFF_POLICY.active_beacon_limit is None
+    assert BASIC_TARIFF_POLICY.active_beacon_limit == 5
     assert BASIC_TARIFF_POLICY.feature_notes is None
     assert BASIC_TARIFF_POLICY.mechanism_notes is None
 
