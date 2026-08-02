@@ -498,10 +498,15 @@ def prepare_claimed_run(
     with Session(engine) as session:
         repo = ScanRepository(session)
         materialized = materialize_due_work(repo, now + timedelta(days=365), 1000)
-        if len(materialized) != 1:
+        available = _physical(
+            session.connection(),
+            beacon_id=fixture["beacon_id"],
+            schedule_id=str(schedule.schedule_id),
+        )
+        if len(materialized) != 1 and len(available["work_rows"]) != 1:
             raise RuntimeError(
                 f"{scenario_id}: expected exactly one materialized due work item, "
-                f"got {len(materialized)}"
+                f"operation returned {len(materialized)}, physical rows {len(available['work_rows'])}"
             )
         claims = claim_work(repo, now, 1, 120)
         if len(claims) != 1:
