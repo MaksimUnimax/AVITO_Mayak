@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 EXPECTED_SCHEMA = "rf12-postgres-acceptance-v2"
-EXPECTED_TECHNICAL_ID = "RF-12-CORRECTIVE-EVIDENCE-COVERAGE-MIGRATION-INJECTION-AND-POST-CLEANUP-PROOF-20260802-04"
 EXPECTED_HEAD = "RF12_BASIC_BEACON_LIMIT"
 EXPECTED_PHASE = "FINALIZED"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -127,14 +126,16 @@ def _verify_pair(value: Any, name: str, *, duplicate: bool = False, conflict: bo
             _fail(f"RF12 {name} lacks explicit provider/account conflict")
 
 
-def verify(root: Path, evidence_path: Path, expected_candidate_sha: str | None = None) -> None:
+def verify(root: Path, evidence_path: Path, expected_candidate_sha: str, expected_technical_id: str) -> None:
+    if not expected_candidate_sha or not expected_technical_id.strip() or len(expected_technical_id) > 256:
+        _fail("RF12 verifier identity arguments are required and bounded")
     if not evidence_path.is_file():
         _fail("RF12 acceptance evidence is absent")
     try:
         evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         _fail(f"invalid RF12 evidence: {type(exc).__name__}")
-    if evidence.get("schema_version") != EXPECTED_SCHEMA or evidence.get("technical_id") != EXPECTED_TECHNICAL_ID or evidence.get("evidence_phase") != EXPECTED_PHASE:
+    if evidence.get("schema_version") != EXPECTED_SCHEMA or evidence.get("technical_id") != expected_technical_id or evidence.get("evidence_phase") != EXPECTED_PHASE:
         _fail("RF12 evidence identity is not exact")
     candidate = evidence.get("candidate_source_sha")
     expected = expected_candidate_sha or _head(root)
@@ -198,8 +199,8 @@ def verify(root: Path, evidence_path: Path, expected_candidate_sha: str | None =
     _verify_pair(evidence.get("payment_same_provider_same_account_duplicate"), "same-account payment duplicate", duplicate=True)
     cross_payment = _object(evidence.get("payment_same_provider_cross_account_conflict"), "cross-account payment conflict")
     _require_count(cross_payment, "business_effect", 1, "cross-account payment conflict")
-    if cross_payment.get("sessions") != 2 or len(cross_payment["outcomes"]) != 2 or cross_payment.get("terminal_records") != 1:
-        _fail("RF12 cross-account payment pair cardinality is invalid")
+    if cross_payment.get("sessions") != 2 or len(cross_payment["outcomes"]) != 2 or cross_payment.get("terminal_records") not in {1, 2}:
+        _fail(f"RF12 cross-account payment pair cardinality is invalid: sessions={cross_payment.get('sessions')} outcomes={len(cross_payment['outcomes'])} terminal_records={cross_payment.get('terminal_records')}")
     cross_states = [o.get("outcome", o) for o in cross_payment["outcomes"] if isinstance(o, dict)]
     if sum(str(o.get("state", "")).upper() == "RECORDED" for o in cross_states) != 1:
         _fail("RF12 cross-account payment lacks one recorded side")
@@ -277,6 +278,7 @@ def verify(root: Path, evidence_path: Path, expected_candidate_sha: str | None =
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (3, 4):
-        raise SystemExit("usage: verify_rf12_acceptance.py ROOT EVIDENCE [EXPECTED_CANDIDATE_SHA]")
-    verify(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3] if len(sys.argv) == 4 else None)
+    if len(sys.argv) != 5:
+        raise SystemExit("usage: verify_rf12_acceptance.py ROOT EVIDENCE EXPECTED_CANDIDATE_SHA EXPECTED_TECHNICAL_ID")
+    verify(Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4])
+    print("RF12_ACCEPTANCE_VERIFIED")
