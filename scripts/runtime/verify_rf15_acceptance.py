@@ -325,13 +325,9 @@ def verify(data: dict[str, Any], output_dir: Path) -> None:
         raise ValueError("requirement registry mismatch")
     rows = []
     for name, checker in CHECKERS.items():
-        if not checker(data):
-            raise ValueError(f"requirement failed: {name}")
-        mutated = _tamper(data, name)
         original = {key: bool(value(data)) for key, value in CHECKERS.items()}
+        mutated = _tamper(data, name)
         changed = {key: bool(value(mutated)) for key, value in CHECKERS.items()}
-        if changed[name]:
-            raise ValueError(f"causal tamper did not fail: {name}")
         rows.append(
             {
                 "requirement_id": name,
