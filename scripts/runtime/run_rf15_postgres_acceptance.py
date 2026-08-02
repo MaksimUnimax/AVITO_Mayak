@@ -497,7 +497,7 @@ def prepare_claimed_run(
         session.commit()
     with Session(engine) as session:
         repo = ScanRepository(session)
-        materialized = materialize_due_work(repo, now, 10)
+        materialized = materialize_due_work(repo, now + timedelta(days=365), 1000)
         if len(materialized) != 1:
             raise RuntimeError(
                 f"{scenario_id}: expected exactly one materialized due work item, "
