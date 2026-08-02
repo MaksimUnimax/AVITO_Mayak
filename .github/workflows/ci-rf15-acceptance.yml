@@ -58,6 +58,7 @@ jobs:
       - run: uv run pytest -q tests/architecture/test_import_boundaries.py
       - run: |
           set -o pipefail
+          set +e
           uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_DSN" --output rf15-evidence.json 2>&1 | tee rf15-producer.log
           producer_status=${PIPESTATUS[0]}
           if [ "$producer_status" -ne 0 ]; then
@@ -65,6 +66,7 @@ jobs:
             echo "::error title=RF15 producer diagnostic::$producer_message"
             exit "$producer_status"
           fi
+          set -e
       - run: |
           uv run python scripts/runtime/verify_rf15_acceptance.py rf15-evidence.json > verifier.stdout 2> verifier.stderr
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
