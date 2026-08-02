@@ -1,0 +1,42 @@
+name: RF15 PostgreSQL acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  rf15:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: mayak
+          POSTGRES_DB: mayak
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      MAYAK_DATABASE_URL: postgresql+psycopg://mayak:mayak@localhost:5432/mayak
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14.6'}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: '0.11.31'}
+      - run: uv sync --frozen
+      - run: uv run alembic upgrade head
+      - run: uv run ruff check src/mayak/modules/scan_orchestration scripts/runtime
+      - run: uv run mypy src/mayak/modules/scan_orchestration
+      - run: uv run pytest -q tests/runtime/test_scan_schema.py tests/architecture/test_import_boundaries.py
+      - run: uv run python scripts/runtime/run_rf15_postgres_acceptance.py --output rf15-evidence.json
+      - run: |
+          uv run python scripts/runtime/verify_rf15_acceptance.py rf15-evidence.json > verifier.stdout 2> verifier.stderr
+          test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
+          test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stderr || true)" -eq 0
+      - uses: actions/upload-artifact@v4
+        with: {name: rf15-postgres-evidence, path: rf15-evidence.json}
