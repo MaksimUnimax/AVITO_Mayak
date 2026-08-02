@@ -32,7 +32,7 @@ REQUIREMENTS: dict[str, tuple[str, str]] = {
     "concurrent_single_row": ("persistence.concurrency", "physical_rows"),
     "concurrent_same_effect": ("persistence.concurrency", "same_effect"),
     "snapshot_bound": ("persistence", "snapshot_bytes"),
-    "raw_payload_blocked": ("runtime.persistence", "raw_payload_rejected"),
+    "raw_payload_blocked": ("persistence", "raw_payload_rejected"),
     "rollback_proof": ("persistence", "rollback_proven"),
     "replay_uniqueness": ("persistence", "replayed"),
 }
