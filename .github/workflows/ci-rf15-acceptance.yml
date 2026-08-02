@@ -47,7 +47,7 @@ jobs:
           import os
           engine = create_engine(os.environ["RF15_DSN"])
           cfg = Config("alembic.ini")
-          with engine.connect() as connection:
+          with engine.begin() as connection:
               cfg.attributes["connection"] = connection
               command.upgrade(cfg, "head")
           PY

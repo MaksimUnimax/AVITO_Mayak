@@ -75,8 +75,10 @@ def main() -> int:
             version = str(connection.execute(text("select version()")).scalar_one())
             version_schema = connection.execute(
                 text(
-                    "select schemaname from pg_catalog.pg_tables "
-                    "where tablename = 'alembic_version' order by schemaname limit 1"
+                    "select n.nspname from pg_catalog.pg_class c "
+                    "join pg_catalog.pg_namespace n on n.oid = c.relnamespace "
+                    "where c.relname = 'alembic_version' "
+                    "order by n.nspname limit 1"
                 )
             ).scalar_one()
             head = str(
