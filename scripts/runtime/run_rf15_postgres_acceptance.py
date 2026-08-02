@@ -791,8 +791,8 @@ def scenario_restart_durability(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="restart")
     terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-restart")
     engine = connection.engine
+    dsn = str(engine.url)
     engine.dispose()
-    dsn = os.environ.get("MAYAK_DATABASE_URL") or os.environ["RF15_DSN"]
     fresh_engine = create_engine(dsn, future=True)
     try:
         with Session(fresh_engine) as session:
