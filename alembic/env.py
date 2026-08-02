@@ -48,10 +48,10 @@ def run_migrations_online() -> None:
             context.configure(connection=injected, **_configure_kwargs())
             with context.begin_transaction():
                 context.run_migrations()
-            # The injected connection is owned by the hosted migration
-            # boundary; commit the Alembic DDL/version marker before the
-            # serializer releases its advisory lock.
-            injected.commit()
+                # The injected connection is owned by the hosted migration
+                # boundary; commit the Alembic DDL/version marker before the
+                # serializer releases its advisory lock.
+                injected.commit()
         return
     engine = create_migration_engine()
     try:
