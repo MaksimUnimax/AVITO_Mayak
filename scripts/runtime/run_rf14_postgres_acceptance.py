@@ -352,13 +352,22 @@ def main() -> int:
         # attempted resolution.  No case is represented by a declared result.
         dispatch_cases = []
         dispatch_inputs = {
-            "source_identity_mismatch": replace(trusted_source, source_reference_id="wrong-source"),
-            "provenance_mismatch": replace(trusted_source, beacon_source_reference="wrong-provenance"),
-            "profile_identity_version_mismatch": replace(trusted_profile, profile_version="wrong-version", semantic_version="wrong-version"),
-            "authority_proof_mismatch": trusted_source,
-            "invalid_final_target": trusted_source,
+            "source_identity_mismatch": (
+                replace(trusted_source, source_reference_id="wrong-source"),
+                trusted_profile,
+            ),
+            "provenance_mismatch": (
+                replace(trusted_source, beacon_source_reference="wrong-provenance"),
+                trusted_profile,
+            ),
+            "profile_identity_version_mismatch": (
+                trusted_source,
+                replace(trusted_profile, profile_version="wrong-version", semantic_version="wrong-version"),
+            ),
+            "authority_proof_mismatch": (trusted_source, trusted_profile),
+            "invalid_final_target": (trusted_source, trusted_profile),
         }
-        for scenario_id, attempted_source in dispatch_inputs.items():
+        for scenario_id, (attempted_source, attempted_profile) in dispatch_inputs.items():
             scenario_calls = 0
 
             def scenario_handler(request: httpx.Request) -> httpx.Response:
@@ -370,17 +379,14 @@ def main() -> int:
                 enabled=True, transport=httpx.MockTransport(scenario_handler), authority=TrustedDispatchAuthority(())
             )
             before = scenario_calls
-            result = adapter.fetch(
-                attempted_source,
-                profile=(dispatch_inputs[scenario_id] if scenario_id == "profile_identity_version_mismatch" else trusted_profile),
-            )
+            result = adapter.fetch(attempted_source, profile=attempted_profile)
             after = scenario_calls
             dispatch_cases.append({
                 "scenario_id": scenario_id,
-                "input_source_reference_id": attempted_source.source_reference.source_reference_id,
+                "input_source_reference_id": attempted_source.source_reference_id,
                 "input_provenance_reference": attempted_source.beacon_source_reference,
                 "input_profile_id": trusted_profile.profile_id,
-                "input_profile_version": getattr(dispatch_inputs[scenario_id], "profile_version", trusted_profile.profile_version),
+                "input_profile_version": attempted_profile.profile_version,
                 "authority_binding_identity": "rf14-authority",
                 "proof_identity": "rf14-proof",
                 "resolved_target": None,
