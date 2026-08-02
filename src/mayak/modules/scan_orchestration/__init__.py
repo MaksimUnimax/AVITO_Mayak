@@ -16,13 +16,6 @@ from .contracts import (
     ScheduleResult,
     WorkClaim,
 )
-from .services import (
-    ScheduleService,
-    claim_work,
-    commit_comparison,
-    materialize_due_work,
-    start_run,
-)
 
 MODULE_ID = SCAN_ORCHESTRATION_AND_LISTING_STATE_MODULE_ID
 
@@ -39,10 +32,5 @@ __all__ = [
     "RunResult",
     "ScheduleCommand",
     "ScheduleResult",
-    "ScheduleService",
     "WorkClaim",
-    "claim_work",
-    "commit_comparison",
-    "materialize_due_work",
-    "start_run",
 ]
