@@ -90,6 +90,7 @@ def test_canonical_order_and_global_shape() -> None:
                 "id",
                 "account_id",
                 "name",
+                "source_url",
                 "current_revision_no",
                 "current_revision_id",
                 "state",
@@ -103,7 +104,14 @@ def test_canonical_order_and_global_shape() -> None:
             (
                 "beacon_id",
                 "revision_no",
+                "revision_id",
                 "source_url",
+                "snapshot_id",
+                "parser_outcome_status",
+                "accepted_as_clean",
+                "parser_evidence_reference",
+                "unsupported_parameters",
+                "warning_codes",
                 "filter_candidate",
                 "accepted_filter",
                 "created_by_account_id",
@@ -113,7 +121,11 @@ def test_canonical_order_and_global_shape() -> None:
         ),
         (
             "beacon_filter_overrides",
-            ("id", "beacon_id", "revision_no", "field_code", "value", "created_at", "row_version"),
+            (
+                "id", "beacon_id", "revision_no", "field_code", "value",
+                "parser_evidence_reference", "override_evidence_reference", "created_at",
+                "row_version",
+            ),
         ),
         (
             "beacon_lifecycle_events",
@@ -224,8 +236,8 @@ def test_types_defaults_nullability_and_no_current_revision_fk() -> None:
 
 def test_immediate_fks_and_checks() -> None:
     tables = register_beacon_tables(fresh())
-    assert sum(len(table.foreign_key_constraints) for table in tables) == 8
-    assert [len(table.foreign_key_constraints) for table in tables] == [2, 3, 1, 2]
+    assert sum(len(table.foreign_key_constraints) for table in tables) == 9
+    assert [len(table.foreign_key_constraints) for table in tables] == [3, 3, 1, 2]
     assert all(
         fk.ondelete == "RESTRICT" for table in tables for fk in table.foreign_key_constraints
     )
@@ -237,7 +249,7 @@ def test_immediate_fks_and_checks() -> None:
     )
     for fragment in (
         "btrim(name)",
-        "current_revision_no > 0",
+        "current_revision_no IS NULL OR current_revision_no > 0",
         "filter_candidate IS NULL",
         "accepted_filter",
         "octet_length(value",
