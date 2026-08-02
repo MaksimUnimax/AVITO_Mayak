@@ -44,12 +44,25 @@ jobs:
           psql postgresql://rf13@127.0.0.1:5432/rf13_prior -v ON_ERROR_STOP=1 -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration"
       - run: |
           mkdir -p ci-evidence/rf13
+          set +e
           uv run python scripts/runtime/run_rf13_postgres_acceptance.py \
             --dsn postgresql+psycopg://mayak_migration:rf13migration@127.0.0.1:5432/rf13 \
             --prior-dsn postgresql+psycopg://mayak_migration:rf13migration@127.0.0.1:5432/rf13_prior \
             --output ci-evidence/rf13/acceptance.json \
             --technical-id "$RF13_TECHNICAL_ID" \
-            --candidate-sha "${{ github.sha }}"
+            --candidate-sha "${{ github.sha }}" \
+            >ci-evidence/rf13/producer.stdout \
+            2>ci-evidence/rf13/producer.stderr
+          producer_status=$?
+          cat ci-evidence/rf13/producer.stdout
+          cat ci-evidence/rf13/producer.stderr >&2
+          if [ "$producer_status" -ne 0 ]; then
+            while IFS= read -r line; do
+              safe_line=$(printf '%s' "$line" | sed -E 's#(postgresql\+psycopg://[^:]+:)[^@]+@#\1***@#g')
+              printf '::error file=scripts/runtime/run_rf13_postgres_acceptance.py::%s\n' "$safe_line"
+            done <ci-evidence/rf13/producer.stderr
+            exit "$producer_status"
+          fi
       - name: Independent fail-closed verifier
         run: |
           set -o pipefail
