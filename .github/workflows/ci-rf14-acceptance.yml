@@ -2,7 +2,7 @@ name: RF-14 Hosted PostgreSQL Acceptance
 
 on:
   push:
-    branches: ["rf14-acceptance/**"]
+    branches: [main, "rf14-*"]
   workflow_dispatch:
 
 permissions:
@@ -11,17 +11,17 @@ permissions:
 env:
   UV_NO_SYSTEM_CONFIG: "1"
   UV_PROJECT_ENVIRONMENT: .venv
-  RF14_TECHNICAL_ID: RF-14-AVITO-PARSER-ADAPTER-RUNTIME-POSTGRES-20260802-01
+  RF14_TECHNICAL_ID: RF-14-AVITO-PARSER-AUTHORITY-BEHAVIORAL-ACCEPTANCE-20260802-09
 
 jobs:
   rf14-postgres:
     runs-on: ubuntu-latest
+    container: ghcr.io/catthehacker/ubuntu:act-latest
     timeout-minutes: 45
     services:
       postgres:
         image: postgres:18-bookworm
         env: {POSTGRES_PASSWORD: rf14, POSTGRES_USER: rf14, POSTGRES_DB: rf14}
-        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U rf14 -d rf14"
           --health-interval 5s --health-timeout 5s --health-retries 20
@@ -38,7 +38,7 @@ jobs:
       - name: Create migration boundary
         env: {PGPASSWORD: rf14}
         run: |
-          psql postgresql://rf14@127.0.0.1:5432/rf14 -v ON_ERROR_STOP=1 \
+          psql postgresql://rf14@postgres:5432/rf14 -v ON_ERROR_STOP=1 \
             -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf14migration'" \
             -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf14application'" \
             -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration"
@@ -48,7 +48,7 @@ jobs:
           mkdir -p ci-evidence/rf14
           set +e
           uv run python scripts/runtime/run_rf14_postgres_acceptance.py \
-            --dsn postgresql+psycopg://mayak_migration:rf14migration@127.0.0.1:5432/rf14 \
+            --dsn postgresql+psycopg://mayak_migration:rf14migration@postgres:5432/rf14 \
             --output ci-evidence/rf14/acceptance.json \
             --technical-id "$RF14_TECHNICAL_ID" --candidate-sha "${{ github.sha }}" \
             >ci-evidence/rf14/producer.stdout 2>ci-evidence/rf14/producer.stderr
@@ -63,6 +63,8 @@ jobs:
       - name: Verify raw observations independently
         run: |
           if ! uv run python scripts/runtime/verify_rf14_acceptance.py . ci-evidence/rf14/acceptance.json "${{ github.sha }}" \
+            --tamper-output ci-evidence/rf14/tamper-matrix.json \
+            --map-output ci-evidence/rf14/requirement-map.json \
             >ci-evidence/rf14/verifier.stdout 2>ci-evidence/rf14/verifier.stderr; then
             error_line=$(tail -n 5 ci-evidence/rf14/verifier.stderr | tr "\n" " " | cut -c1-1800)
             echo "::error file=scripts/runtime/verify_rf14_acceptance.py::$error_line"

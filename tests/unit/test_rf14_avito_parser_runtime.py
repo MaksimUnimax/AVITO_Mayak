@@ -8,7 +8,6 @@ from mayak.modules.avito_parser_adapter import (
     AvitoParserRuntime,
     CompatibilityProfileAuthorityClass,
     HttpxLiveAdapter,
-    LiveAuthorizationGrant,
     NormalizedListingSnapshot,
     ParserOutcomeStatus,
     ParserSourceReference,
@@ -17,6 +16,8 @@ from mayak.modules.avito_parser_adapter import (
     SyntheticParserProvider,
     SyntheticScenario,
     TransportOutcomeStatus,
+    TrustedDispatchAuthority,
+    TrustedDispatchBinding,
 )
 
 
@@ -88,15 +89,20 @@ def test_authorized_fake_httpx_requires_current_profile_and_accepts_proven_empty
         profile, authority_class=CompatibilityProfileAuthorityClass.PROOF_GATED
     )
 
-    class TestAuthority:
-        def issue(self, candidate):
-            return LiveAuthorizationGrant("test-authority", candidate.profile_id)
+    source = ParserSourceReference(
+        "test-source", SourceReferenceKind.SAFE_REFERENCE, "beacon-source", "https://caller.invalid"
+    )
+    authority = TrustedDispatchAuthority((TrustedDispatchBinding(
+        source.source_reference_id, source.beacon_source_reference, profile.profile_id,
+        profile.profile_version, "test-authority", "test-proof", "https://synthetic.invalid/search",
+        ("EMPTY_WITH_PROOF",),
+    ),))
 
     adapter = HttpxLiveAdapter(
-        enabled=True, transport=httpx.MockTransport(handler), authority=TestAuthority()
+        enabled=True, transport=httpx.MockTransport(handler), authority=authority
     )
     classification = adapter.fetch(
-        ParserSourceReference("test-source", SourceReferenceKind.SAFE_REFERENCE, "beacon-source", "https://synthetic.invalid/search"),
+        source,
         profile=profile,
     )
     assert classification.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
@@ -121,10 +127,6 @@ def test_httpx_restriction_and_malformed_are_not_empty_success() -> None:
             profile, authority_class=CompatibilityProfileAuthorityClass.PROOF_GATED
         )
 
-        class TestAuthority:
-            def issue(self, candidate):
-                return LiveAuthorizationGrant("test-authority", candidate.profile_id)
-
         adapter = HttpxLiveAdapter(
             enabled=True,
             transport=httpx.MockTransport(
@@ -132,7 +134,10 @@ def test_httpx_restriction_and_malformed_are_not_empty_success() -> None:
                     status_code, content=body
                 )
             ),
-            authority=TestAuthority(),
+            authority=TrustedDispatchAuthority((TrustedDispatchBinding(
+                "test-source", "beacon-source", profile.profile_id, profile.profile_version,
+                "test-authority", "test-proof", "https://synthetic.invalid", ("EMPTY_WITH_PROOF",),
+            ),)),
         )
         result = adapter.fetch(
             ParserSourceReference(

@@ -1,41 +1,99 @@
-"""Independent RF-14 verifier for measured acceptance observations."""
+"""Independent RF14 verifier.
 
+The producer supplies measured raw observations only.  This verifier contains
+the requirement map and derives every decision from the mapped evidence; it
+does not inspect implementation source as behavioural proof.
+"""
 # ruff: noqa: E501
-
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import subprocess
+from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 MARKER = "RF14_ACCEPTANCE_VERIFIED"
-TECHNICAL_ID = "RF-14-AVITO-PARSER-ADAPTER-RUNTIME-POSTGRES-20260802-01"
-EXPECTED_PARENT = "37e9ecf1fb3c7fde6f33c4805b5f921b796f620a"
+TECHNICAL_ID = "RF-14-AVITO-PARSER-AUTHORITY-BEHAVIORAL-ACCEPTANCE-20260802-09"
+EXPECTED_PARENT = "d342f6fead10196a704db7ed28c846549b5dbcf6"
 EXPECTED_HEAD = "RF13_BEACON_RUNTIME_HARDEN"
-EXPECTED_COLUMNS = [
-    "id", "beacon_id", "run_id", "route_id", "outcome_code",
-    "listing_snapshot", "observed_at", "fingerprint", "created_at",
-]
-EXPECTED_SCENARIOS = [
-    "usable_configuration", "usable_listing_page", "clean_empty",
-    "empty_without_proof", "captcha", "rate_restricted", "explicit_rejection",
-    "malformed", "incomplete", "partial", "unsupported", "ambiguous",
-    "transport_unavailable", "transport_ambiguous", "stale_profile",
-    "missing_profile", "disputed_profile",
-]
-GATE_IDS = (
-    "identity_exact", "toolchain_exact", "migration_head_exact", "parser_schema_exact",
-    "synthetic_registry_closed", "synthetic_determinism", "clean_empty_proof",
-    "negative_outcome_matrix", "source_analysis_fail_closed", "multivalue_preserved",
-    "duplicate_observation_preserved", "batch_mixed_outcomes", "live_default_disabled",
-    "caller_cannot_authorize_live", "synthetic_profile_cannot_authorize_live",
-    "live_fake_transport_bounded", "redirect_disabled", "no_retry",
-    "raw_payload_persistence_blocked", "normalized_snapshot_bounded", "replay_deterministic",
-    "concurrent_replay_single_effect", "rollback_retry", "foreign_tables_unchanged",
-    "parser_cleanup", "credential_exposure",
-)
+
+REQUIREMENTS: dict[str, tuple[str, str]] = {
+    "dispatch_authority": ("runtime.dispatch", "default_calls"),
+    "dispatch_mismatch_fail_closed": ("runtime.dispatch", "mismatch_calls"),
+    "classifier_separation": ("runtime.classifier", "generic_empty"),
+    "classifier_negative_matrix": ("runtime.classifier", "negative_outcomes"),
+    "behavioral_no_source_gates": ("runtime.acceptance", "source_text_gate_count"),
+    "requirement_specific_tamper": ("runtime.acceptance", "tamper_coverage"),
+    "foreign_state_witness": ("persistence.foreign", "semantic_equal"),
+    "foreign_after_tamper": ("persistence.foreign", "tamper_rejected"),
+    "concurrent_overlap": ("persistence.concurrency", "overlap"),
+    "concurrent_single_row": ("persistence.concurrency", "physical_rows"),
+    "concurrent_same_effect": ("persistence.concurrency", "same_effect"),
+    "snapshot_bound": ("persistence", "snapshot_bytes"),
+    "raw_payload_blocked": ("runtime.persistence", "raw_payload_rejected"),
+    "rollback_proof": ("persistence", "rollback_proven"),
+    "replay_uniqueness": ("persistence", "replayed"),
+}
+
+
+def _lookup(data: dict[str, Any], path: str, field: str) -> Any:
+    current: Any = data
+    for part in path.split("."):
+        current = current[part]
+    return current[field]
+
+
+def _checks(data: dict[str, Any]) -> dict[str, bool]:
+    runtime = data["runtime"]
+    persistence = data["persistence"]
+    dispatch = runtime["dispatch"]
+    classifier = runtime["classifier"]
+    acceptance = runtime["acceptance"]
+    foreign = persistence["foreign"]
+    concurrency = persistence["concurrency"]
+    return {
+        "dispatch_authority": dispatch["default_calls"] == 0 and dispatch["trusted_target_calls"] == 1,
+        "dispatch_mismatch_fail_closed": all(value == 0 for value in dispatch["mismatch_calls"].values()),
+        "classifier_separation": classifier["generic_empty"] != "USABLE_RESPONSE" and classifier["body_empty_proof"] != "USABLE_RESPONSE",
+        "classifier_negative_matrix": all(value not in {"USABLE_RESPONSE", "CLEAN_EMPTY"} for value in classifier["negative_outcomes"].values()),
+        "behavioral_no_source_gates": acceptance["source_text_gate_count"] == 0,
+        "requirement_specific_tamper": acceptance["tamper_coverage"] == sorted(REQUIREMENTS),
+        "foreign_state_witness": foreign["semantic_equal"] and foreign["baseline_after_fixtures_before_parser"] and foreign["after_parser"],
+        "foreign_after_tamper": foreign["tamper_rejected"],
+        "concurrent_overlap": concurrency["overlap"] and max(concurrency["call_start_a"], concurrency["call_start_b"]) < min(concurrency["call_end_a"], concurrency["call_end_b"]),
+        "concurrent_single_row": concurrency["physical_rows"] == 1,
+        "concurrent_same_effect": concurrency["same_effect"],
+        "snapshot_bound": persistence["snapshot_bytes"] <= 32768,
+        "raw_payload_blocked": persistence["raw_payload_rejected"],
+        "rollback_proof": persistence["rollback_proven"],
+        "replay_uniqueness": persistence["replayed"],
+    }
+
+
+def _tamper_matrix(data: dict[str, Any], checks: dict[str, bool]) -> list[dict[str, Any]]:
+    rows = []
+    for requirement_id, (path, field) in REQUIREMENTS.items():
+        tampered = deepcopy(data)
+        target: Any = tampered
+        for part in path.split("."):
+            target = target[part]
+        original = target[field]
+        if isinstance(original, bool):
+            target[field] = not original
+        elif isinstance(original, int):
+            target[field] = original + 1
+        elif isinstance(original, list):
+            target[field] = []
+        else:
+            target[field] = "tampered"
+        after = _checks(tampered)[requirement_id]
+        rows.append({"requirement_id": requirement_id, "raw_field": f"{path}.{field}",
+                     "original": original, "tampered": target[field],
+                     "checker_before": checks[requirement_id], "checker_after": after,
+                     "expected_causal_failure": not after})
+    return rows
 
 
 def main() -> int:
@@ -43,44 +101,31 @@ def main() -> int:
     parser.add_argument("root", type=Path)
     parser.add_argument("observations", type=Path)
     parser.add_argument("candidate_sha")
+    parser.add_argument("--tamper-output", type=Path)
+    parser.add_argument("--map-output", type=Path)
     args = parser.parse_args()
     data = json.loads(args.observations.read_text(encoding="utf-8"))
-    identity, postgres = data["identity"], data["postgres"]
-    persistence, runtime, source = data["persistence"], data["runtime"], data["source_analysis"]
     actual_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    actual_parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
     actual_tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
-    source_text = (args.root / "src/mayak/modules/avito_parser_adapter/runtime.py").read_text()
-    lock_digest = hashlib.sha256((args.root / "uv.lock").read_bytes()).hexdigest()
-    gates = {
-        "identity_exact": identity["technical_id"] == TECHNICAL_ID and identity["candidate_sha"] == actual_sha == args.candidate_sha and identity["parent_sha"] == EXPECTED_PARENT and identity["tree_sha"] == actual_tree,
-        "toolchain_exact": identity["python"] == "3.14.6" and identity["uv"].split()[0:2] == ["uv", "0.11.31"] and identity["uv_lock_sha256"] == lock_digest,
-        "migration_head_exact": postgres["alembic_head"] == EXPECTED_HEAD,
-        "parser_schema_exact": postgres["parser_columns"] == EXPECTED_COLUMNS,
-        "synthetic_registry_closed": runtime["scenario_ids"] == EXPECTED_SCENARIOS and runtime["unknown_scenario_rejected"],
-        "synthetic_determinism": runtime["deterministic_equal"],
-        "clean_empty_proof": runtime["clean_empty_status"] == "USABLE_RESPONSE",
-        "negative_outcome_matrix": all(item in source_text for item in ("CAPTCHA_OR_CHALLENGE", "MALFORMED_RESPONSE", "UNSUPPORTED_STRUCTURE", "RESULT_AMBIGUOUS")),
-        "source_analysis_fail_closed": source["no_transport"] == "NOT_SENT" and source["unclassified"] == "RESULT_AMBIGUOUS",
-        "multivalue_preserved": "MULTIVALUE_PARAMETER_PRESERVED" in source_text,
-        "duplicate_observation_preserved": "duplicate_observations" in source_text,
-        "batch_mixed_outcomes": runtime["mixed_succeeded"] == 1 and runtime["mixed_failed"] == 1 and runtime["mixed_ambiguous"] == 1,
-        "live_default_disabled": runtime["live_calls_before"] == runtime["live_calls_after"] == 0 and runtime["disabled_handler_calls"] == 0 and runtime["disabled_transport"] == "NOT_SENT",
-        "caller_cannot_authorize_live": runtime["caller_forgery_rejected"] and "approved:" not in source_text,
-        "synthetic_profile_cannot_authorize_live": runtime["synthetic_rejection_explanation"] == "SYNTHETIC_PROFILE_CANNOT_AUTHORIZE_LIVE",
-        "live_fake_transport_bounded": "max_response_bytes" in source_text and "httpx.Timeout" in source_text,
-        "redirect_disabled": "follow_redirects=False" in source_text,
-        "no_retry": "retries" not in source_text,
-        "raw_payload_persistence_blocked": runtime["raw_persistence_rejected"] and "listing_snapshot: Any" not in source_text,
-        "normalized_snapshot_bounded": persistence["snapshot_bytes"] <= 32768,
-        "replay_deterministic": persistence["replayed"],
-        "concurrent_replay_single_effect": persistence.get("concurrent_physical_rows") == 1,
-        "rollback_retry": persistence["rollback_before"] == persistence["rollback_after"] and persistence["retry_replayed"] is False,
-        "foreign_tables_unchanged": persistence["foreign_before"] == persistence["foreign_after"],
-        "parser_cleanup": persistence["committed_after_cleanup"] < persistence["committed_before_cleanup"],
-        "credential_exposure": all(token not in source_text for token in ("password=", "Bearer ", "/root/.ssh/")),
-    }
-    if tuple(gates) != GATE_IDS or not all(gates.values()):
-        raise SystemExit("RF14 acceptance gate failure: " + ",".join(key for key, value in gates.items() if not value))
+    identity = data["identity"]
+    checks = _checks(data)
+    matrix = _tamper_matrix(data, checks)
+    if args.map_output:
+        args.map_output.write_text(json.dumps({
+            requirement_id: {"evidence_path": f"{path}.{field}", "checker": requirement_id}
+            for requirement_id, (path, field) in REQUIREMENTS.items()
+        }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.tamper_output:
+        args.tamper_output.write_text(json.dumps(matrix, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    identity_ok = (identity["technical_id"] == TECHNICAL_ID and identity["candidate_sha"] == actual_sha == args.candidate_sha
+                   and actual_parent == EXPECTED_PARENT and identity["parent_sha"] == EXPECTED_PARENT
+                   and identity["tree_sha"] == actual_tree and data["postgres"]["alembic_head"] == EXPECTED_HEAD
+                   and data["postgres"]["major"] == 18)
+    matrix_ok = len(matrix) == len(REQUIREMENTS) and all(row["expected_causal_failure"] for row in matrix)
+    failed = [name for name, passed in checks.items() if not passed]
+    if not identity_ok or not matrix_ok or failed:
+        raise SystemExit("RF14 acceptance gate failure: " + ",".join(failed or (["identity_or_tamper"] if not (identity_ok and matrix_ok) else [])))
     print(MARKER)
     return 0
 

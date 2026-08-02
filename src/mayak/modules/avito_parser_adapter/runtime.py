@@ -18,10 +18,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -94,31 +95,94 @@ class SyntheticScenario(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class LiveAuthorizationGrant:
-    """Opaque result issued by a trusted server-side authority port.
+class TrustedDispatchBinding:
+    """Server-owned, immutable binding used as the only network target."""
 
-    The adapter never accepts this object from its public fetch method.  A
-    test authority may issue one explicitly; the production authority never
-    does until operator evidence is installed.
-    """
-
-    authority_reference: str
+    source_reference_id: str
+    beacon_source_reference: str
     profile_id: str
+    profile_version: str
+    authority_reference: str
+    proof_reference: str
+    target: str
+    response_evidence_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.authority_reference.strip() or not self.profile_id.strip():
-            raise ValueError("live grants require trusted authority and profile references")
+        parts = urlsplit(self.target)
+        if parts.scheme != "https" or not parts.netloc or parts.username or parts.password:
+            raise ValueError("trusted target must be an absolute https URL without credentials")
+        for field in ("source_reference_id", "beacon_source_reference", "profile_id",
+                      "profile_version", "authority_reference", "proof_reference"):
+            if not getattr(self, field).strip():
+                raise ValueError(f"{field} must not be blank")
 
 
-class LiveAuthorityPort(Protocol):
-    def issue(self, profile: ParserCompatibilityProfile) -> LiveAuthorizationGrant | None: ...
+class TrustedDispatchAuthorityPort(Protocol):
+    def resolve(
+        self, source: ParserSourceReference, profile: ParserCompatibilityProfile
+    ) -> TrustedDispatchBinding | None: ...
+
+
+class TrustedDispatchAuthority:
+    """Exact server-owned resolver; caller data cannot create a binding."""
+
+    def __init__(self, bindings: tuple[TrustedDispatchBinding, ...] = ()) -> None:
+        self._bindings = bindings
+
+    def resolve(self, source: ParserSourceReference, profile: ParserCompatibilityProfile) -> TrustedDispatchBinding | None:
+        for binding in self._bindings:
+            if (
+                binding.source_reference_id == source.source_reference_id
+                and binding.beacon_source_reference == source.beacon_source_reference
+                and binding.profile_id == profile.profile_id
+                and binding.profile_version == profile.profile_version
+            ):
+                return binding
+        return None
 
 
 class DisabledLiveAuthority:
     """Default production authority: fail closed and issue no grant."""
 
-    def issue(self, profile: ParserCompatibilityProfile) -> None:
+    def resolve(self, source: ParserSourceReference, profile: ParserCompatibilityProfile) -> None:
         return None
+
+
+@dataclass(frozen=True, slots=True)
+class RawHttpResponseObservation:
+    """Transport facts only; it contains no semantic parser decision."""
+
+    status_code: int
+    headers: tuple[tuple[str, str], ...]
+    body: bytes
+    request_target: str
+
+
+class HttpxTransport:
+    """HTTP mechanics isolated from provider/semantic classification."""
+
+    def __init__(self, settings: HttpxAdapterSettings, transport: httpx.BaseTransport | None) -> None:
+        self.settings = settings
+        self.transport = transport
+
+    def request(self, target: str) -> RawHttpResponseObservation:
+        timeout = httpx.Timeout(
+            connect=self.settings.connect_timeout_seconds,
+            read=self.settings.read_timeout_seconds,
+            write=self.settings.write_timeout_seconds,
+            pool=self.settings.pool_timeout_seconds,
+        )
+        with httpx.Client(transport=self.transport, timeout=timeout, follow_redirects=False,
+                          cookies=None, trust_env=False) as client:
+            with client.stream("GET", target) as response:
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    body.extend(chunk)
+                    if len(body) > self.settings.max_response_bytes:
+                        raise ValueError("response exceeds configured bound")
+                return RawHttpResponseObservation(
+                    response.status_code, tuple(response.headers.multi_items()), bytes(body), target
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,7 +314,7 @@ class HttpxLiveAdapter:
         settings: HttpxAdapterSettings | None = None,
         enabled: bool = False,
         transport: httpx.BaseTransport | None = None,
-        authority: LiveAuthorityPort | None = None,
+        authority: TrustedDispatchAuthorityPort | None = None,
     ) -> None:
         self.settings = settings or HttpxAdapterSettings()
         self.enabled = enabled
@@ -297,108 +361,73 @@ class HttpxLiveAdapter:
                 explanation="SYNTHETIC_PROFILE_CANNOT_AUTHORIZE_LIVE",
                 evidence=(ref,),
             )
-        grant = self._authority.issue(profile)
-        if grant is None or grant.profile_id != profile.profile_id:
+        binding = self._authority.resolve(source, profile)
+        if binding is None:
             return _classification(
                 "live-authority-missing",
                 TransportOutcomeStatus.NOT_SENT,
                 explanation="PROVIDER_DISABLED_CONTINUE",
                 evidence=(ref,),
             )
-        timeout = httpx.Timeout(
-            connect=self.settings.connect_timeout_seconds,
-            read=self.settings.read_timeout_seconds,
-            write=self.settings.write_timeout_seconds,
-            pool=self.settings.pool_timeout_seconds,
-        )
+        if binding.profile_version != profile.profile_version or binding.beacon_source_reference != source.beacon_source_reference:
+            return _classification("live-binding-mismatch", TransportOutcomeStatus.NOT_SENT,
+                                    explanation="TRUSTED_BINDING_MISMATCH", evidence=(ref,))
         self.calls += 1
         try:
-            with httpx.Client(
-                transport=self._transport,
-                timeout=timeout,
-                follow_redirects=False,
-                cookies=None,
-                trust_env=False,
-            ) as client:
-                with client.stream("GET", source.bounded_value) as response:
-                    if response.status_code in (403, 429):
-                        return _classification(
-                            "httpx-restricted",
-                            TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                            parser_status=ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
-                            evidence_class=ProviderResponseEvidenceClass.RATE_OR_ACCESS_RESTRICTED,
-                            restriction=ResponseRestrictionSignal.ACCESS_RESTRICTED,
-                            evidence=(ref,),
-                        )
-                    body = bytearray()
-                    for chunk in response.iter_bytes():
-                        body.extend(chunk)
-                        if len(body) > self.settings.max_response_bytes:
-                            return _classification(
-                                "httpx-response-too-large",
-                                TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
-                                parser_status=ParserOutcomeStatus.INCOMPLETE_RESPONSE,
-                                evidence_class=ProviderResponseEvidenceClass.INCOMPLETE_RESPONSE,
-                                evidence=(ref,),
-                            )
-                    if response.status_code >= 400:
-                        return _classification(
-                            "httpx-rejected",
-                            TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                            parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
-                            evidence_class=ProviderResponseEvidenceClass.EXPLICIT_REJECTION,
-                            evidence=(ref,),
-                        )
-                    try:
-                        decoded = json.loads(bytes(body))
-                    except (UnicodeDecodeError, json.JSONDecodeError):
-                        return _classification(
-                            "httpx-malformed",
-                            TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                            parser_status=ParserOutcomeStatus.MALFORMED_RESPONSE,
-                            evidence_class=ProviderResponseEvidenceClass.MALFORMED_RESPONSE,
-                            evidence=(ref,),
-                        )
-                    if not isinstance(decoded, dict) or decoded.get("challenge"):
-                        return _classification(
-                            "httpx-challenge",
-                            TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                            parser_status=ParserOutcomeStatus.CAPTCHA_OR_CHALLENGE,
-                            evidence_class=ProviderResponseEvidenceClass.CAPTCHA_OR_CHALLENGE,
-                            restriction=ResponseRestrictionSignal.CHALLENGE,
-                            evidence=(ref,),
-                        )
-                    if "items" not in decoded or not isinstance(decoded["items"], list):
-                        return _classification(
-                            "httpx-unsupported",
-                            TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                            parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
-                            evidence_class=ProviderResponseEvidenceClass.UNSUPPORTED_STRUCTURE,
-                            evidence=(ref,),
-                        )
-                    empty_proof = decoded.get("empty_proof") is True
-                    status = ParserOutcomeStatus.USABLE_RESPONSE if decoded["items"] or empty_proof else ParserOutcomeStatus.RESULT_AMBIGUOUS
-                    evidence_class = (
-                        ProviderResponseEvidenceClass.USABLE_RESPONSE
-                        if decoded["items"]
-                        else (
-                            ProviderResponseEvidenceClass.EMPTY_WITH_PROOF
-                            if empty_proof
-                            else ProviderResponseEvidenceClass.EMPTY_WITHOUT_PROOF
-                        )
-                    )
-                    if not decoded["items"] and not empty_proof:
-                        status = ParserOutcomeStatus.RESULT_AMBIGUOUS
-                    return _classification(
-                        "httpx-usable",
-                        TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                        parser_status=status,
-                        evidence_class=evidence_class,
-                        completeness=ResponseCompletenessStatus.EMPTY_PROVEN
-                        if empty_proof
-                        else ResponseCompletenessStatus.COMPLETE,
-                        evidence=(ref,),
-                    )
+            response = HttpxTransport(self.settings, self._transport).request(binding.target)
+            if 300 <= response.status_code < 400:
+                return _classification("httpx-redirect", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                        parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+                                        evidence_class=ProviderResponseEvidenceClass.RESULT_AMBIGUOUS,
+                                        explanation="REDIRECT_POLICY_BLOCKED", evidence=(ref,))
+            if response.status_code in (403, 429):
+                return _classification("httpx-restricted", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                        parser_status=ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
+                                        evidence_class=ProviderResponseEvidenceClass.RATE_OR_ACCESS_RESTRICTED,
+                                        restriction=ResponseRestrictionSignal.ACCESS_RESTRICTED, evidence=(ref,))
+            if response.status_code >= 400:
+                return _classification("httpx-rejected", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                        parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+                                        evidence_class=ProviderResponseEvidenceClass.EXPLICIT_REJECTION, evidence=(ref,))
+            try:
+                decoded = json.loads(response.body)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return _classification("httpx-malformed", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                        parser_status=ParserOutcomeStatus.MALFORMED_RESPONSE,
+                                        evidence_class=ProviderResponseEvidenceClass.MALFORMED_RESPONSE, evidence=(ref,))
+            if not isinstance(decoded, dict) or decoded.get("challenge"):
+                return _classification("httpx-challenge", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                        parser_status=ParserOutcomeStatus.CAPTCHA_OR_CHALLENGE,
+                                        evidence_class=ProviderResponseEvidenceClass.CAPTCHA_OR_CHALLENGE,
+                                        restriction=ResponseRestrictionSignal.CHALLENGE, evidence=(ref,))
+            if not isinstance(decoded.get("items"), list):
+                return _classification("httpx-unsupported", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                        parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+                                        evidence_class=ProviderResponseEvidenceClass.UNSUPPORTED_STRUCTURE, evidence=(ref,))
+            items = decoded["items"]
+            structure_valid = all(isinstance(item, dict) and isinstance(item.get("id"), str) for item in items)
+            proof_allowed = (profile.authority_class is CompatibilityProfileAuthorityClass.PROOF_GATED
+                             and "EMPTY_WITH_PROOF" in binding.response_evidence_ids)
+            # A body field is data, never authority.  Only the server binding can permit empty proof.
+            empty_proven = not items and proof_allowed and decoded.get("empty_proof") is True
+            usable = bool(items) and structure_valid and profile.authority_class is CompatibilityProfileAuthorityClass.PROOF_GATED
+            if not usable and not empty_proven:
+                return _classification("httpx-ambiguous", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                        parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+                                        evidence_class=ProviderResponseEvidenceClass.EMPTY_WITHOUT_PROOF
+                                        if not items else ProviderResponseEvidenceClass.RESULT_AMBIGUOUS,
+                                        completeness=ResponseCompletenessStatus.EMPTY_BLOCKED
+                                        if not items else ResponseCompletenessStatus.AMBIGUOUS, evidence=(ref,))
+            return _classification("httpx-classified", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                    parser_status=ParserOutcomeStatus.USABLE_RESPONSE,
+                                    evidence_class=ProviderResponseEvidenceClass.EMPTY_WITH_PROOF
+                                    if empty_proven else ProviderResponseEvidenceClass.USABLE_RESPONSE,
+                                    completeness=ResponseCompletenessStatus.EMPTY_PROVEN
+                                    if empty_proven else ResponseCompletenessStatus.COMPLETE, evidence=(ref,))
+        except ValueError:
+            return _classification("httpx-response-too-large", TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
+                                    parser_status=ParserOutcomeStatus.INCOMPLETE_RESPONSE,
+                                    evidence_class=ProviderResponseEvidenceClass.INCOMPLETE_RESPONSE, evidence=(ref,))
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError):
             return _classification(
                 "httpx-transport-failure",
@@ -672,6 +701,10 @@ class AvitoParserRuntime:
 
         table = metadata.tables["mayak.parser_outcomes"]
         db: Any = session
+        # PostgreSQL is the replay authority even when a caller has no run_id.
+        # This is a database transaction lock, never a process-local mutex.
+        lock_key = int.from_bytes(hashlib.sha256(f"parser-replay:{fingerprint}".encode()).digest()[:8], "big", signed=True)
+        db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
         existing = (
             db.execute(
                 select(table).where(table.c.run_id == run_id, table.c.fingerprint == fingerprint)
@@ -991,9 +1024,12 @@ def _fingerprint(
 
 __all__ = [
     "SyntheticScenario",
-    "LiveAuthorizationGrant",
-    "LiveAuthorityPort",
+    "TrustedDispatchBinding",
+    "TrustedDispatchAuthorityPort",
+    "TrustedDispatchAuthority",
     "DisabledLiveAuthority",
+    "RawHttpResponseObservation",
+    "HttpxTransport",
     "ParserTransportPort",
     "SyntheticRuntimeResult",
     "ParserBatchRuntimeResult",

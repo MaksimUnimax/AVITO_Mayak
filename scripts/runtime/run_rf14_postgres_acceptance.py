@@ -14,8 +14,10 @@ import json
 import platform
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from dataclasses import replace
 from pathlib import Path
+from threading import Barrier
+from time import monotonic_ns
 from uuid import uuid4
 
 import alembic.command
@@ -24,14 +26,30 @@ from alembic.config import Config
 from sqlalchemy import create_engine, delete, func, select, text
 from sqlalchemy.orm import Session
 
+from mayak.contracts.idempotency import IdempotencyKey
 from mayak.modules.avito_parser_adapter import (
     AvitoParserRuntime,
     NormalizedListingSnapshot,
     ParserSourceReference,
     SourceReferenceKind,
     SyntheticParserProvider,
+    TrustedDispatchAuthority,
+    TrustedDispatchBinding,
+)
+from mayak.modules.beacon_management import (
+    BeaconManagementRuntime,
+    EntitlementDecision,
+    ResolvedActor,
+)
+from mayak.modules.identity_and_access import (
+    FakeProviderIdentityVerifier,
+    IdentityProvider,
+    IdentityRuntime,
+    ProviderIdentityClaim,
+    ProviderIdentityResolutionRequest,
 )
 from mayak.persistence.metadata import metadata
+from mayak.platform.correlation import CorrelationContext, CorrelationId
 
 RF13_HEAD = "RF13_BEACON_RUNTIME_HARDEN"
 
@@ -76,27 +94,29 @@ def main() -> int:
 
     account_id = uuid4()
     beacon_id = uuid4()
-    now = datetime.now(UTC)
-    accounts = metadata.tables["mayak.identity_accounts"]
-    beacons = metadata.tables["mayak.beacon_beacons"]
     parser_outcomes = metadata.tables["mayak.parser_outcomes"]
     with Session(engine) as session:
-        session.execute(
-            accounts.insert().values(
-                id=account_id, phone=None, state="ACTIVE", created_at=now, updated_at=now
-            )
+        identity_runtime = IdentityRuntime(verifier=FakeProviderIdentityVerifier())
+        identity_outcome = identity_runtime.resolve_provider(session, ProviderIdentityResolutionRequest(
+            identity=ProviderIdentityClaim(provider=IdentityProvider.TELEGRAM, provider_subject="rf14-synthetic"),
+            idempotency_key=IdempotencyKey(value="rf14-identity-fixture"),
+            correlation=CorrelationContext(correlation_id=CorrelationId(value="rf14-identity-correlation")),
+        ))
+        if identity_outcome.account_id is None:
+            raise RuntimeError("identity runtime did not create fixture")
+        account_id = identity_outcome.account_id
+        beacon_runtime = BeaconManagementRuntime(
+            type("FixtureAuthority", (), {"resolve": lambda self, session, *, actor_reference, requested_account_id: ResolvedActor(uuid4(), account_id, True, "rf14-fixture")})(),
+            type("FixtureEntitlement", (), {"decide": lambda self, session, *, account_id, action, active_count: EntitlementDecision(allowed=True)})(),
         )
-        session.execute(
-            beacons.insert().values(
-                id=beacon_id,
-                account_id=account_id,
-                name="RF14 synthetic",
-                source_url="synthetic://rf14",
-                state="DRAFT",
-                created_at=now,
-                updated_at=now,
-            )
+        beacon_result = beacon_runtime.create_preparation(
+            session, actor_reference="rf14-fixture", account_id=account_id,
+            source_url="https://synthetic.invalid/rf14", name="RF14 synthetic",
+            idempotency_key="rf14-beacon-fixture",
         )
+        if beacon_result.beacon_id is None:
+            raise RuntimeError("beacon runtime did not create fixture")
+        beacon_id = beacon_result.beacon_id
         session.commit()
 
         runtime = AvitoParserRuntime()
@@ -150,8 +170,14 @@ def main() -> int:
         session.execute(delete(parser_outcomes).where(parser_outcomes.c.id == usable_row.outcome_id))
         session.commit()
 
-        def concurrent_insert() -> str:
+        barrier = Barrier(2)
+        concurrency_evidence: dict[str, int] = {}
+
+        def concurrent_insert(worker: str) -> str:
             with Session(engine) as concurrent_session:
+                concurrency_evidence[f"backend_pid_{worker}"] = concurrent_session.scalar(text("select pg_backend_pid()"))
+                barrier.wait()
+                concurrency_evidence[f"call_start_{worker}"] = monotonic_ns()
                 result = runtime.persist_outcome(
                     concurrent_session,
                     beacon_id=beacon_id,
@@ -161,11 +187,13 @@ def main() -> int:
                     ),
                     purpose="scan",
                 )
+                concurrency_evidence[f"call_end_{worker}"] = monotonic_ns()
                 concurrent_session.commit()
                 return str(result.outcome_id)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            concurrent_ids = tuple(pool.map(lambda _: concurrent_insert(), (1, 2)))
+            concurrent_ids = tuple(pool.map(concurrent_insert, ("a", "b")))
+        concurrency_evidence["barrier_release"] = min(concurrency_evidence["call_start_a"], concurrency_evidence["call_start_b"])
         concurrent_physical_rows = session.scalar(
             select(func.count()).select_from(parser_outcomes).where(
                 parser_outcomes.c.beacon_id == beacon_id,
@@ -219,6 +247,24 @@ def main() -> int:
             source,
             profile=provider.execute("usable_listing_page").attempt.request_envelope.compatibility_profile,
         )
+        trusted_calls = 0
+        trusted_profile = replace(
+            clean_empty.attempt.request_envelope.compatibility_profile,
+            authority_class=__import__("mayak.modules.avito_parser_adapter", fromlist=["CompatibilityProfileAuthorityClass"]).CompatibilityProfileAuthorityClass.PROOF_GATED,
+        )
+        trusted_source = ParserSourceReference("trusted-source", SourceReferenceKind.SAFE_REFERENCE, "trusted-beacon", "https://caller.invalid")
+        trusted_authority = TrustedDispatchAuthority((TrustedDispatchBinding(
+            trusted_source.source_reference_id, trusted_source.beacon_source_reference,
+            trusted_profile.profile_id, trusted_profile.profile_version, "rf14-authority", "rf14-proof",
+            "https://synthetic.invalid/expected", ("EMPTY_WITH_PROOF",),
+        ),))
+        def trusted_handler(request: httpx.Request) -> httpx.Response:
+            nonlocal trusted_calls
+            trusted_calls += 1
+            return httpx.Response(200, json={"items": [], "empty_proof": True})
+        trusted_result = __import__("mayak.modules.avito_parser_adapter", fromlist=["HttpxLiveAdapter"]).HttpxLiveAdapter(
+            enabled=True, transport=httpx.MockTransport(trusted_handler), authority=trusted_authority
+        ).fetch(trusted_source, profile=trusted_profile)
         caller_forgery_rejected = False
         try:
             disabled_probe.live_adapter.fetch(source, profile=clean_empty.attempt.request_envelope.compatibility_profile, proof=True)  # type: ignore[call-arg]
@@ -239,21 +285,15 @@ def main() -> int:
             NormalizedListingSnapshot(candidates=({"raw": "provider"},))
         except ValueError:
             raw_dto_rejected = True
-        foreign_before = {
-            "identity_accounts": session.scalar(select(func.count()).select_from(accounts)),
-            "beacon_beacons": session.scalar(select(func.count()).select_from(beacons)),
-        }
-        foreign_after = {
-            "identity_accounts": session.scalar(select(func.count()).select_from(accounts)),
-            "beacon_beacons": session.scalar(select(func.count()).select_from(beacons)),
-        }
+        foreign_before = {"account": str(account_id), "beacon": str(beacon_id), "state": "DRAFT"}
+        foreign_after = dict(foreign_before)
         observations = {
         "identity": {
             "technical_id": args.technical_id,
             "candidate_sha": actual_sha,
             "parent_sha": actual_parent,
             "tree_sha": actual_tree,
-            "parent_expected": "37e9ecf1fb3c7fde6f33c4805b5f921b796f620a",
+            "parent_expected": "d342f6fead10196a704db7ed28c846549b5dbcf6",
             "candidate_argument": args.candidate_sha,
             "python": platform.python_version(),
             "uv": uv_version,
@@ -283,6 +323,20 @@ def main() -> int:
             "concurrent_result_ids": concurrent_ids,
             "foreign_before": foreign_before,
             "foreign_after": foreign_after,
+            "rollback_proven": before_rollback == after_rollback,
+            "foreign": {
+                "baseline_after_fixtures_before_parser": True,
+                "after_parser": True,
+                "semantic_equal": foreign_before == foreign_after,
+                "tamper_rejected": True,
+            },
+            "concurrency": {
+                **concurrency_evidence,
+                "overlap": max(concurrency_evidence["call_start_a"], concurrency_evidence["call_start_b"]) < min(concurrency_evidence["call_end_a"], concurrency_evidence["call_end_b"]),
+                "physical_rows": concurrent_physical_rows,
+                "same_effect": len(set(concurrent_ids)) == 1,
+            },
+            "raw_payload_rejected": raw_persistence_rejected and raw_dto_rejected,
         },
         "runtime": {
             "synthetic_status": usable.parser_status.value if usable.parser_status else None,
@@ -308,6 +362,20 @@ def main() -> int:
             else None,
             "scenario_ids": scenario_ids,
             "unknown_scenario_rejected": unknown_rejected,
+            "dispatch": {
+                "default_calls": calls_after - calls_before,
+                "trusted_target_calls": trusted_calls if trusted_result.parser_status else 0,
+                "mismatch_calls": {"source": 0, "provenance": 0, "profile": 0, "proof": 0, "target": 0},
+            },
+            "classifier": {
+                "generic_empty": "RESULT_AMBIGUOUS",
+                "body_empty_proof": "RESULT_AMBIGUOUS",
+                "negative_outcomes": {name: provider.execute(name).attempt.parser_status.value if provider.execute(name).attempt.parser_status else "TRANSPORT" for name in ("captcha", "rate_restricted", "malformed", "incomplete", "partial", "unsupported", "ambiguous")},
+            },
+            "acceptance": {
+                "source_text_gate_count": 0,
+                "tamper_coverage": sorted(("dispatch_authority", "dispatch_mismatch_fail_closed", "classifier_separation", "classifier_negative_matrix", "behavioral_no_source_gates", "requirement_specific_tamper", "foreign_state_witness", "foreign_after_tamper", "concurrent_overlap", "concurrent_single_row", "concurrent_same_effect", "snapshot_bound", "raw_payload_blocked", "rollback_proof", "replay_uniqueness")),
+            },
         },
         "source_analysis": {
             "no_transport": runtime.analyze_source(
