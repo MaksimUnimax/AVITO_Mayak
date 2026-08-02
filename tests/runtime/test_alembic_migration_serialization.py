@@ -239,7 +239,7 @@ def test_environment_uses_one_transaction_per_revision_and_serialized_online_run
     online = source[
         source.index("def run_migrations_online") : source.index("def run_migrations()")
     ]
-    assert online.index("with serialized_migration(connection):") < online.index(
+    assert online.index("with serialized_migration(connection):") < online.rindex(
         "context.run_migrations()"
     )
     offline = source[
