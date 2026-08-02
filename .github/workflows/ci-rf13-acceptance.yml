@@ -96,7 +96,11 @@ jobs:
             ci-evidence/rf13/tamper-matrix.json
           test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_rejected"])')" = "True"
           test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_required_cases_present"])')" = "True"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_mutations_effective"])')" = "True"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_changed_paths_valid"])')" = "True"
           test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["uncovered_requirement_ids"])')" = "[]"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["unmapped_case_ids"])')" = "[]"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["marker_leakage"])')" = "False"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.1.0
         with:
