@@ -144,8 +144,8 @@ def test_m02_metadata_fk_is_explicit_and_untruncated() -> None:
 
 def test_metadata_inventory_is_accepted() -> None:
     assert len(metadata.tables) == 51
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 72
-    assert sum(len(table.foreign_key_constraints) for table in metadata.tables.values()) == 72
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 73
+    assert sum(len(table.foreign_key_constraints) for table in metadata.tables.values()) == 73
 
 
 def test_finalizer_foreign_keys_are_registered_exactly() -> None:
