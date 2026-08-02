@@ -159,7 +159,9 @@ def _check(name: str, c: Mapping[str, Any]) -> bool:
         )
     if name == "raw_payload_snapshot_boundary":
         return len(c.get("attempts", [])) >= 15 and all(
-            isinstance(x, Mapping) and "exception" in x.get("operation", {}) for x in c["attempts"]
+            isinstance(x, Mapping)
+            and isinstance(x.get("operation", {}).get("exception"), Mapping)
+            for x in c["attempts"]
         )
     if name not in {"cadence_policy", "parser_failure_no_advance"}:
         _physical(c)
