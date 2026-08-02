@@ -41,11 +41,22 @@ jobs:
           umask 077
           printf '%s' 'rf15migration' > /run/secrets/mayak_database_migration_password
           postgres_container=$(docker ps --format '{{.ID}} {{.Image}}' | awk '$2 ~ /^postgres:18/ {print $1; exit}')
-          test -n "$postgres_container"
-          docker exec "$postgres_container" psql postgresql://mayak:mayak@127.0.0.1:5432/mayak -v ON_ERROR_STOP=1 \
+          if [ -z "$postgres_container" ]; then
+            echo '::error title=RF15 database boundary::postgres:18 service container was not discoverable'
+            exit 1
+          fi
+          set +e
+          boundary_output=$(docker exec "$postgres_container" psql postgresql://mayak:mayak@127.0.0.1:5432/mayak -v ON_ERROR_STOP=1 \
             -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'" \
             -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'" \
-            -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration"
+            -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration" 2>&1)
+          boundary_status=$?
+          set -e
+          if [ "$boundary_status" -ne 0 ]; then
+            boundary_message=$(printf '%s' "$boundary_output" | tr '\n' ' ' | sed -E 's/(postgresql[^ ]*):[^@ ]+@/\1:<redacted>@/g')
+            echo "::error title=RF15 database boundary::$boundary_message"
+            exit "$boundary_status"
+          fi
       - name: Alembic upgrade head
         run: uv run alembic upgrade head
       - name: Verify migration across a new connection
