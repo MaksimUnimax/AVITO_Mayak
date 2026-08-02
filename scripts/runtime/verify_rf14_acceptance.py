@@ -80,7 +80,15 @@ def _tamper_matrix(data: dict[str, Any], checks: dict[str, bool]) -> list[dict[s
         for part in path.split("."):
             target = target[part]
         original = target[field]
-        if isinstance(original, bool):
+        if requirement_id == "classifier_separation":
+            target[field] = "USABLE_RESPONSE"
+        elif requirement_id == "classifier_negative_matrix":
+            target[field] = dict(original)
+            first_key = next(iter(target[field]))
+            target[field][first_key] = "USABLE_RESPONSE"
+        elif requirement_id == "snapshot_bound":
+            target[field] = 32769
+        elif isinstance(original, bool):
             target[field] = not original
         elif isinstance(original, int):
             target[field] = original + 1
