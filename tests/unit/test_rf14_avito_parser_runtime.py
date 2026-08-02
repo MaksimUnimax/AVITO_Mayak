@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import httpx
 
 from mayak.modules.avito_parser_adapter import (
     AvitoParserRuntime,
+    CompatibilityProfileAuthorityClass,
     HttpxLiveAdapter,
-    LiveAuthorizationProof,
+    LiveAuthorizationGrant,
+    NormalizedListingSnapshot,
     ParserOutcomeStatus,
+    ParserSourceReference,
     ProviderResponseEvidenceClass,
+    SourceReferenceKind,
     SyntheticParserProvider,
     SyntheticScenario,
     TransportOutcomeStatus,
@@ -56,7 +62,10 @@ def test_live_adapter_is_disabled_without_server_proof() -> None:
     result = SyntheticParserProvider().execute("usable_listing_page")
     profile = result.attempt.request_envelope.compatibility_profile
     adapter = HttpxLiveAdapter(transport=httpx.MockTransport(handler))
-    classification = adapter.fetch("https://synthetic.invalid", profile=profile)
+    classification = adapter.fetch(
+        ParserSourceReference("test-source", SourceReferenceKind.SAFE_REFERENCE, "beacon-source", "https://synthetic.invalid"),
+        profile=profile,
+    )
     assert classification.transport_status is TransportOutcomeStatus.NOT_SENT
     assert classification.explanation is not None
     assert classification.explanation.summary == "PROVIDER_DISABLED_CONTINUE"
@@ -75,11 +84,20 @@ def test_authorized_fake_httpx_requires_current_profile_and_accepts_proven_empty
         .execute("clean_empty")
         .attempt.request_envelope.compatibility_profile
     )
-    adapter = HttpxLiveAdapter(enabled=True, transport=httpx.MockTransport(handler))
+    profile = replace(
+        profile, authority_class=CompatibilityProfileAuthorityClass.PROOF_GATED
+    )
+
+    class TestAuthority:
+        def issue(self, candidate):
+            return LiveAuthorizationGrant("test-authority", candidate.profile_id)
+
+    adapter = HttpxLiveAdapter(
+        enabled=True, transport=httpx.MockTransport(handler), authority=TestAuthority()
+    )
     classification = adapter.fetch(
-        "https://synthetic.invalid/search",
+        ParserSourceReference("test-source", SourceReferenceKind.SAFE_REFERENCE, "beacon-source", "https://synthetic.invalid/search"),
         profile=profile,
-        proof=LiveAuthorizationProof("server-proof", True, profile.profile_id),
     )
     assert classification.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
     assert (
@@ -99,6 +117,14 @@ def test_httpx_restriction_and_malformed_are_not_empty_success() -> None:
         (429, b"blocked", ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED),
         (200, b"not-json", ParserOutcomeStatus.MALFORMED_RESPONSE),
     ):
+        profile = replace(
+            profile, authority_class=CompatibilityProfileAuthorityClass.PROOF_GATED
+        )
+
+        class TestAuthority:
+            def issue(self, candidate):
+                return LiveAuthorizationGrant("test-authority", candidate.profile_id)
+
         adapter = HttpxLiveAdapter(
             enabled=True,
             transport=httpx.MockTransport(
@@ -106,11 +132,16 @@ def test_httpx_restriction_and_malformed_are_not_empty_success() -> None:
                     status_code, content=body
                 )
             ),
+            authority=TestAuthority(),
         )
         result = adapter.fetch(
-            "https://synthetic.invalid",
+            ParserSourceReference(
+                "test-source",
+                SourceReferenceKind.SAFE_REFERENCE,
+                "beacon-source",
+                "https://synthetic.invalid",
+            ),
             profile=profile,
-            proof=LiveAuthorizationProof("server-proof", True, profile.profile_id),
         )
         assert result.parser_status is expected
 
@@ -120,3 +151,64 @@ def test_runtime_does_not_make_scan_or_newness_decisions() -> None:
     assert page is not None
     assert not hasattr(page, "baseline")
     assert not hasattr(page, "newness")
+
+
+def test_unknown_synthetic_scenario_is_rejected() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="unsupported synthetic scenario"):
+        SyntheticParserProvider().execute("future-scenario")
+
+
+def test_source_analysis_is_fail_closed_for_absent_and_unclassified_transport() -> None:
+    runtime = AvitoParserRuntime()
+    attempt = runtime.run_synthetic("usable_listing_page").attempt
+    assert (
+        runtime.analyze_source(attempt.request_envelope, None).status
+        is TransportOutcomeStatus.NOT_SENT
+    )
+    assert (
+        runtime.analyze_source(attempt.request_envelope, attempt.transport_outcome).status
+        is ParserOutcomeStatus.RESULT_AMBIGUOUS
+    )
+
+
+def test_synthetic_profile_cannot_authorize_live_even_with_enabled_adapter() -> None:
+    calls: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(200, json={"items": [{"id": "x"}]})
+
+    result = SyntheticParserProvider().execute("usable_listing_page")
+    classification = HttpxLiveAdapter(
+        enabled=True, transport=httpx.MockTransport(handler), authority=object()
+    ).fetch(
+        ParserSourceReference(
+            "test-source", SourceReferenceKind.SAFE_REFERENCE, "beacon-source", "https://synthetic.invalid"
+        ),
+        profile=result.attempt.request_envelope.compatibility_profile,
+    )
+    assert classification.explanation is not None
+    assert classification.explanation.summary == "SYNTHETIC_PROFILE_CANNOT_AUTHORIZE_LIVE"
+    assert calls == []
+
+
+def test_batch_preserves_order_counts_and_duplicate_observations() -> None:
+    result = AvitoParserRuntime().run_batch(
+        ("usable_listing_page", "rate_restricted", "usable_listing_page")
+    )
+    assert [item.scenario for item in result.outcomes] == [
+        "usable_listing_page",
+        "rate_restricted",
+        "usable_listing_page",
+    ]
+    assert (result.succeeded_count, result.failed_count, result.ambiguous_count) == (2, 1, 0)
+    assert result.duplicate_observations == ("listing::1",)
+
+
+def test_normalized_snapshot_rejects_provider_shaped_fields() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="unapproved"):
+        NormalizedListingSnapshot(candidates=({"body": "raw html"},))
