@@ -91,12 +91,21 @@ jobs:
           test "$(grep -c RF13_ACCEPTANCE_VERIFIED ci-evidence/rf13/verifier.stderr || true)" = "0"
       - name: Tamper-negative matrix
         run: |
+          set +e
           uv run python scripts/runtime/run_rf13_tamper_matrix.py . \
             ci-evidence/rf13/acceptance.json "${{ github.sha }}" \
             ci-evidence/rf13/tamper-matrix.json
+          matrix_status=$?
+          set -e
+          python -c 'import json; d=json.load(open("ci-evidence/rf13/tamper-matrix.json")); bad=[k for k,v in d["cases"].items() if not v["mutation_effective"] or not v["changed_paths_valid"] or not v["rejected"]]; print("::error file=scripts/runtime/run_rf13_tamper_matrix.py::"+json.dumps({"bad_cases":bad,"all_mutations_effective":d["all_mutations_effective"],"all_changed_paths_valid":d["all_changed_paths_valid"],"all_rejected":d["all_rejected"],"uncovered":d["uncovered_requirement_ids"],"unmapped":d["unmapped_case_ids"],"marker_leakage":d["marker_leakage"]}, sort_keys=True)) if bad or not d["all_mutations_effective"] or not d["all_changed_paths_valid"] or not d["all_rejected"] or d["uncovered_requirement_ids"] or d["unmapped_case_ids"] or d["marker_leakage"] else None'
+          if [ "$matrix_status" -ne 0 ]; then exit "$matrix_status"; fi
           test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_rejected"])')" = "True"
           test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_required_cases_present"])')" = "True"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_mutations_effective"])')" = "True"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["all_changed_paths_valid"])')" = "True"
           test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["uncovered_requirement_ids"])')" = "[]"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["unmapped_case_ids"])')" = "[]"
+          test "$(python -c 'import json; print(json.load(open("ci-evidence/rf13/tamper-matrix.json"))["marker_leakage"])')" = "False"
       - if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.1.0
         with:
