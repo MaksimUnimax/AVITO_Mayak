@@ -10,7 +10,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, text
 
 TECHNICAL_ID = "RF-15-SCAN-ORCHESTRATION-DURABLE-RUNTIME-20260802-01"
 REQUIREMENTS = (
@@ -78,22 +78,25 @@ def main() -> int:
                     text("select version_num from mayak.alembic_version")
                 ).scalar_one()
             )
-            inspector = inspect(connection)
             tables = sorted(
-                name
-                for name in inspector.get_table_names(schema="mayak")
-                if name != "alembic_version"
-            )
-            indexes = {
-                name: tuple(
-                    sorted(
-                        str(item["name"])
-                        for item in inspector.get_indexes(name, schema="mayak")
-                        if item.get("name")
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "select tablename from pg_catalog.pg_tables "
+                        "where schemaname = 'mayak' and tablename <> 'alembic_version'"
                     )
                 )
-                for name in tables
-            }
+            )
+            index_names = {name: [] for name in tables}
+            for table_name, index_name in connection.execute(
+                text(
+                    "select tablename, indexname from pg_catalog.pg_indexes "
+                    "where schemaname = 'mayak' and tablename <> 'alembic_version' "
+                    "and indexname like 'ix_%'"
+                )
+            ):
+                index_names[table_name].append(index_name)
+            indexes = {name: tuple(sorted(value)) for name, value in index_names.items()}
             rows = {
                 name: int(
                     connection.execute(text(f'select count(*) from mayak."{name}"')).scalar_one()
