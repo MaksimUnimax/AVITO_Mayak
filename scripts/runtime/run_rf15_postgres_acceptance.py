@@ -542,6 +542,53 @@ def prepare_claimed_run(
     }
 
 
+def prepare_next_run(engine: Any, fixture: dict[str, Any], *, scenario_id: str) -> dict[str, Any]:
+    """Prepare a second real work/run on the same Beacon and schedule scope."""
+    beacon_id = UUID(fixture["beacon_id"])
+    account_id = UUID(fixture["account_id"])
+    revision = int(fixture["revision"])
+    now = _now()
+    with Session(engine) as session:
+        service = ScheduleService(
+            ScanRepository(session),
+            SyntheticBeacon(beacon_id, account_id, revision),
+            SyntheticEntitlementPort(),
+        )
+        command_type = __import__(
+            "mayak.modules.scan_orchestration.contracts", fromlist=["ScheduleCommand"]
+        ).ScheduleCommand
+        service.create_or_update(
+            command_type(
+                beacon_id=beacon_id,
+                interval_seconds=300,
+                next_due_at=now - timedelta(days=1),
+            )
+        )
+        session.commit()
+    with Session(engine) as session:
+        repo = ScanRepository(session)
+        materialized = materialize_due_work(repo, now + timedelta(days=365), 1000)
+        session.commit()
+        claims = claim_work(repo, now, 1, 120)
+        if len(materialized) != 1 or len(claims) != 1:
+            raise RuntimeError(
+                f"{scenario_id}: expected one same-scope next work/run, "
+                f"materialized={len(materialized)} claims={len(claims)}"
+            )
+        claim = claims[0]
+        run = start_run(repo, claim, SyntheticBeacon(beacon_id, account_id, revision), now)
+        session.commit()
+    return {
+        **fixture,
+        "work_id": str(claim.work_item_id),
+        "run_id": str(run.run_id),
+        "claim": claim,
+        "run": run,
+        "now": now.isoformat(),
+        "scenario_id": scenario_id,
+    }
+
+
 def scenario_cadence_policy(connection: Any) -> dict[str, Any]:
     basic = EntitlementSnapshot(
         status=DecisionStatus.ALLOWED, tier=AccessTier.BASIC, minimum_seconds=300, step_seconds=300
@@ -1237,7 +1284,7 @@ def scenario_new_listing_exactly_once(connection: Any) -> dict[str, Any]:
         _clean_outcome((ListingCandidate(identity_key="listing-new", snapshot={"price": 1}),)),
         "rf15-new-baseline",
     )
-    later = prepare_claimed_run(connection.engine, scenario_id="new-listing-difference")
+    later = prepare_next_run(connection.engine, first, scenario_id="new-listing-difference")
     return _terminal(
         connection.engine,
         later,
@@ -1254,7 +1301,7 @@ def scenario_price_change_no_event(connection: Any) -> dict[str, Any]:
         _clean_outcome((ListingCandidate(identity_key="listing-price", snapshot={"price": 1}),)),
         "rf15-price-baseline",
     )
-    later = prepare_claimed_run(connection.engine, scenario_id="price-difference")
+    later = prepare_next_run(connection.engine, first, scenario_id="price-difference")
     return _terminal(
         connection.engine,
         later,
@@ -1298,7 +1345,7 @@ def scenario_absence_no_removal(connection: Any) -> dict[str, Any]:
     return {
         "operation": _terminal(
             connection.engine,
-            prepare_claimed_run(connection.engine, scenario_id="absence-later"),
+            prepare_next_run(connection.engine, fixture, scenario_id="absence-later"),
             _clean_outcome(),
             "rf15-absence-later",
         )["operation"],
@@ -1311,7 +1358,13 @@ def scenario_absence_no_removal(connection: Any) -> dict[str, Any]:
 def scenario_authority_recheck(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="authority")
     attempts = [
-        _terminal(connection.engine, fixture, _clean_outcome(), f"rf15-authority-{n}")
+        _terminal(
+            connection.engine,
+            fixture,
+            _clean_outcome(),
+            f"rf15-authority-{n}",
+            run=fixture["run"].model_copy(update={"lease_token": uuid4()}),
+        )
         for n in ("lifecycle", "revision", "entitlement", "parser")
     ]
     return {
