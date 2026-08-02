@@ -509,6 +509,7 @@ def prepare_claimed_run(
                 f"operation returned {len(materialized)}, "
                 f"physical rows {len(available['work_rows'])}"
             )
+        session.commit()
         claims = claim_work(repo, now, 1, 120)
         if len(claims) != 1:
             raise RuntimeError(
@@ -667,6 +668,7 @@ def _terminal(
             },
         )
         before = _scoped(session.connection(), fixture)
+        session.commit()
         effective_run = run or fixture["run"]
         operation = _operation(
             session.connection(),
@@ -1020,6 +1022,7 @@ def scenario_recovery_blocks_backlog(connection: Any) -> dict[str, Any]:
             },
         )
         before = _scoped(session.connection(), fixture)
+        session.commit()
         transition = _operation(
             session.connection(),
             "record_parser_outcome",
