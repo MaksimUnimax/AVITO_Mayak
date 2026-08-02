@@ -791,7 +791,7 @@ def scenario_restart_durability(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="restart")
     terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-restart")
     engine = connection.engine
-    dsn = str(engine.url)
+    dsn = engine.url.render_as_string(hide_password=False)
     engine.dispose()
     fresh_engine = create_engine(dsn, future=True)
     try:
