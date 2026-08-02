@@ -89,7 +89,7 @@ def _mutate(source: dict[str, Any], case: str) -> dict[str, Any]:
     elif case == "concurrent-mismatch-terminal-count": obj("concurrent_same_key_different_fingerprint_conflict")["counts"]["terminal_records"] = 2
     elif case.startswith("same-account-payment-"):
         obj("payment_same_provider_same_account_duplicate")["counts"]["business_effect"] = 2
-    elif case == "cross-account-provider-conflict-removed": outcome("payment_same_provider_cross_account_conflict", 1)["reason_code"] = "OTHER"
+    elif case == "cross-account-provider-conflict-removed": outcome("payment_same_provider_cross_account_conflict", 1).setdefault("outcome", {})["reason_code"] = "OTHER"
     elif case == "cross-account-committed-payment-count": obj("payment_same_provider_cross_account_conflict")["counts"]["business_effect"] = 2
     elif case in {"manual-rollback-observation-removed", "second-rollback-observation-removed"}: obj("manual_grant_rollback_retry" if case.startswith("manual") else "second_rollback_retry")["retry_committed"] = False
     elif case in {"manual-rollback-residual-effect", "second-rollback-residual-effect"}: obj("manual_grant_rollback_retry" if case.startswith("manual") else "second_rollback_retry")["counts"]["post_rollback_business"] = 1
@@ -133,20 +133,40 @@ def _mutate(source: dict[str, Any], case: str) -> dict[str, Any]:
     return item
 
 
-def run(root: Path, evidence: Path, output: Path, expected_sha: str) -> None:
+def run(root: Path, evidence: Path, output: Path, expected_sha: str, expected_technical_id: str) -> None:
+    pristine = subprocess.run(
+        [sys.executable, "scripts/runtime/verify_rf12_acceptance.py", str(root), str(evidence), expected_sha, expected_technical_id],
+        capture_output=True, text=True,
+    )
+    marker = "RF12_ACCEPTANCE_VERIFIED"
+    pristine_marker = marker if pristine.returncode == 0 and marker in pristine.stdout.splitlines() else None
+    if pristine.returncode != 0 or pristine_marker != marker or pristine.stdout.splitlines().count(marker) != 1:
+        output.write_text(json.dumps({
+            "pristine_accepted": False, "pristine_return_code": pristine.returncode,
+            "pristine_marker": pristine_marker, "expected_technical_id": expected_technical_id,
+            "expected_candidate_sha": expected_sha, "case_ids": list(REQUIRED_TAMPER_CASE_IDS),
+            "mutation_return_codes": {}, "return_codes": {}, "all_rejected": False,
+        }, sort_keys=True) + "\n", encoding="utf-8")
+        raise SystemExit("RF12 pristine evidence is not accepted")
     source = json.loads(evidence.read_text(encoding="utf-8"))
     results: dict[str, int] = {}
     for case in REQUIRED_TAMPER_CASE_IDS:
         path = output.parent / f"tamper-{case}.json"
         path.write_text(json.dumps(_mutate(source, case), sort_keys=True), encoding="utf-8")
-        result = subprocess.run([sys.executable, "scripts/runtime/verify_rf12_acceptance.py", str(root), str(path), expected_sha], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "scripts/runtime/verify_rf12_acceptance.py", str(root), str(path), expected_sha, expected_technical_id], capture_output=True, text=True)
         results[case] = result.returncode
-    output.write_text(json.dumps({"case_ids": list(REQUIRED_TAMPER_CASE_IDS), "return_codes": results, "all_rejected": all(code != 0 for code in results.values())}, sort_keys=True) + "\n", encoding="utf-8")
+    all_rejected = all(code != 0 for code in results.values())
+    output.write_text(json.dumps({
+        "pristine_accepted": True, "pristine_return_code": pristine.returncode,
+        "pristine_marker": marker, "expected_technical_id": expected_technical_id,
+        "expected_candidate_sha": expected_sha, "case_ids": list(REQUIRED_TAMPER_CASE_IDS),
+        "mutation_return_codes": results, "return_codes": results, "all_rejected": all_rejected,
+    }, sort_keys=True) + "\n", encoding="utf-8")
     if not all(code != 0 for code in results.values()):
         raise SystemExit("RF12 tamper matrix contained an accepted mutation")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
-        raise SystemExit("usage: run_rf12_tamper_matrix.py ROOT EVIDENCE OUTPUT EXPECTED_SHA")
-    run(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4])
+    if len(sys.argv) != 6:
+        raise SystemExit("usage: run_rf12_tamper_matrix.py ROOT EVIDENCE OUTPUT EXPECTED_SHA EXPECTED_TECHNICAL_ID")
+    run(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5])

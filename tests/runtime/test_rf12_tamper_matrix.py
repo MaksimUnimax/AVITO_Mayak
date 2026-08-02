@@ -17,3 +17,13 @@ def test_rf12_tamper_registry_is_exact_and_nonempty() -> None:
     assert {"technical-id", "free-active-beacon-second-allowed", "build-input-identity-altered"} <= set(
         REQUIRED_TAMPER_CASE_IDS
     )
+
+
+def test_tamper_requires_pristine_verifier_and_passes_identity_to_each_mutation() -> None:
+    source = Path("scripts/runtime/run_rf12_tamper_matrix.py").read_text(encoding="utf-8")
+    assert "RF12 pristine evidence is not accepted" in source
+    assert '"pristine_accepted": True' in source
+    assert '"pristine_return_code": pristine.returncode' in source
+    assert '"pristine_marker": marker' in source
+    assert "expected_technical_id" in source
+    assert "len(sys.argv) != 6" in source
