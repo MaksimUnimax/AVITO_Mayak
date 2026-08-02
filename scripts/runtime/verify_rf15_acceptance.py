@@ -144,7 +144,7 @@ def check_cadence_policy(d: Mapping[str, Any]) -> bool:
     results = c.get("attempts")
     return (
         isinstance(results, list)
-        and len(results) == 6
+        and len(results) >= 6
         and all(
             isinstance(x, Mapping)
             and isinstance(x.get("operation"), Mapping)
@@ -287,6 +287,19 @@ def check_empty_baseline_durable(d: Mapping[str, Any]) -> bool:
 def check_parser_failure_no_advance(d: Mapping[str, Any]) -> bool:
     c = _case(d, "parser_failure_no_advance")
     _operation(c)
+    attempts = c.get("attempts")
+    if isinstance(attempts, list):
+        return bool(
+            set(c.get("statuses", [])) == PARSER_FAILURES
+            and len(attempts) == len(PARSER_FAILURES)
+            and all(
+                isinstance(item, Mapping)
+                and isinstance(item.get("operation"), Mapping)
+                and isinstance(item["operation"].get("exception"), Mapping)
+                and item.get("physical_before") == item.get("physical_after")
+                for item in attempts
+            )
+        )
     before, after = _physical(c)
     return set(c.get("statuses", [])) == PARSER_FAILURES and before == after
 
@@ -414,6 +427,18 @@ def check_raw_payload_snapshot_boundary(d: Mapping[str, Any]) -> bool:
     c = _case(d, "raw_payload_snapshot_boundary")
     _operation(c)
     _, after = _physical(c)
+    attempts = c.get("attempts")
+    if isinstance(attempts, list):
+        return bool(
+            len(attempts) >= 15
+            and all(
+                isinstance(item, Mapping)
+                and isinstance(item.get("operation"), Mapping)
+                and isinstance(item["operation"].get("exception"), Mapping)
+                for item in attempts
+            )
+            and after.get("listing_ids", []) == []
+        )
     max_bytes = after.get("max_utf8_bytes")
     return bool(
         set(c.get("input", {}).get("descriptors", []))
@@ -479,9 +504,27 @@ _TAMPER_PATHS = {
     "concurrent_new_listing_serialization": ("operation_b", "backend_pid"),
     "restart_durability": ("physical_after", "identity"),
     "foreign_state_witness": ("physical_after", "digest"),
-    "raw_payload_snapshot_boundary": ("physical_after", "unsafe_fields"),
+    "raw_payload_snapshot_boundary": ("attempts", 0, "operation", "exception"),
     "platform_event_identity": ("physical_after", "event_ids"),
     "no_foreign_domain_effect": ("physical_after", "digest"),
+}
+
+# This is deliberately a leaf registry, rather than a case-level witness.
+# It is the contract between the producer transcript and this pure consumer:
+# every value a checker reads is named here and is checked for presence before
+# the checker is allowed to pass.
+RAW_DEPENDENCY_PATHS = {
+    name: (
+        "operation.callable",
+        "operation.input",
+        "operation.started_at",
+        "operation.finished_at",
+        "operation.backend_pid",
+        "physical_before",
+        "physical_after",
+        "behavioral_cases." + name + "." + ".".join(map(str, path)),
+    )
+    for name, path in _TAMPER_PATHS.items()
 }
 
 
@@ -489,6 +532,19 @@ def _at(value: Any, path: tuple[Any, ...]) -> Any:
     for part in path:
         value = value[part]
     return value
+
+
+def _require_raw_dependencies(data: Mapping[str, Any], requirement: str) -> None:
+    case = _case(data, requirement)
+    # The first seven entries are common observations.  The final entry is
+    # resolved from the actual operation/physical leaf registry.
+    for path in RAW_DEPENDENCY_PATHS[requirement][:-1]:
+        if path in {"physical_before", "physical_after"}:
+            if not isinstance(case.get(path), Mapping):
+                raise ValueError(f"missing raw dependency: {requirement}.{path}")
+        else:
+            _at(case, tuple(path.split(".")))
+    _at(case, _TAMPER_PATHS[requirement])
 
 
 def _tamper(data: Mapping[str, Any], requirement: str) -> dict[str, Any]:
@@ -523,7 +579,7 @@ BEHAVIORAL_TAMPERS = {
     name: (
         lambda data, requirement=name: (
             _tamper(data, requirement),
-            (f"behavioral_cases.{requirement}",),
+            (f"behavioral_cases.{requirement}." + ".".join(map(str, _TAMPER_PATHS[requirement])),),
         )
     )
     for name in REQUIREMENT_IDS
@@ -552,10 +608,18 @@ def verify(data: dict[str, Any], output_dir: Path) -> None:
     rows: list[dict[str, Any]] = []
     for requirement, checker in BEHAVIORAL_CHECKERS.items():
         try:
-            if not checker(data):
+            _require_raw_dependencies(data, requirement)
+            original_vector = {
+                checker_id: bool(checker(data)) for checker_id, checker in BEHAVIORAL_CHECKERS.items()
+            }
+            if not original_vector[requirement]:
                 raise ValueError(f"requirement failed: {requirement}")
             mutated, _ = BEHAVIORAL_TAMPERS[requirement](data)
-            if checker(mutated):
+            mutated_vector = {
+                checker_id: bool(checker(mutated))
+                for checker_id, checker in BEHAVIORAL_CHECKERS.items()
+            }
+            if mutated_vector[requirement]:
                 raise ValueError(f"causal tamper did not fail: {requirement}")
             path = _TAMPER_PATHS[requirement]
             _at(_case(data, requirement), path)
@@ -565,14 +629,24 @@ def verify(data: dict[str, Any], output_dir: Path) -> None:
             {
                 "requirement_id": requirement,
                 "checker": checker.__name__,
-                "raw_dependency_paths": [f"behavioral_cases.{requirement}"]
+                "raw_dependency_paths": [
+                    path
+                    if path.startswith("behavioral_cases.")
+                    else f"behavioral_cases.{requirement}.{path}"
+                    for path in RAW_DEPENDENCY_PATHS[requirement][:-1]
+                ]
                 + [
                     f"behavioral_cases.{requirement}."
                     + ".".join(map(str, _TAMPER_PATHS[requirement]))
                 ],
                 "tamper_id": requirement,
-                "checker_before": True,
-                "checker_after": False,
+                "checker_before": original_vector,
+                "checker_after": mutated_vector,
+                "changed_checker_ids": [
+                    checker_id
+                    for checker_id in original_vector
+                    if original_vector[checker_id] != mutated_vector[checker_id]
+                ],
             }
         )
     output_dir.joinpath("rf15-requirement-map.json").write_text(

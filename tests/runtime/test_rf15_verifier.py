@@ -189,7 +189,11 @@ def _case() -> dict:
     c["raw_payload_snapshot_boundary"].update(
         {
             "input": {"descriptors": ["raw", "headers", "cookies", "token", "phone"]},
-            "physical_after": {"unsafe_fields": [], "max_utf8_bytes": 32768},
+            "attempts": [
+                {"operation": _op(61 + i, exception={"class": "ValueError"}, offset=i)}
+                for i in range(15)
+            ],
+            "physical_after": {"listing_ids": []},
         }
     )
     c["platform_event_identity"].update(
