@@ -5,16 +5,25 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import Table, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from mayak.persistence.metadata import metadata
 
-from .contracts import IdempotencyMismatch, LeaseConflict, RunResult, WorkClaim
+from .contracts import (
+    BeaconSnapshot,
+    ComparisonResult,
+    EntitlementSnapshot,
+    IdempotencyMismatch,
+    LeaseConflict,
+    ParserOutcome,
+    RunResult,
+    WorkClaim,
+)
 
 
-def _table(name: str):
+def _table(name: str) -> Table:
     return metadata.tables[f"mayak.{name}"]
 
 
@@ -209,8 +218,14 @@ class ScanRepository:
         return False
 
     def commit_comparison(
-        self, run: RunResult, parser, beacon, entitlement, idempotency_key: str, now: datetime
-    ):
+        self,
+        run: RunResult,
+        parser: ParserOutcome,
+        beacon: BeaconSnapshot,
+        entitlement: EntitlementSnapshot,
+        idempotency_key: str,
+        now: datetime,
+    ) -> ComparisonResult:
         from .services import commit_comparison
 
         return commit_comparison(self, run, parser, beacon, entitlement, idempotency_key, now)
