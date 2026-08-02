@@ -50,6 +50,7 @@ jobs:
           with engine.begin() as connection:
               cfg.attributes["connection"] = connection
               command.upgrade(cfg, "head")
+              connection.commit()
           PY
       - run: uv run ruff check src/mayak/modules/scan_orchestration scripts/runtime
       - run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/scan_orchestration

@@ -80,12 +80,10 @@ def main() -> int:
                     "where c.relname = 'alembic_version' "
                     "order by n.nspname limit 1"
                 )
-            ).scalar_one()
-            head = str(
-                connection.execute(
-                    text(f'select version_num from "{version_schema}"."alembic_version"')
-                ).scalar_one()
-            )
+            ).scalar_one_or_none()
+            if version_schema is None:
+                raise RuntimeError("no persisted Alembic version relation was found")
+            head = str(connection.execute(text(f'select version_num from "{version_schema}"."alembic_version"')).scalar_one())
             tables = sorted(
                 row[0]
                 for row in connection.execute(
