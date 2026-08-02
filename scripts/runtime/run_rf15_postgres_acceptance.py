@@ -134,7 +134,7 @@ def _semantic_foreign(connection: Any) -> dict[str, Any]:
     # These are owning-module semantic projections, not catalog metadata.
     names = {
         "identity": "identity_accounts",
-        "entitlements": "entitlement_grants",
+        "entitlements": "entitlement_access_grants",
         "beacon": "beacon_beacons",
         "parser": "parser_outcomes",
         "egress": "egress_routes",
