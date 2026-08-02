@@ -62,7 +62,9 @@ class UsageConsumptionSourceFactsOwner(str, Enum):
 
 
 BEACON_MANAGEMENT_MODULE_LABEL: Final[str] = UsageConsumptionRequesterModule.BEACON_MANAGEMENT.value
-SCAN_ORCHESTRATION_MODULE_LABEL: Final[str] = UsageConsumptionRequesterModule.SCAN_ORCHESTRATION.value
+SCAN_ORCHESTRATION_MODULE_LABEL: Final[str] = (
+    UsageConsumptionRequesterModule.SCAN_ORCHESTRATION.value
+)
 
 APPROVED_USAGE_COUNTER_FAMILIES: Final[tuple[UsageCounterFamily, ...]] = (
     UsageCounterFamily.ACTIVE_BEACON_SLOT,
@@ -165,8 +167,13 @@ class UsageConsumptionDecision(BaseModel):
 
     @model_validator(mode="after")
     def _validate_terminal_outcome(self) -> "UsageConsumptionDecision":
-        if self.outcome is not UsageConsumptionOutcome.REPLAYED and self.outcome != self.terminal_outcome:
-            raise ValueError("terminal outcome must match the current outcome except for replayed decisions")
+        if (
+            self.outcome is not UsageConsumptionOutcome.REPLAYED
+            and self.outcome != self.terminal_outcome
+        ):
+            raise ValueError(
+                "terminal outcome must match the current outcome except for replayed decisions"
+            )
         return self
 
 
@@ -174,7 +181,9 @@ def _request_fingerprint(request: UsageConsumptionRequest) -> IdempotencyFingerp
     return IdempotencyFingerprint(
         value=(
             "usage-consumption:"
-            f"{request.model_dump_json(exclude={'idempotency_key', 'prior_idempotency_record', 'decision_at'})}"
+            f"{request.model_dump_json(exclude={
+                'idempotency_key', 'prior_idempotency_record', 'decision_at'
+            })}"
         )
     )
 
@@ -268,7 +277,10 @@ def _evaluate_active_beacon_slot(
             request,
             outcome=UsageConsumptionOutcome.UNAVAILABLE,
             reason_code="ACTIVE_BEACON_EVIDENCE_REQUIRED",
-            reason="Synthetic Beacon snapshot evidence is required for ACTIVE_BEACON_SLOT evaluation.",
+            reason=(
+                "Synthetic Beacon snapshot evidence is required for "
+                "ACTIVE_BEACON_SLOT evaluation."
+            ),
             current_tariff_name=tariff_definition.tariff_name.value,
         )
 
@@ -281,12 +293,18 @@ def _evaluate_active_beacon_slot(
             reason="Beacon Management current_active_beacon_count is required before activation.",
             current_tariff_name=tariff_definition.tariff_name.value,
         )
-    if evidence.source_fact_active_beacon_count is not None and evidence.source_fact_active_beacon_count != current_count:
+    if (
+        evidence.source_fact_active_beacon_count is not None
+        and evidence.source_fact_active_beacon_count != current_count
+    ):
         return _build_decision(
             request,
             outcome=UsageConsumptionOutcome.CONFLICT,
             reason_code="ACTIVE_BEACON_SOURCE_FACT_CONFLICT",
-            reason="Conflicting Beacon snapshot facts cannot be accepted as a safe semantic decision.",
+            reason=(
+                "Conflicting Beacon snapshot facts cannot be accepted as a safe "
+                "semantic decision."
+            ),
             source_references=(evidence.snapshot_reference, evidence.source_fact_reference or ""),
             current_tariff_name=tariff_definition.tariff_name.value,
         )
@@ -297,7 +315,10 @@ def _evaluate_active_beacon_slot(
             request,
             outcome=UsageConsumptionOutcome.DENIED,
             reason_code="USAGE_LIMIT_REACHED",
-            reason="The current Beacon Management count leaves no active slot for the proposed activation.",
+            reason=(
+                "The current Beacon Management count leaves no active slot for the "
+                "proposed activation."
+            ),
             source_references=(evidence.snapshot_reference, tariff_definition.tariff_name.value),
             current_tariff_name=tariff_definition.tariff_name.value,
             active_beacon_limit=active_beacon_limit,
@@ -308,7 +329,10 @@ def _evaluate_active_beacon_slot(
         request,
         outcome=UsageConsumptionOutcome.ACCEPTED,
         reason_code="ACTIVE_BEACON_SLOT_ACCEPTED",
-        reason="The current Beacon Management count leaves an active slot for the proposed activation.",
+        reason=(
+            "The current Beacon Management count leaves an active slot for the "
+            "proposed activation."
+        ),
         source_references=(evidence.snapshot_reference, tariff_definition.tariff_name.value),
         current_tariff_name=tariff_definition.tariff_name.value,
         active_beacon_limit=active_beacon_limit,
@@ -326,7 +350,10 @@ def _evaluate_scan_interval_window(
             request,
             outcome=UsageConsumptionOutcome.BLOCKED,
             reason_code="OD011_SAFETY_REQUIRED",
-            reason="OD-011 safety remains open, so this case must not be accepted deterministically.",
+            reason=(
+                "OD-011 safety remains open, so this case must not be accepted "
+                "deterministically."
+            ),
             current_tariff_name=tariff_definition.tariff_name.value,
         )
 
@@ -360,7 +387,10 @@ def _evaluate_scan_interval_window(
             current_tariff_name=tariff_definition.tariff_name.value,
         )
 
-    if evidence.source_fact_interval_minutes is not None and evidence.source_fact_interval_minutes != derived_interval_minutes:
+    if (
+        evidence.source_fact_interval_minutes is not None
+        and evidence.source_fact_interval_minutes != derived_interval_minutes
+    ):
         return _build_decision(
             request,
             outcome=UsageConsumptionOutcome.CONFLICT,
@@ -416,7 +446,10 @@ def evaluate_usage_consumption(
             request,
             outcome=UsageConsumptionOutcome.REJECTED,
             reason_code="IDEMPOTENCY_KEY_REQUIRED",
-            reason="Usage-consumption semantic requests require an idempotency key before any effect.",
+            reason=(
+                "Usage-consumption semantic requests require an idempotency key "
+                "before any effect."
+            ),
         )
 
     request_fingerprint = _request_fingerprint(request)
@@ -427,7 +460,10 @@ def evaluate_usage_consumption(
                 request,
                 outcome=UsageConsumptionOutcome.CONFLICT,
                 reason_code="IDEMPOTENCY_KEY_CONFLICT",
-                reason="The prior idempotency evidence references a different key than the current request.",
+                reason=(
+                    "The prior idempotency evidence references a different key than "
+                    "the current request."
+                ),
                 source_references=(prior.idempotency_key.value, request.idempotency_key.value),
             )
         if prior.request_fingerprint != request_fingerprint:
@@ -443,7 +479,10 @@ def evaluate_usage_consumption(
             outcome=UsageConsumptionOutcome.REPLAYED,
             terminal_outcome=prior.terminal_outcome,
             reason_code="IDEMPOTENT_REPLAY",
-            reason="The same idempotency key and request fingerprint replay the original terminal outcome.",
+            reason=(
+                "The same idempotency key and request fingerprint replay the "
+                "original terminal outcome."
+            ),
             source_references=(prior.idempotency_key.value, prior.request_fingerprint.value),
             current_tariff_name=request.current_tariff_definition.tariff_name.value
             if request.current_tariff_definition is not None
@@ -485,7 +524,10 @@ def evaluate_usage_consumption(
                 request,
                 outcome=UsageConsumptionOutcome.CONFLICT,
                 reason_code="BEACON_REQUESTER_SOURCE_CONFLICT",
-                reason="ACTIVE_BEACON_SLOT decisions require Beacon Management requester and source-facts ownership.",
+                reason=(
+                    "ACTIVE_BEACON_SLOT decisions require Beacon Management requester "
+                    "and source-facts ownership."
+                ),
             )
 
         tariff_definition = request.current_tariff_definition
@@ -494,7 +536,10 @@ def evaluate_usage_consumption(
                 request,
                 outcome=UsageConsumptionOutcome.UNAVAILABLE,
                 reason_code="CURRENT_TARIFF_REQUIRED",
-                reason="Current tariff evidence is required before active Beacon consumption can be decided.",
+                reason=(
+                    "Current tariff evidence is required before active Beacon "
+                    "consumption can be decided."
+                ),
             )
 
         if tariff_definition not in request.approved_tariff_definitions:
@@ -502,7 +547,10 @@ def evaluate_usage_consumption(
                 request,
                 outcome=UsageConsumptionOutcome.BLOCKED,
                 reason_code="CURRENT_TARIFF_UNSUPPORTED",
-                reason="The supplied tariff definition is not approved for the current semantic contract.",
+                reason=(
+                    "The supplied tariff definition is not approved for the current "
+                    "semantic contract."
+                ),
                 current_tariff_name=tariff_definition.tariff_name.value,
             )
 
@@ -518,7 +566,10 @@ def evaluate_usage_consumption(
                 request,
                 outcome=UsageConsumptionOutcome.CONFLICT,
                 reason_code="SCAN_REQUESTER_SOURCE_CONFLICT",
-                reason="SCAN_INTERVAL_WINDOW decisions require Scan Orchestration requester and source-facts ownership.",
+                reason=(
+                    "SCAN_INTERVAL_WINDOW decisions require Scan Orchestration "
+                    "requester and source-facts ownership."
+                ),
             )
 
         tariff_definition = request.current_tariff_definition
@@ -527,7 +578,10 @@ def evaluate_usage_consumption(
                 request,
                 outcome=UsageConsumptionOutcome.UNAVAILABLE,
                 reason_code="CURRENT_TARIFF_REQUIRED",
-                reason="Current tariff evidence is required before scan interval consumption can be decided.",
+                reason=(
+                    "Current tariff evidence is required before scan interval "
+                    "consumption can be decided."
+                ),
             )
 
         if tariff_definition not in request.approved_tariff_definitions:
@@ -535,7 +589,10 @@ def evaluate_usage_consumption(
                 request,
                 outcome=UsageConsumptionOutcome.BLOCKED,
                 reason_code="CURRENT_TARIFF_UNSUPPORTED",
-                reason="The supplied tariff definition is not approved for the current semantic contract.",
+                reason=(
+                    "The supplied tariff definition is not approved for the current "
+                    "semantic contract."
+                ),
                 current_tariff_name=tariff_definition.tariff_name.value,
             )
 

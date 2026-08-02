@@ -35,7 +35,9 @@ def test_approved_tariff_values_are_exact_and_versioned() -> None:
     assert FREE_TARIFF_POLICY.scan_interval_step_minutes == 180
     assert FREE_TARIFF_POLICY.active_beacon_limit == 1
     assert FREE_TARIFF_POLICY.feature_notes == "reduced features"
-    assert FREE_TARIFF_POLICY.mechanism_notes == "same entitlement mechanism as paid tariff, stricter limits"
+    assert FREE_TARIFF_POLICY.mechanism_notes == (
+        "same entitlement mechanism as paid tariff, stricter limits"
+    )
 
     assert BASIC_TARIFF_POLICY.tariff_name is TariffName.BASIC
     assert BASIC_TARIFF_POLICY.semantic_version == "v1"
@@ -79,11 +81,16 @@ def test_tariff_definition_rejects_fabricated_defaults() -> None:
         )
 
 
-def test_manual_access_grant_requires_actor_reason_scope_interval_idempotency_and_audit_reference() -> None:
+def test_manual_access_grant_requires_actor_reason_scope_interval_idempotency_and_audit_reference(
+) -> None:
     starts_at = datetime(2026, 7, 8, 10, 0, tzinfo=timezone.utc)
     ends_at = datetime(2026, 7, 8, 11, 0, tzinfo=timezone.utc)
     interval = EffectiveInterval(starts_at=starts_at, ends_at=ends_at)
-    actor = MANUAL_GRANT_AUTHORIZED.manual_access_grant.actor if MANUAL_GRANT_AUTHORIZED.manual_access_grant else None
+    actor = (
+        MANUAL_GRANT_AUTHORIZED.manual_access_grant.actor
+        if MANUAL_GRANT_AUTHORIZED.manual_access_grant
+        else None
+    )
 
     grant = ManualAccessGrant(
         account_id="acct-synth-own-001",
@@ -105,7 +112,14 @@ def test_manual_access_grant_requires_actor_reason_scope_interval_idempotency_an
     assert grant.idempotency_key.value == "idem-test-001"
     assert grant.audit_reference == "audit-test-001"
 
-    for missing_field in ("actor", "reason", "scope", "effective_interval", "idempotency_key", "audit_reference"):
+    for missing_field in (
+        "actor",
+        "reason",
+        "scope",
+        "effective_interval",
+        "idempotency_key",
+        "audit_reference",
+    ):
         payload = grant.model_dump()
         payload.pop(missing_field)
         with pytest.raises(ValidationError):

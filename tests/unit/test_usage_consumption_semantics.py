@@ -23,7 +23,6 @@ from mayak.modules.entitlements_and_billing import (
 )
 from mayak.platform.idempotency import IdempotencyKey
 
-
 DECISION_AT = datetime(2026, 7, 8, 10, 0, tzinfo=timezone.utc)
 TARGET_ACCOUNT_ID = "acct-eb06-usage-001"
 ACTIVE_BEACON_LIMIT_ONE = 1
@@ -95,11 +94,14 @@ def _scan_interval_request(
 
 
 def _module_source_text() -> str:
-    return Path(
-        __file__
-    ).resolve().parents[2].joinpath(
-        "src/mayak/modules/entitlements_and_billing/usage_consumption.py"
-    ).read_text().lower()
+    return (
+        Path(__file__)
+        .resolve()
+        .parents[2]
+        .joinpath("src/mayak/modules/entitlements_and_billing/usage_consumption.py")
+        .read_text()
+        .lower()
+    )
 
 
 def test_eb06_usage_counter_families_and_blocked_families_are_represented_001() -> None:
@@ -270,7 +272,9 @@ def test_eb06_usage_idempotent_replay_same_fingerprint_001() -> None:
         request_fingerprint=fingerprint,
         terminal_outcome=UsageConsumptionOutcome.ACCEPTED,
     )
-    decision = evaluate_usage_consumption(request.model_copy(update={"prior_idempotency_record": prior}))
+    decision = evaluate_usage_consumption(
+        request.model_copy(update={"prior_idempotency_record": prior})
+    )
 
     assert decision.outcome is UsageConsumptionOutcome.REPLAYED
     assert decision.terminal_outcome is UsageConsumptionOutcome.ACCEPTED

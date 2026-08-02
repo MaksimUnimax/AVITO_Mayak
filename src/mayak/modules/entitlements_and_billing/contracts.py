@@ -140,7 +140,9 @@ class TariffDefinition(BaseModel):
             if self.feature_notes != "reduced features":
                 raise ValueError("Free tariff feature notes must describe reduced features")
             if self.mechanism_notes != "same entitlement mechanism as paid tariff, stricter limits":
-                raise ValueError("Free tariff mechanism notes must describe the approved entitlement mechanism")
+                raise ValueError(
+                    "Free tariff mechanism notes must describe the approved entitlement mechanism"
+                )
         elif self.tariff_name is TariffName.BASIC:
             if self.price_rub != 990:
                 raise ValueError("Basic tariff price must be 990 RUB")

@@ -66,8 +66,7 @@ Owner: module 02. Purpose: bounded session state. Mutability: `current-state`. P
 ### 8. `identity_link_challenges`
 Owner: module 02. Purpose: one-time account-link challenge. Mutability: `work-state`. PK: `id uuid`. Required: `account_id uuid NOT NULL`, `challenge_hash char(64) NOT NULL`, `provider_code varchar(64) NOT NULL`, `expires_at timestamptz NOT NULL`, `consumed_at timestamptz NULL`, `created_at timestamptz NOT NULL`, `row_version bigint NOT NULL DEFAULT 1`. FKs: account -> `identity_accounts.id` `RESTRICT`. Unique: `challenge_hash`. Indexes: partial `(expires_at)` WHERE `consumed_at IS NULL`. Checks: expiry after creation, hash lowercase 64. Retention/delete: delete consumed/expired, synthetic max 14 days. Privacy: personal. Forbidden: challenge raw value, token, secret. Writer: Identity linking service.
 
-9. entitlement_tariff_definitions
-
+### 9. `entitlement_tariff_definitions`
 Owner: module 03. Purpose: versioned Free/Basic tariff terms. Mutability: immutable. PK: id uuid. Required: code varchar(64) NOT NULL, version bigint NOT NULL, price_minor bigint NOT NULL, currency char(3) NOT NULL, min_interval_seconds bigint NOT NULL, step_seconds bigint NOT NULL, active_beacon_limit bigint NOT NULL, active_from timestamptz NOT NULL, active_until timestamptz NULL, created_at timestamptz NOT NULL. FKs: none. Unique: (code,version). Indexes: (code,active_from). Checks: price nonnegative; interval and step positive; active_beacon_limit > 0; currency length 3; active_until > active_from. Retention/delete: immutable, retain synthetic max 14 days only where applicable. Privacy: internal. Forbidden: provider payload. Writer: Entitlement owner only; current approved Free/Basic active-Beacon limits are tariff authority and are not supplied by Beacon/UI callers.
 
 ### 10. `entitlement_access_grants`
