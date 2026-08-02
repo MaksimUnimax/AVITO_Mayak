@@ -73,9 +73,15 @@ def main() -> int:
     try:
         with engine.connect() as connection:
             version = str(connection.execute(text("select version()")).scalar_one())
+            version_schema = connection.execute(
+                text(
+                    "select schemaname from pg_catalog.pg_tables "
+                    "where tablename = 'alembic_version' order by schemaname limit 1"
+                )
+            ).scalar_one()
             head = str(
                 connection.execute(
-                    text("select version_num from mayak.alembic_version")
+                    text(f'select version_num from "{version_schema}"."alembic_version"')
                 ).scalar_one()
             )
             tables = sorted(
@@ -118,6 +124,7 @@ def main() -> int:
             "uv": os.environ.get("UV_VERSION", "hosted-toolchain"),
             "postgresql_version": version,
             "alembic_head": head,
+            "alembic_version_schema": version_schema,
         },
         "migration": {
             "head": head,
