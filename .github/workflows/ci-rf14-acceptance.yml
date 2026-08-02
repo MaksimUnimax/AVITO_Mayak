@@ -31,6 +31,9 @@ jobs:
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with: {version: 0.11.31, python-version: 3.14.6, activate-environment: true}
       - run: uv sync --frozen --all-groups --python 3.14.6
+      - run: uv run pytest -q tests/contract/test_avito_parser_adapter_contracts.py tests/unit/test_avito_parser_adapter_semantics.py tests/unit/test_rf14_avito_parser_runtime.py tests/runtime/test_parser_schema.py
+      - run: uv run ruff check src/mayak/modules/avito_parser_adapter tests/unit/test_rf14_avito_parser_runtime.py scripts/runtime
+      - run: uv run mypy src/mayak/modules/avito_parser_adapter
       - run: uv run lint-imports
       - name: Create migration boundary
         env: {PGPASSWORD: rf14}
@@ -59,12 +62,16 @@ jobs:
           fi
       - name: Verify raw observations independently
         run: |
-          uv run python scripts/runtime/verify_rf14_acceptance.py . ci-evidence/rf14/acceptance.json "${{ github.sha }}" \
-            >ci-evidence/rf14/verifier.stdout 2>ci-evidence/rf14/verifier.stderr
+          if ! uv run python scripts/runtime/verify_rf14_acceptance.py . ci-evidence/rf14/acceptance.json "${{ github.sha }}" \
+            >ci-evidence/rf14/verifier.stdout 2>ci-evidence/rf14/verifier.stderr; then
+            error_line=$(tail -n 5 ci-evidence/rf14/verifier.stderr | tr "\n" " " | cut -c1-1800)
+            echo "::error file=scripts/runtime/verify_rf14_acceptance.py::$error_line"
+            exit 1
+          fi
           test "$(cat ci-evidence/rf14/verifier.stdout)" = "RF14_ACCEPTANCE_VERIFIED"
           test "$(grep -o RF14_ACCEPTANCE_VERIFIED ci-evidence/rf14/verifier.stdout | wc -l)" = "1"
           test "$(grep -c RF14_ACCEPTANCE_VERIFIED ci-evidence/rf14/verifier.stderr || true)" = "0"
       - name: Upload RF14 evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with: {name: rf14-postgres-acceptance, path: ci-evidence/rf14}
