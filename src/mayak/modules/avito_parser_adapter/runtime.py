@@ -122,23 +122,67 @@ class TrustedDispatchAuthorityPort(Protocol):
         self, source: ParserSourceReference, profile: ParserCompatibilityProfile
     ) -> TrustedDispatchBinding | None: ...
 
+    def resolve_with_reason(
+        self, source: ParserSourceReference, profile: ParserCompatibilityProfile
+    ) -> tuple[TrustedDispatchBinding | None, str]: ...
+
 
 class TrustedDispatchAuthority:
     """Exact server-owned resolver; caller data cannot create a binding."""
 
-    def __init__(self, bindings: tuple[TrustedDispatchBinding, ...] = ()) -> None:
+    def __init__(
+        self,
+        bindings: tuple[TrustedDispatchBinding, ...] = (),
+        *,
+        expected_bindings: tuple[TrustedDispatchBinding, ...] | None = None,
+    ) -> None:
         self._bindings = bindings
+        self._expected_bindings = expected_bindings if expected_bindings is not None else bindings
 
     def resolve(self, source: ParserSourceReference, profile: ParserCompatibilityProfile) -> TrustedDispatchBinding | None:
-        for binding in self._bindings:
-            if (
-                binding.source_reference_id == source.source_reference_id
-                and binding.beacon_source_reference == source.beacon_source_reference
-                and binding.profile_id == profile.profile_id
-                and binding.profile_version == profile.profile_version
-            ):
-                return binding
-        return None
+        return self.resolve_with_reason(source, profile)[0]
+
+    def resolve_with_reason(
+        self, source: ParserSourceReference, profile: ParserCompatibilityProfile
+    ) -> tuple[TrustedDispatchBinding | None, str]:
+        expected = next(
+            (
+                item for item in self._expected_bindings
+                if item.source_reference_id == source.source_reference_id
+                and item.beacon_source_reference == source.beacon_source_reference
+                and item.profile_id == profile.profile_id
+                and item.profile_version == profile.profile_version
+            ),
+            None,
+        )
+        if expected is None:
+            for item in self._expected_bindings:
+                if item.source_reference_id != source.source_reference_id:
+                    return None, "SOURCE_IDENTITY_MISMATCH"
+                if item.beacon_source_reference != source.beacon_source_reference:
+                    return None, "PROVENANCE_MISMATCH"
+                if item.profile_id != profile.profile_id or item.profile_version != profile.profile_version:
+                    return None, "PROFILE_IDENTITY_VERSION_MISMATCH"
+            return None, "LIVE_AUTHORITY_MISSING"
+        candidate = next(
+            (
+                item for item in self._bindings
+                if item.source_reference_id == source.source_reference_id
+                and item.beacon_source_reference == source.beacon_source_reference
+                and item.profile_id == profile.profile_id
+                and item.profile_version == profile.profile_version
+            ),
+            None,
+        )
+        if candidate is None:
+            return None, "LIVE_AUTHORITY_MISSING"
+        if candidate.authority_reference != expected.authority_reference:
+            return None, "AUTHORITY_IDENTITY_MISMATCH"
+        if candidate.proof_reference != expected.proof_reference:
+            return None, "PROOF_IDENTITY_MISMATCH"
+        if candidate.target != expected.target:
+            return None, "TRUSTED_TARGET_POLICY_MISMATCH"
+        return candidate, "AUTHORIZED"
 
 
 class DisabledLiveAuthority:
@@ -146,6 +190,11 @@ class DisabledLiveAuthority:
 
     def resolve(self, source: ParserSourceReference, profile: ParserCompatibilityProfile) -> None:
         return None
+
+    def resolve_with_reason(
+        self, source: ParserSourceReference, profile: ParserCompatibilityProfile
+    ) -> tuple[None, str]:
+        return None, "LIVE_AUTHORITY_MISSING"
 
 
 @dataclass(frozen=True, slots=True)
@@ -361,17 +410,14 @@ class HttpxLiveAdapter:
                 explanation="SYNTHETIC_PROFILE_CANNOT_AUTHORIZE_LIVE",
                 evidence=(ref,),
             )
-        binding = self._authority.resolve(source, profile)
+        binding, authority_reason = self._authority.resolve_with_reason(source, profile)
         if binding is None:
             return _classification(
-                "live-authority-missing",
+                "live-authority-rejected",
                 TransportOutcomeStatus.NOT_SENT,
-                explanation="PROVIDER_DISABLED_CONTINUE",
+                explanation=authority_reason,
                 evidence=(ref,),
             )
-        if binding.profile_version != profile.profile_version or binding.beacon_source_reference != source.beacon_source_reference:
-            return _classification("live-binding-mismatch", TransportOutcomeStatus.NOT_SENT,
-                                    explanation="TRUSTED_BINDING_MISMATCH", evidence=(ref,))
         self.calls += 1
         try:
             response = HttpxTransport(self.settings, self._transport).request(binding.target)
@@ -395,35 +441,14 @@ class HttpxLiveAdapter:
                 return _classification("httpx-malformed", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
                                         parser_status=ParserOutcomeStatus.MALFORMED_RESPONSE,
                                         evidence_class=ProviderResponseEvidenceClass.MALFORMED_RESPONSE, evidence=(ref,))
-            if not isinstance(decoded, dict) or decoded.get("challenge"):
-                return _classification("httpx-challenge", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                        parser_status=ParserOutcomeStatus.CAPTCHA_OR_CHALLENGE,
-                                        evidence_class=ProviderResponseEvidenceClass.CAPTCHA_OR_CHALLENGE,
-                                        restriction=ResponseRestrictionSignal.CHALLENGE, evidence=(ref,))
-            if not isinstance(decoded.get("items"), list):
-                return _classification("httpx-unsupported", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                        parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
-                                        evidence_class=ProviderResponseEvidenceClass.UNSUPPORTED_STRUCTURE, evidence=(ref,))
-            items = decoded["items"]
-            structure_valid = all(isinstance(item, dict) and isinstance(item.get("id"), str) for item in items)
-            proof_allowed = (profile.authority_class is CompatibilityProfileAuthorityClass.PROOF_GATED
-                             and "EMPTY_WITH_PROOF" in binding.response_evidence_ids)
-            # A body field is data, never authority.  Only the server binding can permit empty proof.
-            empty_proven = not items and proof_allowed and decoded.get("empty_proof") is True
-            usable = bool(items) and structure_valid and profile.authority_class is CompatibilityProfileAuthorityClass.PROOF_GATED
-            if not usable and not empty_proven:
-                return _classification("httpx-ambiguous", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                        parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
-                                        evidence_class=ProviderResponseEvidenceClass.EMPTY_WITHOUT_PROOF
-                                        if not items else ProviderResponseEvidenceClass.RESULT_AMBIGUOUS,
-                                        completeness=ResponseCompletenessStatus.EMPTY_BLOCKED
-                                        if not items else ResponseCompletenessStatus.AMBIGUOUS, evidence=(ref,))
-            return _classification("httpx-classified", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                    parser_status=ParserOutcomeStatus.USABLE_RESPONSE,
-                                    evidence_class=ProviderResponseEvidenceClass.EMPTY_WITH_PROOF
-                                    if empty_proven else ProviderResponseEvidenceClass.USABLE_RESPONSE,
-                                    completeness=ResponseCompletenessStatus.EMPTY_PROVEN
-                                    if empty_proven else ResponseCompletenessStatus.COMPLETE, evidence=(ref,))
+            # The current accepted evidence contains no live Avito response schema.
+            # Parseability and generic keys are therefore never semantic authority.
+            del decoded, binding
+            return _classification("httpx-unproven-schema", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                                    parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+                                    evidence_class=ProviderResponseEvidenceClass.UNSUPPORTED_STRUCTURE,
+                                    completeness=ResponseCompletenessStatus.AMBIGUOUS,
+                                    explanation="LIVE_RESPONSE_SCHEMA_UNPROVEN", evidence=(ref,))
         except ValueError:
             return _classification("httpx-response-too-large", TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
                                     parser_status=ParserOutcomeStatus.INCOMPLETE_RESPONSE,

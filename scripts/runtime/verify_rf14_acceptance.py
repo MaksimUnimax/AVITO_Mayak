@@ -12,7 +12,7 @@ from typing import Any, Callable, NoReturn
 
 MARKER = "RF14_ACCEPTANCE_VERIFIED"
 TECHNICAL_ID = "RF-14-AVITO-PARSER-AUTHORITY-BEHAVIORAL-ACCEPTANCE-20260802-09"
-EXPECTED_PARENT = "d217d7152e72d100f3ea69e1ed01d0af77e72730"
+EXPECTED_PARENT = "58bb0b8502f02107ed1c67f8bbb4aec036b40c79"
 EXPECTED_HEAD = "RF13_BEACON_RUNTIME_HARDEN"
 
 Evidence = dict[str, Any]
@@ -49,22 +49,54 @@ def check_dispatch_authority(data: Evidence) -> bool:
 
 def check_dispatch_mismatch_fail_closed(data: Evidence) -> bool:
     scenarios = data["runtime"]["dispatch"]["mismatch_scenarios"]
-    return len(scenarios) == 5 and all(
-        item["handler_calls_after"] - item["handler_calls_before"] == 0
-        and item["transport_status"] == "NOT_SENT"
-        and item["observed_request_url"] is None
-        for item in scenarios
-    )
+    expected = {
+        "source_identity_mismatch": ("SOURCE_IDENTITY_MISMATCH", "source"),
+        "provenance_mismatch": ("PROVENANCE_MISMATCH", "provenance"),
+        "profile_identity_version_mismatch": ("PROFILE_IDENTITY_VERSION_MISMATCH", "profile"),
+        "authority_proof_mismatch": ("AUTHORITY_IDENTITY_MISMATCH", "authority"),
+        "invalid_final_target": ("TRUSTED_TARGET_POLICY_MISMATCH", "target"),
+    }
+    if {item["scenario_id"] for item in scenarios} != set(expected):
+        return False
+    for item in scenarios:
+        reason, dimension = expected[item["scenario_id"]]
+        if (
+            item["handler_calls_after"] - item["handler_calls_before"] != 0
+            or item["transport_status"] != "NOT_SENT"
+            or item["observed_request_url"] is not None
+            or item["reason_code"] != reason
+        ):
+            return False
+        if dimension == "source" and item["input_source_reference_id"] == item["expected_source_reference_id"]:
+            return False
+        if dimension == "provenance" and item["input_provenance_reference"] == item["expected_provenance_reference"]:
+            return False
+        if dimension == "profile" and item["input_profile_version"] == item["expected_profile_version"]:
+            return False
+        if dimension == "authority" and item["attempted_authority_identity"] == item["expected_authority_identity"]:
+            return False
+        if dimension == "target" and item["attempted_target"] == item["expected_target"]:
+            return False
+    return True
 
 
 def check_classifier_separation(data: Evidence) -> bool:
     runtime = data["runtime"]
-    return _case(runtime, "generic_empty")["classifier_status"] != "USABLE_RESPONSE" and _case(runtime, "generic_items_empty")["classifier_status"] != "USABLE_RESPONSE"
+    forbidden = {"USABLE_RESPONSE", "CLEAN_EMPTY"}
+    return all(
+        _case(runtime, name)["classifier_status"] not in forbidden
+        and _case(runtime, name).get("provider_response_evidence_class") != "EMPTY_WITH_PROOF"
+        for name in (
+            "generic_empty", "generic_items_empty", "generic_items_one",
+            "generic_items_empty_proof", "arbitrary_parseable_json",
+            "generic_challenge", "syntactically_valid_json_list",
+        )
+    )
 
 
 def check_classifier_negative_matrix(data: Evidence) -> bool:
     runtime = data["runtime"]
-    return all(_case(runtime, name)["classifier_status"] not in {"USABLE_RESPONSE", "CLEAN_EMPTY"} for name in ("captcha", "rate_restricted", "malformed_bytes", "incomplete", "partial", "unsupported", "redirect", "stale_profile", "missing_profile", "disputed_profile"))
+    return all(_case(runtime, name)["classifier_status"] not in {"USABLE_RESPONSE", "CLEAN_EMPTY"} for name in ("captcha", "rate_restricted", "malformed_bytes", "oversized_body", "incomplete", "partial", "unsupported", "redirect", "403", "429", "500", "timeout", "network_failure", "stale_profile", "missing_profile", "disputed_profile"))
 
 
 def check_foreign_state_witness(data: Evidence) -> bool:
@@ -86,7 +118,11 @@ def check_concurrent_single_row(data: Evidence) -> bool:
 
 def check_concurrent_same_effect(data: Evidence) -> bool:
     concurrency = data["persistence"]["concurrency"]
-    return concurrency["actual_result_id_a"] == concurrency["actual_result_id_b"] and bool(concurrency["fingerprint"])
+    return (
+        concurrency["actual_result_id_a"] == concurrency["actual_result_id_b"]
+        and bool(concurrency["fingerprint"])
+        and {concurrency["replay_a"], concurrency["replay_b"]} == {False, True}
+    )
 
 
 def check_snapshot_bound(data: Evidence) -> bool:
@@ -134,8 +170,9 @@ def _tamper_value(data: Evidence, requirement: str) -> tuple[Evidence, list[str]
         changed["runtime"]["dispatch"]["mismatch_scenarios"][0]["handler_calls_after"] += 1
         return changed, ["runtime.dispatch.mismatch_scenarios[0].handler_calls_after"]
     if requirement == "classifier_separation":
-        _case(changed["runtime"], "generic_empty")["classifier_status"] = "USABLE_RESPONSE"
-        return changed, ["runtime.classifier.cases[generic_empty].classifier_status"]
+        _case(changed["runtime"], "generic_items_one")["classifier_status"] = "USABLE_RESPONSE"
+        _case(changed["runtime"], "generic_items_empty_proof")["classifier_status"] = "USABLE_RESPONSE"
+        return changed, ["runtime.classifier.cases[generic_items_one].classifier_status", "runtime.classifier.cases[generic_items_empty_proof].classifier_status"]
     if requirement == "classifier_negative_matrix":
         _case(changed["runtime"], "captcha")["classifier_status"] = "USABLE_RESPONSE"
         return changed, ["runtime.classifier.cases[captcha].classifier_status"]
@@ -218,8 +255,8 @@ META_STATIC_ACCEPTANCE_CHECKS: dict[str, Checker] = {
 RAW_PATHS = {
     "dispatch_authority": ["runtime.dispatch.trusted_handler_calls_before", "runtime.dispatch.trusted_handler_calls_after", "runtime.dispatch.trusted_observed_request_url"],
     "dispatch_mismatch_fail_closed": ["runtime.dispatch.mismatch_scenarios[*]"],
-    "classifier_separation": ["runtime.classifier.cases[generic_empty].classifier_status", "runtime.classifier.cases[generic_items_empty].classifier_status"],
-    "classifier_negative_matrix": ["runtime.classifier.cases[captcha|rate_restricted|malformed_bytes|incomplete|partial|unsupported|redirect|stale_profile|missing_profile|disputed_profile].classifier_status"],
+    "classifier_separation": ["runtime.classifier.cases[generic_empty|generic_items_empty|generic_items_one|generic_items_empty_proof|arbitrary_parseable_json|generic_challenge|syntactically_valid_json_list].classifier_status"],
+    "classifier_negative_matrix": ["runtime.classifier.cases[captcha|rate_restricted|malformed_bytes|oversized_body|incomplete|partial|unsupported|redirect|403|429|500|timeout|network_failure|stale_profile|missing_profile|disputed_profile].classifier_status"],
     "foreign_state_witness": ["persistence.foreign_snapshot_before_parser", "persistence.foreign_snapshot_after_parser", "persistence.foreign_timeline"],
     "concurrent_overlap": ["persistence.concurrency.call_start_*", "persistence.concurrency.call_end_*"],
     "concurrent_single_row": ["persistence.concurrency.physical_rows"],
@@ -275,8 +312,8 @@ def main() -> int:
                 errors.append(error)
         if args.map_output:
             mapping = {requirement: {"checker": checker.__name__, "raw_evidence_paths": RAW_PATHS[requirement], "tamper": BEHAVIORAL_TAMPERS[requirement].__name__, "producer_derived_field_consumed": False} for requirement, checker in BEHAVIORAL_CHECKERS.items()}
-            mapping["meta_static_integrity_checks"] = {requirement: {"integrity_checker": checker.__name__, "evidence_or_source_of_integrity_proof": "verifier-owned registry/source inspection", "semantic_tamper_required": False} for requirement, checker in META_STATIC_ACCEPTANCE_CHECKS.items()}
-            args.map_output.write_text(json.dumps({"behavioral_requirements": mapping, "meta_static_integrity_checks": list(META_STATIC_ACCEPTANCE_CHECKS), "behavioral_requirement_count": len(BEHAVIORAL_CHECKERS)}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            meta_mapping = {requirement: {"integrity_checker": checker.__name__, "evidence_or_source_of_integrity_proof": "verifier-owned registry/source inspection", "semantic_tamper_required": False} for requirement, checker in META_STATIC_ACCEPTANCE_CHECKS.items()}
+            args.map_output.write_text(json.dumps({"behavioral_requirements": mapping, "meta_static_integrity_checks": meta_mapping, "behavioral_requirement_count": len(BEHAVIORAL_CHECKERS)}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         if args.tamper_output:
             args.tamper_output.write_text(json.dumps(matrix, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         identity_ok = identity["technical_id"] == TECHNICAL_ID and identity["candidate_sha"] == actual_sha == args.candidate_sha and identity["parent_sha"] == actual_parent and identity["tree_sha"] == actual_tree and data["postgres"]["alembic_head"] == EXPECTED_HEAD and data["postgres"]["major"] == 18 and subprocess.run(["git", "merge-base", "--is-ancestor", EXPECTED_PARENT, actual_sha], check=False).returncode == 0

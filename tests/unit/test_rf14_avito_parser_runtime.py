@@ -73,7 +73,7 @@ def test_live_adapter_is_disabled_without_server_proof() -> None:
     assert not calls
 
 
-def test_authorized_fake_httpx_requires_current_profile_and_accepts_proven_empty() -> None:
+def test_authorized_fake_httpx_never_invents_live_schema_semantics() -> None:
     calls: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -105,12 +105,45 @@ def test_authorized_fake_httpx_requires_current_profile_and_accepts_proven_empty
         source,
         profile=profile,
     )
-    assert classification.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
+    assert classification.parser_status is ParserOutcomeStatus.UNSUPPORTED_STRUCTURE
     assert (
         classification.provider_response_evidence_class
-        is ProviderResponseEvidenceClass.EMPTY_WITH_PROOF
+        is ProviderResponseEvidenceClass.UNSUPPORTED_STRUCTURE
     )
     assert len(calls) == 1 and calls[0].method == "GET"
+
+
+def test_live_generic_success_shapes_are_all_non_usable() -> None:
+    profile = replace(
+        SyntheticParserProvider().execute("clean_empty").attempt.request_envelope.compatibility_profile,
+        authority_class=CompatibilityProfileAuthorityClass.PROOF_GATED,
+    )
+    source = ParserSourceReference(
+        "test-source", SourceReferenceKind.SAFE_REFERENCE, "beacon-source", "https://caller.invalid"
+    )
+    binding = TrustedDispatchBinding(
+        "test-source", "beacon-source", profile.profile_id, profile.profile_version,
+        "test-authority", "test-proof", "https://synthetic.invalid/search", ("EMPTY_WITH_PROOF",),
+    )
+    bodies = (
+        b"{}", b'{"items":[]}', b'{"items":[{"id":"x"}]}',
+        b'{"items":[],"empty_proof":true}', b'{"challenge":true}',
+        b'{"other":"value"}', b'[{"id":"x"}]',
+    )
+    for body in bodies:
+        adapter = HttpxLiveAdapter(
+            enabled=True,
+            transport=httpx.MockTransport(
+                lambda request, body=body: httpx.Response(200, content=body)
+            ),
+            authority=TrustedDispatchAuthority((binding,)),
+        )
+        result = adapter.fetch(source, profile=profile)
+        assert result.parser_status not in {ParserOutcomeStatus.USABLE_RESPONSE}
+        assert (
+            result.provider_response_evidence_class
+            is not ProviderResponseEvidenceClass.EMPTY_WITH_PROOF
+        )
 
 
 def test_httpx_restriction_and_malformed_are_not_empty_success() -> None:

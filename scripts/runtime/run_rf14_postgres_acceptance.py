@@ -312,11 +312,12 @@ def main() -> int:
             authority_class=__import__("mayak.modules.avito_parser_adapter", fromlist=["CompatibilityProfileAuthorityClass"]).CompatibilityProfileAuthorityClass.PROOF_GATED,
         )
         trusted_source = ParserSourceReference("trusted-source", SourceReferenceKind.SAFE_REFERENCE, "trusted-beacon", "https://caller.invalid")
-        trusted_authority = TrustedDispatchAuthority((TrustedDispatchBinding(
+        trusted_binding = TrustedDispatchBinding(
             trusted_source.source_reference_id, trusted_source.beacon_source_reference,
             trusted_profile.profile_id, trusted_profile.profile_version, "rf14-authority", "rf14-proof",
             "https://synthetic.invalid/expected", ("EMPTY_WITH_PROOF",),
-        ),))
+        )
+        trusted_authority = TrustedDispatchAuthority((trusted_binding,))
         def trusted_handler(request: httpx.Request) -> httpx.Response:
             nonlocal trusted_calls
             trusted_calls += 1
@@ -326,7 +327,7 @@ def main() -> int:
             enabled=True, transport=httpx.MockTransport(trusted_handler), authority=trusted_authority
         )
         trusted_calls_before = trusted_calls
-        trusted_result = trusted_adapter.fetch(trusted_source, profile=trusted_profile)
+        trusted_adapter.fetch(trusted_source, profile=trusted_profile)
         caller_forgery_rejected = False
         try:
             disabled_probe.live_adapter.fetch(source, profile=clean_empty.attempt.request_envelope.compatibility_profile, proof=True)  # type: ignore[call-arg]
@@ -353,21 +354,26 @@ def main() -> int:
         dispatch_cases = []
         dispatch_inputs = {
             "source_identity_mismatch": (
-                replace(trusted_source, source_reference_id="wrong-source"),
-                trusted_profile,
+                replace(trusted_source, source_reference_id="wrong-source"), trusted_profile, trusted_binding,
             ),
             "provenance_mismatch": (
-                replace(trusted_source, beacon_source_reference="wrong-provenance"),
-                trusted_profile,
+                replace(trusted_source, beacon_source_reference="wrong-provenance"), trusted_profile, trusted_binding,
             ),
             "profile_identity_version_mismatch": (
                 trusted_source,
                 replace(trusted_profile, profile_version="wrong-version", semantic_version="wrong-version"),
+                trusted_binding,
             ),
-            "authority_proof_mismatch": (trusted_source, trusted_profile),
-            "invalid_final_target": (trusted_source, trusted_profile),
+            "authority_proof_mismatch": (
+                trusted_source, trusted_profile,
+                replace(trusted_binding, authority_reference="stale-authority", proof_reference="disputed-proof"),
+            ),
+            "invalid_final_target": (
+                trusted_source, trusted_profile,
+                replace(trusted_binding, target="https://synthetic.invalid/wrong-target"),
+            ),
         }
-        for scenario_id, (attempted_source, attempted_profile) in dispatch_inputs.items():
+        for scenario_id, (attempted_source, attempted_profile, attempted_binding) in dispatch_inputs.items():
             scenario_calls = 0
 
             def scenario_handler(request: httpx.Request) -> httpx.Response:
@@ -376,7 +382,8 @@ def main() -> int:
                 return httpx.Response(200, json={"items": [{"id": "unexpected"}]})
 
             adapter = __import__("mayak.modules.avito_parser_adapter", fromlist=["HttpxLiveAdapter"]).HttpxLiveAdapter(
-                enabled=True, transport=httpx.MockTransport(scenario_handler), authority=TrustedDispatchAuthority(())
+                enabled=True, transport=httpx.MockTransport(scenario_handler),
+                authority=TrustedDispatchAuthority((attempted_binding,), expected_bindings=(trusted_binding,)),
             )
             before = scenario_calls
             result = adapter.fetch(attempted_source, profile=attempted_profile)
@@ -387,8 +394,16 @@ def main() -> int:
                 "input_provenance_reference": attempted_source.beacon_source_reference,
                 "input_profile_id": trusted_profile.profile_id,
                 "input_profile_version": attempted_profile.profile_version,
-                "authority_binding_identity": "rf14-authority",
-                "proof_identity": "rf14-proof",
+                "expected_source_reference_id": trusted_binding.source_reference_id,
+                "expected_provenance_reference": trusted_binding.beacon_source_reference,
+                "expected_profile_id": trusted_binding.profile_id,
+                "expected_profile_version": trusted_binding.profile_version,
+                "expected_authority_identity": trusted_binding.authority_reference,
+                "expected_proof_identity": trusted_binding.proof_reference,
+                "expected_target": trusted_binding.target,
+                "attempted_authority_identity": attempted_binding.authority_reference,
+                "attempted_proof_identity": attempted_binding.proof_reference,
+                "attempted_target": attempted_binding.target,
                 "resolved_target": None,
                 "handler_calls_before": before,
                 "handler_calls_after": after,
@@ -404,9 +419,14 @@ def main() -> int:
             ("generic_items_one", b'{"items":[{"id":"x"}]}', 200),
             ("generic_items_empty_proof", b'{"items":[],"empty_proof":true}', 200),
             ("arbitrary_parseable_json", b'{"other":"value"}', 200),
+            ("generic_challenge", b'{"challenge":true}', 200),
+            ("syntactically_valid_json_list", b'[{"id":"x"}]', 200),
             ("malformed_bytes", b"not-json", 200),
             ("oversized_body", b"x" * (8 * 1024 * 1024 + 1), 200),
             ("redirect", b"", 302),
+            ("403", b"blocked", 403),
+            ("429", b"blocked", 429),
+            ("500", b"error", 500),
         )
         classifier_cases = []
         for case_id, body, status_code in generic_cases:
@@ -426,6 +446,8 @@ def main() -> int:
                 "transport_status": result.transport_status.value if result.transport_status else None,
                 "http_status": status_code, "redirect": 300 <= status_code < 400,
                 "classifier_status": result.parser_status.value if result.parser_status else None,
+                "provider_response_evidence_class": result.provider_response_evidence_class.value,
+                "response_completeness_status": result.response_completeness_status.value,
                 "warning_codes": [warning.code.value for warning in result.warnings],
                 "reason_code": result.explanation.reason_code if result.explanation else None,
                 "handler_calls": adapter.calls, "observed_request_url": observed_url[0] if observed_url else None,
@@ -439,6 +461,8 @@ def main() -> int:
                 "transport_status": attempt.transport_status.value,
                 "http_status": None, "redirect": False,
                 "classifier_status": attempt.parser_status.value if attempt.parser_status else None,
+                "provider_response_evidence_class": attempt.provider_response_evidence_class.value,
+                "response_completeness_status": attempt.response_completeness_status.value,
                 "warning_codes": [warning.code.value for warning in attempt.warnings],
                 "reason_code": attempt.explanation.reason_code if attempt.explanation else None,
                 "handler_calls": 0, "observed_request_url": None,
@@ -459,6 +483,8 @@ def main() -> int:
                 "transport_status": result.transport_status.value if result.transport_status else None,
                 "http_status": None, "redirect": False,
                 "classifier_status": result.parser_status.value if result.parser_status else None,
+                "provider_response_evidence_class": result.provider_response_evidence_class.value,
+                "response_completeness_status": result.response_completeness_status.value,
                 "warning_codes": [warning.code.value for warning in result.warnings],
                 "reason_code": result.explanation.reason_code if result.explanation else None,
                 "handler_calls": adapter.calls, "observed_request_url": None,
@@ -470,7 +496,7 @@ def main() -> int:
             "candidate_sha": actual_sha,
             "parent_sha": actual_parent,
             "tree_sha": actual_tree,
-            "parent_expected": "d342f6fead10196a704db7ed28c846549b5dbcf6",
+            "parent_expected": "58bb0b8502f02107ed1c67f8bbb4aec036b40c79",
             "candidate_argument": args.candidate_sha,
             "python": platform.python_version(),
             "uv": uv_version,
@@ -555,7 +581,7 @@ def main() -> int:
             "unknown_scenario_rejected": unknown_rejected,
             "dispatch": {
                 "default_calls": calls_after - calls_before,
-                "trusted_target_calls": trusted_calls if trusted_result.parser_status else 0,
+                "trusted_target_calls": trusted_calls,
                 "trusted_resolved_target": "https://synthetic.invalid/expected",
                 "trusted_observed_request_url": trusted_urls[0] if trusted_urls else None,
                 "trusted_handler_calls_before": trusted_calls_before,
