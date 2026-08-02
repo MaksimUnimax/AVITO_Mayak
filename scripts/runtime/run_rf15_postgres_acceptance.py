@@ -51,6 +51,7 @@ from mayak.modules.scan_orchestration.services import (
     claim_work,
     commit_comparison,
     materialize_due_work,
+    record_parser_outcome,
     start_run,
     validate_cadence,
 )
@@ -453,7 +454,7 @@ def _create_fixture(engine: Any) -> dict[str, str]:
             ).ScheduleCommand(
                 beacon_id=beacon.beacon_id,
                 interval_seconds=300,
-                next_due_at=_now() - timedelta(hours=2),
+                next_due_at=_now() - timedelta(days=1),
             )
         )
         session.commit()
@@ -490,7 +491,7 @@ def prepare_claimed_run(
             command_type(
                 beacon_id=beacon_id,
                 interval_seconds=interval_seconds,
-                next_due_at=now - timedelta(hours=4),
+                next_due_at=now - timedelta(days=1),
             )
         )
         session.commit()
@@ -988,10 +989,54 @@ def scenario_due_work_coalescing(connection: Any) -> dict[str, Any]:
 
 def scenario_recovery_blocks_backlog(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="recovery")
+    outcome = ParserOutcome(
+        outcome_id=uuid4(),
+        status="PARTIAL",
+        provenance_fingerprint=_digest({"recovery": fixture["run_id"]}),
+    )
+    parser = SyntheticParserPort(outcome)
+    with Session(connection.engine) as session:
+        session.execute(
+            text(
+                "insert into mayak.parser_outcomes "
+                "(id, beacon_id, run_id, outcome_code, observed_at, fingerprint, created_at) "
+                "values (cast(:id as uuid), cast(:beacon_id as uuid), cast(:run_id as uuid), "
+                ":code, :observed_at, :fingerprint, :created_at)"
+            ),
+            {
+                "id": str(outcome.outcome_id),
+                "beacon_id": fixture["beacon_id"],
+                "run_id": fixture["run_id"],
+                "code": outcome.status,
+                "observed_at": _now(),
+                "fingerprint": outcome.provenance_fingerprint,
+                "created_at": _now(),
+            },
+        )
+        before = _scoped(session.connection(), fixture)
+        transition = _operation(
+            session.connection(),
+            "record_parser_outcome",
+            {"status": outcome.status, "run_id": fixture["run_id"]},
+            lambda: record_parser_outcome(
+                ScanRepository(session), fixture["run"], outcome.outcome_id, parser
+            ),
+        )
+        session.commit()
+    with Session(connection.engine) as session:
+        materialize = _operation(
+            session.connection(),
+            "materialize_due_work",
+            {"scenario_id": "recovery", "after_reconciliation": True},
+            lambda: materialize_due_work(ScanRepository(session), _now(), 10),
+        )
+        session.commit()
+        after = _scoped(session.connection(), fixture)
     return {
-        "operation": {"callable": "record_parser_outcome", "input": {"status": "PARTIAL"}},
-        "physical_before": _scoped(connection, fixture),
-        "physical_after": _scoped(connection, fixture),
+        "operation": transition,
+        "materialize_operation": materialize,
+        "physical_before": before,
+        "physical_after": after,
         "scope": fixture,
     }
 
