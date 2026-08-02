@@ -23,6 +23,7 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy import insert, select
 from sqlalchemy.engine import Connection
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .contracts import (
@@ -51,6 +52,7 @@ from .contracts import (
     ParserOutcomeExplanation,
     ParserOutcomeStatus,
     ParserRequestEnvelope,
+    ParserSourceReference,
     ParserWarning,
     ParserWarningCode,
     ProviderResponseEvidenceClass,
@@ -64,6 +66,7 @@ from .contracts import (
     SearchConfigurationValueKind,
     SearchConfigurationWarningCode,
     SearchSourceAnalysisOutcome,
+    SourceReferenceKind,
     TransportOutcomeReference,
     TransportOutcomeStatus,
     TransportResponseClassificationOutcome,
@@ -91,16 +94,31 @@ class SyntheticScenario(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class LiveAuthorizationProof:
-    """Server-resolved proof required before a live request can be sent."""
+class LiveAuthorizationGrant:
+    """Opaque result issued by a trusted server-side authority port.
 
-    proof_reference: str
-    approved: bool
+    The adapter never accepts this object from its public fetch method.  A
+    test authority may issue one explicitly; the production authority never
+    does until operator evidence is installed.
+    """
+
+    authority_reference: str
     profile_id: str
 
     def __post_init__(self) -> None:
-        if not self.proof_reference.strip() or not self.profile_id.strip():
-            raise ValueError("live proof reference and profile_id are required")
+        if not self.authority_reference.strip() or not self.profile_id.strip():
+            raise ValueError("live grants require trusted authority and profile references")
+
+
+class LiveAuthorityPort(Protocol):
+    def issue(self, profile: ParserCompatibilityProfile) -> LiveAuthorizationGrant | None: ...
+
+
+class DisabledLiveAuthority:
+    """Default production authority: fail closed and issue no grant."""
+
+    def issue(self, profile: ParserCompatibilityProfile) -> None:
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +132,69 @@ class SyntheticRuntimeResult:
     attempt: ParserAttemptOutcome
     configuration: SearchConfigurationExtractionOutcome | None = None
     page: ListingPageParseOutcome | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class NormalizedListingSnapshot:
+    """The only listing representation accepted by parser persistence.
+
+    It contains normalized semantic fields only; provider bodies, headers,
+    cookies, tokens and unknown fields have no slot in this DTO.
+    """
+
+    candidates: tuple[dict[str, object], ...] = ()
+
+    def __post_init__(self) -> None:
+        allowed_fields = {item.value for item in ListingFieldFamily}
+        for candidate in self.candidates:
+            if set(candidate) != {"listing_candidate_id", "status", "fields"}:
+                raise ValueError("snapshot contains an unapproved normalized field")
+            if not isinstance(candidate["listing_candidate_id"], str) or not candidate[
+                "listing_candidate_id"
+            ].strip():
+                raise ValueError("snapshot listing identity must be non-empty")
+            if candidate["status"] not in {item.value for item in ListingCandidateStatus}:
+                raise ValueError("snapshot contains an unapproved candidate status")
+            fields = candidate["fields"]
+            if not isinstance(fields, dict) or not set(fields).issubset(allowed_fields):
+                raise ValueError("snapshot contains an unapproved normalized field")
+            if any(
+                not isinstance(value, (str, int, float, bool)) and value is not None
+                for value in fields.values()
+            ):
+                raise ValueError("snapshot fields must be scalar normalized values")
+
+    @classmethod
+    def from_page(cls, page: ListingPageParseOutcome) -> "NormalizedListingSnapshot":
+        candidates: list[dict[str, object]] = []
+        for candidate in page.normalized_listing_candidates:
+            fields = {
+                field.field_family.value: field.value
+                for field in candidate.card_candidate.field_candidates
+                if isinstance(field.value, (str, int, float, bool)) or field.value is None
+            }
+            candidates.append(
+                {
+                    "listing_candidate_id": candidate.listing_candidate_id,
+                    "status": candidate.status.value,
+                    "fields": fields,
+                }
+            )
+        return cls(tuple(candidates))
+
+    def as_dict(self) -> dict[str, object]:
+        return {"candidates": [dict(item) for item in self.candidates]}
+
+
+@dataclass(frozen=True, slots=True)
+class ParserBatchRuntimeResult:
+    """Ordered per-page batch result; parser owns no scan/newness decisions."""
+
+    outcomes: tuple[SyntheticRuntimeResult, ...]
+    succeeded_count: int
+    failed_count: int
+    ambiguous_count: int
+    duplicate_observations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +212,7 @@ class ParserOutcomeReadback:
     run_id: UUID | None
     route_id: UUID | None
     outcome_code: str
-    listing_snapshot: Any
+    listing_snapshot: dict[str, object] | None
     observed_at: datetime
     fingerprint: str
     created_at: datetime
@@ -169,21 +250,32 @@ class HttpxLiveAdapter:
         settings: HttpxAdapterSettings | None = None,
         enabled: bool = False,
         transport: httpx.BaseTransport | None = None,
+        authority: LiveAuthorityPort | None = None,
     ) -> None:
         self.settings = settings or HttpxAdapterSettings()
         self.enabled = enabled
         self._transport = transport
+        self._authority = authority or DisabledLiveAuthority()
         self.calls = 0
 
     def fetch(
         self,
-        source: str,
+        source: ParserSourceReference,
         *,
         profile: ParserCompatibilityProfile | None,
-        proof: LiveAuthorizationProof | None = None,
     ) -> TransportResponseClassificationOutcome:
         ref = _evidence("httpx", "adapter")
-        if not self.enabled or proof is None or not proof.approved:
+        if not isinstance(source, ParserSourceReference) or source.source_reference_kind not in (
+            SourceReferenceKind.BEACON_OWNED_SUBMISSION,
+            SourceReferenceKind.SAFE_REFERENCE,
+        ):
+            return _classification(
+                "live-source-boundary-blocked",
+                TransportOutcomeStatus.NOT_SENT,
+                explanation="SOURCE_URL_POLICY_MISSING",
+                evidence=(ref,),
+            )
+        if not self.enabled:
             return _classification(
                 "live-disabled",
                 TransportOutcomeStatus.NOT_SENT,
@@ -191,21 +283,26 @@ class HttpxLiveAdapter:
                 explanation="PROVIDER_DISABLED_CONTINUE",
                 evidence=(ref,),
             )
-        if (
-            profile is None
-            or profile.lifecycle_status is not CompatibilityProfileLifecycleStatus.CURRENT
-        ):
+        if profile is None or profile.lifecycle_status is not CompatibilityProfileLifecycleStatus.CURRENT:
             return _classification(
                 "live-profile-missing",
                 TransportOutcomeStatus.NOT_SENT,
                 explanation="REFERENCE_MISSING_OR_NOT_CURRENT",
                 evidence=(ref,),
             )
-        if proof.profile_id != profile.profile_id:
+        if profile.authority_class is CompatibilityProfileAuthorityClass.SYNTHETIC:
             return _classification(
-                "live-profile-mismatch",
+                "live-synthetic-profile-rejected",
                 TransportOutcomeStatus.NOT_SENT,
-                explanation="REFERENCE_DISPUTED",
+                explanation="SYNTHETIC_PROFILE_CANNOT_AUTHORIZE_LIVE",
+                evidence=(ref,),
+            )
+        grant = self._authority.issue(profile)
+        if grant is None or grant.profile_id != profile.profile_id:
+            return _classification(
+                "live-authority-missing",
+                TransportOutcomeStatus.NOT_SENT,
+                explanation="PROVIDER_DISABLED_CONTINUE",
                 evidence=(ref,),
             )
         timeout = httpx.Timeout(
@@ -223,7 +320,7 @@ class HttpxLiveAdapter:
                 cookies=None,
                 trust_env=False,
             ) as client:
-                with client.stream("GET", source) as response:
+                with client.stream("GET", source.bounded_value) as response:
                     if response.status_code in (403, 429):
                         return _classification(
                             "httpx-restricted",
@@ -254,7 +351,7 @@ class HttpxLiveAdapter:
                         )
                     try:
                         decoded = json.loads(bytes(body))
-                    except UnicodeDecodeError, json.JSONDecodeError:
+                    except (UnicodeDecodeError, json.JSONDecodeError):
                         return _classification(
                             "httpx-malformed",
                             TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
@@ -280,11 +377,7 @@ class HttpxLiveAdapter:
                             evidence=(ref,),
                         )
                     empty_proof = decoded.get("empty_proof") is True
-                    status = (
-                        ParserOutcomeStatus.USABLE_RESPONSE
-                        if decoded["items"] or empty_proof
-                        else ParserOutcomeStatus.EXPLICIT_REJECTION
-                    )
+                    status = ParserOutcomeStatus.USABLE_RESPONSE if decoded["items"] or empty_proof else ParserOutcomeStatus.RESULT_AMBIGUOUS
                     evidence_class = (
                         ProviderResponseEvidenceClass.USABLE_RESPONSE
                         if decoded["items"]
@@ -306,7 +399,7 @@ class HttpxLiveAdapter:
                         else ResponseCompletenessStatus.COMPLETE,
                         evidence=(ref,),
                     )
-        except httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError:
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError):
             return _classification(
                 "httpx-transport-failure",
                 TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
@@ -322,6 +415,8 @@ class SyntheticParserProvider:
         self, scenario: str | SyntheticScenario, *, request_id: str = "synthetic"
     ) -> SyntheticRuntimeResult:
         name = str(scenario.value if isinstance(scenario, SyntheticScenario) else scenario)
+        if name not in {item.value for item in SyntheticScenario}:
+            raise ValueError(f"unsupported synthetic scenario: {name}")
         profile_status = CompatibilityProfileLifecycleStatus.CURRENT
         if name == SyntheticScenario.STALE_PROFILE:
             profile_status = CompatibilityProfileLifecycleStatus.STALE
@@ -475,6 +570,43 @@ class AvitoParserRuntime:
     ) -> SyntheticRuntimeResult:
         return self.synthetic_provider.execute(scenario, request_id=request_id)
 
+    def run_page(
+        self, scenario: str | SyntheticScenario, *, request_id: str = "synthetic-page"
+    ) -> ListingPageParseOutcome:
+        result = self.run_synthetic(scenario, request_id=request_id)
+        if result.page is None:
+            raise ValueError(f"scenario does not produce a listing page: {result.scenario}")
+        return result.page
+
+    def run_batch(
+        self, scenarios: tuple[str | SyntheticScenario, ...], *, request_id: str = "synthetic-batch"
+    ) -> ParserBatchRuntimeResult:
+        if not scenarios:
+            raise ValueError("batch must not be empty")
+        outcomes = tuple(
+            self.run_synthetic(scenario, request_id=f"{request_id}::{index}")
+            for index, scenario in enumerate(scenarios, 1)
+        )
+        statuses = tuple(item.attempt.parser_status for item in outcomes)
+        succeeded = sum(status is ParserOutcomeStatus.USABLE_RESPONSE for status in statuses)
+        ambiguous = sum(status is ParserOutcomeStatus.RESULT_AMBIGUOUS for status in statuses)
+        seen: set[str] = set()
+        duplicates: list[str] = []
+        for item in outcomes:
+            if item.page is None:
+                continue
+            for candidate in item.page.normalized_listing_candidates:
+                if candidate.listing_candidate_id in seen:
+                    duplicates.append(candidate.listing_candidate_id)
+                seen.add(candidate.listing_candidate_id)
+        return ParserBatchRuntimeResult(
+            outcomes=outcomes,
+            succeeded_count=succeeded,
+            failed_count=len(outcomes) - succeeded - ambiguous,
+            ambiguous_count=ambiguous,
+            duplicate_observations=tuple(duplicates),
+        )
+
     def analyze_source(
         self, request: ParserRequestEnvelope, transport: TransportOutcomeReference | None
     ) -> Any:
@@ -527,13 +659,13 @@ class AvitoParserRuntime:
         *,
         beacon_id: UUID,
         attempt: ParserAttemptOutcome,
-        listing_snapshot: Any = None,
+        normalized_snapshot: NormalizedListingSnapshot | ListingPageParseOutcome | None = None,
         run_id: UUID | None = None,
         route_id: UUID | None = None,
         purpose: str = "scan",
         observed_at: datetime | None = None,
     ) -> ParserPersistenceResult:
-        snapshot = _bounded_snapshot(listing_snapshot)
+        snapshot = _snapshot_for_persistence(normalized_snapshot)
         code = (attempt.parser_status or attempt.transport_status).value
         fingerprint = _fingerprint(beacon_id, purpose, attempt, snapshot)
         from mayak.persistence.metadata import metadata
@@ -552,19 +684,24 @@ class AvitoParserRuntime:
                 raise ValueError("contradictory immutable parser replay")
             return ParserPersistenceResult(existing["id"], fingerprint, True, code)
         outcome_id = uuid4()
-        db.execute(
-            insert(table).values(
-                id=outcome_id,
-                beacon_id=beacon_id,
-                run_id=run_id,
-                route_id=route_id,
-                outcome_code=code,
-                listing_snapshot=snapshot,
-                observed_at=observed_at or datetime.now(UTC),
-                fingerprint=fingerprint,
-                created_at=observed_at or datetime.now(UTC),
-            )
+        values = dict(
+            id=outcome_id, beacon_id=beacon_id, run_id=run_id, route_id=route_id,
+            outcome_code=code, listing_snapshot=snapshot,
+            observed_at=observed_at or datetime.now(UTC), fingerprint=fingerprint,
+            created_at=observed_at or datetime.now(UTC),
         )
+        try:
+            with db.begin_nested():
+                db.execute(insert(table).values(**values))
+        except IntegrityError:
+            existing = db.execute(
+                select(table).where(table.c.run_id == run_id, table.c.fingerprint == fingerprint)
+            ).mappings().first()
+            if existing is None:
+                raise
+            if existing["outcome_code"] != code or existing["listing_snapshot"] != snapshot:
+                raise ValueError("contradictory immutable parser replay")
+            return ParserPersistenceResult(existing["id"], fingerprint, True, code)
         return ParserPersistenceResult(outcome_id, fingerprint, False, code)
 
     def read_outcome(
@@ -672,12 +809,11 @@ def _status_for_transport(
 ) -> Any:
     if profile.lifecycle_status is not CompatibilityProfileLifecycleStatus.CURRENT:
         return profile.lifecycle_status
-    return (
-        transport.transport_status
-        if transport is not None
-        and transport.transport_status is not TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED
-        else ParserOutcomeStatus.USABLE_RESPONSE
-    )
+    if transport is None:
+        return TransportOutcomeStatus.NOT_SENT
+    if transport.transport_status is not TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED:
+        return transport.transport_status
+    return ParserOutcomeStatus.RESULT_AMBIGUOUS
 
 
 def _synthetic_configuration(
@@ -811,12 +947,19 @@ def _synthetic_page(
     )
 
 
-def _bounded_snapshot(value: Any) -> Any:
+def _snapshot_for_persistence(
+    value: NormalizedListingSnapshot | ListingPageParseOutcome | None,
+) -> dict[str, object] | None:
     if value is None:
         return None
-    encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    if isinstance(value, ListingPageParseOutcome):
+        value = NormalizedListingSnapshot.from_page(value)
+    if not isinstance(value, NormalizedListingSnapshot):
+        raise TypeError("persistence requires NormalizedListingSnapshot or ListingPageParseOutcome")
+    snapshot = value.as_dict()
+    encoded = json.dumps(snapshot, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     if len(encoded.encode()) > 32768:
-        raise ValueError("listing_snapshot exceeds 32 KiB")
+        raise ValueError("normalized listing snapshot exceeds 32 KiB")
     return json.loads(encoded)
 
 
@@ -830,6 +973,15 @@ def _fingerprint(
         "transport": attempt.transport_status.value,
         "parser": attempt.parser_status.value if attempt.parser_status else None,
         "response": attempt.response_reference,
+        "profile": (
+            attempt.request_envelope.compatibility_profile.profile_id
+            if attempt.request_envelope is not None
+            else None
+        ),
+        "evidence": tuple(
+            reference.reference_id
+            for reference in attempt.evidence_references
+        ),
         "snapshot": snapshot,
     }
     return hashlib.sha256(
@@ -839,9 +991,13 @@ def _fingerprint(
 
 __all__ = [
     "SyntheticScenario",
-    "LiveAuthorizationProof",
+    "LiveAuthorizationGrant",
+    "LiveAuthorityPort",
+    "DisabledLiveAuthority",
     "ParserTransportPort",
     "SyntheticRuntimeResult",
+    "ParserBatchRuntimeResult",
+    "NormalizedListingSnapshot",
     "ParserPersistenceResult",
     "ParserOutcomeReadback",
     "HttpxAdapterSettings",
