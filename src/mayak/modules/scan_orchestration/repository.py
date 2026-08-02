@@ -63,35 +63,50 @@ class ScanRepository:
             .with_for_update(skip_locked=True)
         ).mappings()
         for row in rows:
-            due = row["next_due_at"]
-            while due <= now:
-                due += timedelta(seconds=row["interval_seconds"])
-            wid = uuid4()
-            result = self.session.execute(
-                insert(work)
-                .values(
-                    id=wid,
-                    schedule_id=row["id"],
-                    beacon_id=row["beacon_id"],
-                    due_at=due,
-                    state="DUE",
-                    attempt_count=0,
-                    created_at=now,
-                    row_version=1,
+            original_due = row["next_due_at"]
+            unresolved = self.session.execute(
+                select(work.c.id)
+                .where(
+                    work.c.schedule_id == row["id"],
+                    work.c.state.in_(("DUE", "CLAIMED", "PENDING_RECONCILIATION", "RETRY")),
                 )
-                .on_conflict_do_nothing(index_elements=["schedule_id", "due_at"])
-            )
-            if result.rowcount:
-                made.append(wid)
-            self.session.execute(
+                .limit(1)
+            ).first()
+            if unresolved is None:
+                # Coalesce all missed intervals into the one currently due
+                # obligation.  The persisted work remains due now; only the
+                # schedule cursor advances beyond now.
+                wid = uuid4()
+                result = self.session.execute(
+                    insert(work)
+                    .values(
+                        id=wid,
+                        schedule_id=row["id"],
+                        beacon_id=row["beacon_id"],
+                        due_at=original_due,
+                        state="DUE",
+                        attempt_count=0,
+                        created_at=now,
+                        row_version=1,
+                    )
+                    .on_conflict_do_nothing(index_elements=["schedule_id", "due_at"])
+                )
+                if result.rowcount == 1:
+                    made.append(wid)
+            next_due = original_due
+            while next_due <= now:
+                next_due += timedelta(seconds=row["interval_seconds"])
+            changed = self.session.execute(
                 update(schedules)
                 .where(schedules.c.id == row["id"], schedules.c.row_version == row["row_version"])
                 .values(
-                    next_due_at=due,
+                    next_due_at=next_due,
                     updated_at=now,
                     row_version=row["row_version"] + 1,
                 )
             )
+            if changed.rowcount != 1:
+                raise LeaseConflict("schedule cursor changed while materializing due work")
         return made
 
     def claim(self, now: datetime, limit: int, lease_seconds: int) -> list[WorkClaim]:
@@ -116,9 +131,9 @@ class ScanRepository:
         for row in rows:
             token = uuid4()
             expiry = now + timedelta(seconds=lease_seconds)
-            self.session.execute(
+            changed = self.session.execute(
                 update(work)
-                .where(work.c.id == row["id"])
+                .where(work.c.id == row["id"], work.c.row_version == row["row_version"])
                 .values(
                     state="CLAIMED",
                     lease_started_at=now,
@@ -128,6 +143,8 @@ class ScanRepository:
                     row_version=row["row_version"] + 1,
                 )
             )
+            if changed.rowcount != 1:
+                raise LeaseConflict("work claim row changed")
             claims.append(
                 WorkClaim(
                     work_item_id=row["id"],

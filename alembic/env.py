@@ -44,14 +44,10 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     injected = config.attributes.get("connection")
     if injected is not None:
-        with serialized_migration(injected, commit_body=True):
+        with serialized_migration(injected):
             context.configure(connection=injected, **_configure_kwargs())
             with context.begin_transaction():
                 context.run_migrations()
-                # The injected connection is owned by the hosted migration
-                # boundary; commit the Alembic DDL/version marker before the
-                # serializer releases its advisory lock.
-                injected.commit()
         return
     engine = create_migration_engine()
     try:

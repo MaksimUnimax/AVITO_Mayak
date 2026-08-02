@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from mayak.contracts.results import CommonOutcome, Result
@@ -195,6 +195,18 @@ def commit_comparison(
         )
     )
     with session.begin():
+        # Serialize terminal decisions for the platform key before the first
+        # lookup. A concurrent session must observe the committed terminal
+        # record instead of evaluating the same empty key first.
+        idem_lock_key = int.from_bytes(
+            hashlib.sha256(f"scan-idempotency:{idempotency_key}".encode()).digest()[:8],
+            "big",
+            signed=True,
+        )
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": idem_lock_key},
+        )
         idem = PostgresTerminalIdempotencyRepository()
         resolution = idem.evaluate(
             session,
@@ -248,6 +260,15 @@ def commit_comparison(
         validate_cadence(
             current_entitlement, 300 if current_entitlement.tier is AccessTier.BASIC else 10800
         )
+        # The first successful comparison is Beacon-scoped durable state.  A
+        # PostgreSQL transaction lock serializes concurrent first baselines and
+        # new-listing decisions across independent Sessions/connections.
+        lock_key = int.from_bytes(
+            hashlib.sha256(f"scan-comparison:{runrow['beacon_id']}".encode()).digest()[:8],
+            "big",
+            signed=True,
+        )
+        session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
         baseline = (
             session.execute(
                 select(runs.c.id)
@@ -307,7 +328,7 @@ def commit_comparison(
                     )
                 )
                 continue
-            session.execute(
+            inserted_listing = session.execute(
                 insert(listings)
                 .values(
                     id=uuid4(),
@@ -320,8 +341,9 @@ def commit_comparison(
                     row_version=1,
                 )
                 .on_conflict_do_nothing(index_elements=["beacon_id", "external_listing_key"])
-            )
-            if not baseline:
+                .returning(listings.c.id)
+            ).scalar_one_or_none()
+            if not baseline and inserted_listing is not None:
                 new_keys.append(candidate.identity_key)
                 event_ids.append(
                     publish_event(
@@ -501,6 +523,7 @@ def record_parser_outcome(
         if (
             runrow["beacon_id"] != run.beacon_id
             or workrow["beacon_id"] != run.beacon_id
+            or workrow["state"] != "CLAIMED"
             or workrow["lease_token"] != run.lease_token
             or workrow["lease_expires_at"] <= moment
         ):
@@ -517,7 +540,7 @@ def record_parser_outcome(
         )
         if changed.rowcount != 1:
             raise RevisionConflict("run row version changed while recording parser outcome")
-        repo.session.execute(
+        changed_work = repo.session.execute(
             update(work)
             .where(
                 work.c.id == run.work_item_id,
@@ -532,6 +555,8 @@ def record_parser_outcome(
                 row_version=workrow["row_version"] + 1,
             )
         )
+        if changed_work.rowcount != 1:
+            raise LeaseConflict("work row changed while recording parser outcome")
     return state
 
 
