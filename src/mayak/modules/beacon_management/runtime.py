@@ -36,6 +36,7 @@ from .contracts import (
 )
 
 _BEACONS = metadata.tables["mayak.beacon_beacons"]
+_ACCOUNTS = metadata.tables["mayak.identity_accounts"]
 _REVISIONS = metadata.tables["mayak.beacon_configuration_revisions"]
 _OVERRIDES = metadata.tables["mayak.beacon_filter_overrides"]
 _EVENTS = metadata.tables["mayak.beacon_lifecycle_events"]
@@ -64,7 +65,9 @@ class EntitlementPort(Protocol):
 
 
 class SystemAuthorityPort(Protocol):
-    def resolve_system(self, session: Session, *, actor_reference: str) -> "ResolvedActor": ...
+    def resolve_system(
+        self, session: Session, *, actor_reference: str
+    ) -> "ResolvedSystemActor": ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +78,16 @@ class ResolvedActor:
     account_id: UUID
     verified: bool
     reference: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedSystemActor:
+    """Service authority; it is never an account owner."""
+
+    actor_id: UUID
+    verified: bool
+    reference: str
+    system_actor_class: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,11 +230,11 @@ class BeaconManagementRuntime:
             raise BeaconRuntimeError("verified authority required")
         return actor
 
-    def _system_authority(self, session: Session, actor_reference: str) -> ResolvedActor:
+    def _system_authority(self, session: Session, actor_reference: str) -> ResolvedSystemActor:
         if self.system_authority is None:
             raise BeaconRuntimeError("system lifecycle authority required")
         actor = self.system_authority.resolve_system(session, actor_reference=actor_reference)
-        if not isinstance(actor, ResolvedActor) or not actor.verified:
+        if not isinstance(actor, ResolvedSystemActor) or not actor.verified:
             raise BeaconRuntimeError("verified system authority required")
         return actor
 
@@ -267,8 +280,15 @@ class BeaconManagementRuntime:
         return result
 
     def _audit(
-        self, session: Session, actor: ResolvedActor, action: str, beacon_id: UUID, reason: str,
-        *, account_id: UUID | None = None, system_actor: bool = False,
+        self,
+        session: Session,
+        actor: ResolvedActor | ResolvedSystemActor,
+        action: str,
+        beacon_id: UUID,
+        reason: str,
+        *,
+        account_id: UUID | None = None,
+        system_actor: bool = False,
     ) -> None:
         correlation = CorrelationContext(correlation_id=CorrelationId(value=str(uuid4())))
         context = AuditContext(
@@ -284,7 +304,9 @@ class BeaconManagementRuntime:
             session,
             entry_id=uuid4(),
             actor_account_id=(
-                None if system_actor else (actor.account_id if account_id is None else account_id)
+                None
+                if system_actor
+                else (getattr(actor, "account_id", None) if account_id is None else account_id)
             ),
             context=context,
             target_id=str(beacon_id),
@@ -384,9 +406,7 @@ class BeaconManagementRuntime:
             raise ConflictError("expected row version is required")
         actor = self._authority(session, actor_reference, None)
         row = (
-            session.execute(
-                select(_BEACONS).where(_BEACONS.c.id == beacon_id).with_for_update()
-            )
+            session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id).with_for_update())
             .mappings()
             .one_or_none()
         )
@@ -474,7 +494,13 @@ class BeaconManagementRuntime:
         if isinstance(snapshot, dict):
             blob = json.dumps(snapshot, ensure_ascii=False).lower()
             forbidden = (
-                "html", "searchcore", "search_core", "context", "payload", "cookie", "token"
+                "html",
+                "searchcore",
+                "search_core",
+                "context",
+                "payload",
+                "cookie",
+                "token",
             )
             if any(word in blob for word in forbidden):
                 raise BeaconRuntimeError("raw or provider-shaped evidence is forbidden")
@@ -519,21 +545,21 @@ class BeaconManagementRuntime:
         if "source_url" in patch:
             raise BeaconRuntimeError("source URL cannot be patched")
         actor = self._authority(session, actor_reference, None)
+        # PATCH is field-scoped last-write-wins.  Serialize the owner account,
+        # then reread authoritative state; expected_row_version is an
+        # observation/precondition for callers, not a stale whole-form reject.
+        self._lock(session, actor.account_id)
         row = (
-            session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id))
+            session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id).with_for_update())
             .mappings()
             .one_or_none()
         )
         if row is None or row["account_id"] != actor.account_id:
             raise BeaconRuntimeError("beacon unavailable")
-        fp = self._fingerprint(
-            "patch", {"beacon": beacon_id, "patch": patch, "expected": expected_row_version}
-        )
+        fp = self._fingerprint("patch", {"beacon": beacon_id, "patch": patch})
         replay = self._begin(session, idempotency_key, fp)
         if replay:
             return replay
-        if row["row_version"] != expected_row_version:
-            raise ConflictError("stale patch")
         current = (
             session.execute(
                 select(_REVISIONS).where(
@@ -576,7 +602,7 @@ class BeaconManagementRuntime:
         version = row["row_version"] + 1
         changed = session.execute(
             update(_BEACONS)
-            .where(_BEACONS.c.id == beacon_id, _BEACONS.c.row_version == expected_row_version)
+            .where(_BEACONS.c.id == beacon_id, _BEACONS.c.row_version == row["row_version"])
             .values(
                 current_revision_no=revision_no,
                 current_revision_id=revision_id,
@@ -672,16 +698,21 @@ class BeaconManagementRuntime:
     ) -> BeaconCommandResult:
         actor = self._authority(session, actor_reference, None)
         return self._transition_as_actor(
-            session, actor=actor, beacon_id=beacon_id, action=action,
-            idempotency_key=idempotency_key, expected_row_version=expected_row_version,
-            reason=reason, causation=None,
+            session,
+            actor=actor,
+            beacon_id=beacon_id,
+            action=action,
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+            reason=reason,
+            causation=None,
         )
 
     def _transition_as_actor(
         self,
         session: Session,
         *,
-        actor: ResolvedActor,
+        actor: ResolvedActor | ResolvedSystemActor,
         beacon_id: UUID,
         action: str,
         idempotency_key: str,
@@ -689,14 +720,32 @@ class BeaconManagementRuntime:
         reason: str,
         causation: BeaconActionCausation | None,
     ) -> BeaconCommandResult:
-        self._lock(session, actor.account_id)
+        if isinstance(actor, ResolvedActor):
+            # Serialize all owner Beacon lifecycle decisions before taking a
+            # per-Beacon row lock; otherwise distinct final-slot rows can both
+            # observe the same active count.
+            self._lock(session, actor.account_id)
+            session.execute(
+                select(_ACCOUNTS).where(_ACCOUNTS.c.id == actor.account_id).with_for_update()
+            ).one()
         row = (
             session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id).with_for_update())
             .mappings()
             .one_or_none()
         )
-        if row is None or row["account_id"] != actor.account_id:
+        if row is None or (
+            isinstance(actor, ResolvedActor) and row["account_id"] != actor.account_id
+        ):
             raise BeaconRuntimeError("beacon unavailable")
+        self._lock(session, row["account_id"])
+        session.execute(
+            select(_ACCOUNTS).where(_ACCOUNTS.c.id == row["account_id"]).with_for_update()
+        ).one()
+        row = (
+            session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id).with_for_update())
+            .mappings()
+            .one()
+        )
         if expected_row_version is None:
             raise ConflictError("expected row version is required")
         if row["row_version"] != expected_row_version:
@@ -711,11 +760,18 @@ class BeaconManagementRuntime:
             "activate": {BeaconLifecycleState.READY.value},
             "pause": {BeaconLifecycleState.ACTIVE.value},
             "resume": {BeaconLifecycleState.PAUSED.value, BeaconLifecycleState.FROZEN.value},
-            "archive": {BeaconLifecycleState.READY.value, BeaconLifecycleState.PAUSED.value,
-                         BeaconLifecycleState.FROZEN.value},
-            "user_delete": {BeaconLifecycleState.DRAFT.value, BeaconLifecycleState.READY.value,
-                             BeaconLifecycleState.ACTIVE.value, BeaconLifecycleState.PAUSED.value,
-                             BeaconLifecycleState.FROZEN.value},
+            "archive": {
+                BeaconLifecycleState.READY.value,
+                BeaconLifecycleState.PAUSED.value,
+                BeaconLifecycleState.FROZEN.value,
+            },
+            "user_delete": {
+                BeaconLifecycleState.DRAFT.value,
+                BeaconLifecycleState.READY.value,
+                BeaconLifecycleState.ACTIVE.value,
+                BeaconLifecycleState.PAUSED.value,
+                BeaconLifecycleState.FROZEN.value,
+            },
             "permanent_delete": {BeaconLifecycleState.ARCHIVED.value},
         }
         if action == "freeze_after_expiry":
@@ -741,16 +797,17 @@ class BeaconManagementRuntime:
         target = targets.get(action)
         if target is None or row["state"] not in allowed_states:
             raise BeaconRuntimeError("invalid lifecycle transition")
+        account_id = row["account_id"]
         if action == "activate" and row["current_revision_no"] is None:
             raise BeaconRuntimeError("activation requires accepted current revision")
         if action in {"activate", "resume", "restore"}:
             count = session.execute(
                 select(func.count())
                 .select_from(_BEACONS)
-                .where(_BEACONS.c.account_id == actor.account_id, _BEACONS.c.state.in_(_ACTIVE))
+                .where(_BEACONS.c.account_id == account_id, _BEACONS.c.state.in_(_ACTIVE))
             ).scalar_one()
             decision = self.entitlement.decide(
-                session, account_id=actor.account_id, action=action, active_count=count
+                session, account_id=account_id, action=action, active_count=count
             )
             if not decision.fresh or not decision.allowed:
                 raise BeaconRuntimeError("current entitlement does not allow lifecycle action")
@@ -769,14 +826,21 @@ class BeaconManagementRuntime:
                 beacon_id=beacon_id,
                 from_state=row["state"],
                 to_state=target.value,
-                actor_account_id=None if causation is not None else actor.account_id,
+                actor_account_id=None if causation is not None else account_id,
+                system_actor_class=(causation.service_actor_class.value if causation else None),
+                causation_reference=(causation.causation_reference if causation else None),
+                policy_source_reference=(causation.policy_source_reference if causation else None),
                 reason=reason[:500],
                 created_at=now,
             )
         )
         self._audit(
-            session, actor, "BEACON_" + action.upper(), beacon_id, reason,
-            account_id=None if causation is not None else actor.account_id,
+            session,
+            actor,
+            "BEACON_" + action.upper(),
+            beacon_id,
+            reason,
+            account_id=None if causation is not None else account_id,
             system_actor=causation is not None,
         )
         return self._finish(
@@ -787,7 +851,7 @@ class BeaconManagementRuntime:
                 result=Result.SUCCEEDED,
                 reason_code="LIFECYCLE_TRANSITIONED",
                 beacon_id=beacon_id,
-                account_id=actor.account_id,
+                account_id=account_id,
                 state=target.value,
                 revision_no=row["current_revision_no"],
                 row_version=version,
@@ -795,57 +859,152 @@ class BeaconManagementRuntime:
             ),
         )
 
-    def activate(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-                 idempotency_key: str, expected_row_version: int) -> BeaconCommandResult:
-        return self._transition(session, actor_reference=actor_reference, beacon_id=beacon_id,
-                                action="activate", idempotency_key=idempotency_key,
-                                expected_row_version=expected_row_version)
+    def activate(
+        self,
+        session: Session,
+        *,
+        actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+    ) -> BeaconCommandResult:
+        return self._transition(
+            session,
+            actor_reference=actor_reference,
+            beacon_id=beacon_id,
+            action="activate",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
 
-    def pause(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-              idempotency_key: str, expected_row_version: int) -> BeaconCommandResult:
-        return self._transition(session, actor_reference=actor_reference, beacon_id=beacon_id,
-                                action="pause", idempotency_key=idempotency_key,
-                                expected_row_version=expected_row_version)
+    def pause(
+        self,
+        session: Session,
+        *,
+        actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+    ) -> BeaconCommandResult:
+        return self._transition(
+            session,
+            actor_reference=actor_reference,
+            beacon_id=beacon_id,
+            action="pause",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
 
-    def resume(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-               idempotency_key: str, expected_row_version: int) -> BeaconCommandResult:
-        return self._transition(session, actor_reference=actor_reference, beacon_id=beacon_id,
-                                action="resume", idempotency_key=idempotency_key,
-                                expected_row_version=expected_row_version)
+    def resume(
+        self,
+        session: Session,
+        *,
+        actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+    ) -> BeaconCommandResult:
+        return self._transition(
+            session,
+            actor_reference=actor_reference,
+            beacon_id=beacon_id,
+            action="resume",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
 
-    def archive(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-                idempotency_key: str, expected_row_version: int) -> BeaconCommandResult:
-        return self._transition(session, actor_reference=actor_reference, beacon_id=beacon_id,
-                                action="archive", idempotency_key=idempotency_key,
-                                expected_row_version=expected_row_version)
+    def archive(
+        self,
+        session: Session,
+        *,
+        actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+    ) -> BeaconCommandResult:
+        return self._transition(
+            session,
+            actor_reference=actor_reference,
+            beacon_id=beacon_id,
+            action="archive",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
 
-    def restore(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-                idempotency_key: str, expected_row_version: int) -> BeaconCommandResult:
-        return self._transition(session, actor_reference=actor_reference, beacon_id=beacon_id,
-                                action="restore", idempotency_key=idempotency_key,
-                                expected_row_version=expected_row_version)
+    def restore(
+        self,
+        session: Session,
+        *,
+        actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+    ) -> BeaconCommandResult:
+        return self._transition(
+            session,
+            actor_reference=actor_reference,
+            beacon_id=beacon_id,
+            action="restore",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
 
-    def user_delete(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-                    idempotency_key: str, expected_row_version: int) -> BeaconCommandResult:
-        return self._transition(session, actor_reference=actor_reference, beacon_id=beacon_id,
-                                action="user_delete", idempotency_key=idempotency_key,
-                                expected_row_version=expected_row_version)
+    def user_delete(
+        self,
+        session: Session,
+        *,
+        actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+    ) -> BeaconCommandResult:
+        return self._transition(
+            session,
+            actor_reference=actor_reference,
+            beacon_id=beacon_id,
+            action="user_delete",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
 
-    def permanent_delete(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-                         idempotency_key: str, expected_row_version: int) -> BeaconCommandResult:
-        return self._transition(session, actor_reference=actor_reference, beacon_id=beacon_id,
-                                action="permanent_delete", idempotency_key=idempotency_key,
-                                expected_row_version=expected_row_version)
+    def permanent_delete(
+        self,
+        session: Session,
+        *,
+        actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+    ) -> BeaconCommandResult:
+        return self._transition(
+            session,
+            actor_reference=actor_reference,
+            beacon_id=beacon_id,
+            action="permanent_delete",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
 
-    def freeze_after_expiry(self, session: Session, *, system_actor_reference: str,
-                            beacon_id: UUID, idempotency_key: str, expected_row_version: int,
-                            causation: BeaconActionCausation) -> BeaconCommandResult:
+    def freeze_after_expiry(
+        self,
+        session: Session,
+        *,
+        system_actor_reference: str,
+        beacon_id: UUID,
+        idempotency_key: str,
+        expected_row_version: int,
+        causation: BeaconActionCausation,
+    ) -> BeaconCommandResult:
         if causation.service_actor_class.value == "":
             raise BeaconRuntimeError("system causation is required")
         actor = self._system_authority(session, system_actor_reference)
         result = self._transition_as_actor(
-            session, actor=actor, beacon_id=beacon_id, action="freeze_after_expiry",
-            idempotency_key=idempotency_key, expected_row_version=expected_row_version,
+            session,
+            actor=actor,
+            beacon_id=beacon_id,
+            action="freeze_after_expiry",
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
             reason="PAID_ACCESS_EXPIRED:" + causation.causation_reference,
             causation=causation,
         )
@@ -894,20 +1053,36 @@ class BeaconManagementRuntime:
         )
         return tuple(dict(row) for row in rows)
 
-    def get_revision(self, session: Session, *, actor_reference: str, beacon_id: UUID,
-                     revision_no: int) -> BeaconRevisionView:
+    def get_revision(
+        self, session: Session, *, actor_reference: str, beacon_id: UUID, revision_no: int
+    ) -> BeaconRevisionView:
         self.get(session, actor_reference=actor_reference, beacon_id=beacon_id)
-        row = session.execute(select(_REVISIONS).where(
-            _REVISIONS.c.beacon_id == beacon_id, _REVISIONS.c.revision_no == revision_no
-        )).mappings().one_or_none()
+        row = (
+            session.execute(
+                select(_REVISIONS).where(
+                    _REVISIONS.c.beacon_id == beacon_id, _REVISIONS.c.revision_no == revision_no
+                )
+            )
+            .mappings()
+            .one_or_none()
+        )
         if row is None:
             raise BeaconRuntimeError("revision unavailable")
-        overrides = session.execute(select(_OVERRIDES).where(
-            _OVERRIDES.c.beacon_id == beacon_id, _OVERRIDES.c.revision_no == revision_no
-        ).order_by(_OVERRIDES.c.field_code)).mappings().all()
+        overrides = (
+            session.execute(
+                select(_OVERRIDES)
+                .where(_OVERRIDES.c.beacon_id == beacon_id, _OVERRIDES.c.revision_no == revision_no)
+                .order_by(_OVERRIDES.c.field_code)
+            )
+            .mappings()
+            .all()
+        )
         return BeaconRevisionView(
-            beacon_id=beacon_id, revision_no=revision_no, revision_id=row["revision_id"],
-            source_url=row["source_url"], snapshot_id=row["snapshot_id"],
+            beacon_id=beacon_id,
+            revision_no=revision_no,
+            revision_id=row["revision_id"],
+            source_url=row["source_url"],
+            snapshot_id=row["snapshot_id"],
             parser_outcome_status=row["parser_outcome_status"],
             accepted_as_clean=row["accepted_as_clean"],
             parser_evidence_reference=row["parser_evidence_reference"],
@@ -929,5 +1104,6 @@ __all__ = [
     "EntitlementDecision",
     "EntitlementPort",
     "ResolvedActor",
+    "ResolvedSystemActor",
     "SystemAuthorityPort",
 ]

@@ -392,6 +392,9 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         Column("from_state", String(64), nullable=True),
         Column("to_state", String(64), nullable=False),
         Column("actor_account_id", UUID(as_uuid=True), nullable=True),
+        Column("system_actor_class", String(128), nullable=True),
+        Column("causation_reference", String(512), nullable=True),
+        Column("policy_source_reference", String(512), nullable=True),
         Column("reason", Text, nullable=False),
         Column("created_at", TIMESTAMP(timezone=True), nullable=False),
         ForeignKeyConstraint(["beacon_id"], ["mayak.beacon_beacons.id"], ondelete="RESTRICT"),
@@ -403,6 +406,13 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         ),
         CheckConstraint("btrim(to_state) <> ''", name="to_state_nonempty"),
         CheckConstraint("btrim(reason) <> ''", name="reason_nonempty"),
+        CheckConstraint(
+            "(actor_account_id IS NOT NULL AND system_actor_class IS NULL "
+            "AND causation_reference IS NULL AND policy_source_reference IS NULL) OR "
+            "(actor_account_id IS NULL AND system_actor_class IS NOT NULL "
+            "AND causation_reference IS NOT NULL AND policy_source_reference IS NOT NULL)",
+            name="ck_beacon_lifecycle_events_actor_causation_pair",
+        ),
     )
     Index("ix_beacon_lifecycle_events_beacon_created_at", events.c.beacon_id, events.c.created_at)
     return beacons, revisions, overrides, events
