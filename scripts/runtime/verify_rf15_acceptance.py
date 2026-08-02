@@ -226,7 +226,14 @@ def _check(name: str, c: Mapping[str, Any]) -> bool:
     )
 
 
-CHECKERS = {name: (lambda d, n=name: _check(n, _case(d, n))) for name in REQUIREMENT_IDS}
+def _safe_check(data: Mapping[str, Any], name: str) -> bool:
+    try:
+        return _check(name, _case(data, name))
+    except KeyError, IndexError, TypeError, ValueError, OverflowError:
+        return False
+
+
+CHECKERS = {name: (lambda d, n=name: _safe_check(d, n)) for name in REQUIREMENT_IDS}
 BEHAVIORAL_CHECKERS = CHECKERS
 
 
