@@ -42,12 +42,12 @@ from mayak.modules.beacon_management import (
     ResolvedActor,
 )
 from mayak.modules.identity_and_access import (
-    FakeProviderIdentityVerifier,
     IdentityProvider,
     IdentityRuntime,
     ProviderIdentityClaim,
     ProviderIdentityResolutionRequest,
 )
+from mayak.modules.identity_and_access.runtime import FakeProviderIdentityVerifier
 from mayak.persistence.metadata import metadata
 from mayak.platform.correlation import CorrelationContext, CorrelationId
 
