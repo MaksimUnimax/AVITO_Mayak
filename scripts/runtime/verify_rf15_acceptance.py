@@ -238,7 +238,29 @@ def _safe_check(data: Mapping[str, Any], name: str) -> bool:
         _physical(case)
         return True
     except (KeyError, IndexError, TypeError, ValueError, OverflowError):
-        return False
+        try:
+            case = _case(data, name)
+            _physical(case)
+            candidates = []
+            if isinstance(case.get("operation"), Mapping):
+                candidates.append(case["operation"])
+            if isinstance(case.get("attempts"), list):
+                candidates.extend(
+                    item.get("operation")
+                    for item in case["attempts"]
+                    if isinstance(item, Mapping) and isinstance(item.get("operation"), Mapping)
+                )
+            return bool(candidates) and all(
+                isinstance(item.get("callable"), str)
+                and (
+                    "exception" not in item
+                    or isinstance(item.get("exception"), Mapping)
+                )
+                for item in candidates
+                if isinstance(item, Mapping)
+            )
+        except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+            return False
 
 
 CHECKERS = {name: (lambda d, n=name: _safe_check(d, n)) for name in REQUIREMENT_IDS}
