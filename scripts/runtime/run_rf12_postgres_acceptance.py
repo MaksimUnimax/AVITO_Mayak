@@ -42,7 +42,6 @@ from mayak.modules.entitlements_and_billing.runtime import (
 from mayak.persistence.metadata import metadata
 
 SCHEMA = "rf12-postgres-acceptance-v2"
-TECHNICAL_ID = "RF-12-CORRECTIVE-BASIC-BEACON-LIMIT-AND-ACTIVE-SLOT-AUTHORITY-20260802-05"
 EXPECTED_HEAD = "RF12_BASIC_BEACON_LIMIT"
 HISTORICAL = Path("alembic/versions/20260801_RF12_manual_grant_semantics.py")
 HISTORICAL_HARDEN = Path("alembic/versions/20260801_RF12_runtime_harden.py")
@@ -530,7 +529,12 @@ def _real_payment_race(engine: Engine) -> dict[str, Any]:
             thread.join(timeout=15)
         with Session(engine) as check:
             payments = _count(check, "billing_payment_records", f"provider_code = '{provider}' AND external_payment_id = '{external}'")
-            idempotency = _count(check, "platform_idempotency_records", "scope='entitlements_and_billing' AND idempotency_key LIKE 'payment-race-%'")
+            idempotency_keys = (
+                f"idempotency_key = '{request_key}'"
+                if accounts[0] == accounts[1]
+                else f"idempotency_key IN ('payment-race-{accounts[0]}', 'payment-race-{accounts[1]}')"
+            )
+            idempotency = _count(check, "platform_idempotency_records", f"scope='entitlements_and_billing' AND {idempotency_keys}")
         return {
             "sessions": 2, "synchronization": "Barrier + independent SQLAlchemy Sessions",
         "outcomes": outcomes, "committed_payment_count": payments,
@@ -704,6 +708,8 @@ def _safe_failure_message(exc: BaseException) -> str:
 
 
 def produce(args: argparse.Namespace) -> dict[str, Any]:
+    if not isinstance(args.technical_id, str) or not args.technical_id.strip() or len(args.technical_id) > 256:
+        raise SystemExit("RF12 technical ID must be a non-empty bounded string")
     if not args.dsn or "@" not in args.dsn or "localhost" in args.dsn or "127.0.0.1" in args.dsn:
         raise SystemExit("RF12 task-owned internal PostgreSQL DSN is required")
     args._phase = "migration_ladders"
@@ -753,7 +759,7 @@ def produce(args: argparse.Namespace) -> dict[str, Any]:
     cleanup = _cleanup(engine, [matrix["account_id"], concurrency["account_id"], tariff_concurrency["account_id"], concurrent_mismatch["account_id"], rollback["account_id"], payment_rollback["account_id"], manual_semantics_account, payment_authority_account, usage_policy_account, *payment_race["account_ids"]])
     args._phase = "evidence_schema_observation"
     evidence = {
-        "schema_version": SCHEMA, "technical_id": TECHNICAL_ID,
+        "schema_version": SCHEMA, "technical_id": args.technical_id,
         "evidence_phase": "RUNTIME_COMPLETE_PENDING_HOST_FINALIZATION",
         "candidate_source_sha": args.candidate_sha, "candidate_tree_identity": _safe_git("write-tree") if not args.candidate_tree else args.candidate_tree,
         "application_image_identity": args.image_identity, "lock_identity": args.lock_identity,
@@ -817,6 +823,7 @@ def main() -> int:
     parser.add_argument("--runtime-harden-dsn")
     parser.add_argument("--artifact", type=Path, required=True)
     parser.add_argument("--candidate-sha", required=True)
+    parser.add_argument("--technical-id", required=True)
     parser.add_argument("--candidate-tree")
     parser.add_argument("--image-identity", required=True)
     parser.add_argument("--image-provenance")
