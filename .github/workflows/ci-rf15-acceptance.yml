@@ -36,15 +36,19 @@ jobs:
         with: {version: '0.11.31'}
       - run: uv sync --frozen
       - name: Create migration boundary
-        env: {PGPASSWORD: mayak}
         run: |
           install -d -m 700 /run/secrets
           umask 077
           printf '%s' 'rf15migration' > /run/secrets/mayak_database_migration_password
-          psql postgresql://mayak@127.0.0.1:5432/mayak -v ON_ERROR_STOP=1 \
-            -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'" \
-            -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'" \
-            -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration"
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine("postgresql+psycopg://mayak:mayak@127.0.0.1:5432/mayak")
+          with engine.begin() as connection:
+              connection.execute(text("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'"))
+              connection.execute(text("CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'"))
+              connection.execute(text("CREATE SCHEMA mayak AUTHORIZATION mayak_migration"))
+          engine.dispose()
+          PY
       - name: Alembic upgrade head
         run: uv run alembic upgrade head
       - name: Verify migration across a new connection
