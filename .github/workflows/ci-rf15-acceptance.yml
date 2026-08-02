@@ -41,12 +41,26 @@ jobs:
           umask 077
           printf '%s' 'rf15migration' > /run/secrets/mayak_database_migration_password
           uv run python - <<'PY'
+          import time
           from sqlalchemy import create_engine, text
-          engine = create_engine("postgresql+psycopg://mayak:mayak@127.0.0.1:5432/mayak")
-          with engine.begin() as connection:
-              connection.execute(text("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'"))
-              connection.execute(text("CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'"))
-              connection.execute(text("CREATE SCHEMA mayak AUTHORIZATION mayak_migration"))
+          engine = create_engine(
+              "postgresql+psycopg://mayak:mayak@127.0.0.1:5432/mayak",
+              connect_args={"connect_timeout": 5},
+          )
+          last = None
+          for attempt in range(1, 31):
+              try:
+                  with engine.begin() as connection:
+                      connection.execute(text("DO $$ BEGIN CREATE ROLE mayak_migration LOGIN PASSWORD 'rf15migration'; EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+                      connection.execute(text("DO $$ BEGIN CREATE ROLE mayak_application LOGIN PASSWORD 'rf15application'; EXCEPTION WHEN duplicate_object THEN NULL; END $$"))
+                      connection.execute(text("CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration"))
+                  break
+              except Exception as exc:
+                  last = exc
+                  print(f"database boundary attempt {attempt}: {type(exc).__name__}")
+                  time.sleep(2)
+          else:
+              raise RuntimeError(f"database boundary unavailable: {type(last).__name__}")
           engine.dispose()
           PY
       - name: Alembic upgrade head
