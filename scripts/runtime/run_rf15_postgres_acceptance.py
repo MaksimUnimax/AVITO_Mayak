@@ -506,7 +506,8 @@ def prepare_claimed_run(
         if len(materialized) != 1 and len(available["work_rows"]) != 1:
             raise RuntimeError(
                 f"{scenario_id}: expected exactly one materialized due work item, "
-                f"operation returned {len(materialized)}, physical rows {len(available['work_rows'])}"
+                f"operation returned {len(materialized)}, "
+                f"physical rows {len(available['work_rows'])}"
             )
         claims = claim_work(repo, now, 1, 120)
         if len(claims) != 1:
