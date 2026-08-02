@@ -70,29 +70,40 @@ def main() -> int:
     if not args.dsn:
         raise SystemExit("a PostgreSQL DSN is required")
     engine = create_engine(args.dsn, future=True)
-    with engine.connect() as connection:
-        version = str(connection.execute(text("select version()")).scalar_one())
-        head = str(
-            connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
-        )
-        inspector = inspect(connection)
-        tables = sorted(
-            name for name in inspector.get_table_names(schema="mayak") if name != "alembic_version"
-        )
-        indexes = {
-            name: tuple(
-                sorted(
-                    str(item["name"])
-                    for item in inspector.get_indexes(name, schema="mayak")
-                    if item.get("name")
-                )
+    try:
+        with engine.connect() as connection:
+            version = str(connection.execute(text("select version()")).scalar_one())
+            head = str(
+                connection.execute(
+                    text("select version_num from mayak.alembic_version")
+                ).scalar_one()
             )
-            for name in tables
-        }
-        rows = {
-            name: int(connection.execute(text(f"select count(*) from mayak.{name}")).scalar_one())
-            for name in tables
-        }
+            inspector = inspect(connection)
+            tables = sorted(
+                name
+                for name in inspector.get_table_names(schema="mayak")
+                if name != "alembic_version"
+            )
+            indexes = {
+                name: tuple(
+                    sorted(
+                        str(item["name"])
+                        for item in inspector.get_indexes(name, schema="mayak")
+                        if item.get("name")
+                    )
+                )
+                for name in tables
+            }
+            rows = {
+                name: int(
+                    connection.execute(text(f'select count(*) from mayak."{name}"')).scalar_one()
+                )
+                for name in tables
+            }
+    except Exception as exc:
+        raise SystemExit(
+            f"RF15_PRODUCER_DATABASE_OBSERVATION_FAILED:{type(exc).__name__}:{exc}"
+        ) from exc
     candidate = git("rev-parse", "HEAD")
     evidence = {
         "identity": {
