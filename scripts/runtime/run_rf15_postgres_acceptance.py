@@ -80,6 +80,17 @@ def _git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
+def _parent_sha() -> str:
+    """Record the parent even when hosted checkout intentionally is shallow."""
+    event_before = os.environ.get("GITHUB_EVENT_BEFORE")
+    if event_before and len(event_before) == 40:
+        return event_before
+    try:
+        return _git("rev-parse", "HEAD^")
+    except subprocess.CalledProcessError:
+        return "shallow-parent-unavailable"
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -1452,7 +1463,7 @@ def main() -> int:
         "identity": {
             "technical_id": TECHNICAL_ID,
             "candidate_sha": _git("rev-parse", "HEAD"),
-            "parent_sha": _git("rev-parse", "HEAD^"),
+            "parent_sha": _parent_sha(),
             "tree_sha": _git("rev-parse", "HEAD^{tree}"),
             "python": platform.python_version(),
             "captured_at": _now().isoformat(),
