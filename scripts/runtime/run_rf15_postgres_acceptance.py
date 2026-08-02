@@ -77,7 +77,7 @@ PARSER_FAILURES = (
 
 
 def _git(*args: str) -> str:
-    return subprocess.check_output(["git", *args], text=True).strip()
+    return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL).strip()
 
 
 def _parent_sha() -> str:
@@ -1485,7 +1485,8 @@ def main() -> int:
         "behavioral_cases": cases,
     }
     args.output.write_text(
-        json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2, default=_safe) + "\n",
+        encoding="utf-8",
     )
     return 0
 
