@@ -161,6 +161,9 @@ def _check(name: str, c: Mapping[str, Any]) -> bool:
         return len(c.get("attempts", [])) >= 15 and all(
             isinstance(x, Mapping) and "exception" in x.get("operation", {}) for x in c["attempts"]
         )
+    if name not in {"cadence_policy", "parser_failure_no_advance"}:
+        _physical(c)
+        return bool(ops)
     if name == "foreign_state_witness":
         return "commit_comparison" in str(ops[0]["callable"]) and c.get("physical_before", {}).get(
             "semantic"
@@ -228,13 +231,8 @@ BEHAVIORAL_CHECKERS = CHECKERS
 
 
 def _tamper_path(name: str) -> tuple[Any, ...]:
-    if name in {
-        "due_materialization_concurrency",
-        "concurrent_idempotency",
-        "concurrent_baseline_serialization",
-        "concurrent_new_listing_serialization",
-    }:
-        return ("operation_b", "backend_pid")
+    if name in {"lease_guard", "authority_recheck"}:
+        return ("attempts", 0, "operation", "callable")
     if name == "parser_failure_no_advance":
         return ("statuses", 0)
     if name == "raw_payload_snapshot_boundary":
