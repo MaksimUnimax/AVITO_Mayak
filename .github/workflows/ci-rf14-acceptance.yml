@@ -38,12 +38,22 @@ jobs:
       - name: Create migration boundary
         run: |
           uv run python - <<'PY'
+          import time
           import psycopg
-          with psycopg.connect("postgresql://rf14@postgres:5432/rf14", autocommit=True) as connection:
-              with connection.cursor() as cursor:
-                  cursor.execute("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf14migration'")
-                  cursor.execute("CREATE ROLE mayak_application LOGIN PASSWORD 'rf14application'")
-                  cursor.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+          last_error = None
+          for _ in range(30):
+              try:
+                  with psycopg.connect("postgresql://rf14@postgres:5432/rf14", autocommit=True) as connection:
+                      with connection.cursor() as cursor:
+                          cursor.execute("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf14migration'")
+                          cursor.execute("CREATE ROLE mayak_application LOGIN PASSWORD 'rf14application'")
+                          cursor.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+                  break
+              except psycopg.OperationalError as error:
+                  last_error = error
+                  time.sleep(2)
+          else:
+              raise last_error
           PY
       - name: Produce raw observations
         env: {PGPASSWORD: rf14}
