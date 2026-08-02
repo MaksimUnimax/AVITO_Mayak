@@ -15,8 +15,11 @@ from sqlalchemy import create_engine, inspect, text
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--dsn", default=os.environ.get("MAYAK_DATABASE_URL"))
     args = parser.parse_args()
-    url = os.environ["MAYAK_DATABASE_URL"]
+    if not args.dsn:
+        raise SystemExit("a PostgreSQL DSN is required")
+    url = args.dsn
     engine = create_engine(url, future=True)
     with engine.connect() as connection:
         version = connection.execute(text("select version()")).scalar_one()
