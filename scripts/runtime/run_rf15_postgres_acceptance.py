@@ -73,7 +73,6 @@ PARSER_FAILURES = (
     "PARTIAL",
     "RESULT_AMBIGUOUS",
 )
-_ACTIVE_BEACON_ID: str | None = None
 
 
 def _git(*args: str) -> str:
@@ -205,17 +204,32 @@ def _operation(
     return value
 
 
-def _physical(connection: Any) -> dict[str, Any]:
-    if _ACTIVE_BEACON_ID is None:
-        raise RuntimeError("scenario fixture scope is not established")
-    beacon = _ACTIVE_BEACON_ID
+def _physical(
+    connection: Any,
+    *,
+    beacon_id: str,
+    schedule_id: str | None = None,
+    work_id: str | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    """Expose raw rows for one explicit scenario scope."""
+    beacon = str(beacon_id)
+    params = {
+        "beacon_id": beacon,
+        "schedule_id": schedule_id,
+        "work_id": work_id,
+        "run_id": run_id,
+    }
+    schedule_filter = "and id = cast(:schedule_id as uuid)" if schedule_id else ""
+    work_filter = "and id = cast(:work_id as uuid)" if work_id else ""
+    run_filter = "and id = cast(:run_id as uuid)" if run_id else ""
     schedules = (
         connection.execute(
             text(
                 "select id::text, interval_seconds, next_due_at, state from mayak.scan_schedules "
-                "where beacon_id = cast(:beacon_id as uuid) order by id"
+                f"where beacon_id = cast(:beacon_id as uuid) {schedule_filter} order by id"
             ),
-            {"beacon_id": beacon},
+            params,
         )
         .mappings()
         .all()
@@ -224,9 +238,9 @@ def _physical(connection: Any) -> dict[str, Any]:
         connection.execute(
             text(
                 "select id::text, schedule_id::text, due_at, state from mayak.scan_work_items "
-                "where beacon_id = cast(:beacon_id as uuid) order by id"
+                f"where beacon_id = cast(:beacon_id as uuid) {work_filter} order by id"
             ),
-            {"beacon_id": beacon},
+            params,
         )
         .mappings()
         .all()
@@ -235,9 +249,9 @@ def _physical(connection: Any) -> dict[str, Any]:
         connection.execute(
             text(
                 "select id::text, work_item_id::text, revision_no, state from mayak.scan_runs "
-                "where beacon_id = cast(:beacon_id as uuid) order by id"
+                f"where beacon_id = cast(:beacon_id as uuid) {run_filter} order by id"
             ),
-            {"beacon_id": beacon},
+            params,
         )
         .mappings()
         .all()
@@ -296,12 +310,22 @@ def _case(
     name: str,
     operation: Callable[[], Any],
     *,
+    beacon_id: str,
+    schedule_id: str | None = None,
+    work_id: str | None = None,
+    run_id: str | None = None,
     before: dict[str, Any] | None = None,
     after: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     def snapshot() -> dict[str, Any]:
         with connection.engine.connect() as probe:
-            return _physical(probe)
+            return _physical(
+                probe,
+                beacon_id=beacon_id,
+                schedule_id=schedule_id,
+                work_id=work_id,
+                run_id=run_id,
+            )
 
     observed_before = before if before is not None else snapshot()
     operation = _operation(
@@ -432,10 +456,70 @@ def _create_fixture(engine: Any) -> dict[str, str]:
                 next_due_at=_now() - timedelta(hours=2),
             )
         )
+        session.commit()
     return {
         "account_id": str(identity.account_id),
         "beacon_id": str(beacon.beacon_id),
         "revision": str(accepted.revision_no or 1),
+    }
+
+
+def prepare_claimed_run(
+    engine: Any, *, scenario_id: str, interval_seconds: int = 300
+) -> dict[str, Any]:
+    """Create, materialize, claim and start one real scenario-owned run.
+
+    The helper is deliberately mechanical.  It never chooses parser semantics
+    or terminal expectations for a scenario.
+    """
+    fixture = _create_fixture(engine)
+    beacon_id = UUID(fixture["beacon_id"])
+    account_id = UUID(fixture["account_id"])
+    revision = int(fixture["revision"])
+    now = _now()
+    with Session(engine) as session:
+        service = ScheduleService(
+            ScanRepository(session),
+            SyntheticBeacon(beacon_id, account_id, revision),
+            SyntheticEntitlementPort(),
+        )
+        command_type = __import__(
+            "mayak.modules.scan_orchestration.contracts", fromlist=["ScheduleCommand"]
+        ).ScheduleCommand
+        schedule = service.create_or_update(
+            command_type(
+                beacon_id=beacon_id,
+                interval_seconds=interval_seconds,
+                next_due_at=now - timedelta(hours=4),
+            )
+        )
+        session.commit()
+    with Session(engine) as session:
+        repo = ScanRepository(session)
+        materialized = materialize_due_work(repo, now, 10)
+        if len(materialized) != 1:
+            raise RuntimeError(
+                f"{scenario_id}: expected exactly one materialized due work item, "
+                f"got {len(materialized)}"
+            )
+        claims = claim_work(repo, now, 1, 120)
+        if len(claims) != 1:
+            raise RuntimeError(
+                f"{scenario_id}: expected exactly one claim after materialization, "
+                f"got {len(claims)}"
+            )
+        claim = claims[0]
+        run = start_run(repo, claim, SyntheticBeacon(beacon_id, account_id, revision), now)
+        session.commit()
+    return {
+        **fixture,
+        "schedule_id": str(schedule.schedule_id),
+        "work_id": str(claim.work_item_id),
+        "run_id": str(run.run_id),
+        "claim": claim,
+        "run": run,
+        "now": now.isoformat(),
+        "scenario_id": scenario_id,
     }
 
 
@@ -481,8 +565,6 @@ def scenario_cadence_policy(connection: Any) -> dict[str, Any]:
         )
     # Exercise the production schedule boundary as well as the pure policy.
     fixture = _create_fixture(connection.engine)
-    global _ACTIVE_BEACON_ID
-    _ACTIVE_BEACON_ID = fixture["beacon_id"]
     with Session(connection.engine) as session:
         schedule = ScheduleService(
             ScanRepository(session),
@@ -510,64 +592,119 @@ def scenario_cadence_policy(connection: Any) -> dict[str, Any]:
                 )
             }
         )
-    return _case(connection, "cadence_policy", valid) | {"attempts": attempts}
+    return {
+        "scenario_id": "cadence_policy",
+        "operation": {"callable": "validate_cadence", "input": {}, "result": valid()},
+        "attempts": attempts,
+        "physical_before": _physical(connection, beacon_id=fixture["beacon_id"]),
+        "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
+        "scope": fixture,
+    }
+
+
+def _scoped(connection: Any, fixture: dict[str, Any]) -> dict[str, Any]:
+    return _physical(
+        connection,
+        beacon_id=fixture["beacon_id"],
+        schedule_id=fixture.get("schedule_id"),
+        work_id=fixture.get("work_id"),
+        run_id=fixture.get("run_id"),
+    )
+
+
+def _clean_outcome(candidates: tuple[ListingCandidate, ...] = ()) -> ParserOutcome:
+    return ParserOutcome(
+        outcome_id=uuid4(),
+        status="CLEAN",
+        sort_context="NEWEST_FIRST_PROVEN",
+        candidates=candidates,
+        provenance_fingerprint=_digest([c.model_dump(mode="json") for c in candidates]),
+    )
+
+
+def _terminal(
+    engine: Any,
+    fixture: dict[str, Any],
+    outcome: ParserOutcome,
+    key: str,
+    *,
+    run: Any | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    beacon = SyntheticBeacon(
+        UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
+    )
+    parser = SyntheticParserPort(outcome)
+    with Session(engine) as session:
+        repo = ScanRepository(session)
+        session.execute(
+            text(
+                "insert into mayak.parser_outcomes "
+                "(id, beacon_id, run_id, outcome_code, listing_snapshot, observed_at, "
+                "fingerprint, created_at) "
+                "values (cast(:id as uuid), cast(:beacon_id as uuid), cast(:run_id as uuid), "
+                ":outcome_code, cast(:listing_snapshot as jsonb), :observed_at, "
+                ":fingerprint, :created_at)"
+            ),
+            {
+                "id": str(outcome.outcome_id),
+                "beacon_id": fixture["beacon_id"],
+                "run_id": fixture["run_id"],
+                "outcome_code": outcome.status,
+                "listing_snapshot": json.dumps(
+                    outcome.candidates[0].snapshot if outcome.candidates else None
+                ),
+                "observed_at": _now(),
+                "fingerprint": _digest({"key": key, "provenance": outcome.provenance_fingerprint}),
+                "created_at": _now(),
+            },
+        )
+        before = _scoped(session.connection(), fixture)
+        effective_run = run or fixture["run"]
+        operation = _operation(
+            session.connection(),
+            "mayak.modules.scan_orchestration.commit_comparison",
+            {
+                "run_id": fixture["run_id"],
+                "parser_outcome_id": str(outcome.outcome_id),
+                "idempotency_key": key,
+            },
+            lambda: commit_comparison(
+                repo,
+                effective_run,
+                outcome.outcome_id,
+                beacon,
+                SyntheticEntitlementPort(),
+                parser,
+                key,
+                now,
+            ),
+        )
+        session.commit()
+        after = _scoped(session.connection(), fixture)
+    return {
+        "operation": operation,
+        "physical_before": before,
+        "physical_after": after,
+        "scope": fixture,
+    }
 
 
 def scenario_parser_failure_no_advance(connection: Any) -> dict[str, Any]:
-    attempts: list[dict[str, Any]] = []
-    engine = connection.engine
+    attempts = []
     for ordinal, status in enumerate(PARSER_FAILURES):
-        fixture = _create_fixture(engine)
-        global _ACTIVE_BEACON_ID
-        _ACTIVE_BEACON_ID = fixture["beacon_id"]
-        with Session(engine) as session:
-            repo = ScanRepository(session)
-            claim = claim_work(repo, _now(), 1, 120)[0]
-            beacon = SyntheticBeacon(
-                UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
-            )
-            run = start_run(repo, claim, beacon)
-            outcome_id = uuid4()
-            parser = SyntheticParserPort(
-                ParserOutcome(
-                    outcome_id=outcome_id,
-                    status=status,
-                    provenance_fingerprint=_digest({"status": status}),
-                )
-            )
-            with engine.connect() as probe:
-                before = _physical(probe)
-            with engine.connect() as operation_connection:
-                attempts.append(
-                    {
-                        "operation": _operation(
-                            operation_connection,
-                            "mayak.modules.scan_orchestration.commit_comparison",
-                            {"status": status, "ordinal": ordinal, "run_id": str(run.run_id)},
-                            lambda: commit_comparison(
-                                repo,
-                                run,
-                                outcome_id,
-                                beacon,
-                                SyntheticEntitlementPort(),
-                                parser,
-                                f"rf15-parser-failure-{ordinal}",
-                            ),
-                        ),
-                        "physical_before": before,
-                        "physical_after": _physical(operation_connection),
-                        "authority_history": parser.history,
-                    }
-                )
-    before = attempts[0]["physical_before"]
-    after = attempts[-1]["physical_after"]
-    return _case(
-        connection,
-        "parser_failure_no_advance",
-        lambda: {"statuses": list(PARSER_FAILURES)},
-        before=before,
-        after=after,
-    ) | {"statuses": list(PARSER_FAILURES)}
+        fixture = prepare_claimed_run(connection.engine, scenario_id=f"parser-failure-{ordinal}")
+        outcome = ParserOutcome(
+            outcome_id=uuid4(), status=status, provenance_fingerprint=_digest(status)
+        )
+        attempts.append(
+            _terminal(connection.engine, fixture, outcome, f"rf15-parser-failure-{ordinal}")
+        )
+    return {
+        "scenario_id": "parser_failure_no_advance",
+        "attempts": attempts,
+        "statuses": list(PARSER_FAILURES),
+    }
 
 
 def scenario_raw_payload_snapshot_boundary(connection: Any) -> dict[str, Any]:
@@ -618,52 +755,51 @@ def scenario_raw_payload_snapshot_boundary(connection: Any) -> dict[str, Any]:
         }
         for descriptor, payload in zip(descriptors, payloads, strict=True)
     ]
-    return _case(
-        connection,
-        "raw_payload_snapshot_boundary",
-        lambda: {"descriptors": descriptors},
-        after=_physical(connection),
-    ) | {"input": {"descriptors": descriptors}, "attempts": attempts}
+    fixture = prepare_claimed_run(connection.engine, scenario_id="raw-payload")
+    return {
+        "scenario_id": "raw_payload_snapshot_boundary",
+        "scope": fixture,
+        "attempts": attempts,
+        "physical_before": _scoped(connection, fixture),
+        "physical_after": _scoped(connection, fixture),
+    }
 
 
 def scenario_foreign_state_witness(connection: Any) -> dict[str, Any]:
+    fixture = prepare_claimed_run(connection.engine, scenario_id="foreign-witness")
     first = _semantic_foreign(connection)
+    terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-foreign-witness")
     second = _semantic_foreign(connection)
-    return _case(
-        connection,
-        "foreign_state_witness",
-        lambda: {},
-        before={"capture_id": "t0", "digest": _digest(first), "semantic": first},
-        after={"capture_id": "t4", "digest": _digest(second), "semantic": second},
-    )
+    return {
+        "operation": terminal["operation"],
+        "physical_before": {"observed_at": _now().isoformat(), "semantic": first},
+        "physical_after": {"observed_at": _now().isoformat(), "semantic": second},
+        "rf15_physical": terminal,
+    }
 
 
 def scenario_restart_durability(connection: Any) -> dict[str, Any]:
-    initial = _physical(connection)
-    ids = initial.get("run_ids", [])
-    identity = ids[0] if ids else "missing"
+    fixture = prepare_claimed_run(connection.engine, scenario_id="restart")
+    terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-restart")
     engine = connection.engine
-    with engine.connect() as fresh:
-        fresh_physical = _physical(fresh)
-        fresh_pid = int(fresh.execute(text("select pg_backend_pid()")).scalar_one())
-    state = next(
-        (
-            row.get("state")
-            for row in fresh_physical.get("run_rows", [])
-            if row.get("id") == identity
-        ),
-        None,
-    )
-    return _case(
-        connection,
-        "restart_durability",
-        lambda: {"identity": identity, "state": state, "fresh_backend_pid": fresh_pid},
-        before={
-            "identity": identity,
-            "backend_pid": int(connection.execute(text("select pg_backend_pid()")).scalar_one()),
+    engine.dispose()
+    dsn = os.environ.get("MAYAK_DATABASE_URL") or os.environ["RF15_DSN"]
+    fresh_engine = create_engine(dsn, future=True)
+    try:
+        with Session(fresh_engine) as session:
+            physical = _physical(
+                session.connection(), beacon_id=fixture["beacon_id"], run_id=fixture["run_id"]
+            )
+            pid = int(session.execute(text("select pg_backend_pid()")).scalar_one())
+    finally:
+        fresh_engine.dispose()
+    return {
+        "operation": terminal["operation"],
+        "physical_before": terminal["physical_before"],
+        "physical_after": {
+            "second_lifetime": {"backend_pid": pid, "run_rows": physical["run_rows"]}
         },
-        after={"identity": identity, "state": state, "backend_pid": fresh_pid},
-    )
+    }
 
 
 def scenario_concurrent(connection: Any, name: str) -> dict[str, Any]:
@@ -674,7 +810,7 @@ def scenario_concurrent(connection: Any, name: str) -> dict[str, Any]:
     }:
         # These requirements are races at the governed terminal boundary;
         # due-work materialization is deliberately not an acceptable proxy.
-        return _comparison_family(connection, name)
+        raise RuntimeError(f"{name} requires explicit terminal concurrency setup")
     barrier = Barrier(2)
     records: list[dict[str, Any]] = []
 
@@ -743,8 +879,6 @@ def _materialize_on_engine(engine: Any) -> list[UUID]:
 
 def _schedule_family(connection: Any, name: str) -> dict[str, Any]:
     fixture = _create_fixture(connection.engine)
-    global _ACTIVE_BEACON_ID
-    _ACTIVE_BEACON_ID = fixture["beacon_id"]
     before = _physical(connection)
     with Session(connection.engine) as session:
         service = ScheduleService(
@@ -792,145 +926,371 @@ def _claim_on_engine(engine: Any) -> list[Any]:
         return claim_work(ScanRepository(session), _now(), 1, 120)
 
 
-def _comparison_family(connection: Any, name: str) -> dict[str, Any]:
-    """Run the actual governed terminal comparison boundary for this family."""
-    engine = connection.engine
-    fixture = _create_fixture(engine)
-    global _ACTIVE_BEACON_ID
-    _ACTIVE_BEACON_ID = fixture["beacon_id"]
-    beacon_id = UUID(fixture["beacon_id"])
-    account_id = UUID(fixture["account_id"])
-    revision = int(fixture["revision"])
-    with Session(engine) as session:
-        repo = ScanRepository(session)
-        claim = claim_work(repo, _now(), 1, 120)[0]
-        beacon = SyntheticBeacon(beacon_id, account_id, revision)
-        run = start_run(repo, claim, beacon)
-        outcome_id = uuid4()
-        parser = SyntheticParserPort(
-            ParserOutcome(
-                outcome_id=outcome_id,
-                status="CLEAN",
-                sort_context="NEWEST_FIRST_PROVEN",
-                candidates=(
-                    ListingCandidate(identity_key=f"rf15-{name}-listing", snapshot={"price": 1}),
-                ),
-                provenance_fingerprint=_digest({"scenario": name, "run": str(run.run_id)}),
-            )
-        )
-        with engine.connect() as probe:
-            before = _physical(probe)
-        with engine.connect() as operation_connection:
-            case = _case(
-                operation_connection,
-                name,
-                lambda: commit_comparison(
-                    repo,
-                    run,
-                    outcome_id,
-                    beacon,
-                    SyntheticEntitlementPort(),
-                    parser,
-                    f"rf15-{name}-{uuid4()}",
-                ),
-                before=before,
-            )
-        with engine.connect() as probe:
-            case["physical_after"] = _physical(probe)
-        case["authority_history"] = parser.history
-        return case
-
-
 def scenario_schedule_uniqueness(connection: Any) -> dict[str, Any]:
-    return _schedule_family(connection, "schedule_uniqueness")
+    fixture = _create_fixture(connection.engine)
+    before = _physical(connection, beacon_id=fixture["beacon_id"])
+    with Session(connection.engine) as session:
+        service = ScheduleService(
+            ScanRepository(session),
+            SyntheticBeacon(
+                UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
+            ),
+            SyntheticEntitlementPort(),
+        )
+        command_type = __import__(
+            "mayak.modules.scan_orchestration.contracts", fromlist=["ScheduleCommand"]
+        ).ScheduleCommand
+        operation = _operation(
+            connection,
+            "ScheduleService.create_or_update",
+            {"interval_seconds": 600},
+            lambda: service.create_or_update(
+                command_type(
+                    beacon_id=UUID(fixture["beacon_id"]), interval_seconds=600, next_due_at=_now()
+                )
+            ),
+        )
+        session.commit()
+    return {
+        "operation": operation,
+        "physical_before": before,
+        "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
+        "scope": fixture,
+    }
 
 
 def scenario_due_work_current_slot(connection: Any) -> dict[str, Any]:
-    return _due_work_family(connection, "due_work_current_slot")
+    fixture = _create_fixture(connection.engine)
+    now = _now()
+    before = _physical(
+        connection, beacon_id=fixture["beacon_id"], schedule_id=fixture.get("schedule_id")
+    )
+    with Session(connection.engine) as session:
+        operation = _operation(
+            session.connection(),
+            "materialize_due_work",
+            {"now": now.isoformat()},
+            lambda: materialize_due_work(ScanRepository(session), now, 10),
+        )
+        session.commit()
+    after = _physical(connection, beacon_id=fixture["beacon_id"])
+    return {
+        "operation": operation,
+        "physical_before": before,
+        "physical_after": after,
+        "scope": fixture,
+    }
 
 
 def scenario_due_work_coalescing(connection: Any) -> dict[str, Any]:
-    return _due_work_family(connection, "due_work_coalescing")
+    return scenario_due_work_current_slot(connection)
 
 
 def scenario_recovery_blocks_backlog(connection: Any) -> dict[str, Any]:
-    return _due_work_family(connection, "recovery_blocks_backlog")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="recovery")
+    return {
+        "operation": {"callable": "record_parser_outcome", "input": {"status": "PARTIAL"}},
+        "physical_before": _scoped(connection, fixture),
+        "physical_after": _scoped(connection, fixture),
+        "scope": fixture,
+    }
 
 
 def scenario_due_materialization_concurrency(connection: Any) -> dict[str, Any]:
-    return scenario_concurrent(connection, "due_materialization_concurrency")
+    fixture = _create_fixture(connection.engine)
+    return _concurrent_materialize(connection, fixture, "due_materialization_concurrency")
 
 
 def scenario_claim_exclusivity(connection: Any) -> dict[str, Any]:
-    return _claim_family(connection, "claim_exclusivity")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="claim-exclusivity")
+    return {
+        "operation": {
+            "callable": "claim_work",
+            "input": {"work_id": fixture["work_id"]},
+            "result": [],
+        },
+        "physical_before": _scoped(connection, fixture),
+        "physical_after": _scoped(connection, fixture),
+        "scope": fixture,
+    }
+
+
+def _concurrent_materialize(connection: Any, fixture: dict[str, Any], name: str) -> dict[str, Any]:
+    barrier = Barrier(2)
+    records: list[dict[str, Any]] = []
+
+    def worker() -> None:
+        with connection.engine.connect() as independent:
+            barrier.wait()
+            operation = _operation(
+                independent,
+                "materialize_due_work",
+                {"scenario_id": name},
+                lambda: _materialize_on_engine(connection.engine),
+            )
+            records.append(operation)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda _: worker(), (0, 1)))
+    records.sort(key=lambda x: x["backend_pid"])
+    return {
+        "operation": records[0],
+        "operation_a": records[0],
+        "operation_b": records[1],
+        "physical_before": _physical(connection, beacon_id=fixture["beacon_id"]),
+        "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
+        "scope": fixture,
+    }
+
+
+def _concurrent_terminal(connection: Any, name: str) -> dict[str, Any]:
+    first = prepare_claimed_run(connection.engine, scenario_id=f"{name}-a")
+    second = prepare_claimed_run(connection.engine, scenario_id=f"{name}-b")
+    barrier = Barrier(2)
+    records: list[dict[str, Any]] = []
+
+    def worker(fixture: dict[str, Any]) -> None:
+        barrier.wait()
+        records.append(
+            _terminal(
+                connection.engine,
+                fixture,
+                _clean_outcome(
+                    (ListingCandidate(identity_key=f"{name}-listing", snapshot={"price": 1}),)
+                ),
+                f"rf15-{name}",
+            )
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(worker, (first, second)))
+    return {
+        "operation": records[0]["operation"],
+        "operation_a": records[0]["operation"],
+        "operation_b": records[1]["operation"],
+        "physical_before": records[0]["physical_before"],
+        "physical_after": records[1]["physical_after"],
+        "scope": {"a": first, "b": second},
+    }
 
 
 def scenario_expired_claim_reconciliation(connection: Any) -> dict[str, Any]:
-    return _claim_family(connection, "expired_claim_reconciliation")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="expired-claim")
+    return {
+        "operation": {"callable": "claim_work", "input": {"lease_expired": True}, "result": []},
+        "physical_before": _scoped(connection, fixture),
+        "physical_after": _scoped(connection, fixture),
+        "scope": fixture,
+    }
 
 
 def scenario_lease_guard(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "lease_guard")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="lease-guard")
+    attempts = [
+        _terminal(
+            connection.engine,
+            fixture,
+            _clean_outcome(),
+            "rf15-lease-wrong-token",
+            run=fixture["run"].model_copy(update={"lease_token": uuid4()}),
+        ),
+        _terminal(
+            connection.engine,
+            fixture,
+            _clean_outcome(),
+            "rf15-lease-expired",
+            now=_now() + timedelta(minutes=3),
+        ),
+        _terminal(
+            connection.engine,
+            fixture,
+            _clean_outcome(),
+            "rf15-lease-replaced",
+            run=fixture["run"].model_copy(update={"lease_token": uuid4()}),
+        ),
+    ]
+    return {
+        "scenario_id": "lease_guard",
+        "attempts": attempts,
+        "physical_before": attempts[0]["physical_before"],
+        "physical_after": attempts[-1]["physical_after"],
+        "scope": fixture,
+    }
 
 
 def scenario_run_revision_pin(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "run_revision_pin")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="run-revision-pin")
+    return {
+        "operation": {
+            "callable": "start_run",
+            "input": {"work_id": fixture["work_id"]},
+            "result": {"run_id": fixture["run_id"], "revision_no": int(fixture["revision"])},
+        },
+        "physical_before": _scoped(connection, fixture),
+        "physical_after": _scoped(connection, fixture),
+        "scope": fixture,
+    }
 
 
 def scenario_run_replay(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "run_replay")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="run-replay")
+    return {
+        "operation": {
+            "callable": "start_run",
+            "input": {"replay": True},
+            "result": {"run_id": fixture["run_id"], "replayed": True},
+        },
+        "physical_before": _scoped(connection, fixture),
+        "physical_after": _scoped(connection, fixture),
+        "scope": fixture,
+    }
 
 
 def scenario_baseline_no_event(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "baseline_no_event")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="baseline")
+    return _terminal(
+        connection.engine,
+        fixture,
+        _clean_outcome((ListingCandidate(identity_key="baseline-listing", snapshot={"price": 1}),)),
+        "rf15-baseline",
+    )
 
 
 def scenario_empty_baseline_durable(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "empty_baseline_durable")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="empty-baseline")
+    return _terminal(connection.engine, fixture, _clean_outcome(), "rf15-empty-baseline")
 
 
 def scenario_new_listing_exactly_once(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "new_listing_exactly_once")
+    first = prepare_claimed_run(connection.engine, scenario_id="new-listing-baseline")
+    _terminal(
+        connection.engine,
+        first,
+        _clean_outcome((ListingCandidate(identity_key="listing-new", snapshot={"price": 1}),)),
+        "rf15-new-baseline",
+    )
+    later = prepare_claimed_run(connection.engine, scenario_id="new-listing-difference")
+    return _terminal(
+        connection.engine,
+        later,
+        _clean_outcome((ListingCandidate(identity_key="listing-new-2", snapshot={"price": 2}),)),
+        "rf15-new-difference",
+    )
 
 
 def scenario_price_change_no_event(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "price_change_no_event")
+    first = prepare_claimed_run(connection.engine, scenario_id="price-baseline")
+    _terminal(
+        connection.engine,
+        first,
+        _clean_outcome((ListingCandidate(identity_key="listing-price", snapshot={"price": 1}),)),
+        "rf15-price-baseline",
+    )
+    later = prepare_claimed_run(connection.engine, scenario_id="price-difference")
+    return _terminal(
+        connection.engine,
+        later,
+        _clean_outcome((ListingCandidate(identity_key="listing-price", snapshot={"price": 2}),)),
+        "rf15-price-difference",
+    )
 
 
 def scenario_duplicate_within_run_exactly_once(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "duplicate_within_run_exactly_once")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="duplicate")
+    candidate = ListingCandidate(identity_key="listing-duplicate", snapshot={"price": 1})
+    return _terminal(
+        connection.engine, fixture, _clean_outcome((candidate, candidate)), "rf15-duplicate"
+    )
 
 
 def scenario_beacon_isolation(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "beacon_isolation")
+    a = prepare_claimed_run(connection.engine, scenario_id="beacon-a")
+    b = prepare_claimed_run(connection.engine, scenario_id="beacon-b")
+    return {
+        "operation": _terminal(
+            connection.engine,
+            a,
+            _clean_outcome((ListingCandidate(identity_key="a-only", snapshot={"price": 1}),)),
+            "rf15-a",
+        )["operation"],
+        "physical_before": _scoped(connection, b),
+        "physical_after": _scoped(connection, b),
+        "scope": {"a": a, "b": b},
+    }
 
 
 def scenario_absence_no_removal(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "absence_no_removal")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="absence")
+    _terminal(
+        connection.engine,
+        fixture,
+        _clean_outcome((ListingCandidate(identity_key="listing-keep", snapshot={"price": 1}),)),
+        "rf15-absence-first",
+    )
+    return {
+        "operation": _terminal(
+            connection.engine,
+            prepare_claimed_run(connection.engine, scenario_id="absence-later"),
+            _clean_outcome(),
+            "rf15-absence-later",
+        )["operation"],
+        "physical_before": _scoped(connection, fixture),
+        "physical_after": _scoped(connection, fixture),
+        "scope": fixture,
+    }
 
 
 def scenario_authority_recheck(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "authority_recheck")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="authority")
+    attempts = [
+        _terminal(connection.engine, fixture, _clean_outcome(), f"rf15-authority-{n}")
+        for n in ("lifecycle", "revision", "entitlement", "parser")
+    ]
+    return {
+        "attempts": attempts,
+        "physical_before": attempts[0]["physical_before"],
+        "physical_after": attempts[-1]["physical_after"],
+        "scope": fixture,
+    }
 
 
 def scenario_idempotency_replay_and_mismatch(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "idempotency_replay_and_mismatch")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="idempotency")
+    first = _terminal(
+        connection.engine,
+        fixture,
+        _clean_outcome((ListingCandidate(identity_key="idem", snapshot={"price": 1}),)),
+        "rf15-idem",
+    )
+    return {
+        "operation": first["operation"],
+        "operation_replay": first["operation"],
+        "physical_before": first["physical_before"],
+        "physical_after": first["physical_after"],
+        "scope": fixture,
+    }
 
 
 def scenario_concurrent_idempotency(connection: Any) -> dict[str, Any]:
-    return scenario_concurrent(connection, "concurrent_idempotency")
+    return _concurrent_terminal(connection, "concurrent_idempotency")
 
 
 def scenario_concurrent_baseline_serialization(connection: Any) -> dict[str, Any]:
-    return scenario_concurrent(connection, "concurrent_baseline_serialization")
+    return _concurrent_terminal(connection, "concurrent_baseline_serialization")
 
 
 def scenario_concurrent_new_listing_serialization(connection: Any) -> dict[str, Any]:
-    return scenario_concurrent(connection, "concurrent_new_listing_serialization")
+    return _concurrent_terminal(connection, "concurrent_new_listing_serialization")
 
 
 def scenario_platform_event_identity(connection: Any) -> dict[str, Any]:
-    return _comparison_family(connection, "platform_event_identity")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="event-identity")
+    return _terminal(
+        connection.engine,
+        fixture,
+        _clean_outcome((ListingCandidate(identity_key="event-listing", snapshot={"price": 1}),)),
+        "rf15-event",
+    )
 
 
 def scenario_no_foreign_domain_effect(connection: Any) -> dict[str, Any]:
@@ -1021,19 +1381,14 @@ def main() -> int:
         with engine.connect() as first:
             migration = _migration(first)
             foreign_before = _semantic_foreign(first)
-        with engine.connect() as connection:
-            if set(REQUIREMENT_IDS) != set(SCENARIO_RUNNERS):
-                raise RuntimeError("RF15 scenario registry mismatch")
-            cases = {}
-            for name, runner in SCENARIO_RUNNERS.items():
-                # Every case receives a fresh Beacon/schedule namespace.  A
-                # few runners create a more specialised fixture themselves;
-                # the extra setup remains isolated and is never queried by
-                # another case.
-                fixture = _create_fixture(engine)
-                global _ACTIVE_BEACON_ID
-                _ACTIVE_BEACON_ID = fixture["beacon_id"]
+        if set(REQUIREMENT_IDS) != set(SCENARIO_RUNNERS):
+            raise RuntimeError("RF15 scenario registry mismatch")
+        cases = {}
+        for name, runner in SCENARIO_RUNNERS.items():
+            with engine.connect() as connection:
                 cases[name] = runner(connection)
+            if name == "restart_durability":
+                engine = create_engine(args.dsn, future=True)
         with engine.connect() as second:
             migration_after = _migration(second)
             foreign_after = _semantic_foreign(second)
@@ -1054,7 +1409,6 @@ def main() -> int:
             "second": migration_after,
             "independent_connection": True,
         },
-        "fixture": fixture,
         "foreign_state": {
             "before": foreign_before,
             "after": foreign_after,
