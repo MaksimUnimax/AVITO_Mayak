@@ -83,7 +83,8 @@ def main() -> int:
             ).scalar_one_or_none()
             if version_schema is None:
                 raise RuntimeError("no persisted Alembic version relation was found")
-            head = str(connection.execute(text(f'select version_num from "{version_schema}"."alembic_version"')).scalar_one())
+            version_query = text(f'select version_num from "{version_schema}"."alembic_version"')
+            head = str(connection.execute(version_query).scalar_one())
             tables = sorted(
                 row[0]
                 for row in connection.execute(
