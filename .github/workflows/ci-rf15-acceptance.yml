@@ -53,7 +53,8 @@ jobs:
           PY
       - run: uv run ruff check src/mayak/modules/scan_orchestration scripts/runtime
       - run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/scan_orchestration
-      - run: uv run pytest -q tests/runtime/test_scan_schema.py tests/architecture/test_import_boundaries.py
+      - run: uv run pytest -q tests/runtime/test_scan_schema.py
+      - run: uv run pytest -q tests/architecture/test_import_boundaries.py
       - run: uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_DSN" --output rf15-evidence.json
       - run: |
           uv run python scripts/runtime/verify_rf15_acceptance.py rf15-evidence.json > verifier.stdout 2> verifier.stderr
