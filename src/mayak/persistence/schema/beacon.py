@@ -265,8 +265,9 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         Column("id", UUID(as_uuid=True), primary_key=True, nullable=False),
         Column("account_id", UUID(as_uuid=True), nullable=False),
         Column("name", Text, nullable=False),
-        Column("current_revision_no", BigInteger, nullable=False),
-        Column("current_revision_id", UUID(as_uuid=True), nullable=False),
+        Column("source_url", String(4096), nullable=True),
+        Column("current_revision_no", BigInteger, nullable=True),
+        Column("current_revision_id", UUID(as_uuid=True), nullable=True),
         Column("state", String(64), nullable=False),
         Column("created_at", TIMESTAMP(timezone=True), nullable=False),
         Column("updated_at", TIMESTAMP(timezone=True), nullable=False),
@@ -284,7 +285,12 @@ def _register_canonical(metadata: MetaData) -> tuple[Table, Table, Table, Table]
         ),
         UniqueConstraint("id", "current_revision_no", name="uq_beacon_beacons_id_current_revision"),
         CheckConstraint("btrim(name) <> ''", name="name_nonempty"),
-        CheckConstraint("current_revision_no > 0", name="revision_positive"),
+        CheckConstraint(
+            "current_revision_no IS NULL OR current_revision_no > 0", name="revision_positive"
+        ),
+        CheckConstraint(
+            "source_url IS NULL OR btrim(source_url) <> ''", name="source_url_nonempty"
+        ),
         CheckConstraint("btrim(state) <> ''", name="state_nonempty"),
         CheckConstraint("row_version > 0", name="row_version_positive"),
     )
