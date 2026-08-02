@@ -235,7 +235,7 @@ def _safe_check(data: Mapping[str, Any], name: str) -> bool:
         _ops(case)
         _physical(case)
         return True
-    except KeyError, IndexError, TypeError, ValueError, OverflowError:
+    except (KeyError, IndexError, TypeError, ValueError, OverflowError):
         return False
 
 
