@@ -12,12 +12,10 @@ from sqlalchemy.orm import Session
 from mayak.persistence.metadata import metadata
 
 from .contracts import (
-    BeaconSnapshot,
-    ComparisonResult,
-    EntitlementSnapshot,
-    IdempotencyMismatch,
+    BeaconPort,
+    EntitlementPort,
     LeaseConflict,
-    ParserOutcome,
+    ParserOutcomePort,
     RunResult,
     WorkClaim,
 )
@@ -65,6 +63,8 @@ class ScanRepository:
         ).mappings()
         for row in rows:
             due = row["next_due_at"]
+            while due <= now:
+                due += timedelta(seconds=row["interval_seconds"])
             wid = uuid4()
             result = self.session.execute(
                 insert(work)
@@ -86,7 +86,7 @@ class ScanRepository:
                 update(schedules)
                 .where(schedules.c.id == row["id"], schedules.c.row_version == row["row_version"])
                 .values(
-                    next_due_at=now + timedelta(seconds=row["interval_seconds"]),
+                    next_due_at=due,
                     updated_at=now,
                     row_version=row["row_version"] + 1,
                 )
@@ -97,12 +97,16 @@ class ScanRepository:
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be explicit and positive")
         work = _table("scan_work_items")
+        # An expired claim is evidence of an unknown external effect, not a retry.
+        # Move it out of the ordinary claimable set before selecting DUE/RETRY rows.
+        self.session.execute(
+            update(work)
+            .where(work.c.state == "CLAIMED", work.c.lease_expires_at < now)
+            .values(state="PENDING_RECONCILIATION", row_version=work.c.row_version + 1)
+        )
         rows = self.session.execute(
             select(work)
-            .where(
-                ((work.c.state.in_(["DUE", "RETRY"])) & (work.c.due_at <= now))
-                | ((work.c.state == "CLAIMED") & (work.c.lease_expires_at < now))
-            )
+            .where((work.c.state.in_(["DUE", "RETRY"])) & (work.c.due_at <= now))
             .order_by(work.c.due_at, work.c.id)
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -135,6 +139,23 @@ class ScanRepository:
                 )
             )
         return claims
+
+    def mark_claim_reconciliation_required(
+        self, work_item_id: UUID, lease_token: UUID, now: datetime
+    ) -> None:
+        """Explicit operator/reconciler decision for an expired claim; never auto-reclaim it."""
+        work = _table("scan_work_items")
+        changed = self.session.execute(
+            update(work)
+            .where(
+                work.c.id == work_item_id,
+                work.c.lease_token == lease_token,
+                work.c.state == "CLAIMED",
+            )
+            .values(state="PENDING_RECONCILIATION", row_version=work.c.row_version + 1)
+        )
+        if changed.rowcount != 1:
+            raise LeaseConflict("claim reconciliation lost its lease guard")
 
     def start_run(self, claim: WorkClaim, beacon_revision: int, now: datetime) -> RunResult:
         work, runs = _table("scan_work_items"), _table("scan_runs")
@@ -189,46 +210,21 @@ class ScanRepository:
             lease_token=claim.lease_token,
         )
 
-    def _idempotency(self, key: str, fingerprint: str, result: dict, now: datetime) -> bool:
-        table = _table("platform_idempotency_records")
-        old = (
-            self.session.execute(
-                select(table)
-                .where(table.c.scope == "scan", table.c.idempotency_key == key)
-                .with_for_update()
-            )
-            .mappings()
-            .first()
-        )
-        if old:
-            if old["request_fingerprint"] != fingerprint:
-                raise IdempotencyMismatch("IDEMPOTENCY_MISMATCH")
-            return True
-        self.session.execute(
-            insert(table).values(
-                id=uuid4(),
-                scope="scan",
-                idempotency_key=key,
-                request_fingerprint=fingerprint,
-                result=result,
-                expires_at=now + timedelta(days=30),
-                created_at=now,
-            )
-        )
-        return False
-
     def commit_comparison(
         self,
         run: RunResult,
-        parser: ParserOutcome,
-        beacon: BeaconSnapshot,
-        entitlement: EntitlementSnapshot,
+        parser_outcome_id: UUID,
+        beacon: BeaconPort,
+        entitlement: EntitlementPort,
+        parser: ParserOutcomePort,
         idempotency_key: str,
         now: datetime,
-    ) -> ComparisonResult:
+    ):
         from .services import commit_comparison
 
-        return commit_comparison(self, run, parser, beacon, entitlement, idempotency_key, now)
+        return commit_comparison(
+            self, run, parser_outcome_id, beacon, entitlement, parser, idempotency_key, now
+        )
 
 
 __all__ = ["ScanRepository"]

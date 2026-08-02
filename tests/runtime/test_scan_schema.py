@@ -56,12 +56,17 @@ def test_exact_six_table_return_order() -> None:
 
 def test_global_counts() -> None:
     assert (
-        len(metadata.tables) == 51 and sum(len(t.indexes) for t in metadata.tables.values()) == 72
+        len(metadata.tables) == 51 and sum(len(t.indexes) for t in metadata.tables.values()) == 73
     )
 
 
 def test_scan_index_count() -> None:
     assert sum(len(t.indexes) for t in tables()) == 8
+
+
+def test_rf14_parser_index_is_not_a_scan_index() -> None:
+    assert sum(len(t.indexes) for t in tables()) == 8
+    assert sum(len(t.indexes) for t in metadata.tables.values()) == 73
 
 
 def test_schedule_columns() -> None:

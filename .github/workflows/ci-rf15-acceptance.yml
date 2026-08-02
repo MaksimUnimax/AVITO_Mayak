@@ -54,6 +54,7 @@ jobs:
       - run: uv run ruff check src/mayak/modules/scan_orchestration scripts/runtime
       - run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/scan_orchestration
       - run: uv run pytest -q tests/runtime/test_scan_schema.py
+      - run: uv run pytest -q tests/unit/test_rf15_scan_contracts.py
       - run: uv run pytest -q tests/architecture/test_import_boundaries.py
       - run: uv run python scripts/runtime/run_rf15_postgres_acceptance.py --dsn "$RF15_DSN" --output rf15-evidence.json
       - run: |
@@ -61,4 +62,11 @@ jobs:
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stderr || true)" -eq 0
       - uses: actions/upload-artifact@v4
-        with: {name: rf15-postgres-evidence, path: rf15-evidence.json}
+        with:
+          name: rf15-postgres-acceptance
+          path: |
+            rf15-evidence.json
+            rf15-requirement-map.json
+            rf15-tamper-matrix.json
+            verifier.stdout
+            verifier.stderr

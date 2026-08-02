@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -100,9 +101,54 @@ class ListingCandidate(ScanModel):
         }
         if forbidden.intersection(self.snapshot):
             raise ValueError("provider-shaped or private fields are not authoritative Scan data")
-        if len(str(self.snapshot).encode()) > 32768:
+        _validate_snapshot(self.snapshot)
+        encoded = json.dumps(
+            self.snapshot,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        if len(encoded) > 32768:
             raise ValueError("listing snapshot exceeds 32 KiB")
         return self
+
+
+_FORBIDDEN_SNAPSHOT_NAMES = {
+    "body",
+    "raw",
+    "raw_body",
+    "html",
+    "headers",
+    "cookies",
+    "token",
+    "tokens",
+    "seller",
+    "phone",
+    "description",
+    "full_description",
+    "views",
+    "private_route",
+}
+_SCALAR_TYPES = (str, int, float, bool)
+
+
+def _validate_snapshot(value: Any, *, path: str = "snapshot") -> None:
+    if value is None or isinstance(value, _SCALAR_TYPES):
+        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+            raise ValueError(f"{path} contains a non-JSON number")
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str) or key.lower() in _FORBIDDEN_SNAPSHOT_NAMES:
+                raise ValueError(f"{path} contains an unsafe provider-shaped field")
+            _validate_snapshot(item, path=f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _validate_snapshot(item, path=f"{path}[{index}]")
+        return
+    raise ValueError(f"{path} contains a non-JSON-serializable value")
 
 
 class ParserOutcome(ScanModel):
@@ -167,6 +213,16 @@ class EntitlementPort(Protocol):
     def current(self, beacon_id: UUID, account_id: UUID | None) -> EntitlementSnapshot: ...
 
 
+class ParserOutcomePort(Protocol):
+    """Server-owned reader for normalized Parser evidence."""
+
+    def resolve(self, outcome_id: UUID, *, run_id: UUID, beacon_id: UUID) -> ParserOutcome: ...
+
+
+class ParserOutcomeReference(ScanModel):
+    outcome_id: UUID
+
+
 __all__ = [
     "AccessTier",
     "BeaconPort",
@@ -181,6 +237,8 @@ __all__ = [
     "LeaseConflict",
     "ListingCandidate",
     "ParserOutcome",
+    "ParserOutcomePort",
+    "ParserOutcomeReference",
     "ParserStatus",
     "RevisionConflict",
     "RunResult",
