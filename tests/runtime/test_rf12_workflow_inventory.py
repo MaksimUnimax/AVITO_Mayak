@@ -85,6 +85,34 @@ def test_hosted_workflow_invokes_every_rf12_harness_test() -> None:
     assert MYPY_PATHS <= _command_paths(source, "uv run mypy ")
 
 
+def test_workflow_identity_and_verifier_stage_are_fail_closed() -> None:
+    source = Path(".github/workflows/ci-rf12-acceptance.yml").read_text(encoding="utf-8")
+    technical_id = "RF-12-CORRECTIVE-VERIFIER-FAIL-CLOSED-AND-EVIDENCE-IDENTITY-CLOSURE-20260802-08"
+    assert f"RF12_TECHNICAL_ID: {technical_id}" in source
+    producer = source.index("run_rf12_postgres_acceptance.py")
+    verifier = source.index("verify_rf12_acceptance.py", producer)
+    tamper = source.index("run_rf12_tamper_matrix.py", verifier)
+    assert source.count("$RF12_TECHNICAL_ID") >= 3
+    assert "--technical-id \"$RF12_TECHNICAL_ID\"" in source
+    assert '"$RF12_TECHNICAL_ID" 2>&1 | tee' in source
+    assert "set -o pipefail" in source
+    assert "grep -Fxq 'RF12_ACCEPTANCE_VERIFIED'" in source
+    assert "if: success()" in source
+    assert producer < verifier < tamper
+    assert "continue-on-error" not in source
+    assert "|| true" not in source[source.index("Run final independent verifier"):]
+    assert "verifier.txt" in source
+    assert "tamper-negative.json" in source
+
+
+def test_shell_contract_cannot_mask_nonzero_verifier_with_tee(tmp_path: Path) -> None:
+    import subprocess
+
+    script = "set -o pipefail; sh -c 'echo RF12 verifier failed; exit 7' 2>&1 | tee verifier.txt"
+    result = subprocess.run(["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 7
+
+
 def test_physical_data_model_table_9_is_canonical() -> None:
     document = Path(
         "docs/04-modules/14-runtime-foundation-and-autonomous-integration/PHYSICAL_DATA_MODEL_v1.0.md"
