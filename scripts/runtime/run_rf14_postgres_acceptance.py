@@ -455,14 +455,15 @@ def main() -> int:
         for case_id in ("clean_empty", "usable_listing_page", "captcha", "rate_restricted", "incomplete", "partial", "unsupported", "ambiguous", "stale_profile", "missing_profile", "disputed_profile"):
             result = provider.execute(case_id)
             attempt = result.attempt
+            classification = attempt.transport_response_classification
             classifier_cases.append({
                 "case_id": case_id, "fixture_profile_identity": attempt.request_envelope.compatibility_profile.profile_id if attempt.request_envelope else None,
                 "body_bytes": None, "body_sha256": None,
                 "transport_status": attempt.transport_status.value,
                 "http_status": None, "redirect": False,
                 "classifier_status": attempt.parser_status.value if attempt.parser_status else None,
-                "provider_response_evidence_class": attempt.provider_response_evidence_class.value,
-                "response_completeness_status": attempt.response_completeness_status.value,
+                "provider_response_evidence_class": classification.provider_response_evidence_class.value if classification else None,
+                "response_completeness_status": classification.response_completeness_status.value if classification else None,
                 "warning_codes": [warning.code.value for warning in attempt.warnings],
                 "reason_code": attempt.explanation.reason_code if attempt.explanation else None,
                 "handler_calls": 0, "observed_request_url": None,
