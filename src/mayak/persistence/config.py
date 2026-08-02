@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -193,6 +194,13 @@ def build_migration_url(
     secret_path: Path | None = None,
     require_secret: bool = True,
 ) -> URL:
+    # Hosted acceptance supplies an explicit, ephemeral migration endpoint.
+    # Honour it before the application default host; this keeps Alembic on
+    # the PostgreSQL service selected by the workflow without changing global
+    # configuration or secret-file semantics for normal runtime use.
+    hosted_url = os.environ.get("RF15_MIGRATION_DSN") or os.environ.get("RF15_DSN")
+    if hosted_url:
+        return make_url(hosted_url)
     settings = settings or MigrationDatabaseSettings(
         secret_path=secret_path or MIGRATION_SECRET_PATH
     )
