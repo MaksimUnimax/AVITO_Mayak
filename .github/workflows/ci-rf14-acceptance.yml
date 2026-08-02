@@ -62,7 +62,7 @@ jobs:
           fi
       - name: Verify raw observations independently
         run: |
-          if ! uv run python scripts/runtime/verify_rf14_acceptance.py . ci-evidence/rf14/acceptance.json "${{ github.sha }}" \
+          if ! uv run python scripts/runtime/verify_rf14_acceptance.py ci-evidence/rf14/acceptance.json "${{ github.sha }}" \
             --tamper-output ci-evidence/rf14/tamper-matrix.json \
             --map-output ci-evidence/rf14/requirement-map.json \
             >ci-evidence/rf14/verifier.stdout 2>ci-evidence/rf14/verifier.stderr; then

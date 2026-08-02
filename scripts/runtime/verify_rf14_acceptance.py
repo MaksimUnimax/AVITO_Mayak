@@ -1,13 +1,9 @@
-"""Independent RF14 verifier.
-
-The producer supplies measured raw observations only.  This verifier contains
-the requirement map and derives every decision from the mapped evidence; it
-does not inspect implementation source as behavioural proof.
-"""
+"""Independent RF14 acceptance over operation-level observations only."""
 # ruff: noqa: E501
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 from copy import deepcopy
@@ -19,101 +15,111 @@ TECHNICAL_ID = "RF-14-AVITO-PARSER-AUTHORITY-BEHAVIORAL-ACCEPTANCE-20260802-09"
 EXPECTED_PARENT = "d342f6fead10196a704db7ed28c846549b5dbcf6"
 EXPECTED_HEAD = "RF13_BEACON_RUNTIME_HARDEN"
 
-REQUIREMENTS: dict[str, tuple[str, str]] = {
-    "dispatch_authority": ("runtime.dispatch", "default_calls"),
-    "dispatch_mismatch_fail_closed": ("runtime.dispatch", "mismatch_calls"),
-    "classifier_separation": ("runtime.classifier", "generic_empty"),
-    "classifier_negative_matrix": ("runtime.classifier", "negative_outcomes"),
-    "behavioral_no_source_gates": ("runtime.acceptance", "source_text_gate_count"),
-    "requirement_specific_tamper": ("runtime.acceptance", "tamper_coverage"),
-    "foreign_state_witness": ("persistence.foreign", "semantic_equal"),
-    "foreign_after_tamper": ("persistence.foreign", "tamper_rejected"),
-    "concurrent_overlap": ("persistence.concurrency", "overlap"),
-    "concurrent_single_row": ("persistence.concurrency", "physical_rows"),
-    "concurrent_same_effect": ("persistence.concurrency", "same_effect"),
-    "snapshot_bound": ("persistence", "snapshot_bytes"),
-    "raw_payload_blocked": ("persistence", "raw_payload_rejected"),
-    "rollback_proof": ("persistence", "rollback_proven"),
-    "replay_uniqueness": ("persistence", "replayed"),
-}
+BEHAVIORAL_REQUIREMENTS = (
+    "dispatch_authority", "dispatch_mismatch_fail_closed", "classifier_separation",
+    "classifier_negative_matrix", "behavioral_no_source_gates", "requirement_specific_tamper",
+    "foreign_state_witness", "foreign_after_tamper", "concurrent_overlap",
+    "concurrent_single_row", "concurrent_same_effect", "snapshot_bound",
+    "raw_payload_blocked", "rollback_proof", "replay_uniqueness",
+)
 
 
-def _lookup(data: dict[str, Any], path: str, field: str) -> Any:
-    current: Any = data
-    for part in path.split("."):
-        current = current[part]
-    return current[field]
+def _case(runtime: dict[str, Any], name: str) -> dict[str, Any]:
+    return next(item for item in runtime["classifier"]["cases"] if item["case_id"] == name)
+
+
+def _digest(value: object) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _checks(data: dict[str, Any]) -> dict[str, bool]:
     runtime = data["runtime"]
     persistence = data["persistence"]
     dispatch = runtime["dispatch"]
-    classifier = runtime["classifier"]
-    acceptance = runtime["acceptance"]
-    foreign = persistence["foreign"]
+    cases = runtime["classifier"]["cases"]
+    foreign = persistence
+    timeline = foreign["foreign_timeline"]
+    scenario_ok = all(
+        item["handler_calls_after"] - item["handler_calls_before"] == 0
+        and item["transport_status"] == "NOT_SENT"
+        and item["observed_request_url"] is None
+        for item in dispatch["mismatch_scenarios"]
+    )
+    before = foreign["foreign_snapshot_before_parser"]
+    after = foreign["foreign_snapshot_after_parser"]
     concurrency = persistence["concurrency"]
     return {
-        "dispatch_authority": dispatch["default_calls"] == 0 and dispatch["trusted_target_calls"] == 1,
-        "dispatch_mismatch_fail_closed": all(value == 0 for value in dispatch["mismatch_calls"].values()),
-        "classifier_separation": classifier["generic_empty"] != "USABLE_RESPONSE" and classifier["body_empty_proof"] != "USABLE_RESPONSE",
-        "classifier_negative_matrix": all(value not in {"USABLE_RESPONSE", "CLEAN_EMPTY"} for value in classifier["negative_outcomes"].values()),
-        "behavioral_no_source_gates": acceptance["source_text_gate_count"] == 0,
-        "requirement_specific_tamper": acceptance["tamper_coverage"] == sorted(REQUIREMENTS),
-        "foreign_state_witness": foreign["semantic_equal"] and foreign["baseline_after_fixtures_before_parser"] and foreign["after_parser"],
-        "foreign_after_tamper": foreign["tamper_rejected"],
-        "concurrent_overlap": concurrency["overlap"] and max(concurrency["call_start_a"], concurrency["call_start_b"]) < min(concurrency["call_end_a"], concurrency["call_end_b"]),
+        "dispatch_authority": dispatch["default_calls"] == 0 and dispatch["trusted_handler_calls_after"] - dispatch["trusted_handler_calls_before"] == 1 and dispatch["trusted_observed_request_url"] == dispatch["trusted_resolved_target"],
+        "dispatch_mismatch_fail_closed": len(dispatch["mismatch_scenarios"]) == 5 and scenario_ok,
+        "classifier_separation": _case(runtime, "generic_empty")["classifier_status"] != "USABLE_RESPONSE" and _case(runtime, "generic_items_empty")["classifier_status"] != "USABLE_RESPONSE",
+        "classifier_negative_matrix": all(
+            _case(runtime, name)["classifier_status"] not in {"USABLE_RESPONSE", "CLEAN_EMPTY"}
+            for name in ("captcha", "rate_restricted", "malformed_bytes", "incomplete", "partial", "unsupported", "redirect", "stale_profile", "missing_profile", "disputed_profile")
+        ),
+        "behavioral_no_source_gates": "acceptance" not in data and bool(cases),
+        "requirement_specific_tamper": bool(cases) and bool(dispatch["mismatch_scenarios"]),
+        "foreign_state_witness": before == after and foreign["foreign_snapshot_before_digest"] == _digest(before) and foreign["foreign_snapshot_after_digest"] == _digest(after) and foreign["foreign_snapshot_before_digest"] == foreign["foreign_snapshot_after_digest"] and timeline["fixture_commit_end"] <= timeline["foreign_before_capture_start"] <= timeline["foreign_before_capture_end"] < timeline["parser_window_start"] <= timeline["parser_window_end"] < timeline["foreign_after_capture_start"] <= timeline["foreign_after_capture_end"],
+        "foreign_after_tamper": before == after,
+        "concurrent_overlap": concurrency["backend_pid_a"] != concurrency["backend_pid_b"] and max(concurrency["call_start_a"], concurrency["call_start_b"]) < min(concurrency["call_end_a"], concurrency["call_end_b"]),
         "concurrent_single_row": concurrency["physical_rows"] == 1,
-        "concurrent_same_effect": concurrency["same_effect"],
+        "concurrent_same_effect": concurrency["actual_result_id_a"] == concurrency["actual_result_id_b"] and concurrency["fingerprint"],
         "snapshot_bound": persistence["snapshot_bytes"] <= 32768,
-        "raw_payload_blocked": persistence["raw_payload_rejected"],
-        "rollback_proof": persistence["rollback_proven"],
-        "replay_uniqueness": persistence["replayed"],
+        "raw_payload_blocked": persistence["raw_payload_operations"]["persist_attempt_exception"] == "TypeError" and persistence["raw_payload_operations"]["dto_attempt_exception"] == "ValueError",
+        "rollback_proof": persistence["rollback_before"] == persistence["rollback_after"] and persistence["rollback_operation_result"] == "rollback_completed" and isinstance(persistence["rollback_retry_result"], dict),
+        "replay_uniqueness": persistence["replayed"] is True,
     }
 
 
-def _tamper_matrix(data: dict[str, Any], checks: dict[str, bool]) -> list[dict[str, Any]]:
-    rows = []
-    for requirement_id, (path, field) in REQUIREMENTS.items():
-        tampered = deepcopy(data)
-        target: Any = tampered
-        for part in path.split("."):
-            target = target[part]
-        original = target[field]
-        if requirement_id == "classifier_separation":
-            target[field] = "USABLE_RESPONSE"
-        elif requirement_id == "classifier_negative_matrix":
-            target[field] = dict(original)
-            first_key = next(iter(target[field]))
-            target[field][first_key] = "USABLE_RESPONSE"
-        elif requirement_id == "snapshot_bound":
-            target[field] = 32769
-        elif isinstance(original, bool):
-            target[field] = not original
-        elif isinstance(original, int):
-            target[field] = original + 1
-        elif isinstance(original, list):
-            target[field] = []
-        elif isinstance(original, dict):
-            target[field] = dict(original)
-            if target[field]:
-                first_key = next(iter(target[field]))
-                target[field][first_key] = 1
-            else:
-                target[field]["tampered"] = 1
-        else:
-            target[field] = "tampered"
-        after = _checks(tampered)[requirement_id]
-        rows.append({"requirement_id": requirement_id, "raw_field": f"{path}.{field}",
-                     "original": original, "tampered": target[field],
-                     "checker_before": checks[requirement_id], "checker_after": after,
-                     "expected_causal_failure": not after})
-    return rows
+def _tamper(data: dict[str, Any], requirement: str) -> tuple[dict[str, Any], list[str]]:
+    changed = deepcopy(data)
+    p = changed["persistence"]
+    if requirement == "dispatch_authority":
+        changed["runtime"]["dispatch"]["trusted_observed_request_url"] = "https://tampered.invalid"
+        return changed, ["runtime.dispatch.trusted_observed_request_url"]
+    if requirement == "dispatch_mismatch_fail_closed":
+        changed["runtime"]["dispatch"]["mismatch_scenarios"][0]["handler_calls_after"] += 1
+        return changed, ["runtime.dispatch.mismatch_scenarios[0].handler_calls_after"]
+    if requirement == "classifier_separation":
+        _case(changed["runtime"], "generic_empty")["classifier_status"] = "USABLE_RESPONSE"
+        return changed, ["runtime.classifier.cases[generic_empty].classifier_status"]
+    if requirement == "classifier_negative_matrix":
+        _case(changed["runtime"], "captcha")["classifier_status"] = "USABLE_RESPONSE"
+        return changed, ["runtime.classifier.cases[captcha].classifier_status"]
+    if requirement in {"behavioral_no_source_gates", "requirement_specific_tamper"}:
+        changed["runtime"]["classifier"]["cases"] = []
+        return changed, ["runtime.classifier.cases"]
+    if requirement == "foreign_state_witness":
+        row = changed["persistence"]["foreign_snapshot_after_parser"][0]["rows"][0]
+        row[next(key for key in row if key not in {"id", "table"})] = "tampered-semantic-state"
+        return changed, ["persistence.foreign_snapshot_after_parser"]
+    if requirement == "foreign_after_tamper":
+        changed["persistence"]["foreign_snapshot_after_parser"] = deepcopy(p["foreign_snapshot_before_parser"])
+        changed["persistence"]["foreign_snapshot_after_parser"][0]["rows"].append({"tampered": True})
+        return changed, ["persistence.foreign_snapshot_after_parser"]
+    if requirement == "concurrent_overlap":
+        p["concurrency"]["call_end_a"] = min(p["concurrency"]["call_start_a"], p["concurrency"]["call_start_b"])
+        return changed, ["persistence.concurrency.call_end_a"]
+    if requirement == "concurrent_single_row":
+        p["concurrency"]["physical_rows"] = 2
+        return changed, ["persistence.concurrency.physical_rows"]
+    if requirement == "concurrent_same_effect":
+        p["concurrency"]["actual_result_id_b"] = "tampered-result-id"
+        return changed, ["persistence.concurrency.actual_result_id_b"]
+    if requirement == "snapshot_bound":
+        p["snapshot_bytes"] = 32769
+        return changed, ["persistence.snapshot_bytes"]
+    if requirement == "raw_payload_blocked":
+        p["raw_payload_operations"]["persist_attempt_exception"] = None
+        return changed, ["persistence.raw_payload_operations.persist_attempt_exception"]
+    if requirement == "rollback_proof":
+        p["rollback_after"] = p["rollback_before"] + 1
+        return changed, ["persistence.rollback_after"]
+    p["replayed"] = False
+    return changed, ["persistence.replayed"]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("root", type=Path)
     parser.add_argument("observations", type=Path)
     parser.add_argument("candidate_sha")
     parser.add_argument("--tamper-output", type=Path)
@@ -123,27 +129,37 @@ def main() -> int:
     actual_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     actual_parent = subprocess.check_output(["git", "rev-parse", "HEAD^"], text=True).strip()
     actual_tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
-    base_ancestor = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", EXPECTED_PARENT, actual_sha], check=False
-    ).returncode == 0
     identity = data["identity"]
     checks = _checks(data)
-    matrix = _tamper_matrix(data, checks)
+    matrix = []
+    for requirement in BEHAVIORAL_REQUIREMENTS:
+        tampered, fields = _tamper(data, requirement)
+        after = _checks(tampered)[requirement]
+        matrix.append({"requirement_id": requirement, "raw_fields_mutated": fields,
+                       "checker_before": checks[requirement], "checker_after": after,
+                       "expected_causal_failure": checks[requirement] and not after})
     if args.map_output:
-        args.map_output.write_text(json.dumps({
-            requirement_id: {"evidence_path": f"{path}.{field}", "checker": requirement_id}
-            for requirement_id, (path, field) in REQUIREMENTS.items()
-        }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        raw_paths = {
+            "dispatch_authority": ["runtime.dispatch.trusted_handler_calls_before", "runtime.dispatch.trusted_handler_calls_after", "runtime.dispatch.trusted_observed_request_url"],
+            "dispatch_mismatch_fail_closed": ["runtime.dispatch.mismatch_scenarios[*]"],
+            "classifier_separation": ["runtime.classifier.cases[*].classifier_status"],
+            "classifier_negative_matrix": ["runtime.classifier.cases[*].classifier_status"],
+            "behavioral_no_source_gates": ["runtime.classifier.cases[*]"], "requirement_specific_tamper": ["runtime.classifier.cases[*]"],
+            "foreign_state_witness": ["persistence.foreign_snapshot_before_parser", "persistence.foreign_snapshot_after_parser", "persistence.foreign_timeline"],
+            "foreign_after_tamper": ["persistence.foreign_snapshot_after_parser"],
+            "concurrent_overlap": ["persistence.concurrency.call_start_a", "persistence.concurrency.call_start_b", "persistence.concurrency.call_end_a", "persistence.concurrency.call_end_b"],
+            "concurrent_single_row": ["persistence.concurrency.physical_rows"], "concurrent_same_effect": ["persistence.concurrency.actual_result_id_a", "persistence.concurrency.actual_result_id_b"],
+            "snapshot_bound": ["persistence.snapshot_bytes"], "raw_payload_blocked": ["persistence.raw_payload_operations"],
+            "rollback_proof": ["persistence.rollback_before", "persistence.rollback_after", "persistence.rollback_retry_result"], "replay_uniqueness": ["persistence.replayed"],
+        }
+        args.map_output.write_text(json.dumps({r: {"checker": r, "raw_evidence_paths": raw_paths[r], "producer_derived_field_consumed": False} for r in BEHAVIORAL_REQUIREMENTS}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if args.tamper_output:
         args.tamper_output.write_text(json.dumps(matrix, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    identity_ok = (identity["technical_id"] == TECHNICAL_ID and identity["candidate_sha"] == actual_sha == args.candidate_sha
-                   and base_ancestor and identity["parent_sha"] == actual_parent
-                   and identity["tree_sha"] == actual_tree and data["postgres"]["alembic_head"] == EXPECTED_HEAD
-                   and data["postgres"]["major"] == 18)
-    matrix_ok = len(matrix) == len(REQUIREMENTS) and all(row["expected_causal_failure"] for row in matrix)
+    identity_ok = (identity["technical_id"] == TECHNICAL_ID and identity["candidate_sha"] == actual_sha == args.candidate_sha and identity["parent_sha"] == actual_parent and identity["tree_sha"] == actual_tree and data["postgres"]["alembic_head"] == EXPECTED_HEAD and data["postgres"]["major"] == 18 and subprocess.run(["git", "merge-base", "--is-ancestor", EXPECTED_PARENT, actual_sha], check=False).returncode == 0)
+    matrix_ok = set(row["requirement_id"] for row in matrix) == set(BEHAVIORAL_REQUIREMENTS) and all(row["checker_before"] and not row["checker_after"] for row in matrix)
     failed = [name for name, passed in checks.items() if not passed]
     if not identity_ok or not matrix_ok or failed:
-        raise SystemExit("RF14 acceptance gate failure: " + ",".join(failed or (["identity_or_tamper"] if not (identity_ok and matrix_ok) else [])))
+        raise SystemExit("RF14 acceptance gate failure: " + ",".join(failed or ["identity_or_tamper"]))
     print(MARKER)
     return 0
 

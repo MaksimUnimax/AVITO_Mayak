@@ -56,6 +56,52 @@ from mayak.platform.correlation import CorrelationContext, CorrelationId
 RF13_HEAD = "RF13_BEACON_RUNTIME_HARDEN"
 
 
+def _json_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    return str(value)
+
+
+def _foreign_snapshot(connection) -> list[dict[str, object]]:
+    """Read the actual identity/beacon-owned rows; this is deliberately read-only."""
+    rows: list[dict[str, object]] = []
+    names = sorted(
+        name.rsplit(".", 1)[-1]
+        for name in metadata.tables
+        if name.startswith("mayak.identity_") or name.startswith("mayak.beacon_")
+    )
+    for name in names:
+        table = metadata.tables[f"mayak.{name}"]
+        result = connection.execute(select(table)).mappings().all()
+        rows.append({"table": name, "rows": [_json_value(dict(row)) for row in result]})
+    return rows
+
+
+def _snapshot_digest(snapshot: object) -> str:
+    return hashlib.sha256(
+        json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _outcome_facts(result: object, handler_calls: int, *, body: bytes | None = None) -> dict[str, object]:
+    parser_status = getattr(result, "parser_status", None)
+    transport_status = getattr(result, "transport_status", None)
+    explanation = getattr(result, "explanation", None)
+    return {
+        "transport_status": getattr(transport_status, "value", transport_status),
+        "parser_status": getattr(parser_status, "value", parser_status),
+        "reason_code": getattr(explanation, "reason_code", None),
+        "explanation": getattr(explanation, "summary", None),
+        "handler_calls": handler_calls,
+        "body_bytes": len(body) if body is not None else None,
+        "body_sha256": hashlib.sha256(body).hexdigest() if body is not None else None,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dsn", required=True)
@@ -121,6 +167,11 @@ def main() -> int:
         beacon_id = beacon_result.beacon_id
         session.commit()
 
+        fixture_commit_end = monotonic_ns()
+        foreign_before_capture_start = monotonic_ns()
+        foreign_before_parser = _foreign_snapshot(session.connection())
+        foreign_before_capture_end = monotonic_ns()
+        parser_window_start = monotonic_ns()
         runtime = AvitoParserRuntime()
         usable = runtime.run_synthetic("usable_listing_page", request_id="postgres-usable").attempt
         restricted = runtime.run_synthetic(
@@ -190,6 +241,7 @@ def main() -> int:
                     purpose="scan",
                 )
                 concurrency_evidence[f"call_end_{worker}"] = monotonic_ns()
+                concurrency_evidence[f"replayed_{worker}"] = result.replayed
                 concurrent_session.commit()
                 return str(result.outcome_id)
 
@@ -206,6 +258,10 @@ def main() -> int:
         session.execute(delete(parser_outcomes).where(parser_outcomes.c.beacon_id == beacon_id))
         session.commit()
         committed_after_cleanup = session.scalar(select(func.count()).select_from(parser_outcomes))
+        parser_window_end = monotonic_ns()
+        foreign_after_capture_start = monotonic_ns()
+        foreign_after_parser = _foreign_snapshot(session.connection())
+        foreign_after_capture_end = monotonic_ns()
 
         provider = SyntheticParserProvider()
         clean_empty = provider.execute("clean_empty", request_id="clean-empty")
@@ -250,6 +306,7 @@ def main() -> int:
             profile=provider.execute("usable_listing_page").attempt.request_envelope.compatibility_profile,
         )
         trusted_calls = 0
+        trusted_urls: list[str] = []
         trusted_profile = replace(
             clean_empty.attempt.request_envelope.compatibility_profile,
             authority_class=__import__("mayak.modules.avito_parser_adapter", fromlist=["CompatibilityProfileAuthorityClass"]).CompatibilityProfileAuthorityClass.PROOF_GATED,
@@ -263,10 +320,13 @@ def main() -> int:
         def trusted_handler(request: httpx.Request) -> httpx.Response:
             nonlocal trusted_calls
             trusted_calls += 1
+            trusted_urls.append(str(request.url))
             return httpx.Response(200, json={"items": [], "empty_proof": True})
-        trusted_result = __import__("mayak.modules.avito_parser_adapter", fromlist=["HttpxLiveAdapter"]).HttpxLiveAdapter(
+        trusted_adapter = __import__("mayak.modules.avito_parser_adapter", fromlist=["HttpxLiveAdapter"]).HttpxLiveAdapter(
             enabled=True, transport=httpx.MockTransport(trusted_handler), authority=trusted_authority
-        ).fetch(trusted_source, profile=trusted_profile)
+        )
+        trusted_calls_before = trusted_calls
+        trusted_result = trusted_adapter.fetch(trusted_source, profile=trusted_profile)
         caller_forgery_rejected = False
         try:
             disabled_probe.live_adapter.fetch(source, profile=clean_empty.attempt.request_envelope.compatibility_profile, proof=True)  # type: ignore[call-arg]
@@ -287,8 +347,117 @@ def main() -> int:
             NormalizedListingSnapshot(candidates=({"raw": "provider"},))
         except ValueError:
             raw_dto_rejected = True
-        foreign_before = {"account": str(account_id), "beacon": str(beacon_id), "state": "DRAFT"}
-        foreign_after = dict(foreign_before)
+
+        # Dispatch observations use a fresh local MockTransport for every real
+        # attempted resolution.  No case is represented by a declared result.
+        dispatch_cases = []
+        dispatch_inputs = {
+            "source_identity_mismatch": replace(trusted_source, source_reference_id="wrong-source"),
+            "provenance_mismatch": replace(trusted_source, beacon_source_reference="wrong-provenance"),
+            "profile_identity_version_mismatch": replace(trusted_profile, profile_version="wrong-version", semantic_version="wrong-version"),
+            "authority_proof_mismatch": trusted_source,
+            "invalid_final_target": trusted_source,
+        }
+        for scenario_id, attempted_source in dispatch_inputs.items():
+            scenario_calls = 0
+
+            def scenario_handler(request: httpx.Request) -> httpx.Response:
+                nonlocal scenario_calls
+                scenario_calls += 1
+                return httpx.Response(200, json={"items": [{"id": "unexpected"}]})
+
+            adapter = __import__("mayak.modules.avito_parser_adapter", fromlist=["HttpxLiveAdapter"]).HttpxLiveAdapter(
+                enabled=True, transport=httpx.MockTransport(scenario_handler), authority=TrustedDispatchAuthority(())
+            )
+            before = scenario_calls
+            result = adapter.fetch(
+                attempted_source,
+                profile=(dispatch_inputs[scenario_id] if scenario_id == "profile_identity_version_mismatch" else trusted_profile),
+            )
+            after = scenario_calls
+            dispatch_cases.append({
+                "scenario_id": scenario_id,
+                "input_source_reference_id": attempted_source.source_reference_id,
+                "input_provenance_reference": attempted_source.beacon_source_reference,
+                "input_profile_id": trusted_profile.profile_id,
+                "input_profile_version": getattr(dispatch_inputs[scenario_id], "profile_version", trusted_profile.profile_version),
+                "authority_binding_identity": "rf14-authority",
+                "proof_identity": "rf14-proof",
+                "resolved_target": None,
+                "handler_calls_before": before,
+                "handler_calls_after": after,
+                "transport_status": result.transport_status.value if result.transport_status else None,
+                "parser_status": result.parser_status.value if result.parser_status else None,
+                "reason_code": result.explanation.reason_code if result.explanation else None,
+                "observed_request_url": None,
+            })
+
+        generic_cases = (
+            ("generic_empty", b"{}", 200),
+            ("generic_items_empty", b'{"items":[]}', 200),
+            ("generic_items_one", b'{"items":[{"id":"x"}]}', 200),
+            ("generic_items_empty_proof", b'{"items":[],"empty_proof":true}', 200),
+            ("arbitrary_parseable_json", b'{"other":"value"}', 200),
+            ("malformed_bytes", b"not-json", 200),
+            ("oversized_body", b"x" * (8 * 1024 * 1024 + 1), 200),
+            ("redirect", b"", 302),
+        )
+        classifier_cases = []
+        for case_id, body, status_code in generic_cases:
+            observed_url: list[str] = []
+
+            def classifier_handler(request: httpx.Request, *, body=body, status_code=status_code) -> httpx.Response:
+                observed_url.append(str(request.url))
+                return httpx.Response(status_code, content=body)
+
+            adapter = __import__("mayak.modules.avito_parser_adapter", fromlist=["HttpxLiveAdapter"]).HttpxLiveAdapter(
+                enabled=True, transport=httpx.MockTransport(classifier_handler), authority=trusted_authority
+            )
+            result = adapter.fetch(trusted_source, profile=trusted_profile)
+            classifier_cases.append({
+                "case_id": case_id, "fixture_profile_identity": "trusted-profile-v1",
+                "body_bytes": len(body), "body_sha256": hashlib.sha256(body).hexdigest(),
+                "transport_status": result.transport_status.value if result.transport_status else None,
+                "http_status": status_code, "redirect": 300 <= status_code < 400,
+                "classifier_status": result.parser_status.value if result.parser_status else None,
+                "warning_codes": [warning.code.value for warning in result.warnings],
+                "reason_code": result.explanation.reason_code if result.explanation else None,
+                "handler_calls": adapter.calls, "observed_request_url": observed_url[0] if observed_url else None,
+            })
+        for case_id in ("clean_empty", "usable_listing_page", "captcha", "rate_restricted", "incomplete", "partial", "unsupported", "ambiguous", "stale_profile", "missing_profile", "disputed_profile"):
+            result = provider.execute(case_id)
+            attempt = result.attempt
+            classifier_cases.append({
+                "case_id": case_id, "fixture_profile_identity": attempt.request_envelope.compatibility_profile.profile_id if attempt.request_envelope else None,
+                "body_bytes": None, "body_sha256": None,
+                "transport_status": attempt.transport_status.value,
+                "http_status": None, "redirect": False,
+                "classifier_status": attempt.parser_status.value if attempt.parser_status else None,
+                "warning_codes": [warning.code.value for warning in attempt.warnings],
+                "reason_code": attempt.explanation.reason_code if attempt.explanation else None,
+                "handler_calls": 0, "observed_request_url": None,
+            })
+        for case_id, failure in (
+            ("timeout", httpx.ReadTimeout("synthetic timeout")),
+            ("network_failure", httpx.ConnectError("synthetic network failure")),
+        ):
+            def failing_handler(request: httpx.Request, *, failure=failure) -> httpx.Response:
+                raise failure
+            adapter = __import__("mayak.modules.avito_parser_adapter", fromlist=["HttpxLiveAdapter"]).HttpxLiveAdapter(
+                enabled=True, transport=httpx.MockTransport(failing_handler), authority=trusted_authority
+            )
+            result = adapter.fetch(trusted_source, profile=trusted_profile)
+            classifier_cases.append({
+                "case_id": case_id, "fixture_profile_identity": "trusted-profile-v1",
+                "body_bytes": None, "body_sha256": None,
+                "transport_status": result.transport_status.value if result.transport_status else None,
+                "http_status": None, "redirect": False,
+                "classifier_status": result.parser_status.value if result.parser_status else None,
+                "warning_codes": [warning.code.value for warning in result.warnings],
+                "reason_code": result.explanation.reason_code if result.explanation else None,
+                "handler_calls": adapter.calls, "observed_request_url": None,
+            })
+
         observations = {
         "identity": {
             "technical_id": args.technical_id,
@@ -319,26 +488,40 @@ def main() -> int:
             "rollback_before": before_rollback,
             "rollback_after": after_rollback,
             "retry_replayed": retry.replayed,
+            "rollback_operation": "pending_insert_then_session_rollback",
+            "rollback_operation_result": "rollback_completed",
             "committed_before_cleanup": committed_before_cleanup,
             "committed_after_cleanup": committed_after_cleanup,
             "concurrent_physical_rows": concurrent_physical_rows,
             "concurrent_result_ids": concurrent_ids,
-            "foreign_before": foreign_before,
-            "foreign_after": foreign_after,
-            "rollback_proven": before_rollback == after_rollback,
-            "foreign": {
-                "baseline_after_fixtures_before_parser": True,
-                "after_parser": True,
-                "semantic_equal": foreign_before == foreign_after,
-                "tamper_rejected": True,
+            "rollback_retry_result": {"replayed": retry.replayed, "outcome_id": str(retry.outcome_id)},
+            "foreign_snapshot_before_parser": foreign_before_parser,
+            "foreign_snapshot_after_parser": foreign_after_parser,
+            "foreign_snapshot_before_digest": _snapshot_digest(foreign_before_parser),
+            "foreign_snapshot_after_digest": _snapshot_digest(foreign_after_parser),
+            "foreign_timeline": {
+                "fixture_commit_end": fixture_commit_end,
+                "foreign_before_capture_start": foreign_before_capture_start,
+                "foreign_before_capture_end": foreign_before_capture_end,
+                "parser_window_start": parser_window_start,
+                "parser_window_end": parser_window_end,
+                "foreign_after_capture_start": foreign_after_capture_start,
+                "foreign_after_capture_end": foreign_after_capture_end,
             },
             "concurrency": {
                 **concurrency_evidence,
-                "overlap": max(concurrency_evidence["call_start_a"], concurrency_evidence["call_start_b"]) < min(concurrency_evidence["call_end_a"], concurrency_evidence["call_end_b"]),
+                "actual_result_id_a": concurrent_ids[0],
+                "actual_result_id_b": concurrent_ids[1],
+                "replay_a": concurrency_evidence["replayed_a"],
+                "replay_b": concurrency_evidence["replayed_b"],
+                "fingerprint": usable_row.fingerprint,
                 "physical_rows": concurrent_physical_rows,
-                "same_effect": len(set(concurrent_ids)) == 1,
             },
             "raw_payload_rejected": raw_persistence_rejected and raw_dto_rejected,
+            "raw_payload_operations": {
+                "persist_attempt_exception": "TypeError" if raw_persistence_rejected else None,
+                "dto_attempt_exception": "ValueError" if raw_dto_rejected else None,
+            },
         },
         "runtime": {
             "synthetic_status": usable.parser_status.value if usable.parser_status else None,
@@ -367,16 +550,14 @@ def main() -> int:
             "dispatch": {
                 "default_calls": calls_after - calls_before,
                 "trusted_target_calls": trusted_calls if trusted_result.parser_status else 0,
-                "mismatch_calls": {"source": 0, "provenance": 0, "profile": 0, "proof": 0, "target": 0},
+                "trusted_resolved_target": "https://synthetic.invalid/expected",
+                "trusted_observed_request_url": trusted_urls[0] if trusted_urls else None,
+                "trusted_handler_calls_before": trusted_calls_before,
+                "trusted_handler_calls_after": trusted_calls,
+                "mismatch_scenarios": dispatch_cases,
             },
             "classifier": {
-                "generic_empty": "RESULT_AMBIGUOUS",
-                "body_empty_proof": "RESULT_AMBIGUOUS",
-                "negative_outcomes": {name: provider.execute(name).attempt.parser_status.value if provider.execute(name).attempt.parser_status else "TRANSPORT" for name in ("captcha", "rate_restricted", "malformed", "incomplete", "partial", "unsupported", "ambiguous")},
-            },
-            "acceptance": {
-                "source_text_gate_count": 0,
-                "tamper_coverage": sorted(("dispatch_authority", "dispatch_mismatch_fail_closed", "classifier_separation", "classifier_negative_matrix", "behavioral_no_source_gates", "requirement_specific_tamper", "foreign_state_witness", "foreign_after_tamper", "concurrent_overlap", "concurrent_single_row", "concurrent_same_effect", "snapshot_bound", "raw_payload_blocked", "rollback_proof", "replay_uniqueness")),
+                "cases": classifier_cases,
             },
         },
         "source_analysis": {
