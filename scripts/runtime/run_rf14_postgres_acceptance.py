@@ -377,7 +377,7 @@ def main() -> int:
             after = scenario_calls
             dispatch_cases.append({
                 "scenario_id": scenario_id,
-                "input_source_reference_id": attempted_source.source_reference_id,
+                "input_source_reference_id": attempted_source.source_reference.source_reference_id,
                 "input_provenance_reference": attempted_source.beacon_source_reference,
                 "input_profile_id": trusted_profile.profile_id,
                 "input_profile_version": getattr(dispatch_inputs[scenario_id], "profile_version", trusted_profile.profile_version),
