@@ -44,7 +44,7 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     injected = config.attributes.get("connection")
     if injected is not None:
-        with serialized_migration(injected):
+        with serialized_migration(injected, commit_body=True):
             context.configure(connection=injected, **_configure_kwargs())
             with context.begin_transaction():
                 context.run_migrations()

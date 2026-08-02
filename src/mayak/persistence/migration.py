@@ -102,7 +102,7 @@ def _best_effort_cleanup(connection: Any) -> None:
 
 
 @contextmanager
-def serialized_migration(connection: Any) -> Iterator[None]:
+def serialized_migration(connection: Any, *, commit_body: bool = False) -> Iterator[None]:
     """Hold one session-level lock over configuration and all migrations."""
     if _transaction_state(connection, "migration serialization unavailable"):
         raise MigrationSerializationError("migration serialization unavailable")
@@ -125,7 +125,10 @@ def serialized_migration(connection: Any) -> Iterator[None]:
     else:
         try:
             if _transaction_state(connection, "migration serialization release failed"):
-                connection.rollback()
+                if commit_body:
+                    connection.commit()
+                else:
+                    connection.rollback()
             _release(connection)
             connection.commit()
             if _transaction_state(connection, "migration serialization release failed"):
