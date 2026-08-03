@@ -14,8 +14,10 @@ import re
 import sys
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
+from uuid import UUID
 
 MARKER = "RF16_ACCEPTANCE_VERIFIED"
 TECHNICAL_ID = "RF-16-EGRESS-ROUTING-DURABLE-RUNTIME-20260803-01"
@@ -92,7 +94,7 @@ def _check(fn: Callable[[dict[str, object]], bool]) -> Callable[[dict[str, objec
     def wrapped(data: dict[str, object]) -> bool:
         try:
             return fn(data)
-        except (KeyError, TypeError, ValueError, IndexError):
+        except KeyError, TypeError, ValueError, IndexError:
             return False
 
     return wrapped
@@ -110,6 +112,25 @@ def _r(
 
 def _raw_projection(value: object) -> bool:
     return isinstance(value, dict) and bool(value)
+
+
+def _safe_identity(value: object) -> bool:
+    try:
+        UUID(str(value))
+        return True
+    except TypeError, ValueError, AttributeError:
+        return False
+
+
+def _safe_diagnostic_value(value: object, key: str = "") -> bool:
+    if isinstance(value, dict):
+        return all(
+            isinstance(k, str) and not FORBIDDEN.search(k) and _safe_diagnostic_value(v, k)
+            for k, v in value.items()
+        )
+    if isinstance(value, list):
+        return all(_safe_diagnostic_value(v, key) for v in value)
+    return not (isinstance(value, str) and FORBIDDEN.search(value))
 
 
 def _registry(expected_sha: str, repository_head: str) -> tuple[Requirement, ...]:
@@ -200,41 +221,52 @@ def _registry(expected_sha: str, repository_head: str) -> tuple[Requirement, ...
     def diagnostics(d: dict[str, object]) -> bool:
         x = d["diagnostics"]
         raw = x.get("observed") if isinstance(x, dict) else None
-
-        def scan(v: object) -> bool:
-            if isinstance(v, dict):
-                return all(not FORBIDDEN.search(str(k)) and scan(val) for k, val in v.items())
-            if isinstance(v, list):
-                return all(scan(i) for i in v)
-            return not (isinstance(v, str) and FORBIDDEN.search(v))
-
+        expected_keys = {
+            "source",
+            "protocol_version",
+            "correlation_id",
+            "route_id",
+            "agent_id",
+            "route_code",
+            "readiness",
+            "lease_id",
+            "lease_state",
+            "lease_expires_at",
+        }
+        try:
+            expiry = datetime.fromisoformat(str(raw["lease_expires_at"]))
+        except KeyError, TypeError, ValueError:
+            return False
         return (
             isinstance(raw, dict)
-            and scan(raw)
-            and set(raw) <= {"route_id", "lease_id", "agent_id", "scenario", "protocol_version"}
+            and set(raw) == expected_keys
+            and _safe_diagnostic_value(raw)
+            and raw["source"] == "rf16"
+            and raw["protocol_version"] == "rf16-egress-v1"
+            and isinstance(raw["correlation_id"], str)
+            and re.fullmatch(r"[0-9a-f]{16,128}", raw["correlation_id"]) is not None
+            and all(_safe_identity(raw[key]) for key in ("route_id", "agent_id", "lease_id"))
+            and isinstance(raw["route_code"], str)
+            and re.fullmatch(r"rf16-[a-z0-9-]{1,48}", raw["route_code"]) is not None
+            and raw["readiness"] in {"READY", "NOT_READY"}
+            and raw["lease_state"] in {"ACTIVE", "COMPLETED", "EXPIRED", "REVOKED", "AMBIGUOUS"}
+            and expiry.tzinfo is not None
         )
 
     def parser(d: dict[str, object]) -> bool:
         expected = {
-            "NOT_SENT": {None, "NO_REQUEST"},
-            "UNAVAILABLE": {"TRANSPORT_UNAVAILABLE"},
-            "FAILURE": {"RESULT_AMBIGUOUS"},
-            "RESTRICTED": {"RATE_OR_ACCESS_RESTRICTED", "UNCLASSIFIED"},
-            "MALFORMED": {"MALFORMED_RESPONSE", "UNSUPPORTED_STRUCTURE"},
-            "DISPATCH_AMBIGUOUS": {"RESULT_AMBIGUOUS"},
-            "RESULT_AMBIGUOUS": {"RESULT_AMBIGUOUS"},
-            "VALIDATED_RESPONSE": {"USABLE_RESPONSE"},
+            "NOT_SENT": {"EXPLICIT_REJECTION"},
+            "TRANSPORT_UNAVAILABLE": {"EXPLICIT_REJECTION"},
+            "TRANSPORT_AMBIGUOUS": {"RESULT_AMBIGUOUS"},
+            "RESPONSE_RECEIVED_UNCLASSIFIED": {None},
         }
         rows = d["parser_cases"]
         return (
             isinstance(rows, list)
-            and len(rows) == len(expected)
+            and len(rows) == 8
             and all(
-                x.get("parser_status") in expected.get(x.get("case_id"), set())
-                and (
-                    x.get("case_id") == "VALIDATED_RESPONSE"
-                    or x.get("parser_status") != "USABLE_RESPONSE"
-                )
+                x.get("transport_status") in expected
+                and x.get("parser_status") in expected[x["transport_status"]]
                 for x in rows
             )
         )
@@ -276,46 +308,72 @@ def _registry(expected_sha: str, repository_head: str) -> tuple[Requirement, ...
             "MALFORMED": ("OUTCOME", "MALFORMED_UNUSABLE"),
             "DISPATCH_AMBIGUOUS": ("OUTCOME", "DISPATCH_AMBIGUOUS"),
             "RESULT_AMBIGUOUS": ("OUTCOME", "RESULT_AMBIGUOUS"),
-            "DUPLICATE": ("RECEIPT", None),
             "MISMATCHED_DUPLICATE": ("OUTCOME", "RESULT_AMBIGUOUS"),
             "EXPIRED_LEASE": ("OUTCOME", "RECONCILIATION_REQUIRED"),
             "REVOKED_LEASE": ("OUTCOME", "RECONCILIATION_REQUIRED"),
-            "RESTART_REPLAY": ("RECEIPT", None),
-            "restart_replay_after_restart": ("RECEIPT", None),
         }
         rows = d["simulator_cases"]
+        standalone = {x.get("scenario"): x for x in rows if isinstance(x, dict)}
+        if set(standalone) != set(expected) or any(
+            (standalone[key].get("message_type"), standalone[key].get("effect")) != value
+            for key, value in expected.items()
+        ):
+            return False
+        duplicate = d["duplicate_witness"]
+        restart = d["restart_witness"]
         return (
-            isinstance(rows, list)
-            and {x.get("scenario") for x in rows} == set(expected)
-            and all(
-                (x.get("message_type"), x.get("effect")) == expected[x["scenario"]] for x in rows
-            )
+            duplicate["seed"]["message_type"] == duplicate["replay"]["message_type"]
+            and duplicate["seed"]["effect"] == duplicate["replay"]["effect"]
+            and duplicate["seed"]["agent_id"] == duplicate["replay"]["agent_id"]
+            and duplicate["seed"]["assignment_id"] == duplicate["replay"]["assignment_id"]
+            and duplicate["seed"]["lease_id"] == duplicate["replay"]["lease_id"]
+            and restart["committed"] == restart["replayed"]
         )
 
     def persistence(d: dict[str, object]) -> bool:
         p = d["persistence_projection"]
-        allowed = {
-            "id",
-            "agent_id",
-            "agent_code",
-            "route_code",
-            "state",
-            "observed_at",
-            "route_id",
-            "work_item_id",
-            "lease_expires_at",
+        columns = {
+            "egress_agents": {
+                "id",
+                "agent_code",
+                "state",
+                "credential_fingerprint",
+                "created_at",
+                "updated_at",
+                "row_version",
+            },
+            "egress_routes": {
+                "id",
+                "agent_id",
+                "route_code",
+                "state",
+                "endpoint_ref",
+                "created_at",
+                "updated_at",
+                "row_version",
+            },
+            "egress_agent_heartbeats": {"id", "agent_id", "observed_at", "state", "safe_metadata"},
+            "egress_route_leases": {
+                "id",
+                "route_id",
+                "work_item_id",
+                "state",
+                "lease_started_at",
+                "lease_expires_at",
+                "lease_token",
+            },
         }
         return (
             isinstance(p, dict)
-            and set(p.get("tables", {}))
-            == {"egress_agents", "egress_routes", "egress_agent_heartbeats", "egress_route_leases"}
+            and p.get("schema_columns") == {key: sorted(value) for key, value in columns.items()}
+            and set(p.get("tables", {})) == set(columns)
             and all(
-                set(row) <= allowed
+                set(row) <= columns[table]
                 and not any(
                     FORBIDDEN.search(str(k)) or (isinstance(v, str) and FORBIDDEN.search(v))
                     for k, v in row.items()
                 )
-                for rows in p["tables"].values()
+                for table, rows in p["tables"].items()
                 for row in rows
             )
         )
@@ -545,7 +603,30 @@ def _registry(expected_sha: str, repository_head: str) -> tuple[Requirement, ...
             "persistence_projection.tables",
             "DB physical",
         ),
+        _r(
+            "safe_acceptance_evidence_no_token_values",
+            lambda d: _safe_evidence(d),
+            _set("lease.token", "raw-secret-token"),
+            "acceptance evidence recursively",
+            "evidence confidentiality",
+        ),
     )
+
+
+def _safe_evidence(value: object, key: str = "") -> bool:
+    """Reject value-bearing secret classes while allowing scenario labels."""
+    sensitive = re.compile(
+        r"^(lease_token|provider_token|token|password|authorization|cookie|credential|private_key|raw_body|raw_payload|raw_headers?)$",
+        re.I,
+    )
+    if isinstance(value, dict):
+        return all(
+            isinstance(k, str) and not sensitive.fullmatch(k) and _safe_evidence(v, k)
+            for k, v in value.items()
+        )
+    if isinstance(value, list):
+        return all(_safe_evidence(v, key) for v in value)
+    return True
 
 
 def source_map(registry: tuple[Requirement, ...]) -> list[dict[str, str]]:
@@ -700,7 +781,20 @@ def build_representative_evidence(expected_sha: str, repository_head: str) -> di
             "parser_row_ids": [],
             "notification_rows": [],
         },
-        "diagnostics": {"observed": {"route_id": "r", "lease_id": "l"}},
+        "diagnostics": {
+            "observed": {
+                "source": "rf16",
+                "protocol_version": "rf16-egress-v1",
+                "correlation_id": "0123456789abcdef",
+                "route_id": "00000000-0000-0000-0000-000000000001",
+                "agent_id": "00000000-0000-0000-0000-000000000002",
+                "route_code": "rf16-route",
+                "readiness": "READY",
+                "lease_id": "00000000-0000-0000-0000-000000000003",
+                "lease_state": "ACTIVE",
+                "lease_expires_at": "2026-01-01T00:00:00+00:00",
+            }
+        },
         "protocol_cases": [
             {"case_id": "canonical_valid", "accepted": True},
             {"case_id": "canonical_assignment", "accepted": True},
@@ -720,7 +814,7 @@ def build_representative_evidence(expected_sha: str, repository_head: str) -> di
         ],
         "simulator_cases": [
             {"scenario": "HEARTBEAT", "message_type": "HEARTBEAT", "effect": None},
-            {"scenario": "ACCEPTED_ASSIGNMENT", "message_type": "ASSIGNMENT", "effect": "ACCEPTED"},
+            {"scenario": "ACCEPTED_ASSIGNMENT", "message_type": "RECEIPT", "effect": None},
         ]
         + [
             {
@@ -730,17 +824,10 @@ def build_representative_evidence(expected_sha: str, repository_head: str) -> di
                     {
                         "SUCCESS_TRANSPORT": "SUCCESS_TRANSPORT_ONLY",
                         "MALFORMED": "MALFORMED_UNUSABLE",
+                        "MISMATCHED_DUPLICATE": "RESULT_AMBIGUOUS",
                     }.get(
                         x,
-                        "RECONCILIATION_REQUIRED"
-                        if x
-                        in {
-                            "EXPIRED_LEASE",
-                            "REVOKED_LEASE",
-                            "RESTART_REPLAY",
-                            "restart_replay_after_restart",
-                        }
-                        else x,
+                        "RECONCILIATION_REQUIRED" if x in {"EXPIRED_LEASE", "REVOKED_LEASE"} else x,
                     )
                 ),
             }
@@ -753,47 +840,150 @@ def build_representative_evidence(expected_sha: str, repository_head: str) -> di
                 "MALFORMED",
                 "DISPATCH_AMBIGUOUS",
                 "RESULT_AMBIGUOUS",
-                "DUPLICATE",
                 "MISMATCHED_DUPLICATE",
                 "EXPIRED_LEASE",
                 "REVOKED_LEASE",
-                "RESTART_REPLAY",
-                "restart_replay_after_restart",
             ]
         ],
+        "duplicate_witness": {
+            "seed": {
+                "agent_id": "00000000-0000-0000-0000-000000000002",
+                "assignment_id": "a",
+                "lease_id": "l",
+                "message_type": "RECEIPT",
+                "effect": None,
+            },
+            "replay": {
+                "agent_id": "00000000-0000-0000-0000-000000000002",
+                "assignment_id": "a",
+                "lease_id": "l",
+                "message_type": "RECEIPT",
+                "effect": None,
+            },
+        },
+        "restart_witness": {
+            "committed": {
+                "message_type": "OUTCOME",
+                "effect": "DISPATCH_AMBIGUOUS",
+                "agent_id": "a",
+                "assignment_id": "a",
+                "lease_id": "l",
+            },
+            "replayed": {
+                "message_type": "OUTCOME",
+                "effect": "DISPATCH_AMBIGUOUS",
+                "agent_id": "a",
+                "assignment_id": "a",
+                "lease_id": "l",
+            },
+        },
         "parser_cases": [
-            {"case_id": "NOT_SENT", "parser_status": None},
-            {"case_id": "UNAVAILABLE", "parser_status": "TRANSPORT_UNAVAILABLE"},
-            {"case_id": "FAILURE", "parser_status": "RESULT_AMBIGUOUS"},
-            {"case_id": "RESTRICTED", "parser_status": "RATE_OR_ACCESS_RESTRICTED"},
-            {"case_id": "MALFORMED", "parser_status": "MALFORMED_RESPONSE"},
-            {"case_id": "DISPATCH_AMBIGUOUS", "parser_status": "RESULT_AMBIGUOUS"},
-            {"case_id": "RESULT_AMBIGUOUS", "parser_status": "RESULT_AMBIGUOUS"},
-            {"case_id": "VALIDATED_RESPONSE", "parser_status": "USABLE_RESPONSE"},
+            {
+                "case_id": "NOT_SENT",
+                "transport_status": "NOT_SENT",
+                "parser_status": "EXPLICIT_REJECTION",
+            },
+            {
+                "case_id": "UNAVAILABLE",
+                "transport_status": "TRANSPORT_UNAVAILABLE",
+                "parser_status": "EXPLICIT_REJECTION",
+            },
+            {
+                "case_id": "FAILURE",
+                "transport_status": "TRANSPORT_AMBIGUOUS",
+                "parser_status": "RESULT_AMBIGUOUS",
+            },
+            {
+                "case_id": "RESTRICTED",
+                "transport_status": "RESPONSE_RECEIVED_UNCLASSIFIED",
+                "parser_status": None,
+            },
+            {
+                "case_id": "MALFORMED",
+                "transport_status": "RESPONSE_RECEIVED_UNCLASSIFIED",
+                "parser_status": None,
+            },
+            {
+                "case_id": "DISPATCH_AMBIGUOUS",
+                "transport_status": "TRANSPORT_AMBIGUOUS",
+                "parser_status": "RESULT_AMBIGUOUS",
+            },
+            {
+                "case_id": "RESULT_AMBIGUOUS",
+                "transport_status": "TRANSPORT_AMBIGUOUS",
+                "parser_status": "RESULT_AMBIGUOUS",
+            },
+            {
+                "case_id": "VALIDATED_RESPONSE",
+                "transport_status": "RESPONSE_RECEIVED_UNCLASSIFIED",
+                "parser_status": None,
+            },
         ],
         "persistence_projection": {
+            "schema_columns": {
+                "egress_agents": [
+                    "agent_code",
+                    "created_at",
+                    "credential_fingerprint",
+                    "id",
+                    "row_version",
+                    "state",
+                    "updated_at",
+                ],
+                "egress_routes": [
+                    "agent_id",
+                    "created_at",
+                    "endpoint_ref",
+                    "id",
+                    "route_code",
+                    "row_version",
+                    "state",
+                    "updated_at",
+                ],
+                "egress_agent_heartbeats": [
+                    "agent_id",
+                    "id",
+                    "observed_at",
+                    "safe_metadata",
+                    "state",
+                ],
+                "egress_route_leases": [
+                    "id",
+                    "lease_expires_at",
+                    "lease_started_at",
+                    "lease_token",
+                    "route_id",
+                    "state",
+                    "work_item_id",
+                ],
+            },
             "tables": {
-                x: [{"id": "x", "state": "READY"}]
-                for x in [
-                    "egress_agents",
-                    "egress_routes",
-                    "egress_agent_heartbeats",
-                    "egress_route_leases",
-                ]
-            }
+                "egress_agents": [{"id": "x", "agent_code": "rf16-agent", "state": "READY"}],
+                "egress_routes": [
+                    {"id": "x", "agent_id": "a", "route_code": "rf16-route", "state": "READY"}
+                ],
+                "egress_agent_heartbeats": [
+                    {
+                        "id": "x",
+                        "agent_id": "a",
+                        "observed_at": "2026-01-01T00:00:00+00:00",
+                        "state": "ONLINE",
+                    }
+                ],
+                "egress_route_leases": [
+                    {
+                        "id": "x",
+                        "route_id": "r",
+                        "work_item_id": "w",
+                        "state": "ACTIVE",
+                        "lease_started_at": "2026-01-01T00:00:00+00:00",
+                        "lease_expires_at": "2026-01-01T00:01:00+00:00",
+                    }
+                ],
+            },
         },
         "package_external": {"verified": True},
     }
-    d["simulator_cases"][1] = {
-        "scenario": "ACCEPTED_ASSIGNMENT",
-        "message_type": "RECEIPT",
-        "effect": None,
-    }
-    for row in d["simulator_cases"]:
-        if row["scenario"] in {"DUPLICATE", "RESTART_REPLAY", "restart_replay_after_restart"}:
-            row["message_type"], row["effect"] = "RECEIPT", None
-        if row["scenario"] == "MISMATCHED_DUPLICATE":
-            row["effect"] = "RESULT_AMBIGUOUS"
     return d
 
 
@@ -867,7 +1057,9 @@ def main() -> int:
         result = {
             "requirement_count": len(registry),
             "requirement_ids": [r.requirement_id for r in registry],
-            "tamper_ids": rejected,
+            "tamper_strategy_ids": [r.requirement_id for r in registry],
+            "tamper_rejected_ids": rejected,
+            "tamper_ids": [r.requirement_id for r in registry],
             "original_pass_count": len(registry)
             - len([x for x in failing if not x.startswith("tamper::")]),
             "tamper_rejected_count": len(rejected),

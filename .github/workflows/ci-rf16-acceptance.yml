@@ -100,14 +100,16 @@ jobs:
           from pathlib import Path
           d = json.loads(Path("rf16-verifier-diagnostics.json").read_text())
           ids = d["requirement_ids"]
-          tamper = d["tamper_ids"]
+          strategies = d["tamper_strategy_ids"]
+          rejected = d["tamper_rejected_ids"]
           assert len(ids) == len(set(ids))
-          assert set(ids) == set(tamper)
+          assert set(ids) == set(strategies)
+          assert set(ids) == set(rejected)
           assert d["original_pass_count"] == d["requirement_count"]
           assert d["tamper_rejected_count"] == d["requirement_count"]
           assert not d["failing_requirements"]
           assert Path("rf16-verifier.stderr").read_text().count("RF16_ACCEPTANCE_VERIFIED") == 0
-          Path("rf16-meta-gate.json").write_text(json.dumps({"requirement_count": len(ids), "original_pass_count": d["original_pass_count"], "tamper_rejected_count": d["tamper_rejected_count"], "ids_equal": set(ids) == set(tamper)}, sort_keys=True) + "\n")
+          Path("rf16-meta-gate.json").write_text(json.dumps({"requirement_count": len(ids), "original_pass_count": d["original_pass_count"], "tamper_rejected_count": d["tamper_rejected_count"], "ids_equal": set(ids) == set(strategies) == set(rejected)}, sort_keys=True) + "\n")
           PY
       - uses: actions/upload-artifact@v4
         if: always()

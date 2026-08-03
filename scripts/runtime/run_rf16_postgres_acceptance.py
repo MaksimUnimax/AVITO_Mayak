@@ -133,32 +133,36 @@ def _protocol_observations() -> list[dict[str, object]]:
     return observations
 
 
-def _simulator_observations() -> list[dict[str, object]]:
-    simulator = EgressAgentSimulator(uuid4())
-    scenarios = list(SimulatorScenario)
-    observations = []
-    for scenario in scenarios:
-        message = simulator.run(scenario)
-        observations.append(
-            {
-                "scenario": scenario.name,
-                "message_type": message.message_type.value,
-                "effect": message.effect.value if message.effect else None,
-                "assignment_id": str(message.assignment_id) if message.assignment_id else None,
-                "lease_id": str(message.lease_id) if message.lease_id else None,
-            }
-        )
-    replay = simulator.restart().run(SimulatorScenario.RESTART_REPLAY)
-    observations.append(
-        {
-            "scenario": "restart_replay_after_restart",
-            "message_type": replay.message_type.value,
-            "effect": replay.effect.value if replay.effect else None,
-            "assignment_id": str(replay.assignment_id),
-            "lease_id": str(replay.lease_id),
+def _simulator_observations() -> tuple[
+    list[dict[str, object]], dict[str, dict[str, object]], dict[str, dict[str, object]]
+]:
+    def raw(message: AgentMessage) -> dict[str, object]:
+        return {
+            "message_type": message.message_type.value,
+            "effect": message.effect.value if message.effect else None,
+            "assignment_id": str(message.assignment_id) if message.assignment_id else None,
+            "lease_id": str(message.lease_id) if message.lease_id else None,
+            "agent_id": str(message.agent_id),
         }
+
+    standalone = []
+    for scenario in SimulatorScenario:
+        if scenario in {SimulatorScenario.DUPLICATE, SimulatorScenario.RESTART_REPLAY}:
+            continue
+        standalone.append(
+            {"scenario": scenario.name, **raw(EgressAgentSimulator(uuid4()).run(scenario))}
+        )
+    duplicate_simulator = EgressAgentSimulator(uuid4())
+    duplicate_seed = duplicate_simulator.run(SimulatorScenario.ACCEPTED_ASSIGNMENT)
+    duplicate_replay = duplicate_simulator.run(SimulatorScenario.DUPLICATE)
+    restart_simulator = EgressAgentSimulator(uuid4())
+    restart_committed = restart_simulator.run(SimulatorScenario.DISPATCH_AMBIGUOUS)
+    restart_replayed = restart_simulator.restart().run(SimulatorScenario.RESTART_REPLAY)
+    return (
+        standalone,
+        {"seed": raw(duplicate_seed), "replay": raw(duplicate_replay)},
+        {"committed": raw(restart_committed), "replayed": raw(restart_replayed)},
     )
-    return observations
 
 
 def _parser_observations() -> list[dict[str, object]]:
@@ -183,7 +187,7 @@ def _parser_observations() -> list[dict[str, object]]:
         rows.append(
             {
                 "case_id": case_id,
-                "transport": case_id,
+                "transport_status": status.value,
                 "parser_status": result.parser_status.value if result.parser_status else None,
             }
         )
@@ -341,7 +345,8 @@ def main() -> int:
         heartbeat_row = (
             session.execute(
                 text(
-                    "select id, state, observed_at from mayak.egress_agent_heartbeats where id=:id"
+                    "select id, agent_id, state, observed_at "
+                    "from mayak.egress_agent_heartbeats where id=:id"
                 ),
                 {"id": heartbeat},
             )
@@ -424,7 +429,7 @@ def main() -> int:
             evidence_current_state="CURRENT",
             reconciliation_state="NOT_REQUIRED",
         )
-        egress.register_route(
+        route3 = egress.register_route(
             session,
             agent_id=agent.id,
             route_code="rf16-route-3",
@@ -433,7 +438,7 @@ def main() -> int:
             state="READY",
         )
         policy.bind_trusted_facts(
-            ids["route3"],
+            route3.id,
             registration_state="REGISTERED",
             readiness_state="READY",
             health_state="HEALTHY",
@@ -510,6 +515,7 @@ def main() -> int:
         ).scalar_one()
     with fixture.connect() as conn:
         foreign_after = _foreign_witness(conn, ids)
+    simulator_cases, duplicate_witness, restart_witness = _simulator_observations()
     with app.connect() as conn:
         observed_expiry = (
             conn.execute(
@@ -634,7 +640,6 @@ def main() -> int:
                 "ok": lease.ok,
                 "reason": lease.reason,
                 "id": str(lease.reference_id) if lease.reference_id else None,
-                "token": str(lease_token),
                 "state_after": observed_lease["state"],
                 "active_count": active_count,
             },
@@ -683,14 +688,51 @@ def main() -> int:
                 "observed": diagnostics,
             },
             "protocol_cases": _protocol_observations(),
-            "simulator_cases": _simulator_observations(),
+            "simulator_cases": simulator_cases,
+            "duplicate_witness": duplicate_witness,
+            "restart_witness": restart_witness,
             "parser_cases": _parser_observations(),
             "persistence_projection": {
+                "schema_columns": {
+                    table_name: sorted(
+                        column.name for column in metadata.tables[f"mayak.{table_name}"].columns
+                    )
+                    for table_name in (
+                        "egress_agents",
+                        "egress_routes",
+                        "egress_agent_heartbeats",
+                        "egress_route_leases",
+                    )
+                },
                 "tables": {
-                    "egress_agents": [dict(observed_agent)],
-                    "egress_routes": [dict(observed_route)],
-                    "egress_agent_heartbeats": [dict(heartbeat_row)],
-                    "egress_route_leases": [dict(observed_lease)],
+                    "egress_agents": [
+                        {key: observed_agent[key] for key in ("id", "agent_code", "state")}
+                    ],
+                    "egress_routes": [
+                        {
+                            key: observed_route[key]
+                            for key in ("id", "agent_id", "route_code", "state")
+                        }
+                    ],
+                    "egress_agent_heartbeats": [
+                        {
+                            key: heartbeat_row[key]
+                            for key in ("id", "agent_id", "observed_at", "state")
+                        }
+                    ],
+                    "egress_route_leases": [
+                        {
+                            key: observed_lease[key]
+                            for key in (
+                                "id",
+                                "route_id",
+                                "work_item_id",
+                                "state",
+                                "lease_started_at",
+                                "lease_expires_at",
+                            )
+                        }
+                    ],
                 },
             },
         }
@@ -704,7 +746,7 @@ def main() -> int:
             barrier.wait(timeout=10)
             result = egress.acquire_lease(
                 concurrent_session,
-                route_id=ids["route3"],
+                route_id=route3.id,
                 work_item_id=ids["work"],
                 lease_token=uuid4(),
                 lease_validity_seconds=60,
@@ -726,7 +768,7 @@ def main() -> int:
                 "select count(*) from mayak.egress_route_leases "
                 "where route_id=:route and work_item_id=:work and state='ACTIVE'"
             ),
-            {"route": ids["route3"], "work": ids["work"]},
+            {"route": route3.id, "work": ids["work"]},
         ).scalar_one()
     observed["concurrency"] = {
         "sessions": concurrent_results,

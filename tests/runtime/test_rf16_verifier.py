@@ -25,6 +25,7 @@ def test_final_registry_is_unique_and_tamper_set_is_identical() -> None:
     assert not failing
     assert len({item.requirement_id for item in registry}) == len(registry)
     assert {item.requirement_id for item in registry} == set(rejected)
+    assert len(registry) == 28
 
 
 def test_missing_path_and_expected_sha_fail_closed() -> None:
@@ -127,6 +128,30 @@ def test_source_map_has_no_banned_summary_authority() -> None:
             lambda d: d["persistence_projection"]["tables"]["egress_routes"][0].update(
                 {"provider_body": "secret"}
             ),
+        ),
+        (
+            "safe_diagnostics",
+            lambda d: d["diagnostics"]["observed"].update({"authorization": "Bearer secret"}),
+        ),
+        (
+            "safe_diagnostics",
+            lambda d: d["diagnostics"]["observed"].update({"route_code": "foreign-host"}),
+        ),
+        (
+            "simulator_runtime_parity",
+            lambda d: d["restart_witness"]["replayed"].update({"effect": "SUCCESS_TRANSPORT_ONLY"}),
+        ),
+        (
+            "simulator_runtime_parity",
+            lambda d: d["duplicate_witness"]["replay"].update({"assignment_id": "different"}),
+        ),
+        (
+            "parser_fail_closed",
+            lambda d: d["parser_cases"][3].update({"parser_status": "USABLE_RESPONSE"}),
+        ),
+        (
+            "safe_acceptance_evidence_no_token_values",
+            lambda d: d["lease"].update({"token": "raw-secret-token"}),
         ),
     ],
 )
