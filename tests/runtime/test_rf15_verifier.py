@@ -261,6 +261,7 @@ def test_both_foreign_scenarios_use_one_shared_two_layer_builder() -> None:
 def test_all_rf15_registries_are_explicit_and_not_defaulted() -> None:
     assert set(V.REQUIREMENT_IDS) == set(V.CHECKERS) == set(V.RAW_DEPENDENCY_PATHS)
     assert set(V.REQUIREMENT_IDS) == set(V.TAMPER_PATHS)
+    assert set(V.REQUIREMENT_IDS) == set(V.BEHAVIORAL_TAMPERS)
     assert "default-for-all" not in inspect.getsource(V)
 
 
@@ -269,6 +270,39 @@ def test_exact_29_representative_cases_and_own_causal_tampers() -> None:
     assert len(evidence["behavioral_cases"]) == 29
     assert all(V.CHECKERS[name](evidence) for name in V.REQUIREMENT_IDS)
     assert all(not V.CHECKERS[name](V._tamper(evidence, name)) for name in V.REQUIREMENT_IDS)
+
+
+@pytest.mark.parametrize("pid_a,pid_b", [(11, 12), (11, 42), (162, 164), (1000, 9001)])
+@pytest.mark.parametrize(
+    "requirement", ["due_materialization_concurrency", "concurrent_idempotency"]
+)
+def test_backend_pid_relational_tampers_collapse_identity_for_any_pid_gap(
+    requirement: str, pid_a: int, pid_b: int
+) -> None:
+    evidence = V.build_representative_evidence()
+    case = evidence["behavioral_cases"][requirement]
+    case["operation_a"]["backend_pid"] = pid_a
+    case["operation_b"]["backend_pid"] = pid_b
+    assert V._check(requirement, case)
+
+    tampered, changed_paths = V.BEHAVIORAL_TAMPERS[requirement](evidence)
+    tampered_case = tampered["behavioral_cases"][requirement]
+    assert changed_paths == (V.TAMPER_PATHS[requirement],)
+    assert tampered_case["operation_a"]["backend_pid"] == pid_b
+    assert (
+        tampered_case["operation_a"]["backend_pid"]
+        == tampered_case["operation_b"]["backend_pid"]
+    )
+    assert not V._check(requirement, tampered_case)
+
+
+def test_registered_tampers_report_declared_paths_and_reject_own_checker() -> None:
+    evidence = V.build_representative_evidence()
+    assert all(V._check(name, evidence["behavioral_cases"][name]) for name in V.REQUIREMENT_IDS)
+    for name in V.REQUIREMENT_IDS:
+        tampered, changed_paths = V.BEHAVIORAL_TAMPERS[name](evidence)
+        assert changed_paths == (V.TAMPER_PATHS[name],)
+        assert not V._check(name, tampered["behavioral_cases"][name])
 
 
 def test_operation_namespace_is_fail_closed_and_replay_uses_durable_identity() -> None:

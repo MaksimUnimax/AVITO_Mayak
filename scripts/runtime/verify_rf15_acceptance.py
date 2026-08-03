@@ -502,7 +502,7 @@ TAMPER_PATHS.update(
 )
 
 
-def _tamper(data: Mapping[str, Any], name: str) -> dict[str, Any]:
+def _tamper_path(data: Mapping[str, Any], name: str) -> dict[str, Any]:
     result = copy.deepcopy(dict(data))
     parent: Any = result["behavioral_cases"][name]
     path = TAMPER_PATHS[name]
@@ -523,12 +523,75 @@ def _tamper(data: Mapping[str, Any], name: str) -> dict[str, Any]:
     return result
 
 
+# These strategies are intentionally explicit: unary evidence can use the
+# path transformer, while relational evidence derives its invalid value from
+# the peer value consumed by its checker.
+def _tamper_backend_identity(data: Mapping[str, Any], name: str) -> tuple[dict[str, Any], tuple]:
+    result = copy.deepcopy(dict(data))
+    case = result["behavioral_cases"][name]
+    case["operation_a"]["backend_pid"] = case["operation_b"]["backend_pid"]
+    return result, (TAMPER_PATHS[name],)
+
+
+def _simple_tamper(data: Mapping[str, Any], name: str) -> tuple[dict[str, Any], tuple]:
+    return _tamper_path(data, name), (TAMPER_PATHS[name],)
+
+
 BEHAVIORAL_TAMPERS = {
-    name: (
-        lambda data, requirement=name: (_tamper(data, requirement), (TAMPER_PATHS[requirement],))
-    )
-    for name in REQUIREMENT_IDS
+    "cadence_policy": lambda data: _simple_tamper(data, "cadence_policy"),
+    "schedule_uniqueness": lambda data: _simple_tamper(data, "schedule_uniqueness"),
+    "due_work_current_slot": lambda data: _simple_tamper(data, "due_work_current_slot"),
+    "due_work_coalescing": lambda data: _simple_tamper(data, "due_work_coalescing"),
+    "recovery_blocks_backlog": lambda data: _simple_tamper(data, "recovery_blocks_backlog"),
+    "due_materialization_concurrency": lambda data: _tamper_backend_identity(
+        data, "due_materialization_concurrency"
+    ),
+    "claim_exclusivity": lambda data: _simple_tamper(data, "claim_exclusivity"),
+    "expired_claim_reconciliation": lambda data: _simple_tamper(
+        data, "expired_claim_reconciliation"
+    ),
+    "lease_guard": lambda data: _simple_tamper(data, "lease_guard"),
+    "run_revision_pin": lambda data: _simple_tamper(data, "run_revision_pin"),
+    "run_replay": lambda data: _simple_tamper(data, "run_replay"),
+    "baseline_no_event": lambda data: _simple_tamper(data, "baseline_no_event"),
+    "empty_baseline_durable": lambda data: _simple_tamper(data, "empty_baseline_durable"),
+    "parser_failure_no_advance": lambda data: _simple_tamper(data, "parser_failure_no_advance"),
+    "new_listing_exactly_once": lambda data: _simple_tamper(data, "new_listing_exactly_once"),
+    "price_change_no_event": lambda data: _simple_tamper(data, "price_change_no_event"),
+    "duplicate_within_run_exactly_once": lambda data: _simple_tamper(
+        data, "duplicate_within_run_exactly_once"
+    ),
+    "beacon_isolation": lambda data: _simple_tamper(data, "beacon_isolation"),
+    "absence_no_removal": lambda data: _simple_tamper(data, "absence_no_removal"),
+    "authority_recheck": lambda data: _simple_tamper(data, "authority_recheck"),
+    "idempotency_replay_and_mismatch": lambda data: _simple_tamper(
+        data, "idempotency_replay_and_mismatch"
+    ),
+    "concurrent_idempotency": lambda data: _tamper_backend_identity(
+        data, "concurrent_idempotency"
+    ),
+    "concurrent_baseline_serialization": lambda data: _simple_tamper(
+        data, "concurrent_baseline_serialization"
+    ),
+    "concurrent_new_listing_serialization": lambda data: _simple_tamper(
+        data, "concurrent_new_listing_serialization"
+    ),
+    "restart_durability": lambda data: _simple_tamper(data, "restart_durability"),
+    "foreign_state_witness": lambda data: _simple_tamper(data, "foreign_state_witness"),
+    "raw_payload_snapshot_boundary": lambda data: _simple_tamper(
+        data, "raw_payload_snapshot_boundary"
+    ),
+    "platform_event_identity": lambda data: _simple_tamper(data, "platform_event_identity"),
+    "no_foreign_domain_effect": lambda data: _simple_tamper(data, "no_foreign_domain_effect"),
 }
+
+
+def _tamper(data: Mapping[str, Any], name: str) -> dict[str, Any]:
+    # A missing registration is an explicit verifier failure, never a
+    # best-effort fallback.
+    strategy = BEHAVIORAL_TAMPERS[name]
+    result, _changed_paths = strategy(data)
+    return result
 
 
 def _stamp(seconds: int) -> tuple[str, str]:
