@@ -16,7 +16,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Iterable, Protocol
+from typing import Iterable, Protocol, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import Select, Table, select, text, update
@@ -125,7 +125,6 @@ class EndpointEligibility:
     provider_code: str
     endpoint_ref: str
     channel_class: NotificationChannelClass = NotificationChannelClass.TELEGRAM
-    accepted_eligibility: NotificationEligibilityDecision | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -417,9 +416,20 @@ def fanout_event(
     ids = tuple(dict.fromkeys(eligible_endpoints))
     if not ids:
         raise AccountScopeConflict("no eligible push endpoint; fan-out is blocked")
-    if eligibility_decision is None or delivery_plan is None:
-        raise AccountScopeConflict("fan-out requires accepted eligibility and delivery-plan evidence")
-    if not eligibility_decision.outbox_candidate_eligible or not delivery_plan.plan_created:
+    if type(eligibility_decision) is not NotificationEligibilityDecision:
+        raise AccountScopeConflict("fan-out requires the accepted eligibility decision type")
+    if type(delivery_plan) is not NotificationDeliveryPlanDecision:
+        raise AccountScopeConflict("fan-out requires the accepted delivery-plan decision type")
+    eligibility_decision = cast(NotificationEligibilityDecision, eligibility_decision)
+    delivery_plan = cast(NotificationDeliveryPlanDecision, delivery_plan)
+    if (
+        not eligibility_decision.outbox_candidate_eligible
+        or not eligibility_decision.source_eligible
+        or eligibility_decision.outbox_effect_authorized is not False
+        or delivery_plan.status.value != "PLANNED"
+        or not delivery_plan.plan_created
+        or delivery_plan.delivery_plan is None
+    ):
         raise AccountScopeConflict("semantic authority does not authorize outbox creation")
     moment = _now(now)
     with session.begin():
@@ -430,6 +440,32 @@ def fanout_event(
         )
         if event is None:
             raise InvalidNotificationSource("unknown notification event")
+        source_event = eligibility_decision.source_intake_decision.source_event
+        item = delivery_plan.outbox_creation_decision.outbox_item
+        plan = delivery_plan.delivery_plan
+        if item is None or plan.outbox_item != item:
+            raise AccountScopeConflict("delivery plan is not bound to its accepted outbox item")
+        if (
+            str(event["account_id"]) != item.account_id
+            or str(event["beacon_id"]) != str(item.beacon_id)
+            or (event["payload"] or {}).get("source_event_id") != item.source_event_id
+            or event["event_code"] != item.event_reason.value
+            or source_event.source_event_id != item.source_event_id
+            or source_event.account_id != item.account_id
+            or source_event.beacon_id != item.beacon_id
+            or source_event.source_fact_id != item.source_fact_id
+            or source_event.source_contract != item.source_contract
+            or source_event.listing_count != item.listing_count
+            or source_event.safe_listing_reference_ids != item.safe_listing_reference_ids
+        ):
+            raise AccountScopeConflict("eligibility/outbox/event semantic scope mismatch")
+        if plan.account_id != item.account_id or plan.beacon_id != item.beacon_id:
+            raise AccountScopeConflict("delivery plan scope mismatch")
+        plan_entries = {
+            entry.channel_class: entry
+            for entry in plan.channel_entries
+            if entry.push_planned
+        }
         made: list[UUID] = []
         for endpoint_id in ids:
             endpoint = (
@@ -449,6 +485,17 @@ def fanout_event(
                 )
             if endpoint["provider_code"] not in (NotificationChannelClass.TELEGRAM.value, NotificationChannelClass.MAX.value):
                 raise AccountScopeConflict("WEB_STATUS_READ_MODEL and arbitrary channels cannot fan out")
+            channel = NotificationChannelClass(endpoint["provider_code"])
+            entry = plan_entries.get(channel)
+            if (
+                entry is None
+                or entry.target_reference_id != endpoint["endpoint_ref"]
+                or entry.outbox_channel_intent is None
+                or entry.outbox_channel_intent.channel_class is not channel
+                or entry.outbox_channel_intent.target_reference_id != endpoint["endpoint_ref"]
+                or channel not in eligibility_decision.eligible_push_channels
+            ):
+                raise AccountScopeConflict("endpoint is not authorized by the accepted channel plan")
             outbox_id = uuid4()
             result = session.execute(
                 insert(outbox)
@@ -729,6 +776,7 @@ def commit_outcome(
                     safe_metadata={
                         "outcome_reference_id": outcome.outcome_reference_id,
                         "outcome_fingerprint": result_fp,
+                        "effect_fingerprint": attempt.effect_fingerprint,
                     },
                 )
                 .on_conflict_do_nothing(index_elements=["attempt_id"])
@@ -765,11 +813,29 @@ def resolve_reconciliation(
         if rec is None:
             raise ReconciliationConflict("reconciliation does not exist")
         current = dict(rec["safe_metadata"] or {})
+        attempt_record = (
+            session.execute(
+                select(attempts)
+                .where(attempts.c.id == attempt_id)
+                .with_for_update()
+            )
+            .mappings()
+            .first()
+        )
+        if attempt_record is None or attempt_record["id"] != evidence.attempt_id:
+            raise ReconciliationConflict("persisted attempt identity does not match evidence")
+        if current.get("effect_fingerprint") != evidence.effect_fingerprint:
+            raise ReconciliationConflict("reconciliation effect fingerprint conflicts with attempt")
         if rec["resolved_at"] is not None:
-            if current.get("resolution_id") != resolution_id or rec["state"] != disposition.value:
+            if (
+                current.get("resolution_id") != resolution_id
+                or rec["state"] != disposition.value
+                or current.get("effect_fingerprint") != evidence.effect_fingerprint
+                or tuple(current.get("evidence_reference_ids", ())) != evidence.evidence_reference_ids
+            ):
                 raise ReconciliationConflict("reconciliation already resolved differently")
             return rec["state"]
-        current.update({"resolution_id": resolution_id, "conclusion": disposition.value, "evidence_reference_ids": list(evidence.evidence_reference_ids)})
+        current.update({"resolution_id": resolution_id, "conclusion": disposition.value, "effect_fingerprint": evidence.effect_fingerprint, "evidence_reference_ids": list(evidence.evidence_reference_ids)})
         attempt_row = session.execute(
             select(attempts.c.outbox_id).where(attempts.c.id == attempt_id)
         ).scalar_one()

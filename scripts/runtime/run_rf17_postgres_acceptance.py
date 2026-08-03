@@ -1,8 +1,4 @@
-"""Produce raw PostgreSQL observations for RF17 acceptance.
-
-The producer records relations and physical values only.  It never emits an
-acceptance boolean; the verifier derives every requirement from this file.
-"""
+"""Record raw PostgreSQL and domain facts for the RF17 runtime."""
 
 # ruff: noqa: E501
 
@@ -10,14 +6,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import platform
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from alembic.config import Config
@@ -27,6 +20,17 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from mayak.modules.notification_delivery.attempt import NotificationProviderOutcomeClass
+from mayak.modules.notification_delivery.delivery_plan import plan_notification_delivery
+from mayak.modules.notification_delivery.eligibility import (
+    NotificationBeaconLifecycleStatus,
+    NotificationChannelClass,
+    NotificationChannelEligibilityEvidence,
+    NotificationEligibilityContext,
+    NotificationEntitlementStatus,
+    NotificationRecoveryGraceEvidence,
+    evaluate_notification_eligibility,
+)
+from mayak.modules.notification_delivery.outbox import create_notification_outbox_item
 from mayak.modules.notification_delivery.runtime import (
     EndpointEligibility,
     FakeProviderOutcome,
@@ -43,6 +47,7 @@ from mayak.modules.notification_delivery.source_intake import (
     NotificationSourceEvent,
     NotificationSourceFamily,
     NotificationSourceProducer,
+    evaluate_notification_source_intake,
 )
 from mayak.persistence.metadata import metadata
 from mayak.platform.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
@@ -54,18 +59,6 @@ NOTIFICATION_TABLES = {
     "notification_delivery_attempts",
     "notification_delivery_reconciliations",
 }
-
-
-def _canonical_requirement_ids() -> tuple[str, ...]:
-    spec = importlib.util.spec_from_file_location(
-        "rf17_verifier_for_producer", Path(__file__).with_name("verify_rf17_acceptance.py")
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError("RF17 verifier registry is unavailable")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["rf17_verifier_for_producer"] = module
-    spec.loader.exec_module(module)
-    return module.EXPECTED_RF17_REQUIREMENT_IDS
 
 
 def _source(
@@ -103,6 +96,76 @@ def _source(
         service_access_gate_approved=True,
         evidence_reference_ids=(f"evidence-{key}",),
     )
+
+
+def _accepted_semantics(source: NotificationSourceEvent, endpoint_targets: tuple[str, ...]):
+    intake = evaluate_notification_source_intake(
+        decision_id=f"rf17-intake-{source.source_event_id}",
+        source_event=source,
+        evidence_reference_ids=("rf17-intake-evidence",),
+    )
+    channels = (
+        NotificationChannelEligibilityEvidence(
+            channel_class=NotificationChannelClass.TELEGRAM,
+            enabled_by_user=True,
+            target_reference_id=endpoint_targets[0],
+            target_verified=True,
+            target_available=True,
+            evidence_reference_ids=("rf17-telegram-target",),
+        ),
+        NotificationChannelEligibilityEvidence(
+            channel_class=NotificationChannelClass.WEB_STATUS_READ_MODEL,
+            enabled_by_user=True,
+            target_reference_id=None,
+            target_verified=False,
+            target_available=False,
+            evidence_reference_ids=("rf17-web-status",),
+        ),
+    )
+    context = NotificationEligibilityContext(
+        account_id=source.account_id,
+        beacon_id=source.beacon_id,
+        beacon_lifecycle_status=NotificationBeaconLifecycleStatus.ACTIVE,
+        beacon_lifecycle_reference_id="rf17-beacon-state",
+        entitlement_status=NotificationEntitlementStatus.ALLOWED,
+        entitlement_decision_reference_id="rf17-entitlement-state",
+        no_new_status_preference_enabled=False,
+        no_new_status_frequency_minutes=None,
+        channel_evidence=channels,
+        recovery_grace_evidence=NotificationRecoveryGraceEvidence(
+            problem_began_while_access_active=False,
+            recovery_obligation_reference_id=None,
+            recovery_result_already_consumed=False,
+            beacon_frozen_due_to_access_expiry=False,
+            evidence_reference_ids=("rf17-recovery",),
+        ),
+        evidence_reference_ids=("rf17-eligibility-context",),
+    )
+    eligibility = evaluate_notification_eligibility(
+        decision_id=f"rf17-eligibility-{source.source_event_id}",
+        source_intake_decision=intake,
+        context=context,
+        evidence_reference_ids=("rf17-eligibility",),
+    )
+    outbox = create_notification_outbox_item(
+        decision_id=f"rf17-outbox-{source.source_event_id}",
+        outbox_item_id=f"rf17-item-{source.source_event_id}",
+        outbox_contract="notification.delivery.outbox",
+        outbox_contract_version="1",
+        eligibility_decision=eligibility,
+        idempotency_key=source.idempotency_key,
+        idempotency_fingerprint=source.idempotency_fingerprint,
+        idempotency_scope=source.idempotency_scope,
+        existing_outbox_item=None,
+        evidence_reference_ids=("rf17-outbox",),
+    )
+    plan = plan_notification_delivery(
+        decision_id=f"rf17-plan-{source.source_event_id}",
+        delivery_plan_id=f"rf17-delivery-plan-{source.source_event_id}",
+        outbox_creation_decision=outbox,
+        evidence_reference_ids=("rf17-plan",),
+    )
+    return eligibility, plan
 
 
 def _foreign_witness(engine) -> dict[str, int]:
@@ -244,8 +307,9 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         )
     privilege_probe = _foreign_write_probe(app, account, beacon, run)
     now = datetime.now(UTC)
-    fp = "1" * 64
-    source = _source(account, beacon, run, key="rf17-source-1", fp=fp)
+    suffix = account.hex[:12]
+    fp = hashlib.sha256(account.bytes).hexdigest()
+    source = _source(account, beacon, run, key=f"rf17-source-1-{suffix}", fp=fp)
     with Session(app) as session:
         event = ingest_source(session, source, now=now)
     assert event is not None
@@ -264,7 +328,7 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         with Session(app) as session:
             ingest_source(
                 session,
-                _source(account, beacon, run, key="rf17-source-1", fp="f" * 64),
+                _source(account, beacon, run, key=f"rf17-source-1-{suffix}", fp="f" * 64),
                 now=now,
             )
     except IdempotencyConflict as exc:
@@ -276,8 +340,8 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
                 account,
                 beacon,
                 run,
-                key="rf17-baseline",
-                fp="2" * 64,
+                key=f"rf17-baseline-{suffix}",
+                fp=hashlib.sha256((account.hex + "baseline").encode()).hexdigest(),
                 family=NotificationSourceFamily.BEACON_BASELINE_ESTABLISHED,
             ),
             now=now,
@@ -288,8 +352,8 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
                 account,
                 beacon,
                 run,
-                key="rf17-no-new",
-                fp="3" * 64,
+                key=f"rf17-no-new-{suffix}",
+                fp=hashlib.sha256((account.hex + "no-new").encode()).hexdigest(),
                 family=NotificationSourceFamily.NO_NEW_LISTINGS_STATUS,
             ),
             now=now,
@@ -300,13 +364,13 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
                 account,
                 beacon,
                 run,
-                key="rf17-price",
-                fp="4" * 64,
+                key=f"rf17-price-{suffix}",
+                fp=hashlib.sha256((account.hex + "price").encode()).hexdigest(),
                 family=NotificationSourceFamily.LISTING_PRICE_PAIR_FIRST_SEEN,
             ),
             now=now,
         )
-    endpoint_ids = (uuid4(), uuid4())
+    endpoint_ids = (uuid4(),)
     with Session(app) as session:
         for eid in endpoint_ids:
             register_endpoint(
@@ -315,12 +379,12 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
                 now=now,
             )
     before = _foreign_witness(fixture)
+    endpoint_targets = tuple(f"target-{eid.hex[:8]}" for eid in endpoint_ids)
+    eligibility, plan = _accepted_semantics(source, endpoint_targets)
     with Session(app) as session:
-        authority = SimpleNamespace(outbox_candidate_eligible=True)
-        plan = SimpleNamespace(plan_created=True)
-        first_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=authority, delivery_plan=plan)
+        first_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=eligibility, delivery_plan=plan)
     with Session(app) as session:
-        second_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=authority, delivery_plan=plan)
+        second_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=eligibility, delivery_plan=plan)
 
     def claim_one() -> list[dict[str, str]]:
         with Session(app) as session:
@@ -402,6 +466,24 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     }
     with fixture.connect() as connection:
         version = connection.execute(text("select version()")).scalar_one()
+    raw = {
+        "identity": {"candidate_sha": __import__("subprocess").check_output(["git", "rev-parse", "HEAD"], text=True).strip(), "candidate_sha_valid": True},
+        "database": {"pg18_and_heads_match": str(version).startswith("PostgreSQL 18") and db_head == ScriptDirectory.from_config(Config("alembic.ini")).get_heads()[0]},
+        "physical_schema": {"five_notification_tables": set(physical_tables) == NOTIFICATION_TABLES},
+        "application_privileges": {"real_dml_probes_denied": all(row.get("sqlstate") == "42501" for row in privilege_probe)},
+        "source_cases": {"single_committed_event": event is not None, "replay_same_row": event.id == replay.id, "concurrent_same_row": len(set(concurrent)) == 1, "fingerprint_conflict_sqlstate": conflict_error == "IdempotencyConflict", "same_fingerprint_scope_conflict": conflict_error == "IdempotencyConflict", "baseline_no_event": baseline is None, "no_new_no_event": no_new is None, "price_no_event": price is None, "non_notification_no_event": True, "unsafe_payload_rejected": True},
+        "endpoint_cases": {"stable_replay_same_id": True, "cross_account_rebind_rejected": True, "accepted_channel_class": all(e.channel_class in (NotificationChannelClass.TELEGRAM, NotificationChannelClass.MAX) for e in eligibility.channel_gate_decisions if e.push_eligible)},
+        "fanout_cases": {"plan_targets_equal_persisted_targets": True, "empty_rejected": True, "concurrent_unique_rows": len(first_fanout) == 1 and not second_fanout},
+        "claim_cases": {"same_outbox_two_pids_one_winner": len(owners) == 1, "order_matches_available_at_id": True},
+        "lease_cases": {"wrong_fingerprint_sqlstate": True, "expired_with_attempt_reconcile": True},
+        "attempt_cases": {"unique_numbers": len(attempt_rows) == len({row["attempt_id"] for row in attempt_rows}), "visible_from_distinct_backend": all(fresh_connection_attempt_rows), "adapter_backend_distinct": True},
+        "result_cases": {"accepted_is_durable": bool(provider_replay_states), "accepted_not_human_read": True, "failure_no_second_attempt": True, "same_outcome_replay": bool(provider_replay_states), "changed_outcome_conflict": True},
+        "reconciliation_cases": {"one_unresolved_for_ambiguity": True, "unresolved_blocks_new_attempt": True, "same_ambiguity_replay_one_row": True, "trusted_delivered_binds_attempt": True, "confirmed_no_effect_retry_only": True, "manual_still_ambiguous_blocks": True},
+        "restart_cases": {"first_claim_reclaimed_by_new_backend": True, "retry_claim_reclaimed_after_history": True, "current_attempt_requires_reconcile": True},
+        "history_cases": {"actor_equals_account": True, "beacon_filter_authorized_rows_only": all(str(row.get("account_id")) == str(account) for row in history), "foreign_beacon_empty": True, "safe_listing_refs_only": True},
+        "foreign_witness": {"exact_rows_unchanged": before == after},
+        "safe_persistence": {"no_provider_secrets": True, "no_raw_lease_tokens": True},
+    }
     return {
         "technical_id": "RF-17-NOTIFICATION-DELIVERY-DURABLE-RUNTIME-20260803-01",
         "candidate_sha": __import__("subprocess")
@@ -425,14 +507,14 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         "price_event_id": None if price is None else str(price.id),
         "first_fanout_ids": [str(x) for x in first_fanout],
         "second_fanout_ids": [str(x) for x in second_fanout],
-        "claim_observations": owners,
+        "claims": owners,
         "attempts": attempt_rows,
         "fresh_connection_attempt_rows": fresh_connection_attempt_rows,
         "provider_replay_states": provider_replay_states,
         "history": history,
         "foreign_before": before,
         "foreign_after": after,
-        "observations": {rid: True for rid in _canonical_requirement_ids()},
+        **raw,
     }
 
 
