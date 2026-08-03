@@ -146,9 +146,11 @@ def test_fixture_proof_uses_fresh_connection_and_ownership_safe_queue_isolation(
     assert "https://synthetic.invalid/rf15" in source
     assert "truncate table" not in source.lower()
     assert "state in ('DUE', 'RETRY')" in source
-    reset = source.split("def _reset_synthetic_scan_state", 1)[1].split(
-        "def _assert_committed_fixture", 1
-    )[0].lower()
+    reset = (
+        source.split("def _reset_synthetic_scan_state", 1)[1]
+        .split("def _assert_committed_fixture", 1)[0]
+        .lower()
+    )
     assert "delete from" not in reset
     assert "update mayak.scan_schedules" in reset
     assert "update mayak.scan_work_items" in reset
@@ -161,9 +163,11 @@ def test_scan_queue_isolation_preserves_foreign_referenced_history() -> None:
     source = (
         Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
     ).read_text()
-    reset = source.split("def _reset_synthetic_scan_state", 1)[1].split(
-        "def _assert_committed_fixture", 1
-    )[0].lower()
+    reset = (
+        source.split("def _reset_synthetic_scan_state", 1)[1]
+        .split("def _assert_committed_fixture", 1)[0]
+        .lower()
+    )
     for historical_table in (
         "scan_runs",
         "scan_listing_observations",
@@ -216,3 +220,43 @@ def test_exact_29_representative_cases_and_own_causal_tampers() -> None:
     assert len(evidence["behavioral_cases"]) == 29
     assert all(V.CHECKERS[name](evidence) for name in V.REQUIREMENT_IDS)
     assert all(not V.CHECKERS[name](V._tamper(evidence, name)) for name in V.REQUIREMENT_IDS)
+
+
+def test_operation_namespace_is_fail_closed_and_replay_uses_durable_identity() -> None:
+    evidence = V.build_representative_evidence()
+    replay = evidence["behavioral_cases"]["run_replay"]
+    assert "operation_first" not in replay
+    assert "first_run_result" in replay
+    assert V._check("run_replay", replay)
+    replay["operation_malformed"] = "not-a-raw-operation"
+    with pytest.raises(ValueError):
+        V._ops(replay)
+
+
+def test_corrected_semantic_shapes_cover_expiry_authority_and_races() -> None:
+    evidence = V.build_representative_evidence()
+    assert V._check(
+        "expired_claim_reconciliation",
+        evidence["behavioral_cases"]["expired_claim_reconciliation"],
+    )
+    assert V._check("authority_recheck", evidence["behavioral_cases"]["authority_recheck"])
+    assert V._check(
+        "concurrent_baseline_serialization",
+        evidence["behavioral_cases"]["concurrent_baseline_serialization"],
+    )
+    assert V._check(
+        "concurrent_new_listing_serialization",
+        evidence["behavioral_cases"]["concurrent_new_listing_serialization"],
+    )
+
+
+def test_foreign_witness_uses_top_level_foreign_snapshots() -> None:
+    evidence = V.build_representative_evidence()
+    for name in ("foreign_state_witness", "no_foreign_domain_effect"):
+        case = evidence["behavioral_cases"][name]
+        assert "rf15_physical" not in case
+        assert any(
+            f"behavioral_cases.{name}.physical_" in path
+            for path in V.RAW_DEPENDENCY_PATHS[name]
+        )
+        assert V._check(name, case)

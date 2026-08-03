@@ -92,9 +92,9 @@ def _op(value: Any) -> Mapping[str, Any]:
 def _ops(case: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     found: list[Mapping[str, Any]] = []
     for key, value in case.items():
-        if (key == "operation" or key.startswith("operation_")) and isinstance(value, Mapping):
+        if key == "operation" or key.startswith("operation_"):
             found.append(_op(value))
-        if key.endswith("_operation") and isinstance(value, Mapping):
+        if key.endswith("_operation"):
             found.append(_op(value))
         if key == "attempts" and isinstance(value, list):
             for attempt in value:
@@ -129,10 +129,7 @@ _MISSING = object()
 
 def _result(case: Mapping[str, Any], needle: str) -> Any:
     for operation in _ops(case):
-        if (
-            needle in str(operation.get("callable"))
-            and "result" in operation
-        ):
+        if needle in str(operation.get("callable")) and "result" in operation:
             return operation["result"]
     return _MISSING
 
@@ -193,8 +190,7 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
             result = case["operation"]["result"]
             return (
                 isinstance(result, Mapping)
-                and
-                result["basic"] == [300, 600]
+                and result["basic"] == [300, 600]
                 and result["free"] == [10800, 21600]
                 and _rejects(case, 6, {"CadenceRejected"})
             )
@@ -212,15 +208,13 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
                 and _terminal(safe)
             )
         if name in {"foreign_state_witness", "no_foreign_domain_effect"}:
-            branch = case["rf15_physical"]
-            before, after = _physical(branch)
+            before, after = _physical(case)
             return (
-                _terminal(branch)
+                _terminal(case)
                 and before["semantic"] == after["semantic"]
                 and _time(before["observation_finished_at"])
-                < _time(branch["operation"]["started_at"])
-                and _time(branch["operation"]["finished_at"])
-                < _time(after["observation_started_at"])
+                < _time(case["operation"]["started_at"])
+                and _time(case["operation"]["finished_at"]) < _time(after["observation_started_at"])
             )
         before, after = _physical(case)
         if name == "schedule_uniqueness":
@@ -258,9 +252,11 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
             )
         if name == "expired_claim_reconciliation":
             return (
-                _rejects(case, 1, {"LeaseConflict"})
+                _success(case, "claim_work")
+                and _result(case, "claim_work") == []
                 and len(after["work_rows"]) == 1
                 and after["work_rows"][0]["state"] == "PENDING_RECONCILIATION"
+                and before["run_rows"] == after["run_rows"]
             )
         if name == "lease_guard":
             return _rejects(case, 3, {"LeaseConflict"}) and _same_rows(before, after)
@@ -273,15 +269,17 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
                 == case["operation"]["result"]["revision_no"]
             )
         if name == "run_replay":
+            result = _result(case, "start_run")
+            durable_before = before["run_rows"]
+            durable_after = after["run_rows"]
             return (
-                _success(case, "start_run")
-                and isinstance(_result(case, "start_run"), Mapping)
-                and len(after["run_rows"]) == len(before["run_rows"])
-                and (
-                    case["operation"].get("result", {}).get("replayed") is True
-                    or case["operation"].get("exception", {}).get("class")
-                    in {"RunAlreadyStarted", "DependencyBlocked"}
-                )
+                isinstance(result, Mapping)
+                and result.get("replayed") is True
+                and len(durable_before) == 1
+                and durable_after == durable_before
+                and result.get("run_id") == durable_before[0]["id"]
+                and result.get("work_item_id") == durable_before[0]["work_item_id"]
+                and result.get("revision_no") == durable_before[0]["revision_no"]
             )
         if name == "baseline_no_event":
             return (
@@ -326,9 +324,26 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
                 and before["listing_rows"] == after["listing_rows"]
             )
         if name == "authority_recheck":
-            return _rejects(
-                case, 4, {"DependencyBlocked", "RevisionConflict", "CadenceRejected"}
-            ) and _same_rows(before, after)
+            attempts = case.get("attempts")
+            expected = [
+                "DependencyBlocked",
+                "RevisionConflict",
+                "CadenceRejected",
+                "DependencyBlocked",
+            ]
+            return (
+                isinstance(attempts, list)
+                and len(attempts) == 4
+                and all(
+                    isinstance(item, Mapping)
+                    and item.get("physical_before", {}).get("work_rows", [{}])[0].get("state")
+                    == "CLAIMED"
+                    and item.get("physical_before") == item.get("physical_after")
+                    and item["operation"].get("exception", {}).get("class") == expected[index]
+                    for index, item in enumerate(attempts)
+                )
+                and _same_rows(before, after)
+            )
         if name == "idempotency_replay_and_mismatch":
             return (
                 _terminal(case)
@@ -339,19 +354,33 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
         if name == "concurrent_idempotency":
             return _concurrent(case, "commit_comparison") and len(after["event_ids"]) <= 1
         if name == "concurrent_baseline_serialization":
+            results = [op.get("result") for op in (case["operation_a"], case["operation_b"])]
+            states = [row["state"] for row in after["run_rows"]]
             return (
                 _concurrent(case, "commit_comparison")
+                and all(isinstance(result, Mapping) for result in results)
+                and sorted(result["baseline_established"] for result in results) == [False, True]
                 and len(after["listing_rows"]) == 1
-                and all(
-                    op.get("result", {}).get("baseline_established") is True
-                    for op in (case["operation_a"], case["operation_b"])
-                )
+                and after["event_ids"] == before["event_ids"]
+                and states.count("SUCCEEDED_BASELINE") == 1
+                and states.count("SUCCEEDED_DIFFERENCE") == 1
             )
         if name == "concurrent_new_listing_serialization":
+            results = [op.get("result") for op in (case["operation_a"], case["operation_b"])]
             return (
                 _concurrent(case, "commit_comparison")
-                and len(after["listing_rows"]) == 1
-                and len(after["event_ids"]) == 1
+                and len(before["listing_rows"]) == 1
+                and len(after["listing_rows"]) == 2
+                and len(after["event_ids"]) == len(before["event_ids"]) + 1
+                and all(
+                    isinstance(result, Mapping) and result["baseline_established"] is False
+                    for result in results
+                )
+                and all(
+                    row["state"] == "SUCCEEDED_DIFFERENCE"
+                    for row in after["run_rows"]
+                    if row["id"] not in {before_row["id"] for before_row in before["run_rows"]}
+                )
             )
         if name == "restart_durability":
             return (
@@ -399,12 +428,12 @@ RAW_DEPENDENCY_PATHS.update(
             "behavioral_cases.raw_payload_snapshot_boundary.safe_persistence.serialized_size",
         ],
         "foreign_state_witness": [
-            "behavioral_cases.foreign_state_witness.rf15_physical.physical_before.semantic",
-            "behavioral_cases.foreign_state_witness.rf15_physical.operation.started_at",
+            "behavioral_cases.foreign_state_witness.physical_before.semantic",
+            "behavioral_cases.foreign_state_witness.operation.started_at",
         ],
         "no_foreign_domain_effect": [
-            "behavioral_cases.no_foreign_domain_effect.rf15_physical.physical_after.semantic",
-            "behavioral_cases.no_foreign_domain_effect.rf15_physical.operation.finished_at",
+            "behavioral_cases.no_foreign_domain_effect.physical_after.semantic",
+            "behavioral_cases.no_foreign_domain_effect.operation.finished_at",
         ],
     }
 )
@@ -438,8 +467,8 @@ TAMPER_PATHS.update(
         "authority_recheck": ("attempts", 0, "operation", "exception", "class"),
         "idempotency_replay_and_mismatch": ("operation_mismatch", "exception", "class"),
         "restart_durability": ("physical_after", "second_lifetime", "run_rows"),
-        "foreign_state_witness": ("rf15_physical", "physical_after", "semantic"),
-        "no_foreign_domain_effect": ("rf15_physical", "physical_after", "semantic"),
+        "foreign_state_witness": ("physical_after", "semantic"),
+        "no_foreign_domain_effect": ("physical_after", "semantic"),
         "raw_payload_snapshot_boundary": ("safe_persistence", "snapshot"),
         "platform_event_identity": ("operation", "result", "event_ids"),
     }
@@ -515,7 +544,8 @@ def _representative_physical(
         "schedule_rows": [{"id": "s", "next_due_at": "2026-08-03T00:00:00+00:00"}],
         "work_rows": work
         or [{"id": "w", "state": "SUCCEEDED", "due_at": "2026-08-02T00:00:00+00:00"}],
-        "run_rows": runs or [{"id": "r", "state": "SUCCEEDED_BASELINE", "revision_no": 1}],
+        "run_rows": runs
+        or [{"id": "r", "work_item_id": "w", "state": "SUCCEEDED_BASELINE", "revision_no": 1}],
         "listing_ids": [row["id"] for row in (listings or [])],
         "listing_rows": listings or [],
         "anchor_rows": [],
@@ -609,7 +639,15 @@ def build_representative_evidence() -> dict[str, Any]:
     cases["run_revision_pin"]["operation"] = _representative_operation(
         "start_run", {"revision_no": 1}
     )
-    cases["run_replay"]["operation"] = _representative_operation("start_run", {"replayed": True})
+    cases["run_replay"]["operation"] = _representative_operation(
+        "start_run", {"replayed": True, "run_id": "r", "work_item_id": "w", "revision_no": 1}
+    )
+    cases["run_replay"]["first_run_result"] = {
+        "run_id": "r",
+        "work_item_id": "w",
+        "revision_no": 1,
+        "state": "RUNNING",
+    }
     cases["baseline_no_event"]["physical_before"] = _representative_physical(
         runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]
     )
@@ -678,6 +716,9 @@ def build_representative_evidence() -> dict[str, Any]:
             ("DependencyBlocked", "RevisionConflict", "CadenceRejected", "DependencyBlocked")
         )
     ]
+    for attempt in cases["authority_recheck"]["attempts"]:
+        attempt["physical_before"]["work_rows"][0]["state"] = "CLAIMED"
+        attempt["physical_after"]["work_rows"][0]["state"] = "CLAIMED"
     cases["idempotency_replay_and_mismatch"].update(
         {
             "operation_replay": _representative_operation("commit_comparison", {}),
@@ -686,9 +727,7 @@ def build_representative_evidence() -> dict[str, Any]:
             ),
         }
     )
-    cases["expired_claim_reconciliation"]["attempts"] = [
-        {"operation": _representative_operation("claim_work", exception="LeaseConflict")}
-    ]
+    cases["expired_claim_reconciliation"]["operation"] = _representative_operation("claim_work", [])
     cases["expired_claim_reconciliation"]["physical_before"] = _representative_physical(
         work=[{"id": "w", "state": "CLAIMED"}]
     )
@@ -718,23 +757,19 @@ def build_representative_evidence() -> dict[str, Any]:
     }
     cases["raw_payload_snapshot_boundary"]["safe_persistence"]["operation"] = operation
     foreign_case = {
-        "rf15_physical": {
-            "operation": _representative_operation("commit_comparison", {}, offset=3),
-            "physical_before": {
-                **_representative_physical(
-                    runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]
-                ),
-                "semantic": {"identity": [], "parser": []},
-                "observation_finished_at": _stamp(1)[1],
-            },
-            "physical_after": {
-                **_representative_physical(
-                    runs=[{"id": "r", "state": "SUCCEEDED_BASELINE", "revision_no": 1}]
-                ),
-                "semantic": {"identity": [], "parser": []},
-                "observation_started_at": _stamp(5)[0],
-            },
-        }
+        "operation": _representative_operation("commit_comparison", {}, offset=3),
+        "physical_before": {
+            **_representative_physical(runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]),
+            "semantic": {"identity": [], "parser": []},
+            "observation_finished_at": _stamp(1)[1],
+        },
+        "physical_after": {
+            **_representative_physical(
+                runs=[{"id": "r", "state": "SUCCEEDED_BASELINE", "revision_no": 1}]
+            ),
+            "semantic": {"identity": [], "parser": []},
+            "observation_started_at": _stamp(5)[0],
+        },
     }
     cases["foreign_state_witness"] = copy.deepcopy(foreign_case)
     cases["no_foreign_domain_effect"] = copy.deepcopy(foreign_case)
@@ -759,7 +794,7 @@ def build_representative_evidence() -> dict[str, Any]:
                 "operation_b": _representative_operation(
                     "commit_comparison",
                     {
-                        "baseline_established": name == "concurrent_baseline_serialization",
+                        "baseline_established": False,
                         "event_ids": [],
                     },
                     pid=12,
@@ -773,23 +808,40 @@ def build_representative_evidence() -> dict[str, Any]:
         events=[],
     )
     cases["concurrent_baseline_serialization"]["physical_after"] = _representative_physical(
-        runs=[{"id": "r", "state": "SUCCEEDED_BASELINE", "revision_no": 1}],
+        runs=[
+            {"id": "r1", "state": "SUCCEEDED_BASELINE", "revision_no": 1},
+            {"id": "r2", "state": "SUCCEEDED_DIFFERENCE", "revision_no": 1},
+        ],
         listings=[{"id": "l"}],
         events=[],
     )
+    cases["concurrent_new_listing_serialization"]["physical_before"] = _representative_physical(
+        runs=[
+            {"id": "baseline", "state": "SUCCEEDED_BASELINE", "revision_no": 1},
+            {"id": "r1", "state": "RUNNING", "revision_no": 1},
+            {"id": "r2", "state": "RUNNING", "revision_no": 1},
+        ],
+        listings=[{"id": "baseline-listing"}],
+        events=[],
+    )
     cases["concurrent_new_listing_serialization"]["physical_after"] = _representative_physical(
-        runs=[{"id": "r", "state": "SUCCEEDED_DIFFERENCE", "revision_no": 1}],
-        listings=[{"id": "l"}],
+        runs=[
+            {"id": "baseline", "state": "SUCCEEDED_BASELINE", "revision_no": 1},
+            {"id": "r1", "state": "SUCCEEDED_DIFFERENCE", "revision_no": 1},
+            {"id": "r2", "state": "SUCCEEDED_DIFFERENCE", "revision_no": 1},
+        ],
+        listings=[{"id": "baseline-listing"}, {"id": "new-listing"}],
         events=["e"],
     )
-    for name in (
-        "concurrent_idempotency",
-        "concurrent_baseline_serialization",
-        "concurrent_new_listing_serialization",
-    ):
-        cases[name]["physical_before"] = _representative_physical(
-            runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]
-        )
+    cases["concurrent_idempotency"]["physical_before"] = _representative_physical(
+        runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]
+    )
+    cases["concurrent_baseline_serialization"]["physical_before"] = _representative_physical(
+        runs=[
+            {"id": "r1", "state": "RUNNING", "revision_no": 1},
+            {"id": "r2", "state": "RUNNING", "revision_no": 1},
+        ]
+    )
     cases["idempotency_replay_and_mismatch"]["physical_before"] = _representative_physical(
         runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]
     )

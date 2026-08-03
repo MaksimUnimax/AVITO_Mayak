@@ -285,7 +285,8 @@ def _physical(
     work = (
         connection.execute(
             text(
-                "select id::text, schedule_id::text, due_at, state from mayak.scan_work_items "
+                "select id::text, schedule_id::text, due_at, state, lease_expires_at "
+                "from mayak.scan_work_items "
                 f"where beacon_id = cast(:beacon_id as uuid) {work_filter} order by id"
             ),
             params,
@@ -422,6 +423,14 @@ class SyntheticBeacon:
         )
 
 
+class SequentialBeaconPort:
+    def __init__(self, snapshots: list[Any]) -> None:
+        self.snapshots = iter(snapshots)
+
+    def current(self, requested: UUID) -> Any:
+        return next(self.snapshots)
+
+
 class SyntheticEntitlementPort:
     def current(self, requested: UUID, owner: UUID | None) -> EntitlementSnapshot:
         return EntitlementSnapshot(
@@ -430,6 +439,14 @@ class SyntheticEntitlementPort:
             minimum_seconds=300,
             step_seconds=300,
         )
+
+
+class SequentialEntitlementPort:
+    def __init__(self, decisions: list[EntitlementSnapshot]) -> None:
+        self.decisions = iter(decisions)
+
+    def current(self, requested: UUID, owner: UUID | None) -> EntitlementSnapshot:
+        return next(self.decisions)
 
 
 class SyntheticParserPort:
@@ -442,6 +459,14 @@ class SyntheticParserPort:
             {"outcome_id": str(outcome_id), "run_id": str(run_id), "beacon_id": str(beacon_id)}
         )
         return self.outcome
+
+
+class SequentialParserPort:
+    def __init__(self, outcomes: list[ParserOutcome]) -> None:
+        self.outcomes = iter(outcomes)
+
+    def resolve(self, outcome_id: UUID, *, run_id: UUID, beacon_id: UUID) -> ParserOutcome:
+        return next(self.outcomes).model_copy(update={"outcome_id": outcome_id})
 
 
 def _create_fixture(engine: Any) -> dict[str, str]:
@@ -526,9 +551,7 @@ def _reset_synthetic_scan_state(engine: Any) -> None:
     synthetic = "https://synthetic.invalid/rf15"
     with engine.begin() as connection:
         params = {"source_url": synthetic}
-        synthetic_beacons = (
-            "select id from mayak.beacon_beacons where source_url = :source_url"
-        )
+        synthetic_beacons = "select id from mayak.beacon_beacons where source_url = :source_url"
         connection.execute(
             text(
                 "update mayak.scan_schedules set state = 'PAUSED', "
@@ -865,6 +888,9 @@ def _terminal(
     operation_barrier: Barrier | None = None,
     observed_before: dict[str, Any] | None = None,
     parser_outcome_id: UUID | None = None,
+    beacon_port: Any | None = None,
+    entitlement_port: Any | None = None,
+    parser_port: Any | None = None,
 ) -> dict[str, Any]:
     beacon = SyntheticBeacon(
         UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
@@ -872,7 +898,9 @@ def _terminal(
     # Parser owns parser_outcomes.  The fixture is committed before the RF15
     # measured interval and its returned identity is the only Scan reference.
     parser_outcome_id = parser_outcome_id or _persist_parser_fixture(engine, fixture, outcome, key)
-    parser = SyntheticParserPort(outcome.model_copy(update={"outcome_id": parser_outcome_id}))
+    parser = parser_port or SyntheticParserPort(
+        outcome.model_copy(update={"outcome_id": parser_outcome_id})
+    )
     if observed_before is None:
         with engine.connect() as probe:
             before = _scoped(probe, fixture)
@@ -896,8 +924,8 @@ def _terminal(
                     repo,
                     effective_run,
                     parser_outcome_id,
-                    beacon,
-                    SyntheticEntitlementPort(),
+                    beacon_port or beacon,
+                    entitlement_port or SyntheticEntitlementPort(),
                     parser,
                     key,
                     now,
@@ -1005,10 +1033,20 @@ def scenario_raw_payload_snapshot_boundary(connection: Any) -> dict[str, Any]:
 
 def scenario_foreign_state_witness(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="foreign-witness")
+    outcome = _clean_outcome()
+    parser_outcome_id = _persist_parser_fixture(
+        connection.engine, fixture, outcome, "rf15-foreign-witness"
+    )
     with connection.engine.connect() as probe:
         first = _semantic_foreign(probe)
         first_finished = _now().isoformat()
-    terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-foreign-witness")
+    terminal = _terminal(
+        connection.engine,
+        fixture,
+        outcome,
+        "rf15-foreign-witness",
+        parser_outcome_id=parser_outcome_id,
+    )
     with connection.engine.connect() as probe:
         second = _semantic_foreign(probe)
         second_started = _now().isoformat()
@@ -1018,7 +1056,6 @@ def scenario_foreign_state_witness(connection: Any) -> dict[str, Any]:
         "operation": terminal["operation"],
         "physical_before": {"observation_finished_at": first_finished, "semantic": first},
         "physical_after": {"observation_started_at": second_started, "semantic": second},
-        "rf15_physical": terminal,
     }
 
 
@@ -1613,7 +1650,7 @@ def scenario_run_replay(connection: Any) -> dict[str, Any]:
             )
     return {
         "operation": operation,
-        "operation_first": _safe(first_run),
+        "first_run_result": _safe(first_run),
         "physical_before": before,
         "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
         "scope": fixture,
@@ -1718,16 +1755,146 @@ def scenario_absence_no_removal(connection: Any) -> dict[str, Any]:
 
 def scenario_authority_recheck(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="authority")
-    attempts = [
-        _terminal(
-            connection.engine,
-            fixture,
-            _clean_outcome(),
-            f"rf15-authority-{n}",
-            run=fixture["run"].model_copy(update={"lease_token": uuid4()}),
-        )
-        for n in ("lifecycle", "revision", "entitlement", "parser")
+    clean = _clean_outcome()
+    denied = EntitlementSnapshot(
+        status=DecisionStatus.DENIED,
+        tier=AccessTier.BASIC,
+        minimum_seconds=300,
+        step_seconds=300,
+    )
+    from mayak.modules.scan_orchestration.contracts import BeaconSnapshot, ParserStatus
+
+    authority_ports = [
+        (
+            SequentialBeaconPort(
+                [
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]),
+                        lifecycle_eligible=True,
+                    ),
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]),
+                        lifecycle_eligible=False,
+                    ),
+                ]
+            ),
+            SequentialEntitlementPort(
+                [
+                    SyntheticEntitlementPort().current(
+                        UUID(fixture["beacon_id"]), UUID(fixture["account_id"])
+                    ),
+                    SyntheticEntitlementPort().current(
+                        UUID(fixture["beacon_id"]), UUID(fixture["account_id"])
+                    ),
+                ]
+            ),
+            SequentialParserPort([clean, clean]),
+        ),
+        (
+            SequentialBeaconPort(
+                [
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]),
+                        lifecycle_eligible=True,
+                    ),
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]) + 1,
+                        lifecycle_eligible=True,
+                    ),
+                ]
+            ),
+            SequentialEntitlementPort(
+                [
+                    SyntheticEntitlementPort().current(
+                        UUID(fixture["beacon_id"]), UUID(fixture["account_id"])
+                    ),
+                    SyntheticEntitlementPort().current(
+                        UUID(fixture["beacon_id"]), UUID(fixture["account_id"])
+                    ),
+                ]
+            ),
+            SequentialParserPort([clean, clean]),
+        ),
+        (
+            SequentialBeaconPort(
+                [
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]),
+                        lifecycle_eligible=True,
+                    ),
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]),
+                        lifecycle_eligible=True,
+                    ),
+                ]
+            ),
+            SequentialEntitlementPort(
+                [
+                    SyntheticEntitlementPort().current(
+                        UUID(fixture["beacon_id"]), UUID(fixture["account_id"])
+                    ),
+                    denied,
+                ]
+            ),
+            SequentialParserPort([clean, clean]),
+        ),
+        (
+            SequentialBeaconPort(
+                [
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]),
+                        lifecycle_eligible=True,
+                    ),
+                    BeaconSnapshot(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        account_id=UUID(fixture["account_id"]),
+                        revision_no=int(fixture["revision"]),
+                        lifecycle_eligible=True,
+                    ),
+                ]
+            ),
+            SequentialEntitlementPort(
+                [
+                    SyntheticEntitlementPort().current(
+                        UUID(fixture["beacon_id"]), UUID(fixture["account_id"])
+                    ),
+                    SyntheticEntitlementPort().current(
+                        UUID(fixture["beacon_id"]), UUID(fixture["account_id"])
+                    ),
+                ]
+            ),
+            SequentialParserPort(
+                [clean, clean.model_copy(update={"status": ParserStatus.PARTIAL})]
+            ),
+        ),
     ]
+    attempts = []
+    for ordinal, (beacon_port, entitlement_port, parser_port) in enumerate(authority_ports):
+        attempts.append(
+            _terminal(
+                connection.engine,
+                fixture,
+                clean,
+                f"rf15-authority-{ordinal}",
+                beacon_port=beacon_port,
+                entitlement_port=entitlement_port,
+                parser_port=parser_port,
+            )
+        )
     return {
         "attempts": attempts,
         "physical_before": attempts[0]["physical_before"],
@@ -1831,7 +1998,59 @@ def scenario_concurrent_baseline_serialization(connection: Any) -> dict[str, Any
 
 
 def scenario_concurrent_new_listing_serialization(connection: Any) -> dict[str, Any]:
-    return _concurrent_terminal(connection, "concurrent_new_listing_serialization")
+    baseline = prepare_claimed_run(connection.engine, scenario_id="concurrent-new-baseline")
+    _terminal(
+        connection.engine,
+        baseline,
+        _clean_outcome(
+            (ListingCandidate(identity_key="concurrent-baseline", snapshot={"price": 1}),)
+        ),
+        "rf15-concurrent-new-baseline",
+    )
+    first = prepare_next_run(connection.engine, baseline, scenario_id="concurrent-new-a")
+    second = prepare_next_run(connection.engine, baseline, scenario_id="concurrent-new-b")
+    outcome = _clean_outcome(
+        (ListingCandidate(identity_key="concurrent-new", snapshot={"price": 2}),)
+    )
+    parser_ids = {
+        first["run_id"]: _persist_parser_fixture(
+            connection.engine, first, outcome, "concurrent-new-a"
+        ),
+        second["run_id"]: _persist_parser_fixture(
+            connection.engine, second, outcome, "concurrent-new-b"
+        ),
+    }
+    with connection.engine.connect() as probe:
+        race_before = _physical(probe, beacon_id=baseline["beacon_id"])
+    barrier = Barrier(2)
+    records: list[dict[str, Any]] = []
+
+    def worker(fixture: dict[str, Any]) -> None:
+        records.append(
+            _terminal(
+                connection.engine,
+                fixture,
+                outcome,
+                f"rf15-concurrent-new-{fixture['run_id']}",
+                operation_barrier=barrier,
+                observed_before=race_before,
+                parser_outcome_id=parser_ids[fixture["run_id"]],
+            )
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(worker, (first, second)))
+    with connection.engine.connect() as probe:
+        race_after = _physical(probe, beacon_id=baseline["beacon_id"])
+    records.sort(key=lambda item: item["operation"]["backend_pid"])
+    return {
+        "operation": records[0]["operation"],
+        "operation_a": records[0]["operation"],
+        "operation_b": records[1]["operation"],
+        "physical_before": race_before,
+        "physical_after": race_after,
+        "scope": {"baseline": baseline, "a": first, "b": second},
+    }
 
 
 def scenario_platform_event_identity(connection: Any) -> dict[str, Any]:
@@ -1846,10 +2065,20 @@ def scenario_platform_event_identity(connection: Any) -> dict[str, Any]:
 
 def scenario_no_foreign_domain_effect(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="no-foreign-effect")
+    outcome = _clean_outcome()
+    parser_outcome_id = _persist_parser_fixture(
+        connection.engine, fixture, outcome, "rf15-no-foreign-effect"
+    )
     with connection.engine.connect() as probe:
         before = _semantic_foreign(probe)
         before_finished = _now().isoformat()
-    terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-no-foreign-effect")
+    terminal = _terminal(
+        connection.engine,
+        fixture,
+        outcome,
+        "rf15-no-foreign-effect",
+        parser_outcome_id=parser_outcome_id,
+    )
     with connection.engine.connect() as probe:
         after = _semantic_foreign(probe)
         after_started = _now().isoformat()
@@ -1859,7 +2088,6 @@ def scenario_no_foreign_domain_effect(connection: Any) -> dict[str, Any]:
         "operation": terminal["operation"],
         "physical_before": {"observation_finished_at": before_finished, "semantic": before},
         "physical_after": {"observation_started_at": after_started, "semantic": after},
-        "rf15_physical": terminal,
     }
 
 
