@@ -1375,6 +1375,18 @@ def scenario_run_revision_pin(connection: Any) -> dict[str, Any]:
 
 def scenario_run_replay(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="run-replay", start_run_now=False)
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            first_run = start_run(
+                ScanRepository(session),
+                fixture["claim"],
+                SyntheticBeacon(
+                    UUID(fixture["beacon_id"]),
+                    UUID(fixture["account_id"]),
+                    int(fixture["revision"]),
+                ),
+                _now(),
+            )
     with connection.engine.connect() as probe:
         before = _scoped(probe, fixture)
     with connection.engine.connect() as measured:
@@ -1399,6 +1411,7 @@ def scenario_run_replay(connection: Any) -> dict[str, Any]:
             )
     return {
         "operation": operation,
+        "operation_first": _safe(first_run),
         "physical_before": before,
         "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
         "scope": fixture,
