@@ -1,0 +1,94 @@
+name: RF17 Notification Delivery durable runtime acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  rf17:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: {POSTGRES_USER: mayak, POSTGRES_PASSWORD: mayak, POSTGRES_DB: mayak}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf17migration@127.0.0.1:5432/mayak
+      RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf17application@127.0.0.1:5432/mayak
+      RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf17migration@127.0.0.1:5432/mayak
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}"}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14.6'}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: '0.11.31'}
+      - run: test "$(python --version)" = "Python 3.14.6"
+      - run: test "$(uv --version | awk '{print $2}')" = "0.11.31"
+      - run: uv sync --frozen --all-groups --python 3.14.6
+      - name: Create canonical database boundary
+        run: |
+          sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
+          umask 077
+          printf '%s' 'mayak' > /run/secrets/mayak_postgres_bootstrap_password
+          printf '%s' 'rf17migration' > /run/secrets/mayak_database_migration_password
+          printf '%s' 'rf17application' > /run/secrets/mayak_database_application_password
+          uv run python - <<'PY'
+          from mayak.persistence.bootstrap import bootstrap_database
+          from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
+          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='127.0.0.1')))
+          PY
+      - run: uv run alembic upgrade head
+      - name: Grant only acceptance runtime access
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine('${{ env.RF17_MIGRATION_DSN }}')
+          with engine.begin() as c:
+              c.execute(text('grant select, insert, update, delete on all tables in schema mayak to mayak_application'))
+              c.execute(text('grant usage, select, update on all sequences in schema mayak to mayak_application'))
+          PY
+      - run: uv run pytest -q tests/unit/test_notification_delivery_source_intake_semantics.py tests/unit/test_notification_delivery_attempt_semantics.py tests/unit/test_notification_delivery_outbox_semantics.py tests/contract/test_notification_delivery_source_intake_contracts.py tests/contract/test_notification_delivery_attempt_contracts.py
+      - run: uv run ruff check src/mayak/modules/notification_delivery/runtime.py scripts/runtime/run_rf17_postgres_acceptance.py scripts/runtime/verify_rf17_acceptance.py
+      - run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/notification_delivery/runtime.py
+      - name: Produce raw observations
+        run: uv run python scripts/runtime/run_rf17_postgres_acceptance.py --dsn "$RF17_APPLICATION_DSN" --fixture-dsn "$RF17_MIGRATION_DSN" --output rf17-evidence.json > rf17-producer.stdout 2> rf17-producer.stderr
+      - name: Strict independent verifier
+        run: |
+          set +e
+          uv run python scripts/runtime/verify_rf17_acceptance.py rf17-evidence.json --expected-sha "$GITHUB_SHA" --diagnostics rf17-verifier-diagnostics.json > rf17-verifier.stdout 2> rf17-verifier.stderr
+          status=$?
+          set -e
+          test "$status" -eq 0
+          test "$(grep -c '^RF17_NOTIFICATION_DELIVERY_RUNTIME_VERIFIED$' rf17-verifier.stdout)" -eq 1
+          test "$(grep -c 'RF17_NOTIFICATION_DELIVERY_RUNTIME_VERIFIED' rf17-verifier.stderr || true)" -eq 0
+      - name: Immutable meta-gate
+        run: |
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path('rf17-verifier-diagnostics.json').read_text())
+          assert set(d['requirement_ids']) == set(d['tamper_strategy_ids']) == set(d['tamper_rejected_ids'])
+          assert d['original_pass_count'] == d['requirement_count']
+          assert d['tamper_rejected_count'] == d['requirement_count']
+          assert d['original_failing_ids'] == [] and d['tamper_failing_ids'] == []
+          assert Path('rf17-verifier.stderr').read_text().count('RF17_NOTIFICATION_DELIVERY_RUNTIME_VERIFIED') == 0
+          Path('rf17-meta-gate.json').write_text(json.dumps({'requirement_count': d['requirement_count'], 'original_pass_count': d['original_pass_count'], 'tamper_rejected_count': d['tamper_rejected_count'], 'ids_equal': True}, sort_keys=True) + '\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rf17-notification-delivery-acceptance
+          path: |
+            rf17-evidence.json
+            rf17-producer.stdout
+            rf17-producer.stderr
+            rf17-verifier.stdout
+            rf17-verifier.stderr
+            rf17-verifier-diagnostics.json
+            rf17-meta-gate.json
