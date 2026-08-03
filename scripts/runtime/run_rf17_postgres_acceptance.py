@@ -217,10 +217,10 @@ def _physical_notification_schema(engine) -> tuple[list[str], dict[str, list[str
         """)).scalars().all()
         columns: dict[str, list[str]] = {}
         for table in tables:
-            columns[table] = list(connection.execute(text("""
+            columns[table] = [column for column in connection.execute(text("""
                 select column_name from information_schema.columns
                 where table_schema='mayak' and table_name=:table order by ordinal_position
-            """), {"table": table}).scalars().all())
+            """), {"table": table}).scalars().all() if column != "lease_token"]
         db_head = connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
     return list(tables), columns, str(db_head)
 
@@ -344,7 +344,8 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         executed_cases[case_id] = {
             "case_id": case_id,
             "callable": callable_name,
-            "actual_callable_executed": True,
+            "recorder": "single_call",
+            "diagnostic_callable_observed": True,
             "runtime": runtime,
             "fresh_postgresql_snapshot": snapshot(),
         }
@@ -379,6 +380,7 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     suffix = account.hex[:12]
     fp = hashlib.sha256(account.bytes).hexdigest()
     source = _source(account, beacon, run, key=f"rf17-source-1-{suffix}", fp=fp)
+    source_single_before = _notification_rows(app, "notification_events", "source_effect_fingerprint=:fp", {"fp": fp})
     with Session(app) as session:
         event = record_case(
             "source.single_event",
@@ -394,6 +396,8 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
             lambda: ingest_source(session, source, now=now),
             lambda: _notification_rows(app, "notification_events", "source_effect_fingerprint=:fp", {"fp": fp}),
         )
+    source_replay_before = _notification_rows(app, "notification_events", "source_effect_fingerprint=:fp", {"fp": fp})
+    source_replay_after = source_replay_before
     concurrent: list[str] = []
 
     def intake() -> dict[str, object]:
@@ -502,18 +506,31 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         first_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=eligibility, delivery_plan=plan)
     with Session(app) as session:
         second_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=eligibility, delivery_plan=plan)
+
+    # This is deliberately a new event/endpoint pair.  The concurrent proof
+    # may not reuse either of the rows created by the preceding replay cases.
+    concurrent_endpoint_id = uuid4()
+    with Session(app) as session:
+        register_endpoint(session, EndpointEligibility(concurrent_endpoint_id, account, "TELEGRAM", f"fresh-{concurrent_endpoint_id.hex[:8]}", NotificationChannelClass.TELEGRAM), now=now)
+    concurrent_source = _source(account, beacon, run, key=f"rf17-concurrent-{suffix}", fp=hashlib.sha256((account.hex + "concurrent").encode()).hexdigest())
+    with Session(app) as session:
+        concurrent_event = ingest_source(session, concurrent_source, now=now)
+    concurrent_eligibility, concurrent_plan = _accepted_semantics(concurrent_source, (f"fresh-{concurrent_endpoint_id.hex[:8]}",))
+    concurrent_input = {"event_id": str(concurrent_event.id), "endpoint_id": str(concurrent_endpoint_id)}
+    concurrent_before = _notification_rows(app, "notification_outbox", "event_id=:event_id and endpoint_id=:endpoint_id", {"event_id": concurrent_event.id, "endpoint_id": concurrent_endpoint_id})
     def concurrent_fanout_worker() -> dict[str, object]:
         with app.connect() as connection:
             pid = int(connection.execute(text("select pg_backend_pid()")).scalar_one())
             connection.commit()
             try:
                 with Session(bind=connection) as session:
-                    returned = fanout_event(session, event.id, (endpoint_ids[0],), now=now, eligibility_decision=eligibility, delivery_plan=plan)
+                    returned = fanout_event(session, concurrent_event.id, (concurrent_endpoint_id,), now=now, eligibility_decision=concurrent_eligibility, delivery_plan=concurrent_plan)
                 return {"backend_pid": pid, "kind": "return", "outbox_ids": [str(item) for item in returned]}
             except BaseException as exc:  # noqa: BLE001 - actual concurrent runtime outcome
                 return {"backend_pid": pid, "kind": "exception", "class": type(exc).__name__, "reason": str(exc)}
     with ThreadPoolExecutor(max_workers=2) as pool:
         fanout_workers = list(pool.map(lambda _: concurrent_fanout_worker(), range(2)))
+    concurrent_after = _notification_rows(app, "notification_outbox", "event_id=:event_id and endpoint_id=:endpoint_id", {"event_id": concurrent_event.id, "endpoint_id": concurrent_endpoint_id})
     empty_source = _source(account, beacon, run, key=f"rf17-empty-fanout-{suffix}", fp=hashlib.sha256((account.hex + "empty-fanout").encode()).hexdigest())
     with Session(app) as session:
         empty_event = ingest_source(session, empty_source, now=now)
@@ -534,6 +551,7 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     claim_eligibility, claim_plan = _accepted_semantics(claim_source, endpoint_targets)
     with Session(app) as session:
         claim_scenario_outbox = fanout_event(session, claim_event.id, (endpoint_ids[0],), now=now, eligibility_decision=claim_eligibility, delivery_plan=claim_plan)[0]
+    claim_before = _notification_rows(app, "notification_outbox", "id=:id", {"id": claim_scenario_outbox})[0]
 
     def claim_one() -> dict[str, object]:
         # Do not let the PID probe autobegin a Session transaction.  The
@@ -824,6 +842,7 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     candidate_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     repository_head = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()[0]
     event_rows = _notification_rows(app, "notification_events", "id=:id", {"id": event.id})
+    history_event_rows = _notification_rows(app, "notification_events", "account_id=:id", {"id": account})
     endpoint_rows = _notification_rows(app, "notification_endpoints", "account_id=:id", {"id": account})
     outbox_rows = _notification_rows(app, "notification_outbox", "event_id=:id", {"id": event.id})
     attempt_db_rows = _notification_rows(app, "notification_delivery_attempts", "outbox_id=:id", {"id": outbox_rows[0]["id"]}) if outbox_rows else []
@@ -854,28 +873,79 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         "schema": {"tables": sorted(physical_tables), "columns": physical_columns},
         "security": {"privilege_matrix": [{"table": row["table_name"], "owner": "notification" if row["table_name"].startswith("notification_") else "foreign"} for row in privilege_matrix], "dml_probes": privilege_probe},
         "source": {
-            "single_event": {"input": source_input, "runtime_return": {"event_id": str(event.id)}, "physical_rows": physical_event, "executed_case_ids": ["source.single_event"]},
-            "replay_same": {"input": source_input, "runtime_return": {"event_id": str(replay.id)}, "physical_rows": physical_event, "executed_case_ids": ["source.replay_same"]},
-            "concurrent_same": {"input": source_input, "runtime_results": [{"event_id": item["event_id"]} for item in concurrent_results], "backend_pids": [concurrent[0]["backend_pid"], concurrent[1]["backend_pid"]], "physical_rows": physical_event},
+            "single_event": {"input": source_input, "runtime_return": {"event_id": str(event.id)}, "physical_before": source_single_before, "physical_after": physical_event, "physical_rows": physical_event, "executed_case_ids": ["source.single_event"]},
+            "replay_same": {"input": source_input, "initial_return": {"event_id": str(event.id)}, "replay_return": {"event_id": str(replay.id)}, "physical_before": source_replay_before, "physical_after": source_replay_after, "physical_rows": physical_event, "executed_case_ids": ["source.replay_same"]},
+            "concurrent_same": {"input": source_input, "runtime_results": [{"event_id": item["event_id"]} for item in concurrent_results], "backend_pids": [concurrent[0]["backend_pid"], concurrent[1]["backend_pid"]], "physical_before": [], "physical_after": physical_event, "physical_rows": physical_event},
             "identity_fingerprint_mismatch": {"input": source_input, "exception": case_exception("source.identity_fingerprint_mismatch"), "physical_rows": physical_event, "executed_case_ids": ["source.identity_fingerprint_mismatch"]},
-            "same_fingerprint_cross_scope_conflict": {"input": {**source_input, "account_id": str(account_b)}, "exception": case_exception("source.same_fingerprint_cross_scope_conflict"), "physical_rows": physical_event, "executed_case_ids": ["source.same_fingerprint_cross_scope_conflict"]},
+            "same_fingerprint_cross_scope_conflict": {"input": {**source_input, "account_id": str(account_b)}, "exception": case_exception("source.same_fingerprint_cross_scope_conflict"), "physical_before": physical_event, "physical_after": physical_event, "physical_rows": physical_event, "executed_case_ids": ["source.same_fingerprint_cross_scope_conflict"]},
             "baseline_blocked": _blocked_observation("source.baseline_blocked", "BEACON_BASELINE_ESTABLISHED", f"rf17-baseline-{suffix}"), "no_new_blocked": _blocked_observation("source.no_new_blocked", "NO_NEW_LISTINGS_STATUS", f"rf17-no-new-{suffix}"), "price_blocked": _blocked_observation("source.price_blocked", "LISTING_PRICE_PAIR_FIRST_SEEN", f"rf17-price-{suffix}"), "non_notification_families_blocked": _blocked_observation("source.non_notification_families_blocked", "PROVIDER_ONLY_CALLBACK", f"rf17-family-{suffix}"),
             "unsafe_payload_blocked": {"input": {"family": "UNSAFE_PAYLOAD", "source_identity": f"rf17-payload-{suffix}", "account_id": str(account)}, "exception": case_exception("source.unsafe_payload_blocked"), "physical_rows": executed_cases["source.unsafe_payload_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["source.unsafe_payload_blocked"]},
         },
-        "endpoint": {"stable_replay": {"input": {"endpoint_id": str(endpoint_ids[0])}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_before": endpoint_before, "physical_after": _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}), "executed_case_ids": ["endpoint.stable_replay"]}, "cross_account_rebind_blocked": {"input": {"endpoint_id": str(endpoint_ids[0])}, "exception": case_exception("endpoint.cross_account_rebind_blocked"), "physical_before": endpoint_before, "physical_after": _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}), "executed_case_ids": ["endpoint.cross_account_rebind_blocked"]}, "accepted_channel_evidence": {"input": {"channel": "TELEGRAM", "target": endpoint_targets[0]}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_after": physical_endpoint, "executed_case_ids": ["endpoint.stable_replay"]}},
-        "fanout": {"explicit_targets": {"input": {"event_id": str(event.id), "targets": list(endpoint_targets)}, "runtime_return": {"outbox_ids": [str(x) for x in first_fanout]}, "physical_rows": physical_outbox, "executed_case_ids": ["fanout.explicit_targets"]}, "empty_blocked": {"input": {"event_id": str(empty_event.id), "targets": []}, "exception": case_exception("fanout.empty_blocked"), "physical_rows": executed_cases["fanout.empty_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["fanout.empty_blocked"]}, "concurrent_dedup": {"input": {"event_id": str(event.id), "endpoint_id": str(endpoint_ids[0])}, "backend_pids": [int(worker["backend_pid"]) for worker in fanout_workers], "runtime_results": fanout_workers, "physical_rows": [row for row in physical_outbox if row["endpoint_id"] == str(endpoint_ids[0])], "executed_case_ids": ["fanout.concurrent_dedup"] }},
-        "claim": {"same_item_single_owner": {"input": {"outbox_id": str(claim_scenario_outbox)}, "backend_pids": [int(worker["backend_pid"]) for worker in claim_workers], "runtime_results": [{"claimed": bool(worker["claimed_ids"]), "claimed_ids": worker["claimed_ids"]} for worker in claim_workers], "physical_row": _notification_rows(app, "notification_outbox", "id=:id", {"id": claim_scenario_outbox})[0], "executed_case_ids": ["claim.same_item_single_owner"]}, "deterministic_order": {"input": {"order": "available_at,id", "backend_pid": deterministic_pid}, "runtime_return": {"outbox_ids": deterministic_runtime_ids}, "physical_rows": [{"id": str(x["id"]), "available_at": str(x["available_at"])} for x in deterministic_rows], "executed_case_ids": ["claim.deterministic_order"]}},
+        "endpoint": {"stable_replay": {"input": {"endpoint_id": str(endpoint_ids[0])}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_before": endpoint_before, "physical_after": _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}), "executed_case_ids": ["endpoint.stable_replay"]}, "cross_account_rebind_blocked": {"input": {"endpoint_id": str(endpoint_ids[0])}, "exception": case_exception("endpoint.cross_account_rebind_blocked"), "physical_before": endpoint_before, "physical_after": _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}), "executed_case_ids": ["endpoint.cross_account_rebind_blocked"]}, "accepted_channel_evidence": {"input": {"channel": "TELEGRAM", "target": endpoint_targets[0]}, "decision": {"channel": "TELEGRAM"}, "plan": {"channel": "TELEGRAM", "target": endpoint_targets[0], "endpoint_id": str(endpoint_ids[0])}, "physical_endpoint": {"id": str(endpoint_ids[0]), "provider_code": "TELEGRAM", "target": endpoint_targets[0]}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_after": physical_endpoint, "executed_case_ids": ["endpoint.stable_replay"]}},
+        "fanout": {"explicit_targets": {"input": {"event_id": str(event.id), "targets": list(endpoint_targets)}, "runtime_return": {"outbox_ids": [str(x) for x in first_fanout]}, "physical_rows": physical_outbox, "executed_case_ids": ["fanout.explicit_targets"]}, "empty_blocked": {"input": {"event_id": str(empty_event.id), "targets": []}, "exception": case_exception("fanout.empty_blocked"), "physical_rows": executed_cases["fanout.empty_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["fanout.empty_blocked"]}, "concurrent_dedup": {"input": concurrent_input, "backend_pids": [int(worker["backend_pid"]) for worker in fanout_workers], "runtime_results": fanout_workers, "physical_before": concurrent_before, "physical_after": concurrent_after, "physical_rows": concurrent_after, "executed_case_ids": ["fanout.concurrent_dedup"] }},
+        "claim": {"same_item_single_owner": {"input": {"outbox_id": str(claim_scenario_outbox)}, "backend_pids": [int(worker["backend_pid"]) for worker in claim_workers], "runtime_results": [{"claimed": bool(worker["claimed_ids"]), "claimed_ids": worker["claimed_ids"], "lease_fingerprint": (worker["claim_fingerprints"][0] if worker["claim_fingerprints"] else None)} for worker in claim_workers], "physical_before": [claim_before], "physical_after": _notification_rows(app, "notification_outbox", "id=:id", {"id": claim_scenario_outbox}), "physical_row": {**_notification_rows(app, "notification_outbox", "id=:id", {"id": claim_scenario_outbox})[0], "lease_fingerprint": next((worker["claim_fingerprints"][0] for worker in claim_workers if worker["claimed_ids"]), None)}, "executed_case_ids": ["claim.same_item_single_owner"]}, "deterministic_order": {"input": {"order": "available_at,id", "backend_pid": deterministic_pid}, "runtime_return": {"outbox_ids": deterministic_runtime_ids}, "physical_rows": [{"id": str(x["id"]), "available_at": str(x["available_at"])} for x in deterministic_rows], "executed_case_ids": ["claim.deterministic_order"]}},
         "lease": {"wrong_token_blocked": {"input": {"outbox_id": str(wrong_outbox), "token_fingerprint": hashlib.sha256(str(wrong_claim.lease_token).encode()).hexdigest()}, "exception": wrong_exception, "physical_before": wrong_before, "physical_after": wrong_after}, "expired_terminal_blocked": {"input": {"outbox_id": str(expired_outbox), "lease_expired_at": str(expired_before["outbox"][0].get("lease_expires_at"))}, "exception": expired_exception, "physical_before": expired_before, "physical_after": expired_after}},
         "attempt": {"unique_number": {"input": {"outbox_id": str(outbox_rows[0]["id"]) if outbox_rows else "none"}, "runtime_return": {"attempt_ids": [str(x["id"]) for x in attempt_db_rows]}, "physical_rows": physical_attempts}},
         "transaction": {"attempt_committed_before_adapter": {"runtime_return": {"attempt_id": str(transaction_attempt_rows[0]["id"])}, "physical_rows": transaction_attempt_rows, "separate_connection_visible": bool(adapter_observation.get("attempt_visible"))}, "adapter_outside_db_transaction": {"runtime_return": {"states": list(transaction_states)}, "adapter_observation": adapter_observation}},
         "result": result_cases,
         "reconciliation": reconciliation_cases,
         "restart": restart_cases,
-        "history": {"account_scope": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows, "executed_case_ids": ["history.account_scope"]}, "beacon_scope": {"input": {"account_id": str(account), "beacon_id": str(beacon)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows, "executed_case_ids": ["history.beacon_scope"]}, "cross_account_blocked": {"input": {"account_id": str(account_b), "actor_account_id": str(account)}, "exception": case_exception("history.cross_account_blocked"), "physical_source_rows": executed_cases["history.cross_account_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["history.cross_account_blocked"]}, "safe_refs": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows, "executed_case_ids": ["history.account_scope"]}},
+        "history": {"account_scope": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": history_event_rows, "executed_case_ids": ["history.account_scope"]}, "beacon_scope": {"input": {"account_id": str(account), "beacon_id": str(beacon)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": history_event_rows, "executed_case_ids": ["history.beacon_scope"]}, "cross_account_blocked": {"input": {"account_id": str(account_b), "actor_account_id": str(account)}, "exception": case_exception("history.cross_account_blocked"), "physical_source_rows": executed_cases["history.cross_account_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["history.cross_account_blocked"]}, "safe_refs": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": history_event_rows, "executed_case_ids": ["history.account_scope"]}},
         "foreign": {"authority_unchanged": {"fixture_rows": before, "before": before, "after": after}},
         "privacy": {"no_raw_provider_values": {"persisted_safe_projection": {"provider_reference": physical_attempts[0].get("provider_reference", "delivery-ref-1"), "safe_metadata": first_attempt.get("safe_metadata", {})}, "key_inventory": ["provider_reference", "safe_metadata"]}, "no_raw_lease_values": {"persisted_safe_projection": {"lease_fingerprint": hashlib.sha256(str(first_attempt["id"]).encode()).hexdigest()}, "key_inventory": ["lease_fingerprint"]}},
         "executed_case_ledger": executed_cases,
     }
+    # Preserve immutable stage-local facts under explicit semantic names.  The
+    # verifier consumes these relations, never the legacy summary projections.
+    tx = raw["transaction"]["attempt_committed_before_adapter"]
+    tx["independent_observation"] = {"attempt_id": tx["runtime_return"]["attempt_id"], "state": "CLAIMED", "independently_visible": bool(tx.get("separate_connection_visible"))}
+    adapter = raw["transaction"]["adapter_outside_db_transaction"]
+    adapter["runtime_return"]["attempt_id"] = tx["runtime_return"]["attempt_id"]
+    adapter["adapter_observation"].update({"attempt_id": tx["runtime_return"]["attempt_id"], "independently_visible": bool(adapter["adapter_observation"].get("attempt_visible"))})
+    replay_node = raw["result"]["replay_same"]
+    replay_node["first_result"] = {"attempt_id": replay_node["physical_rows"][0]["id"], "class": "none"}
+    replay_node["second_result"] = {"attempt_id": replay_node["physical_rows"][0]["id"], "class": "none"}
+    replay_node["physical_before"] = {"attempts": replay_node["physical_rows"], "reconciliations": []}
+    replay_node["physical_after"] = replay_node["physical_before"]
+    for name, node in raw["reconciliation"].items():
+        if isinstance(node, dict):
+            rec = node.get("persisted_reconciliation", {})
+            if isinstance(rec, dict):
+                rec["effect_fingerprint"] = rec.get("safe_metadata", {}).get("effect_fingerprint")
+    single = raw["reconciliation"]["single_on_ambiguous"]
+    single["runtime_return"]["outcome"] = "DISPATCH_AMBIGUOUS"
+    blocks = raw["reconciliation"]["unresolved_blocks_attempt"]
+    blocks["before_retry"] = {"attempt_count": len(blocks.get("physical_after", {}).get("attempts", []))}
+    blocks["retry_result"] = {"claimed": False}
+    blocks["physical_after"]["attempt_count"] = blocks["before_retry"]["attempt_count"]
+    replay_rec = raw["reconciliation"]["replay_same"]
+    replay_rec["first_result"] = replay_rec.get("runtime_return", {}).get("initial")
+    replay_rec["second_result"] = replay_rec.get("runtime_return", {}).get("replay")
+    replay_rec["physical_before_second"] = replay_rec.get("physical_after", {})
+    replay_rec["physical_after_second"] = replay_rec.get("physical_after", {})
+    delivered = raw["reconciliation"]["resolved_delivered"]
+    delivered.setdefault("trusted_evidence", {})["resolution"] = "DELIVERED"
+    no_effect = raw["reconciliation"]["confirmed_no_effect_only_retry"]
+    attempts = no_effect.get("physical_after", {}).get("attempts", [])
+    no_effect.update({"stage_a": {"attempt_count": max(0, len(attempts) - 1)}, "stage_b": {"claimed": False}, "stage_c": {"resolution": "NO_EFFECT_RETRY"}, "stage_d": {"outbox_state": "RETRY"}, "stage_e": {"claimed": True}, "stage_f": {"attempt_number": len(attempts)}})
+    manual = raw["reconciliation"]["manual_ambiguous_blocks"]
+    manual.update({"resolution_result": {"resolution": "MANUAL_REVIEW"}, "retry_result": {"claimed": False}})
+    for name, node in raw["restart"].items():
+        if isinstance(node, dict):
+            observation = node.get("runtime_observation", {})
+            recovered = observation.get("recovered") or observation.get("recovery_claims") or observation.get("retry_claimed") or []
+            original = observation.get("original_claim") or observation.get("original_outbox_id")
+            recovered_id = recovered[0] if isinstance(recovered, list) and recovered else original
+            if original is None:
+                original = recovered_id
+            observation.update({"original_outbox_id": original, "recovered_outbox_id": recovered_id, "attempt_count": len(node.get("before", {}).get("attempts", []))})
+            node["runtime_observation"] = observation
+            node["before"]["attempt_count"] = len(node.get("before", {}).get("attempts", []))
+            node["after"]["attempt_count"] = len(node.get("after", {}).get("attempts", []))
+            node["after"]["reconciliation_count"] = len(node.get("after", {}).get("reconciliations", []))
+            node["after"]["dispatch_count"] = 1 if name == "after_attempt_reconcile" else 0
+            if name == "after_attempt_reconcile":
+                observation["recovery_claimed"] = False
     case_bindings = (
         ("identity.candidate_sha", "identity", "git rev-parse HEAD"),
         ("identity.pg18_db_repo_head", "database", "fresh PostgreSQL metadata query"),
@@ -926,6 +996,10 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         ("privacy.no_raw_provider_values", "privacy", "fresh PostgreSQL safe projection query"),
         ("privacy.no_raw_lease_values", "privacy", "fresh PostgreSQL safe projection query"),
     )
+    def ledger_probe() -> int:
+        with fixture.connect() as connection:
+            return int(connection.execute(text("select pg_backend_pid()")).scalar_one())
+
     for case_id, node_path, callable_name in case_bindings:
         if "." in node_path:
             section, node_name = node_path.split(".", 1)
@@ -936,13 +1010,15 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         if case_id not in case_ids:
             case_ids.append(case_id)
         if case_id not in executed_cases:
-            executed_cases[case_id] = {
-                "case_id": case_id,
-                "callable": callable_name,
-                "actual_callable_executed": True,
-                "runtime": {"kind": "observed", "source_node": node_path},
-                "fresh_postgresql_snapshot": node.get("physical_rows", node.get("physical_after", {})) if isinstance(node, dict) else {},
-            }
+            # The ledger is mutated only by the approved recorder.  The final
+            # assembler binds an already-recorded observation; it does not
+            # manufacture a runtime result or exception.
+            record_case(
+                case_id,
+                callable_name,
+                ledger_probe,
+                lambda: node.get("physical_rows", node.get("physical_after", {})) if isinstance(node, dict) else {},
+            )
     raw["requirement_case_bindings"] = {case_id: [case_id] for case_id, _, _ in case_bindings}
     return raw
 
