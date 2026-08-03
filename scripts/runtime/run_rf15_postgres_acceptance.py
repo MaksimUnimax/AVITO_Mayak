@@ -31,7 +31,7 @@ from mayak.modules.avito_parser_adapter.contracts import (
 from mayak.modules.avito_parser_adapter.contracts import (
     ParserOutcomeStatus as AdapterParserOutcomeStatus,
 )
-from mayak.modules.avito_parser_adapter.runtime import AvitoParserRuntime
+from mayak.modules.avito_parser_adapter.runtime import AvitoParserRuntime, NormalizedListingSnapshot
 from mayak.modules.beacon_management import (
     BeaconManagementRuntime,
     BeaconParserEvidenceReference,
@@ -743,6 +743,22 @@ def _persist_parser_fixture(
                     beacon_id=UUID(fixture["beacon_id"]),
                     run_id=UUID(fixture["run_id"]),
                     attempt=attempt,
+                    normalized_snapshot=(
+                        NormalizedListingSnapshot(
+                            tuple(
+                                {
+                                    "listing_candidate_id": candidate.identity_key,
+                                    "status": "USABLE",
+                                    "fields": {
+                                        "NORMALIZED_PRICE": candidate.snapshot.get("price")
+                                    },
+                                }
+                                for candidate in outcome.candidates
+                            )
+                        )
+                        if outcome.status == "CLEAN"
+                        else None
+                    ),
                     observed_at=_now(),
                 )
                 .outcome_id
