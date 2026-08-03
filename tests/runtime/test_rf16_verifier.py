@@ -85,3 +85,56 @@ def test_verifier_has_no_producer_authored_acceptance_boolean_names() -> None:
         "overlap_barrier",
     ):
         assert forbidden not in source
+
+
+def test_source_map_has_no_banned_summary_authority() -> None:
+    evidence = V.build_representative_evidence(SHA, HEAD)
+    _, _, registry = V.verify(evidence, expected_sha=SHA, repository_head=HEAD, verify_tamper=False)
+    banned = V.BANNED
+    for row in V.source_map(registry):
+        assert not any(part in banned for part in row["authoritative_raw_path"].split("."))
+
+
+@pytest.mark.parametrize(
+    ("requirement_id", "mutate"),
+    [
+        (
+            "foreign_state_unchanged",
+            lambda d: d["foreign_witness_after"].update({"work": [{"state": "DONE"}]}),
+        ),
+        (
+            "concurrent_lease_conflict",
+            lambda d: (
+                d["concurrency"]["sessions"]
+                .__getitem__(0)
+                .update({"operation_started_at": "9999-01-01T00:00:00+00:00"})
+            ),
+        ),
+        (
+            "expiry_recovery",
+            lambda d: d["expiry"].update({"decision_at": "1970-01-01T00:00:00+00:00"}),
+        ),
+        (
+            "parser_fail_closed",
+            lambda d: d["parser_cases"][0].update({"parser_status": "USABLE_RESPONSE"}),
+        ),
+        (
+            "simulator_runtime_parity",
+            lambda d: d["simulator_cases"][0].update({"effect": "FAILURE"}),
+        ),
+        (
+            "no_secret_raw_provider_persistence",
+            lambda d: d["persistence_projection"]["tables"]["egress_routes"][0].update(
+                {"provider_body": "secret"}
+            ),
+        ),
+    ],
+)
+def test_authoritative_raw_corruption_rejects_with_legacy_summary_untouched(
+    requirement_id, mutate
+) -> None:
+    evidence = V.build_representative_evidence(SHA, HEAD)
+    original = V.verify(evidence, expected_sha=SHA, repository_head=HEAD, verify_tamper=False)[2]
+    item = next(x for x in original if x.requirement_id == requirement_id)
+    mutate(evidence)
+    assert item.check(evidence) is False

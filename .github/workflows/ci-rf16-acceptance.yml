@@ -87,7 +87,7 @@ jobs:
       - name: Strict RF16 verifier bound to immutable candidate and repository head
         run: |
           set +e
-          uv run python scripts/runtime/verify_rf16_acceptance.py rf16-evidence.json --expected-sha "$GITHUB_SHA" --repo-root . --diagnostics rf16-verifier-diagnostics.json > rf16-verifier.stdout 2> rf16-verifier.stderr
+          uv run python scripts/runtime/verify_rf16_acceptance.py rf16-evidence.json --expected-sha "$GITHUB_SHA" --repo-root . --diagnostics rf16-verifier-diagnostics.json --package-build-1 rf16-package-1.json --package-build-2 rf16-package-2.json --agent-zip dist/rf16/rf16-agent.zip > rf16-verifier.stdout 2> rf16-verifier.stderr
           verifier_status=$?
           set -e
           test "$verifier_status" -eq 0

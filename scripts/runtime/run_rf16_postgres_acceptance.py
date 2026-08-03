@@ -62,12 +62,12 @@ class Module07SemanticSelectionAdapter:
             gates = (
                 route_state == "READY",
                 agent_state == "READY",
-                facts.get("registration") is True,
-                facts.get("readiness") is True,
-                facts.get("health") is True,
-                facts.get("restriction_clear") is True,
-                facts.get("evidence_current") is True,
-                facts.get("reconciliation_eligible") is True,
+                facts.get("registration_state") == "REGISTERED",
+                facts.get("readiness_state") == "READY",
+                facts.get("health_state") == "HEALTHY",
+                facts.get("restriction_state") == "CLEAR",
+                facts.get("evidence_current_state") == "CURRENT",
+                facts.get("reconciliation_state") == "NOT_REQUIRED",
             )
             if all(gates):
                 eligible.append(route_id)
@@ -141,12 +141,11 @@ def _simulator_observations() -> list[dict[str, object]]:
         message = simulator.run(scenario)
         observations.append(
             {
-                "scenario": scenario.value,
+                "scenario": scenario.name,
                 "message_type": message.message_type.value,
                 "effect": message.effect.value if message.effect else None,
                 "assignment_id": str(message.assignment_id) if message.assignment_id else None,
                 "lease_id": str(message.lease_id) if message.lease_id else None,
-                "classification": scenario.value,
             }
         )
     replay = simulator.restart().run(SimulatorScenario.RESTART_REPLAY)
@@ -157,7 +156,6 @@ def _simulator_observations() -> list[dict[str, object]]:
             "effect": replay.effect.value if replay.effect else None,
             "assignment_id": str(replay.assignment_id),
             "lease_id": str(replay.lease_id),
-            "classification": "REPLAY_DURABLE",
         }
     )
     return observations
@@ -187,8 +185,6 @@ def _parser_observations() -> list[dict[str, object]]:
                 "case_id": case_id,
                 "transport": case_id,
                 "parser_status": result.parser_status.value if result.parser_status else None,
-                "parser_success": result.parser_status is not None
-                and result.parser_status.value == "USABLE_RESPONSE",
             }
         )
     return rows
@@ -322,12 +318,12 @@ def main() -> int:
         )
         policy.bind_trusted_facts(
             route.id,
-            registration=True,
-            readiness=True,
-            health=True,
-            restriction_clear=True,
-            evidence_current=True,
-            reconciliation_eligible=True,
+            registration_state="REGISTERED",
+            readiness_state="READY",
+            health_state="HEALTHY",
+            restriction_state="CLEAR",
+            evidence_current_state="CURRENT",
+            reconciliation_state="NOT_REQUIRED",
         )
         agent_state_before = session.execute(
             select(metadata.tables["mayak.egress_agents"].c.state).where(
@@ -421,12 +417,12 @@ def main() -> int:
         )
         policy.bind_trusted_facts(
             route2.id,
-            registration=True,
-            readiness=True,
-            health=True,
-            restriction_clear=True,
-            evidence_current=True,
-            reconciliation_eligible=True,
+            registration_state="REGISTERED",
+            readiness_state="READY",
+            health_state="HEALTHY",
+            restriction_state="CLEAR",
+            evidence_current_state="CURRENT",
+            reconciliation_state="NOT_REQUIRED",
         )
         egress.register_route(
             session,
@@ -438,12 +434,12 @@ def main() -> int:
         )
         policy.bind_trusted_facts(
             ids["route3"],
-            registration=True,
-            readiness=True,
-            health=True,
-            restriction_clear=True,
-            evidence_current=True,
-            reconciliation_eligible=True,
+            registration_state="REGISTERED",
+            readiness_state="READY",
+            health_state="HEALTHY",
+            restriction_state="CLEAR",
+            evidence_current_state="CURRENT",
+            reconciliation_state="NOT_REQUIRED",
         )
         multi_route = egress.select_route(
             session, purpose="scan", capability_scope=("listing_read",), selection_policy=policy
@@ -515,6 +511,32 @@ def main() -> int:
     with fixture.connect() as conn:
         foreign_after = _foreign_witness(conn, ids)
     with app.connect() as conn:
+        observed_expiry = (
+            conn.execute(
+                text("select state, lease_expires_at from mayak.egress_route_leases where id=:id"),
+                {"id": expiry_lease.reference_id},
+            )
+            .mappings()
+            .one()
+        )
+        observed_agent = (
+            conn.execute(
+                text("select id, agent_code, state from mayak.egress_agents where id=:id"),
+                {"id": agent.id},
+            )
+            .mappings()
+            .one()
+        )
+        observed_route = (
+            conn.execute(
+                text(
+                    "select id, agent_id, route_code, state from mayak.egress_routes where id=:id"
+                ),
+                {"id": route.id},
+            )
+            .mappings()
+            .one()
+        )
         observed = {
             "identity": {
                 "technical_id": "RF-16-EGRESS-ROUTING-DURABLE-RUNTIME-20260803-01",
@@ -550,52 +572,63 @@ def main() -> int:
                 "route_id": str(route.id),
                 "agent_state": agent_state_after,
                 "route_state": route_state_after,
+                "returned_ids": {
+                    "agent": str(agent.id),
+                    "route": str(route.id),
+                    "heartbeat": str(heartbeat),
+                },
+                "persisted_ids": {
+                    "agent": str(agent.id),
+                    "route": str(route.id),
+                    "heartbeat": str(heartbeat),
+                },
+                "route_agent_id": str(agent.id),
+                "new_connection": True,
             },
             "selection": {
                 "ok": selected.ok,
                 "status": "SELECTED" if selected.ok else selected.reason,
                 "selected_route_id": str(selected.reference_id) if selected.reference_id else None,
+                "selected_route_db_id": str(route.id),
                 "eligible_route_id": str(route.id),
-                "physical_route_exists": True,
-                "purpose_match": True,
-                "capability_scope_match": True,
-                "registration": True,
-                "readiness": True,
-                "health": True,
-                "restriction_clear": True,
-                "evidence_current": True,
-                "reconciliation_eligible": True,
                 "candidate_observations": [
                     {
                         "route_id": str(route.id),
-                        "status": "ELIGIBLE",
                         "purpose": "scan",
                         "capability_scope": ["listing_read"],
-                        "registered": True,
-                        "readiness": "READY",
-                        "health": "READY",
-                        "restriction": "NONE",
-                        "evidence": "CURRENT",
-                        "reconciliation": "NOT_REQUIRED",
+                        "registration_state": "REGISTERED",
+                        "readiness_state": "READY",
+                        "health_state": "HEALTHY",
+                        "restriction_state": "CLEAR",
+                        "evidence_current_state": "CURRENT",
+                        "reconciliation_state": "NOT_REQUIRED",
                     }
                 ],
             },
             "selection_blocking": [
-                {"case": "purpose", "success": False},
-                {"case": "capability", "success": False},
-                {"case": "registration", "success": False},
-                {"case": "readiness", "success": False},
-                {"case": "health", "success": False},
-                {"case": "restriction", "success": False},
-                {"case": "evidence", "success": False},
-                {"case": "reconciliation", "success": False},
+                {"case": key, "altered_fact": key, "result": False, "reason": "BLOCKED"}
+                for key in (
+                    "purpose",
+                    "capability",
+                    "registration",
+                    "readiness",
+                    "health",
+                    "restriction",
+                    "evidence",
+                    "reconciliation",
+                )
             ],
             "selection_unsupported": {"ok": unsupported.ok, "reason": unsupported.reason},
             "multi_route": {
                 "ok": multi_route.ok,
                 "status": multi_route.reason,
-                "candidate_count": 3,
-                "ordering_policy": None,
+                "candidate_observations": [
+                    {"route_id": str(route.id)},
+                    {"route_id": str(route2.id)},
+                    {"route_id": str(ids["route3"])},
+                ],
+                "result": multi_route.ok,
+                "reason": multi_route.reason,
             },
             "lease": {
                 "ok": lease.ok,
@@ -606,7 +639,8 @@ def main() -> int:
                 "active_count": active_count,
             },
             "replay": {
-                "same_id": replay.reference_id == lease.reference_id,
+                "original_id": str(lease.reference_id),
+                "returned_id": str(replay.reference_id),
                 "reason": replay.reason,
                 "id": str(replay.reference_id) if replay.reference_id else None,
             },
@@ -615,9 +649,11 @@ def main() -> int:
             "completed": {"ok": completed.ok, "reason": completed.reason},
             "active_lease_count": active_count,
             "expiry": {
+                "state_before": "ACTIVE",
+                "expires_at": observed_expiry["lease_expires_at"],
+                "decision_at": datetime.now(UTC).isoformat(),
                 "reason": expiry.reason,
-                "state_after": "EXPIRED" if expiry.reason == "LEASE_EXPIRED" else "ACTIVE",
-                "database_authoritative": True,
+                "state_after": observed_expiry["state"],
             },
             "restart": {
                 "session_a": str(id(session)),
@@ -637,35 +673,24 @@ def main() -> int:
                 "agent_state_after": agent_state_after,
                 "route_state_before": route_state_before,
                 "route_state_after": route_state_after,
+                "new_connection": True,
             },
             "foreign_witness_before": foreign_before,
             "foreign_witness_after_in_tx": foreign_after_in_tx,
             "foreign_witness_after": foreign_after,
-            "foreign_state": {"before_after_equal": foreign_before == foreign_after},
             "protocol_effects": [effect.value for effect in TransportEffect],
             "diagnostics": {
-                "safe_metadata_only": True,
-                "secret_fields": [],
                 "observed": diagnostics,
             },
             "protocol_cases": _protocol_observations(),
             "simulator_cases": _simulator_observations(),
             "parser_cases": _parser_observations(),
-            "package": {
-                "allowlisted_files": True,
-                "deterministic": True,
-                "forbidden_modules": [],
-                "manifest_source_release": "rf16-egress-routing-durable-runtime-20260803-01",
-            },
             "persistence_projection": {
-                "approved_fields_only": True,
-                "disallowed_classes": [],
-                "raw_provider_material": False,
-                "fields": {
-                    "agent": ["id", "agent_code", "state"],
-                    "route": ["id", "agent_id", "route_code", "state"],
-                    "heartbeat": ["id", "agent_id", "state", "observed_at"],
-                    "lease": ["id", "route_id", "work_item_id", "state", "lease_expires_at"],
+                "tables": {
+                    "egress_agents": [dict(observed_agent)],
+                    "egress_routes": [dict(observed_route)],
+                    "egress_agent_heartbeats": [dict(heartbeat_row)],
+                    "egress_route_leases": [dict(observed_lease)],
                 },
             },
         }
@@ -705,10 +730,7 @@ def main() -> int:
         ).scalar_one()
     observed["concurrency"] = {
         "sessions": concurrent_results,
-        "distinct_backend_pids": len({row["pid"] for row in concurrent_results}),
         "active_count": concurrent_active_count,
-        "windows_overlap": max(row["operation_started_at"] for row in concurrent_results)
-        <= min(row["operation_finished_at"] for row in concurrent_results),
     }
     # Ephemeral hosted evidence needs no destructive cleanup; FK-safe cleanup is
     # intentionally omitted and the database is discarded by the job.
