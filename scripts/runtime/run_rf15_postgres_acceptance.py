@@ -20,7 +20,7 @@ from threading import Barrier
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, insert, text
 from sqlalchemy.orm import Session
 
 from mayak.contracts.idempotency import IdempotencyKey
@@ -52,6 +52,8 @@ from mayak.modules.scan_orchestration.contracts import (
     EntitlementSnapshot,
     ListingCandidate,
     ParserOutcome,
+    RunResult,
+    WorkClaim,
 )
 from mayak.modules.scan_orchestration.repository import ScanRepository
 from mayak.modules.scan_orchestration.services import (
@@ -63,6 +65,7 @@ from mayak.modules.scan_orchestration.services import (
     start_run,
     validate_cadence,
 )
+from mayak.persistence.metadata import metadata
 from mayak.platform.correlation import CorrelationContext, CorrelationId
 
 TECHNICAL_ID = "RF-15-SCAN-ORCHESTRATION-DURABLE-RUNTIME-20260802-01"
@@ -162,9 +165,11 @@ def _semantic_foreign(connection: Any) -> dict[str, Any]:
     names = {
         "identity": "identity_accounts",
         "entitlements": "entitlement_access_grants",
+        "billing": "billing_payment_records",
         "beacon": "beacon_beacons",
         "parser": "parser_outcomes",
         "egress": "egress_routes",
+        "notification": "notification_events",
     }
     result: dict[str, Any] = {}
     for label, table in names.items():
@@ -749,9 +754,7 @@ def _persist_parser_fixture(
                                 {
                                     "listing_candidate_id": candidate.identity_key,
                                     "status": "USABLE",
-                                    "fields": {
-                                        "NORMALIZED_PRICE": candidate.snapshot.get("price")
-                                    },
+                                    "fields": {"NORMALIZED_PRICE": candidate.snapshot.get("price")},
                                 }
                                 for candidate in outcome.candidates
                             )
@@ -775,13 +778,14 @@ def _terminal(
     now: datetime | None = None,
     operation_barrier: Barrier | None = None,
     observed_before: dict[str, Any] | None = None,
+    parser_outcome_id: UUID | None = None,
 ) -> dict[str, Any]:
     beacon = SyntheticBeacon(
         UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
     )
     # Parser owns parser_outcomes.  The fixture is committed before the RF15
     # measured interval and its returned identity is the only Scan reference.
-    parser_outcome_id = _persist_parser_fixture(engine, fixture, outcome, key)
+    parser_outcome_id = parser_outcome_id or _persist_parser_fixture(engine, fixture, outcome, key)
     parser = SyntheticParserPort(outcome.model_copy(update={"outcome_id": parser_outcome_id}))
     if observed_before is None:
         with engine.connect() as probe:
@@ -904,24 +908,30 @@ def scenario_raw_payload_snapshot_boundary(connection: Any) -> dict[str, Any]:
         "physical_before": _scoped(connection, fixture),
         "physical_after": _scoped(connection, fixture),
         "safe_persistence": {
-            "successful_terminal": "result" in safe["operation"],
+            "operation": safe["operation"],
             "serialized_size": len(json.dumps(safe_snapshot, sort_keys=True).encode()),
-            "unsafe_persisted_values": False,
-            "raw_provider_body": False,
-            "safe_snapshot": safe_snapshot,
+            "snapshot": safe_snapshot["snapshot"],
+            "physical_before": safe["physical_before"],
+            "physical_after": safe["physical_after"],
         },
     }
 
 
 def scenario_foreign_state_witness(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="foreign-witness")
-    first = _semantic_foreign(connection)
+    with connection.engine.connect() as probe:
+        first = _semantic_foreign(probe)
+        first_finished = _now().isoformat()
     terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-foreign-witness")
-    second = _semantic_foreign(connection)
+    with connection.engine.connect() as probe:
+        second = _semantic_foreign(probe)
+        second_started = _now().isoformat()
+    terminal["physical_before"]["observation_finished_at"] = first_finished
+    terminal["physical_after"]["observation_started_at"] = second_started
     return {
         "operation": terminal["operation"],
-        "physical_before": {"observed_at": _now().isoformat(), "semantic": first},
-        "physical_after": {"observed_at": _now().isoformat(), "semantic": second},
+        "physical_before": {"observation_finished_at": first_finished, "semantic": first},
+        "physical_after": {"observation_started_at": second_started, "semantic": second},
         "rf15_physical": terminal,
     }
 
@@ -945,7 +955,8 @@ def scenario_restart_durability(connection: Any) -> dict[str, Any]:
         "operation": terminal["operation"],
         "physical_before": terminal["physical_before"],
         "physical_after": {
-            "second_lifetime": {"backend_pid": pid, "run_rows": physical["run_rows"]}
+            **terminal["physical_after"],
+            "second_lifetime": {"backend_pid": pid, "run_rows": physical["run_rows"]},
         },
     }
 
@@ -1281,12 +1292,78 @@ def _concurrent_claim(connection: Any, fixture: dict[str, Any], name: str) -> di
     }
 
 
+def _adversarial_terminal_pair(
+    engine: Any, scenario_id: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    first = prepare_claimed_run(engine, scenario_id=f"{scenario_id}-a")
+    now = _now()
+    second_work_id, second_run_id, second_token = uuid4(), uuid4(), uuid4()
+    work_table = metadata.tables["mayak.scan_work_items"]
+    run_table = metadata.tables["mayak.scan_runs"]
+    with engine.begin() as setup:
+        setup.execute(
+            insert(work_table).values(
+                id=second_work_id,
+                schedule_id=UUID(first["schedule_id"]),
+                beacon_id=UUID(first["beacon_id"]),
+                due_at=now + timedelta(seconds=1),
+                state="CLAIMED",
+                lease_started_at=now,
+                lease_expires_at=now + timedelta(minutes=2),
+                lease_token=second_token,
+                attempt_count=0,
+                created_at=now,
+                row_version=1,
+            )
+        )
+        setup.execute(
+            insert(run_table).values(
+                id=second_run_id,
+                work_item_id=second_work_id,
+                beacon_id=UUID(first["beacon_id"]),
+                revision_no=int(first["revision"]),
+                state="RUNNING",
+                started_at=now,
+                completed_at=None,
+                row_version=1,
+            )
+        )
+    second = {
+        **first,
+        "work_id": str(second_work_id),
+        "run_id": str(second_run_id),
+        "claim": WorkClaim(
+            work_item_id=second_work_id,
+            beacon_id=UUID(first["beacon_id"]),
+            schedule_id=UUID(first["schedule_id"]),
+            due_at=now + timedelta(seconds=1),
+            lease_token=second_token,
+            lease_started_at=now,
+            lease_expires_at=now + timedelta(minutes=2),
+        ),
+        "run": RunResult(
+            run_id=second_run_id,
+            work_item_id=second_work_id,
+            beacon_id=UUID(first["beacon_id"]),
+            revision_no=int(first["revision"]),
+            state="RUNNING",
+            lease_token=second_token,
+        ),
+    }
+    return first, second
+
+
 def _concurrent_terminal(connection: Any, name: str) -> dict[str, Any]:
-    first = prepare_claimed_run(connection.engine, scenario_id=f"{name}-a")
-    # Both actors intentionally target the same Beacon and schedule.  They
-    # receive separate legitimate runs, so the race is over one durable
-    # Beacon state rather than two unrelated fixtures.
-    second = prepare_next_run(connection.engine, first, scenario_id=f"{name}-b")
+    # This is a TEST-ONLY SCAN-owned adversarial terminal precondition.  It is
+    # not a claim that the public scheduler creates two unresolved works.
+    first, second = _adversarial_terminal_pair(connection.engine, name)
+    outcome = _clean_outcome(
+        (ListingCandidate(identity_key=f"{name}-listing", snapshot={"price": 1}),)
+    )
+    parser_ids = {
+        first["run_id"]: _persist_parser_fixture(connection.engine, first, outcome, f"{name}-a"),
+        second["run_id"]: _persist_parser_fixture(connection.engine, second, outcome, f"{name}-b"),
+    }
     with connection.engine.connect() as probe:
         race_before = _physical(probe, beacon_id=first["beacon_id"])
     barrier = Barrier(2)
@@ -1297,12 +1374,11 @@ def _concurrent_terminal(connection: Any, name: str) -> dict[str, Any]:
             _terminal(
                 connection.engine,
                 fixture,
-                _clean_outcome(
-                    (ListingCandidate(identity_key=f"{name}-listing", snapshot={"price": 1}),)
-                ),
-                f"rf15-{name}",
+                outcome,
+                f"rf15-{name}-{fixture['run_id']}",
                 operation_barrier=barrier,
                 observed_before=race_before,
+                parser_outcome_id=parser_ids[fixture["run_id"]],
             )
         )
 
@@ -1392,21 +1468,19 @@ def scenario_run_revision_pin(connection: Any) -> dict[str, Any]:
     with connection.engine.connect() as measured:
         with Session(bind=measured) as session:
             repo = ScanRepository(session)
-            operation = (
-                _operation(
-                    measured,
-                    "start_run",
-                    {"work_id": fixture["work_id"]},
-                    lambda: start_run(
-                        repo,
-                        fixture["claim"],
-                        SyntheticBeacon(
-                            UUID(fixture["beacon_id"]),
-                            UUID(fixture["account_id"]),
-                            int(fixture["revision"]),
-                        ),
-                        _now(),
+            operation = _operation(
+                measured,
+                "start_run",
+                {"work_id": fixture["work_id"]},
+                lambda: start_run(
+                    repo,
+                    fixture["claim"],
+                    SyntheticBeacon(
+                        UUID(fixture["beacon_id"]),
+                        UUID(fixture["account_id"]),
+                        int(fixture["revision"]),
                     ),
+                    _now(),
                 ),
             )
     return {
@@ -1436,21 +1510,19 @@ def scenario_run_replay(connection: Any) -> dict[str, Any]:
     with connection.engine.connect() as measured:
         with Session(bind=measured) as session:
             repo = ScanRepository(session)
-            operation = (
-                _operation(
-                    measured,
-                    "start_run",
-                    {"work_id": fixture["work_id"], "replay": True},
-                    lambda: start_run(
-                        repo,
-                        fixture["claim"],
-                        SyntheticBeacon(
-                            UUID(fixture["beacon_id"]),
-                            UUID(fixture["account_id"]),
-                            int(fixture["revision"]),
-                        ),
-                        _now(),
+            operation = _operation(
+                measured,
+                "start_run",
+                {"work_id": fixture["work_id"], "replay": True},
+                lambda: start_run(
+                    repo,
+                    fixture["claim"],
+                    SyntheticBeacon(
+                        UUID(fixture["beacon_id"]),
+                        UUID(fixture["account_id"]),
+                        int(fixture["revision"]),
                     ),
+                    _now(),
                 ),
             )
     return {
@@ -1522,15 +1594,16 @@ def scenario_duplicate_within_run_exactly_once(connection: Any) -> dict[str, Any
 def scenario_beacon_isolation(connection: Any) -> dict[str, Any]:
     a = prepare_claimed_run(connection.engine, scenario_id="beacon-a")
     b = prepare_claimed_run(connection.engine, scenario_id="beacon-b")
+    a_terminal = _terminal(
+        connection.engine,
+        a,
+        _clean_outcome((ListingCandidate(identity_key="a-only", snapshot={"price": 1}),)),
+        "rf15-a",
+    )
     return {
-        "operation": _terminal(
-            connection.engine,
-            a,
-            _clean_outcome((ListingCandidate(identity_key="a-only", snapshot={"price": 1}),)),
-            "rf15-a",
-        )["operation"],
-        "physical_before": _scoped(connection, b),
-        "physical_after": _scoped(connection, b),
+        "operation": a_terminal["operation"],
+        "physical_before": a_terminal["physical_before"],
+        "physical_after": a_terminal["physical_after"],
         "scope": {"a": a, "b": b},
     }
 
@@ -1543,15 +1616,16 @@ def scenario_absence_no_removal(connection: Any) -> dict[str, Any]:
         _clean_outcome((ListingCandidate(identity_key="listing-keep", snapshot={"price": 1}),)),
         "rf15-absence-first",
     )
+    later_terminal = _terminal(
+        connection.engine,
+        prepare_next_run(connection.engine, fixture, scenario_id="absence-later"),
+        _clean_outcome(),
+        "rf15-absence-later",
+    )
     return {
-        "operation": _terminal(
-            connection.engine,
-            prepare_next_run(connection.engine, fixture, scenario_id="absence-later"),
-            _clean_outcome(),
-            "rf15-absence-later",
-        )["operation"],
-        "physical_before": _scoped(connection, fixture),
-        "physical_after": _scoped(connection, fixture),
+        "operation": later_terminal["operation"],
+        "physical_before": later_terminal["physical_before"],
+        "physical_after": later_terminal["physical_after"],
         "scope": fixture,
     }
 
@@ -1625,7 +1699,45 @@ def scenario_idempotency_replay_and_mismatch(connection: Any) -> dict[str, Any]:
 
 
 def scenario_concurrent_idempotency(connection: Any) -> dict[str, Any]:
-    return _concurrent_terminal(connection, "concurrent_idempotency")
+    fixture = prepare_claimed_run(connection.engine, scenario_id="concurrent-idempotency")
+    outcome = _clean_outcome(
+        (ListingCandidate(identity_key="concurrent-idem", snapshot={"price": 1}),)
+    )
+    parser_id = _persist_parser_fixture(
+        connection.engine, fixture, outcome, "concurrent-idempotency"
+    )
+    with connection.engine.connect() as probe:
+        before = _scoped(probe, fixture)
+    barrier = Barrier(2)
+    operation_barrier = Barrier(2)
+    records: list[dict[str, Any]] = []
+
+    def worker() -> None:
+        barrier.wait()
+        records.append(
+            _terminal(
+                connection.engine,
+                fixture,
+                outcome,
+                "rf15-concurrent-idempotency",
+                operation_barrier=operation_barrier,
+                observed_before=before,
+                parser_outcome_id=parser_id,
+            )
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(lambda _: worker(), (0, 1)))
+    with connection.engine.connect() as probe:
+        after = _scoped(probe, fixture)
+    return {
+        "operation": records[0]["operation"],
+        "operation_a": records[0]["operation"],
+        "operation_b": records[1]["operation"],
+        "physical_before": before,
+        "physical_after": after,
+        "scope": fixture,
+    }
 
 
 def scenario_concurrent_baseline_serialization(connection: Any) -> dict[str, Any]:
@@ -1647,7 +1759,22 @@ def scenario_platform_event_identity(connection: Any) -> dict[str, Any]:
 
 
 def scenario_no_foreign_domain_effect(connection: Any) -> dict[str, Any]:
-    return scenario_foreign_state_witness(connection)
+    fixture = prepare_claimed_run(connection.engine, scenario_id="no-foreign-effect")
+    with connection.engine.connect() as probe:
+        before = _semantic_foreign(probe)
+        before_finished = _now().isoformat()
+    terminal = _terminal(connection.engine, fixture, _clean_outcome(), "rf15-no-foreign-effect")
+    with connection.engine.connect() as probe:
+        after = _semantic_foreign(probe)
+        after_started = _now().isoformat()
+    terminal["physical_before"]["observation_finished_at"] = before_finished
+    terminal["physical_after"]["observation_started_at"] = after_started
+    return {
+        "operation": terminal["operation"],
+        "physical_before": {"observation_finished_at": before_finished, "semantic": before},
+        "physical_after": {"observation_started_at": after_started, "semantic": after},
+        "rf15_physical": terminal,
+    }
 
 
 REQUIREMENT_IDS = (
@@ -1737,9 +1864,23 @@ def main() -> int:
         if set(REQUIREMENT_IDS) != set(SCENARIO_RUNNERS):
             raise RuntimeError("RF15 scenario registry mismatch")
         cases = {}
+        harness_exceptions = 0
         for name, runner in SCENARIO_RUNNERS.items():
             with engine.connect() as connection:
-                cases[name] = runner(connection)
+                captured_at = _now().isoformat()
+                try:
+                    cases[name] = runner(connection)
+                except Exception as exc:
+                    harness_exceptions += 1
+                    cases[name] = {
+                        "scenario_id": name,
+                        "fixture_class": "SCENARIO_HARNESS_FAILURE",
+                        "harness_exception": {
+                            "class": type(exc).__name__,
+                            "reason": str(exc)[:500],
+                            "captured_at": captured_at,
+                        },
+                    }
             if name == "restart_durability":
                 engine = create_engine(args.dsn, future=True)
         with engine.connect() as second:
@@ -1769,6 +1910,7 @@ def main() -> int:
             "after_digest": _digest(foreign_after),
         },
         "scenario_ids": sorted(cases),
+        "harness_exception_count": harness_exceptions,
         "target_operation_family": TARGET_OPERATION_FAMILY,
         "behavioral_cases": cases,
     }

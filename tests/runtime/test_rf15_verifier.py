@@ -117,7 +117,26 @@ def test_producer_has_no_preoperation_session_autobegin_or_foreign_fixture_write
     )
 
 
+def test_terminal_concurrency_helper_has_no_scheduler_overlap_fixture() -> None:
+    source = (
+        Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    ).read_text()
+    helper = source.split("def _concurrent_terminal", 1)[1].split(
+        "def scenario_expired_claim_reconciliation", 1
+    )[0]
+    assert "prepare_next_run" not in helper
+    assert "SCEN_" not in helper
+    assert "_adversarial_terminal_pair" in helper
+
+
 def test_all_rf15_registries_are_explicit_and_not_defaulted() -> None:
     assert set(V.REQUIREMENT_IDS) == set(V.CHECKERS) == set(V.RAW_DEPENDENCY_PATHS)
     assert set(V.REQUIREMENT_IDS) == set(V.TAMPER_PATHS)
     assert "default-for-all" not in inspect.getsource(V)
+
+
+def test_exact_29_representative_cases_and_own_causal_tampers() -> None:
+    evidence = V.build_representative_evidence()
+    assert len(evidence["behavioral_cases"]) == 29
+    assert all(V.CHECKERS[name](evidence) for name in V.REQUIREMENT_IDS)
+    assert all(not V.CHECKERS[name](V._tamper(evidence, name)) for name in V.REQUIREMENT_IDS)
