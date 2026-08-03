@@ -757,6 +757,8 @@ def _terminal(
     *,
     run: Any | None = None,
     now: datetime | None = None,
+    operation_barrier: Barrier | None = None,
+    observed_before: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     beacon = SyntheticBeacon(
         UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
@@ -765,9 +767,14 @@ def _terminal(
     # measured interval and its returned identity is the only Scan reference.
     parser_outcome_id = _persist_parser_fixture(engine, fixture, outcome, key)
     parser = SyntheticParserPort(outcome.model_copy(update={"outcome_id": parser_outcome_id}))
-    with engine.connect() as probe:
-        before = _scoped(probe, fixture)
+    if observed_before is None:
+        with engine.connect() as probe:
+            before = _scoped(probe, fixture)
+    else:
+        before = observed_before
     effective_run = run or fixture["run"]
+    if operation_barrier is not None:
+        operation_barrier.wait()
     with engine.connect() as measured:
         with Session(bind=measured) as session:
             repo = ScanRepository(session)
@@ -1180,7 +1187,10 @@ def scenario_claim_exclusivity(connection: Any) -> dict[str, Any]:
 
 
 def _concurrent_materialize(connection: Any, fixture: dict[str, Any], name: str) -> dict[str, Any]:
+    with connection.engine.connect() as probe:
+        before = _physical(probe, beacon_id=fixture["beacon_id"])
     barrier = Barrier(2)
+    race_started = _now()
     records: list[dict[str, Any]] = []
 
     def worker() -> None:
@@ -1196,13 +1206,16 @@ def _concurrent_materialize(connection: Any, fixture: dict[str, Any], name: str)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: worker(), (0, 1)))
+    race_finished = _now()
     records.sort(key=lambda x: x["backend_pid"])
     return {
         "operation": records[0],
         "operation_a": records[0],
         "operation_b": records[1],
-        "physical_before": _physical(connection, beacon_id=fixture["beacon_id"]),
+        "physical_before": before,
         "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
+        "race_started_at": race_started.isoformat(),
+        "race_finished_at": race_finished.isoformat(),
         "scope": fixture,
     }
 
@@ -1219,6 +1232,7 @@ def _concurrent_claim(connection: Any, fixture: dict[str, Any], name: str) -> di
         materialize_due_work(ScanRepository(session), _now() + timedelta(days=1), 10)
         session.commit()
     barrier = Barrier(2)
+    race_started = _now()
     records: list[dict[str, Any]] = []
 
     def worker() -> None:
@@ -1235,6 +1249,7 @@ def _concurrent_claim(connection: Any, fixture: dict[str, Any], name: str) -> di
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: worker(), (0, 1)))
+    race_finished = _now()
     records.sort(key=lambda item: item["backend_pid"])
     with connection.engine.connect() as probe:
         after = _physical(probe, beacon_id=fixture["beacon_id"])
@@ -1244,6 +1259,8 @@ def _concurrent_claim(connection: Any, fixture: dict[str, Any], name: str) -> di
         "operation_b": records[1],
         "physical_before": before,
         "physical_after": after,
+        "race_started_at": race_started.isoformat(),
+        "race_finished_at": race_finished.isoformat(),
         "scope": fixture,
     }
 
@@ -1254,11 +1271,12 @@ def _concurrent_terminal(connection: Any, name: str) -> dict[str, Any]:
     # receive separate legitimate runs, so the race is over one durable
     # Beacon state rather than two unrelated fixtures.
     second = prepare_next_run(connection.engine, first, scenario_id=f"{name}-b")
+    with connection.engine.connect() as probe:
+        race_before = _physical(probe, beacon_id=first["beacon_id"])
     barrier = Barrier(2)
     records: list[dict[str, Any]] = []
 
     def worker(fixture: dict[str, Any]) -> None:
-        barrier.wait()
         records.append(
             _terminal(
                 connection.engine,
@@ -1267,17 +1285,27 @@ def _concurrent_terminal(connection: Any, name: str) -> dict[str, Any]:
                     (ListingCandidate(identity_key=f"{name}-listing", snapshot={"price": 1}),)
                 ),
                 f"rf15-{name}",
+                operation_barrier=barrier,
+                observed_before=race_before,
             )
         )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(worker, (first, second)))
+    with connection.engine.connect() as probe:
+        race_after = _physical(probe, beacon_id=first["beacon_id"])
     return {
         "operation": records[0]["operation"],
         "operation_a": records[0]["operation"],
         "operation_b": records[1]["operation"],
         "physical_before": records[0]["physical_before"],
-        "physical_after": records[1]["physical_after"],
+        "physical_after": race_after,
+        "race_started_at": min(
+            records[0]["operation"]["started_at"], records[1]["operation"]["started_at"]
+        ),
+        "race_finished_at": max(
+            records[0]["operation"]["finished_at"], records[1]["operation"]["finished_at"]
+        ),
         "scope": {"a": first, "b": second},
     }
 
@@ -1543,6 +1571,9 @@ def scenario_idempotency_replay_and_mismatch(connection: Any) -> dict[str, Any]:
     )
     with connection.engine.connect() as measured:
         with Session(bind=measured) as session:
+            replay_outcome = outcome.model_copy(
+                update={"outcome_id": UUID(first["parser_outcome_id"])}
+            )
             replay_operation = _operation(
                 measured,
                 "commit_comparison",
@@ -1550,14 +1581,14 @@ def scenario_idempotency_replay_and_mismatch(connection: Any) -> dict[str, Any]:
                 lambda: commit_comparison(
                     ScanRepository(session),
                     fixture["run"],
-                    outcome.outcome_id,
+                    UUID(first["parser_outcome_id"]),
                     SyntheticBeacon(
                         UUID(fixture["beacon_id"]),
                         UUID(fixture["account_id"]),
                         int(fixture["revision"]),
                     ),
                     SyntheticEntitlementPort(),
-                    SyntheticParserPort(outcome),
+                    SyntheticParserPort(replay_outcome),
                     "rf15-idem",
                 ),
             )
