@@ -80,6 +80,7 @@ jobs:
               version = connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
               tables = connection.execute(text("select count(*) from pg_catalog.pg_tables where schemaname='mayak' and tablename <> 'alembic_version'")).scalar_one()
               physical_indexes = [row[0] for row in connection.execute(text("select indexname from pg_catalog.pg_indexes where schemaname='mayak' order by indexname"))]
+              physical_ix_indexes = [name for name in physical_indexes if name.startswith('ix_')]
               scan_indexes = connection.execute(text("select count(*) from pg_catalog.pg_indexes where schemaname='mayak' and indexname like 'ix_scan_%'")).scalar_one()
               from mayak.persistence.metadata import metadata
               from alembic.config import Config
@@ -88,7 +89,10 @@ jobs:
               assert len(heads) == 1 and version == heads[0]
               assert tables == 51
               assert sum(len(table.indexes) for table in metadata.tables.values()) == 73
-              assert len(physical_indexes) == 73
+              # Metadata includes three non-ix constraint indexes; keep the
+              # pg_catalog identity definition explicit and independent.
+              assert len(physical_ix_indexes) == 70
+              assert len(set(physical_ix_indexes)) == 70
               assert scan_indexes == 8
           engine.dispose()
           PY
