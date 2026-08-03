@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Callable
 
@@ -160,10 +161,17 @@ def _claim_owner(data):
     results = _raw(data, "claim.same_item_single_owner.runtime_results")
     node = _raw(data, "claim.same_item_single_owner") or {}; winner = next((x for x in results if isinstance(x, dict) and x.get("claimed")), {}) if isinstance(results, list) else {}
     row = node.get("physical_row", {})
+    after = node.get("physical_after", [])
+    before = (node.get("physical_before") or [{}])[0]
+    losers = [item for item in results if isinstance(item, dict) and not item.get("claimed")]
     return (_scenario(data, "claim.same_item_single_owner", "input", "backend_pids", "runtime_results", "physical_before", "physical_after", "physical_row") and
             _rows(data, "claim.same_item_single_owner.physical_before", 1) and len(set(node.get("backend_pids", []))) == 2 and isinstance(results, list) and all(isinstance(item, dict) for item in results) and
-            sum(bool(item.get("claimed")) for item in results) == 1 and winner.get("claimed_ids") == [node["input"].get("outbox_id")] and
-            row.get("id") == node["input"].get("outbox_id") and row.get("lease_fingerprint") == winner.get("lease_fingerprint"))
+            len(results) == 2 and sum(bool(item.get("claimed")) for item in results) == 1 and len(losers) == 1 and losers[0].get("claimed_ids") == [] and
+            winner.get("claimed_ids") == [node["input"].get("outbox_id")] and len(after) == 1 and isinstance(after[0], dict) and
+            row.get("id") == node["input"].get("outbox_id") and {k: v for k, v in row.items() if k != "lease_fingerprint"} == after[0] and row.get("state") == "CLAIMED" and
+            row.get("attempt_count") == 0 and isinstance(row.get("lease_started_at"), str) and isinstance(row.get("lease_expires_at"), str) and
+            isinstance(row.get("row_version"), int) and isinstance(before.get("row_version"), int) and row["row_version"] > before["row_version"] and
+            row.get("lease_fingerprint") == winner.get("lease_fingerprint"))
 def _claim_order(data): return _scenario(data, "claim.deterministic_order", "input", "runtime_return", "physical_rows") and _raw(data, "claim.deterministic_order.runtime_return.outbox_ids") == [row.get("id") for row in sorted(_raw(data, "claim.deterministic_order.physical_rows") or [], key=lambda row: (row.get("available_at"), row.get("id")))]
 def _lease_wrong(data): return _scenario(data, "lease.wrong_token_blocked", "input", "exception", "physical_before", "physical_after") and _is_error(data, "lease.wrong_token_blocked.exception", "LeaseConflict") and _raw(data, "lease.wrong_token_blocked.physical_before") == _raw(data, "lease.wrong_token_blocked.physical_after")
 def _lease_expired(data): return _scenario(data, "lease.expired_terminal_blocked", "input", "exception", "physical_before", "physical_after") and _is_error(data, "lease.expired_terminal_blocked.exception", "LeaseConflict") and _raw(data, "lease.expired_terminal_blocked.physical_before") == _raw(data, "lease.expired_terminal_blocked.physical_after")
@@ -222,10 +230,20 @@ def check_restart_attempt(data):
     return _scenario(data, "restart.after_attempt_reconcile", "before", "after", "backend_pids", "runtime_observation") and node["runtime_observation"].get("recovery_claimed") is False and node["after"].get("attempt_count") == 1 and node["after"].get("reconciliation_count") == 1 and node["after"].get("dispatch_count") == 1
 def _history_account(data):
     node = _raw(data, "history.account_scope") or {}; rows = node.get("runtime_return", {}).get("rows", []); physical = node.get("physical_source_rows", [])
-    return _scenario(data, "history.account_scope", "input", "runtime_return", "physical_source_rows") and all(row.get("account_id") == node["input"].get("account_id") and row.get("event_id") in {x.get("id") for x in physical} for row in rows)
+    if not _scenario(data, "history.account_scope", "input", "runtime_return", "physical_source_rows"):
+        return False
+    if not isinstance(rows, list) or not rows or not isinstance(physical, list) or not physical or not all(isinstance(x, dict) for x in physical) or not all(isinstance(x, dict) for x in rows):
+        return False
+    physical_ids = {x.get("id") for x in physical}
+    return all(row.get("account_id") == node["input"].get("account_id") and row.get("event_id") in physical_ids for row in rows)
 def _history_beacon(data):
     node = _raw(data, "history.beacon_scope") or {}; rows = node.get("runtime_return", {}).get("rows", []); physical = node.get("physical_source_rows", [])
-    return _scenario(data, "history.beacon_scope", "input", "runtime_return", "physical_source_rows") and all(row.get("account_id") == node["input"].get("account_id") and row.get("beacon_id") == node["input"].get("beacon_id") and row.get("event_id") in {x.get("id") for x in physical} for row in rows) and bool(rows)
+    if not _scenario(data, "history.beacon_scope", "input", "runtime_return", "physical_source_rows"):
+        return False
+    if not isinstance(rows, list) or not rows or not isinstance(physical, list) or not physical or not all(isinstance(x, dict) for x in physical) or not all(isinstance(x, dict) for x in rows):
+        return False
+    physical_ids = {x.get("id") for x in physical}
+    return all(row.get("account_id") == node["input"].get("account_id") and row.get("beacon_id") == node["input"].get("beacon_id") and row.get("event_id") in physical_ids for row in rows)
 def _foreign(data): return _scenario(data, "foreign.authority_unchanged", "fixture_rows", "before", "after") and _raw(data, "foreign.authority_unchanged.before") == _raw(data, "foreign.authority_unchanged.after")
 def _privacy(data, name, forbidden):
     node = _raw(data, name)
@@ -295,11 +313,34 @@ def check_result_replay(data): return _result_replay(data)
 def check_result_mismatch(data): return _result_mismatch(data)
 def check_history_account(data): return _history_account(data)
 def check_history_beacon(data): return _history_beacon(data)
-def check_history_cross_account(data): return _scenario(data, "history.cross_account_blocked", "input", "exception", "physical_source_rows") and _is_error(data, "history.cross_account_blocked.exception", "AccountScopeConflict")
+def check_history_cross_account(data):
+    if not _scenario(data, "history.cross_account_blocked", "input", "exception", "physical_source_rows"):
+        return False
+    rows = _raw(data, "history.cross_account_blocked.physical_source_rows")
+    account = _raw(data, "history.cross_account_blocked.input.account_id")
+    return (_is_error(data, "history.cross_account_blocked.exception", "AccountScopeConflict") and isinstance(rows, list) and bool(rows) and
+            all(isinstance(row, dict) and row.get("account_id") == account for row in rows))
 def check_history_refs(data): return _scenario(data, "history.safe_refs", "input", "runtime_return", "physical_source_rows") and all("listing_reference_ids" in row for row in _raw(data, "history.safe_refs.runtime_return.rows") or [])
 def check_foreign(data): return _foreign(data)
 def check_privacy_provider(data): return _privacy(data, "privacy.no_raw_provider_values", "provider_payload")
 def check_privacy_lease(data): return _privacy(data, "privacy.no_raw_lease_values", "raw-lease-secret")
+
+# Every public checker is a total function over JSON-compatible input.  This
+# narrow boundary catches only shape/type failures that are expected from
+# adversarial evidence; semantic code remains explicit and is tested directly.
+_CHECKER_NAMES = tuple(name for name in globals() if name.startswith("check_"))
+for _checker_name in _CHECKER_NAMES:
+    _checker = globals()[_checker_name]
+    @wraps(_checker)
+    def _total_checker(data, _checker=_checker):
+        if not isinstance(data, dict):
+            return False
+        try:
+            result = _checker(data)
+        except (AttributeError, KeyError, TypeError, ValueError, IndexError):
+            return False
+        return result is True
+    globals()[_checker_name] = _total_checker
 
 def tamper_identity_candidate(data): _changed(data, "identity.candidate_sha")
 def tamper_identity_db(data): _changed(data, "database.db_alembic_head")

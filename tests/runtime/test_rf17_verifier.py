@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import ast
@@ -53,6 +54,33 @@ def test_tamper_is_mutating_and_missing_required_primitive_fails_closed() -> Non
     assert all(item.required_raw_paths for item in verifier.registry())
     for item in verifier.registry():
         assert callable(item.check) and callable(item.tamper)
+
+
+def test_all_checkers_are_total_for_deterministic_shape_mutations() -> None:
+    shapes = [None, "tampered-fact", 7, {}, [], ["tampered-fact"]]
+    for item in verifier.registry():
+        for shape in shapes:
+            value = {"scenario": shape}
+            result = item.check(value)
+            assert type(result) is bool
+
+
+def test_hosted_history_tampered_fact_regression_is_fail_closed() -> None:
+    evidence = {"history": {"account_scope": {"input": {"account_id": "a"}, "runtime_return": {"rows": []}, "physical_source_rows": ["tampered-fact"]}}}
+    assert verifier.check_history_account(evidence) is False
+
+
+def test_empty_cross_account_history_regression_is_rejected() -> None:
+    evidence = {"history": {"cross_account_blocked": {"input": {"account_id": "b"}, "exception": {"class": "AccountScopeConflict", "attempted": True}, "physical_source_rows": []}}}
+    assert verifier.check_history_cross_account(evidence) is False
+
+
+def test_canonical_meta_gate_is_the_workflow_authority() -> None:
+    workflow = Path(".github/workflows/ci-rf17-acceptance.yml").read_text(encoding="utf-8")
+    meta = Path("scripts/runtime/check_rf17_acceptance_meta.py").read_text(encoding="utf-8")
+    assert "check_rf17_acceptance_meta.py" in workflow
+    assert "from scripts.runtime import verify_rf17_acceptance" in meta
+    assert "uv run python - <<'PY'" not in workflow[workflow.index("Immutable meta-gate") :]
 
 
 def test_producer_is_independent_of_verifier_and_has_no_acceptance_summary() -> None:
