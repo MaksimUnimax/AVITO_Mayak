@@ -117,8 +117,14 @@ jobs:
           assert d['tamper_count'] == d['unique_tamper_count'] == 48
           assert d['original_pass_count'] == d['tamper_rejected_count'] == 48
           assert d['original_failures'] == [] and d['tamper_failures'] == []
+          assert d['executed_case_count'] == 48
+          assert d['requirement_executed_case_binding_count'] == 48
+          assert d['fabricated_case_count'] == 0
           assert len(d['requirement_checker_mapping']) == len(d['requirement_scenario_mapping']) == len(d['required_raw_paths']) == 48
           evidence = json.loads(Path('rf17-evidence.json').read_text())
+          assert len(evidence['executed_case_ledger']) == 48
+          assert len(evidence['requirement_case_bindings']) == 48
+          assert all(case.get('actual_callable_executed') is True for case in evidence['executed_case_ledger'].values())
           verifier.assert_no_acceptance_summary(evidence)
           bad_e446 = {'technical_id': verifier.TECHNICAL_ID, 'identity': {'candidate_sha': 'a' * 40}, 'source_cases': {'single_committed_event': True, 'replay_same_row': True, 'trusted_delivered_binds_attempt': True}}
           try:

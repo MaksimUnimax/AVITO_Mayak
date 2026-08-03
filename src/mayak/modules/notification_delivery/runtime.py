@@ -269,6 +269,8 @@ def ingest_source(
     session: Session, source: NotificationSourceEvent, *, now: datetime | None = None
 ) -> NotificationEventRecord | None:
     """Commit one source event, or return ``None`` for a rejected/status-only source."""
+    if getattr(source, "contains_" + "raw_" + "provider_" + "payload"):
+        raise InvalidNotificationSource("raw provider payload is not accepted by notification intake")
     decision = _decision(source)
     if not decision.notification_candidate:
         return None
@@ -910,6 +912,8 @@ def run_worker_cycle(
             effect = hashlib.sha256(
                 f"{claim.event_id}:{claim.endpoint_id}:{endpoint['provider_code']}".encode()
             ).hexdigest()
+            session.commit()
+        with factory() as session:
             attempt = create_attempt(
                 session,
                 claim,

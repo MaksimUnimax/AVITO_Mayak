@@ -164,6 +164,31 @@ def _privacy(data, name, forbidden):
     if name.endswith("provider_values"): return isinstance(projection.get("provider_reference"), str) and projection.get("provider_reference") == "delivery-ref-1"
     return projection.get("lease_token") is None and isinstance(projection.get("lease_fingerprint"), str) and bool(re.fullmatch(r"[0-9a-f]{64}", projection["lease_fingerprint"]))
 
+def _validate_executed_case_provenance(data: dict[str, object]) -> tuple[int, int]:
+    ledger = data.get("executed_case_ledger")
+    bindings = data.get("requirement_case_bindings")
+    if not isinstance(ledger, dict) or not isinstance(bindings, dict):
+        raise SystemExit("RF17 executed-case provenance is missing")
+    seen: set[str] = set()
+    for requirement_id in EXPECTED_RF17_REQUIREMENT_IDS:
+        case_ids = bindings.get(requirement_id)
+        if not isinstance(case_ids, list) or not case_ids or any(not isinstance(item, str) for item in case_ids):
+            raise SystemExit("RF17 requirement has no executed case binding: " + requirement_id)
+        for case_id in case_ids:
+            if case_id not in ledger:
+                raise SystemExit("RF17 binding references an absent executed case: " + case_id)
+            case = ledger[case_id]
+            if not isinstance(case, dict) or case.get("case_id") != case_id or case.get("actual_callable_executed") is not True:
+                raise SystemExit("RF17 executed case is not actual callable provenance: " + case_id)
+            if not isinstance(case.get("callable"), str) or not case["callable"]:
+                raise SystemExit("RF17 executed case has no callable provenance: " + case_id)
+            if case_id in seen:
+                raise SystemExit("RF17 duplicate semantic case ID: " + case_id)
+            seen.add(case_id)
+    if len(ledger) != len(seen) or len(seen) != len(EXPECTED_RF17_REQUIREMENT_IDS):
+        raise SystemExit("RF17 executed case ledger contains unbound or duplicate semantic cases")
+    return len(ledger), len(seen)
+
 def check_identity_candidate(data): return _valid_identity(data)
 def check_identity_db(data): return _valid_db(data)
 def check_schema(data): return _valid_schema(data)
@@ -340,6 +365,7 @@ def _safe_check(checker: Callable[[dict[str, object]], bool], data: dict[str, ob
 def verify(data: dict[str, object], expected_sha: str | None, diagnostics_path: Path) -> None:
     assert_no_acceptance_summary(data)
     requirements = registry()
+    executed_case_count, requirement_binding_count = _validate_executed_case_provenance(data)
     if _raw(data, "identity.technical_id") != TECHNICAL_ID or (expected_sha and _raw(data, "identity.candidate_sha") != expected_sha): raise SystemExit("RF17 evidence identity mismatch")
     original_failures = [item.requirement_id for item in requirements if not _safe_check(item.check, data)]
     tamper_failures: list[str] = []
@@ -348,7 +374,7 @@ def verify(data: dict[str, object], expected_sha: str | None, diagnostics_path: 
         mutated = copy.deepcopy(data); before = json.dumps(mutated, sort_keys=True); item.tamper(mutated)
         if before == json.dumps(mutated, sort_keys=True) or _safe_check(item.check, mutated): tamper_failures.append(item.requirement_id)
         else: rejected.append(item.requirement_id)
-    diagnostics = {"technical_id": TECHNICAL_ID, "requirement_ids": list(EXPECTED_RF17_REQUIREMENT_IDS), "tamper_strategy_ids": list(EXPECTED_RF17_TAMPER_STRATEGY_IDS), "requirement_count": len(requirements), "checker_count": len(requirements), "unique_checker_count": len({item.check.__name__ for item in requirements}), "tamper_count": len(requirements), "unique_tamper_count": len({item.tamper.__name__ for item in requirements}), "requirement_checker_mapping": {item.requirement_id: item.check.__name__ for item in requirements}, "requirement_scenario_mapping": {item.requirement_id: item.scenario_id for item in requirements}, "required_raw_paths": {item.requirement_id: list(item.required_raw_paths) for item in requirements}, "raw_path_mapping_count": sum(bool(item.required_raw_paths) for item in requirements), "original_failures": original_failures, "tamper_failures": tamper_failures, "original_pass_count": len(requirements) - len(original_failures), "tamper_rejected_count": len(rejected), "evidence_digest": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()}
+    diagnostics = {"technical_id": TECHNICAL_ID, "requirement_ids": list(EXPECTED_RF17_REQUIREMENT_IDS), "tamper_strategy_ids": list(EXPECTED_RF17_TAMPER_STRATEGY_IDS), "requirement_count": len(requirements), "checker_count": len(requirements), "unique_checker_count": len({item.check.__name__ for item in requirements}), "tamper_count": len(requirements), "unique_tamper_count": len({item.tamper.__name__ for item in requirements}), "requirement_checker_mapping": {item.requirement_id: item.check.__name__ for item in requirements}, "requirement_scenario_mapping": {item.requirement_id: item.scenario_id for item in requirements}, "required_raw_paths": {item.requirement_id: list(item.required_raw_paths) for item in requirements}, "raw_path_mapping_count": sum(bool(item.required_raw_paths) for item in requirements), "executed_case_count": executed_case_count, "requirement_executed_case_binding_count": requirement_binding_count, "fabricated_case_count": 0, "original_failures": original_failures, "tamper_failures": tamper_failures, "original_pass_count": len(requirements) - len(original_failures), "tamper_rejected_count": len(rejected), "evidence_digest": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()}
     diagnostics_path.write_text(json.dumps(diagnostics, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     if original_failures or tamper_failures or tuple(rejected) != EXPECTED_RF17_REQUIREMENT_IDS: raise SystemExit("RF17 verifier failed")
     print(MARKER)

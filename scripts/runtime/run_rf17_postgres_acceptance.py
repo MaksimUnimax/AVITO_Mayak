@@ -20,7 +20,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from mayak.modules.notification_delivery.attempt import NotificationProviderOutcomeClass
 from mayak.modules.notification_delivery.delivery_plan import plan_notification_delivery
@@ -50,6 +50,7 @@ from mayak.modules.notification_delivery.runtime import (
     read_history,
     register_endpoint,
     resolve_reconciliation,
+    run_worker_cycle,
 )
 from mayak.modules.notification_delivery.source_intake import (
     NotificationSourceEvent,
@@ -78,6 +79,10 @@ def _source(
     key: str,
     fp: str,
     family: NotificationSourceFamily = NotificationSourceFamily.NEW_LISTINGS_FOUND,
+    contains_raw_provider_payload: bool = False,
+    account_override: UUID | None = None,
+    beacon_override: UUID | None = None,
+    run_override: UUID | None = None,
 ) -> NotificationSourceEvent:
     return NotificationSourceEvent(
         source_event_id=f"event-{key}",
@@ -88,9 +93,9 @@ def _source(
         source_fact_id=f"fact-{key}",
         source_committed=True,
         source_commit_reference=f"commit-{key}",
-        account_id=str(account),
-        beacon_id=str(beacon),
-        scan_run_id=str(run),
+        account_id=str(account_override or account),
+        beacon_id=str(beacon_override or beacon),
+        scan_run_id=str(run_override or run),
         listing_count=2 if family is NotificationSourceFamily.NEW_LISTINGS_FOUND else 0,
         safe_listing_reference_ids=("listing-a", "listing-b")
         if family is NotificationSourceFamily.NEW_LISTINGS_FOUND
@@ -101,7 +106,7 @@ def _source(
         idempotency_fingerprint=IdempotencyFingerprint(value=fp),
         idempotency_scope=IdempotencyScope(value="scan.comparison"),
         source_identity_ambiguous=False,
-        contains_raw_provider_payload=False,
+        contains_raw_provider_payload=contains_raw_provider_payload,
         service_access_gate_approved=True,
         evidence_reference_ids=(f"evidence-{key}",),
     )
@@ -248,16 +253,6 @@ def _safe_exception(exc: BaseException, attempted: bool = True) -> dict[str, obj
     return {"class": type(exc).__name__, "reason": str(exc), "attempted": attempted}
 
 
-def _runtime_return(value: object) -> object:
-    if value is None:
-        return None
-    if hasattr(value, "id"):
-        return {"event_id": str(value.id)}
-    if isinstance(value, (list, tuple)):
-        return {"outbox_ids": [str(getattr(item, "outbox_id", item)) for item in value]}
-    return value
-
-
 def _fixture(engine) -> tuple[UUID, UUID, UUID]:
     account, beacon, revision, schedule, work, run = (uuid4() for _ in range(6))
     now = datetime.now(UTC)
@@ -334,6 +329,38 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     app = create_engine(dsn, pool_size=8, max_overflow=0)
     fixture = create_engine(fixture_dsn)
     account, beacon, run = _fixture(fixture)
+    executed_cases: dict[str, dict[str, object]] = {}
+
+    def record_case(case_id: str, callable_name: str, operation, snapshot) -> object:
+        """Record only a callable's observed return/exception and fresh SQL snapshot."""
+        try:
+            returned = operation()
+            observed = getattr(returned, "id", returned)
+            runtime = {"kind": "return", "value": None if observed is None else str(observed)}
+            result: object = returned
+        except BaseException as exc:  # noqa: BLE001 - provenance must retain actual class
+            runtime = {"kind": "exception", "class": type(exc).__name__, "reason": str(exc)}
+            result = None
+        executed_cases[case_id] = {
+            "case_id": case_id,
+            "callable": callable_name,
+            "actual_callable_executed": True,
+            "runtime": runtime,
+            "fresh_postgresql_snapshot": snapshot(),
+        }
+        return result
+
+    def case_exception(case_id: str) -> dict[str, object]:
+        runtime = executed_cases[case_id]["runtime"]
+        if isinstance(runtime, dict) and runtime.get("kind") == "exception":
+            return {"class": runtime["class"], "reason": runtime["reason"], "attempted": True}
+        return {"class": "none", "reason": "operation returned", "attempted": True}
+
+    def case_return(case_id: str, value: object = None) -> object:
+        runtime = executed_cases[case_id]["runtime"]
+        if isinstance(runtime, dict) and runtime.get("kind") == "return":
+            return value if value is not None else runtime.get("value")
+        return None
     with fixture.begin() as connection:
         connection.execute(text("""
         do $$ declare r record; begin
@@ -353,10 +380,20 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     fp = hashlib.sha256(account.bytes).hexdigest()
     source = _source(account, beacon, run, key=f"rf17-source-1-{suffix}", fp=fp)
     with Session(app) as session:
-        event = ingest_source(session, source, now=now)
+        event = record_case(
+            "source.single_event",
+            "ingest_source",
+            lambda: ingest_source(session, source, now=now),
+            lambda: _notification_rows(app, "notification_events", "source_effect_fingerprint=:fp", {"fp": fp}),
+        )
     assert event is not None
     with Session(app) as session:
-        replay = ingest_source(session, source, now=now)
+        replay = record_case(
+            "source.replay_same",
+            "ingest_source",
+            lambda: ingest_source(session, source, now=now),
+            lambda: _notification_rows(app, "notification_events", "source_effect_fingerprint=:fp", {"fp": fp}),
+        )
     concurrent: list[str] = []
 
     def intake() -> dict[str, object]:
@@ -369,18 +406,25 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         concurrent = list(pool.map(lambda _: intake(), range(2)))
-    conflict_error = "none"
-    try:
-        with Session(app) as session:
-            ingest_source(
-                session,
-                _source(account, beacon, run, key=f"rf17-source-1-{suffix}", fp="f" * 64),
-                now=now,
-            )
-    except IdempotencyConflict as exc:
-        conflict_error = type(exc).__name__
     with Session(app) as session:
-        baseline = ingest_source(
+        mismatch = record_case(
+            "source.identity_fingerprint_mismatch",
+            "ingest_source",
+            lambda: ingest_source(session, _source(account, beacon, run, key=f"rf17-source-1-{suffix}", fp="f" * 64), now=now),
+            lambda: _notification_rows(app, "notification_events", "source_effect_fingerprint=:fp", {"fp": fp}),
+        )
+    account_b, beacon_b, run_b = _fixture(fixture)
+    with Session(app) as session:
+        scope_conflict = record_case(
+            "source.same_fingerprint_cross_scope_conflict",
+            "ingest_source",
+            lambda: ingest_source(session, _source(account_b, beacon_b, run_b, key=f"rf17-source-1-{suffix}", fp=fp), now=now),
+            lambda: _notification_rows(app, "notification_events", "source_effect_fingerprint=:fp", {"fp": fp}),
+        )
+    with Session(app) as session:
+        baseline = record_case(
+            "source.baseline_blocked", "ingest_source",
+            lambda: ingest_source(
             session,
             _source(
                 account,
@@ -390,9 +434,12 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
                 fp=hashlib.sha256((account.hex + "baseline").encode()).hexdigest(),
                 family=NotificationSourceFamily.BEACON_BASELINE_ESTABLISHED,
             ),
-            now=now,
+            now=now),
+            lambda: _notification_rows(app, "notification_events", "event_code=:c", {"c": NotificationSourceFamily.BEACON_BASELINE_ESTABLISHED.value}),
         )
-        no_new = ingest_source(
+        no_new = record_case(
+            "source.no_new_blocked", "ingest_source",
+            lambda: ingest_source(
             session,
             _source(
                 account,
@@ -402,9 +449,12 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
                 fp=hashlib.sha256((account.hex + "no-new").encode()).hexdigest(),
                 family=NotificationSourceFamily.NO_NEW_LISTINGS_STATUS,
             ),
-            now=now,
+            now=now),
+            lambda: _notification_rows(app, "notification_events", "event_code=:c", {"c": NotificationSourceFamily.NO_NEW_LISTINGS_STATUS.value}),
         )
-        price = ingest_source(
+        price = record_case(
+            "source.price_blocked", "ingest_source",
+            lambda: ingest_source(
             session,
             _source(
                 account,
@@ -414,16 +464,37 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
                 fp=hashlib.sha256((account.hex + "price").encode()).hexdigest(),
                 family=NotificationSourceFamily.LISTING_PRICE_PAIR_FIRST_SEEN,
             ),
-            now=now,
+            now=now),
+            lambda: _notification_rows(app, "notification_events", "event_code=:c", {"c": NotificationSourceFamily.LISTING_PRICE_PAIR_FIRST_SEEN.value}),
+        )
+        family = record_case(
+            "source.non_notification_families_blocked", "ingest_source",
+            lambda: ingest_source(session, _source(account, beacon, run, key=f"rf17-family-{suffix}", fp=hashlib.sha256((account.hex + "family").encode()).hexdigest(), family=NotificationSourceFamily.PROVIDER_ONLY_CALLBACK), now=now),
+            lambda: _notification_rows(app, "notification_events", "event_code=:c", {"c": NotificationSourceFamily.PROVIDER_ONLY_CALLBACK.value}),
+        )
+        unsafe = record_case(
+            "source.unsafe_payload_blocked", "ingest_source",
+            lambda: ingest_source(session, _source(account, beacon, run, key=f"rf17-payload-{suffix}", fp=hashlib.sha256((account.hex + "payload").encode()).hexdigest(), contains_raw_provider_payload=True), now=now),
+            lambda: _notification_rows(app, "notification_events", "payload->>'source_identity'=:k", {"k": f"rf17-payload-{suffix}"}),
         )
     endpoint_ids = (uuid4(), uuid4())
     with Session(app) as session:
         for index, eid in enumerate(endpoint_ids):
-            register_endpoint(
-                session,
-                EndpointEligibility(eid, account, "TELEGRAM" if index == 0 else "MAX", f"target-{eid.hex[:8]}", NotificationChannelClass.TELEGRAM if index == 0 else NotificationChannelClass.MAX),
-                now=now,
-            )
+            endpoint = EndpointEligibility(eid, account, "TELEGRAM" if index == 0 else "MAX", f"target-{eid.hex[:8]}", NotificationChannelClass.TELEGRAM if index == 0 else NotificationChannelClass.MAX)
+            register_endpoint(session, endpoint, now=now)
+    endpoint_before = _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]})
+    with Session(app) as session:
+        endpoint_replay = record_case(
+            "endpoint.stable_replay", "register_endpoint",
+            lambda: register_endpoint(session, EndpointEligibility(endpoint_ids[0], account, "TELEGRAM", endpoint_targets[0] if 'endpoint_targets' in locals() else f"target-{endpoint_ids[0].hex[:8]}", NotificationChannelClass.TELEGRAM), now=now),
+            lambda: _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}),
+        )
+    with Session(app) as session:
+        endpoint_conflict = record_case(
+            "endpoint.cross_account_rebind_blocked", "register_endpoint",
+            lambda: register_endpoint(session, EndpointEligibility(endpoint_ids[0], account_b, "TELEGRAM", f"target-{endpoint_ids[0].hex[:8]}", NotificationChannelClass.TELEGRAM), now=now),
+            lambda: _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}),
+        )
     before = _foreign_witness(fixture)
     endpoint_targets = tuple(f"target-{eid.hex[:8]}" for eid in endpoint_ids)
     eligibility, plan = _accepted_semantics(source, endpoint_targets)
@@ -431,8 +502,40 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         first_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=eligibility, delivery_plan=plan)
     with Session(app) as session:
         second_fanout = fanout_event(session, event.id, endpoint_ids, now=now, eligibility_decision=eligibility, delivery_plan=plan)
+    def concurrent_fanout_worker() -> dict[str, object]:
+        with app.connect() as connection:
+            pid = int(connection.execute(text("select pg_backend_pid()")).scalar_one())
+            connection.commit()
+            try:
+                with Session(bind=connection) as session:
+                    returned = fanout_event(session, event.id, (endpoint_ids[0],), now=now, eligibility_decision=eligibility, delivery_plan=plan)
+                return {"backend_pid": pid, "kind": "return", "outbox_ids": [str(item) for item in returned]}
+            except BaseException as exc:  # noqa: BLE001 - actual concurrent runtime outcome
+                return {"backend_pid": pid, "kind": "exception", "class": type(exc).__name__, "reason": str(exc)}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fanout_workers = list(pool.map(lambda _: concurrent_fanout_worker(), range(2)))
+    empty_source = _source(account, beacon, run, key=f"rf17-empty-fanout-{suffix}", fp=hashlib.sha256((account.hex + "empty-fanout").encode()).hexdigest())
+    with Session(app) as session:
+        empty_event = ingest_source(session, empty_source, now=now)
+    empty_eligibility, empty_plan = _accepted_semantics(empty_source, endpoint_targets)
+    with Session(app) as session:
+        empty_fanout = record_case(
+            "fanout.empty_blocked", "fanout_event",
+            lambda: fanout_event(session, empty_event.id, (), now=now, eligibility_decision=empty_eligibility, delivery_plan=empty_plan),
+            lambda: _notification_rows(app, "notification_outbox", "event_id=:e", {"e": empty_event.id}),
+        )
 
-    def claim_one() -> list[dict[str, str]]:
+    # Drain the two explicit fan-out targets through the real worker boundary
+    # before constructing the single-candidate claim-concurrency fixture.
+    run_worker_cycle(sessionmaker(bind=app), lambda attempt: FakeProviderOutcome("drain", NotificationProviderOutcomeClass.PROVIDER_ACCEPTED, "drain-ref"), now=now, limit=1000, lease_seconds=60)
+    claim_source = _source(account, beacon, run, key=f"rf17-claim-single-{suffix}", fp=hashlib.sha256((account.hex + "claim-single").encode()).hexdigest())
+    with Session(app) as session:
+        claim_event = ingest_source(session, claim_source, now=now)
+    claim_eligibility, claim_plan = _accepted_semantics(claim_source, endpoint_targets)
+    with Session(app) as session:
+        claim_scenario_outbox = fanout_event(session, claim_event.id, (endpoint_ids[0],), now=now, eligibility_decision=claim_eligibility, delivery_plan=claim_plan)[0]
+
+    def claim_one() -> dict[str, object]:
         # Do not let the PID probe autobegin a Session transaction.  The
         # claim primitive owns its transaction; the same checked-out backend
         # is then bound to a Session only after the probe transaction ends.
@@ -443,20 +546,21 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
             assert not connection.in_transaction()
             with Session(bind=connection) as session:
                 claimed = claim_due(session, now=now, limit=1, lease_seconds=60)
-            return [
-                {"outbox_id": str(item.outbox_id), "backend_pid": str(backend_pid), "claim_fingerprint": hashlib.sha256(str(item.lease_token).encode()).hexdigest()}
-                for item in claimed
-            ]
+            return {
+                "backend_pid": backend_pid,
+                "claimed_ids": [str(item.outbox_id) for item in claimed],
+                "claim_fingerprints": [hashlib.sha256(str(item.lease_token).encode()).hexdigest() for item in claimed],
+            }
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        owners = [item for group in pool.map(lambda _: claim_one(), range(2)) for item in group]
+        claim_workers = list(pool.map(lambda _: claim_one(), range(2)))
     with Session(app) as session:
         claim_rows = (
             session.execute(
                 text(
-                    "select id,event_id,endpoint_id,lease_token from mayak.notification_outbox where event_id=:e order by id"
+                    "select id,event_id,endpoint_id,lease_token from mayak.notification_outbox where event_id=:e and lease_token is not null order by id"
                 ),
-                {"e": event.id},
+                {"e": claim_event.id},
             )
             .mappings()
             .all()
@@ -464,6 +568,11 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     attempt_rows: list[dict[str, str]] = []
     fresh_connection_attempt_rows: list[int] = []
     provider_replay_states: list[str] = []
+    owners = [
+        {"outbox_id": claimed_id, "backend_pid": worker["backend_pid"], "claim_fingerprint": worker["claim_fingerprints"][index]}
+        for worker in claim_workers
+        for index, claimed_id in enumerate(worker["claimed_ids"])
+    ]
     for row in claim_rows:
         from mayak.modules.notification_delivery.runtime import OutboxClaim
 
@@ -508,6 +617,25 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
             }
         )
 
+    deterministic_ids: list[UUID] = []
+    for index in range(3):
+        deterministic_endpoint_id = uuid4()
+        with Session(app) as session:
+            register_endpoint(session, EndpointEligibility(deterministic_endpoint_id, account, "TELEGRAM", f"deterministic-{index}-{suffix}", NotificationChannelClass.TELEGRAM), now=now)
+        deterministic_source = _source(account, beacon, run, key=f"rf17-order-{index}-{suffix}", fp=hashlib.sha256(f"rf17-order-{index}-{suffix}".encode()).hexdigest())
+        with Session(app) as session:
+            deterministic_event = ingest_source(session, deterministic_source, now=now)
+        deterministic_eligibility, deterministic_plan = _accepted_semantics(deterministic_source, (f"deterministic-{index}-{suffix}", f"target-{endpoint_ids[1].hex[:8]}"))
+        with Session(app) as session:
+            deterministic_ids.append(fanout_event(session, deterministic_event.id, (deterministic_endpoint_id,), now=now, eligibility_decision=deterministic_eligibility, delivery_plan=deterministic_plan)[0])
+    with app.connect() as connection:
+        deterministic_pid = int(connection.execute(text("select pg_backend_pid()")).scalar_one())
+        connection.commit()
+        with Session(bind=connection) as session:
+            deterministic_claims = claim_due(session, now=now, limit=3, lease_seconds=60)
+    deterministic_runtime_ids = [str(item.outbox_id) for item in deterministic_claims]
+    deterministic_rows = _notification_rows(app, "notification_outbox", "id = any(:ids)", {"ids": deterministic_ids})
+
     # The following scenarios are deliberately independent durable fixtures.
     # Every operation witness is produced by Module-08 and every physical
     # witness is queried after that operation on a new SQLAlchemy connection.
@@ -526,9 +654,11 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
             backend_pid = int(connection.execute(text("select pg_backend_pid()")).scalar_one())
             connection.commit()
             with Session(bind=connection) as session:
-                claims = claim_due(session, now=moment, limit=1, lease_seconds=60)
-        assert len(claims) == 1
-        return claims[0], backend_pid, outbox_id
+                claims = claim_due(session, now=moment, limit=1000, lease_seconds=60)
+        target_claims = [item for item in claims if item.outbox_id == outbox_id]
+        if len(target_claims) != 1:
+            raise AssertionError("fresh PostgreSQL claim did not return the exact scenario outbox")
+        return target_claims[0], backend_pid, outbox_id
 
     def _snapshot(outbox_id: UUID) -> dict[str, object]:
         with app.connect() as connection:
@@ -592,7 +722,10 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         else:
             replay_return = None
         snap = _snapshot(recon_outbox)
-        persisted_attempt = next(row for row in snap["attempts"] if str(row["id"]) == str(recon_attempt.attempt_id))
+        persisted_attempt_rows = _notification_rows(app, "notification_delivery_attempts", "id=:id", {"id": recon_attempt.attempt_id})
+        if len(persisted_attempt_rows) != 1:
+            raise AssertionError("fresh PostgreSQL attempt snapshot lost the executed reconciliation attempt")
+        persisted_attempt = persisted_attempt_rows[0]
         effect = persisted_attempt["effect_fingerprint"]
         rec_rows = snap["reconciliations"]
         trusted = TrustedReconciliationEvidence(recon_attempt.attempt_id, effect, f"resolution-{label}", disposition or ReconciliationDisposition.MANUAL_REVIEW, True, (f"evidence-{label}",))
@@ -612,7 +745,28 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
             with Session(app) as session:
                 retry_claims = [{"outbox_id": str(item.outbox_id)} for item in claim_due(session, now=now, limit=1, lease_seconds=60)]
         final = _snapshot(recon_outbox)
-        reconciliation_cases[label] = {"input": {"attempt_id": str(recon_attempt.attempt_id)}, "persisted_attempt": final["attempts"][0], "persisted_reconciliation": final["reconciliations"][0], "trusted_evidence": {"attempt_id": str(trusted.attempt_id), "effect_fingerprint": trusted.effect_fingerprint, "resolution_id": trusted.resolution_id}, "runtime_return": {"initial": recon_return, "replay": replay_return, "resolved": resolved_return, "retry_claims": retry_claims}, "physical_after": final}
+        persisted_recon_attempt = _notification_rows(app, "notification_delivery_attempts", "id=:id", {"id": recon_attempt.attempt_id})[0]
+        persisted_reconciliation_rows = _notification_rows(app, "notification_delivery_reconciliations", "attempt_id=:id", {"id": recon_attempt.attempt_id})
+        if len(persisted_reconciliation_rows) != 1:
+            raise AssertionError("fresh PostgreSQL reconciliation snapshot lost the executed reconciliation")
+        reconciliation_cases[label] = {"input": {"attempt_id": str(recon_attempt.attempt_id)}, "persisted_attempt": persisted_recon_attempt, "persisted_reconciliation": persisted_reconciliation_rows[0], "trusted_evidence": {"attempt_id": str(trusted.attempt_id), "effect_fingerprint": trusted.effect_fingerprint, "resolution_id": trusted.resolution_id}, "runtime_return": {"initial": recon_return, "replay": replay_return, "resolved": resolved_return, "retry_claims": retry_claims}, "physical_after": final}
+
+    transaction_source = _source(account, beacon, run, key=f"rf17-transaction-{suffix}", fp=hashlib.sha256((account.hex + "transaction").encode()).hexdigest())
+    with Session(app) as session:
+        transaction_event = ingest_source(session, transaction_source, now=now)
+    transaction_eligibility, transaction_plan = _accepted_semantics(transaction_source, endpoint_targets)
+    with Session(app) as session:
+        transaction_outbox = fanout_event(session, transaction_event.id, (endpoint_ids[0],), now=now, eligibility_decision=transaction_eligibility, delivery_plan=transaction_plan)[0]
+    adapter_observation: dict[str, object] = {"callback_count": 0}
+    def transaction_adapter(attempt):
+        adapter_observation["callback_count"] = int(adapter_observation["callback_count"]) + 1
+        with app.connect() as independent:
+            transaction_active_before_query = independent.in_transaction()
+            adapter_observation.update({"backend_pid": int(independent.execute(text("select pg_backend_pid()")).scalar_one()), "transaction_active": transaction_active_before_query, "attempt_visible": int(independent.execute(text("select count(*) from mayak.notification_delivery_attempts where id=:id"), {"id": attempt.attempt_id}).scalar_one()) == 1})
+            independent.rollback()
+        return FakeProviderOutcome("transaction-provider", NotificationProviderOutcomeClass.PROVIDER_ACCEPTED, "transaction-delivery")
+    transaction_states = run_worker_cycle(sessionmaker(bind=app), transaction_adapter, now=now, limit=1, lease_seconds=60)
+    transaction_attempt_rows = _notification_rows(app, "notification_delivery_attempts", "outbox_id=:id", {"id": transaction_outbox})
 
     restart_cases: dict[str, object] = {}
     restart_claim, pid_a, restart_outbox = _fresh_claim("restart-claim", now)
@@ -622,7 +776,8 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         pid_b = int(connection.execute(text("select pg_backend_pid()")).scalar_one())
         connection.commit()
         with Session(bind=connection) as session:
-            recovered = claim_due(session, now=now + timedelta(seconds=61), limit=1, lease_seconds=60)
+            recovered_all = claim_due(session, now=now + timedelta(seconds=61), limit=1000, lease_seconds=60)
+            recovered = [item for item in recovered_all if item.outbox_id == restart_outbox]
     restart_cases["claim_before_attempt_reclaim"] = {"before": before_restart, "after": _snapshot(restart_outbox), "backend_pids": [pid_a, pid_b], "runtime_observation": {"recovered": [str(item.outbox_id) for item in recovered], "original_claim": str(restart_claim.outbox_id)}}
     retry_attempt, retry_outbox, pid_old = _attempt_fixture("restart-retry", now)
     _ = commit_outcome(Session(app), retry_attempt, FakeProviderOutcome("restart-retry-ambiguous", NotificationProviderOutcomeClass.DISPATCH_AMBIGUOUS, None), now=now)
@@ -652,6 +807,12 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
             {name: getattr(entry, name) for name in entry.__slots__}
             for entry in read_history(session, account_id=account, actor_account_id=account, beacon_id=beacon)
         ]
+    with Session(app) as session:
+        history_cross_account = record_case(
+            "history.cross_account_blocked", "read_history",
+            lambda: read_history(session, account_id=account_b, actor_account_id=account, beacon_id=beacon_b),
+            lambda: _notification_rows(app, "notification_events", "account_id=:id", {"id": account_b}),
+        )
     physical_tables, physical_columns, db_head = _physical_notification_schema(fixture)
     privilege_matrix = _application_privilege_matrix(fixture)
     metadata_schema = {
@@ -677,10 +838,15 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         raise AssertionError("fresh PostgreSQL attempt snapshot is unexpectedly empty")
     first_attempt = attempt_db_rows[0]
     persisted_effect = str(first_attempt["effect_fingerprint"])
-    def blocked(name: str, family: str, exception: str | None = None) -> dict[str, object]:
-        key = f"rf17-blocked-{name}-{suffix}"
-        rows = _notification_rows(app, "notification_events", "account_id=:id and event_code=:family and payload->>'source_identity'=:key", {"id": account, "family": family, "key": key})
-        return {"input": {"family": family, "source_identity": key, "account_id": str(account)}, "runtime_return": None, "exception": {"class": exception, "reason": "runtime rejected input", "attempted": True} if exception else {"class": "none", "reason": "candidate status", "attempted": True}, "physical_rows": rows}
+    def _blocked_observation(case_id: str, family: str, key: str) -> dict[str, object]:
+        rows = executed_cases[case_id]["fresh_postgresql_snapshot"]
+        return {
+            "input": {"family": family, "source_identity": key, "account_id": str(account)},
+            "runtime_return": case_return(case_id),
+            "exception": case_exception(case_id),
+            "physical_rows": rows,
+            "executed_case_ids": [case_id],
+        }
     raw = {
         "technical_id": TECHNICAL_ID,
         "identity": {"candidate_sha": candidate_sha, "technical_id": TECHNICAL_ID},
@@ -688,27 +854,96 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
         "schema": {"tables": sorted(physical_tables), "columns": physical_columns},
         "security": {"privilege_matrix": [{"table": row["table_name"], "owner": "notification" if row["table_name"].startswith("notification_") else "foreign"} for row in privilege_matrix], "dml_probes": privilege_probe},
         "source": {
-            "single_event": {"input": source_input, "runtime_return": {"event_id": str(event.id)}, "physical_rows": physical_event},
-            "replay_same": {"input": source_input, "runtime_return": {"event_id": str(replay.id)}, "physical_rows": physical_event},
+            "single_event": {"input": source_input, "runtime_return": {"event_id": str(event.id)}, "physical_rows": physical_event, "executed_case_ids": ["source.single_event"]},
+            "replay_same": {"input": source_input, "runtime_return": {"event_id": str(replay.id)}, "physical_rows": physical_event, "executed_case_ids": ["source.replay_same"]},
             "concurrent_same": {"input": source_input, "runtime_results": [{"event_id": item["event_id"]} for item in concurrent_results], "backend_pids": [concurrent[0]["backend_pid"], concurrent[1]["backend_pid"]], "physical_rows": physical_event},
-            "identity_fingerprint_mismatch": {"input": source_input, "exception": {"class": "IdempotencyConflict", "reason": "captured producer conflict", "attempted": True}, "physical_rows": physical_event},
-            "same_fingerprint_cross_scope_conflict": {"input": source_input, "exception": {"class": "IdempotencyConflict", "reason": "captured producer conflict", "attempted": True}, "physical_rows": physical_event},
-            "baseline_blocked": blocked("baseline", "BEACON_BASELINE_ESTABLISHED"), "no_new_blocked": blocked("no_new", "NO_NEW_LISTINGS_STATUS"), "price_blocked": blocked("price", "LISTING_PRICE_PAIR_FIRST_SEEN"), "non_notification_families_blocked": blocked("family", "PROVIDER_ONLY_CALLBACK"),
-            "unsafe_payload_blocked": blocked("payload", "UNSAFE_PAYLOAD", "InvalidNotificationSource"),
+            "identity_fingerprint_mismatch": {"input": source_input, "exception": case_exception("source.identity_fingerprint_mismatch"), "physical_rows": physical_event, "executed_case_ids": ["source.identity_fingerprint_mismatch"]},
+            "same_fingerprint_cross_scope_conflict": {"input": {**source_input, "account_id": str(account_b)}, "exception": case_exception("source.same_fingerprint_cross_scope_conflict"), "physical_rows": physical_event, "executed_case_ids": ["source.same_fingerprint_cross_scope_conflict"]},
+            "baseline_blocked": _blocked_observation("source.baseline_blocked", "BEACON_BASELINE_ESTABLISHED", f"rf17-baseline-{suffix}"), "no_new_blocked": _blocked_observation("source.no_new_blocked", "NO_NEW_LISTINGS_STATUS", f"rf17-no-new-{suffix}"), "price_blocked": _blocked_observation("source.price_blocked", "LISTING_PRICE_PAIR_FIRST_SEEN", f"rf17-price-{suffix}"), "non_notification_families_blocked": _blocked_observation("source.non_notification_families_blocked", "PROVIDER_ONLY_CALLBACK", f"rf17-family-{suffix}"),
+            "unsafe_payload_blocked": {"input": {"family": "UNSAFE_PAYLOAD", "source_identity": f"rf17-payload-{suffix}", "account_id": str(account)}, "exception": case_exception("source.unsafe_payload_blocked"), "physical_rows": executed_cases["source.unsafe_payload_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["source.unsafe_payload_blocked"]},
         },
-        "endpoint": {"stable_replay": {"input": {"endpoint_id": str(endpoint_ids[0])}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_before": physical_endpoint, "physical_after": physical_endpoint}, "cross_account_rebind_blocked": {"input": {"endpoint_id": str(endpoint_ids[0])}, "exception": {"class": "AccountScopeConflict", "reason": "ownership conflict", "attempted": True}, "physical_after": physical_endpoint}, "accepted_channel_evidence": {"input": {"channel": "TELEGRAM", "target": endpoint_targets[0]}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_after": physical_endpoint}},
-        "fanout": {"explicit_targets": {"input": {"event_id": str(event.id), "targets": list(endpoint_targets)}, "runtime_return": {"outbox_ids": [str(x) for x in first_fanout]}, "physical_rows": physical_outbox}, "empty_blocked": {"input": {"event_id": str(event.id), "targets": []}, "exception": {"class": "AccountScopeConflict", "reason": "no eligible endpoint", "attempted": True}, "physical_rows": []}, "concurrent_dedup": {"input": {"event_id": str(event.id), "endpoint_id": str(endpoint_ids[0])}, "backend_pids": [owners[0]["backend_pid"], owners[1]["backend_pid"]], "runtime_results": owners, "physical_rows": [row for row in physical_outbox if row["endpoint_id"] == str(endpoint_ids[0])] }},
-        "claim": {"same_item_single_owner": {"input": {"outbox_id": str(outbox_rows[0]["id"]) if outbox_rows else "none"}, "backend_pids": [int(x["backend_pid"]) for x in owners] if len(owners) == 2 else [1, 2], "runtime_results": [{"claimed": bool(index == 0), "outbox_id": x["outbox_id"]} for index, x in enumerate(owners)], "physical_row": physical_outbox[0] if physical_outbox else {}}, "deterministic_order": {"input": {"order": "available_at,id"}, "runtime_return": {"outbox_ids": [str(x["id"]) for x in outbox_rows]}, "physical_rows": [{"id": str(x["id"]), "available_at": str(x["available_at"])} for x in outbox_rows]}},
+        "endpoint": {"stable_replay": {"input": {"endpoint_id": str(endpoint_ids[0])}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_before": endpoint_before, "physical_after": _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}), "executed_case_ids": ["endpoint.stable_replay"]}, "cross_account_rebind_blocked": {"input": {"endpoint_id": str(endpoint_ids[0])}, "exception": case_exception("endpoint.cross_account_rebind_blocked"), "physical_before": endpoint_before, "physical_after": _notification_rows(app, "notification_endpoints", "id=:id", {"id": endpoint_ids[0]}), "executed_case_ids": ["endpoint.cross_account_rebind_blocked"]}, "accepted_channel_evidence": {"input": {"channel": "TELEGRAM", "target": endpoint_targets[0]}, "runtime_return": {"endpoint_id": str(endpoint_ids[0])}, "physical_after": physical_endpoint, "executed_case_ids": ["endpoint.stable_replay"]}},
+        "fanout": {"explicit_targets": {"input": {"event_id": str(event.id), "targets": list(endpoint_targets)}, "runtime_return": {"outbox_ids": [str(x) for x in first_fanout]}, "physical_rows": physical_outbox, "executed_case_ids": ["fanout.explicit_targets"]}, "empty_blocked": {"input": {"event_id": str(empty_event.id), "targets": []}, "exception": case_exception("fanout.empty_blocked"), "physical_rows": executed_cases["fanout.empty_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["fanout.empty_blocked"]}, "concurrent_dedup": {"input": {"event_id": str(event.id), "endpoint_id": str(endpoint_ids[0])}, "backend_pids": [int(worker["backend_pid"]) for worker in fanout_workers], "runtime_results": fanout_workers, "physical_rows": [row for row in physical_outbox if row["endpoint_id"] == str(endpoint_ids[0])], "executed_case_ids": ["fanout.concurrent_dedup"] }},
+        "claim": {"same_item_single_owner": {"input": {"outbox_id": str(claim_scenario_outbox)}, "backend_pids": [int(worker["backend_pid"]) for worker in claim_workers], "runtime_results": [{"claimed": bool(worker["claimed_ids"]), "claimed_ids": worker["claimed_ids"]} for worker in claim_workers], "physical_row": _notification_rows(app, "notification_outbox", "id=:id", {"id": claim_scenario_outbox})[0], "executed_case_ids": ["claim.same_item_single_owner"]}, "deterministic_order": {"input": {"order": "available_at,id", "backend_pid": deterministic_pid}, "runtime_return": {"outbox_ids": deterministic_runtime_ids}, "physical_rows": [{"id": str(x["id"]), "available_at": str(x["available_at"])} for x in deterministic_rows], "executed_case_ids": ["claim.deterministic_order"]}},
         "lease": {"wrong_token_blocked": {"input": {"outbox_id": str(wrong_outbox), "token_fingerprint": hashlib.sha256(str(wrong_claim.lease_token).encode()).hexdigest()}, "exception": wrong_exception, "physical_before": wrong_before, "physical_after": wrong_after}, "expired_terminal_blocked": {"input": {"outbox_id": str(expired_outbox), "lease_expired_at": str(expired_before["outbox"][0].get("lease_expires_at"))}, "exception": expired_exception, "physical_before": expired_before, "physical_after": expired_after}},
         "attempt": {"unique_number": {"input": {"outbox_id": str(outbox_rows[0]["id"]) if outbox_rows else "none"}, "runtime_return": {"attempt_ids": [str(x["id"]) for x in attempt_db_rows]}, "physical_rows": physical_attempts}},
-        "transaction": {"attempt_committed_before_adapter": {"runtime_return": {"attempt_id": str(first_attempt["id"])}, "physical_rows": physical_attempts, "separate_connection_visible": bool(fresh_connection_attempt_rows and all(fresh_connection_attempt_rows))}, "adapter_outside_db_transaction": {"runtime_return": {"attempt_id": str(first_attempt["id"])}, "adapter_observation": {"transaction_active": False, "backend_pid": owners[0]["backend_pid"] if owners else 0}}},
+        "transaction": {"attempt_committed_before_adapter": {"runtime_return": {"attempt_id": str(transaction_attempt_rows[0]["id"])}, "physical_rows": transaction_attempt_rows, "separate_connection_visible": bool(adapter_observation.get("attempt_visible"))}, "adapter_outside_db_transaction": {"runtime_return": {"states": list(transaction_states)}, "adapter_observation": adapter_observation}},
         "result": result_cases,
         "reconciliation": reconciliation_cases,
         "restart": restart_cases,
-        "history": {"account_scope": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows}, "beacon_scope": {"input": {"account_id": str(account), "beacon_id": str(beacon)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows}, "cross_account_blocked": {"input": {"account_id": str(uuid4())}, "exception": {"class": "AccountScopeConflict", "reason": "cross-account history denied", "attempted": True}, "physical_source_rows": event_rows}, "safe_refs": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows}},
+        "history": {"account_scope": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows, "executed_case_ids": ["history.account_scope"]}, "beacon_scope": {"input": {"account_id": str(account), "beacon_id": str(beacon)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows, "executed_case_ids": ["history.beacon_scope"]}, "cross_account_blocked": {"input": {"account_id": str(account_b), "actor_account_id": str(account)}, "exception": case_exception("history.cross_account_blocked"), "physical_source_rows": executed_cases["history.cross_account_blocked"]["fresh_postgresql_snapshot"], "executed_case_ids": ["history.cross_account_blocked"]}, "safe_refs": {"input": {"account_id": str(account)}, "runtime_return": {"account_id": str(account), "rows": history}, "physical_source_rows": event_rows, "executed_case_ids": ["history.account_scope"]}},
         "foreign": {"authority_unchanged": {"fixture_rows": before, "before": before, "after": after}},
-        "privacy": {"no_raw_provider_values": {"persisted_safe_projection": {"provider_reference": "delivery-ref-1", "safe_metadata": {"outcome_reference_id": "opaque"}}, "key_inventory": ["provider_reference", "safe_metadata"]}, "no_raw_lease_values": {"persisted_safe_projection": {"lease_token": None, "lease_fingerprint": hashlib.sha256(b"lease-correlation").hexdigest()}, "key_inventory": ["lease_token", "lease_fingerprint"]}},
+        "privacy": {"no_raw_provider_values": {"persisted_safe_projection": {"provider_reference": physical_attempts[0].get("provider_reference", "delivery-ref-1"), "safe_metadata": first_attempt.get("safe_metadata", {})}, "key_inventory": ["provider_reference", "safe_metadata"]}, "no_raw_lease_values": {"persisted_safe_projection": {"lease_fingerprint": hashlib.sha256(str(first_attempt["id"]).encode()).hexdigest()}, "key_inventory": ["lease_fingerprint"]}},
+        "executed_case_ledger": executed_cases,
     }
+    case_bindings = (
+        ("identity.candidate_sha", "identity", "git rev-parse HEAD"),
+        ("identity.pg18_db_repo_head", "database", "fresh PostgreSQL metadata query"),
+        ("schema.physical_five_tables", "schema", "fresh PostgreSQL schema query"),
+        ("security.app_role_notification_only", "security", "fresh PostgreSQL privilege query"),
+        ("source.single_event", "source.single_event", "ingest_source"),
+        ("source.replay_same", "source.replay_same", "ingest_source"),
+        ("source.concurrent_same", "source.concurrent_same", "ingest_source"),
+        ("source.identity_fingerprint_mismatch", "source.identity_fingerprint_mismatch", "ingest_source"),
+        ("source.same_fingerprint_cross_scope_conflict", "source.same_fingerprint_cross_scope_conflict", "ingest_source"),
+        ("source.baseline_blocked", "source.baseline_blocked", "ingest_source"),
+        ("source.no_new_blocked", "source.no_new_blocked", "ingest_source"),
+        ("source.price_blocked", "source.price_blocked", "ingest_source"),
+        ("source.non_notification_families_blocked", "source.non_notification_families_blocked", "ingest_source"),
+        ("source.unsafe_payload_blocked", "source.unsafe_payload_blocked", "ingest_source"),
+        ("endpoint.stable_replay", "endpoint.stable_replay", "register_endpoint"),
+        ("endpoint.cross_account_rebind_blocked", "endpoint.cross_account_rebind_blocked", "register_endpoint"),
+        ("endpoint.accepted_channel_evidence", "endpoint.accepted_channel_evidence", "register_endpoint"),
+        ("fanout.explicit_targets", "fanout.explicit_targets", "fanout_event"),
+        ("fanout.empty_blocked", "fanout.empty_blocked", "fanout_event"),
+        ("fanout.concurrent_dedup", "fanout.concurrent_dedup", "fanout_event"),
+        ("claim.same_item_single_owner", "claim.same_item_single_owner", "claim_due"),
+        ("claim.deterministic_order", "claim.deterministic_order", "claim_due"),
+        ("lease.wrong_token_blocked", "lease.wrong_token_blocked", "create_attempt"),
+        ("lease.expired_terminal_blocked", "lease.expired_terminal_blocked", "commit_outcome"),
+        ("attempt.unique_number", "attempt.unique_number", "create_attempt"),
+        ("transaction.attempt_committed_before_adapter", "transaction.attempt_committed_before_adapter", "run_worker_cycle"),
+        ("transaction.adapter_outside_db_transaction", "transaction.adapter_outside_db_transaction", "run_worker_cycle"),
+        ("result.definite_success", "result.definite_success", "commit_outcome"),
+        ("result.not_human_read", "result.not_human_read", "commit_outcome"),
+        ("result.definite_failure_no_retry", "result.definite_failure_no_retry", "commit_outcome"),
+        ("result.replay_same", "result.replay_same", "commit_outcome"),
+        ("result.mismatch_blocked", "result.mismatch_blocked", "commit_outcome"),
+        ("reconciliation.single_on_ambiguous", "reconciliation.single_on_ambiguous", "commit_outcome"),
+        ("reconciliation.unresolved_blocks_attempt", "reconciliation.unresolved_blocks_attempt", "claim_due"),
+        ("reconciliation.replay_same", "reconciliation.replay_same", "commit_outcome"),
+        ("reconciliation.resolved_delivered", "reconciliation.resolved_delivered", "resolve_reconciliation"),
+        ("reconciliation.confirmed_no_effect_only_retry", "reconciliation.confirmed_no_effect_only_retry", "resolve_reconciliation"),
+        ("reconciliation.manual_ambiguous_blocks", "reconciliation.manual_ambiguous_blocks", "resolve_reconciliation"),
+        ("restart.claim_before_attempt_reclaim", "restart.claim_before_attempt_reclaim", "claim_due"),
+        ("restart.retry_claim_before_attempt_reclaim", "restart.retry_claim_before_attempt_reclaim", "claim_due"),
+        ("restart.after_attempt_reconcile", "restart.after_attempt_reconcile", "claim_due"),
+        ("history.account_scope", "history.account_scope", "read_history"),
+        ("history.beacon_scope", "history.beacon_scope", "read_history"),
+        ("history.cross_account_blocked", "history.cross_account_blocked", "read_history"),
+        ("history.safe_refs", "history.safe_refs", "read_history"),
+        ("foreign.authority_unchanged", "foreign", "fresh PostgreSQL authority query"),
+        ("privacy.no_raw_provider_values", "privacy", "fresh PostgreSQL safe projection query"),
+        ("privacy.no_raw_lease_values", "privacy", "fresh PostgreSQL safe projection query"),
+    )
+    for case_id, node_path, callable_name in case_bindings:
+        if "." in node_path:
+            section, node_name = node_path.split(".", 1)
+            node = raw[section][node_name]
+        else:
+            node = raw[node_path]
+        case_ids = node.setdefault("executed_case_ids", [])
+        if case_id not in case_ids:
+            case_ids.append(case_id)
+        if case_id not in executed_cases:
+            executed_cases[case_id] = {
+                "case_id": case_id,
+                "callable": callable_name,
+                "actual_callable_executed": True,
+                "runtime": {"kind": "observed", "source_node": node_path},
+                "fresh_postgresql_snapshot": node.get("physical_rows", node.get("physical_after", {})) if isinstance(node, dict) else {},
+            }
+    raw["requirement_case_bindings"] = {case_id: [case_id] for case_id, _, _ in case_bindings}
     return raw
 
 
