@@ -113,10 +113,11 @@ jobs:
           registry = verifier.registry()
           assert tuple(d['requirement_ids']) == EXPECTED_RF17_REQUIREMENT_IDS
           assert tuple(d['tamper_strategy_ids']) == EXPECTED_RF17_TAMPER_STRATEGY_IDS
-          assert tuple(d['tamper_rejected_ids']) == EXPECTED_RF17_REQUIREMENT_IDS
-          assert d['requirement_count'] == d['original_pass_count'] == d['tamper_rejected_count'] == 48
-          assert d['original_failing_ids'] == [] and d['tamper_failing_ids'] == []
-          assert d['raw_path_mapping_count'] == 48
+          assert d['requirement_count'] == d['checker_count'] == d['unique_checker_count'] == 48
+          assert d['tamper_count'] == d['unique_tamper_count'] == 48
+          assert d['original_pass_count'] == d['tamper_rejected_count'] == 48
+          assert d['original_failures'] == [] and d['tamper_failures'] == []
+          assert len(d['requirement_checker_mapping']) == len(d['requirement_scenario_mapping']) == len(d['required_raw_paths']) == 48
           evidence = json.loads(Path('rf17-evidence.json').read_text())
           verifier.assert_no_acceptance_summary(evidence)
           bad_e446 = {'technical_id': verifier.TECHNICAL_ID, 'identity': {'candidate_sha': 'a' * 40}, 'source_cases': {'single_committed_event': True, 'replay_same_row': True, 'trusted_delivered_binds_attempt': True}}
@@ -128,6 +129,11 @@ jobs:
               raise AssertionError('e446 summary fixture was accepted')
           assert 'observations' not in evidence
           assert all(item.required_raw_paths for item in registry)
+          assert len({item.check.__name__ for item in registry}) == 48
+          assert len({item.tamper.__name__ for item in registry}) == 48
+          verifier_source = Path('scripts/runtime/verify_rf17_acceptance.py').read_text()
+          for forbidden in ('registry_group', '_spec_for', 'operation.relation_id', 'physical.relation_id'):
+              assert forbidden not in verifier_source
           for item in registry:
               mutated = copy.deepcopy(evidence)
               before = json.dumps(mutated, sort_keys=True)

@@ -50,3 +50,14 @@ def test_reconciliation_binds_evidence_to_persisted_attempt_effect() -> None:
     source = inspect.getsource(nd.resolve_reconciliation)
     assert 'attempt_record["effect_fingerprint"] != evidence.effect_fingerprint' in source
     assert "persisted attempt effect fingerprint conflicts with evidence" in source
+
+
+def test_producer_claim_probe_ends_autobegin_before_claim_due_and_reuses_connection() -> None:
+    source = Path("scripts/runtime/run_rf17_postgres_acceptance.py").read_text(encoding="utf-8")
+    claim = source[source.index("def claim_one") : source.index("with ThreadPoolExecutor", source.index("def claim_one"))]
+    assert "app.connect()" in claim
+    assert "connection.commit()" in claim
+    assert "assert not connection.in_transaction()" in claim
+    assert "Session(bind=connection)" in claim
+    assert "claim_due(session" in claim
+    assert "InvalidRequestError" not in claim
