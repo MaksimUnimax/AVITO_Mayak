@@ -27,6 +27,15 @@ EXPECTED_RF17_REQUIREMENT_IDS = (
     "history.safe_refs", "foreign.authority_unchanged", "privacy.no_raw_provider_values", "privacy.no_raw_lease_values",
 )
 EXPECTED_RF17_TAMPER_STRATEGY_IDS = tuple("tamper." + item for item in EXPECTED_RF17_REQUIREMENT_IDS)
+PROVENANCE_ONLY_RAW_PATHS = {
+    "source.concurrent_same": ("source.concurrent_same.physical_rows",),
+    "source.same_fingerprint_cross_scope_conflict": ("source.same_fingerprint_cross_scope_conflict.physical_rows",),
+    "reconciliation.confirmed_no_effect_only_retry": (
+        "reconciliation.confirmed_no_effect_only_retry.stage_c",
+        "reconciliation.confirmed_no_effect_only_retry.stage_e",
+    ),
+    "restart.after_attempt_reconcile": ("restart.after_attempt_reconcile.backend_pids",),
+}
 _BAD_KEYS = {"observations", "passes", "verdicts", "acceptance_results", "provider_payload", "raw_lease_token", "single_committed_event", "replay_same_row", "trusted_delivered_binds_attempt", "e446_summary", "operation", "physical", "relation_id"}
 _SECRET = re.compile(r"(?i)(bearer\s+\S+|authorization\s*[:=]|cookie\s*[:=]|lease_token\s*[:=]\s*[^\s,}]+)")
 
@@ -108,12 +117,17 @@ def _valid_schema(data: dict[str, object]) -> bool:
     return _raw(data, "schema.tables") == ["notification_delivery_attempts", "notification_delivery_reconciliations", "notification_endpoints", "notification_events", "notification_outbox"] and all(isinstance(_raw(data, f"schema.columns.{table}"), list) for table in _raw(data, "schema.tables") or [])
 def _valid_privileges(data: dict[str, object]) -> bool:
     matrix = _raw(data, "security.privilege_matrix"); probes = _raw(data, "security.dml_probes")
-    return isinstance(matrix, list) and isinstance(probes, list) and all(isinstance(row, dict) for row in matrix) and all(isinstance(row, dict) for row in probes) and all(row.get("owner") == "notification" for row in matrix if str(row.get("table", "")).startswith("notification_")) and all(row.get("sqlstate") == "42501" for row in probes if row.get("domain") in {"identity", "beacon", "scan"})
+    return (isinstance(matrix, list) and len(matrix) >= 5 and isinstance(probes, list) and len(probes) >= 3
+            and all(isinstance(row, dict) and isinstance(row.get("table"), str) and isinstance(row.get("owner"), str) for row in matrix)
+            and all(isinstance(row, dict) and isinstance(row.get("domain"), str) and isinstance(row.get("sqlstate"), str) for row in probes)
+            and all(row.get("owner") == "notification" for row in matrix if str(row.get("table", "")).startswith("notification_"))
+            and {row.get("domain") for row in probes} >= {"identity", "beacon", "scan"}
+            and all(row.get("sqlstate") == "42501" for row in probes if row.get("domain") in {"identity", "beacon", "scan"}))
 def _source_single(data):
     node = _raw(data, "source.single_event") or {}; rows = node.get("physical_rows", [])
     return (_scenario(data, "source.single_event", "input", "runtime_return", "physical_before", "physical_after") and
             _rows(data, "source.single_event.physical_before", 0) and _rows(data, "source.single_event.physical_after", 1) and
-            node["runtime_return"].get("event_id") == rows[0].get("id") and
+            node["runtime_return"].get("event_id") == rows[0].get("id") and node.get("physical_after") == rows and
             rows[0].get("account_id") == node["input"].get("account_id") and
             (rows[0].get("source_effect_fingerprint") or rows[0].get("fingerprint")) == node["input"].get("fingerprint"))
 def _source_replay(data):
@@ -128,12 +142,16 @@ def _source_concurrent(data):
     return (_scenario(data, "source.concurrent_same", "input", "runtime_results", "backend_pids", "physical_before", "physical_after") and
             len(results) == 2 and len(set(node.get("backend_pids", []))) == 2 and _rows(data, "source.concurrent_same.physical_before", 0) and
             len(set(ids)) == 1 and len(rows) == 1 and ids[0] == rows[0].get("id") and rows[0].get("account_id") == node["input"].get("account_id"))
-def _source_fp(data): return _scenario(data, "source.identity_fingerprint_mismatch", "input", "exception", "physical_rows") and _is_error(data, "source.identity_fingerprint_mismatch.exception", "IdempotencyConflict") and _rows(data, "source.identity_fingerprint_mismatch.physical_rows", 1)
+def _source_fp(data):
+    rows = _raw(data, "source.identity_fingerprint_mismatch.physical_rows")
+    return bool(_scenario(data, "source.identity_fingerprint_mismatch", "input", "exception", "physical_rows")
+            and _is_error(data, "source.identity_fingerprint_mismatch.exception", "IdempotencyConflict")
+            and isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict) and rows[0].get("id"))
 def _source_scope(data):
     node = _raw(data, "source.same_fingerprint_cross_scope_conflict") or {}; rows = node.get("physical_after", [])
     return (_scenario(data, "source.same_fingerprint_cross_scope_conflict", "input", "exception", "physical_before", "physical_after") and
             _is_error(data, "source.same_fingerprint_cross_scope_conflict.exception", "IdempotencyConflict") and
-            node.get("physical_before") == node.get("physical_after") and not any(row.get("account_id") == node.get("input", {}).get("account_id") for row in rows))
+            node.get("physical_before") == node.get("physical_after") and isinstance(rows, list) and rows and not any(row.get("account_id") == node.get("input", {}).get("account_id") for row in rows))
 def _source_blocked(data, name, family): return _scenario(data, name, "input", "runtime_return", "physical_rows") and _raw(data, f"{name}.runtime_return") is None and _rows(data, f"{name}.physical_rows", 0) and _raw(data, f"{name}.input.family") == family
 def _endpoint_replay(data):
     node = _raw(data, "endpoint.stable_replay") or {}; before = node.get("physical_before", [{}]); after = node.get("physical_after", [{}]); ret = node.get("runtime_return", {})
@@ -177,7 +195,11 @@ def _lease_wrong(data): return _scenario(data, "lease.wrong_token_blocked", "inp
 def _lease_expired(data): return _scenario(data, "lease.expired_terminal_blocked", "input", "exception", "physical_before", "physical_after") and _is_error(data, "lease.expired_terminal_blocked.exception", "LeaseConflict") and _raw(data, "lease.expired_terminal_blocked.physical_before") == _raw(data, "lease.expired_terminal_blocked.physical_after")
 def _attempt_unique(data):
     rows = _raw(data, "attempt.unique_number.physical_rows")
-    return _scenario(data, "attempt.unique_number", "input", "runtime_return", "physical_rows") and isinstance(rows, list) and all(isinstance(row, dict) for row in rows) and len({row.get("attempt_number") for row in rows}) == len(rows)
+    runtime = _raw(data, "attempt.unique_number.runtime_return")
+    ids = [row.get("id") for row in rows] if isinstance(rows, list) else []
+    return (_scenario(data, "attempt.unique_number", "input", "runtime_return", "physical_rows") and isinstance(runtime, dict)
+            and runtime.get("attempt_ids") == ids and isinstance(rows, list) and all(isinstance(row, dict) for row in rows)
+            and len({row.get("attempt_number") for row in rows}) == len(rows))
 def _tx_visible(data):
     node = _raw(data, "transaction.attempt_committed_before_adapter") or {}; obs = node.get("independent_observation", {})
     return _scenario(data, "transaction.attempt_committed_before_adapter", "runtime_return", "independent_observation") and obs.get("attempt_id") == node["runtime_return"].get("attempt_id") and obs.get("state") == "CLAIMED" and bool(obs.get("independently_visible"))
@@ -248,7 +270,10 @@ def _foreign(data): return _scenario(data, "foreign.authority_unchanged", "fixtu
 def _privacy(data, name, forbidden):
     node = _raw(data, name)
     projection = _raw(data, f"{name}.persisted_safe_projection")
-    if not isinstance(node, dict) or not isinstance(projection, dict) or not _present(data, f"{name}.key_inventory") or forbidden in json.dumps(node, sort_keys=True): return False
+    inventory = node.get("key_inventory") if isinstance(node, dict) else None
+    expected = ["provider_reference", "safe_metadata"] if name.endswith("provider_values") else ["lease_fingerprint"]
+    if (not isinstance(node, dict) or not isinstance(projection, dict) or inventory != expected
+            or forbidden in json.dumps(node, sort_keys=True)): return False
     if name.endswith("provider_values"): return isinstance(projection.get("provider_reference"), str) and projection.get("provider_reference") == "delivery-ref-1"
     return projection.get("lease_token") is None and isinstance(projection.get("lease_fingerprint"), str) and bool(re.fullmatch(r"[0-9a-f]{64}", projection["lease_fingerprint"]))
 
@@ -320,7 +345,16 @@ def check_history_cross_account(data):
     account = _raw(data, "history.cross_account_blocked.input.account_id")
     return (_is_error(data, "history.cross_account_blocked.exception", "AccountScopeConflict") and isinstance(rows, list) and bool(rows) and
             all(isinstance(row, dict) and row.get("account_id") == account for row in rows))
-def check_history_refs(data): return _scenario(data, "history.safe_refs", "input", "runtime_return", "physical_source_rows") and all("listing_reference_ids" in row for row in _raw(data, "history.safe_refs.runtime_return.rows") or [])
+def check_history_refs(data):
+    node = _raw(data, "history.safe_refs") or {}
+    runtime = node.get("runtime_return")
+    physical = node.get("physical_source_rows")
+    rows = runtime.get("rows") if isinstance(runtime, dict) else None
+    return (_scenario(data, "history.safe_refs", "input", "runtime_return", "physical_source_rows")
+            and isinstance(runtime, dict) and isinstance(rows, list) and rows
+            and isinstance(physical, list) and physical
+            and all(isinstance(row, dict) and "listing_reference_ids" in row for row in rows)
+            and all(isinstance(row, dict) and isinstance(row.get("payload"), dict) and "listing_reference_ids" in row["payload"] for row in physical))
 def check_foreign(data): return _foreign(data)
 def check_privacy_provider(data): return _privacy(data, "privacy.no_raw_provider_values", "provider_payload")
 def check_privacy_lease(data): return _privacy(data, "privacy.no_raw_lease_values", "raw-lease-secret")
@@ -399,9 +433,9 @@ def registry() -> tuple[Requirement, ...]:
         Requirement("security.app_role_notification_only", "tamper.security.app_role_notification_only", ("security.privilege_matrix", "security.dml_probes"), check_privileges, tamper_privileges, "security.app_role_notification_only"),
         Requirement("source.single_event", "tamper.source.single_event", ("source.single_event.runtime_return", "source.single_event.physical_before", "source.single_event.physical_after"), check_source_single, tamper_source_single, "source.single_event"),
         Requirement("source.replay_same", "tamper.source.replay_same", ("source.replay_same.initial_return", "source.replay_same.replay_return", "source.replay_same.physical_before", "source.replay_same.physical_after"), check_source_replay, tamper_source_replay, "source.replay_same"),
-        Requirement("source.concurrent_same", "tamper.source.concurrent_same", ("source.concurrent_same.runtime_results", "source.concurrent_same.backend_pids", "source.concurrent_same.physical_rows"), check_source_concurrent, tamper_source_concurrent, "source.concurrent_same"),
+        Requirement("source.concurrent_same", "tamper.source.concurrent_same", ("source.concurrent_same.runtime_results", "source.concurrent_same.backend_pids"), check_source_concurrent, tamper_source_concurrent, "source.concurrent_same"),
         Requirement("source.identity_fingerprint_mismatch", "tamper.source.identity_fingerprint_mismatch", ("source.identity_fingerprint_mismatch.exception", "source.identity_fingerprint_mismatch.physical_rows"), check_source_fingerprint, tamper_source_fingerprint, "source.identity_fingerprint_mismatch"),
-        Requirement("source.same_fingerprint_cross_scope_conflict", "tamper.source.same_fingerprint_cross_scope_conflict", ("source.same_fingerprint_cross_scope_conflict.exception", "source.same_fingerprint_cross_scope_conflict.physical_rows"), check_source_scope, tamper_source_scope, "source.same_fingerprint_cross_scope_conflict"),
+        Requirement("source.same_fingerprint_cross_scope_conflict", "tamper.source.same_fingerprint_cross_scope_conflict", ("source.same_fingerprint_cross_scope_conflict.exception", "source.same_fingerprint_cross_scope_conflict.physical_after"), check_source_scope, tamper_source_scope, "source.same_fingerprint_cross_scope_conflict"),
         Requirement("source.baseline_blocked", "tamper.source.baseline_blocked", ("source.baseline_blocked.input", "source.baseline_blocked.runtime_return", "source.baseline_blocked.physical_rows"), check_source_baseline, tamper_source_baseline, "source.baseline_blocked"),
         Requirement("source.no_new_blocked", "tamper.source.no_new_blocked", ("source.no_new_blocked.input", "source.no_new_blocked.runtime_return", "source.no_new_blocked.physical_rows"), check_source_no_new, tamper_source_no_new, "source.no_new_blocked"),
         Requirement("source.price_blocked", "tamper.source.price_blocked", ("source.price_blocked.input", "source.price_blocked.runtime_return", "source.price_blocked.physical_rows"), check_source_price, tamper_source_price, "source.price_blocked"),
@@ -429,11 +463,11 @@ def registry() -> tuple[Requirement, ...]:
         Requirement("reconciliation.unresolved_blocks_attempt", "tamper.reconciliation.unresolved_blocks_attempt", ("reconciliation.unresolved_blocks_attempt.before_retry", "reconciliation.unresolved_blocks_attempt.retry_result", "reconciliation.unresolved_blocks_attempt.physical_after"), check_recon_blocks, tamper_recon_blocks, "reconciliation.unresolved_blocks_attempt"),
         Requirement("reconciliation.replay_same", "tamper.reconciliation.replay_same", ("reconciliation.replay_same.first_result", "reconciliation.replay_same.second_result", "reconciliation.replay_same.physical_before_second", "reconciliation.replay_same.physical_after_second"), check_recon_replay, tamper_recon_replay, "reconciliation.replay_same"),
         Requirement("reconciliation.resolved_delivered", "tamper.reconciliation.resolved_delivered", ("reconciliation.resolved_delivered.trusted_evidence", "reconciliation.resolved_delivered.physical_after"), check_recon_delivered, tamper_recon_delivered, "reconciliation.resolved_delivered"),
-        Requirement("reconciliation.confirmed_no_effect_only_retry", "tamper.reconciliation.confirmed_no_effect_only_retry", ("reconciliation.confirmed_no_effect_only_retry.stage_a", "reconciliation.confirmed_no_effect_only_retry.stage_b", "reconciliation.confirmed_no_effect_only_retry.stage_c", "reconciliation.confirmed_no_effect_only_retry.stage_d", "reconciliation.confirmed_no_effect_only_retry.stage_e", "reconciliation.confirmed_no_effect_only_retry.stage_f"), check_recon_no_effect, tamper_recon_no_effect, "reconciliation.confirmed_no_effect_only_retry"),
+        Requirement("reconciliation.confirmed_no_effect_only_retry", "tamper.reconciliation.confirmed_no_effect_only_retry", ("reconciliation.confirmed_no_effect_only_retry.stage_a", "reconciliation.confirmed_no_effect_only_retry.stage_b", "reconciliation.confirmed_no_effect_only_retry.stage_d", "reconciliation.confirmed_no_effect_only_retry.stage_f"), check_recon_no_effect, tamper_recon_no_effect, "reconciliation.confirmed_no_effect_only_retry"),
         Requirement("reconciliation.manual_ambiguous_blocks", "tamper.reconciliation.manual_ambiguous_blocks", ("reconciliation.manual_ambiguous_blocks.resolution_result", "reconciliation.manual_ambiguous_blocks.retry_result", "reconciliation.manual_ambiguous_blocks.physical_after"), check_recon_manual, tamper_recon_manual, "reconciliation.manual_ambiguous_blocks"),
         Requirement("restart.claim_before_attempt_reclaim", "tamper.restart.claim_before_attempt_reclaim", ("restart.claim_before_attempt_reclaim.backend_pids", "restart.claim_before_attempt_reclaim.runtime_observation", "restart.claim_before_attempt_reclaim.after"), check_restart_claim, tamper_restart_claim, "restart.claim_before_attempt_reclaim"),
         Requirement("restart.retry_claim_before_attempt_reclaim", "tamper.restart.retry_claim_before_attempt_reclaim", ("restart.retry_claim_before_attempt_reclaim.backend_pids", "restart.retry_claim_before_attempt_reclaim.runtime_observation", "restart.retry_claim_before_attempt_reclaim.after"), check_restart_retry, tamper_restart_retry, "restart.retry_claim_before_attempt_reclaim"),
-        Requirement("restart.after_attempt_reconcile", "tamper.restart.after_attempt_reconcile", ("restart.after_attempt_reconcile.backend_pids", "restart.after_attempt_reconcile.runtime_observation", "restart.after_attempt_reconcile.after"), check_restart_attempt, tamper_restart_attempt, "restart.after_attempt_reconcile"),
+        Requirement("restart.after_attempt_reconcile", "tamper.restart.after_attempt_reconcile", ("restart.after_attempt_reconcile.runtime_observation", "restart.after_attempt_reconcile.after"), check_restart_attempt, tamper_restart_attempt, "restart.after_attempt_reconcile"),
         Requirement("history.account_scope", "tamper.history.account_scope", ("history.account_scope.input.account_id", "history.account_scope.runtime_return.rows", "history.account_scope.physical_source_rows"), check_history_account, tamper_history_account, "history.account_scope"),
         Requirement("history.beacon_scope", "tamper.history.beacon_scope", ("history.beacon_scope.input.beacon_id", "history.beacon_scope.runtime_return.rows", "history.beacon_scope.physical_source_rows"), check_history_beacon, tamper_history_beacon, "history.beacon_scope"),
         Requirement("history.cross_account_blocked", "tamper.history.cross_account_blocked", ("history.cross_account_blocked.exception", "history.cross_account_blocked.physical_source_rows"), check_history_cross_account, tamper_history_cross_account, "history.cross_account_blocked"),

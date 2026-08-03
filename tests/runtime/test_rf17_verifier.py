@@ -22,6 +22,23 @@ def test_registry_is_explicit_and_one_to_one() -> None:
     assert all(len(item.required_raw_paths) >= 2 for item in items)
 
 
+def test_raw_path_provenance_is_explicit_and_disjoint_from_acceptance_paths() -> None:
+    required = {path for item in verifier.registry() for path in item.required_raw_paths}
+    provenance = {path for paths in verifier.PROVENANCE_ONLY_RAW_PATHS.values() for path in paths}
+    assert provenance.isdisjoint(required)
+    assert set(verifier.PROVENANCE_ONLY_RAW_PATHS) <= {item.requirement_id for item in verifier.registry()}
+
+
+def test_canonical_meta_has_no_post_checker_shape_exemption_or_literal_audits() -> None:
+    source = Path("scripts/runtime/check_rf17_acceptance_meta.py").read_text(encoding="utf-8")
+    assert "shape_not_applicable" not in source
+    assert "if checker returns True" not in source
+    assert "fresh_immediate_snapshot_audit_count = 48" not in source
+    assert "non_vacuous_precondition_audit_count = 48" not in source
+    assert '"fresh_immediate_snapshot_audit_failures": []' not in source
+    assert '"non_vacuous_precondition_audit_failures": []' not in source
+
+
 def test_registry_has_no_generic_fallback_or_mirrored_relation_model() -> None:
     source = Path("scripts/runtime/verify_rf17_acceptance.py").read_text(encoding="utf-8")
     for forbidden in ("registry_group", "_spec_for", "modulo", "default-success"):
