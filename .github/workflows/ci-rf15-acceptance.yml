@@ -79,13 +79,17 @@ jobs:
               assert not connection.in_transaction()
               version = connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
               tables = connection.execute(text("select count(*) from pg_catalog.pg_tables where schemaname='mayak' and tablename <> 'alembic_version'")).scalar_one()
-              indexes = connection.execute(text("select count(*) from pg_catalog.pg_indexes where schemaname='mayak' and indexname like 'ix_%'")).scalar_one()
+              physical_indexes = [row[0] for row in connection.execute(text("select indexname from pg_catalog.pg_indexes where schemaname='mayak' order by indexname"))]
               scan_indexes = connection.execute(text("select count(*) from pg_catalog.pg_indexes where schemaname='mayak' and indexname like 'ix_scan_%'")).scalar_one()
+              from mayak.persistence.metadata import metadata
               from alembic.config import Config
               from alembic.script import ScriptDirectory
               heads = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
               assert len(heads) == 1 and version == heads[0]
-              assert tables > 0 and indexes > 0 and scan_indexes > 0
+              assert tables == 51
+              assert sum(len(table.indexes) for table in metadata.tables.values()) == 73
+              assert len(physical_indexes) == 73
+              assert scan_indexes == 8
           engine.dispose()
           PY
       - name: Grant application runtime privileges
@@ -172,6 +176,7 @@ jobs:
             rf15-evidence.json
             rf15-requirement-map.json
             rf15-tamper-matrix.json
+            rf15-verifier-diagnostics.json
             verifier.stdout
             verifier.stderr
             rf15-producer.log

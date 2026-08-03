@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import inspect
 from pathlib import Path
@@ -18,29 +19,18 @@ def test_registry_has_exactly_29_requirements_and_raw_dependencies() -> None:
     assert len(V.REQUIREMENT_IDS) == 29
     assert set(V.REQUIREMENT_IDS) == set(V.CHECKERS)
     assert set(V.REQUIREMENT_IDS) == set(V.RAW_DEPENDENCY_PATHS)
-    assert all(
-        any("physical_before" in path for path in paths)
-        for paths in V.RAW_DEPENDENCY_PATHS.values()
-    )
+    assert set(V.REQUIREMENT_IDS) == set(V.TAMPER_PATHS)
+    assert all(paths for paths in V.RAW_DEPENDENCY_PATHS.values())
 
 
 def test_verifier_does_not_depend_on_conclusion_fields() -> None:
     forbidden = {
-        "due_at",
-        "now",
-        "next_due_at",
-        "missed_intervals",
-        "claimable",
-        "baseline_id",
-        "anchor_id",
-        "returned_run_ids",
-        "returned_results",
-        "effect_ids",
-        "terminal_ids",
-        "snapshot",
-        "listing_key",
-        "beacon_a",
-        "beacon_b",
+        "passed",
+        "accepted",
+        "checker_before",
+        "checker_after",
+        "requirement_verdict",
+        "producer_success",
     }
     assert not any(
         any(token in path.rsplit(".", 1)[-1] for token in forbidden)
@@ -110,3 +100,24 @@ def test_verifier_is_structurally_fail_closed() -> None:
     assert "return bool(ops)" not in source
     assert "operation.callable" not in source
     assert "_safe_check" not in source
+
+
+def test_producer_has_no_preoperation_session_autobegin_or_foreign_fixture_write() -> None:
+    source_path = Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    source = source_path.read_text()
+    tree = ast.parse(source)
+    assert "session.connection()" not in source
+    assert "insert into mayak.parser_outcomes" not in source.lower()
+    assert "_materialize_on_engine" not in source
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "connection"
+        for node in ast.walk(tree)
+    )
+
+
+def test_all_rf15_registries_are_explicit_and_not_defaulted() -> None:
+    assert set(V.REQUIREMENT_IDS) == set(V.CHECKERS) == set(V.RAW_DEPENDENCY_PATHS)
+    assert set(V.REQUIREMENT_IDS) == set(V.TAMPER_PATHS)
+    assert "default-for-all" not in inspect.getsource(V)

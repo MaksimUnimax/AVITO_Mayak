@@ -24,6 +24,14 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from mayak.contracts.idempotency import IdempotencyKey
+from mayak.modules.avito_parser_adapter.contracts import (
+    ParserAttemptOutcome,
+    TransportOutcomeStatus,
+)
+from mayak.modules.avito_parser_adapter.contracts import (
+    ParserOutcomeStatus as AdapterParserOutcomeStatus,
+)
+from mayak.modules.avito_parser_adapter.runtime import AvitoParserRuntime
 from mayak.modules.beacon_management import (
     BeaconManagementRuntime,
     BeaconParserEvidenceReference,
@@ -102,6 +110,8 @@ def _digest(value: Any) -> str:
 
 
 def _migration(connection: Any) -> dict[str, Any]:
+    from mayak.persistence.metadata import metadata
+
     head = str(
         connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
     )
@@ -115,14 +125,15 @@ def _migration(connection: Any) -> dict[str, Any]:
             )
         )
     ]
-    indexes = int(
-        connection.execute(
+    physical_indexes = [
+        str(row[0])
+        for row in connection.execute(
             text(
-                "select count(*) from pg_catalog.pg_indexes "
-                "where schemaname='mayak' and indexname like 'ix_%'"
+                "select indexname from pg_catalog.pg_indexes "
+                "where schemaname='mayak' order by indexname"
             )
-        ).scalar_one()
-    )
+        )
+    ]
     scan_indexes = int(
         connection.execute(
             text(
@@ -134,7 +145,12 @@ def _migration(connection: Any) -> dict[str, Any]:
     return {
         "head": head,
         "table_count": len(tables),
-        "global_index_count": indexes,
+        "metadata_index_count": sum(len(table.indexes) for table in metadata.tables.values()),
+        "physical_index_count": len(physical_indexes),
+        "physical_index_names": physical_indexes,
+        # Backward-compatible transcript label; it is no longer used as the
+        # metadata count because pg_catalog and SQLAlchemy count different sets.
+        "global_index_count": len(physical_indexes),
         "scan_index_count": scan_indexes,
         "independent_connection": True,
         "backend_pid": int(connection.execute(text("select pg_backend_pid()")).scalar_one()),
@@ -492,7 +508,7 @@ def _create_fixture(engine: Any) -> dict[str, str]:
 
 
 def prepare_claimed_run(
-    engine: Any, *, scenario_id: str, interval_seconds: int = 300
+    engine: Any, *, scenario_id: str, interval_seconds: int = 300, start_run_now: bool = True
 ) -> dict[str, Any]:
     """Create, materialize, claim and start one real scenario-owned run.
 
@@ -524,11 +540,10 @@ def prepare_claimed_run(
     with Session(engine) as session:
         repo = ScanRepository(session)
         materialized = materialize_due_work(repo, now + timedelta(days=365), 1000)
-        available = _physical(
-            session.connection(),
-            beacon_id=fixture["beacon_id"],
-            schedule_id=str(schedule.schedule_id),
-        )
+        with engine.connect() as probe:
+            available = _physical(
+                probe, beacon_id=fixture["beacon_id"], schedule_id=str(schedule.schedule_id)
+            )
         if len(materialized) != 1 and len(available["work_rows"]) != 1:
             raise RuntimeError(
                 f"{scenario_id}: expected exactly one materialized due work item, "
@@ -543,13 +558,16 @@ def prepare_claimed_run(
                 f"got {len(claims)}"
             )
         claim = claims[0]
-        run = start_run(repo, claim, SyntheticBeacon(beacon_id, account_id, revision), now)
-        session.commit()
+        run = (
+            start_run(repo, claim, SyntheticBeacon(beacon_id, account_id, revision), now)
+            if start_run_now
+            else None
+        )
     return {
         **fixture,
         "schedule_id": str(schedule.schedule_id),
         "work_id": str(claim.work_item_id),
-        "run_id": str(run.run_id),
+        "run_id": str(run.run_id) if run is not None else None,
         "claim": claim,
         "run": run,
         "now": now.isoformat(),
@@ -703,6 +721,34 @@ def _clean_outcome(candidates: tuple[ListingCandidate, ...] = ()) -> ParserOutco
     )
 
 
+def _persist_parser_fixture(
+    engine: Any, fixture: dict[str, Any], outcome: ParserOutcome, key: str
+) -> UUID:
+    """Persist a synthetic parser fact through the Module05 public owner."""
+    attempt = ParserAttemptOutcome(
+        attempt_id=f"rf15-{key}",
+        transport_status=TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+        parser_status=(
+            AdapterParserOutcomeStatus.USABLE_RESPONSE
+            if outcome.status == "CLEAN"
+            else AdapterParserOutcomeStatus.PARTIAL
+        ),
+    )
+    with engine.connect() as fixture_connection:
+        with fixture_connection.begin():
+            return (
+                AvitoParserRuntime()
+                .persist_outcome(
+                    fixture_connection,
+                    beacon_id=UUID(fixture["beacon_id"]),
+                    run_id=UUID(fixture["run_id"]),
+                    attempt=attempt,
+                    observed_at=_now(),
+                )
+                .outcome_id
+            )
+
+
 def _terminal(
     engine: Any,
     fixture: dict[str, Any],
@@ -716,60 +762,42 @@ def _terminal(
         UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
     )
     parser = SyntheticParserPort(outcome)
-    with Session(engine) as session:
-        repo = ScanRepository(session)
-        session.execute(
-            text(
-                "insert into mayak.parser_outcomes "
-                "(id, beacon_id, run_id, outcome_code, listing_snapshot, observed_at, "
-                "fingerprint, created_at) "
-                "values (cast(:id as uuid), cast(:beacon_id as uuid), cast(:run_id as uuid), "
-                ":outcome_code, cast(:listing_snapshot as jsonb), :observed_at, "
-                ":fingerprint, :created_at)"
-            ),
-            {
-                "id": str(outcome.outcome_id),
-                "beacon_id": fixture["beacon_id"],
-                "run_id": fixture["run_id"],
-                "outcome_code": outcome.status,
-                "listing_snapshot": json.dumps(
-                    outcome.candidates[0].snapshot if outcome.candidates else None
+    # Parser owns parser_outcomes.  The fixture is committed before the RF15
+    # measured interval and its returned identity is the only Scan reference.
+    parser_outcome_id = _persist_parser_fixture(engine, fixture, outcome, key)
+    with engine.connect() as probe:
+        before = _scoped(probe, fixture)
+    effective_run = run or fixture["run"]
+    with engine.connect() as measured:
+        with Session(bind=measured) as session:
+            repo = ScanRepository(session)
+            operation = _operation(
+                measured,
+                "mayak.modules.scan_orchestration.commit_comparison",
+                {
+                    "run_id": fixture["run_id"],
+                    "parser_outcome_id": str(parser_outcome_id),
+                    "idempotency_key": key,
+                },
+                lambda: commit_comparison(
+                    repo,
+                    effective_run,
+                    parser_outcome_id,
+                    beacon,
+                    SyntheticEntitlementPort(),
+                    parser,
+                    key,
+                    now,
                 ),
-                "observed_at": _now(),
-                "fingerprint": _digest({"key": key, "provenance": outcome.provenance_fingerprint}),
-                "created_at": _now(),
-            },
-        )
-        before = _scoped(session.connection(), fixture)
-        session.commit()
-        effective_run = run or fixture["run"]
-        operation = _operation(
-            session.connection(),
-            "mayak.modules.scan_orchestration.commit_comparison",
-            {
-                "run_id": fixture["run_id"],
-                "parser_outcome_id": str(outcome.outcome_id),
-                "idempotency_key": key,
-            },
-            lambda: commit_comparison(
-                repo,
-                effective_run,
-                outcome.outcome_id,
-                beacon,
-                SyntheticEntitlementPort(),
-                parser,
-                key,
-                now,
-            ),
-        )
-        session.commit()
-        after = _scoped(session.connection(), fixture)
+            )
+    with engine.connect() as probe:
+        after = _scoped(probe, fixture)
     return {
         "operation": operation,
         "physical_before": before,
         "physical_after": after,
         "scope": fixture,
-        "parser_outcome_id": str(outcome.outcome_id),
+        "parser_outcome_id": str(parser_outcome_id),
     }
 
 
@@ -839,12 +867,26 @@ def scenario_raw_payload_snapshot_boundary(connection: Any) -> dict[str, Any]:
         for descriptor, payload in zip(descriptors, payloads, strict=True)
     ]
     fixture = prepare_claimed_run(connection.engine, scenario_id="raw-payload")
+    safe = _terminal(
+        connection.engine,
+        fixture,
+        _clean_outcome((ListingCandidate(identity_key="raw-safe", snapshot={"price": 1}),)),
+        "rf15-raw-safe",
+    )
+    safe_snapshot = {"identity_key": "raw-safe", "snapshot": {"price": 1}}
     return {
         "scenario_id": "raw_payload_snapshot_boundary",
         "scope": fixture,
         "attempts": attempts,
         "physical_before": _scoped(connection, fixture),
         "physical_after": _scoped(connection, fixture),
+        "safe_persistence": {
+            "successful_terminal": "result" in safe["operation"],
+            "serialized_size": len(json.dumps(safe_snapshot, sort_keys=True).encode()),
+            "unsafe_persisted_values": False,
+            "raw_provider_body": False,
+            "safe_snapshot": safe_snapshot,
+        },
     }
 
 
@@ -869,11 +911,11 @@ def scenario_restart_durability(connection: Any) -> dict[str, Any]:
     engine.dispose()
     fresh_engine = create_engine(dsn, future=True)
     try:
-        with Session(fresh_engine) as session:
+        with fresh_engine.connect() as fresh_connection:
             physical = _physical(
-                session.connection(), beacon_id=fixture["beacon_id"], run_id=fixture["run_id"]
+                fresh_connection, beacon_id=fixture["beacon_id"], run_id=fixture["run_id"]
             )
-            pid = int(session.execute(text("select pg_backend_pid()")).scalar_one())
+            pid = _backend_pid(fresh_connection)
     finally:
         fresh_engine.dispose()
     return {
@@ -947,17 +989,12 @@ def _due_work_family(connection: Any, name: str) -> dict[str, Any]:
         case = _case(
             operation_connection,
             name,
-            lambda: _materialize_on_engine(connection.engine),
+            lambda: _materialize_on_connection(operation_connection),
             before=before,
         )
     with connection.engine.connect() as probe:
         case["physical_after"] = _physical(probe)
     return case
-
-
-def _materialize_on_engine(engine: Any) -> list[UUID]:
-    with Session(engine) as session:
-        return materialize_due_work(ScanRepository(session), _now(), 10)
 
 
 def _schedule_family(connection: Any, name: str) -> dict[str, Any]:
@@ -996,7 +1033,7 @@ def _claim_family(connection: Any, name: str) -> dict[str, Any]:
         case = _case(
             operation_connection,
             name,
-            lambda: _claim_on_engine(connection.engine),
+            lambda: _claim_on_connection(operation_connection),
             before=before,
         )
     with connection.engine.connect() as probe:
@@ -1004,36 +1041,40 @@ def _claim_family(connection: Any, name: str) -> dict[str, Any]:
     return case
 
 
-def _claim_on_engine(engine: Any) -> list[Any]:
-    with Session(engine) as session:
+def _claim_on_connection(connection: Any) -> list[Any]:
+    with Session(bind=connection) as session:
         return claim_work(ScanRepository(session), _now(), 1, 120)
 
 
 def scenario_schedule_uniqueness(connection: Any) -> dict[str, Any]:
     fixture = _create_fixture(connection.engine)
     before = _physical(connection, beacon_id=fixture["beacon_id"])
-    with Session(connection.engine) as session:
-        service = ScheduleService(
-            ScanRepository(session),
-            SyntheticBeacon(
-                UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
-            ),
-            SyntheticEntitlementPort(),
-        )
-        command_type = __import__(
-            "mayak.modules.scan_orchestration.contracts", fromlist=["ScheduleCommand"]
-        ).ScheduleCommand
-        operation = _operation(
-            connection,
-            "ScheduleService.create_or_update",
-            {"interval_seconds": 600},
-            lambda: service.create_or_update(
-                command_type(
-                    beacon_id=UUID(fixture["beacon_id"]), interval_seconds=600, next_due_at=_now()
-                )
-            ),
-        )
-        session.commit()
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            service = ScheduleService(
+                ScanRepository(session),
+                SyntheticBeacon(
+                    UUID(fixture["beacon_id"]),
+                    UUID(fixture["account_id"]),
+                    int(fixture["revision"]),
+                ),
+                SyntheticEntitlementPort(),
+            )
+            command_type = __import__(
+                "mayak.modules.scan_orchestration.contracts", fromlist=["ScheduleCommand"]
+            ).ScheduleCommand
+            operation = _operation(
+                measured,
+                "ScheduleService.create_or_update",
+                {"interval_seconds": 600},
+                lambda: service.create_or_update(
+                    command_type(
+                        beacon_id=UUID(fixture["beacon_id"]),
+                        interval_seconds=600,
+                        next_due_at=_now(),
+                    )
+                ),
+            )
     return {
         "operation": operation,
         "physical_before": before,
@@ -1048,14 +1089,14 @@ def scenario_due_work_current_slot(connection: Any) -> dict[str, Any]:
     before = _physical(
         connection, beacon_id=fixture["beacon_id"], schedule_id=fixture.get("schedule_id")
     )
-    with Session(connection.engine) as session:
-        operation = _operation(
-            session.connection(),
-            "materialize_due_work",
-            {"now": now.isoformat()},
-            lambda: materialize_due_work(ScanRepository(session), now, 10),
-        )
-        session.commit()
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            operation = _operation(
+                measured,
+                "materialize_due_work",
+                {"now": now.isoformat()},
+                lambda: materialize_due_work(ScanRepository(session), now, 10),
+            )
     after = _physical(connection, beacon_id=fixture["beacon_id"])
     return {
         "operation": operation,
@@ -1070,14 +1111,14 @@ def scenario_due_work_coalescing(connection: Any) -> dict[str, Any]:
     now = _now() + timedelta(days=30)
     with connection.engine.connect() as probe:
         before = _physical(probe, beacon_id=fixture["beacon_id"])
-    with Session(connection.engine) as session:
-        operation = _operation(
-            session.connection(),
-            "materialize_due_work",
-            {"now": now.isoformat(), "coalescing": True},
-            lambda: materialize_due_work(ScanRepository(session), now, 10),
-        )
-        session.commit()
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            operation = _operation(
+                measured,
+                "materialize_due_work",
+                {"now": now.isoformat(), "coalescing": True},
+                lambda: materialize_due_work(ScanRepository(session), now, 10),
+            )
     with connection.engine.connect() as probe:
         after = _physical(probe, beacon_id=fixture["beacon_id"])
     return {
@@ -1096,44 +1137,29 @@ def scenario_recovery_blocks_backlog(connection: Any) -> dict[str, Any]:
         provenance_fingerprint=_digest({"recovery": fixture["run_id"]}),
     )
     parser = SyntheticParserPort(outcome)
-    with Session(connection.engine) as session:
-        session.execute(
-            text(
-                "insert into mayak.parser_outcomes "
-                "(id, beacon_id, run_id, outcome_code, observed_at, fingerprint, created_at) "
-                "values (cast(:id as uuid), cast(:beacon_id as uuid), cast(:run_id as uuid), "
-                ":code, :observed_at, :fingerprint, :created_at)"
-            ),
-            {
-                "id": str(outcome.outcome_id),
-                "beacon_id": fixture["beacon_id"],
-                "run_id": fixture["run_id"],
-                "code": outcome.status,
-                "observed_at": _now(),
-                "fingerprint": outcome.provenance_fingerprint,
-                "created_at": _now(),
-            },
-        )
-        before = _scoped(session.connection(), fixture)
-        session.commit()
-        transition = _operation(
-            session.connection(),
-            "record_parser_outcome",
-            {"status": outcome.status, "run_id": fixture["run_id"]},
-            lambda: record_parser_outcome(
-                ScanRepository(session), fixture["run"], outcome.outcome_id, parser
-            ),
-        )
-        session.commit()
-    with Session(connection.engine) as session:
-        materialize = _operation(
-            session.connection(),
-            "materialize_due_work",
-            {"scenario_id": "recovery", "after_reconciliation": True},
-            lambda: materialize_due_work(ScanRepository(session), _now(), 10),
-        )
-        session.commit()
-        after = _scoped(session.connection(), fixture)
+    parser_outcome_id = _persist_parser_fixture(connection.engine, fixture, outcome, "recovery")
+    with connection.engine.connect() as probe:
+        before = _scoped(probe, fixture)
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            transition = _operation(
+                measured,
+                "record_parser_outcome",
+                {"status": outcome.status, "run_id": fixture["run_id"]},
+                lambda: record_parser_outcome(
+                    ScanRepository(session), fixture["run"], parser_outcome_id, parser
+                ),
+            )
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            materialize = _operation(
+                measured,
+                "materialize_due_work",
+                {"scenario_id": "recovery", "after_reconciliation": True},
+                lambda: materialize_due_work(ScanRepository(session), _now(), 10),
+            )
+    with connection.engine.connect() as probe:
+        after = _scoped(probe, fixture)
     return {
         "operation": transition,
         "materialize_operation": materialize,
@@ -1164,7 +1190,7 @@ def _concurrent_materialize(connection: Any, fixture: dict[str, Any], name: str)
                 independent,
                 "materialize_due_work",
                 {"scenario_id": name},
-                lambda: _materialize_on_engine(connection.engine),
+                lambda: _materialize_on_connection(independent),
             )
             records.append(operation)
 
@@ -1181,6 +1207,11 @@ def _concurrent_materialize(connection: Any, fixture: dict[str, Any], name: str)
     }
 
 
+def _materialize_on_connection(connection: Any) -> list[UUID]:
+    with Session(bind=connection) as session:
+        return materialize_due_work(ScanRepository(session), _now(), 10)
+
+
 def _concurrent_claim(connection: Any, fixture: dict[str, Any], name: str) -> dict[str, Any]:
     with connection.engine.connect() as probe:
         before = _physical(probe, beacon_id=fixture["beacon_id"])
@@ -1191,15 +1222,15 @@ def _concurrent_claim(connection: Any, fixture: dict[str, Any], name: str) -> di
     records: list[dict[str, Any]] = []
 
     def worker() -> None:
-        with Session(connection.engine) as session:
-            barrier.wait()
-            operation = _operation(
-                session.connection(),
-                "claim_work",
-                {"scenario_id": name},
-                lambda: claim_work(ScanRepository(session), _now(), 1, 120),
-            )
-            session.commit()
+        with connection.engine.connect() as measured:
+            with Session(bind=measured) as session:
+                barrier.wait()
+                operation = _operation(
+                    measured,
+                    "claim_work",
+                    {"scenario_id": name},
+                    lambda: claim_work(ScanRepository(session), _now(), 1, 120),
+                )
             records.append(operation)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -1255,14 +1286,14 @@ def scenario_expired_claim_reconciliation(connection: Any) -> dict[str, Any]:
     fixture = prepare_claimed_run(connection.engine, scenario_id="expired-claim")
     with connection.engine.connect() as probe:
         before = _scoped(probe, fixture)
-    with Session(connection.engine) as session:
-        operation = _operation(
-            session.connection(),
-            "claim_work",
-            {"now": (_now() + timedelta(minutes=3)).isoformat()},
-            lambda: claim_work(ScanRepository(session), _now() + timedelta(minutes=3), 1, 120),
-        )
-        session.commit()
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            operation = _operation(
+                measured,
+                "claim_work",
+                {"now": (_now() + timedelta(minutes=3)).isoformat()},
+                lambda: claim_work(ScanRepository(session), _now() + timedelta(minutes=3), 1, 120),
+            )
     with connection.engine.connect() as probe:
         after = _scoped(probe, fixture)
     return {
@@ -1309,57 +1340,67 @@ def scenario_lease_guard(connection: Any) -> dict[str, Any]:
 
 
 def scenario_run_revision_pin(connection: Any) -> dict[str, Any]:
-    fixture = prepare_claimed_run(connection.engine, scenario_id="run-revision-pin")
-    with Session(connection.engine) as session:
-        repo = ScanRepository(session)
-        operation = _operation(
-            session.connection(),
-            "start_run",
-            {"work_id": fixture["work_id"]},
-            lambda: start_run(
-                repo,
-                fixture["claim"],
-                SyntheticBeacon(
-                    UUID(fixture["beacon_id"]),
-                    UUID(fixture["account_id"]),
-                    int(fixture["revision"]),
+    fixture = prepare_claimed_run(
+        connection.engine, scenario_id="run-revision-pin", start_run_now=False
+    )
+    with connection.engine.connect() as probe:
+        before = _scoped(probe, fixture)
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            repo = ScanRepository(session)
+            operation = (
+                _operation(
+                    measured,
+                    "start_run",
+                    {"work_id": fixture["work_id"]},
+                    lambda: start_run(
+                        repo,
+                        fixture["claim"],
+                        SyntheticBeacon(
+                            UUID(fixture["beacon_id"]),
+                            UUID(fixture["account_id"]),
+                            int(fixture["revision"]),
+                        ),
+                        _now(),
+                    ),
                 ),
-                _now(),
-            ),
-        )
-        session.commit()
+            )
     return {
         "operation": operation,
-        "physical_before": _scoped(connection, fixture),
-        "physical_after": _scoped(connection, fixture),
+        "physical_before": before,
+        "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
         "scope": fixture,
     }
 
 
 def scenario_run_replay(connection: Any) -> dict[str, Any]:
-    fixture = prepare_claimed_run(connection.engine, scenario_id="run-replay")
-    with Session(connection.engine) as session:
-        repo = ScanRepository(session)
-        operation = _operation(
-            session.connection(),
-            "start_run",
-            {"work_id": fixture["work_id"], "replay": True},
-            lambda: start_run(
-                repo,
-                fixture["claim"],
-                SyntheticBeacon(
-                    UUID(fixture["beacon_id"]),
-                    UUID(fixture["account_id"]),
-                    int(fixture["revision"]),
+    fixture = prepare_claimed_run(connection.engine, scenario_id="run-replay", start_run_now=False)
+    with connection.engine.connect() as probe:
+        before = _scoped(probe, fixture)
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            repo = ScanRepository(session)
+            operation = (
+                _operation(
+                    measured,
+                    "start_run",
+                    {"work_id": fixture["work_id"], "replay": True},
+                    lambda: start_run(
+                        repo,
+                        fixture["claim"],
+                        SyntheticBeacon(
+                            UUID(fixture["beacon_id"]),
+                            UUID(fixture["account_id"]),
+                            int(fixture["revision"]),
+                        ),
+                        _now(),
+                    ),
                 ),
-                _now(),
-            ),
-        )
-        session.commit()
+            )
     return {
         "operation": operation,
-        "physical_before": _scoped(connection, fixture),
-        "physical_after": _scoped(connection, fixture),
+        "physical_before": before,
+        "physical_after": _physical(connection, beacon_id=fixture["beacon_id"]),
         "scope": fixture,
     }
 
@@ -1487,26 +1528,26 @@ def scenario_idempotency_replay_and_mismatch(connection: Any) -> dict[str, Any]:
         outcome,
         "rf15-idem",
     )
-    with Session(connection.engine) as session:
-        replay_operation = _operation(
-            session.connection(),
-            "commit_comparison",
-            {"idempotency_key": "rf15-idem", "replay": True},
-            lambda: commit_comparison(
-                ScanRepository(session),
-                fixture["run"],
-                outcome.outcome_id,
-                SyntheticBeacon(
-                    UUID(fixture["beacon_id"]),
-                    UUID(fixture["account_id"]),
-                    int(fixture["revision"]),
+    with connection.engine.connect() as measured:
+        with Session(bind=measured) as session:
+            replay_operation = _operation(
+                measured,
+                "commit_comparison",
+                {"idempotency_key": "rf15-idem", "replay": True},
+                lambda: commit_comparison(
+                    ScanRepository(session),
+                    fixture["run"],
+                    outcome.outcome_id,
+                    SyntheticBeacon(
+                        UUID(fixture["beacon_id"]),
+                        UUID(fixture["account_id"]),
+                        int(fixture["revision"]),
+                    ),
+                    SyntheticEntitlementPort(),
+                    SyntheticParserPort(outcome),
+                    "rf15-idem",
                 ),
-                SyntheticEntitlementPort(),
-                SyntheticParserPort(outcome),
-                "rf15-idem",
-            ),
-        )
-        session.commit()
+            )
     mismatch = _terminal(
         connection.engine,
         fixture,
