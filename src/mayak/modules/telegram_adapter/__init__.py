@@ -1,5 +1,7 @@
 """Telegram Adapter module package."""
 
+# ruff: noqa: I001
+
 from mayak.modules.telegram_adapter.contracts import (
     TelegramAccountLinkReference,
     TelegramCallbackActionScope,
@@ -117,6 +119,26 @@ from mayak.modules.telegram_adapter.contracts import (
     VerifiedTelegramIdentityEvidence,
 )
 from mayak.platform.boundaries import TELEGRAM_ADAPTER_MODULE_ID
+from .runtime import (
+    TelegramAdapterRuntime,
+    TelegramDeliveryMappingResult,
+    TelegramIdentityConflict,
+    TelegramIdentityMappingResult,
+    TelegramInputRejected,
+    TelegramIntakeOutcome,
+    TelegramIntakeResult,
+    TelegramReadiness,
+    TelegramRuntimeError,
+    telegram_readiness,
+    webhook_authenticity,
+)
+from .transport import (
+    FakeTelegramTransport,
+    HttpxTelegramTransport,
+    TelegramTransportClass,
+    TelegramTransportResult,
+    TelegramUpdateBatchResult,
+)
 
 MODULE_ID = TELEGRAM_ADAPTER_MODULE_ID
 
@@ -236,4 +258,20 @@ __all__ = [
     "TelegramRuntimeGateReference",
     "TelegramRuntimeBoundaryRequest",
     "TelegramRuntimeBoundaryOutcome",
+    "TelegramAdapterRuntime",
+    "TelegramDeliveryMappingResult",
+    "TelegramIdentityConflict",
+    "TelegramIdentityMappingResult",
+    "TelegramInputRejected",
+    "TelegramIntakeOutcome",
+    "TelegramIntakeResult",
+    "TelegramReadiness",
+    "TelegramRuntimeError",
+    "telegram_readiness",
+    "webhook_authenticity",
+    "FakeTelegramTransport",
+    "HttpxTelegramTransport",
+    "TelegramTransportClass",
+    "TelegramTransportResult",
+    "TelegramUpdateBatchResult",
 ]

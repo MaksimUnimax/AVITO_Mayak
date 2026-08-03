@@ -8,7 +8,7 @@ import pytest
 REPO = Path(__file__).parents[2]
 PRODUCTION_DIR = REPO / "src/mayak/modules/telegram_adapter"
 PRODUCTION = (PRODUCTION_DIR / "contracts.py", PRODUCTION_DIR / "__init__.py")
-EXPECTED_DIRECT_ENTRIES = {"contracts.py", "__init__.py"}
+EXPECTED_DIRECT_ENTRIES = {"contracts.py", "__init__.py", "runtime.py", "transport.py"}
 TG10_SYMBOLS = (
     "TelegramChatSurfaceClass",
     "TelegramChatSurfaceAdmissionState",

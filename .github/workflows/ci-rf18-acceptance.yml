@@ -1,0 +1,98 @@
+name: RF18 Telegram Adapter acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rf18:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+        env: {POSTGRES_USER: mayak, POSTGRES_PASSWORD: rf18_bootstrap_synthetic, POSTGRES_DB: mayak}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.sha }}", fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14.6'}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: '0.11.31'}
+      - run: test "$(python --version)" = "Python 3.14.6"
+      - run: test "$(uv --version | awk '{print $2}')" = "0.11.31"
+      - run: uv sync --frozen --all-groups --python 3.14.6
+      - name: Create synthetic database secrets
+        run: |
+          sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
+          umask 077
+          bootstrap='rf18_bootstrap_synthetic'
+          migration="$(openssl rand -hex 24)"
+          application="$(openssl rand -hex 24)"
+          printf '%s' "$bootstrap" > /run/secrets/mayak_postgres_bootstrap_password
+          printf '%s' "$migration" > /run/secrets/mayak_database_migration_password
+          printf '%s' "$application" > /run/secrets/mayak_database_application_password
+          {
+            echo "RF18_DATABASE_URL=postgresql+psycopg://mayak_application:${application}@127.0.0.1:5432/mayak"
+            echo "RF18_MIGRATION_DSN=postgresql+psycopg://mayak_migration:${migration}@127.0.0.1:5432/mayak"
+            echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:${migration}@127.0.0.1:5432/mayak"
+            echo "RF17_APPLICATION_DSN=postgresql+psycopg://mayak_application:${application}@127.0.0.1:5432/mayak"
+            echo "RF17_MIGRATION_DSN=postgresql+psycopg://mayak_migration:${migration}@127.0.0.1:5432/mayak"
+          } >> "$GITHUB_ENV"
+      - name: Bootstrap and migrate current head
+        run: |
+          uv run python - <<'PY'
+          from mayak.persistence.bootstrap import bootstrap_database
+          from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
+          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='127.0.0.1')))
+          PY
+          uv run alembic upgrade head
+      - name: Grant exact RF18 application boundary
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          import os
+          engine = create_engine(os.environ['RF18_MIGRATION_DSN'])
+          with engine.begin() as c:
+              c.execute(text("""do $$ declare r record; begin
+                for r in select table_schema, table_name from information_schema.tables where table_schema='mayak' and table_name <> 'alembic_version'
+                loop execute format('revoke insert, update, delete, truncate, references, trigger on table %I.%I from mayak_application', r.table_schema, r.table_name); end loop; end $$;"""))
+              c.execute(text('grant usage on schema mayak to mayak_application'))
+              c.execute(text('grant select, insert, update, delete on table mayak.telegram_inbound_updates, mayak.telegram_identity_mappings, mayak.telegram_delivery_mappings to mayak_application'))
+              c.execute(text('grant select on table mayak.identity_provider_links, mayak.notification_delivery_attempts to mayak_application'))
+              c.execute(text('grant usage, select, update on all sequences in schema mayak to mayak_application'))
+          PY
+      - name: Verify schema and runtime gates
+        run: |
+          uv run python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          e=create_engine(os.environ['RF18_MIGRATION_DSN'])
+          with e.connect() as c:
+              assert c.execute(text("select version_num from mayak.alembic_version")).scalar_one()
+              assert [r[0] for r in c.execute(text("select table_name from information_schema.tables where table_schema='mayak' and table_name like 'telegram_%' order by table_name"))] == ['telegram_delivery_mappings','telegram_identity_mappings','telegram_inbound_updates']
+          PY
+      - run: uv run pytest -q tests/runtime/test_rf18_telegram_adapter_runtime.py tests/contract/test_rf18_telegram_adapter_runtime_exports.py tests/architecture/test_rf18_telegram_runtime_boundaries.py tests/architecture/test_telegram_adapter_* tests/contract/test_telegram_adapter_imports.py
+      - run: uv run ruff check src/mayak/modules/telegram_adapter scripts/runtime/run_rf18_postgres_acceptance.py scripts/runtime/verify_rf18_acceptance.py scripts/runtime/check_rf18_telegram_live.py tests/runtime/test_rf18_telegram_adapter_runtime.py tests/runtime/test_rf18_telegram_adapter_postgres.py
+      - run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/telegram_adapter/runtime.py src/mayak/modules/telegram_adapter/transport.py
+      - run: uv run python scripts/runtime/run_rf18_postgres_acceptance.py --dsn "$RF18_DATABASE_URL" --fixture-dsn "$RF18_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf18-acceptance-evidence.json
+      - run: RF18_DATABASE_URL="$RF18_DATABASE_URL" uv run pytest -q tests/runtime/test_rf18_telegram_adapter_postgres.py
+      - run: uv run python scripts/runtime/verify_rf18_acceptance.py rf18-acceptance-evidence.json
+      - run: uv run pytest -q
+      - name: Artifact safety scan
+        run: |
+          ! rg -n -i 'bearer[[:space:]]+[^ ]+|authorization[[:space:]]*[:=]|BEGIN (RSA|OPENSSH) PRIVATE KEY|api\.telegram\.org/bot' rf18-acceptance-evidence.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rf18-telegram-adapter-acceptance
+          path: rf18-acceptance-evidence.json

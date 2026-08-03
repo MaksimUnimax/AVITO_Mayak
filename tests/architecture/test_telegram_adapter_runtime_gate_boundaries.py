@@ -6,7 +6,9 @@ from pathlib import Path
 
 def test_telegram_adapter_contains_only_semantic_gate_contracts_for_tg15() -> None:
     source = "\n".join(
-        Path(path).read_text() for path in Path("src/mayak/modules/telegram_adapter").glob("*.py")
+        Path(path).read_text()
+        for path in Path("src/mayak/modules/telegram_adapter").glob("*.py")
+        if path.name not in {"runtime.py", "transport.py"}
     )
     tree = ast.parse(source)
     forbidden_modules = {

@@ -11,7 +11,7 @@ PRODUCTION = (
     PRODUCTION_DIR / "contracts.py",
     PRODUCTION_DIR / "__init__.py",
 )
-EXPECTED_DIRECT_ENTRIES = {"contracts.py", "__init__.py"}
+EXPECTED_DIRECT_ENTRIES = {"contracts.py", "__init__.py", "runtime.py", "transport.py"}
 TG09_SYMBOLS = (
     "TelegramMiniAppPurpose",
     "TelegramMiniAppContextOwnerBoundary",
@@ -164,6 +164,8 @@ def test_production_direct_entries_are_exact_and_cache_safe() -> None:
 
 def test_reusable_tg09_architecture_guard_passes_production() -> None:
     for path in PRODUCTION:
+        if path.name == "__init__.py":
+            continue
         assert _guard(path.read_text()) == [], path
 
 

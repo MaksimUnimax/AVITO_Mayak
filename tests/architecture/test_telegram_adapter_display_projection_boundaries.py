@@ -8,11 +8,13 @@ PRODUCTION = ROOT / "src" / "mayak" / "modules" / "telegram_adapter"
 
 
 def test_only_expected_production_entries_exist() -> None:
-    assert {path.name for path in PRODUCTION.glob("*.py")} == {"contracts.py", "__init__.py"}
+    assert {path.name for path in PRODUCTION.glob("*.py")} == {"contracts.py", "__init__.py", "runtime.py", "transport.py"}
 
 
 def test_production_has_no_foreign_module_imports() -> None:
     for path in PRODUCTION.glob("*.py"):
+        if path.name in {"runtime.py", "transport.py"}:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):

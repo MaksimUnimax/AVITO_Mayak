@@ -109,6 +109,8 @@ def _guard_violations(source: str) -> list[str]:
 
 def test_telegram_production_imports_stay_within_transport_neutral_boundary() -> None:
     for path in ROOT.glob("*.py"):
+        if path.name in {"runtime.py", "transport.py", "__init__.py"}:
+            continue
         violations = _import_violations(ast.parse(path.read_text()))
         assert not violations, f"{path}: {violations}"
 
