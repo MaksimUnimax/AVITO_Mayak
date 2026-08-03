@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 from pathlib import Path
 
 import pytest
@@ -78,7 +79,7 @@ def test_cadence_contract_is_actual_policy() -> None:
                     "operation": {
                         "callable": "validate_cadence",
                         "input": {},
-                        "exception": {},
+                        "exception": {"class": "CadenceRejected"},
                         "started_at": "2026-08-02T00:00:00+00:00",
                         "finished_at": "2026-08-02T00:00:01+00:00",
                         "backend_pid": i,
@@ -88,3 +89,24 @@ def test_cadence_contract_is_actual_policy() -> None:
             ],
         },
     )
+
+
+def test_missing_semantic_evidence_is_rejected() -> None:
+    assert not V._check(
+        "schedule_uniqueness",
+        {"operation": {"callable": "create_or_update", "input": {}, "result": {}}},
+    )
+    assert not hasattr(V, "_safe_check")
+
+
+def test_tamper_paths_are_requirement_specific() -> None:
+    assert len(V.TAMPER_PATHS) == 29
+    assert V.TAMPER_PATHS["raw_payload_snapshot_boundary"] != V.TAMPER_PATHS["cadence_policy"]
+    assert V.TAMPER_PATHS["due_work_coalescing"] != V.TAMPER_PATHS["due_work_current_slot"]
+
+
+def test_verifier_is_structurally_fail_closed() -> None:
+    source = inspect.getsource(V)
+    assert "return bool(ops)" not in source
+    assert "operation.callable" not in source
+    assert "_safe_check" not in source

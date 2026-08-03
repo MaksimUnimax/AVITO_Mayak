@@ -1,4 +1,4 @@
-"""Pure, fail-closed consumer of RF15 raw PostgreSQL transcripts."""
+"""Pure, fail-closed verifier for the RF15 raw runtime transcript."""
 
 from __future__ import annotations
 
@@ -60,16 +60,6 @@ REQUIREMENT_IDS = (
 )
 
 
-def _case(d: Mapping[str, Any], name: str) -> Mapping[str, Any]:
-    cases = d.get("behavioral_cases")
-    if not isinstance(cases, Mapping) or set(cases) != set(REQUIREMENT_IDS):
-        raise ValueError("behavioral case registry mismatch")
-    value = cases[name]
-    if not isinstance(value, Mapping):
-        raise ValueError(f"missing case: {name}")
-    return value
-
-
 def _time(value: Any) -> datetime:
     if not isinstance(value, str):
         raise ValueError("timestamp is not a string")
@@ -80,21 +70,24 @@ def _time(value: Any) -> datetime:
 
 
 def _op(value: Any) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping) or not isinstance(value.get("callable"), str):
+    if (
+        not isinstance(value, Mapping)
+        or not isinstance(value.get("callable"), str)
+        or not isinstance(value.get("input"), Mapping)
+    ):
         raise ValueError("raw operation missing")
-    if not isinstance(value.get("input"), Mapping):
-        raise ValueError("raw operation input missing")
     if ("result" in value) == ("exception" in value):
         raise ValueError("raw operation must contain result xor exception")
-    start, finish = _time(value.get("started_at")), _time(value.get("finished_at"))
-    if start >= finish or not isinstance(value.get("backend_pid"), int):
+    if _time(value.get("started_at")) >= _time(value.get("finished_at")) or not isinstance(
+        value.get("backend_pid"), int
+    ):
         raise ValueError("invalid raw operation interval or backend identity")
     return value
 
 
-def _ops(c: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    result = []
-    for key, value in c.items():
+def _ops(case: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    result: list[Mapping[str, Any]] = []
+    for key, value in case.items():
         if key == "operation" or key.startswith("operation_"):
             if isinstance(value, Mapping):
                 result.append(_op(value))
@@ -105,242 +98,329 @@ def _ops(c: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return result
 
 
-def _physical(c: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
-    before, after = c.get("physical_before"), c.get("physical_after")
+def _physical(case: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    before, after = case.get("physical_before"), case.get("physical_after")
     if not isinstance(before, Mapping) or not isinstance(after, Mapping):
-        raise ValueError("raw physical observations missing")
-    for rows in (before, after):
-        for key in (
-            "schedule_rows",
-            "work_rows",
-            "run_rows",
-            "listing_rows",
-            "anchor_rows",
-            "event_ids",
-        ):
-            if key in rows and not isinstance(rows[key], list):
-                raise ValueError(f"raw physical field is not a row/list: {key}")
+        raise ValueError("physical observations missing")
+    for observation in (before, after):
+        for key in ("schedule_rows", "work_rows", "run_rows", "listing_rows", "event_ids"):
+            if not isinstance(observation.get(key), list):
+                raise ValueError(f"missing physical leaf: {key}")
     return before, after
 
 
-def _terminal(c: Mapping[str, Any]) -> bool:
-    ops = _ops(c)
-    before, after = _physical(c)
+def _case(data: Mapping[str, Any], name: str) -> Mapping[str, Any]:
+    cases = data.get("behavioral_cases")
+    if (
+        not isinstance(cases, Mapping)
+        or set(cases) != set(REQUIREMENT_IDS)
+        or not isinstance(cases.get(name), Mapping)
+    ):
+        raise ValueError("behavioral case registry mismatch")
+    return cases[name]
+
+
+def _success(case: Mapping[str, Any], needle: str) -> bool:
+    return any(needle in str(op["callable"]) and "result" in op for op in _ops(case))
+
+
+def _rejects(case: Mapping[str, Any], count: int, classes: set[str]) -> bool:
+    attempts = case.get("attempts")
     return (
-        any("commit_comparison" in str(op["callable"]) for op in ops)
-        and isinstance(after.get("run_rows"), list)
-        and isinstance(after.get("listing_rows"), list)
-        and before != after
+        isinstance(attempts, list)
+        and len(attempts) == count
+        and all(
+            isinstance(item, Mapping)
+            and isinstance(item.get("operation"), Mapping)
+            and item["operation"].get("exception", {}).get("class") in classes
+            and item.get("physical_before") == item.get("physical_after")
+            for item in attempts
+        )
     )
 
 
-def _check(name: str, c: Mapping[str, Any]) -> bool:
-    ops = _ops(c)
-    if not ops:
-        return False
-    if name == "cadence_policy":
-        result = c.get("operation", {}).get("result", {})
-        return (
-            result.get("basic") == [300, 600]
-            and result.get("free") == [10800, 21600]
-            and len(c.get("attempts", [])) >= 6
-        )
-    if name == "parser_failure_no_advance":
-        attempts = c.get("attempts", [])
-        return (
-            set(c.get("statuses", [])) == PARSER_FAILURES
-            and len(attempts) == len(PARSER_FAILURES)
-            and all(
-                isinstance(x, Mapping)
-                and isinstance(x.get("operation", {}).get("exception"), Mapping)
-                and x.get("physical_before") == x.get("physical_after")
-                for x in attempts
-            )
-        )
-    if name == "raw_payload_snapshot_boundary":
-        return len(c.get("attempts", [])) >= 15 and all(
-            isinstance(x, Mapping)
-            and isinstance(x.get("operation", {}).get("exception"), Mapping)
-            for x in c["attempts"]
-        )
-    if name not in {"cadence_policy", "parser_failure_no_advance"}:
-        _physical(c)
-        return bool(ops)
-    if name == "foreign_state_witness":
-        return "commit_comparison" in str(ops[0]["callable"]) and c.get("physical_before", {}).get(
-            "semantic"
-        ) == c.get("physical_after", {}).get("semantic")
-    if name == "restart_durability":
-        return isinstance(
-            c.get("physical_after", {}).get("second_lifetime", {}).get("backend_pid"), int
-        )
-    if name in {"lease_guard", "authority_recheck"}:
-        return len(c.get("attempts", [])) == (3 if name == "lease_guard" else 4) and all(
-            "exception" in x.get("operation", {}) for x in c["attempts"]
-        )
-    if name in {
-        "due_materialization_concurrency",
-        "concurrent_idempotency",
-        "concurrent_baseline_serialization",
-        "concurrent_new_listing_serialization",
-    }:
-        a, b = c.get("operation_a"), c.get("operation_b")
-        if not isinstance(a, Mapping) or not isinstance(b, Mapping):
-            return False
-        return (
-            a.get("backend_pid") != b.get("backend_pid")
-            and _time(a["started_at"]) < _time(b["finished_at"])
-            and _time(b["started_at"]) < _time(a["finished_at"])
-        )
-    if name == "empty_baseline_durable":
-        return _terminal(c) and len(c["physical_after"].get("listing_rows", [])) == 0
-    if name == "baseline_no_event":
-        before, after = _physical(c)
-        return _terminal(c) and len(after.get("event_ids", [])) == len(before.get("event_ids", []))
-    if name == "new_listing_exactly_once":
-        return _terminal(c) and len(c["physical_after"].get("event_ids", [])) == 1
-    if name == "price_change_no_event":
-        return _terminal(c) and len(c["physical_after"].get("event_ids", [])) == len(
-            c["physical_before"].get("event_ids", [])
-        )
-    if name == "absence_no_removal":
-        return _terminal(c) and c["physical_before"].get("listing_rows") == c["physical_after"].get(
-            "listing_rows"
-        )
-    if name == "schedule_uniqueness":
-        return len(c["physical_after"].get("schedule_rows", [])) == 1
-    if name in {
-        "due_work_current_slot",
-        "due_work_coalescing",
-        "recovery_blocks_backlog",
-        "claim_exclusivity",
-        "expired_claim_reconciliation",
-        "run_revision_pin",
-        "run_replay",
-    }:
-        return isinstance(c["physical_after"].get("work_rows"), list) and isinstance(
-            c["physical_after"].get("run_rows"), list
-        )
+def _terminal(case: Mapping[str, Any]) -> bool:
+    return _success(case, "commit_comparison") and case["physical_before"] != case["physical_after"]
+
+
+def _concurrent(case: Mapping[str, Any], needle: str) -> bool:
+    a, b = case.get("operation_a"), case.get("operation_b")
     return (
-        _terminal(c)
-        if name not in {"platform_event_identity", "no_foreign_domain_effect"}
-        else _terminal(c)
+        isinstance(a, Mapping)
+        and isinstance(b, Mapping)
+        and needle in str(a.get("callable"))
+        and needle in str(b.get("callable"))
+        and isinstance(a.get("backend_pid"), int)
+        and isinstance(b.get("backend_pid"), int)
+        and a["backend_pid"] != b["backend_pid"]
+        and _time(a["started_at"]) < _time(b["finished_at"])
+        and _time(b["started_at"]) < _time(a["finished_at"])
     )
 
 
-def _safe_check(data: Mapping[str, Any], name: str) -> bool:
+def _check(name: str, case: Mapping[str, Any]) -> bool:
+    """Every requirement has an independent semantic branch. Missing leaves reject."""
     try:
-        result = _check(name, _case(data, name))
-        if result or name == "parser_failure_no_advance":
-            return result
-        case = _case(data, name)
-        _ops(case)
-        _physical(case)
-        return True
-    except (KeyError, IndexError, TypeError, ValueError, OverflowError):
-        try:
-            case = _case(data, name)
-            _physical(case)
-            candidates = []
-            if isinstance(case.get("operation"), Mapping):
-                candidates.append(case["operation"])
-            if isinstance(case.get("attempts"), list):
-                candidates.extend(
-                    item.get("operation")
-                    for item in case["attempts"]
-                    if isinstance(item, Mapping) and isinstance(item.get("operation"), Mapping)
-                )
-            return bool(candidates) and all(
-                isinstance(item.get("callable"), str)
-                and (
-                    "exception" not in item
-                    or isinstance(item.get("exception"), Mapping)
-                )
-                for item in candidates
-                if isinstance(item, Mapping)
+        if name == "cadence_policy":
+            result = case["operation"]["result"]
+            return (
+                _success(case, "validate_cadence")
+                and result["basic"] == [300, 600]
+                and result["free"] == [10800, 21600]
+                and _rejects(case, 6, {"CadenceRejected"})
             )
-        except (KeyError, IndexError, TypeError, ValueError, OverflowError):
-            return False
+        before, after = _physical(case)
+        if name == "schedule_uniqueness":
+            return (
+                _success(case, "create_or_update")
+                and len(after["schedule_rows"]) == 1
+                and after["schedule_rows"][0]["interval_seconds"] in (300, 600)
+            )
+        if name == "due_work_current_slot":
+            return (
+                _success(case, "materialize_due_work")
+                and after["work_rows"]
+                and all(
+                    row["due_at"] <= case["operation"]["input"]["now"] for row in after["work_rows"]
+                )
+            )
+        if name == "due_work_coalescing":
+            return (
+                _success(case, "materialize_due_work")
+                and len(after["work_rows"]) == 1
+                and after["schedule_rows"][0]["next_due_at"] > case["operation"]["input"]["now"]
+            )
+        if name == "recovery_blocks_backlog":
+            return (
+                _success(case, "record_parser_outcome")
+                and _success(case, "materialize_due_work")
+                and len(after["work_rows"]) == len(before["work_rows"])
+            )
+        if name == "due_materialization_concurrency":
+            return _concurrent(case, "materialize_due_work") and len(after["work_rows"]) == 1
+        if name == "claim_exclusivity":
+            return (
+                _concurrent(case, "claim_work")
+                and sum(row["state"] == "CLAIMED" for row in after["work_rows"]) == 1
+            )
+        if name == "expired_claim_reconciliation":
+            return _rejects(case, 1, {"DependencyBlocked", "LeaseConflict"}) and any(
+                row["state"] == "RECONCILIATION" for row in after["work_rows"]
+            )
+        if name == "lease_guard":
+            return _rejects(case, 3, {"LeaseConflict"}) and before == after
+        if name == "run_revision_pin":
+            return (
+                _success(case, "start_run")
+                and after["run_rows"]
+                and all(
+                    row["revision_no"] == case["operation"]["result"]["revision_no"]
+                    for row in after["run_rows"]
+                )
+            )
+        if name == "run_replay":
+            return (
+                _success(case, "start_run")
+                and len(after["run_rows"]) == len(before["run_rows"])
+                and case["operation"]["result"].get("replayed") is True
+            )
+        if name == "baseline_no_event":
+            return (
+                _terminal(case)
+                and after["listing_rows"]
+                and len(after["event_ids"]) == len(before["event_ids"])
+            )
+        if name == "empty_baseline_durable":
+            return (
+                _terminal(case)
+                and len(after["run_rows"]) > len(before["run_rows"])
+                and not after["listing_rows"]
+                and not after["event_ids"]
+            )
+        if name == "parser_failure_no_advance":
+            return set(case["statuses"]) == PARSER_FAILURES and _rejects(
+                case, len(PARSER_FAILURES), {"DependencyBlocked", "ParserRejected"}
+            )
+        if name == "new_listing_exactly_once":
+            return (
+                _terminal(case)
+                and len(after["listing_rows"]) == len(before["listing_rows"]) + 1
+                and len(after["event_ids"]) == len(before["event_ids"]) + 1
+            )
+        if name == "price_change_no_event":
+            return (
+                _terminal(case)
+                and len(after["listing_rows"]) == len(before["listing_rows"])
+                and len(after["event_ids"]) == len(before["event_ids"])
+            )
+        if name == "duplicate_within_run_exactly_once":
+            return (
+                _terminal(case) and len(after["listing_rows"]) == 1 and len(after["event_ids"]) <= 1
+            )
+        if name == "beacon_isolation":
+            return (
+                _terminal(case)
+                and case["scope"]["a"]["beacon_id"] != case["scope"]["b"]["beacon_id"]
+                and case["physical_before"].get("beacon_id")
+                == case["physical_after"].get("beacon_id")
+            )
+        if name == "absence_no_removal":
+            return (
+                _terminal(case)
+                and bool(before["listing_rows"])
+                and before["listing_rows"] == after["listing_rows"]
+            )
+        if name == "authority_recheck":
+            return (
+                _rejects(case, 4, {"DependencyBlocked", "RevisionConflict", "CadenceRejected"})
+                and before == after
+            )
+        if name == "idempotency_replay_and_mismatch":
+            return (
+                _terminal(case)
+                and case.get("operation_replay", {}).get("result") is not None
+                and case.get("operation_mismatch", {}).get("exception", {}).get("class")
+                == "IdempotencyMismatch"
+            )
+        if name in {
+            "concurrent_idempotency",
+            "concurrent_baseline_serialization",
+            "concurrent_new_listing_serialization",
+        }:
+            return (
+                _concurrent(case, "commit_comparison")
+                and len(after["listing_rows"]) == 1
+                and len(after["event_ids"]) <= 1
+            )
+        if name == "restart_durability":
+            second = after["second_lifetime"]
+            return (
+                _terminal(case)
+                and isinstance(second["backend_pid"], int)
+                and second["run_rows"] == after["run_rows"]
+            )
+        if name in {"foreign_state_witness", "no_foreign_domain_effect"}:
+            return (
+                _terminal(case["rf15_physical"])
+                and case["physical_before"]["semantic"] == case["physical_after"]["semantic"]
+            )
+        if name == "raw_payload_snapshot_boundary":
+            return _rejects(case, 15, {"ValidationError"}) and not after.get(
+                "unsafe_persisted_values"
+            )
+        if name == "platform_event_identity":
+            return (
+                _terminal(case)
+                and case.get("returned_event_id") == case.get("persisted_event_id")
+                and case["returned_event_id"] in after["event_ids"]
+            )
+    except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+        return False
+    return False
 
 
-CHECKERS = {name: (lambda d, n=name: _safe_check(d, n)) for name in REQUIREMENT_IDS}
+CHECKERS = {
+    name: (lambda data, requirement=name: _check(requirement, _case(data, requirement)))
+    for name in REQUIREMENT_IDS
+}
 BEHAVIORAL_CHECKERS = CHECKERS
-
-
-def _tamper_path(name: str) -> tuple[Any, ...]:
-    if name in {"lease_guard", "authority_recheck"}:
-        return ("attempts", 0, "operation", "callable")
-    if name == "parser_failure_no_advance":
-        return ("statuses", 0)
-    if name == "raw_payload_snapshot_boundary":
-        return ("attempts", 0, "operation", "exception")
-    return ("operation", "callable")
-
-
 RAW_DEPENDENCY_PATHS = {
-    name: (
-        f"behavioral_cases.{name}.operation.callable",
-        f"behavioral_cases.{name}.operation.input",
+    name: [
+        f"behavioral_cases.{name}.operation",
         f"behavioral_cases.{name}.physical_before",
         f"behavioral_cases.{name}.physical_after",
-    )
+    ]
     for name in REQUIREMENT_IDS
 }
 
-
-def _at(value: Any, path: tuple[Any, ...]) -> Any:
-    for part in path:
-        value = value[part]
-    return value
+TAMPER_PATHS = {name: ("physical_after", "event_ids") for name in REQUIREMENT_IDS}
+TAMPER_PATHS.update(
+    {
+        "cadence_policy": ("operation", "result", "basic"),
+        "schedule_uniqueness": ("physical_after", "schedule_rows"),
+        "due_work_current_slot": ("operation", "input", "now"),
+        "due_work_coalescing": ("physical_after", "work_rows"),
+        "recovery_blocks_backlog": ("physical_after", "work_rows"),
+        "claim_exclusivity": ("physical_after", "work_rows"),
+        "expired_claim_reconciliation": ("physical_after", "work_rows"),
+        "lease_guard": ("attempts", 0, "physical_after"),
+        "run_revision_pin": ("operation", "result", "revision_no"),
+        "run_replay": ("operation", "result", "replayed"),
+        "empty_baseline_durable": ("physical_after", "listing_rows"),
+        "duplicate_within_run_exactly_once": ("physical_after", "listing_rows"),
+        "beacon_isolation": ("physical_after", "beacon_id"),
+        "absence_no_removal": ("physical_after", "listing_rows"),
+        "authority_recheck": ("attempts", 0, "operation", "exception"),
+        "idempotency_replay_and_mismatch": (
+            "operation_mismatch", "exception", "class"
+        ),
+        "concurrent_baseline_serialization": ("physical_after", "listing_rows"),
+        "parser_failure_no_advance": ("attempts", 0, "physical_after"),
+        "raw_payload_snapshot_boundary": ("attempts", 0, "operation", "exception"),
+        "foreign_state_witness": ("physical_after", "semantic"),
+        "no_foreign_domain_effect": ("physical_after", "semantic"),
+        "restart_durability": ("physical_after", "second_lifetime", "run_rows"),
+    }
+)
 
 
 def _tamper(data: Mapping[str, Any], name: str) -> dict[str, Any]:
     result = copy.deepcopy(dict(data))
-    case = result["behavioral_cases"][name]
-    path = _tamper_path(name)
-    parent = case
+    parent: Any = result["behavioral_cases"][name]
+    path = TAMPER_PATHS[name]
     for part in path[:-1]:
         parent = parent[part]
-    current = parent[path[-1]]
-    parent[path[-1]] = (
-        (not current)
-        if isinstance(current, bool)
-        else (current + 1 if isinstance(current, int) else None)
-    )
+    leaf = path[-1]
+    value = parent[leaf]
+    if isinstance(value, list):
+        parent[leaf] = value + [{"tampered": True}]
+    elif isinstance(value, bool):
+        parent[leaf] = not value
+    elif isinstance(value, int):
+        parent[leaf] = value + 1
+    elif isinstance(value, dict):
+        parent[leaf] = {"tampered": True}
+    else:
+        parent[leaf] = "tampered"
     return result
 
 
 BEHAVIORAL_TAMPERS = {
     name: (
-        lambda data, requirement=name: (_tamper(data, requirement), (_tamper_path(requirement),))
+        lambda data, requirement=name: (_tamper(data, requirement), (TAMPER_PATHS[requirement],))
     )
     for name in REQUIREMENT_IDS
 }
 
 
 def verify(data: dict[str, Any], output_dir: Path) -> None:
-    if data.get("identity", {}).get("technical_id") != TECHNICAL_ID:
-        raise ValueError("identity mismatch")
-    if set(data.get("behavioral_cases", {})) != set(REQUIREMENT_IDS):
-        raise ValueError("requirement registry mismatch")
+    if data.get("identity", {}).get("technical_id") != TECHNICAL_ID or set(
+        data.get("behavioral_cases", {})
+    ) != set(REQUIREMENT_IDS):
+        raise ValueError("identity or requirement registry mismatch")
     rows = []
-    for name, checker in CHECKERS.items():
-        original = {key: bool(value(data)) for key, value in CHECKERS.items()}
+    original = {name: bool(CHECKERS[name](data)) for name in REQUIREMENT_IDS}
+    if not all(original.values()):
+        raise ValueError("original evidence is not true for every requirement")
+    for name in REQUIREMENT_IDS:
         mutated = _tamper(data, name)
-        changed = {key: bool(value(mutated)) for key, value in CHECKERS.items()}
+        after = {other: bool(CHECKERS[other](mutated)) for other in REQUIREMENT_IDS}
+        changed = [other for other in REQUIREMENT_IDS if original[other] != after[other]]
+        if after[name] or name not in changed:
+            raise ValueError(f"semantic tamper did not reject {name}")
         rows.append(
             {
                 "requirement_id": name,
-                "checker": "_check",
-                "raw_dependency_paths": list(RAW_DEPENDENCY_PATHS[name]),
-                "tamper_id": name,
                 "checker_before": original,
-                "checker_after": changed,
-                "changed_checker_ids": [key for key in original if original[key] != changed[key]],
+                "checker_after": after,
+                "changed_checker_ids": changed,
+                "tamper_id": name,
+                "raw_dependency_paths": RAW_DEPENDENCY_PATHS[name],
             }
         )
+    payload = {"requirements": rows}
     output_dir.joinpath("rf15-requirement-map.json").write_text(
-        json.dumps({"requirements": rows}, indent=2, sort_keys=True) + "\n"
+        json.dumps(payload, indent=2, sort_keys=True) + "\n"
     )
     output_dir.joinpath("rf15-tamper-matrix.json").write_text(
         json.dumps({"tampers": rows}, indent=2, sort_keys=True) + "\n"

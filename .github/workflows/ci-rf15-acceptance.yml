@@ -124,6 +124,25 @@ jobs:
           uv run python scripts/runtime/verify_rf15_acceptance.py rf15-evidence.json > verifier.stdout 2> verifier.stderr
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stderr || true)" -eq 0
+      - name: Independent immutable RF15 matrix meta-gate
+        run: |
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          ids = json.loads(Path('rf15-evidence.json').read_text())['scenario_ids']
+          requirements = json.loads(Path('rf15-requirement-map.json').read_text())['requirements']
+          tampers = json.loads(Path('rf15-tamper-matrix.json').read_text())['tampers']
+          assert len(ids) == len(set(ids)) == 29
+          assert len(requirements) == len(tampers) == 29
+          assert {row['requirement_id'] for row in requirements} == set(ids)
+          assert {row['requirement_id'] for row in tampers} == set(ids)
+          for row in requirements + tampers:
+              rid = row['requirement_id']
+              assert row['checker_before'][rid] is True
+              assert row['checker_after'][rid] is False
+              assert rid in row['changed_checker_ids']
+          print('RF15_MATRIX_META_GATE_VERIFIED')
+          PY
       - if: always()
         uses: actions/upload-artifact@v4
         with:
