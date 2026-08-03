@@ -1,11 +1,21 @@
-# ruff: noqa: E501
+# ruff: noqa: E402, E501
 from __future__ import annotations
 
 import ast
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from scripts.runtime import check_rf17_acceptance_meta as meta
 from scripts.runtime import verify_rf17_acceptance as verifier
 
 
@@ -98,6 +108,92 @@ def test_canonical_meta_gate_is_the_workflow_authority() -> None:
     assert "check_rf17_acceptance_meta.py" in workflow
     assert "from scripts.runtime import verify_rf17_acceptance" in meta
     assert "uv run python - <<'PY'" not in workflow[workflow.index("Immutable meta-gate") :]
+
+
+def _clean_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.pop("PYTHONHOME", None)
+    return env
+
+
+def _uv() -> str:
+    return shutil.which("uv") or "/root/.local/bin/uv"
+
+
+def test_canonical_entrypoint_is_importable_from_clean_repository_root() -> None:
+    result = subprocess.run([_uv(), "run", "python", "scripts/runtime/check_rf17_acceptance_meta.py", "--help"], cwd=ROOT, env=_clean_env(), capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+
+
+def test_canonical_entrypoint_is_importable_from_clean_foreign_cwd() -> None:
+    script = ROOT / "scripts/runtime/check_rf17_acceptance_meta.py"
+    with tempfile.TemporaryDirectory() as foreign:
+        result = subprocess.run([_uv(), "run", "python", str(script), "--help"], cwd=foreign, env=_clean_env(), capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+
+
+def test_exact_workflow_form_writes_canonical_meta_output() -> None:
+    evidence = Path("/opt/avito-mayak-runtime/rf17-prepublish-c07/final-artifacts/rf17-evidence.json")
+    diagnostics = Path("/opt/avito-mayak-runtime/rf17-prepublish-c07/final-artifacts/rf17-verifier-diagnostics.json")
+    if not evidence.exists() or not diagnostics.exists():
+        pytest.skip("project-owned RF17 evidence is unavailable")
+    with tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / "rf17-meta-gate.json"
+        result = subprocess.run(
+            [
+                _uv(),
+                "run",
+                "python",
+                "scripts/runtime/check_rf17_acceptance_meta.py",
+                "--evidence",
+                str(evidence),
+                "--diagnostics",
+                str(diagnostics),
+                "--output",
+                str(output),
+            ],
+            cwd=ROOT,
+            env=_clean_env(),
+            capture_output=True,
+            text=True,
+        )
+        output_created = output.exists()
+        output_value = json.loads(output.read_text()) if output_created else {}
+    assert result.returncode == 0, result.stderr
+    assert output_created
+    assert output_value["requirement_count"] == 48
+
+
+def test_audit_families_are_independent_and_non_vacuous() -> None:
+    items = verifier.registry()
+    immediate = meta.immediate_snapshot_specs(items)
+    precondition = meta.precondition_specs(items)
+    assert len(immediate) == len(precondition) == 48
+    assert sum(item.applicable for item in immediate) + sum(not item.applicable for item in immediate) == 48
+    assert sum(item.applicable for item in precondition) + sum(not item.applicable for item in precondition) == 48
+    assert all(item.evaluator is not requirement.check for item in immediate for requirement in items if item.requirement_id == requirement.requirement_id)
+    assert all(item.evaluator is not requirement.check for item in precondition for requirement in items if item.requirement_id == requirement.requirement_id)
+    assert all(item.not_applicable_reason for item in immediate + precondition if not item.applicable)
+    source = Path("scripts/runtime/check_rf17_acceptance_meta.py").read_text(encoding="utf-8")
+    assert "_audit_specs(items: tuple[verifier.Requirement, ...], lifecycle: bool)" not in source
+    assert "evaluator=item.check" not in source
+    assert "passed = True if not spec.applicable" not in source
+
+
+def test_meta_audit_mutation_contracts_are_fail_closed() -> None:
+    fixture = Path("/opt/avito-mayak-runtime/rf17-prepublish-c07/final-artifacts/rf17-evidence.json")
+    if not fixture.exists():
+        pytest.skip("project-owned RF17 evidence is unavailable")
+    evidence = json.loads(fixture.read_text())
+    items = verifier.registry()
+    for specs, label in ((meta.immediate_snapshot_specs(items), "immediate"), (meta.precondition_specs(items), "precondition")):
+        counts = meta._audit_sensitivity(specs, evidence, label)
+        assert counts[f"{label}_mutation_accepted_count"] == 0
+        assert counts[f"{label}_mutation_exception_count"] == 0
+        assert counts[f"{label}_mutation_rejected_count"] == counts[f"{label}_mutation_attempted_count"]
 
 
 def test_producer_is_independent_of_verifier_and_has_no_acceptance_summary() -> None:
