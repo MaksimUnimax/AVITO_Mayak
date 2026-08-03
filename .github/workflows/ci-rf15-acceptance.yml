@@ -126,7 +126,11 @@ jobs:
           verifier_status=$?
           cat verifier.stdout
           cat verifier.stderr >&2
-          test "$verifier_status" -eq 0
+          if [ "$verifier_status" -ne 0 ]; then
+            verifier_message=$(tr '\n' ' ' < verifier.stderr)
+            echo "::error title=RF15 strict verifier::$verifier_message"
+            exit "$verifier_status"
+          fi
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stderr || true)" -eq 0
       - name: Independent immutable RF15 matrix meta-gate
