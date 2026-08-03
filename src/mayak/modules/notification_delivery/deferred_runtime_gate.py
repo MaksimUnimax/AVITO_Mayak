@@ -61,6 +61,54 @@ class NotificationDeferredRuntimeCapability(str, Enum):
     LIVE_DELIVERY = "LIVE_DELIVERY"
 
 
+class NotificationRF17AuthorizationStatus(str, Enum):
+    CURRENTLY_AUTHORIZED = "CURRENTLY_AUTHORIZED"
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationRF17CurrentAuthorization:
+    """Module-14 supersession: narrow RF17 runtime authority."""
+
+    status: NotificationRF17AuthorizationStatus
+    authorized_capabilities: tuple[str, ...]
+    blocked_capabilities: tuple[str, ...]
+    evidence_reference_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.status is not NotificationRF17AuthorizationStatus.CURRENTLY_AUTHORIZED:
+            raise ValueError("RF17 authorization must be current")
+        if not self.authorized_capabilities or not self.blocked_capabilities:
+            raise ValueError("RF17 authorization must state both sides of the boundary")
+        if not self.evidence_reference_ids:
+            raise ValueError("RF17 authorization requires evidence references")
+
+
+_RF17_AUTHORIZED = (
+    "notification-postgresql-persistence",
+    "sqlalchemy-psycopg-persistence",
+    "durable-postgresql-outbox",
+    "generic-delivery-worker-cycle",
+    "provider-neutral-synthetic-fake",
+    "reconciliation-restart-runtime",
+)
+_RF17_BLOCKED = (
+    "telegram-adapter", "max-adapter", "provider-credentials", "provider-http",
+    "webhook", "polling", "mini-app", "provider-templates", "provider-retry-policy",
+    "quiet-hours", "digest-batching", "live-delivery", "production-readiness",
+)
+
+
+def build_rf17_current_authorization(
+    *, evidence_reference_ids: tuple[str, ...] = ("rf17-module14-supersession",),
+) -> NotificationRF17CurrentAuthorization:
+    return NotificationRF17CurrentAuthorization(
+        NotificationRF17AuthorizationStatus.CURRENTLY_AUTHORIZED,
+        _RF17_AUTHORIZED,
+        _RF17_BLOCKED,
+        evidence_reference_ids,
+    )
+
+
 _CANONICAL_REQUIRED_GATE_CLASSES = (
     NotificationDeferredRuntimeRequirement.PHYSICAL_SCHEMA_AND_MIGRATIONS,
     NotificationDeferredRuntimeRequirement.QUEUE_WORKER_BROKER,
@@ -285,4 +333,7 @@ __all__ = (
     "NotificationDeferredRuntimeCapability",
     "NotificationDeferredRuntimeGateBoundary",
     "build_notification_deferred_runtime_gate",
+    "NotificationRF17AuthorizationStatus",
+    "NotificationRF17CurrentAuthorization",
+    "build_rf17_current_authorization",
 )

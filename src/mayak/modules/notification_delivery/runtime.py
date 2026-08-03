@@ -5,6 +5,8 @@ external execution boundary is an injected adapter callable; callers must
 invoke it after :func:`create_attempt` has returned and committed.
 """
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import hashlib
@@ -24,6 +26,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from mayak.persistence.metadata import metadata
 
 from .attempt import NotificationProviderOutcomeClass
+from .delivery_plan import NotificationDeliveryPlanDecision
+from .eligibility import NotificationChannelClass, NotificationEligibilityDecision
 from .source_intake import (
     NotificationSourceEvent,
     NotificationSourceIntakeDecision,
@@ -60,11 +64,35 @@ class ReconciliationConflict(NotificationRuntimeError):
     pass
 
 
+class AccountScopeConflict(NotificationRuntimeError):
+    pass
+
+
 class ReconciliationDisposition(StrEnum):
     DELIVERED = "RESOLVED_DELIVERED"
     FAILED = "RESOLVED_FAILED"
     NO_EFFECT_RETRY = "RESOLVED_NO_EFFECT_RETRY"
     MANUAL_REVIEW = "MANUAL_REVIEW"
+
+
+@dataclass(frozen=True, slots=True)
+class TrustedReconciliationEvidence:
+    """Server-trusted, provider-redacted reconciliation conclusion."""
+
+    attempt_id: UUID
+    effect_fingerprint: str
+    resolution_id: str
+    conclusion: ReconciliationDisposition
+    committed: bool
+    evidence_reference_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not _HEX64.fullmatch(self.effect_fingerprint) or not _safe_text(self.resolution_id):
+            raise ValueError("reconciliation evidence identity is unsafe")
+        if not self.committed or not self.evidence_reference_ids:
+            raise ValueError("reconciliation evidence must be committed and referenced")
+        if any(not _safe_text(item) for item in self.evidence_reference_ids):
+            raise ValueError("reconciliation evidence references must be safe")
 
 
 class OutboxState(StrEnum):
@@ -96,6 +124,8 @@ class EndpointEligibility:
     account_id: UUID
     provider_code: str
     endpoint_ref: str
+    channel_class: NotificationChannelClass = NotificationChannelClass.TELEGRAM
+    accepted_eligibility: NotificationEligibilityDecision | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +287,10 @@ def ingest_source(
             text("SELECT pg_advisory_xact_lock(:key)"),
             {"key": _advisory_key("notification-source", source.idempotency_key.value)},
         )
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(:key)"),
+            {"key": _advisory_key("notification-fingerprint", fingerprint)},
+        )
         existing = (
             session.execute(select(events).where(events.c.source_effect_fingerprint == fingerprint))
             .mappings()
@@ -273,10 +307,17 @@ def ingest_source(
                 .first()
             )
         if existing is not None:
-            if existing["source_effect_fingerprint"] != fingerprint:
-                raise IdempotencyConflict(
-                    "same source identity has a different semantic fingerprint"
-                )
+            old_payload = dict(existing["payload"] or {})
+            same_scope = (
+                existing["account_id"] == account_id
+                and existing["beacon_id"] == beacon_id
+                and existing["run_id"] == run_id
+                and old_payload.get("source_identity") == source.idempotency_key.value
+                and old_payload.get("source_family") == source.source_family.value
+                and old_payload == payload
+            )
+            if existing["source_effect_fingerprint"] != fingerprint or not same_scope:
+                raise IdempotencyConflict("source identity, fingerprint, or scope conflicts")
             return _event_record(existing)
         event_id = uuid4()
         session.execute(
@@ -320,12 +361,16 @@ def _event_record(row: object) -> NotificationEventRecord:
 def register_endpoint(
     session: Session, endpoint: EndpointEligibility, *, now: datetime | None = None
 ) -> UUID:
+    if endpoint.channel_class not in (NotificationChannelClass.TELEGRAM, NotificationChannelClass.MAX):
+        raise AccountScopeConflict("only accepted push channel classes may be registered")
+    if endpoint.provider_code != endpoint.channel_class.value:
+        raise AccountScopeConflict("provider code must equal accepted logical channel class")
     if not _safe_text(endpoint.provider_code) or not _safe_text(endpoint.endpoint_ref):
         raise InvalidNotificationSource("endpoint identity is not a safe opaque reference")
     endpoints = _table("notification_endpoints")
     moment = _now(now)
     with session.begin():
-        session.execute(
+        result = session.execute(
             insert(endpoints)
             .values(
                 id=endpoint.endpoint_id,
@@ -337,17 +382,24 @@ def register_endpoint(
                 updated_at=moment,
                 row_version=1,
             )
-            .on_conflict_do_update(
-                constraint="uq_notification_endpoints_provider_endpoint",
-                set_={
-                    "account_id": endpoint.account_id,
-                    "state": "ACTIVE",
-                    "updated_at": moment,
-                    "row_version": endpoints.c.row_version + 1,
-                },
-            )
+            .on_conflict_do_nothing(constraint="uq_notification_endpoints_provider_endpoint")
+            .returning(endpoints.c.id)
         )
-    return endpoint.endpoint_id
+        if result.scalar_one_or_none() is not None:
+            return endpoint.endpoint_id
+        existing = session.execute(
+            select(endpoints).where(
+                endpoints.c.provider_code == endpoint.provider_code,
+                endpoints.c.endpoint_ref == endpoint.endpoint_ref,
+            )
+        ).mappings().one()
+        if (
+            existing["account_id"] != endpoint.account_id
+            or existing["id"] != endpoint.endpoint_id
+            or existing["provider_code"] != endpoint.channel_class.value
+        ):
+            raise AccountScopeConflict("endpoint ownership or semantic identity conflicts")
+        return existing["id"]
 
 
 def fanout_event(
@@ -356,11 +408,19 @@ def fanout_event(
     eligible_endpoints: Iterable[UUID],
     *,
     now: datetime | None = None,
+    eligibility_decision: NotificationEligibilityDecision | None = None,
+    delivery_plan: NotificationDeliveryPlanDecision | None = None,
 ) -> tuple[UUID, ...]:
     endpoints = _table("notification_endpoints")
     events = _table("notification_events")
     outbox = _table("notification_outbox")
     ids = tuple(dict.fromkeys(eligible_endpoints))
+    if not ids:
+        raise AccountScopeConflict("no eligible push endpoint; fan-out is blocked")
+    if eligibility_decision is None or delivery_plan is None:
+        raise AccountScopeConflict("fan-out requires accepted eligibility and delivery-plan evidence")
+    if not eligibility_decision.outbox_candidate_eligible or not delivery_plan.plan_created:
+        raise AccountScopeConflict("semantic authority does not authorize outbox creation")
     moment = _now(now)
     with session.begin():
         event = (
@@ -387,6 +447,8 @@ def fanout_event(
                 raise InvalidNotificationSource(
                     "eligible endpoint is absent, inactive, or cross-account"
                 )
+            if endpoint["provider_code"] not in (NotificationChannelClass.TELEGRAM.value, NotificationChannelClass.MAX.value):
+                raise AccountScopeConflict("WEB_STATUS_READ_MODEL and arbitrary channels cannot fan out")
             outbox_id = uuid4()
             result = session.execute(
                 insert(outbox)
@@ -430,15 +492,20 @@ def claim_due(
             .all()
         )
         for row in expired:
-            has_attempt = (
+            current_claim_attempt = (
                 session.execute(
-                    select(attempts.c.id).where(attempts.c.outbox_id == row["id"]).limit(1)
+                    select(attempts.c.id).where(
+                        attempts.c.outbox_id == row["id"],
+                        attempts.c.started_at >= row["lease_started_at"],
+                        attempts.c.state.in_(("STARTED", "RECONCILIATION_REQUIRED")),
+                    ).limit(1)
                 ).first()
-                is not None
+                if row["lease_started_at"] is not None
+                else None
             )
             new_state = (
                 OutboxState.RECONCILIATION_REQUIRED.value
-                if has_attempt
+                if current_claim_attempt is not None
                 else OutboxState.PENDING.value
             )
             session.execute(
@@ -495,7 +562,7 @@ def create_attempt(
     effect_fingerprint: str,
     now: datetime | None = None,
 ) -> AttemptLease:
-    if (
+    if channel_class not in (NotificationChannelClass.TELEGRAM.value, NotificationChannelClass.MAX.value) or (
         not _safe_text(channel_class)
         or not _safe_text(target_reference)
         or not _HEX64.fullmatch(effect_fingerprint)
@@ -621,7 +688,8 @@ def commit_outcome(
             or box["lease_expires_at"] <= moment
         ):
             raise LeaseConflict("terminal result requires the current unexpired lease")
-        state = "RECONCILIATION_REQUIRED" if ambiguous else ("DELIVERED" if accepted else "FAILED")
+        outbox_state = "RECONCILIATION_REQUIRED" if ambiguous else ("DELIVERED" if accepted else "FAILED")
+        attempt_state = "RECONCILIATION_REQUIRED" if ambiguous else ("DELIVERED_ACCEPTED" if accepted else "FAILED_NON_RETRYABLE")
         metadata_value.update(
             {
                 "outcome_reference_id": outcome.outcome_reference_id,
@@ -633,7 +701,7 @@ def commit_outcome(
             update(attempts)
             .where(attempts.c.id == attempt.attempt_id)
             .values(
-                state=state,
+                state=attempt_state,
                 provider_reference=outcome.provider_safe_delivery_reference,
                 completed_at=moment,
                 safe_metadata=metadata_value,
@@ -643,7 +711,7 @@ def commit_outcome(
             update(outbox)
             .where(outbox.c.id == attempt.outbox_id, outbox.c.lease_token == attempt.lease_token)
             .values(
-                state=state,
+                state=outbox_state,
                 lease_started_at=None,
                 lease_expires_at=None,
                 lease_token=None,
@@ -665,19 +733,23 @@ def commit_outcome(
                 )
                 .on_conflict_do_nothing(index_elements=["attempt_id"])
             )
-        return state
+        return outbox_state
 
 
 def resolve_reconciliation(
     session: Session,
     attempt_id: UUID,
-    disposition: ReconciliationDisposition,
+    disposition: ReconciliationDisposition | None = None,
     *,
     resolution_id: str,
     now: datetime | None = None,
+    evidence: TrustedReconciliationEvidence | None = None,
 ) -> str:
-    if not _safe_text(resolution_id):
-        raise ReconciliationConflict("resolution identity must be safe")
+    if evidence is None or disposition is not None:
+        raise ReconciliationConflict("typed trusted reconciliation evidence is required")
+    if evidence.attempt_id != attempt_id or evidence.resolution_id != resolution_id:
+        raise ReconciliationConflict("reconciliation evidence does not identify this attempt")
+    disposition = evidence.conclusion
     recs, outbox, attempts = (
         _table("notification_delivery_reconciliations"),
         _table("notification_outbox"),
@@ -697,7 +769,7 @@ def resolve_reconciliation(
             if current.get("resolution_id") != resolution_id or rec["state"] != disposition.value:
                 raise ReconciliationConflict("reconciliation already resolved differently")
             return rec["state"]
-        current.update({"resolution_id": resolution_id, "disposition": disposition.value})
+        current.update({"resolution_id": resolution_id, "conclusion": disposition.value, "evidence_reference_ids": list(evidence.evidence_reference_ids)})
         attempt_row = session.execute(
             select(attempts.c.outbox_id).where(attempts.c.id == attempt_id)
         ).scalar_one()
@@ -712,6 +784,12 @@ def resolve_reconciliation(
                 else OutboxState.RECONCILIATION_REQUIRED.value
             )
         )
+        attempt_state = (
+            "DELIVERED_ACCEPTED" if disposition is ReconciliationDisposition.DELIVERED
+            else "FAILED_NON_RETRYABLE" if disposition is ReconciliationDisposition.FAILED
+            else "FAILED_RETRYABLE_AFTER_POLICY" if disposition is ReconciliationDisposition.NO_EFFECT_RETRY
+            else "RECONCILIATION_REQUIRED"
+        )
         session.execute(
             update(recs)
             .where(recs.c.id == rec["id"])
@@ -723,7 +801,7 @@ def resolve_reconciliation(
             )
         )
         session.execute(
-            update(attempts).where(attempts.c.id == attempt_id).values(state=next_state)
+            update(attempts).where(attempts.c.id == attempt_id).values(state=attempt_state)
         )
         session.execute(
             update(outbox)
@@ -779,10 +857,12 @@ def run_worker_cycle(
 
 
 def read_history(
-    session: Session, *, account_id: UUID, beacon_id: UUID | None = None, limit: int = 100
+    session: Session, *, account_id: UUID, actor_account_id: UUID | None = None, beacon_id: UUID | None = None, limit: int = 100
 ) -> tuple[NotificationHistoryEntry, ...]:
     if not 1 <= limit <= 1000:
         raise ValueError("bounded history limit is required")
+    if actor_account_id is None or actor_account_id != account_id:
+        raise AccountScopeConflict("requester is not authorized for this account")
     events, outbox, endpoints, attempts, recs = (
         _table(name)
         for name in (
@@ -839,6 +919,7 @@ __all__ = (
     "LeaseConflict",
     "ReconciliationRequired",
     "ReconciliationConflict",
+    "AccountScopeConflict",
     "ReconciliationDisposition",
     "OutboxState",
     "FakeOutcomeClass",
@@ -847,6 +928,7 @@ __all__ = (
     "OutboxClaim",
     "AttemptLease",
     "FakeProviderOutcome",
+    "TrustedReconciliationEvidence",
     "ProviderNeutralAdapter",
     "NotificationHistoryEntry",
     "ingest_source",

@@ -50,14 +50,32 @@ jobs:
           from sqlalchemy import create_engine, text
           engine = create_engine('${{ env.RF17_MIGRATION_DSN }}')
           with engine.begin() as c:
-              c.execute(text('grant select, insert, update, delete on all tables in schema mayak to mayak_application'))
-              c.execute(text('grant usage, select, update on all sequences in schema mayak to mayak_application'))
+              c.execute(text("""
+              do $$ declare r record; begin
+                for r in select table_schema, table_name from information_schema.tables
+                  where table_schema='mayak' and table_name not like 'notification_%' and table_name <> 'alembic_version'
+                loop execute format('revoke insert, update, delete on table %I.%I from mayak_application', r.table_schema, r.table_name); end loop;
+              end $$;
+              """))
+              c.execute(text('grant select, insert, update, delete on table mayak.notification_endpoints, mayak.notification_events, mayak.notification_outbox, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application'))
           PY
-      - run: uv run pytest -q tests/unit/test_notification_delivery_source_intake_semantics.py tests/unit/test_notification_delivery_attempt_semantics.py tests/unit/test_notification_delivery_outbox_semantics.py tests/contract/test_notification_delivery_source_intake_contracts.py tests/contract/test_notification_delivery_attempt_contracts.py
+      - run: uv run pytest -q tests/unit/test_notification_delivery_source_intake_semantics.py tests/unit/test_notification_delivery_attempt_semantics.py tests/unit/test_notification_delivery_outbox_semantics.py tests/contract/test_notification_delivery_source_intake_contracts.py tests/contract/test_notification_delivery_attempt_contracts.py tests/runtime/test_rf17_notification_delivery_runtime.py tests/architecture/test_rf17_notification_runtime_boundaries.py tests/architecture/test_import_boundaries.py
       - run: uv run ruff check src/mayak/modules/notification_delivery/runtime.py scripts/runtime/run_rf17_postgres_acceptance.py scripts/runtime/verify_rf17_acceptance.py
       - run: uv run mypy --follow-imports=skip --ignore-missing-imports src/mayak/modules/notification_delivery/runtime.py
       - name: Produce raw observations
         run: uv run python scripts/runtime/run_rf17_postgres_acceptance.py --dsn "$RF17_APPLICATION_DSN" --fixture-dsn "$RF17_MIGRATION_DSN" --output rf17-evidence.json > rf17-producer.stdout 2> rf17-producer.stderr
+      - name: Check producer and artifact safety
+        run: |
+          test ! -s rf17-producer.stderr
+          uv run python - <<'PY'
+          import json, re
+          from pathlib import Path
+          value = Path('rf17-evidence.json').read_text()
+          assert 'safe_projection' not in value
+          assert not re.search(r'(?i)(bearer\s+\S+|authorization\s*[:=]|cookie\s*[:=])', value)
+          data = json.loads(value)
+          assert 'lease_token' not in data.get('claim_observations', [{}])[0]
+          PY
       - name: Strict independent verifier
         run: |
           set +e
@@ -73,9 +91,11 @@ jobs:
           import json
           from pathlib import Path
           d = json.loads(Path('rf17-verifier-diagnostics.json').read_text())
-          assert set(d['requirement_ids']) == set(d['tamper_strategy_ids']) == set(d['tamper_rejected_ids'])
-          assert d['original_pass_count'] == d['requirement_count']
-          assert d['tamper_rejected_count'] == d['requirement_count']
+          from scripts.runtime.verify_rf17_acceptance import EXPECTED_RF17_REQUIREMENT_IDS, EXPECTED_RF17_TAMPER_STRATEGY_IDS
+          assert tuple(d['requirement_ids']) == EXPECTED_RF17_REQUIREMENT_IDS
+          assert tuple(d['tamper_strategy_ids']) == EXPECTED_RF17_TAMPER_STRATEGY_IDS
+          assert tuple(d['tamper_rejected_ids']) == EXPECTED_RF17_REQUIREMENT_IDS
+          assert d['requirement_count'] == d['original_pass_count'] == d['tamper_rejected_count'] == 48
           assert d['original_failing_ids'] == [] and d['tamper_failing_ids'] == []
           assert Path('rf17-verifier.stderr').read_text().count('RF17_NOTIFICATION_DELIVERY_RUNTIME_VERIFIED') == 0
           Path('rf17-meta-gate.json').write_text(json.dumps({'requirement_count': d['requirement_count'], 'original_pass_count': d['original_pass_count'], 'tamper_rejected_count': d['tamper_rejected_count'], 'ids_equal': True}, sort_keys=True) + '\n')

@@ -15,6 +15,7 @@ from . import listing_card as _listing_card
 from . import no_new_status as _no_new_status
 from . import outbox as _outbox
 from . import read_model as _read_model
+from . import runtime as _runtime
 from . import security_privacy as _security_privacy
 from . import source_intake as _source_intake
 
@@ -174,6 +175,35 @@ NotificationDeferredRuntimeGateBoundary = (
 build_notification_deferred_runtime_gate = (
     _deferred_runtime_gate.build_notification_deferred_runtime_gate
 )
+NotificationRF17AuthorizationStatus = _deferred_runtime_gate.NotificationRF17AuthorizationStatus
+NotificationRF17CurrentAuthorization = _deferred_runtime_gate.NotificationRF17CurrentAuthorization
+build_rf17_current_authorization = _deferred_runtime_gate.build_rf17_current_authorization
+
+RF17_TASK_ID = _runtime.RF17_TASK_ID
+NotificationRuntimeError = _runtime.NotificationRuntimeError
+IdempotencyConflict = _runtime.IdempotencyConflict
+InvalidNotificationSource = _runtime.InvalidNotificationSource
+LeaseConflict = _runtime.LeaseConflict
+ReconciliationRequired = _runtime.ReconciliationRequired
+ReconciliationConflict = _runtime.ReconciliationConflict
+AccountScopeConflict = _runtime.AccountScopeConflict
+ReconciliationDisposition = _runtime.ReconciliationDisposition
+OutboxState = _runtime.OutboxState
+EndpointEligibility = _runtime.EndpointEligibility
+NotificationEventRecord = _runtime.NotificationEventRecord
+OutboxClaim = _runtime.OutboxClaim
+AttemptLease = _runtime.AttemptLease
+FakeProviderOutcome = _runtime.FakeProviderOutcome
+TrustedReconciliationEvidence = _runtime.TrustedReconciliationEvidence
+ingest_source = _runtime.ingest_source
+register_endpoint = _runtime.register_endpoint
+fanout_event = _runtime.fanout_event
+claim_due = _runtime.claim_due
+create_attempt = _runtime.create_attempt
+commit_outcome = _runtime.commit_outcome
+resolve_reconciliation = _runtime.resolve_reconciliation
+run_worker_cycle = _runtime.run_worker_cycle
+read_history = _runtime.read_history
 
 __all__ = (
     "MODULE_ID",
@@ -295,6 +325,31 @@ __all__ = (
     "NotificationHistoricalEvidenceSnapshot",
     "NotificationSecurityPrivacyDecision",
     "evaluate_notification_security_privacy",
+    "RF17_TASK_ID",
+    "NotificationRuntimeError",
+    "IdempotencyConflict",
+    "InvalidNotificationSource",
+    "LeaseConflict",
+    "ReconciliationRequired",
+    "ReconciliationConflict",
+    "AccountScopeConflict",
+    "ReconciliationDisposition",
+    "OutboxState",
+    "EndpointEligibility",
+    "NotificationEventRecord",
+    "OutboxClaim",
+    "AttemptLease",
+    "FakeProviderOutcome",
+    "TrustedReconciliationEvidence",
+    "ingest_source",
+    "register_endpoint",
+    "fanout_event",
+    "claim_due",
+    "create_attempt",
+    "commit_outcome",
+    "resolve_reconciliation",
+    "run_worker_cycle",
+    "read_history",
     "ND14_TASK_ID",
     "NotificationDeferredRuntimeAuthority",
     "NotificationDeferredRuntimeGateStatus",
@@ -303,4 +358,7 @@ __all__ = (
     "NotificationDeferredRuntimeCapability",
     "NotificationDeferredRuntimeGateBoundary",
     "build_notification_deferred_runtime_gate",
+    "NotificationRF17AuthorizationStatus",
+    "NotificationRF17CurrentAuthorization",
+    "build_rf17_current_authorization",
 )
