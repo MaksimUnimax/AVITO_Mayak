@@ -196,6 +196,24 @@ def test_meta_audit_mutation_contracts_are_fail_closed() -> None:
         assert counts[f"{label}_mutation_rejected_count"] == counts[f"{label}_mutation_attempted_count"]
 
 
+def test_semantic_false_positive_regressions_preserve_shape_and_are_rejected() -> None:
+    evidence_path = Path("/opt/avito-mayak-runtime/rf17-prepublish-c09/rf17-evidence.json")
+    if not evidence_path.exists():
+        pytest.skip("project-owned RF17 evidence is unavailable")
+    evidence = json.loads(evidence_path.read_text())
+
+    endpoint = json.loads(json.dumps(evidence))
+    row = endpoint["endpoint"]["stable_replay"]["physical_after"][0]
+    row["id"] = "different-valid-looking-endpoint-id"
+    assert meta._regression_mutations(endpoint, [])["endpoint_stable_replay_semantic_counterexample_rejected"]
+
+    source = json.loads(json.dumps(evidence))
+    source["source"]["single_event"]["physical_before"].append(
+        dict(source["source"]["single_event"]["physical_after"][0])
+    )
+    assert meta._regression_mutations(source, [])["source_single_event_preexisting_counterexample_rejected"]
+
+
 def test_producer_is_independent_of_verifier_and_has_no_acceptance_summary() -> None:
     producer = Path("scripts/runtime/run_rf17_postgres_acceptance.py")
     tree = ast.parse(producer.read_text(encoding="utf-8"))

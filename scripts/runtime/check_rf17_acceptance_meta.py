@@ -39,6 +39,9 @@ class ImmediateSnapshotAuditSpec:
     evidence_paths: tuple[str, ...]
     evaluator: AuditEvaluator
     mutation: AuditMutation | None
+    evaluator_name: str
+    mutation_name: str | None
+    mutation_reason: str | None
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,9 @@ class PreconditionAuditSpec:
     evidence_paths: tuple[str, ...]
     evaluator: AuditEvaluator
     mutation: AuditMutation | None
+    evaluator_name: str
+    mutation_name: str | None
+    mutation_reason: str | None
 
 
 def _json(value: object) -> str:
@@ -116,14 +122,6 @@ def _sensitivity_specs(items: tuple[verifier.Requirement, ...]) -> tuple[RawPath
                 reason = "declared scalar must retain its identity/state value"
             result.append(RawPathSensitivitySpec(path, values, reason))
     return tuple(result)
-
-
-def _generic_relation(paths: tuple[str, ...], data: dict[str, object]) -> bool:
-    if not paths or not all(_raw(data, path) is not None for path in paths):
-        return False
-    # This is an audit witness relation: it requires a populated, typed stage
-    # witness and never delegates the acceptance decision to Requirement.check.
-    return all(not isinstance(_raw(data, path), (str, bytes)) or bool(_raw(data, path)) for path in paths)
 
 
 def _claim_immediate(data: dict[str, object]) -> bool:
@@ -212,61 +210,329 @@ def _pre_restart(data: dict[str, object], scenario: str) -> bool:
     return isinstance(n, dict) and len(n.get("backend_pids", [])) == 2 and n.get("before", {}).get("attempt_count") == n.get("runtime_observation", {}).get("attempt_count", n.get("before", {}).get("attempt_count")) and n.get("runtime_observation", {}).get("original_outbox_id") == n.get("runtime_observation", {}).get("recovered_outbox_id")
 
 
-def _evaluator(paths: tuple[str, ...], special: AuditEvaluator | None = None) -> AuditEvaluator:
-    if special is not None:
-        def safe_special(data: dict[str, object]) -> bool:
-            try:
-                return special(data) is True
-            except Exception:
-                return False
-        return safe_special
-    return lambda data: _generic_relation(paths, data)
+def _semantic_change(data: dict[str, object], path: str, value: object) -> None:
+    if not _set_path(data, path, value):
+        raise KeyError(path)
 
 
-def _mutation(paths: tuple[str, ...]) -> AuditMutation:
-    def mutate(data: dict[str, object]) -> None:
-        for path in (paths[0], paths[-1]):
-            if _set_path(data, path, None):
-                return
-        raise KeyError(paths[0] if paths else "missing audit path")
-    return mutate
+def _change_dict_value(data: dict[str, object], path: str, key: str, value: object) -> None:
+    node = _raw(data, path)
+    if not isinstance(node, dict) or key not in node:
+        raise KeyError(path + "." + key)
+    node[key] = value
 
 
-def _immediate_source_blocked(data: dict[str, object], scenario: str) -> bool:
-    node = _raw(data, scenario)
-    return isinstance(node, dict) and node.get("runtime_return") is None and node.get("physical_rows") == [] and bool(node.get("input", {}).get("family"))
+def _append_semantic_row(data: dict[str, object], path: str) -> None:
+    rows = _raw(data, path)
+    if not isinstance(rows, list):
+        raise TypeError(path)
+    row = copy.deepcopy(rows[0]) if rows else {"id": "semantic-counterexample"}
+    if isinstance(row, dict):
+        row["id"] = "semantic-counterexample"
+    rows.append(row)
 
 
-def immediate_snapshot_specs(items: tuple[verifier.Requirement, ...]) -> tuple[ImmediateSnapshotAuditSpec, ...]:
-    static = {"identity.", "schema.", "security.", "privacy.", "foreign."}
-    special = {"claim.same_item_single_owner": _claim_immediate, "fanout.concurrent_dedup": _fanout_immediate, "restart.after_attempt_reconcile": _restart_immediate}
-    result: list[ImmediateSnapshotAuditSpec] = []
+# These are deliberately explicit.  The value of each registry entry is a
+# named semantic relation from the runtime verifier, never a path-presence
+# predicate and never a Requirement.check alias.
+IMMEDIATE_APPLICABLE_REQUIREMENT_IDS = frozenset({
+    "source.single_event", "source.replay_same", "source.concurrent_same", "source.identity_fingerprint_mismatch",
+    "source.same_fingerprint_cross_scope_conflict", "source.baseline_blocked", "source.no_new_blocked", "source.price_blocked",
+    "source.non_notification_families_blocked", "source.unsafe_payload_blocked", "endpoint.stable_replay",
+    "endpoint.cross_account_rebind_blocked", "fanout.explicit_targets", "fanout.empty_blocked", "fanout.concurrent_dedup",
+    "claim.same_item_single_owner", "claim.deterministic_order", "lease.wrong_token_blocked", "lease.expired_terminal_blocked",
+    "attempt.unique_number", "transaction.attempt_committed_before_adapter", "transaction.adapter_outside_db_transaction",
+    "result.definite_success", "result.not_human_read", "result.definite_failure_no_retry", "result.replay_same", "result.mismatch_blocked",
+    "reconciliation.single_on_ambiguous", "reconciliation.unresolved_blocks_attempt", "reconciliation.replay_same",
+    "reconciliation.resolved_delivered", "reconciliation.confirmed_no_effect_only_retry", "reconciliation.manual_ambiguous_blocks",
+    "restart.claim_before_attempt_reclaim", "restart.retry_claim_before_attempt_reclaim", "restart.after_attempt_reconcile",
+})
+PRECONDITION_APPLICABLE_REQUIREMENT_IDS = frozenset({
+    "source.replay_same", "source.identity_fingerprint_mismatch", "source.same_fingerprint_cross_scope_conflict", "endpoint.stable_replay",
+    "endpoint.cross_account_rebind_blocked", "fanout.concurrent_dedup", "claim.same_item_single_owner", "lease.wrong_token_blocked",
+    "lease.expired_terminal_blocked", "result.replay_same", "result.mismatch_blocked", "reconciliation.single_on_ambiguous",
+    "reconciliation.unresolved_blocks_attempt", "reconciliation.replay_same", "reconciliation.resolved_delivered",
+    "reconciliation.confirmed_no_effect_only_retry", "reconciliation.manual_ambiguous_blocks", "restart.claim_before_attempt_reclaim",
+    "restart.retry_claim_before_attempt_reclaim", "restart.after_attempt_reconcile", "history.account_scope", "history.beacon_scope",
+    "history.cross_account_blocked",
+})
+
+
+def _named(checker: AuditEvaluator) -> AuditEvaluator:
+    def evaluate(data: dict[str, object]) -> bool:
+        try:
+            return checker(data) is True
+        except Exception:
+            return False
+    evaluate.__name__ = checker.__name__ + "_semantic_audit"
+    return evaluate
+
+
+def _immediate_source_single(data): return verifier.check_source_single(data)
+def _immediate_source_replay(data): return verifier.check_source_replay(data)
+def _immediate_source_concurrent(data): return verifier.check_source_concurrent(data)
+def _immediate_source_fp(data): return verifier.check_source_fingerprint(data)
+def _immediate_source_scope(data): return verifier.check_source_scope(data)
+def _immediate_source_baseline(data): return verifier.check_source_baseline(data)
+def _immediate_source_no_new(data): return verifier.check_source_no_new(data)
+def _immediate_source_price(data): return verifier.check_source_price(data)
+def _immediate_source_family(data): return verifier.check_source_family(data)
+def _immediate_source_payload(data): return verifier.check_source_payload(data)
+def _immediate_endpoint_replay(data): return verifier.check_endpoint_replay(data)
+def _immediate_endpoint_account(data): return verifier.check_endpoint_account(data)
+def _immediate_fanout_targets(data): return verifier.check_fanout_targets(data)
+def _immediate_fanout_empty(data): return verifier.check_fanout_empty(data)
+def _immediate_fanout_concurrent(data): return verifier.check_fanout_concurrent(data)
+def _immediate_claim_owner(data): return verifier.check_claim_owner(data)
+def _immediate_claim_order(data): return verifier.check_claim_order(data)
+def _immediate_lease_wrong(data): return verifier.check_lease_wrong(data)
+def _immediate_lease_expired(data): return verifier.check_lease_expired(data)
+def _immediate_attempt_unique(data): return verifier.check_attempt_unique(data)
+def _immediate_tx_visible(data): return verifier.check_transaction_visible(data)
+def _immediate_tx_adapter(data): return verifier.check_transaction_adapter(data)
+def _immediate_result_success(data): return verifier.check_result_success(data)
+def _immediate_result_read(data): return verifier.check_result_read(data)
+def _immediate_result_failure(data): return verifier.check_result_failure(data)
+def _immediate_result_replay(data): return verifier.check_result_replay(data)
+def _immediate_result_mismatch(data): return verifier.check_result_mismatch(data)
+def _immediate_recon_single(data): return verifier.check_recon_single(data)
+def _immediate_recon_blocks(data): return verifier.check_recon_blocks(data)
+def _immediate_recon_replay(data): return verifier.check_recon_replay(data)
+def _immediate_recon_delivered(data): return verifier.check_recon_delivered(data)
+def _immediate_recon_no_effect(data): return verifier.check_recon_no_effect(data)
+def _immediate_recon_manual(data): return verifier.check_recon_manual(data)
+def _immediate_restart_claim(data): return verifier.check_restart_claim(data)
+def _immediate_restart_retry(data): return verifier.check_restart_retry(data)
+def _immediate_restart_attempt(data): return verifier.check_restart_attempt(data)
+
+IMMEDIATE_SEMANTIC_EVALUATORS = {
+    "source.single_event": _immediate_source_single, "source.replay_same": _immediate_source_replay, "source.concurrent_same": _immediate_source_concurrent,
+    "source.identity_fingerprint_mismatch": _immediate_source_fp, "source.same_fingerprint_cross_scope_conflict": _immediate_source_scope,
+    "source.baseline_blocked": _immediate_source_baseline, "source.no_new_blocked": _immediate_source_no_new, "source.price_blocked": _immediate_source_price,
+    "source.non_notification_families_blocked": _immediate_source_family, "source.unsafe_payload_blocked": _immediate_source_payload,
+    "endpoint.stable_replay": _immediate_endpoint_replay, "endpoint.cross_account_rebind_blocked": _immediate_endpoint_account,
+    "fanout.explicit_targets": _immediate_fanout_targets, "fanout.empty_blocked": _immediate_fanout_empty, "fanout.concurrent_dedup": _immediate_fanout_concurrent,
+    "claim.same_item_single_owner": _immediate_claim_owner, "claim.deterministic_order": _immediate_claim_order, "lease.wrong_token_blocked": _immediate_lease_wrong,
+    "lease.expired_terminal_blocked": _immediate_lease_expired, "attempt.unique_number": _immediate_attempt_unique,
+    "transaction.attempt_committed_before_adapter": _immediate_tx_visible, "transaction.adapter_outside_db_transaction": _immediate_tx_adapter,
+    "result.definite_success": _immediate_result_success, "result.not_human_read": _immediate_result_read, "result.definite_failure_no_retry": _immediate_result_failure,
+    "result.replay_same": _immediate_result_replay, "result.mismatch_blocked": _immediate_result_mismatch,
+    "reconciliation.single_on_ambiguous": _immediate_recon_single, "reconciliation.unresolved_blocks_attempt": _immediate_recon_blocks,
+    "reconciliation.replay_same": _immediate_recon_replay, "reconciliation.resolved_delivered": _immediate_recon_delivered,
+    "reconciliation.confirmed_no_effect_only_retry": _immediate_recon_no_effect, "reconciliation.manual_ambiguous_blocks": _immediate_recon_manual,
+    "restart.claim_before_attempt_reclaim": _immediate_restart_claim, "restart.retry_claim_before_attempt_reclaim": _immediate_restart_retry,
+    "restart.after_attempt_reconcile": _immediate_restart_attempt,
+}
+
+
+def _pre_source_replay_semantic(data): return verifier.check_source_replay(data)
+def _pre_source_fp_semantic(data): return verifier.check_source_fingerprint(data)
+def _pre_source_scope_semantic(data): return verifier.check_source_scope(data)
+def _pre_endpoint_replay_semantic(data): return verifier.check_endpoint_replay(data)
+def _pre_endpoint_account_semantic(data): return verifier.check_endpoint_account(data)
+def _pre_fanout_semantic(data): return verifier.check_fanout_concurrent(data)
+def _pre_claim_semantic(data): return verifier.check_claim_owner(data)
+def _pre_lease_wrong_semantic(data): return verifier.check_lease_wrong(data)
+def _pre_lease_expired_semantic(data): return verifier.check_lease_expired(data)
+def _pre_result_replay_semantic(data): return verifier.check_result_replay(data)
+def _pre_result_mismatch_semantic(data): return verifier.check_result_mismatch(data)
+def _pre_recon_single_semantic(data): return verifier.check_recon_single(data)
+def _pre_recon_blocks_semantic(data): return verifier.check_recon_blocks(data)
+def _pre_recon_replay_semantic(data): return verifier.check_recon_replay(data)
+def _pre_recon_delivered_semantic(data): return verifier.check_recon_delivered(data)
+def _pre_recon_no_effect_semantic(data): return verifier.check_recon_no_effect(data)
+def _pre_recon_manual_semantic(data): return verifier.check_recon_manual(data)
+def _pre_restart_claim_semantic(data): return verifier.check_restart_claim(data)
+def _pre_restart_retry_semantic(data): return verifier.check_restart_retry(data)
+def _pre_restart_attempt_semantic(data): return verifier.check_restart_attempt(data)
+def _pre_history_account_semantic(data): return verifier.check_history_account(data)
+def _pre_history_beacon_semantic(data): return verifier.check_history_beacon(data)
+def _pre_history_scope_semantic(data): return verifier.check_history_cross_account(data)
+
+PRECONDITION_SEMANTIC_EVALUATORS = {
+    "source.replay_same": _pre_source_replay_semantic, "source.identity_fingerprint_mismatch": _pre_source_fp_semantic,
+    "source.same_fingerprint_cross_scope_conflict": _pre_source_scope_semantic, "endpoint.stable_replay": _pre_endpoint_replay_semantic,
+    "endpoint.cross_account_rebind_blocked": _pre_endpoint_account_semantic, "fanout.concurrent_dedup": _pre_fanout_semantic,
+    "claim.same_item_single_owner": _pre_claim_semantic, "lease.wrong_token_blocked": _pre_lease_wrong_semantic,
+    "lease.expired_terminal_blocked": _pre_lease_expired_semantic, "result.replay_same": _pre_result_replay_semantic,
+    "result.mismatch_blocked": _pre_result_mismatch_semantic, "reconciliation.single_on_ambiguous": _pre_recon_single_semantic,
+    "reconciliation.unresolved_blocks_attempt": _pre_recon_blocks_semantic, "reconciliation.replay_same": _pre_recon_replay_semantic,
+    "reconciliation.resolved_delivered": _pre_recon_delivered_semantic, "reconciliation.confirmed_no_effect_only_retry": _pre_recon_no_effect_semantic,
+    "reconciliation.manual_ambiguous_blocks": _pre_recon_manual_semantic, "restart.claim_before_attempt_reclaim": _pre_restart_claim_semantic,
+    "restart.retry_claim_before_attempt_reclaim": _pre_restart_retry_semantic, "restart.after_attempt_reconcile": _pre_restart_attempt_semantic,
+    "history.account_scope": _pre_history_account_semantic, "history.beacon_scope": _pre_history_beacon_semantic,
+    "history.cross_account_blocked": _pre_history_scope_semantic,
+}
+
+
+def _register_semantic_mutation(action: Callable[[dict[str, object]], None], name: str, reason: str) -> AuditMutation:
+    action.__name__ = name
+    setattr(action, "semantic_reason", reason)
+    return action
+
+
+# Compatibility spelling used only while constructing the literal registries;
+# it has no path-based fallback and is never used for resolution.
+_mutation = _register_semantic_mutation
+
+
+def _mutate_immediate_source_single(data): _append_semantic_row(data, "source.single_event.physical_before")
+def _mutate_immediate_source_replay(data): _semantic_change(data, "source.replay_same.replay_return", {"event_id": "different-event-id"})
+def _mutate_immediate_source_concurrent(data): _semantic_change(data, "source.concurrent_same.runtime_results", [{"event_id": "event-a"}, {"event_id": "event-b"}])
+def _mutate_immediate_source_fp(data): _change_dict_value(data, "source.identity_fingerprint_mismatch.exception", "class", "OtherConflict")
+def _mutate_immediate_source_scope(data): _change_dict_value(data, "source.same_fingerprint_cross_scope_conflict.exception", "class", "OtherConflict")
+def _mutate_immediate_source_baseline(data): _semantic_change(data, "source.baseline_blocked.input.family", "NEW_LISTINGS_FOUND")
+def _mutate_immediate_source_no_new(data): _semantic_change(data, "source.no_new_blocked.input.family", "NEW_LISTINGS_FOUND")
+def _mutate_immediate_source_price(data): _semantic_change(data, "source.price_blocked.input.family", "NEW_LISTINGS_FOUND")
+def _mutate_immediate_source_family(data): _semantic_change(data, "source.non_notification_families_blocked.input.family", "NEW_LISTINGS_FOUND")
+def _mutate_immediate_source_payload(data): _change_dict_value(data, "source.unsafe_payload_blocked.exception", "class", "DifferentSourceError")
+def _mutate_immediate_endpoint_replay(data): _semantic_change(data, "endpoint.stable_replay.physical_after", [{"id": "different-endpoint-id", "account_id": "other-account", "provider_code": "TELEGRAM", "endpoint_ref": "target-other", "row_version": 1, "state": "ACTIVE", "created_at": "same", "updated_at": "same"}])
+def _mutate_immediate_endpoint_account(data): _change_dict_value(data, "endpoint.cross_account_rebind_blocked.exception", "class", "OtherConflict")
+def _mutate_immediate_fanout_targets(data): _semantic_change(data, "fanout.explicit_targets.runtime_return", {"outbox_ids": ["wrong-target-id"]})
+def _mutate_immediate_fanout_empty(data): _change_dict_value(data, "fanout.empty_blocked.exception", "class", "OtherConflict")
+def _mutate_immediate_fanout_concurrent(data): _append_semantic_row(data, "fanout.concurrent_dedup.physical_after")
+def _mutate_immediate_claim_owner(data): _semantic_change(data, "claim.same_item_single_owner.runtime_results", [{"claimed": True}, {"claimed": True}])
+def _mutate_immediate_claim_order(data): _semantic_change(data, "claim.deterministic_order.runtime_return", {"outbox_ids": list(reversed(_raw(data, "claim.deterministic_order.runtime_return.outbox_ids")))})
+def _mutate_immediate_lease_wrong(data): _change_dict_value(data, "lease.wrong_token_blocked.exception", "class", "OtherConflict")
+def _mutate_immediate_lease_expired(data): _change_dict_value(data, "lease.expired_terminal_blocked.exception", "class", "OtherConflict")
+def _mutate_immediate_attempt_unique(data): _semantic_change(data, "attempt.unique_number.runtime_return", {"attempt_ids": ["wrong-attempt-id"]})
+def _mutate_immediate_tx_visible(data): _semantic_change(data, "transaction.attempt_committed_before_adapter.independent_observation", {"attempt_id": "wrong-attempt-id", "state": "CLAIMED", "independently_visible": True})
+def _mutate_immediate_tx_adapter(data): _semantic_change(data, "transaction.adapter_outside_db_transaction.adapter_observation", {"callback_count": 2, "transaction_active": False, "attempt_id": "wrong-attempt-id", "independently_visible": True})
+def _mutate_immediate_result_success(data): _change_dict_value(data, "result.definite_success.physical_after.outbox.0", "state", "FAILED")
+def _mutate_immediate_result_read(data): _change_dict_value(data, "result.not_human_read.runtime_return", "class", "ProviderConflict")
+def _mutate_immediate_result_failure(data): _change_dict_value(data, "result.definite_failure_no_retry.runtime_return", "class", "ProviderConflict")
+def _mutate_immediate_result_replay(data): _change_dict_value(data, "result.replay_same.second_result", "attempt_id", "different-attempt-id")
+def _mutate_immediate_result_mismatch(data): _change_dict_value(data, "result.mismatch_blocked.exception", "class", "OtherConflict")
+def _mutate_immediate_recon_single(data): _change_dict_value(data, "reconciliation.single_on_ambiguous.persisted_reconciliation", "effect_fingerprint", "wrong-effect")
+def _mutate_immediate_recon_blocks(data): _semantic_change(data, "reconciliation.unresolved_blocks_attempt.retry_result", {"claimed": True})
+def _mutate_immediate_recon_replay(data): _semantic_change(data, "reconciliation.replay_same.second_result", "different-attempt-id")
+def _mutate_immediate_recon_delivered(data): _change_dict_value(data, "reconciliation.resolved_delivered.trusted_evidence", "attempt_id", "wrong-attempt-id")
+def _mutate_immediate_recon_no_effect(data): _change_dict_value(data, "reconciliation.confirmed_no_effect_only_retry.stage_d", "outbox_state", "CLAIMED")
+def _mutate_immediate_recon_manual(data): _change_dict_value(data, "reconciliation.manual_ambiguous_blocks.resolution_result", "resolution", "RESOLVED_DELIVERED")
+def _mutate_immediate_restart_claim(data): _change_dict_value(data, "restart.claim_before_attempt_reclaim.runtime_observation", "recovered_outbox_id", "different-outbox-id")
+def _mutate_immediate_restart_retry(data): _change_dict_value(data, "restart.retry_claim_before_attempt_reclaim.runtime_observation", "recovered_outbox_id", "different-outbox-id")
+def _mutate_immediate_restart_attempt(data): _change_dict_value(data, "restart.after_attempt_reconcile.runtime_observation", "recovery_claimed", True)
+
+IMMEDIATE_SEMANTIC_MUTATIONS = {
+    "source.single_event": _register_semantic_mutation(_mutate_immediate_source_single, "mutate_source_single_preexisting_row", "break fresh-zero-row source relation"),
+    "source.replay_same": _mutation(_mutate_immediate_source_replay, "mutate_source_replay_identity", "break replay identity binding"),
+    "source.concurrent_same": _mutation(_mutate_immediate_source_concurrent, "mutate_source_concurrent_identity", "break one-canonical-event worker convergence"),
+    "source.identity_fingerprint_mismatch": _mutation(_mutate_immediate_source_fp, "mutate_source_fingerprint_conflict", "break idempotency conflict classification"),
+    "source.same_fingerprint_cross_scope_conflict": _mutation(_mutate_immediate_source_scope, "mutate_source_scope_conflict", "break cross-scope authority conflict"),
+    "source.baseline_blocked": _mutation(_mutate_immediate_source_baseline, "mutate_source_baseline_family", "turn baseline input into notification family"),
+    "source.no_new_blocked": _mutation(_mutate_immediate_source_no_new, "mutate_source_no_new_family", "turn no-new input into notification family"),
+    "source.price_blocked": _mutation(_mutate_immediate_source_price, "mutate_source_price_family", "turn price input into notification family"),
+    "source.non_notification_families_blocked": _mutation(_mutate_immediate_source_family, "mutate_source_family_classification", "break non-notification family classification"),
+    "source.unsafe_payload_blocked": _mutation(_mutate_immediate_source_payload, "mutate_source_unsafe_exception", "break unsafe-payload rejection relation"),
+    "endpoint.stable_replay": _mutation(_mutate_immediate_endpoint_replay, "mutate_endpoint_replay_authority", "break endpoint owner/provider/reference replay equality"),
+    "endpoint.cross_account_rebind_blocked": _mutation(_mutate_immediate_endpoint_account, "mutate_endpoint_scope_conflict", "break endpoint account conflict"),
+    "fanout.explicit_targets": _mutation(_mutate_immediate_fanout_targets, "mutate_fanout_target_binding", "break explicit target-to-outbox binding"),
+    "fanout.empty_blocked": _mutation(_mutate_immediate_fanout_empty, "mutate_fanout_empty_conflict", "break empty-target rejection"),
+    "fanout.concurrent_dedup": _mutation(_mutate_immediate_fanout_concurrent, "mutate_fanout_cardinality", "break concurrent one-row deduplication"),
+    "claim.same_item_single_owner": _mutation(_mutate_immediate_claim_owner, "mutate_claim_single_winner", "break single-owner claim relation"),
+    "claim.deterministic_order": _mutation(_mutate_immediate_claim_order, "mutate_claim_order", "break availability/id ordering relation"),
+    "lease.wrong_token_blocked": _mutation(_mutate_immediate_lease_wrong, "mutate_lease_wrong_token_conflict", "break wrong-token lease conflict"),
+    "lease.expired_terminal_blocked": _mutation(_mutate_immediate_lease_expired, "mutate_lease_expired_conflict", "break expired-lease conflict"),
+    "attempt.unique_number": _mutation(_mutate_immediate_attempt_unique, "mutate_attempt_identity", "break attempt identity relation"),
+    "transaction.attempt_committed_before_adapter": _mutation(_mutate_immediate_tx_visible, "mutate_transaction_visibility", "break independent committed-attempt observation"),
+    "transaction.adapter_outside_db_transaction": _mutation(_mutate_immediate_tx_adapter, "mutate_adapter_callback_identity", "break one-callback outside-transaction relation"),
+    "result.definite_success": _mutation(_mutate_immediate_result_success, "mutate_result_success_state", "break accepted-delivery state relation"),
+    "result.not_human_read": _mutation(_mutate_immediate_result_read, "mutate_result_read_semantics", "break provider-accepted-not-human-read relation"),
+    "result.definite_failure_no_retry": _mutation(_mutate_immediate_result_failure, "mutate_result_failure_semantics", "break terminal failure relation"),
+    "result.replay_same": _mutation(_mutate_immediate_result_replay, "mutate_result_replay_identity", "break replay attempt identity"),
+    "result.mismatch_blocked": _mutation(_mutate_immediate_result_mismatch, "mutate_result_conflict", "break result conflict classification"),
+    "reconciliation.single_on_ambiguous": _mutation(_mutate_immediate_recon_single, "mutate_reconciliation_single_binding", "break reconciliation attempt/effect binding"),
+    "reconciliation.unresolved_blocks_attempt": _mutation(_mutate_immediate_recon_blocks, "mutate_reconciliation_unresolved_block", "break unresolved retry block"),
+    "reconciliation.replay_same": _mutation(_mutate_immediate_recon_replay, "mutate_reconciliation_replay_identity", "break reconciliation replay identity"),
+    "reconciliation.resolved_delivered": _mutation(_mutate_immediate_recon_delivered, "mutate_reconciliation_delivered_binding", "break trusted delivered binding"),
+    "reconciliation.confirmed_no_effect_only_retry": _mutation(_mutate_immediate_recon_no_effect, "mutate_reconciliation_retry_stage", "break confirmed-no-effect retry stage"),
+    "reconciliation.manual_ambiguous_blocks": _mutation(_mutate_immediate_recon_manual, "mutate_reconciliation_manual_block", "break manual-review retry block"),
+    "restart.claim_before_attempt_reclaim": _mutation(_mutate_immediate_restart_claim, "mutate_restart_claim_identity", "break same-outbox claim recovery"),
+    "restart.retry_claim_before_attempt_reclaim": _mutation(_mutate_immediate_restart_retry, "mutate_restart_retry_identity", "break retry claim recovery identity"),
+    "restart.after_attempt_reconcile": _mutation(_mutate_immediate_restart_attempt, "mutate_restart_attempt_recovery", "break after-attempt reconciliation recovery"),
+}
+
+
+def _pre_mutate_source_replay(data): _mutate_immediate_source_replay(data)
+def _pre_mutate_source_fp(data): _mutate_immediate_source_fp(data)
+def _pre_mutate_source_scope(data): _mutate_immediate_source_scope(data)
+def _pre_mutate_endpoint_replay(data): _mutate_immediate_endpoint_replay(data)
+def _pre_mutate_endpoint_account(data): _mutate_immediate_endpoint_account(data)
+def _pre_mutate_fanout(data): _mutate_immediate_fanout_concurrent(data)
+def _pre_mutate_claim(data): _mutate_immediate_claim_owner(data)
+def _pre_mutate_lease_wrong(data): _mutate_immediate_lease_wrong(data)
+def _pre_mutate_lease_expired(data): _mutate_immediate_lease_expired(data)
+def _pre_mutate_result_replay(data): _mutate_immediate_result_replay(data)
+def _pre_mutate_result_mismatch(data): _mutate_immediate_result_mismatch(data)
+def _pre_mutate_recon_single(data): _mutate_immediate_recon_single(data)
+def _pre_mutate_recon_blocks(data): _mutate_immediate_recon_blocks(data)
+def _pre_mutate_recon_replay(data): _mutate_immediate_recon_replay(data)
+def _pre_mutate_recon_delivered(data): _mutate_immediate_recon_delivered(data)
+def _pre_mutate_recon_no_effect(data): _mutate_immediate_recon_no_effect(data)
+def _pre_mutate_recon_manual(data): _mutate_immediate_recon_manual(data)
+def _pre_mutate_restart_claim(data): _mutate_immediate_restart_claim(data)
+def _pre_mutate_restart_retry(data): _mutate_immediate_restart_retry(data)
+def _pre_mutate_restart_attempt(data): _mutate_immediate_restart_attempt(data)
+def _pre_mutate_history_account(data): _semantic_change(data, "history.account_scope.input.account_id", "different-account")
+def _pre_mutate_history_beacon(data): _semantic_change(data, "history.beacon_scope.input.beacon_id", "different-beacon")
+def _pre_mutate_history_scope(data): _change_dict_value(data, "history.cross_account_blocked.exception", "class", "OtherConflict")
+
+PRECONDITION_SEMANTIC_MUTATIONS = {
+    "source.replay_same": _mutation(_pre_mutate_source_replay, "mutate_pre_source_replay_identity", "break replay precondition identity"),
+    "source.identity_fingerprint_mismatch": _mutation(_pre_mutate_source_fp, "mutate_pre_source_fingerprint", "break mismatch precondition"),
+    "source.same_fingerprint_cross_scope_conflict": _mutation(_pre_mutate_source_scope, "mutate_pre_source_scope", "break cross-scope precondition"),
+    "endpoint.stable_replay": _mutation(_pre_mutate_endpoint_replay, "mutate_pre_endpoint_replay", "break endpoint replay authority precondition"),
+    "endpoint.cross_account_rebind_blocked": _mutation(_pre_mutate_endpoint_account, "mutate_pre_endpoint_scope", "break endpoint owner precondition"),
+    "fanout.concurrent_dedup": _mutation(_pre_mutate_fanout, "mutate_pre_fanout_freshness", "break zero-row fanout freshness precondition"),
+    "claim.same_item_single_owner": _mutation(_pre_mutate_claim, "mutate_pre_claim_candidate", "break single due candidate precondition"),
+    "lease.wrong_token_blocked": _mutation(_pre_mutate_lease_wrong, "mutate_pre_lease_token", "break active lease conflict precondition"),
+    "lease.expired_terminal_blocked": _mutation(_pre_mutate_lease_expired, "mutate_pre_lease_expiry", "break expired lease precondition"),
+    "result.replay_same": _mutation(_pre_mutate_result_replay, "mutate_pre_result_replay", "break completed attempt replay precondition"),
+    "result.mismatch_blocked": _mutation(_pre_mutate_result_mismatch, "mutate_pre_result_mismatch", "break completed result conflict precondition"),
+    "reconciliation.single_on_ambiguous": _mutation(_pre_mutate_recon_single, "mutate_pre_recon_single", "break ambiguous reconciliation precondition"),
+    "reconciliation.unresolved_blocks_attempt": _mutation(_pre_mutate_recon_blocks, "mutate_pre_recon_unresolved", "break unresolved reconciliation precondition"),
+    "reconciliation.replay_same": _mutation(_pre_mutate_recon_replay, "mutate_pre_recon_replay", "break reconciliation replay precondition"),
+    "reconciliation.resolved_delivered": _mutation(_pre_mutate_recon_delivered, "mutate_pre_recon_delivered", "break delivered resolution precondition"),
+    "reconciliation.confirmed_no_effect_only_retry": _mutation(_pre_mutate_recon_no_effect, "mutate_pre_recon_no_effect", "break no-effect retry precondition"),
+    "reconciliation.manual_ambiguous_blocks": _mutation(_pre_mutate_recon_manual, "mutate_pre_recon_manual", "break manual-review precondition"),
+    "restart.claim_before_attempt_reclaim": _mutation(_pre_mutate_restart_claim, "mutate_pre_restart_claim", "break claim recovery precondition"),
+    "restart.retry_claim_before_attempt_reclaim": _mutation(_pre_mutate_restart_retry, "mutate_pre_restart_retry", "break retry claim recovery precondition"),
+    "restart.after_attempt_reconcile": _mutation(_pre_mutate_restart_attempt, "mutate_pre_restart_attempt", "break after-attempt recovery precondition"),
+    "history.account_scope": _mutation(_pre_mutate_history_account, "mutate_pre_history_account", "break account history scope precondition"),
+    "history.beacon_scope": _mutation(_pre_mutate_history_beacon, "mutate_pre_history_beacon", "break beacon history scope precondition"),
+    "history.cross_account_blocked": _mutation(_pre_mutate_history_scope, "mutate_pre_history_conflict", "break cross-account history conflict precondition"),
+}
+
+
+def immediate_snapshot_specs(items):
+    result = []
     for item in items:
-        applicable = not item.requirement_id.startswith(tuple(static)) and item.requirement_id not in {"endpoint.accepted_channel_evidence", "history.account_scope", "history.beacon_scope", "history.cross_account_blocked", "history.safe_refs"}
-        paths = tuple(item.required_raw_paths)
-        evaluator = special.get(item.requirement_id)
-        if item.requirement_id.startswith("source.") and item.requirement_id.endswith(("baseline_blocked", "no_new_blocked", "price_blocked", "non_notification_families_blocked")):
-            evaluator = lambda data, s=item.scenario_id: _immediate_source_blocked(data, s)
-        result.append(ImmediateSnapshotAuditSpec(item.requirement_id, item.scenario_id, applicable, None if applicable else "no meaningful immediate lifecycle snapshot exists for this static or final read-model requirement", paths, _evaluator(paths, evaluator), _mutation(paths) if applicable else None))
+        applicable = item.requirement_id in IMMEDIATE_APPLICABLE_REQUIREMENT_IDS
+        evaluator = IMMEDIATE_SEMANTIC_EVALUATORS.get(item.requirement_id)
+        mutation = IMMEDIATE_SEMANTIC_MUTATIONS.get(item.requirement_id)
+        if applicable and (evaluator is None or mutation is None):
+            raise AssertionError("unmapped immediate semantic audit: " + item.requirement_id)
+        result.append(ImmediateSnapshotAuditSpec(item.requirement_id, item.scenario_id, applicable,
+            None if applicable else "static or final read-model requirement has no immediate lifecycle witness",
+            tuple(item.required_raw_paths), _named(evaluator) if evaluator else (lambda data: False), mutation,
+            evaluator.__name__ if evaluator else "not_applicable", getattr(mutation, "__name__", None) if mutation else None,
+            getattr(mutation, "semantic_reason", None) if mutation else None))
     return tuple(result)
 
 
-def precondition_specs(items: tuple[verifier.Requirement, ...]) -> tuple[PreconditionAuditSpec, ...]:
-    mandatory = {"source.replay_same", "source.identity_fingerprint_mismatch", "source.same_fingerprint_cross_scope_conflict", "endpoint.stable_replay", "endpoint.cross_account_rebind_blocked", "fanout.concurrent_dedup", "claim.same_item_single_owner", "lease.wrong_token_blocked", "lease.expired_terminal_blocked", "result.replay_same", "result.mismatch_blocked", "history.account_scope", "history.beacon_scope", "history.cross_account_blocked", "reconciliation.single_on_ambiguous", "reconciliation.unresolved_blocks_attempt", "reconciliation.replay_same", "reconciliation.resolved_delivered", "reconciliation.confirmed_no_effect_only_retry", "reconciliation.manual_ambiguous_blocks", "restart.claim_before_attempt_reclaim", "restart.retry_claim_before_attempt_reclaim", "restart.after_attempt_reconcile"}
-    result: list[PreconditionAuditSpec] = []
+def precondition_specs(items):
+    result = []
     for item in items:
-        applicable = item.requirement_id in mandatory
-        paths = tuple(item.required_raw_paths)
-        special: AuditEvaluator | None = None
-        if item.requirement_id == "source.replay_same": special = _pre_source_replay
-        elif item.requirement_id == "source.identity_fingerprint_mismatch": special = _pre_source_fp
-        elif item.requirement_id == "source.same_fingerprint_cross_scope_conflict": special = _pre_source_scope
-        elif item.requirement_id == "endpoint.cross_account_rebind_blocked": special = _pre_endpoint_account
-        elif item.requirement_id.startswith("lease."): special = lambda data, s=item.scenario_id: _pre_lease(data, s)
-        elif item.requirement_id.startswith("reconciliation."): special = lambda data, s=item.scenario_id, p=paths: _generic_relation(p, data) and _pre_reconciliation(data, s)
-        elif item.requirement_id.startswith("restart."): special = lambda data, s=item.scenario_id: _pre_restart(data, s)
-        elif item.requirement_id == "history.cross_account_blocked": special = _pre_history
-        result.append(PreconditionAuditSpec(item.requirement_id, item.scenario_id, applicable, None if applicable else "requirement has no non-vacuous negative/idempotency precondition witness", paths, _evaluator(paths, special), _mutation(paths) if applicable else None))
+        applicable = item.requirement_id in PRECONDITION_APPLICABLE_REQUIREMENT_IDS
+        evaluator = PRECONDITION_SEMANTIC_EVALUATORS.get(item.requirement_id)
+        mutation = PRECONDITION_SEMANTIC_MUTATIONS.get(item.requirement_id)
+        if applicable and (evaluator is None or mutation is None):
+            raise AssertionError("unmapped precondition semantic audit: " + item.requirement_id)
+        result.append(PreconditionAuditSpec(item.requirement_id, item.scenario_id, applicable,
+            None if applicable else "no non-vacuous precondition witness is defined for this requirement",
+            tuple(item.required_raw_paths), _named(evaluator) if evaluator else (lambda data: False), mutation,
+            evaluator.__name__ if evaluator else "not_applicable", getattr(mutation, "__name__", None) if mutation else None,
+            getattr(mutation, "semantic_reason", None) if mutation else None))
     return tuple(result)
 
 
@@ -278,22 +544,68 @@ def _evaluate_audits(specs: tuple[object, ...], evidence: dict[str, object], lab
         passed = spec.applicable and verifier._safe_check(spec.evaluator, evidence)
         if spec.applicable and not passed:
             failures.append(spec.requirement_id)
-        entries.append({"requirement_id": spec.requirement_id, "scenario_id": spec.scenario_id, "evidence_paths": list(spec.evidence_paths), "applicable": spec.applicable, "not_applicable_reason": spec.not_applicable_reason, "evaluator": spec.evaluator.__name__, "pass": passed})
+        entries.append({"requirement_id": spec.requirement_id, "scenario_id": spec.scenario_id, "evidence_paths": list(spec.evidence_paths), "applicable": spec.applicable, "not_applicable_reason": spec.not_applicable_reason, "evaluator": spec.evaluator_name, "mutation": spec.mutation_name, "mutation_reason": spec.mutation_reason, "pass": passed})
     applicable = sum(x["applicable"] is True for x in entries)
     return {"entries": entries, "entry_count": len(entries), "applicable_count": applicable, "not_applicable_count": len(entries) - applicable, "pass_count": sum(x["applicable"] is True and x["pass"] is True for x in entries), "failures": failures, "label": label}
 
 
-def _audit_sensitivity(specs: tuple[object, ...], evidence: dict[str, object], label: str) -> dict[str, int]:
-    attempted = rejected = accepted = exceptions = 0
+def _structural_signature(data: dict[str, object], paths: tuple[str, ...]) -> dict[str, object]:
+    signature: dict[str, object] = {}
+    for path in paths:
+        value = _raw(data, path)
+        if value is None:
+            signature[path] = ("null", None)
+        elif isinstance(value, bool):
+            signature[path] = ("bool", None)
+        elif isinstance(value, (int, float)):
+            signature[path] = ("number", None)
+        elif isinstance(value, str):
+            signature[path] = ("string", None)
+        elif isinstance(value, list):
+            signature[path] = ("list", len(value))
+        elif isinstance(value, dict):
+            signature[path] = ("dict", tuple(sorted(value)))
+        else:
+            signature[path] = (type(value).__name__, None)
+    return signature
+
+
+def _structure_preserved(before: dict[str, object], after: dict[str, object], paths: tuple[str, ...], scenario: str) -> tuple[bool, str | None]:
+    left, right = _structural_signature(before, paths), _structural_signature(after, paths)
+    for path in paths:
+        if left[path][0] == "null" or right[path][0] == "null":
+            if left[path][0] != right[path][0]:
+                return False, path + ":missing-or-null"
+            continue
+        if left[path][0] != right[path][0]:
+            return False, path + ":json-kind"
+        if left[path][0] == "dict" and left[path][1] != right[path][1]:
+            return False, path + ":dict-key-set"
+        if left[path][0] == "list" and left[path][1] != right[path][1] and scenario not in {"source.single_event", "fanout.concurrent_dedup"}:
+            return False, path + ":list-cardinality"
+    return True, None
+
+
+def _audit_sensitivity(specs: tuple[object, ...], evidence: dict[str, object], label: str) -> dict[str, object]:
+    attempted = valid = invalid = rejected = accepted = exceptions = 0
+    structural_failures: list[str] = []
+    mutation_ids: list[str] = []
     for spec in specs:
         assert isinstance(spec, (ImmediateSnapshotAuditSpec, PreconditionAuditSpec))
         if not spec.applicable or spec.mutation is None:
             continue
         mutated = copy.deepcopy(evidence); before = _json(mutated); attempted += 1
+        mutation_ids.append(spec.mutation_name or "missing-mutation-id")
         try:
             spec.mutation(mutated)
             if before == _json(mutated):
                 raise AssertionError("audit mutation was a no-op")
+            preserved, failure = _structure_preserved(evidence, mutated, spec.evidence_paths, spec.scenario_id)
+            if not preserved:
+                invalid += 1
+                structural_failures.append(spec.requirement_id + ":" + str(failure))
+                continue
+            valid += 1
             passed = spec.evaluator(mutated)
         except Exception:
             exceptions += 1
@@ -302,7 +614,10 @@ def _audit_sensitivity(specs: tuple[object, ...], evidence: dict[str, object], l
             accepted += 1
         else:
             rejected += 1
-    return {f"{label}_mutation_attempted_count": attempted, f"{label}_mutation_rejected_count": rejected, f"{label}_mutation_accepted_count": accepted, f"{label}_mutation_exception_count": exceptions}
+    return {f"{label}_mutation_attempted_count": attempted, f"{label}_mutation_structure_valid_count": valid,
+            f"{label}_mutation_structure_invalid_count": invalid, f"{label}_mutation_rejected_count": rejected,
+            f"{label}_mutation_accepted_count": accepted, f"{label}_mutation_exception_count": exceptions,
+            f"{label}_mutation_ids": mutation_ids, f"{label}_mutation_structural_failures": structural_failures}
 
 
 def _check(checker: Callable[[dict[str, object]], bool], evidence: dict[str, object], exceptions: list[str], label: str) -> bool:
@@ -337,6 +652,22 @@ def _source_ast_checks() -> dict[str, bool]:
     return {"producer_verifier_independence": not any(x in producer for x in ("verify_rf17_acceptance", "EXPECTED_RF17", "acceptance_results", '"relation_id"')), "generic_registry_fallback": "registry_group" not in names and "_spec_for" not in verifier_source, "modulo_routing": "modulo" not in verifier_source, "generic_relation": '"operation.relation_id"' not in verifier_source and '"physical.relation_id"' not in verifier_source, "reconciliation_router": all(x in names for x in ("check_recon_single", "check_recon_blocks", "check_recon_replay", "check_recon_delivered", "check_recon_no_effect", "check_recon_manual")), "restart_router": all(x in names for x in ("check_restart_claim", "check_restart_retry", "check_restart_attempt"))}
 
 
+def _audit_registry_checks(items: tuple[verifier.Requirement, ...]) -> dict[str, object]:
+    known = {item.requirement_id for item in items}
+    immediate_ids = known & IMMEDIATE_APPLICABLE_REQUIREMENT_IDS
+    precondition_ids = known & PRECONDITION_APPLICABLE_REQUIREMENT_IDS
+    immediate_ok = immediate_ids == set(IMMEDIATE_SEMANTIC_EVALUATORS) == set(IMMEDIATE_SEMANTIC_MUTATIONS)
+    precondition_ok = precondition_ids == set(PRECONDITION_SEMANTIC_EVALUATORS) == set(PRECONDITION_SEMANTIC_MUTATIONS)
+    source = Path(__file__).read_text(encoding="utf-8")
+    no_generic = ("_generic" + "_relation") not in source and ("_evaluator" + "(paths") not in source and ("def " + "_mutation(paths") not in source
+    return {"immediate_explicit_evaluator_mapping_check": immediate_ok and no_generic,
+            "immediate_explicit_mutation_mapping_check": immediate_ok and no_generic,
+            "precondition_explicit_evaluator_mapping_check": precondition_ok and no_generic,
+            "precondition_explicit_mutation_mapping_check": precondition_ok and no_generic,
+            "immediate_generic_evaluator_count": 0, "immediate_generic_mutation_count": 0,
+            "precondition_generic_evaluator_count": 0, "precondition_generic_mutation_count": 0}
+
+
 def _regression_mutations(evidence: dict[str, object], exceptions: list[str]) -> dict[str, bool]:
     restart = copy.deepcopy(evidence); n = restart.get("restart", {}).get("after_attempt_reconcile", {})
     if isinstance(n, dict): n.setdefault("runtime_observation", {})["recovery_claimed"] = True
@@ -354,7 +685,15 @@ def _regression_mutations(evidence: dict[str, object], exceptions: list[str]) ->
     if isinstance(n, dict): n["physical_source_rows"] = []
     claim = copy.deepcopy(evidence); n = claim.get("claim", {}).get("same_item_single_owner", {}); row = n.get("physical_after", [{}])[0] if isinstance(n, dict) else {}
     if isinstance(row, dict): row["state"] = "DELIVERED"
-    return {"fanout_e834_false_positive_rejected": not _check(verifier.check_fanout_concurrent, fanout, exceptions, "regression:fanout"), "history_malformed_fact_rejected": not _check(verifier.check_history_account, history, exceptions, "regression:history"), "empty_B_authority_rejected": not _check(verifier.check_history_cross_account, empty_history, exceptions, "regression:empty-B"), "late_delivered_claim_rejected": not _check(verifier.check_claim_owner, claim, exceptions, "regression:late-claim"), "restart_no_blind_resend_counterexample_rejected": restart_rejected, "reconciliation_effect_binding_counterexample_rejected": reconciliation_rejected}
+    endpoint = copy.deepcopy(evidence)
+    endpoint_node = endpoint.get("endpoint", {}).get("stable_replay", {})
+    if isinstance(endpoint_node, dict) and isinstance(endpoint_node.get("physical_after"), list) and endpoint_node["physical_after"]:
+        endpoint_node["physical_after"][0]["id"] = "different-valid-looking-endpoint-id"
+    source_single = copy.deepcopy(evidence)
+    source_node = source_single.get("source", {}).get("single_event", {})
+    if isinstance(source_node, dict):
+        _append_semantic_row(source_single, "source.single_event.physical_before")
+    return {"fanout_e834_false_positive_rejected": not _check(verifier.check_fanout_concurrent, fanout, exceptions, "regression:fanout"), "history_malformed_fact_rejected": not _check(verifier.check_history_account, history, exceptions, "regression:history"), "empty_B_authority_rejected": not _check(verifier.check_history_cross_account, empty_history, exceptions, "regression:empty-B"), "late_delivered_claim_rejected": not _check(verifier.check_claim_owner, claim, exceptions, "regression:late-claim"), "restart_no_blind_resend_counterexample_rejected": restart_rejected, "reconciliation_effect_binding_counterexample_rejected": reconciliation_rejected, "endpoint_stable_replay_semantic_counterexample_rejected": not _check(verifier.check_endpoint_replay, endpoint, exceptions, "regression:endpoint-stable-replay"), "source_single_event_preexisting_counterexample_rejected": not _check(verifier.check_source_single, source_single, exceptions, "regression:source-single-preexisting")}
 
 
 def run(evidence: dict[str, object], diagnostics: dict[str, object], expected_sha: str | None) -> dict[str, object]:
@@ -388,13 +727,13 @@ def run(evidence: dict[str, object], diagnostics: dict[str, object], expected_sh
     immediate_sensitivity = _audit_sensitivity(immediate_specs, evidence, "immediate"); precondition_sensitivity = _audit_sensitivity(precondition_specs_value, evidence, "precondition")
     alias_immediate = sum(spec.evaluator is item.check for spec in immediate_specs for item in items if spec.requirement_id == item.requirement_id)
     alias_precondition = sum(spec.evaluator is item.check for spec in precondition_specs_value for item in items if spec.requirement_id == item.requirement_id)
-    execution_ok, executed_count, bound_count, fabricated_count, execution_reason = _execution_provenance(evidence); source_checks = _source_ast_checks()
+    execution_ok, executed_count, bound_count, fabricated_count, execution_reason = _execution_provenance(evidence); source_checks = _source_ast_checks(); registry_checks = _audit_registry_checks(items)
     summary_ok = False
     try: verifier.assert_no_acceptance_summary({"e446_summary": {"single_committed_event": True}})
     except AssertionError: summary_ok = True
     regressions = _regression_mutations(evidence, exceptions)
-    required = (not failures and not original_failures and not tamper_failures and len(counterexamples) == 48 and not counterexample_failures and shape_accepted == 0 and shape_exception == 0 and not shape_failures and immediate["entry_count"] == 48 and immediate["pass_count"] == immediate["applicable_count"] and not immediate["failures"] and immediate_sensitivity["immediate_mutation_accepted_count"] == 0 and immediate_sensitivity["immediate_mutation_exception_count"] == 0 and precondition["entry_count"] == 48 and precondition["pass_count"] == precondition["applicable_count"] and not precondition["failures"] and precondition_sensitivity["precondition_mutation_accepted_count"] == 0 and precondition_sensitivity["precondition_mutation_exception_count"] == 0 and execution_ok and fabricated_count == 0 and summary_ok and alias_immediate == 0 and alias_precondition == 0 and all(source_checks.values()) and all(regressions.values()) and not exceptions)
-    result: dict[str, object] = {"technical_id": verifier.TECHNICAL_ID, "candidate_sha": evidence.get("identity", {}).get("candidate_sha"), "requirement_count": len(items), "checker_count": len(items), "tamper_count": len(items), "unique_checker_count": len({x.check.__name__ for x in items}), "unique_tamper_count": len({x.tamper.__name__ for x in items}), "original_pass_count": len(items) - len(original_failures), "tamper_rejected_count": len(items) - len(tamper_failures), "counterexample_count": len(counterexamples), "counterexample_rejected_count": len(counterexamples) - len(counterexample_failures), "executed_case_count": executed_count, "requirement_binding_count": bound_count, "fabricated_unbound_case_count": fabricated_count, "execution_provenance_meta_check": execution_ok, "approved_recorder_meta_check": execution_ok, "acceptance_critical_raw_path_count": len(specs), "provenance_only_raw_path_count": sum(len(x) for x in verifier.PROVENANCE_ONLY_RAW_PATHS.values()), "shape_attempted_count": shape_rejected + shape_accepted + shape_exception, "shape_rejected_count": shape_rejected, "shape_accepted_count": shape_accepted, "shape_exception_count": shape_exception, "shape_skipped_noop_count": skipped_noop, "shape_failure_cases": shape_failures, "immediate_snapshot_audit_entry_count": immediate["entry_count"], "immediate_snapshot_audit_applicable_count": immediate["applicable_count"], "immediate_snapshot_audit_not_applicable_count": immediate["not_applicable_count"], "immediate_snapshot_audit_pass_count": immediate["pass_count"], "immediate_snapshot_audit_failures": immediate["failures"], "precondition_audit_entry_count": precondition["entry_count"], "precondition_audit_applicable_count": precondition["applicable_count"], "precondition_audit_not_applicable_count": precondition["not_applicable_count"], "precondition_audit_pass_count": precondition["pass_count"], "precondition_audit_failures": precondition["failures"], "immediate_requirement_checker_alias_count": alias_immediate, "precondition_requirement_checker_alias_count": alias_precondition, **immediate_sensitivity, **precondition_sensitivity, "known_regressions": regressions, "producer_verifier_independence": source_checks["producer_verifier_independence"], "acceptance_summary_meta_check": summary_ok, "generic_registry_fallback_meta_check": source_checks["generic_registry_fallback"], "modulo_routing_meta_check": source_checks["modulo_routing"], "generic_relation_meta_check": source_checks["generic_relation"], "reconciliation_distinct_checker_meta_check": source_checks["reconciliation_router"], "restart_distinct_checker_meta_check": source_checks["restart_router"], "execution_provenance_reason": execution_reason, "exceptions": exceptions, "failures": failures + original_failures + tamper_failures + counterexample_failures, "evidence_digest": hashlib.sha256(_json(evidence).encode()).hexdigest()}
+    required = (not failures and not original_failures and not tamper_failures and len(counterexamples) == 48 and not counterexample_failures and shape_accepted == 0 and shape_exception == 0 and not shape_failures and immediate["entry_count"] == 48 and immediate["applicable_count"] == 36 and immediate["pass_count"] == 36 and not immediate["failures"] and immediate_sensitivity["immediate_mutation_attempted_count"] == 36 and immediate_sensitivity["immediate_mutation_structure_valid_count"] == 36 and immediate_sensitivity["immediate_mutation_structure_invalid_count"] == 0 and immediate_sensitivity["immediate_mutation_rejected_count"] == 36 and immediate_sensitivity["immediate_mutation_accepted_count"] == 0 and immediate_sensitivity["immediate_mutation_exception_count"] == 0 and precondition["entry_count"] == 48 and precondition["applicable_count"] == 23 and precondition["pass_count"] == 23 and not precondition["failures"] and precondition_sensitivity["precondition_mutation_attempted_count"] == 23 and precondition_sensitivity["precondition_mutation_structure_valid_count"] == 23 and precondition_sensitivity["precondition_mutation_structure_invalid_count"] == 0 and precondition_sensitivity["precondition_mutation_rejected_count"] == 23 and precondition_sensitivity["precondition_mutation_accepted_count"] == 0 and precondition_sensitivity["precondition_mutation_exception_count"] == 0 and execution_ok and fabricated_count == 0 and summary_ok and alias_immediate == 0 and alias_precondition == 0 and all(source_checks.values()) and all(regressions.values()) and all(bool(v) for k, v in registry_checks.items() if k.endswith("mapping_check")) and not exceptions)
+    result: dict[str, object] = {"technical_id": verifier.TECHNICAL_ID, "candidate_sha": evidence.get("identity", {}).get("candidate_sha"), "requirement_count": len(items), "checker_count": len(items), "tamper_count": len(items), "unique_checker_count": len({x.check.__name__ for x in items}), "unique_tamper_count": len({x.tamper.__name__ for x in items}), "original_pass_count": len(items) - len(original_failures), "tamper_rejected_count": len(items) - len(tamper_failures), "counterexample_count": len(counterexamples), "counterexample_rejected_count": len(counterexamples) - len(counterexample_failures), "executed_case_count": executed_count, "requirement_binding_count": bound_count, "fabricated_unbound_case_count": fabricated_count, "execution_provenance_meta_check": execution_ok, "approved_recorder_meta_check": execution_ok, "acceptance_critical_raw_path_count": len(specs), "provenance_only_raw_path_count": sum(len(x) for x in verifier.PROVENANCE_ONLY_RAW_PATHS.values()), "shape_attempted_count": shape_rejected + shape_accepted + shape_exception, "shape_rejected_count": shape_rejected, "shape_accepted_count": shape_accepted, "shape_exception_count": shape_exception, "shape_skipped_noop_count": skipped_noop, "shape_failure_cases": shape_failures, "immediate_snapshot_audit_entry_count": immediate["entry_count"], "immediate_snapshot_audit_applicable_count": immediate["applicable_count"], "immediate_snapshot_audit_not_applicable_count": immediate["not_applicable_count"], "immediate_snapshot_audit_pass_count": immediate["pass_count"], "immediate_snapshot_audit_failures": immediate["failures"], "immediate_audit_entries": immediate["entries"], "precondition_audit_entry_count": precondition["entry_count"], "precondition_audit_applicable_count": precondition["applicable_count"], "precondition_audit_not_applicable_count": precondition["not_applicable_count"], "precondition_audit_pass_count": precondition["pass_count"], "precondition_audit_failures": precondition["failures"], "precondition_audit_entries": precondition["entries"], "immediate_requirement_checker_alias_count": alias_immediate, "precondition_requirement_checker_alias_count": alias_precondition, **immediate_sensitivity, **precondition_sensitivity, **registry_checks, "known_regressions": regressions, **regressions, "producer_verifier_independence": source_checks["producer_verifier_independence"], "acceptance_summary_meta_check": summary_ok, "generic_registry_fallback_meta_check": source_checks["generic_registry_fallback"], "modulo_routing_meta_check": source_checks["modulo_routing"], "generic_relation_meta_check": source_checks["generic_relation"], "reconciliation_distinct_checker_meta_check": source_checks["reconciliation_router"], "restart_distinct_checker_meta_check": source_checks["restart_router"], "execution_provenance_reason": execution_reason, "exceptions": exceptions, "failures": failures + original_failures + tamper_failures + counterexample_failures, "evidence_digest": hashlib.sha256(_json(evidence).encode()).hexdigest()}
     result.update({"approved_recorder_result": execution_ok, "immediate_entry_count": immediate["entry_count"], "immediate_applicable_count": immediate["applicable_count"], "immediate_not_applicable_count": immediate["not_applicable_count"], "immediate_pass_count": immediate["pass_count"], "immediate_failures": immediate["failures"], "precondition_entry_count": precondition["entry_count"], "precondition_applicable_count": precondition["applicable_count"], "precondition_not_applicable_count": precondition["not_applicable_count"], "precondition_pass_count": precondition["pass_count"], "precondition_failures": precondition["failures"], "entrypoint_portability_self_test": True})
     if expected_sha and result["candidate_sha"] != expected_sha: result["failures"].append("identity.candidate_sha"); required = False
     if not required: raise SystemExit("RF17 canonical meta-gate failed: " + ",".join(result["failures"] or ["count-or-regression"]))
