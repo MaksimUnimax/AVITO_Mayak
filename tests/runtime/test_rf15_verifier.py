@@ -137,7 +137,7 @@ def test_producer_has_no_preoperation_session_autobegin_or_foreign_fixture_write
     )
 
 
-def test_fixture_proof_uses_fresh_connection_and_synthetic_only_queue_reset() -> None:
+def test_fixture_proof_uses_fresh_connection_and_ownership_safe_queue_isolation() -> None:
     source_path = Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
     source = source_path.read_text()
     assert "def _assert_committed_fixture" in source
@@ -146,6 +146,51 @@ def test_fixture_proof_uses_fresh_connection_and_synthetic_only_queue_reset() ->
     assert "https://synthetic.invalid/rf15" in source
     assert "truncate table" not in source.lower()
     assert "state in ('DUE', 'RETRY')" in source
+    reset = source.split("def _reset_synthetic_scan_state", 1)[1].split(
+        "def _assert_committed_fixture", 1
+    )[0].lower()
+    assert "delete from" not in reset
+    assert "update mayak.scan_schedules" in reset
+    assert "update mayak.scan_work_items" in reset
+    assert "state = 'pending_reconciliation'" in reset
+    assert "parser_outcomes" not in reset
+    assert "notification_" not in reset
+
+
+def test_scan_queue_isolation_preserves_foreign_referenced_history() -> None:
+    source = (
+        Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    ).read_text()
+    reset = source.split("def _reset_synthetic_scan_state", 1)[1].split(
+        "def _assert_committed_fixture", 1
+    )[0].lower()
+    for historical_table in (
+        "scan_runs",
+        "scan_listing_observations",
+        "scan_beacon_listing_state",
+        "scan_anchors",
+    ):
+        assert f"delete from mayak.{historical_table}" not in reset
+    assert "state in ('due', 'retry')" in reset
+    assert "where state in ('due', 'retry') and due_at <= now()" in reset
+
+
+def test_producer_has_no_direct_parser_or_foreign_module_mutation() -> None:
+    source = (
+        Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    ).read_text()
+    lowered = source.lower()
+    assert "delete from mayak.parser_outcomes" not in lowered
+    assert "update mayak.parser_outcomes" not in lowered
+    for foreign_table in (
+        "identity_",
+        "entitlement_",
+        "billing_",
+        "egress_",
+        "notification_",
+    ):
+        assert f"delete from mayak.{foreign_table}" not in lowered
+        assert f"update mayak.{foreign_table}" not in lowered
 
 
 def test_terminal_concurrency_helper_has_no_scheduler_overlap_fixture() -> None:

@@ -513,31 +513,39 @@ def _create_fixture(engine: Any) -> dict[str, str]:
 
 
 def _reset_synthetic_scan_state(engine: Any) -> None:
-    """Remove only disposable RF15 Scan rows before the next measured case.
+    """Neutralize only synthetic Scan queue state before the next measured case.
 
     ``claim_work`` is intentionally global, so beacon-scoped observation is
-    not scenario isolation.  The acceptance database is disposable, but the
-    cleanup remains bounded to synthetic beacons created by this harness and
-    never performs a global table operation or touches non-synthetic resources.
+    not scenario isolation.  Historical Scan rows can be referenced by
+    durable Parser and other foreign-module facts, so scenario isolation must
+    not delete them.  Instead, this acceptance-only boundary retires synthetic
+    schedules and moves only synthetic claimable work out of the production
+    claim set.  It is bounded to synthetic beacons and never touches
+    non-synthetic resources or foreign-module tables.
     """
     synthetic = "https://synthetic.invalid/rf15"
     with engine.begin() as connection:
         params = {"source_url": synthetic}
-        for table in (
-            "scan_listing_observations",
-            "scan_beacon_listing_state",
-            "scan_anchors",
-            "scan_runs",
-            "scan_work_items",
-            "scan_schedules",
-        ):
-            connection.execute(
-                text(
-                    f"delete from mayak.{table} where beacon_id in ("
-                    "select id from mayak.beacon_beacons where source_url = :source_url)"
-                ),
-                params,
-            )
+        synthetic_beacons = (
+            "select id from mayak.beacon_beacons where source_url = :source_url"
+        )
+        connection.execute(
+            text(
+                "update mayak.scan_schedules set state = 'PAUSED', "
+                "updated_at = now(), row_version = row_version + 1 "
+                f"where beacon_id in ({synthetic_beacons}) and state = 'ACTIVE'"
+            ),
+            params,
+        )
+        connection.execute(
+            text(
+                "update mayak.scan_work_items set state = 'PENDING_RECONCILIATION', "
+                "row_version = row_version + 1 "
+                f"where beacon_id in ({synthetic_beacons}) "
+                "and state in ('DUE', 'RETRY')"
+            ),
+            params,
+        )
         remaining = int(
             connection.execute(
                 text(
