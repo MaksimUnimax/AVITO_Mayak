@@ -17,25 +17,80 @@ jobs:
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
-      RF16_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf16migration@127.0.0.1:5432/mayak
-      RF16_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf16application@127.0.0.1:5432/mayak
+      PYTHONDONTWRITEBYTECODE: "1"
+      MAYAK_DATABASE_HOST: 127.0.0.1
+      MAYAK_DATABASE_PORT: "5432"
+      MAYAK_DATABASE_NAME: mayak
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_DATABASE_SSLMODE: disable
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf16migration@127.0.0.1:5432/mayak
+      RF15_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf16application@127.0.0.1:5432/mayak
     steps:
       - uses: actions/checkout@v4
-        with: {ref: main}
+        with: {ref: ${{ github.sha }}}
       - uses: actions/setup-python@v5
         with: {python-version: '3.14.6'}
       - uses: astral-sh/setup-uv@v6
         with: {version: '0.11.31'}
       - run: uv sync --frozen
-      - name: Create roles and migrate
+      - name: Create canonical file-backed Mayak database boundary
         run: |
-          docker ps --filter 'ancestor=postgres:18' --filter status=running --format '{{.ID}}' | grep -E '.+'
-          docker exec "$(docker ps --filter 'ancestor=postgres:18' --filter status=running --format '{{.ID}}' | head -1)" psql -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'rf16migration';" -c "CREATE ROLE mayak_application LOGIN PASSWORD 'rf16application';" -c "CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration"
-          RF16_DSN="$RF16_MIGRATION_DSN" uv run alembic upgrade head
-          RF16_DSN="$RF16_MIGRATION_DSN" uv run python -c 'from sqlalchemy import create_engine,text; import os; e=create_engine(os.environ["RF16_DSN"]); c=e.connect(); c.execute(text("GRANT USAGE ON SCHEMA mayak TO mayak_application")); c.execute(text("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")); c.commit()'
+          sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
+          umask 077
+          printf '%s' 'mayak' > /run/secrets/mayak_postgres_bootstrap_password
+          printf '%s' 'rf16migration' > /run/secrets/mayak_database_migration_password
+          printf '%s' 'rf16application' > /run/secrets/mayak_database_application_password
+          test "$(stat -c '%F:%a' /run/secrets)" = 'directory:700'
+          test "$(stat -c '%F:%a' /run/secrets/mayak_database_migration_password)" = 'regular file:600'
+          test "$(stat -c '%F:%a' /run/secrets/mayak_database_application_password)" = 'regular file:600'
+          mapfile -t postgres_containers < <(docker ps --filter 'ancestor=postgres:18' --filter status=running --format '{{.ID}}')
+          test "${#postgres_containers[@]}" -eq 1
+          postgres_container="${postgres_containers[0]}"
+          test "$(docker inspect --format '{{.Config.Image}}' "$postgres_container")" = 'postgres:18'
+          uv run python - <<'PY'
+          from mayak.persistence.bootstrap import bootstrap_database
+          from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
+          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host="127.0.0.1")))
+          PY
+      - name: Alembic current head through canonical migration config
+        run: uv run alembic upgrade head
+      - name: Verify migration across a new connection and grant application runtime only
+        run: |
+          uv run python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          engine = create_engine(os.environ["RF15_MIGRATION_DSN"])
+          with engine.connect() as c:
+              version = c.execute(text("select version_num from mayak.alembic_version")).scalar_one()
+              heads = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
+              assert len(heads) == 1 and version == heads[0]
+              assert c.execute(text("select version()" )).scalar_one().startswith("PostgreSQL 18.")
+              c.execute(text("grant usage on schema mayak to mayak_application"))
+              c.execute(text("grant select, insert, update, delete on mayak.egress_agents, mayak.egress_routes, mayak.egress_agent_heartbeats, mayak.egress_route_leases to mayak_application"))
+              c.execute(text("grant references on mayak.scan_work_items to mayak_application"))
+              c.commit()
+          engine.dispose()
+          PY
       - run: uv run pytest -q tests/contract/test_rf16_egress_runtime_contracts.py tests/contract/test_rf16_parser_egress_integration.py tests/architecture/test_egress_routing_boundaries.py tests/architecture/test_import_boundaries.py
-      - run: uv run python scripts/runtime/build_rf16_agent.py
-      - run: uv run python scripts/runtime/run_rf16_postgres_acceptance.py --dsn "$RF16_APPLICATION_DSN" --fixture-dsn "$RF16_MIGRATION_DSN" --output rf16-evidence.json
+      - name: Build dedicated agent twice and compare logical contents
+        run: |
+          uv run python scripts/runtime/build_rf16_agent.py > rf16-package-1.json
+          cp dist/rf16/rf16-agent.zip /tmp/rf16-agent-1.zip
+          uv run python scripts/runtime/build_rf16_agent.py > rf16-package-2.json
+          cmp /tmp/rf16-agent-1.zip dist/rf16/rf16-agent.zip
+      - run: uv run python scripts/runtime/run_rf16_postgres_acceptance.py --dsn "$RF15_APPLICATION_DSN" --fixture-dsn "$RF15_MIGRATION_DSN" --output rf16-evidence.json
+      - name: Strict RF16 verifier and immutable tamper meta-gate
+        run: uv run python scripts/runtime/verify_rf16_acceptance.py rf16-evidence.json > rf16-verifier.json
       - uses: actions/upload-artifact@v4
         if: always()
-        with: {name: rf16-postgres-acceptance, path: 'rf16-evidence.json'}
+        with:
+          name: rf16-postgres-acceptance
+          path: |
+            rf16-evidence.json
+            rf16-verifier.json
+            rf16-package-1.json
+            rf16-package-2.json
+            dist/rf16/rf16-agent.zip

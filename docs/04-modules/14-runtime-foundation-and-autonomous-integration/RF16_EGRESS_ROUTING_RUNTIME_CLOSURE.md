@@ -1,40 +1,37 @@
-# RF16 Egress Routing durable runtime closure
+# RF16 Egress Routing durable runtime corrective closure
 
 Technical ID: `RF-16-EGRESS-ROUTING-DURABLE-RUNTIME-20260803-01`
+Expected base: `441eb4c86cc6e19eae2e0c826713209d653c3a3d`
+Previous candidate: `441eb4c86cc6e19eae2e0c826713209d653c3a3d`
+Previous hosted run/job: `30783243880` / `91591837769`
 
-This package adds the PostgreSQL-backed Module-07 service boundary, bounded
-transport-neutral agent protocol, deterministic simulator, Parser fail-closed
-adapter, and Linux-side package build validation. It does not select or deploy
-production networking.
+## Previous publication and root cause
 
-## Authority and physical model
+The original RF16 partial publication preceded a complete source-level
+production/evidence audit. The independently proven first failure was
+`FileNotFoundError: secret path is not a regular file:
+/run/secrets/mayak_database_migration_password`. PostgreSQL 18, the exact
+candidate checkout, Python 3.14.6, uv 0.11.31 and frozen sync had passed.
+The workflow created roles/schema and invoked `alembic/env.py`, whose canonical
+`create_migration_engine -> build_migration_url -> resolve_secret_file` path
+had no required file-backed secret or complete `MAYAK_DATABASE_*` boundary.
+The workflow also invented `RF16_DSN` instead of reusing the accepted Mayak
+bootstrap contract.
 
-Base SHA: `696ecc9c6759f14c81a512af6f1c0d71a81e552f`.
+## Corrective facts
 
-The accepted four tables remain authoritative: `egress_agents`,
-`egress_routes`, `egress_agent_heartbeats`, and `egress_route_leases`.
-No migration or schema change is included. Heartbeat is liveness only; READY
-is an explicit synthetic/project-owned route and agent state.
+This candidate reuses the canonical file-backed Mayak bootstrap, requires an
+explicit trusted lease validity input, adapts the accepted Module-07 selection
+port, makes replay/conflict/terminal mutation fail closed, strictly validates
+typed protocol messages, persists simulator replay across a process-equivalent
+restart, emits raw PostgreSQL observations, and builds only the allowlisted
+transport-neutral agent artifact. No schema or migration is changed.
 
-The pre-RF16 gate is not deleted or rewritten. `rf16_authority.py` is the
-traceable higher-authority boundary for this exact task. Live listeners,
-firewall/DNS/TLS, tunnel/VPN/proxy, external traffic and Windows installation
-remain unauthorized.
+Hosted run/job/artifact, strict-verifier count, tamper count, package digest,
+and PostgreSQL/Python/uv identities are intentionally `PENDING` until the
+single post-publication hosted run completes. No hosted success is implied.
 
-## Protocol and package
-
-Protocol identity is `rf16-egress-v1`; messages are bounded to 16 KiB and use
-JSON with explicit UUID assignment/lease identity. The simulator is
-`EgressAgentSimulator` and covers liveness, accepted assignment, failures,
-restriction, malformed/ambiguous effects, duplicate replay and restart replay.
-The build validation entry point is `scripts/runtime/build_rf16_agent.py` and
-the future operator command is `uv run python scripts/runtime/build_rf16_agent.py`.
-The resulting wheel is an operator artifact only; it does not install a service,
-touch the database, or configure a Windows host.
-
-## Verdict
-
-Automatic tests and PostgreSQL 18 hosted evidence are recorded by the publishing
-report. External residual: `WINDOWS_LIVE_PROOF_OPERATOR_ONLY_CONTINUE`.
+External residual: `WINDOWS_LIVE_PROOF_OPERATOR_ONLY_CONTINUE`.
+Production readiness is not claimed.
 
 `PUBLISHED_FOR_INDEPENDENT_ACCEPTANCE`

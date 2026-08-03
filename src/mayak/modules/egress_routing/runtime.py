@@ -12,11 +12,12 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Protocol, Sequence
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from mayak.persistence.metadata import metadata
@@ -39,6 +40,8 @@ class RuntimeReason(StrEnum):
     LEASE_REVOKED = "LEASE_REVOKED"
     LEASE_RECONCILIATION_REQUIRED = "LEASE_RECONCILIATION_REQUIRED"
     IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
+    SELECTION_POLICY_REQUIRED = "SELECTION_POLICY_REQUIRED"
+    LEASE_CONFLICT = "LEASE_CONFLICT"
 
 
 class LeaseState(StrEnum):
@@ -56,6 +59,18 @@ class RuntimeResult:
     ok: bool
     reason: str
     reference_id: UUID | None = None
+
+
+class TrustedSelectionPolicyPort(Protocol):
+    """Server-owned adapter to the accepted Module-07 selection boundary."""
+
+    def select(
+        self,
+        *,
+        route_facts: Sequence[tuple[UUID, UUID, str, str]],
+        purpose: str,
+        capability_scope: tuple[str, ...],
+    ) -> RuntimeResult: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,19 +281,39 @@ class EgressRuntime:
             return "ONLINE_UNREADY"
         return "READY"
 
-    def select_route(self, session: Session, *, capability: str | None = None) -> RuntimeResult:
-        del capability  # capability policy is intentionally not invented in RF16.
+    def select_route(
+        self,
+        session: Session,
+        *,
+        purpose: str,
+        capability_scope: tuple[str, ...],
+        selection_policy: TrustedSelectionPolicyPort | None = None,
+    ) -> RuntimeResult:
+        if selection_policy is None:
+            return RuntimeResult(False, RuntimeReason.SELECTION_POLICY_REQUIRED)
+        if (
+            not isinstance(purpose, str)
+            or not purpose.strip()
+            or type(capability_scope) is not tuple
+            or not capability_scope
+        ):
+            return RuntimeResult(False, RuntimeReason.SELECTION_POLICY_REQUIRED)
         rows = session.execute(
-            select(ROUTES.c.id, ROUTES.c.agent_id, ROUTES.c.state)
+            select(
+                ROUTES.c.id, ROUTES.c.agent_id, ROUTES.c.state, AGENTS.c.state.label("agent_state")
+            )
             .join(AGENTS, AGENTS.c.id == ROUTES.c.agent_id)
-            .where(ROUTES.c.state == "READY", AGENTS.c.state == "READY")
             .order_by(ROUTES.c.id)
         ).all()
-        if not rows:
+        physical_ids = tuple(row.id for row in rows)
+        decision = selection_policy.select(
+            route_facts=tuple((row.id, row.agent_id, row.state, row.agent_state) for row in rows),
+            purpose=purpose,
+            capability_scope=capability_scope,
+        )
+        if decision.ok and (decision.reference_id not in physical_ids):
             return RuntimeResult(False, RuntimeReason.NO_ELIGIBLE_ROUTE)
-        if len(rows) > 1:
-            return RuntimeResult(False, RuntimeReason.MULTIPLE_ROUTES_UNAPPROVED)
-        return RuntimeResult(True, "SELECTED", rows[0].id)
+        return decision
 
     def acquire_lease(
         self,
@@ -286,10 +321,14 @@ class EgressRuntime:
         *,
         route_id: UUID,
         work_item_id: UUID,
-        lease_token: UUID | None = None,
-        lease_seconds: int = 300,
+        lease_token: UUID,
+        lease_validity_seconds: int,
     ) -> RuntimeResult:
-        if lease_seconds <= 0:
+        if (
+            not isinstance(lease_token, UUID)
+            or not isinstance(lease_validity_seconds, int)
+            or lease_validity_seconds <= 0
+        ):
             raise ValueError("lease duration must be positive")
         route = (
             session.execute(
@@ -320,17 +359,32 @@ class EgressRuntime:
                 existing["state"] == "ACTIVE", "REPLAY_" + existing["state"], existing["id"]
             )
         lease_id = uuid4()
-        session.execute(
-            insert(LEASES).values(
-                id=lease_id,
-                route_id=route_id,
-                work_item_id=work_item_id,
-                lease_token=token,
-                lease_started_at=func.now(),
-                lease_expires_at=func.now() + _seconds(lease_seconds),
-                state="ACTIVE",
-            )
-        )
+        try:
+            with session.begin_nested():
+                session.execute(
+                    insert(LEASES).values(
+                        id=lease_id,
+                        route_id=route_id,
+                        work_item_id=work_item_id,
+                        lease_token=token,
+                        lease_started_at=func.now(),
+                        lease_expires_at=func.now() + _seconds(lease_validity_seconds),
+                        state="ACTIVE",
+                    )
+                )
+        except IntegrityError:
+            # The partial unique index is the final race protection.  The
+            # savepoint keeps the caller's PostgreSQL transaction usable.
+            protected = session.execute(
+                select(LEASES.c.id).where(
+                    LEASES.c.route_id == route_id,
+                    LEASES.c.work_item_id == work_item_id,
+                    LEASES.c.state == "ACTIVE",
+                )
+            ).scalar_one_or_none()
+            if protected is not None:
+                return RuntimeResult(False, RuntimeReason.LEASE_CONFLICT, protected)
+            raise
         return RuntimeResult(True, "GRANTED", lease_id)
 
     def reconcile_expired(self, session: Session) -> int:
@@ -363,11 +417,18 @@ class EgressRuntime:
             "REVOKED",
         }:
             raise ValueError("unsupported terminal lease state")
-        session.execute(
+        changed = session.execute(
             update(LEASES)
-            .where(LEASES.c.id == lease_id, LEASES.c.state == "ACTIVE")
+            .where(
+                LEASES.c.id == lease_id,
+                LEASES.c.lease_token == lease_token,
+                LEASES.c.state == "ACTIVE",
+                LEASES.c.lease_expires_at > database_now,
+            )
             .values(state=terminal_state)
         )
+        if changed.rowcount != 1:
+            return RuntimeResult(False, "LEASE_STATE_CHANGED", lease_id)
         return RuntimeResult(True, terminal_state, lease_id)
 
     def safe_diagnostics(
@@ -433,4 +494,5 @@ __all__ = [
     "RouteProjection",
     "RuntimeReason",
     "RuntimeResult",
+    "TrustedSelectionPolicyPort",
 ]

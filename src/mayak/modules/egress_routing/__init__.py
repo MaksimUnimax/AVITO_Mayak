@@ -158,6 +158,7 @@ from .runtime import (  # noqa: F401
     RouteProjection,
     RuntimeReason,
     RuntimeResult,
+    TrustedSelectionPolicyPort,
 )
 from .safe_diagnostic_gate import (  # noqa: F401
     ER12A_TASK_ID,

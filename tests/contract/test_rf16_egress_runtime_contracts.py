@@ -44,14 +44,28 @@ def test_simulator_scenarios_are_deterministic_and_no_transport_success_is_parse
     first = agent.run(scenario)
     second = agent.run(scenario)
     assert first.agent_id == agent.agent_id
-    assert first.to_bytes() == first.to_bytes()
-    if scenario in {SimulatorScenario.SUCCESS_TRANSPORT, SimulatorScenario.RESULT_AMBIGUOUS}:
+    if scenario is not SimulatorScenario.MISMATCHED_DUPLICATE:
+        equivalent = EgressAgentSimulator(
+            agent.agent_id, agent.assignment_id, agent.lease_id
+        ).run(scenario)
+        assert first.to_bytes() == equivalent.to_bytes()
+    if scenario is SimulatorScenario.SUCCESS_TRANSPORT:
         assert first.effect in {
             TransportEffect.SUCCESS_TRANSPORT_ONLY,
-            TransportEffect.RECONCILIATION_REQUIRED,
         }
+    if scenario is SimulatorScenario.RESULT_AMBIGUOUS:
+        assert first.effect is TransportEffect.RESULT_AMBIGUOUS
     if scenario is SimulatorScenario.DUPLICATE:
         assert second.assignment_id == first.assignment_id
+
+
+def test_simulator_restart_replays_durable_identity_not_memory() -> None:
+    agent = EgressAgentSimulator(uuid4())
+    committed = agent.run(SimulatorScenario.DISPATCH_AMBIGUOUS)
+    restarted = agent.restart()
+    replayed = restarted.run(SimulatorScenario.RESTART_REPLAY)
+    assert replayed.to_bytes() == committed.to_bytes()
+    assert replayed.assignment_id == committed.assignment_id
 
 
 def test_rf16_authority_supersedes_only_historical_runtime_gate() -> None:

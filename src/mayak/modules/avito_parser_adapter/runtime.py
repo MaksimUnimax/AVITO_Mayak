@@ -473,7 +473,7 @@ class HttpxLiveAdapter:
                 )
             try:
                 decoded = json.loads(response.body)
-            except (UnicodeDecodeError, json.JSONDecodeError):
+            except UnicodeDecodeError, json.JSONDecodeError:
                 return _classification(
                     "httpx-malformed",
                     TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
@@ -501,7 +501,7 @@ class HttpxLiveAdapter:
                 evidence_class=ProviderResponseEvidenceClass.INCOMPLETE_RESPONSE,
                 evidence=(ref,),
             )
-        except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError):
+        except httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError:
             return _classification(
                 "httpx-transport-failure",
                 TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
@@ -759,17 +759,12 @@ class AvitoParserRuntime:
         self, request: ParserRequestEnvelope, transport: TransportOutcomeReference
     ) -> ParserAttemptOutcome:
         """Public RF14 integration port: transport failure is never clean/empty success."""
-        blocked = {
-            TransportOutcomeStatus.NOT_SENT,
-            TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
-            TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
-        }
-        parser_status = (
-            ParserOutcomeStatus.RESULT_AMBIGUOUS
-            if transport.transport_status is TransportOutcomeStatus.TRANSPORT_AMBIGUOUS
-            else None
-        )
-        if transport.transport_status in blocked:
+        parser_status = {
+            TransportOutcomeStatus.NOT_SENT: ParserOutcomeStatus.EXPLICIT_REJECTION,
+            TransportOutcomeStatus.TRANSPORT_UNAVAILABLE: ParserOutcomeStatus.EXPLICIT_REJECTION,
+            TransportOutcomeStatus.TRANSPORT_AMBIGUOUS: ParserOutcomeStatus.RESULT_AMBIGUOUS,
+        }.get(transport.transport_status)
+        if parser_status is not None:
             return ParserAttemptOutcome(
                 attempt_id=f"parser-egress::{transport.transport_reference_id}",
                 transport_status=transport.transport_status,
