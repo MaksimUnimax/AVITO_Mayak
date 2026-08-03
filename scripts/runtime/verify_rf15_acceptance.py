@@ -208,13 +208,30 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
                 and _terminal(safe)
             )
         if name in {"foreign_state_witness", "no_foreign_domain_effect"}:
-            before, after = _physical(case)
+            rf15 = case.get("rf15_physical")
+            if not isinstance(rf15, Mapping) or case.get("operation") != rf15.get("operation"):
+                return False
+            _op(rf15["operation"])
+            scan_before, scan_after = _physical(rf15)
+            foreign_before, foreign_after = case["physical_before"], case["physical_after"]
             return (
-                _terminal(case)
-                and before["semantic"] == after["semantic"]
-                and _time(before["observation_finished_at"])
-                < _time(case["operation"]["started_at"])
-                and _time(case["operation"]["finished_at"]) < _time(after["observation_started_at"])
+                isinstance(foreign_before, Mapping)
+                and isinstance(foreign_after, Mapping)
+                and isinstance(foreign_before.get("semantic"), Mapping)
+                and isinstance(foreign_after.get("semantic"), Mapping)
+                and foreign_before["semantic"] == foreign_after["semantic"]
+                and _terminal(rf15)
+                and scan_before["run_rows"]
+                and all(row.get("state") == "RUNNING" for row in scan_before["run_rows"])
+                and scan_after["run_rows"]
+                and all(
+                    row.get("state") in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"}
+                    for row in scan_after["run_rows"]
+                )
+                and _time(foreign_before["observation_finished_at"])
+                < _time(rf15["operation"]["started_at"])
+                and _time(rf15["operation"]["finished_at"])
+                < _time(foreign_after["observation_started_at"])
             )
         before, after = _physical(case)
         if name == "schedule_uniqueness":
@@ -429,11 +446,21 @@ RAW_DEPENDENCY_PATHS.update(
         ],
         "foreign_state_witness": [
             "behavioral_cases.foreign_state_witness.physical_before.semantic",
-            "behavioral_cases.foreign_state_witness.operation.started_at",
+            "behavioral_cases.foreign_state_witness.physical_after.semantic",
+            "behavioral_cases.foreign_state_witness.physical_before.observation_finished_at",
+            "behavioral_cases.foreign_state_witness.rf15_physical.operation",
+            "behavioral_cases.foreign_state_witness.rf15_physical.physical_before.run_rows",
+            "behavioral_cases.foreign_state_witness.rf15_physical.physical_after.run_rows",
+            "behavioral_cases.foreign_state_witness.rf15_physical.physical_after.event_ids",
         ],
         "no_foreign_domain_effect": [
+            "behavioral_cases.no_foreign_domain_effect.physical_before.semantic",
             "behavioral_cases.no_foreign_domain_effect.physical_after.semantic",
-            "behavioral_cases.no_foreign_domain_effect.operation.finished_at",
+            "behavioral_cases.no_foreign_domain_effect.physical_after.observation_started_at",
+            "behavioral_cases.no_foreign_domain_effect.rf15_physical.operation",
+            "behavioral_cases.no_foreign_domain_effect.rf15_physical.physical_before.run_rows",
+            "behavioral_cases.no_foreign_domain_effect.rf15_physical.physical_after.run_rows",
+            "behavioral_cases.no_foreign_domain_effect.rf15_physical.physical_after.event_ids",
         ],
     }
 )
@@ -468,7 +495,7 @@ TAMPER_PATHS.update(
         "idempotency_replay_and_mismatch": ("operation_mismatch", "exception", "class"),
         "restart_durability": ("physical_after", "second_lifetime", "run_rows"),
         "foreign_state_witness": ("physical_after", "semantic"),
-        "no_foreign_domain_effect": ("physical_after", "semantic"),
+        "no_foreign_domain_effect": ("rf15_physical", "physical_after", "run_rows"),
         "raw_payload_snapshot_boundary": ("safe_persistence", "snapshot"),
         "platform_event_identity": ("operation", "result", "event_ids"),
     }
@@ -756,20 +783,29 @@ def build_representative_evidence() -> dict[str, Any]:
         },
     }
     cases["raw_payload_snapshot_boundary"]["safe_persistence"]["operation"] = operation
+    foreign_operation = _representative_operation("commit_comparison", {}, offset=3)
+    foreign_scan = {
+        "operation": foreign_operation,
+        "physical_before": _representative_physical(
+            runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]
+        ),
+        "physical_after": _representative_physical(
+            runs=[{"id": "r", "state": "SUCCEEDED_DIFFERENCE", "revision_no": 1}],
+            listings=[{"id": "l"}],
+            events=["e"],
+        ),
+    }
     foreign_case = {
-        "operation": _representative_operation("commit_comparison", {}, offset=3),
+        "operation": foreign_operation,
         "physical_before": {
-            **_representative_physical(runs=[{"id": "r", "state": "RUNNING", "revision_no": 1}]),
             "semantic": {"identity": [], "parser": []},
             "observation_finished_at": _stamp(1)[1],
         },
         "physical_after": {
-            **_representative_physical(
-                runs=[{"id": "r", "state": "SUCCEEDED_BASELINE", "revision_no": 1}]
-            ),
             "semantic": {"identity": [], "parser": []},
             "observation_started_at": _stamp(5)[0],
         },
+        "rf15_physical": foreign_scan,
     }
     cases["foreign_state_witness"] = copy.deepcopy(foreign_case)
     cases["no_foreign_domain_effect"] = copy.deepcopy(foreign_case)

@@ -250,13 +250,23 @@ def test_corrected_semantic_shapes_cover_expiry_authority_and_races() -> None:
     )
 
 
-def test_foreign_witness_uses_top_level_foreign_snapshots() -> None:
+def test_foreign_witness_uses_two_layer_snapshots() -> None:
     evidence = V.build_representative_evidence()
     for name in ("foreign_state_witness", "no_foreign_domain_effect"):
         case = evidence["behavioral_cases"][name]
-        assert "rf15_physical" not in case
+        assert "rf15_physical" in case
+        assert any("physical_before.semantic" in path for path in V.RAW_DEPENDENCY_PATHS[name])
         assert any(
-            f"behavioral_cases.{name}.physical_" in path
+            "rf15_physical.physical_after.run_rows" in path
             for path in V.RAW_DEPENDENCY_PATHS[name]
         )
+        assert V._check(name, case)
+
+
+def test_foreign_checker_does_not_treat_foreign_semantics_as_scan_physical() -> None:
+    evidence = V.build_representative_evidence()
+    for name in ("foreign_state_witness", "no_foreign_domain_effect"):
+        case = evidence["behavioral_cases"][name]
+        case["physical_before"]["schedule_rows"] = []
+        case["physical_after"]["schedule_rows"] = []
         assert V._check(name, case)

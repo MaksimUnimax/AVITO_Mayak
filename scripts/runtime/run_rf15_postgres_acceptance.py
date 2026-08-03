@@ -458,15 +458,7 @@ class SyntheticParserPort:
         self.history.append(
             {"outcome_id": str(outcome_id), "run_id": str(run_id), "beacon_id": str(beacon_id)}
         )
-        return self.outcome
-
-
-class SequentialParserPort:
-    def __init__(self, outcomes: list[ParserOutcome]) -> None:
-        self.outcomes = iter(outcomes)
-
-    def resolve(self, outcome_id: UUID, *, run_id: UUID, beacon_id: UUID) -> ParserOutcome:
-        return next(self.outcomes).model_copy(update={"outcome_id": outcome_id})
+        return self.outcome.model_copy(update={"outcome_id": outcome_id})
 
 
 def _create_fixture(engine: Any) -> dict[str, str]:
@@ -1054,6 +1046,10 @@ def scenario_foreign_state_witness(connection: Any) -> dict[str, Any]:
     terminal["physical_after"]["observation_started_at"] = second_started
     return {
         "operation": terminal["operation"],
+        # Keep the foreign witness at the top level, and retain the complete
+        # Scan-owned terminal branch separately.  Both references point to
+        # the same measured raw commit_comparison operation.
+        "rf15_physical": terminal,
         "physical_before": {"observation_finished_at": first_finished, "semantic": first},
         "physical_after": {"observation_started_at": second_started, "semantic": second},
     }
@@ -1792,7 +1788,7 @@ def scenario_authority_recheck(connection: Any) -> dict[str, Any]:
                     ),
                 ]
             ),
-            SequentialParserPort([clean, clean]),
+            SyntheticParserPort(clean),
         ),
         (
             SequentialBeaconPort(
@@ -1821,7 +1817,7 @@ def scenario_authority_recheck(connection: Any) -> dict[str, Any]:
                     ),
                 ]
             ),
-            SequentialParserPort([clean, clean]),
+            SyntheticParserPort(clean),
         ),
         (
             SequentialBeaconPort(
@@ -1848,7 +1844,7 @@ def scenario_authority_recheck(connection: Any) -> dict[str, Any]:
                     denied,
                 ]
             ),
-            SequentialParserPort([clean, clean]),
+            SyntheticParserPort(clean),
         ),
         (
             SequentialBeaconPort(
@@ -1877,9 +1873,10 @@ def scenario_authority_recheck(connection: Any) -> dict[str, Any]:
                     ),
                 ]
             ),
-            SequentialParserPort(
-                [clean, clean.model_copy(update={"status": ParserStatus.PARTIAL})]
-            ),
+            # commit_comparison resolves Parser exactly once.  Supply the
+            # first/only resolution as the failing authority outcome rather
+            # than modelling a nonexistent second Parser recheck.
+            SyntheticParserPort(clean.model_copy(update={"status": ParserStatus.PARTIAL})),
         ),
     ]
     attempts = []
@@ -2007,8 +2004,13 @@ def scenario_concurrent_new_listing_serialization(connection: Any) -> dict[str, 
         ),
         "rf15-concurrent-new-baseline",
     )
-    first = prepare_next_run(connection.engine, baseline, scenario_id="concurrent-new-a")
-    second = prepare_next_run(connection.engine, baseline, scenario_id="concurrent-new-b")
+    # The first competing run is normal scheduler-owned setup.  The second
+    # is created by the test-only Scan-owned adversarial terminal precondition;
+    # this does not claim that the scheduler normally materializes overlapping
+    # unresolved same-scope work, and no scheduler call occurs in the race.
+    first, second = _adversarial_terminal_pair(
+        connection.engine, "concurrent-new"
+    )
     outcome = _clean_outcome(
         (ListingCandidate(identity_key="concurrent-new", snapshot={"price": 2}),)
     )
