@@ -111,8 +111,14 @@ class TrustedDispatchBinding:
         parts = urlsplit(self.target)
         if parts.scheme != "https" or not parts.netloc or parts.username or parts.password:
             raise ValueError("trusted target must be an absolute https URL without credentials")
-        for field in ("source_reference_id", "beacon_source_reference", "profile_id",
-                      "profile_version", "authority_reference", "proof_reference"):
+        for field in (
+            "source_reference_id",
+            "beacon_source_reference",
+            "profile_id",
+            "profile_version",
+            "authority_reference",
+            "proof_reference",
+        ):
             if not getattr(self, field).strip():
                 raise ValueError(f"{field} must not be blank")
 
@@ -139,7 +145,9 @@ class TrustedDispatchAuthority:
         self._bindings = bindings
         self._expected_bindings = expected_bindings if expected_bindings is not None else bindings
 
-    def resolve(self, source: ParserSourceReference, profile: ParserCompatibilityProfile) -> TrustedDispatchBinding | None:
+    def resolve(
+        self, source: ParserSourceReference, profile: ParserCompatibilityProfile
+    ) -> TrustedDispatchBinding | None:
         return self.resolve_with_reason(source, profile)[0]
 
     def resolve_with_reason(
@@ -147,7 +155,8 @@ class TrustedDispatchAuthority:
     ) -> tuple[TrustedDispatchBinding | None, str]:
         expected = next(
             (
-                item for item in self._expected_bindings
+                item
+                for item in self._expected_bindings
                 if item.source_reference_id == source.source_reference_id
                 and item.beacon_source_reference == source.beacon_source_reference
                 and item.profile_id == profile.profile_id
@@ -161,12 +170,16 @@ class TrustedDispatchAuthority:
                     return None, "SOURCE_IDENTITY_MISMATCH"
                 if item.beacon_source_reference != source.beacon_source_reference:
                     return None, "PROVENANCE_MISMATCH"
-                if item.profile_id != profile.profile_id or item.profile_version != profile.profile_version:
+                if (
+                    item.profile_id != profile.profile_id
+                    or item.profile_version != profile.profile_version
+                ):
                     return None, "PROFILE_IDENTITY_VERSION_MISMATCH"
             return None, "LIVE_AUTHORITY_MISSING"
         candidate = next(
             (
-                item for item in self._bindings
+                item
+                for item in self._bindings
                 if item.source_reference_id == source.source_reference_id
                 and item.beacon_source_reference == source.beacon_source_reference
                 and item.profile_id == profile.profile_id
@@ -210,7 +223,9 @@ class RawHttpResponseObservation:
 class HttpxTransport:
     """HTTP mechanics isolated from provider/semantic classification."""
 
-    def __init__(self, settings: HttpxAdapterSettings, transport: httpx.BaseTransport | None) -> None:
+    def __init__(
+        self, settings: HttpxAdapterSettings, transport: httpx.BaseTransport | None
+    ) -> None:
         self.settings = settings
         self.transport = transport
 
@@ -221,8 +236,13 @@ class HttpxTransport:
             write=self.settings.write_timeout_seconds,
             pool=self.settings.pool_timeout_seconds,
         )
-        with httpx.Client(transport=self.transport, timeout=timeout, follow_redirects=False,
-                          cookies=None, trust_env=False) as client:
+        with httpx.Client(
+            transport=self.transport,
+            timeout=timeout,
+            follow_redirects=False,
+            cookies=None,
+            trust_env=False,
+        ) as client:
             with client.stream("GET", target) as response:
                 body = bytearray()
                 for chunk in response.iter_bytes():
@@ -262,9 +282,10 @@ class NormalizedListingSnapshot:
         for candidate in self.candidates:
             if set(candidate) != {"listing_candidate_id", "status", "fields"}:
                 raise ValueError("snapshot contains an unapproved normalized field")
-            if not isinstance(candidate["listing_candidate_id"], str) or not candidate[
-                "listing_candidate_id"
-            ].strip():
+            if (
+                not isinstance(candidate["listing_candidate_id"], str)
+                or not candidate["listing_candidate_id"].strip()
+            ):
                 raise ValueError("snapshot listing identity must be non-empty")
             if candidate["status"] not in {item.value for item in ListingCandidateStatus}:
                 raise ValueError("snapshot contains an unapproved candidate status")
@@ -396,7 +417,10 @@ class HttpxLiveAdapter:
                 explanation="PROVIDER_DISABLED_CONTINUE",
                 evidence=(ref,),
             )
-        if profile is None or profile.lifecycle_status is not CompatibilityProfileLifecycleStatus.CURRENT:
+        if (
+            profile is None
+            or profile.lifecycle_status is not CompatibilityProfileLifecycleStatus.CURRENT
+        ):
             return _classification(
                 "live-profile-missing",
                 TransportOutcomeStatus.NOT_SENT,
@@ -422,37 +446,61 @@ class HttpxLiveAdapter:
         try:
             response = HttpxTransport(self.settings, self._transport).request(binding.target)
             if 300 <= response.status_code < 400:
-                return _classification("httpx-redirect", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                        parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
-                                        evidence_class=ProviderResponseEvidenceClass.RESULT_AMBIGUOUS,
-                                        explanation="REDIRECT_POLICY_BLOCKED", evidence=(ref,))
+                return _classification(
+                    "httpx-redirect",
+                    TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                    parser_status=ParserOutcomeStatus.RESULT_AMBIGUOUS,
+                    evidence_class=ProviderResponseEvidenceClass.RESULT_AMBIGUOUS,
+                    explanation="REDIRECT_POLICY_BLOCKED",
+                    evidence=(ref,),
+                )
             if response.status_code in (403, 429):
-                return _classification("httpx-restricted", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                        parser_status=ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
-                                        evidence_class=ProviderResponseEvidenceClass.RATE_OR_ACCESS_RESTRICTED,
-                                        restriction=ResponseRestrictionSignal.ACCESS_RESTRICTED, evidence=(ref,))
+                return _classification(
+                    "httpx-restricted",
+                    TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                    parser_status=ParserOutcomeStatus.RATE_OR_ACCESS_RESTRICTED,
+                    evidence_class=ProviderResponseEvidenceClass.RATE_OR_ACCESS_RESTRICTED,
+                    restriction=ResponseRestrictionSignal.ACCESS_RESTRICTED,
+                    evidence=(ref,),
+                )
             if response.status_code >= 400:
-                return _classification("httpx-rejected", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                        parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
-                                        evidence_class=ProviderResponseEvidenceClass.EXPLICIT_REJECTION, evidence=(ref,))
+                return _classification(
+                    "httpx-rejected",
+                    TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                    parser_status=ParserOutcomeStatus.EXPLICIT_REJECTION,
+                    evidence_class=ProviderResponseEvidenceClass.EXPLICIT_REJECTION,
+                    evidence=(ref,),
+                )
             try:
                 decoded = json.loads(response.body)
             except (UnicodeDecodeError, json.JSONDecodeError):
-                return _classification("httpx-malformed", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                        parser_status=ParserOutcomeStatus.MALFORMED_RESPONSE,
-                                        evidence_class=ProviderResponseEvidenceClass.MALFORMED_RESPONSE, evidence=(ref,))
+                return _classification(
+                    "httpx-malformed",
+                    TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                    parser_status=ParserOutcomeStatus.MALFORMED_RESPONSE,
+                    evidence_class=ProviderResponseEvidenceClass.MALFORMED_RESPONSE,
+                    evidence=(ref,),
+                )
             # The current accepted evidence contains no live Avito response schema.
             # Parseability and generic keys are therefore never semantic authority.
             del decoded, binding
-            return _classification("httpx-unproven-schema", TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
-                                    parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
-                                    evidence_class=ProviderResponseEvidenceClass.UNSUPPORTED_STRUCTURE,
-                                    completeness=ResponseCompletenessStatus.AMBIGUOUS,
-                                    explanation="LIVE_RESPONSE_SCHEMA_UNPROVEN", evidence=(ref,))
+            return _classification(
+                "httpx-unproven-schema",
+                TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
+                parser_status=ParserOutcomeStatus.UNSUPPORTED_STRUCTURE,
+                evidence_class=ProviderResponseEvidenceClass.UNSUPPORTED_STRUCTURE,
+                completeness=ResponseCompletenessStatus.AMBIGUOUS,
+                explanation="LIVE_RESPONSE_SCHEMA_UNPROVEN",
+                evidence=(ref,),
+            )
         except ValueError:
-            return _classification("httpx-response-too-large", TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
-                                    parser_status=ParserOutcomeStatus.INCOMPLETE_RESPONSE,
-                                    evidence_class=ProviderResponseEvidenceClass.INCOMPLETE_RESPONSE, evidence=(ref,))
+            return _classification(
+                "httpx-response-too-large",
+                TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
+                parser_status=ParserOutcomeStatus.INCOMPLETE_RESPONSE,
+                evidence_class=ProviderResponseEvidenceClass.INCOMPLETE_RESPONSE,
+                evidence=(ref,),
+            )
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError):
             return _classification(
                 "httpx-transport-failure",
@@ -707,6 +755,44 @@ class AvitoParserRuntime:
             "safe parser outcome", reason_code=outcome.attempt_id
         )
 
+    def consume_egress_transport(
+        self, request: ParserRequestEnvelope, transport: TransportOutcomeReference
+    ) -> ParserAttemptOutcome:
+        """Public RF14 integration port: transport failure is never clean/empty success."""
+        blocked = {
+            TransportOutcomeStatus.NOT_SENT,
+            TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
+            TransportOutcomeStatus.TRANSPORT_AMBIGUOUS,
+        }
+        parser_status = (
+            ParserOutcomeStatus.RESULT_AMBIGUOUS
+            if transport.transport_status is TransportOutcomeStatus.TRANSPORT_AMBIGUOUS
+            else None
+        )
+        if transport.transport_status in blocked:
+            return ParserAttemptOutcome(
+                attempt_id=f"parser-egress::{transport.transport_reference_id}",
+                transport_status=transport.transport_status,
+                parser_status=parser_status,
+                request_envelope=request,
+                transport_outcome=transport,
+                explanation=ParserOutcomeExplanation(
+                    "egress transport did not produce a usable parser response",
+                    reason_code=transport.transport_status.value,
+                ),
+            )
+        return ParserAttemptOutcome(
+            attempt_id=f"parser-egress::{transport.transport_reference_id}",
+            transport_status=transport.transport_status,
+            parser_status=None,
+            request_envelope=request,
+            transport_outcome=transport,
+            explanation=ParserOutcomeExplanation(
+                "transport outcome requires parser classification; transport success is not parser success",
+                reason_code="PARSER_CLASSIFICATION_REQUIRED",
+            ),
+        )
+
     def persist_outcome(
         self,
         session: Session | Connection,
@@ -728,7 +814,9 @@ class AvitoParserRuntime:
         db: Any = session
         # PostgreSQL is the replay authority even when a caller has no run_id.
         # This is a database transaction lock, never a process-local mutex.
-        lock_key = int.from_bytes(hashlib.sha256(f"parser-replay:{fingerprint}".encode()).digest()[:8], "big", signed=True)
+        lock_key = int.from_bytes(
+            hashlib.sha256(f"parser-replay:{fingerprint}".encode()).digest()[:8], "big", signed=True
+        )
         db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
         existing = (
             db.execute(
@@ -743,18 +831,29 @@ class AvitoParserRuntime:
             return ParserPersistenceResult(existing["id"], fingerprint, True, code)
         outcome_id = uuid4()
         values = dict(
-            id=outcome_id, beacon_id=beacon_id, run_id=run_id, route_id=route_id,
-            outcome_code=code, listing_snapshot=snapshot,
-            observed_at=observed_at or datetime.now(UTC), fingerprint=fingerprint,
+            id=outcome_id,
+            beacon_id=beacon_id,
+            run_id=run_id,
+            route_id=route_id,
+            outcome_code=code,
+            listing_snapshot=snapshot,
+            observed_at=observed_at or datetime.now(UTC),
+            fingerprint=fingerprint,
             created_at=observed_at or datetime.now(UTC),
         )
         try:
             with db.begin_nested():
                 db.execute(insert(table).values(**values))
         except IntegrityError:
-            existing = db.execute(
-                select(table).where(table.c.run_id == run_id, table.c.fingerprint == fingerprint)
-            ).mappings().first()
+            existing = (
+                db.execute(
+                    select(table).where(
+                        table.c.run_id == run_id, table.c.fingerprint == fingerprint
+                    )
+                )
+                .mappings()
+                .first()
+            )
             if existing is None:
                 raise
             if existing["outcome_code"] != code or existing["listing_snapshot"] != snapshot:
@@ -1036,10 +1135,7 @@ def _fingerprint(
             if attempt.request_envelope is not None
             else None
         ),
-        "evidence": tuple(
-            reference.reference_id
-            for reference in attempt.evidence_references
-        ),
+        "evidence": tuple(reference.reference_id for reference in attempt.evidence_references),
         "snapshot": snapshot,
     }
     return hashlib.sha256(

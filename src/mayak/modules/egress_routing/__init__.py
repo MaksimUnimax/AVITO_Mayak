@@ -106,6 +106,13 @@ from .proof_only_gate import (  # noqa: F401
     EgressProofOnlyAuthority,
     EgressProofOnlyGateBoundary,
 )
+from .protocol import (  # noqa: F401
+    MAX_MESSAGE_BYTES,
+    PROTOCOL_VERSION,
+    AgentMessage,
+    MessageType,
+    TransportEffect,
+)
 from .reconciliation import (  # noqa: F401
     ER06E_TASK_ID,
     TransportDispatchReconciliationAuthority,
@@ -142,6 +149,16 @@ from .restriction_signal import (  # noqa: F401
     TransportRestrictionSignalBoundary,
     TransportRestrictionSignalKind,
 )
+from .rf16_authority import RF16_TASK_ID, EgressRF16RuntimeAuthority  # noqa: F401
+from .runtime import (  # noqa: F401
+    AgentProjection,
+    EgressRuntime,
+    LeaseProjection,
+    LeaseState,
+    RouteProjection,
+    RuntimeReason,
+    RuntimeResult,
+)
 from .safe_diagnostic_gate import (  # noqa: F401
     ER12A_TASK_ID,
     SafeEgressDiagnosticAuthority,
@@ -159,6 +176,7 @@ from .session_secret_gate import (  # noqa: F401
     EgressSessionSecretAuthority,
     EgressSessionSecretGateBoundary,
 )
+from .simulator import EgressAgentSimulator, SimulatorScenario  # noqa: F401
 
 MODULE_ID = EGRESS_ROUTING_MODULE_ID
 
@@ -266,6 +284,22 @@ __all__ = (
     "ER14A_TASK_ID",
     "EgressPersistenceRuntimeAuthority",
     "EgressPersistenceRuntimeGateBoundary",
+    "AgentMessage",
+    "MAX_MESSAGE_BYTES",
+    "MessageType",
+    "PROTOCOL_VERSION",
+    "TransportEffect",
+    "AgentProjection",
+    "EgressRuntime",
+    "LeaseProjection",
+    "LeaseState",
+    "RouteProjection",
+    "RuntimeReason",
+    "RuntimeResult",
+    "EgressAgentSimulator",
+    "SimulatorScenario",
+    "EgressRF16RuntimeAuthority",
+    "RF16_TASK_ID",
     "ER07E_TASK_ID",
     "PolicyFallbackTransportOutcomeAuthority",
     "PolicyFallbackTransportOutcomeBoundary",
