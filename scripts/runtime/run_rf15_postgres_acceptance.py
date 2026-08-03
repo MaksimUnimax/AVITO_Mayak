@@ -761,10 +761,10 @@ def _terminal(
     beacon = SyntheticBeacon(
         UUID(fixture["beacon_id"]), UUID(fixture["account_id"]), int(fixture["revision"])
     )
-    parser = SyntheticParserPort(outcome)
     # Parser owns parser_outcomes.  The fixture is committed before the RF15
     # measured interval and its returned identity is the only Scan reference.
     parser_outcome_id = _persist_parser_fixture(engine, fixture, outcome, key)
+    parser = SyntheticParserPort(outcome.model_copy(update={"outcome_id": parser_outcome_id}))
     with engine.connect() as probe:
         before = _scoped(probe, fixture)
     effective_run = run or fixture["run"]
@@ -1136,8 +1136,8 @@ def scenario_recovery_blocks_backlog(connection: Any) -> dict[str, Any]:
         status="PARTIAL",
         provenance_fingerprint=_digest({"recovery": fixture["run_id"]}),
     )
-    parser = SyntheticParserPort(outcome)
     parser_outcome_id = _persist_parser_fixture(connection.engine, fixture, outcome, "recovery")
+    parser = SyntheticParserPort(outcome.model_copy(update={"outcome_id": parser_outcome_id}))
     with connection.engine.connect() as probe:
         before = _scoped(probe, fixture)
     with connection.engine.connect() as measured:
