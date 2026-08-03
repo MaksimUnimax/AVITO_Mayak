@@ -137,12 +137,17 @@ jobs:
           ids = json.loads(Path('rf15-evidence.json').read_text())['scenario_ids']
           requirements = json.loads(Path('rf15-requirement-map.json').read_text())['requirements']
           tampers = json.loads(Path('rf15-tamper-matrix.json').read_text())['tampers']
+          print('RF15_COUNTS', len(ids), len(requirements), len(tampers))
+          print('RF15_ID_SET', sorted(set(ids)))
+          print('RF15_REQUIREMENT_SET', sorted({row['requirement_id'] for row in requirements}))
+          print('RF15_TAMPER_SET', sorted({row['requirement_id'] for row in tampers}))
           assert len(ids) == len(set(ids)) == 29
           assert len(requirements) == len(tampers) == 29
           assert {row['requirement_id'] for row in requirements} == set(ids)
           assert {row['requirement_id'] for row in tampers} == set(ids)
           for row in requirements + tampers:
               rid = row['requirement_id']
+              print('RF15_VECTOR', rid, row['checker_before'].get(rid), row['checker_after'].get(rid), rid in row['changed_checker_ids'])
               assert row['checker_before'][rid] is True
               assert row['checker_after'][rid] is False
               assert rid in row['changed_checker_ids']
