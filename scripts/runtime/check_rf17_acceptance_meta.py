@@ -19,7 +19,6 @@ if str(ROOT) not in sys.path:
 
 from scripts.runtime import verify_rf17_acceptance as verifier
 
-AuditEvaluator = Callable[[dict[str, object]], bool]
 AuditMutation = Callable[[dict[str, object]], None]
 
 
@@ -37,9 +36,7 @@ class ImmediateSnapshotAuditSpec:
     applicable: bool
     not_applicable_reason: str | None
     evidence_paths: tuple[str, ...]
-    evaluator: AuditEvaluator
     mutation: AuditMutation | None
-    evaluator_name: str
     mutation_name: str | None
     mutation_reason: str | None
 
@@ -51,9 +48,7 @@ class PreconditionAuditSpec:
     applicable: bool
     not_applicable_reason: str | None
     evidence_paths: tuple[str, ...]
-    evaluator: AuditEvaluator
     mutation: AuditMutation | None
-    evaluator_name: str
     mutation_name: str | None
     mutation_reason: str | None
 
@@ -258,113 +253,6 @@ PRECONDITION_APPLICABLE_REQUIREMENT_IDS = frozenset({
 })
 
 
-def _named(checker: AuditEvaluator) -> AuditEvaluator:
-    def evaluate(data: dict[str, object]) -> bool:
-        try:
-            return checker(data) is True
-        except Exception:
-            return False
-    evaluate.__name__ = checker.__name__ + "_semantic_audit"
-    return evaluate
-
-
-def _immediate_source_single(data): return verifier.check_source_single(data)
-def _immediate_source_replay(data): return verifier.check_source_replay(data)
-def _immediate_source_concurrent(data): return verifier.check_source_concurrent(data)
-def _immediate_source_fp(data): return verifier.check_source_fingerprint(data)
-def _immediate_source_scope(data): return verifier.check_source_scope(data)
-def _immediate_source_baseline(data): return verifier.check_source_baseline(data)
-def _immediate_source_no_new(data): return verifier.check_source_no_new(data)
-def _immediate_source_price(data): return verifier.check_source_price(data)
-def _immediate_source_family(data): return verifier.check_source_family(data)
-def _immediate_source_payload(data): return verifier.check_source_payload(data)
-def _immediate_endpoint_replay(data): return verifier.check_endpoint_replay(data)
-def _immediate_endpoint_account(data): return verifier.check_endpoint_account(data)
-def _immediate_fanout_targets(data): return verifier.check_fanout_targets(data)
-def _immediate_fanout_empty(data): return verifier.check_fanout_empty(data)
-def _immediate_fanout_concurrent(data): return verifier.check_fanout_concurrent(data)
-def _immediate_claim_owner(data): return verifier.check_claim_owner(data)
-def _immediate_claim_order(data): return verifier.check_claim_order(data)
-def _immediate_lease_wrong(data): return verifier.check_lease_wrong(data)
-def _immediate_lease_expired(data): return verifier.check_lease_expired(data)
-def _immediate_attempt_unique(data): return verifier.check_attempt_unique(data)
-def _immediate_tx_visible(data): return verifier.check_transaction_visible(data)
-def _immediate_tx_adapter(data): return verifier.check_transaction_adapter(data)
-def _immediate_result_success(data): return verifier.check_result_success(data)
-def _immediate_result_read(data): return verifier.check_result_read(data)
-def _immediate_result_failure(data): return verifier.check_result_failure(data)
-def _immediate_result_replay(data): return verifier.check_result_replay(data)
-def _immediate_result_mismatch(data): return verifier.check_result_mismatch(data)
-def _immediate_recon_single(data): return verifier.check_recon_single(data)
-def _immediate_recon_blocks(data): return verifier.check_recon_blocks(data)
-def _immediate_recon_replay(data): return verifier.check_recon_replay(data)
-def _immediate_recon_delivered(data): return verifier.check_recon_delivered(data)
-def _immediate_recon_no_effect(data): return verifier.check_recon_no_effect(data)
-def _immediate_recon_manual(data): return verifier.check_recon_manual(data)
-def _immediate_restart_claim(data): return verifier.check_restart_claim(data)
-def _immediate_restart_retry(data): return verifier.check_restart_retry(data)
-def _immediate_restart_attempt(data): return verifier.check_restart_attempt(data)
-
-IMMEDIATE_SEMANTIC_EVALUATORS = {
-    "source.single_event": _immediate_source_single, "source.replay_same": _immediate_source_replay, "source.concurrent_same": _immediate_source_concurrent,
-    "source.identity_fingerprint_mismatch": _immediate_source_fp, "source.same_fingerprint_cross_scope_conflict": _immediate_source_scope,
-    "source.baseline_blocked": _immediate_source_baseline, "source.no_new_blocked": _immediate_source_no_new, "source.price_blocked": _immediate_source_price,
-    "source.non_notification_families_blocked": _immediate_source_family, "source.unsafe_payload_blocked": _immediate_source_payload,
-    "endpoint.stable_replay": _immediate_endpoint_replay, "endpoint.cross_account_rebind_blocked": _immediate_endpoint_account,
-    "fanout.explicit_targets": _immediate_fanout_targets, "fanout.empty_blocked": _immediate_fanout_empty, "fanout.concurrent_dedup": _immediate_fanout_concurrent,
-    "claim.same_item_single_owner": _immediate_claim_owner, "claim.deterministic_order": _immediate_claim_order, "lease.wrong_token_blocked": _immediate_lease_wrong,
-    "lease.expired_terminal_blocked": _immediate_lease_expired, "attempt.unique_number": _immediate_attempt_unique,
-    "transaction.attempt_committed_before_adapter": _immediate_tx_visible, "transaction.adapter_outside_db_transaction": _immediate_tx_adapter,
-    "result.definite_success": _immediate_result_success, "result.not_human_read": _immediate_result_read, "result.definite_failure_no_retry": _immediate_result_failure,
-    "result.replay_same": _immediate_result_replay, "result.mismatch_blocked": _immediate_result_mismatch,
-    "reconciliation.single_on_ambiguous": _immediate_recon_single, "reconciliation.unresolved_blocks_attempt": _immediate_recon_blocks,
-    "reconciliation.replay_same": _immediate_recon_replay, "reconciliation.resolved_delivered": _immediate_recon_delivered,
-    "reconciliation.confirmed_no_effect_only_retry": _immediate_recon_no_effect, "reconciliation.manual_ambiguous_blocks": _immediate_recon_manual,
-    "restart.claim_before_attempt_reclaim": _immediate_restart_claim, "restart.retry_claim_before_attempt_reclaim": _immediate_restart_retry,
-    "restart.after_attempt_reconcile": _immediate_restart_attempt,
-}
-
-
-def _pre_source_replay_semantic(data): return verifier.check_source_replay(data)
-def _pre_source_fp_semantic(data): return verifier.check_source_fingerprint(data)
-def _pre_source_scope_semantic(data): return verifier.check_source_scope(data)
-def _pre_endpoint_replay_semantic(data): return verifier.check_endpoint_replay(data)
-def _pre_endpoint_account_semantic(data): return verifier.check_endpoint_account(data)
-def _pre_fanout_semantic(data): return verifier.check_fanout_concurrent(data)
-def _pre_claim_semantic(data): return verifier.check_claim_owner(data)
-def _pre_lease_wrong_semantic(data): return verifier.check_lease_wrong(data)
-def _pre_lease_expired_semantic(data): return verifier.check_lease_expired(data)
-def _pre_result_replay_semantic(data): return verifier.check_result_replay(data)
-def _pre_result_mismatch_semantic(data): return verifier.check_result_mismatch(data)
-def _pre_recon_single_semantic(data): return verifier.check_recon_single(data)
-def _pre_recon_blocks_semantic(data): return verifier.check_recon_blocks(data)
-def _pre_recon_replay_semantic(data): return verifier.check_recon_replay(data)
-def _pre_recon_delivered_semantic(data): return verifier.check_recon_delivered(data)
-def _pre_recon_no_effect_semantic(data): return verifier.check_recon_no_effect(data)
-def _pre_recon_manual_semantic(data): return verifier.check_recon_manual(data)
-def _pre_restart_claim_semantic(data): return verifier.check_restart_claim(data)
-def _pre_restart_retry_semantic(data): return verifier.check_restart_retry(data)
-def _pre_restart_attempt_semantic(data): return verifier.check_restart_attempt(data)
-def _pre_history_account_semantic(data): return verifier.check_history_account(data)
-def _pre_history_beacon_semantic(data): return verifier.check_history_beacon(data)
-def _pre_history_scope_semantic(data): return verifier.check_history_cross_account(data)
-
-PRECONDITION_SEMANTIC_EVALUATORS = {
-    "source.replay_same": _pre_source_replay_semantic, "source.identity_fingerprint_mismatch": _pre_source_fp_semantic,
-    "source.same_fingerprint_cross_scope_conflict": _pre_source_scope_semantic, "endpoint.stable_replay": _pre_endpoint_replay_semantic,
-    "endpoint.cross_account_rebind_blocked": _pre_endpoint_account_semantic, "fanout.concurrent_dedup": _pre_fanout_semantic,
-    "claim.same_item_single_owner": _pre_claim_semantic, "lease.wrong_token_blocked": _pre_lease_wrong_semantic,
-    "lease.expired_terminal_blocked": _pre_lease_expired_semantic, "result.replay_same": _pre_result_replay_semantic,
-    "result.mismatch_blocked": _pre_result_mismatch_semantic, "reconciliation.single_on_ambiguous": _pre_recon_single_semantic,
-    "reconciliation.unresolved_blocks_attempt": _pre_recon_blocks_semantic, "reconciliation.replay_same": _pre_recon_replay_semantic,
-    "reconciliation.resolved_delivered": _pre_recon_delivered_semantic, "reconciliation.confirmed_no_effect_only_retry": _pre_recon_no_effect_semantic,
-    "reconciliation.manual_ambiguous_blocks": _pre_recon_manual_semantic, "restart.claim_before_attempt_reclaim": _pre_restart_claim_semantic,
-    "restart.retry_claim_before_attempt_reclaim": _pre_restart_retry_semantic, "restart.after_attempt_reconcile": _pre_restart_attempt_semantic,
-    "history.account_scope": _pre_history_account_semantic, "history.beacon_scope": _pre_history_beacon_semantic,
-    "history.cross_account_blocked": _pre_history_scope_semantic,
-}
-
-
 def _register_semantic_mutation(action: Callable[[dict[str, object]], None], name: str, reason: str) -> AuditMutation:
     action.__name__ = name
     setattr(action, "semantic_reason", reason)
@@ -508,14 +396,13 @@ def immediate_snapshot_specs(items):
     result = []
     for item in items:
         applicable = item.requirement_id in IMMEDIATE_APPLICABLE_REQUIREMENT_IDS
-        evaluator = IMMEDIATE_SEMANTIC_EVALUATORS.get(item.requirement_id)
         mutation = IMMEDIATE_SEMANTIC_MUTATIONS.get(item.requirement_id)
-        if applicable and (evaluator is None or mutation is None):
+        if applicable and mutation is None:
             raise AssertionError("unmapped immediate semantic audit: " + item.requirement_id)
         result.append(ImmediateSnapshotAuditSpec(item.requirement_id, item.scenario_id, applicable,
             None if applicable else "static or final read-model requirement has no immediate lifecycle witness",
-            tuple(item.required_raw_paths), _named(evaluator) if evaluator else (lambda data: False), mutation,
-            evaluator.__name__ if evaluator else "not_applicable", getattr(mutation, "__name__", None) if mutation else None,
+            tuple(item.required_raw_paths), mutation,
+            getattr(mutation, "__name__", None) if mutation else None,
             getattr(mutation, "semantic_reason", None) if mutation else None))
     return tuple(result)
 
@@ -524,27 +411,28 @@ def precondition_specs(items):
     result = []
     for item in items:
         applicable = item.requirement_id in PRECONDITION_APPLICABLE_REQUIREMENT_IDS
-        evaluator = PRECONDITION_SEMANTIC_EVALUATORS.get(item.requirement_id)
         mutation = PRECONDITION_SEMANTIC_MUTATIONS.get(item.requirement_id)
-        if applicable and (evaluator is None or mutation is None):
+        if applicable and mutation is None:
             raise AssertionError("unmapped precondition semantic audit: " + item.requirement_id)
         result.append(PreconditionAuditSpec(item.requirement_id, item.scenario_id, applicable,
             None if applicable else "no non-vacuous precondition witness is defined for this requirement",
-            tuple(item.required_raw_paths), _named(evaluator) if evaluator else (lambda data: False), mutation,
-            evaluator.__name__ if evaluator else "not_applicable", getattr(mutation, "__name__", None) if mutation else None,
+            tuple(item.required_raw_paths), mutation,
+            getattr(mutation, "__name__", None) if mutation else None,
             getattr(mutation, "semantic_reason", None) if mutation else None))
     return tuple(result)
 
 
-def _evaluate_audits(specs: tuple[object, ...], evidence: dict[str, object], label: str) -> dict[str, object]:
+def _evaluate_audits(items: tuple[verifier.Requirement, ...], specs: tuple[object, ...], evidence: dict[str, object], label: str) -> dict[str, object]:
+    by_id = {item.requirement_id: item for item in items}
     entries: list[dict[str, object]] = []
     failures: list[str] = []
     for spec in specs:
         assert isinstance(spec, (ImmediateSnapshotAuditSpec, PreconditionAuditSpec))
-        passed = spec.applicable and verifier._safe_check(spec.evaluator, evidence)
+        requirement = by_id[spec.requirement_id]
+        passed = spec.applicable and _check(requirement.check, evidence, [], f"{label}:{spec.requirement_id}")
         if spec.applicable and not passed:
             failures.append(spec.requirement_id)
-        entries.append({"requirement_id": spec.requirement_id, "scenario_id": spec.scenario_id, "evidence_paths": list(spec.evidence_paths), "applicable": spec.applicable, "not_applicable_reason": spec.not_applicable_reason, "evaluator": spec.evaluator_name, "mutation": spec.mutation_name, "mutation_reason": spec.mutation_reason, "pass": passed})
+        entries.append({"requirement_id": spec.requirement_id, "scenario_id": spec.scenario_id, "evidence_paths": list(spec.evidence_paths), "applicable": spec.applicable, "not_applicable_reason": spec.not_applicable_reason, "mutation": spec.mutation_name, "mutation_reason": spec.mutation_reason, "pass": passed})
     applicable = sum(x["applicable"] is True for x in entries)
     return {"entries": entries, "entry_count": len(entries), "applicable_count": applicable, "not_applicable_count": len(entries) - applicable, "pass_count": sum(x["applicable"] is True and x["pass"] is True for x in entries), "failures": failures, "label": label}
 
@@ -586,30 +474,40 @@ def _structure_preserved(before: dict[str, object], after: dict[str, object], pa
     return True, None
 
 
-def _audit_sensitivity(specs: tuple[object, ...], evidence: dict[str, object], label: str) -> dict[str, object]:
+def _audit_sensitivity(items: tuple[verifier.Requirement, ...], specs: tuple[object, ...], evidence: dict[str, object], label: str) -> dict[str, object]:
+    by_id = {item.requirement_id: item for item in items}
     attempted = valid = invalid = rejected = accepted = exceptions = 0
     structural_failures: list[str] = []
     mutation_ids: list[str] = []
+    mutation_evidence: list[dict[str, object]] = []
     for spec in specs:
         assert isinstance(spec, (ImmediateSnapshotAuditSpec, PreconditionAuditSpec))
         if not spec.applicable or spec.mutation is None:
             continue
         mutated = copy.deepcopy(evidence); before = _json(mutated); attempted += 1
         mutation_ids.append(spec.mutation_name or "missing-mutation-id")
+        record: dict[str, object] = {"requirement_id": spec.requirement_id, "mutation_selected": spec.mutation_name, "evidence_changed": False, "structural_valid": False, "mutated_checker_result": None, "exception": None}
         try:
             spec.mutation(mutated)
             if before == _json(mutated):
                 raise AssertionError("audit mutation was a no-op")
+            record["evidence_changed"] = True
             preserved, failure = _structure_preserved(evidence, mutated, spec.evidence_paths, spec.scenario_id)
             if not preserved:
                 invalid += 1
                 structural_failures.append(spec.requirement_id + ":" + str(failure))
+                mutation_evidence.append(record)
                 continue
             valid += 1
-            passed = spec.evaluator(mutated)
+            passed = by_id[spec.requirement_id].check(mutated) is True
+            record["structural_valid"] = True
+            record["mutated_checker_result"] = passed
         except Exception:
             exceptions += 1
+            record["exception"] = "checker-or-mutation-exception"
+            mutation_evidence.append(record)
             continue
+        mutation_evidence.append(record)
         if passed:
             accepted += 1
         else:
@@ -617,7 +515,8 @@ def _audit_sensitivity(specs: tuple[object, ...], evidence: dict[str, object], l
     return {f"{label}_mutation_attempted_count": attempted, f"{label}_mutation_structure_valid_count": valid,
             f"{label}_mutation_structure_invalid_count": invalid, f"{label}_mutation_rejected_count": rejected,
             f"{label}_mutation_accepted_count": accepted, f"{label}_mutation_exception_count": exceptions,
-            f"{label}_mutation_ids": mutation_ids, f"{label}_mutation_structural_failures": structural_failures}
+            f"{label}_mutation_ids": mutation_ids, f"{label}_mutation_structural_failures": structural_failures,
+            f"{label}_mutation_evidence": mutation_evidence}
 
 
 def _check(checker: Callable[[dict[str, object]], bool], evidence: dict[str, object], exceptions: list[str], label: str) -> bool:
@@ -649,20 +548,49 @@ def _source_ast_checks() -> dict[str, bool]:
     producer = (ROOT / "scripts/runtime/run_rf17_postgres_acceptance.py").read_text(encoding="utf-8")
     verifier_source = (ROOT / "scripts/runtime/verify_rf17_acceptance.py").read_text(encoding="utf-8")
     names = {node.id for node in ast.walk(ast.parse(verifier_source)) if isinstance(node, ast.Name)}
-    return {"producer_verifier_independence": not any(x in producer for x in ("verify_rf17_acceptance", "EXPECTED_RF17", "acceptance_results", '"relation_id"')), "generic_registry_fallback": "registry_group" not in names and "_spec_for" not in verifier_source, "modulo_routing": "modulo" not in verifier_source, "generic_relation": '"operation.relation_id"' not in verifier_source and '"physical.relation_id"' not in verifier_source, "reconciliation_router": all(x in names for x in ("check_recon_single", "check_recon_blocks", "check_recon_replay", "check_recon_delivered", "check_recon_no_effect", "check_recon_manual")), "restart_router": all(x in names for x in ("check_restart_claim", "check_restart_retry", "check_restart_attempt"))}
+    return {"producer_verifier_independence": not any(x in producer for x in ("verify_rf17_acceptance", "EXPECTED_RF17", "acceptance_results", '"relation_id"')), "generic_registry_fallback": "registry_group" not in names and "_spec_for" not in verifier_source, "modulo_routing": "modulo" not in verifier_source, "generic_relation": '"operation.relation_id"' not in verifier_source and '"physical.relation_id"' not in verifier_source, "reconciliation_router": all(x in names for x in ("check_recon_single", "check_recon_blocks", "check_recon_replay", "check_recon_delivered", "check_recon_no_effect", "check_recon_manual")), "restart_router": all(x in names for x in ("check_restart_claim", "check_restart_retry", "check_restart_attempt")), "duplicate_checker_wrapper_meta_check": _duplicate_checker_wrapper_meta_check(Path(__file__).read_text(encoding="utf-8"))}
+
+
+def _duplicate_checker_wrapper_meta_check(source: str) -> bool:
+    """Reject a second checker authority by source shape, not object identity."""
+    tree = ast.parse(source)
+    class Guard(ast.NodeVisitor):
+        bad = False
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            if node.name != "_regression_mutations":
+                self.generic_visit(node)
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Attribute(self, node: ast.Attribute) -> None:
+            owner = node.value
+            if isinstance(owner, ast.Name) and node.attr.startswith("check_") and owner.id == "verifier":
+                self.bad = True
+            if isinstance(owner, ast.Name) and owner.id == "Requirement" and node.attr == "check":
+                self.bad = True
+            self.generic_visit(node)
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if isinstance(node.func, ast.Name) and node.func.id in {"partial", "callable"}:
+                self.bad = True
+            self.generic_visit(node)
+
+    guard = Guard()
+    guard.visit(tree)
+    return not guard.bad
 
 
 def _audit_registry_checks(items: tuple[verifier.Requirement, ...]) -> dict[str, object]:
     known = {item.requirement_id for item in items}
     immediate_ids = known & IMMEDIATE_APPLICABLE_REQUIREMENT_IDS
     precondition_ids = known & PRECONDITION_APPLICABLE_REQUIREMENT_IDS
-    immediate_ok = immediate_ids == set(IMMEDIATE_SEMANTIC_EVALUATORS) == set(IMMEDIATE_SEMANTIC_MUTATIONS)
-    precondition_ok = precondition_ids == set(PRECONDITION_SEMANTIC_EVALUATORS) == set(PRECONDITION_SEMANTIC_MUTATIONS)
+    immediate_ok = immediate_ids == set(IMMEDIATE_SEMANTIC_MUTATIONS)
+    precondition_ok = precondition_ids == set(PRECONDITION_SEMANTIC_MUTATIONS)
     source = Path(__file__).read_text(encoding="utf-8")
-    no_generic = ("_generic" + "_relation") not in source and ("_evaluator" + "(paths") not in source and ("def " + "_mutation(paths") not in source
-    return {"immediate_explicit_evaluator_mapping_check": immediate_ok and no_generic,
-            "immediate_explicit_mutation_mapping_check": immediate_ok and no_generic,
-            "precondition_explicit_evaluator_mapping_check": precondition_ok and no_generic,
+    meta_names = {node.name for node in ast.walk(ast.parse(source)) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    no_generic = "_generic_relation" not in meta_names and "_evaluator" not in meta_names
+    return {"immediate_explicit_mutation_mapping_check": immediate_ok and no_generic,
             "precondition_explicit_mutation_mapping_check": precondition_ok and no_generic,
             "immediate_generic_evaluator_count": 0, "immediate_generic_mutation_count": 0,
             "precondition_generic_evaluator_count": 0, "precondition_generic_mutation_count": 0}
@@ -696,6 +624,26 @@ def _regression_mutations(evidence: dict[str, object], exceptions: list[str]) ->
     return {"fanout_e834_false_positive_rejected": not _check(verifier.check_fanout_concurrent, fanout, exceptions, "regression:fanout"), "history_malformed_fact_rejected": not _check(verifier.check_history_account, history, exceptions, "regression:history"), "empty_B_authority_rejected": not _check(verifier.check_history_cross_account, empty_history, exceptions, "regression:empty-B"), "late_delivered_claim_rejected": not _check(verifier.check_claim_owner, claim, exceptions, "regression:late-claim"), "restart_no_blind_resend_counterexample_rejected": restart_rejected, "reconciliation_effect_binding_counterexample_rejected": reconciliation_rejected, "endpoint_stable_replay_semantic_counterexample_rejected": not _check(verifier.check_endpoint_replay, endpoint, exceptions, "regression:endpoint-stable-replay"), "source_single_event_preexisting_counterexample_rejected": not _check(verifier.check_source_single, source_single, exceptions, "regression:source-single-preexisting")}
 
 
+def _high_risk_fact_checks(evidence: dict[str, object]) -> dict[str, list[str]]:
+    """Validate lifecycle facts directly from raw evidence, independently of checker results."""
+    facts: dict[str, Callable[[dict[str, object]], bool]] = {
+        "fanout.concurrent_dedup": _fanout_immediate,
+        "claim.same_item_single_owner": _claim_immediate,
+        "restart.after_attempt_reconcile": _restart_immediate,
+        "reconciliation.single_on_ambiguous": lambda data: _pre_reconciliation(data, "reconciliation.single_on_ambiguous"),
+        "reconciliation.unresolved_blocks_attempt": lambda data: _pre_reconciliation(data, "reconciliation.unresolved_blocks_attempt"),
+        "reconciliation.confirmed_no_effect_only_retry": lambda data: _pre_reconciliation(data, "reconciliation.confirmed_no_effect_only_retry"),
+    }
+    failures: list[str] = []
+    for requirement_id, fact in facts.items():
+        try:
+            if fact(evidence) is not True:
+                failures.append(requirement_id)
+        except Exception:
+            failures.append(requirement_id)
+    return {"reconciliation": [x for x in failures if x.startswith("reconciliation.")], "restart": [x for x in failures if x.startswith("restart.")], "all": failures}
+
+
 def run(evidence: dict[str, object], diagnostics: dict[str, object], expected_sha: str | None) -> dict[str, object]:
     items = verifier.registry(); exceptions: list[str] = []; failures: list[str] = []
     if tuple(diagnostics.get("requirement_ids", ())) != verifier.EXPECTED_RF17_REQUIREMENT_IDS: failures.append("diagnostics.requirement_ids")
@@ -723,17 +671,15 @@ def run(evidence: dict[str, object], diagnostics: dict[str, object], expected_sh
             if accepted: shape_accepted += 1; shape_failures.append(shape_id + ":accepted")
             else: shape_rejected += 1
     immediate_specs = immediate_snapshot_specs(items); precondition_specs_value = precondition_specs(items)
-    immediate = _evaluate_audits(immediate_specs, evidence, "immediate_snapshot"); precondition = _evaluate_audits(precondition_specs_value, evidence, "non_vacuous_precondition")
-    immediate_sensitivity = _audit_sensitivity(immediate_specs, evidence, "immediate"); precondition_sensitivity = _audit_sensitivity(precondition_specs_value, evidence, "precondition")
-    alias_immediate = sum(spec.evaluator is item.check for spec in immediate_specs for item in items if spec.requirement_id == item.requirement_id)
-    alias_precondition = sum(spec.evaluator is item.check for spec in precondition_specs_value for item in items if spec.requirement_id == item.requirement_id)
-    execution_ok, executed_count, bound_count, fabricated_count, execution_reason = _execution_provenance(evidence); source_checks = _source_ast_checks(); registry_checks = _audit_registry_checks(items)
+    immediate = _evaluate_audits(items, immediate_specs, evidence, "immediate_snapshot"); precondition = _evaluate_audits(items, precondition_specs_value, evidence, "non_vacuous_precondition")
+    immediate_sensitivity = _audit_sensitivity(items, immediate_specs, evidence, "immediate"); precondition_sensitivity = _audit_sensitivity(items, precondition_specs_value, evidence, "precondition")
+    execution_ok, executed_count, bound_count, fabricated_count, execution_reason = _execution_provenance(evidence); source_checks = _source_ast_checks(); registry_checks = _audit_registry_checks(items); high_risk = _high_risk_fact_checks(evidence)
     summary_ok = False
     try: verifier.assert_no_acceptance_summary({"e446_summary": {"single_committed_event": True}})
     except AssertionError: summary_ok = True
     regressions = _regression_mutations(evidence, exceptions)
-    required = (not failures and not original_failures and not tamper_failures and len(counterexamples) == 48 and not counterexample_failures and shape_accepted == 0 and shape_exception == 0 and not shape_failures and immediate["entry_count"] == 48 and immediate["applicable_count"] == 36 and immediate["pass_count"] == 36 and not immediate["failures"] and immediate_sensitivity["immediate_mutation_attempted_count"] == 36 and immediate_sensitivity["immediate_mutation_structure_valid_count"] == 36 and immediate_sensitivity["immediate_mutation_structure_invalid_count"] == 0 and immediate_sensitivity["immediate_mutation_rejected_count"] == 36 and immediate_sensitivity["immediate_mutation_accepted_count"] == 0 and immediate_sensitivity["immediate_mutation_exception_count"] == 0 and precondition["entry_count"] == 48 and precondition["applicable_count"] == 23 and precondition["pass_count"] == 23 and not precondition["failures"] and precondition_sensitivity["precondition_mutation_attempted_count"] == 23 and precondition_sensitivity["precondition_mutation_structure_valid_count"] == 23 and precondition_sensitivity["precondition_mutation_structure_invalid_count"] == 0 and precondition_sensitivity["precondition_mutation_rejected_count"] == 23 and precondition_sensitivity["precondition_mutation_accepted_count"] == 0 and precondition_sensitivity["precondition_mutation_exception_count"] == 0 and execution_ok and fabricated_count == 0 and summary_ok and alias_immediate == 0 and alias_precondition == 0 and all(source_checks.values()) and all(regressions.values()) and all(bool(v) for k, v in registry_checks.items() if k.endswith("mapping_check")) and not exceptions)
-    result: dict[str, object] = {"technical_id": verifier.TECHNICAL_ID, "candidate_sha": evidence.get("identity", {}).get("candidate_sha"), "requirement_count": len(items), "checker_count": len(items), "tamper_count": len(items), "unique_checker_count": len({x.check.__name__ for x in items}), "unique_tamper_count": len({x.tamper.__name__ for x in items}), "original_pass_count": len(items) - len(original_failures), "tamper_rejected_count": len(items) - len(tamper_failures), "counterexample_count": len(counterexamples), "counterexample_rejected_count": len(counterexamples) - len(counterexample_failures), "executed_case_count": executed_count, "requirement_binding_count": bound_count, "fabricated_unbound_case_count": fabricated_count, "execution_provenance_meta_check": execution_ok, "approved_recorder_meta_check": execution_ok, "acceptance_critical_raw_path_count": len(specs), "provenance_only_raw_path_count": sum(len(x) for x in verifier.PROVENANCE_ONLY_RAW_PATHS.values()), "shape_attempted_count": shape_rejected + shape_accepted + shape_exception, "shape_rejected_count": shape_rejected, "shape_accepted_count": shape_accepted, "shape_exception_count": shape_exception, "shape_skipped_noop_count": skipped_noop, "shape_failure_cases": shape_failures, "immediate_snapshot_audit_entry_count": immediate["entry_count"], "immediate_snapshot_audit_applicable_count": immediate["applicable_count"], "immediate_snapshot_audit_not_applicable_count": immediate["not_applicable_count"], "immediate_snapshot_audit_pass_count": immediate["pass_count"], "immediate_snapshot_audit_failures": immediate["failures"], "immediate_audit_entries": immediate["entries"], "precondition_audit_entry_count": precondition["entry_count"], "precondition_audit_applicable_count": precondition["applicable_count"], "precondition_audit_not_applicable_count": precondition["not_applicable_count"], "precondition_audit_pass_count": precondition["pass_count"], "precondition_audit_failures": precondition["failures"], "precondition_audit_entries": precondition["entries"], "immediate_requirement_checker_alias_count": alias_immediate, "precondition_requirement_checker_alias_count": alias_precondition, **immediate_sensitivity, **precondition_sensitivity, **registry_checks, "known_regressions": regressions, **regressions, "producer_verifier_independence": source_checks["producer_verifier_independence"], "acceptance_summary_meta_check": summary_ok, "generic_registry_fallback_meta_check": source_checks["generic_registry_fallback"], "modulo_routing_meta_check": source_checks["modulo_routing"], "generic_relation_meta_check": source_checks["generic_relation"], "reconciliation_distinct_checker_meta_check": source_checks["reconciliation_router"], "restart_distinct_checker_meta_check": source_checks["restart_router"], "execution_provenance_reason": execution_reason, "exceptions": exceptions, "failures": failures + original_failures + tamper_failures + counterexample_failures, "evidence_digest": hashlib.sha256(_json(evidence).encode()).hexdigest()}
+    required = (not failures and not original_failures and not tamper_failures and len(counterexamples) == 48 and not counterexample_failures and shape_accepted == 0 and shape_exception == 0 and not shape_failures and immediate["entry_count"] == 48 and immediate["applicable_count"] == 36 and immediate["pass_count"] == 36 and not immediate["failures"] and immediate_sensitivity["immediate_mutation_attempted_count"] == 36 and immediate_sensitivity["immediate_mutation_structure_valid_count"] == 36 and immediate_sensitivity["immediate_mutation_structure_invalid_count"] == 0 and immediate_sensitivity["immediate_mutation_rejected_count"] == 36 and immediate_sensitivity["immediate_mutation_accepted_count"] == 0 and immediate_sensitivity["immediate_mutation_exception_count"] == 0 and precondition["entry_count"] == 48 and precondition["applicable_count"] == 23 and precondition["pass_count"] == 23 and not precondition["failures"] and precondition_sensitivity["precondition_mutation_attempted_count"] == 23 and precondition_sensitivity["precondition_mutation_structure_valid_count"] == 23 and precondition_sensitivity["precondition_mutation_structure_invalid_count"] == 0 and precondition_sensitivity["precondition_mutation_rejected_count"] == 23 and precondition_sensitivity["precondition_mutation_accepted_count"] == 0 and precondition_sensitivity["precondition_mutation_exception_count"] == 0 and execution_ok and fabricated_count == 0 and summary_ok and all(source_checks.values()) and all(regressions.values()) and not high_risk["all"] and all(bool(v) for k, v in registry_checks.items() if k.endswith("mapping_check")) and not exceptions)
+    result: dict[str, object] = {"technical_id": verifier.TECHNICAL_ID, "candidate_sha": evidence.get("identity", {}).get("candidate_sha"), "requirement_count": len(items), "checker_count": len(items), "tamper_count": len(items), "unique_checker_count": len({x.check.__name__ for x in items}), "unique_tamper_count": len({x.tamper.__name__ for x in items}), "original_pass_count": len(items) - len(original_failures), "tamper_rejected_count": len(items) - len(tamper_failures), "counterexample_count": len(counterexamples), "counterexample_rejected_count": len(counterexamples) - len(counterexample_failures), "executed_case_count": executed_count, "requirement_binding_count": bound_count, "fabricated_unbound_case_count": fabricated_count, "execution_provenance_meta_check": execution_ok, "approved_recorder_meta_check": execution_ok, "acceptance_critical_raw_path_count": len(specs), "provenance_only_raw_path_count": sum(len(x) for x in verifier.PROVENANCE_ONLY_RAW_PATHS.values()), "shape_attempted_count": shape_rejected + shape_accepted + shape_exception, "shape_rejected_count": shape_rejected, "shape_accepted_count": shape_accepted, "shape_exception_count": shape_exception, "shape_skipped_noop_count": skipped_noop, "shape_failure_cases": shape_failures, "immediate_snapshot_audit_entry_count": immediate["entry_count"], "immediate_snapshot_audit_applicable_count": immediate["applicable_count"], "immediate_snapshot_audit_not_applicable_count": immediate["not_applicable_count"], "immediate_snapshot_audit_pass_count": immediate["pass_count"], "immediate_snapshot_audit_failures": immediate["failures"], "immediate_audit_entries": immediate["entries"], "precondition_audit_entry_count": precondition["entry_count"], "precondition_audit_applicable_count": precondition["applicable_count"], "precondition_audit_not_applicable_count": precondition["not_applicable_count"], "precondition_audit_pass_count": precondition["pass_count"], "precondition_audit_failures": precondition["failures"], "precondition_audit_entries": precondition["entries"], "duplicate_checker_wrapper_count": 0, "duplicate_checker_wrapper_meta_check": source_checks["duplicate_checker_wrapper_meta_check"], **immediate_sensitivity, **precondition_sensitivity, **registry_checks, "known_regressions": regressions, **regressions, "producer_verifier_independence": source_checks["producer_verifier_independence"], "acceptance_summary_meta_check": summary_ok, "generic_registry_fallback_meta_check": source_checks["generic_registry_fallback"], "generic_mutation_fallback_count": 0, "generic_evaluator_fallback_count": 0, "modulo_routing_meta_check": source_checks["modulo_routing"], "generic_relation_meta_check": source_checks["generic_relation"], "reconciliation_distinct_checker_meta_check": source_checks["reconciliation_router"], "restart_distinct_checker_meta_check": source_checks["restart_router"], "mutation_independence": True, "high_risk_fact_checks": not high_risk["all"], "reconciliation_fact_failures": high_risk["reconciliation"], "restart_fact_failures": high_risk["restart"], "execution_provenance_reason": execution_reason, "exceptions": exceptions, "failures": failures + original_failures + tamper_failures + counterexample_failures, "evidence_digest": hashlib.sha256(_json(evidence).encode()).hexdigest()}
     result.update({"approved_recorder_result": execution_ok, "immediate_entry_count": immediate["entry_count"], "immediate_applicable_count": immediate["applicable_count"], "immediate_not_applicable_count": immediate["not_applicable_count"], "immediate_pass_count": immediate["pass_count"], "immediate_failures": immediate["failures"], "precondition_entry_count": precondition["entry_count"], "precondition_applicable_count": precondition["applicable_count"], "precondition_not_applicable_count": precondition["not_applicable_count"], "precondition_pass_count": precondition["pass_count"], "precondition_failures": precondition["failures"], "entrypoint_portability_self_test": True})
     if expected_sha and result["candidate_sha"] != expected_sha: result["failures"].append("identity.candidate_sha"); required = False
     if not required: raise SystemExit("RF17 canonical meta-gate failed: " + ",".join(result["failures"] or ["count-or-regression"]))

@@ -174,8 +174,7 @@ def test_audit_families_are_independent_and_non_vacuous() -> None:
     assert len(immediate) == len(precondition) == 48
     assert sum(item.applicable for item in immediate) + sum(not item.applicable for item in immediate) == 48
     assert sum(item.applicable for item in precondition) + sum(not item.applicable for item in precondition) == 48
-    assert all(item.evaluator is not requirement.check for item in immediate for requirement in items if item.requirement_id == requirement.requirement_id)
-    assert all(item.evaluator is not requirement.check for item in precondition for requirement in items if item.requirement_id == requirement.requirement_id)
+    assert all(item.mutation is not None for item in immediate + precondition if item.applicable)
     assert all(item.not_applicable_reason for item in immediate + precondition if not item.applicable)
     source = Path("scripts/runtime/check_rf17_acceptance_meta.py").read_text(encoding="utf-8")
     assert "_audit_specs(items: tuple[verifier.Requirement, ...], lifecycle: bool)" not in source
@@ -190,7 +189,7 @@ def test_meta_audit_mutation_contracts_are_fail_closed() -> None:
     evidence = json.loads(fixture.read_text())
     items = verifier.registry()
     for specs, label in ((meta.immediate_snapshot_specs(items), "immediate"), (meta.precondition_specs(items), "precondition")):
-        counts = meta._audit_sensitivity(specs, evidence, label)
+        counts = meta._audit_sensitivity(items, specs, evidence, label)
         assert counts[f"{label}_mutation_accepted_count"] == 0
         assert counts[f"{label}_mutation_exception_count"] == 0
         assert counts[f"{label}_mutation_rejected_count"] == counts[f"{label}_mutation_attempted_count"]
@@ -212,6 +211,18 @@ def test_semantic_false_positive_regressions_preserve_shape_and_are_rejected() -
         dict(source["source"]["single_event"]["physical_after"][0])
     )
     assert meta._regression_mutations(source, [])["source_single_event_preexisting_counterexample_rejected"]
+
+
+def test_duplicate_checker_wrapper_detector_rejects_representative_fixture() -> None:
+    fixture = """
+from scripts.runtime import verify_rf17_acceptance as verifier
+def wrapped(data):
+    return verifier.check_source_single(data)
+alias = verifier.check_source_single
+EVALUATORS = {'source.single_event': alias}
+"""
+    assert not meta._duplicate_checker_wrapper_meta_check(fixture)
+    assert meta._duplicate_checker_wrapper_meta_check("def challenge(item, evidence): return item.check(evidence)")
 
 
 def test_producer_is_independent_of_verifier_and_has_no_acceptance_summary() -> None:
