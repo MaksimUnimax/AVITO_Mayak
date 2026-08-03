@@ -28,7 +28,8 @@ jobs:
       RF15_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf16application@127.0.0.1:5432/mayak
     steps:
       - uses: actions/checkout@v4
-        with: {ref: ${{ github.sha }}}
+        with:
+          ref: "${{ github.sha }}"
       - uses: actions/setup-python@v5
         with: {python-version: '3.14.6'}
       - uses: astral-sh/setup-uv@v6
@@ -81,16 +82,45 @@ jobs:
           cp dist/rf16/rf16-agent.zip /tmp/rf16-agent-1.zip
           uv run python scripts/runtime/build_rf16_agent.py > rf16-package-2.json
           cmp /tmp/rf16-agent-1.zip dist/rf16/rf16-agent.zip
-      - run: uv run python scripts/runtime/run_rf16_postgres_acceptance.py --dsn "$RF15_APPLICATION_DSN" --fixture-dsn "$RF15_MIGRATION_DSN" --output rf16-evidence.json
-      - name: Strict RF16 verifier and immutable tamper meta-gate
-        run: uv run python scripts/runtime/verify_rf16_acceptance.py rf16-evidence.json > rf16-verifier.json
+      - name: Produce raw PostgreSQL and behavior observations
+        run: uv run python scripts/runtime/run_rf16_postgres_acceptance.py --dsn "$RF15_APPLICATION_DSN" --fixture-dsn "$RF15_MIGRATION_DSN" --output rf16-evidence.json > rf16-producer.stdout 2> rf16-producer.stderr
+      - name: Strict RF16 verifier bound to immutable candidate and repository head
+        run: |
+          set +e
+          uv run python scripts/runtime/verify_rf16_acceptance.py rf16-evidence.json --expected-sha "$GITHUB_SHA" --repo-root . --diagnostics rf16-verifier-diagnostics.json > rf16-verifier.stdout 2> rf16-verifier.stderr
+          verifier_status=$?
+          set -e
+          test "$verifier_status" -eq 0
+          test "$(grep -c '^RF16_ACCEPTANCE_VERIFIED$' rf16-verifier.stdout)" -eq 1
+          test "$(grep -c 'RF16_ACCEPTANCE_VERIFIED' rf16-verifier.stderr || true)" -eq 0
+      - name: Independent immutable RF16 meta-gate
+        run: |
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path("rf16-verifier-diagnostics.json").read_text())
+          ids = d["requirement_ids"]
+          tamper = d["tamper_ids"]
+          assert len(ids) == len(set(ids))
+          assert set(ids) == set(tamper)
+          assert d["original_pass_count"] == d["requirement_count"]
+          assert d["tamper_rejected_count"] == d["requirement_count"]
+          assert not d["failing_requirements"]
+          assert Path("rf16-verifier.stderr").read_text().count("RF16_ACCEPTANCE_VERIFIED") == 0
+          Path("rf16-meta-gate.json").write_text(json.dumps({"requirement_count": len(ids), "original_pass_count": d["original_pass_count"], "tamper_rejected_count": d["tamper_rejected_count"], "ids_equal": set(ids) == set(tamper)}, sort_keys=True) + "\n")
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: rf16-postgres-acceptance
           path: |
             rf16-evidence.json
-            rf16-verifier.json
+            rf16-producer.stdout
+            rf16-producer.stderr
+            rf16-verifier-diagnostics.json
+            rf16-verifier.stdout
+            rf16-verifier.stderr
+            rf16-meta-gate.json
             rf16-package-1.json
             rf16-package-2.json
             dist/rf16/rf16-agent.zip

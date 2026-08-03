@@ -473,7 +473,7 @@ class HttpxLiveAdapter:
                 )
             try:
                 decoded = json.loads(response.body)
-            except UnicodeDecodeError, json.JSONDecodeError:
+            except (UnicodeDecodeError, json.JSONDecodeError):
                 return _classification(
                     "httpx-malformed",
                     TransportOutcomeStatus.RESPONSE_RECEIVED_UNCLASSIFIED,
@@ -501,7 +501,7 @@ class HttpxLiveAdapter:
                 evidence_class=ProviderResponseEvidenceClass.INCOMPLETE_RESPONSE,
                 evidence=(ref,),
             )
-        except httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError:
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.ProtocolError):
             return _classification(
                 "httpx-transport-failure",
                 TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,

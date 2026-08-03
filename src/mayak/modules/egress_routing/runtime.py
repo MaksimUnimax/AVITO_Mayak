@@ -390,7 +390,12 @@ class EgressRuntime:
     def reconcile_expired(self, session: Session) -> int:
         result = session.execute(
             update(LEASES)
-            .where(LEASES.c.state == "ACTIVE", LEASES.c.lease_expires_at <= func.now())
+            # PostgreSQL ``now()`` is transaction-start time; expiry is a
+            # database-time authority observed at reconciliation time.
+            .where(
+                LEASES.c.state == "ACTIVE",
+                LEASES.c.lease_expires_at <= func.clock_timestamp(),
+            )
             .values(state="EXPIRED")
         )
         return result.rowcount or 0
