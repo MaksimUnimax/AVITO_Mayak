@@ -209,6 +209,55 @@ def test_terminal_concurrency_helper_has_no_scheduler_overlap_fixture() -> None:
     assert "_adversarial_terminal_pair" in helper
 
 
+def test_adversarial_second_run_requires_existing_fixture_and_has_no_fresh_fixture_path() -> None:
+    source = (
+        Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    ).read_text()
+    tree = ast.parse(source)
+    helper = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_adversarial_second_run"
+    )
+    arguments = {arg.arg for arg in helper.args.args}
+    assert {"engine", "first"} <= arguments
+    helper_source = ast.get_source_segment(source, helper) or ""
+    assert "prepare_claimed_run" not in helper_source
+    assert "_create_fixture" not in helper_source
+    assert "mayak.scan_beacons" not in helper_source.lower()
+    concurrent_new = next(
+        node for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "scenario_concurrent_new_listing_serialization"
+    )
+    calls = [
+        node for node in ast.walk(concurrent_new)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    ]
+    assert any(node.func.id == "prepare_next_run" for node in calls)
+    assert any(node.func.id == "_adversarial_second_run" for node in calls)
+    assert not any(node.func.id == "_adversarial_terminal_pair" for node in calls)
+
+
+def test_both_foreign_scenarios_use_one_shared_two_layer_builder() -> None:
+    source = (
+        Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    ).read_text()
+    tree = ast.parse(source)
+    calls = {}
+    for name in ("scenario_foreign_state_witness", "scenario_no_foreign_domain_effect"):
+        node = next(
+            item for item in tree.body
+            if isinstance(item, ast.FunctionDef) and item.name == name
+        )
+        calls[name] = [
+            item.func.id for item in ast.walk(node)
+            if isinstance(item, ast.Call) and isinstance(item.func, ast.Name)
+        ]
+    assert calls["scenario_foreign_state_witness"] == ["_foreign_two_layer_witness"]
+    assert calls["scenario_no_foreign_domain_effect"] == ["_foreign_two_layer_witness"]
+    assert "def _build_foreign_two_layer_witness" in source
+
+
 def test_all_rf15_registries_are_explicit_and_not_defaulted() -> None:
     assert set(V.REQUIREMENT_IDS) == set(V.CHECKERS) == set(V.RAW_DEPENDENCY_PATHS)
     assert set(V.REQUIREMENT_IDS) == set(V.TAMPER_PATHS)

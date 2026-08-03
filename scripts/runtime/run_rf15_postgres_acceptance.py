@@ -1023,36 +1023,60 @@ def scenario_raw_payload_snapshot_boundary(connection: Any) -> dict[str, Any]:
     }
 
 
-def scenario_foreign_state_witness(connection: Any) -> dict[str, Any]:
-    fixture = prepare_claimed_run(connection.engine, scenario_id="foreign-witness")
+def _build_foreign_two_layer_witness(
+    terminal: dict[str, Any],
+    semantic_before: dict[str, Any],
+    observation_finished_at: str,
+    semantic_after: dict[str, Any],
+    observation_started_at: str,
+) -> dict[str, Any]:
+    """Assemble the shared semantic/Scan physical foreign witness shape."""
+    terminal["physical_before"]["observation_finished_at"] = observation_finished_at
+    terminal["physical_after"]["observation_started_at"] = observation_started_at
+    return {
+        "operation": terminal["operation"],
+        "rf15_physical": terminal,
+        "physical_before": {
+            "observation_finished_at": observation_finished_at,
+            "semantic": semantic_before,
+        },
+        "physical_after": {
+            "observation_started_at": observation_started_at,
+            "semantic": semantic_after,
+        },
+    }
+
+
+def _foreign_two_layer_witness(connection: Any, scenario_id: str) -> dict[str, Any]:
+    fixture = prepare_claimed_run(connection.engine, scenario_id=scenario_id)
     outcome = _clean_outcome()
     parser_outcome_id = _persist_parser_fixture(
-        connection.engine, fixture, outcome, "rf15-foreign-witness"
+        connection.engine, fixture, outcome, f"rf15-{scenario_id}"
     )
     with connection.engine.connect() as probe:
-        first = _semantic_foreign(probe)
-        first_finished = _now().isoformat()
+        semantic_before = _semantic_foreign(probe)
+        observation_finished_at = _now().isoformat()
     terminal = _terminal(
         connection.engine,
         fixture,
         outcome,
-        "rf15-foreign-witness",
+        f"rf15-{scenario_id}",
         parser_outcome_id=parser_outcome_id,
     )
     with connection.engine.connect() as probe:
-        second = _semantic_foreign(probe)
-        second_started = _now().isoformat()
-    terminal["physical_before"]["observation_finished_at"] = first_finished
-    terminal["physical_after"]["observation_started_at"] = second_started
-    return {
-        "operation": terminal["operation"],
-        # Keep the foreign witness at the top level, and retain the complete
-        # Scan-owned terminal branch separately.  Both references point to
-        # the same measured raw commit_comparison operation.
-        "rf15_physical": terminal,
-        "physical_before": {"observation_finished_at": first_finished, "semantic": first},
-        "physical_after": {"observation_started_at": second_started, "semantic": second},
-    }
+        semantic_after = _semantic_foreign(probe)
+        observation_started_at = _now().isoformat()
+    return _build_foreign_two_layer_witness(
+        terminal,
+        semantic_before,
+        observation_finished_at,
+        semantic_after,
+        observation_started_at,
+    )
+
+
+def scenario_foreign_state_witness(connection: Any) -> dict[str, Any]:
+    return _foreign_two_layer_witness(connection, "foreign-witness")
 
 
 def scenario_restart_durability(connection: Any) -> dict[str, Any]:
@@ -1411,10 +1435,10 @@ def _concurrent_claim(connection: Any, fixture: dict[str, Any], name: str) -> di
     }
 
 
-def _adversarial_terminal_pair(
-    engine: Any, scenario_id: str
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    first = prepare_claimed_run(engine, scenario_id=f"{scenario_id}-a")
+def _adversarial_second_run(
+    engine: Any, first: dict[str, Any], *, scenario_id: str
+) -> dict[str, Any]:
+    """Create only a second Scan-owned terminal fixture from an existing first."""
     now = _now()
     second_work_id, second_run_id, second_token = uuid4(), uuid4(), uuid4()
     work_table = metadata.tables["mayak.scan_work_items"]
@@ -1468,7 +1492,16 @@ def _adversarial_terminal_pair(
             state="RUNNING",
             lease_token=second_token,
         ),
+        "scenario_id": scenario_id,
     }
+    return second
+
+
+def _adversarial_terminal_pair(
+    engine: Any, scenario_id: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    first = prepare_claimed_run(engine, scenario_id=f"{scenario_id}-a")
+    second = _adversarial_second_run(engine, first, scenario_id=f"{scenario_id}-b")
     return first, second
 
 
@@ -2004,13 +2037,21 @@ def scenario_concurrent_new_listing_serialization(connection: Any) -> dict[str, 
         ),
         "rf15-concurrent-new-baseline",
     )
-    # The first competing run is normal scheduler-owned setup.  The second
-    # is created by the test-only Scan-owned adversarial terminal precondition;
-    # this does not claim that the scheduler normally materializes overlapping
-    # unresolved same-scope work, and no scheduler call occurs in the race.
-    first, second = _adversarial_terminal_pair(
-        connection.engine, "concurrent-new"
+    # The first competing run is derived from the committed baseline.  The
+    # second is created by the test-only Scan-owned adversarial terminal
+    # precondition; no scheduler call occurs in the measured race.
+    first = prepare_next_run(
+        connection.engine, baseline, scenario_id="concurrent-new-a"
     )
+    second = _adversarial_second_run(
+        connection.engine, first, scenario_id="concurrent-new-b"
+    )
+    if not (
+        baseline["beacon_id"] == first["beacon_id"] == second["beacon_id"]
+        and first["schedule_id"] == second["schedule_id"]
+        and int(baseline["revision"]) == int(first["revision"]) == int(second["revision"])
+    ):
+        raise RuntimeError("concurrent-new fixtures lost the committed baseline scope")
     outcome = _clean_outcome(
         (ListingCandidate(identity_key="concurrent-new", snapshot={"price": 2}),)
     )
@@ -2024,6 +2065,12 @@ def scenario_concurrent_new_listing_serialization(connection: Any) -> dict[str, 
     }
     with connection.engine.connect() as probe:
         race_before = _physical(probe, beacon_id=baseline["beacon_id"])
+    if (
+        len(race_before["listing_rows"]) != 1
+        or race_before["listing_rows"][0]["external_listing_key"]
+        != "concurrent-baseline"
+    ):
+        raise RuntimeError("concurrent-new race did not observe one committed baseline listing")
     barrier = Barrier(2)
     records: list[dict[str, Any]] = []
 
@@ -2066,31 +2113,7 @@ def scenario_platform_event_identity(connection: Any) -> dict[str, Any]:
 
 
 def scenario_no_foreign_domain_effect(connection: Any) -> dict[str, Any]:
-    fixture = prepare_claimed_run(connection.engine, scenario_id="no-foreign-effect")
-    outcome = _clean_outcome()
-    parser_outcome_id = _persist_parser_fixture(
-        connection.engine, fixture, outcome, "rf15-no-foreign-effect"
-    )
-    with connection.engine.connect() as probe:
-        before = _semantic_foreign(probe)
-        before_finished = _now().isoformat()
-    terminal = _terminal(
-        connection.engine,
-        fixture,
-        outcome,
-        "rf15-no-foreign-effect",
-        parser_outcome_id=parser_outcome_id,
-    )
-    with connection.engine.connect() as probe:
-        after = _semantic_foreign(probe)
-        after_started = _now().isoformat()
-    terminal["physical_before"]["observation_finished_at"] = before_finished
-    terminal["physical_after"]["observation_started_at"] = after_started
-    return {
-        "operation": terminal["operation"],
-        "physical_before": {"observation_finished_at": before_finished, "semantic": before},
-        "physical_after": {"observation_started_at": after_started, "semantic": after},
-    }
+    return _foreign_two_layer_witness(connection, "no-foreign-effect")
 
 
 REQUIREMENT_IDS = (
