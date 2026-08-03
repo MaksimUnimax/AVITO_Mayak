@@ -1,3 +1,4 @@
+# ruff: noqa: E501, I001
 from __future__ import annotations
 
 import importlib.util
@@ -43,3 +44,9 @@ def test_rf17_runtime_requires_actor_authorization_and_typed_reconciliation() ->
 def test_rf17_arbitrary_channels_are_not_runtime_authority() -> None:
     assert "GENERIC" not in inspect.getsource(nd.register_endpoint)
     assert "GENERIC" not in inspect.getsource(nd.create_attempt)
+
+
+def test_reconciliation_binds_evidence_to_persisted_attempt_effect() -> None:
+    source = inspect.getsource(nd.resolve_reconciliation)
+    assert 'attempt_record["effect_fingerprint"] != evidence.effect_fingerprint' in source
+    assert "persisted attempt effect fingerprint conflicts with evidence" in source

@@ -20,6 +20,8 @@ jobs:
       PYTHONDONTWRITEBYTECODE: "1"
       RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf17application@127.0.0.1:5432/mayak
       RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf17migration@127.0.0.1:5432/mayak
+      # build_migration_url intentionally consumes this shared compatibility alias.
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf17migration@127.0.0.1:5432/mayak
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.sha }}"}
@@ -41,6 +43,15 @@ jobs:
           from mayak.persistence.bootstrap import bootstrap_database
           from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
           bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='127.0.0.1')))
+          PY
+      - name: Check migration URL host before Alembic
+        run: |
+          uv run python - <<'PY'
+          from mayak.persistence.config import build_migration_url
+          url = build_migration_url(require_secret=False)
+          assert url.host == '127.0.0.1'
+          assert url.username == 'mayak_migration'
+          print(f'migration_host={url.host} migration_user={url.username}')
           PY
       - run: uv run alembic upgrade head
       - name: Grant only acceptance runtime access
@@ -107,6 +118,14 @@ jobs:
           assert d['original_failing_ids'] == [] and d['tamper_failing_ids'] == []
           assert d['raw_path_mapping_count'] == 48
           evidence = json.loads(Path('rf17-evidence.json').read_text())
+          verifier.assert_no_acceptance_summary(evidence)
+          bad_e446 = {'technical_id': verifier.TECHNICAL_ID, 'identity': {'candidate_sha': 'a' * 40}, 'source_cases': {'single_committed_event': True, 'replay_same_row': True, 'trusted_delivered_binds_attempt': True}}
+          try:
+              verifier.assert_no_acceptance_summary(bad_e446)
+          except AssertionError:
+              pass
+          else:
+              raise AssertionError('e446 summary fixture was accepted')
           assert 'observations' not in evidence
           assert all(item.required_raw_paths for item in registry)
           for item in registry:

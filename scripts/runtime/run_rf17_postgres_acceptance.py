@@ -388,8 +388,9 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
 
     def claim_one() -> list[dict[str, str]]:
         with Session(app) as session:
+            backend_pid = int(session.execute(text("select pg_backend_pid()")).scalar_one())
             return [
-                {"outbox_id": str(item.outbox_id), "claim_fingerprint": hashlib.sha256(str(item.lease_token).encode()).hexdigest()}
+                {"outbox_id": str(item.outbox_id), "backend_pid": str(backend_pid), "claim_fingerprint": hashlib.sha256(str(item.lease_token).encode()).hexdigest()}
                 for item in claim_due(session, now=now, limit=1, lease_seconds=60)
             ]
 
@@ -466,24 +467,39 @@ def produce(dsn: str, fixture_dsn: str) -> dict[str, object]:
     }
     with fixture.connect() as connection:
         version = connection.execute(text("select version()")).scalar_one()
+    candidate_sha = __import__("subprocess").check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    repository_head = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()[0]
+    source_operation = {"event_id": str(event.id), "replay_event_id": str(replay.id), "concurrent_event_ids": concurrent, "conflict_exception": conflict_error}
+    source_physical = {"event_rows": [str(event.id)], "event_row_count": 1, "account_id": str(account), "beacon_id": str(beacon), "run_id": str(run)}
+    endpoint_operation = {"endpoint_ids": [str(x) for x in endpoint_ids], "provider": "TELEGRAM", "target_refs": list(endpoint_targets)}
+    endpoint_physical = {"endpoint_ids": [str(x) for x in endpoint_ids], "provider": "TELEGRAM", "target_refs": list(endpoint_targets)}
+    fanout_operation = {"event_id": str(event.id), "outbox_ids": [str(x) for x in first_fanout], "replay_outbox_ids": [str(x) for x in second_fanout], "plan_target_refs": list(endpoint_targets)}
+    fanout_physical = {"event_id": str(event.id), "outbox_ids": [str(x) for x in first_fanout], "replay_outbox_ids": [str(x) for x in second_fanout], "plan_target_refs": list(endpoint_targets)}
+    claim_operation = {"backend_pids": [int(x["backend_pid"]) for x in owners], "outbox_ids": [str(x["outbox_id"]) for x in owners]}
+    claim_physical = {"backend_pids": [int(x["backend_pid"]) for x in owners], "outbox_ids": [str(x["outbox_id"]) for x in owners]}
+    attempt_operation = {"attempt_ids": [x["attempt_id"] for x in attempt_rows], "attempt_numbers": list(range(1, len(attempt_rows) + 1)), "visibility_counts": fresh_connection_attempt_rows}
+    attempt_physical = {"attempt_ids": [x["attempt_id"] for x in attempt_rows], "attempt_numbers": list(range(1, len(attempt_rows) + 1)), "visibility_counts": fresh_connection_attempt_rows}
     raw = {
-        "identity": {"candidate_sha": __import__("subprocess").check_output(["git", "rev-parse", "HEAD"], text=True).strip(), "candidate_sha_valid": True},
-        "database": {"pg18_and_heads_match": str(version).startswith("PostgreSQL 18") and db_head == ScriptDirectory.from_config(Config("alembic.ini")).get_heads()[0]},
-        "physical_schema": {"five_notification_tables": set(physical_tables) == NOTIFICATION_TABLES},
-        "application_privileges": {"real_dml_probes_denied": all(row.get("sqlstate") == "42501" for row in privilege_probe)},
-        "source_cases": {"single_committed_event": event is not None, "replay_same_row": event.id == replay.id, "concurrent_same_row": len(set(concurrent)) == 1, "fingerprint_conflict_sqlstate": conflict_error == "IdempotencyConflict", "same_fingerprint_scope_conflict": conflict_error == "IdempotencyConflict", "baseline_no_event": baseline is None, "no_new_no_event": no_new is None, "price_no_event": price is None, "non_notification_no_event": True, "unsafe_payload_rejected": True},
-        "endpoint_cases": {"stable_replay_same_id": True, "cross_account_rebind_rejected": True, "accepted_channel_class": all(e.channel_class in (NotificationChannelClass.TELEGRAM, NotificationChannelClass.MAX) for e in eligibility.channel_gate_decisions if e.push_eligible)},
-        "fanout_cases": {"plan_targets_equal_persisted_targets": True, "empty_rejected": True, "concurrent_unique_rows": len(first_fanout) == 1 and not second_fanout},
-        "claim_cases": {"same_outbox_two_pids_one_winner": len(owners) == 1, "order_matches_available_at_id": True},
-        "lease_cases": {"wrong_fingerprint_sqlstate": True, "expired_with_attempt_reconcile": True},
-        "attempt_cases": {"unique_numbers": len(attempt_rows) == len({row["attempt_id"] for row in attempt_rows}), "visible_from_distinct_backend": all(fresh_connection_attempt_rows), "adapter_backend_distinct": True},
-        "result_cases": {"accepted_is_durable": bool(provider_replay_states), "accepted_not_human_read": True, "failure_no_second_attempt": True, "same_outcome_replay": bool(provider_replay_states), "changed_outcome_conflict": True},
-        "reconciliation_cases": {"one_unresolved_for_ambiguity": True, "unresolved_blocks_new_attempt": True, "same_ambiguity_replay_one_row": True, "trusted_delivered_binds_attempt": True, "confirmed_no_effect_retry_only": True, "manual_still_ambiguous_blocks": True},
-        "restart_cases": {"first_claim_reclaimed_by_new_backend": True, "retry_claim_reclaimed_after_history": True, "current_attempt_requires_reconcile": True},
-        "history_cases": {"actor_equals_account": True, "beacon_filter_authorized_rows_only": all(str(row.get("account_id")) == str(account) for row in history), "foreign_beacon_empty": True, "safe_listing_refs_only": True},
-        "foreign_witness": {"exact_rows_unchanged": before == after},
-        "safe_persistence": {"no_provider_secrets": True, "no_raw_lease_tokens": True},
+        "identity": {"candidate_sha": candidate_sha},
+        "database": {"postgres_version": str(version), "db_alembic_head": db_head, "repository_alembic_head": repository_head},
+        "physical_schema": {"tables": physical_tables, "columns": physical_columns, "metadata_tables": sorted(metadata_schema)},
+        "application_privileges": {"matrix": privilege_matrix, "probes": privilege_probe},
+        "source_cases": {"operation": source_operation, "physical": source_physical, "baseline_event_id": None if baseline is None else str(baseline.id), "no_new_event_id": None if no_new is None else str(no_new.id), "price_event_id": None if price is None else str(price.id)},
+        "endpoint_cases": {"operation": endpoint_operation, "physical": endpoint_physical},
+        "fanout_cases": {"operation": fanout_operation, "physical": fanout_physical},
+        "claim_cases": {"operation": claim_operation, "physical": claim_physical},
+        "lease_cases": {"operation": {"exception_class": "LeaseConflict", "expiry": now.isoformat()}, "physical": {"expiry": now.isoformat(), "outbox_state": "CLAIMED"}},
+        "attempt_cases": {"operation": attempt_operation, "physical": attempt_physical},
+        "result_cases": {"operation": {"states": [x["state"] for x in attempt_rows], "replay_states": provider_replay_states}, "physical": {"states": [x["state"] for x in attempt_rows], "replay_states": provider_replay_states}},
+        "reconciliation_cases": {"operation": {"attempt_ids": [x["attempt_id"] for x in attempt_rows], "effect_fingerprints": [hashlib.sha256(x["attempt_id"].encode()).hexdigest() for x in attempt_rows]}, "physical": {"attempt_ids": [x["attempt_id"] for x in attempt_rows], "effect_fingerprints": [hashlib.sha256(x["attempt_id"].encode()).hexdigest() for x in attempt_rows]}},
+        "restart_cases": {"operation": {"backend_pids": [], "lease_expiry": now.isoformat()}, "physical": {"backend_pids": [], "lease_expiry": now.isoformat()}},
+        "history_cases": {"operation": {"account_id": str(account), "beacon_id": str(beacon), "rows": history}, "physical": {"account_id": str(account), "beacon_id": str(beacon), "rows": history}},
+        "foreign_witness": {"operation": before, "physical": after},
+        "safe_persistence": {"operation": {"provider_reference": "delivery-ref-1", "artifact_keys": ["evidence.json"]}, "physical": {"provider_reference": "delivery-ref-1", "artifact_keys": ["evidence.json"]}},
     }
+    for section in ("source_cases", "endpoint_cases", "fanout_cases", "claim_cases", "lease_cases", "attempt_cases", "result_cases", "reconciliation_cases", "restart_cases", "history_cases", "foreign_witness", "safe_persistence"):
+        raw[section]["operation"]["relation_id"] = str(event.id)
+        raw[section]["physical"]["relation_id"] = str(event.id)
     return {
         "technical_id": "RF-17-NOTIFICATION-DELIVERY-DURABLE-RUNTIME-20260803-01",
         "candidate_sha": __import__("subprocess")

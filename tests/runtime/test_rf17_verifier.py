@@ -22,6 +22,13 @@ def _representative_evidence() -> dict[str, object]:
         for part in parts[:-1]:
             current = current.setdefault(part, {})  # type: ignore[assignment]
         current[parts[-1]] = True
+    evidence["identity"]["candidate_sha"] = "a" * 40  # type: ignore[index]
+    evidence["technical_id"] = verifier.TECHNICAL_ID
+    evidence["database"] = {"postgres_version": "PostgreSQL 18.0", "db_alembic_head": "head", "repository_alembic_head": "head"}
+    evidence["physical_schema"] = {"tables": ["notification_endpoints", "notification_events", "notification_outbox", "notification_delivery_attempts", "notification_delivery_reconciliations"]}
+    evidence["application_privileges"] = {"matrix": [{"table": "notification_events", "can_select": True, "can_insert": True, "can_update": True, "can_delete": True}], "probes": [{"table": "identity_accounts", "sqlstate": "42501"}]}
+    for group in ("source_cases", "endpoint_cases", "fanout_cases", "claim_cases", "lease_cases", "attempt_cases", "result_cases", "reconciliation_cases", "restart_cases", "history_cases", "foreign_witness", "safe_persistence"):
+        evidence[group] = {"operation": {"raw": "one", "relation_id": "rf17"}, "physical": {"raw": "two", "relation_id": "rf17"}}
     return evidence
 
 
@@ -71,6 +78,13 @@ def test_no_generic_fact_checker_or_default_success_path() -> None:
     assert "def _fact" not in source
     assert "data.get(\"observations\")" not in source
     assert "default=True" not in source
+
+
+def test_e446_summary_fixture_is_rejected_and_primitive_paths_are_multi_fact() -> None:
+    bad = {"technical_id": verifier.TECHNICAL_ID, "identity": {"candidate_sha": "a" * 40}, "source_cases": {"single_committed_event": True, "replay_same_row": True, "trusted_delivered_binds_attempt": True}}
+    with pytest.raises(AssertionError):
+        verifier.assert_no_acceptance_summary(bad)
+    assert all(len(item.required_raw_paths) >= 2 for item in verifier.registry())
 
 
 @pytest.mark.parametrize("bad", [{"requirement_ids": []}, {"tamper_strategy_ids": []}])

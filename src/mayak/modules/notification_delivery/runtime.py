@@ -824,6 +824,8 @@ def resolve_reconciliation(
         )
         if attempt_record is None or attempt_record["id"] != evidence.attempt_id:
             raise ReconciliationConflict("persisted attempt identity does not match evidence")
+        if attempt_record["effect_fingerprint"] != evidence.effect_fingerprint:
+            raise ReconciliationConflict("persisted attempt effect fingerprint conflicts with evidence")
         if current.get("effect_fingerprint") != evidence.effect_fingerprint:
             raise ReconciliationConflict("reconciliation effect fingerprint conflicts with attempt")
         if rec["resolved_at"] is not None:
