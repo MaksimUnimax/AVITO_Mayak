@@ -121,7 +121,12 @@ jobs:
           fi
           set -e
       - run: |
+          set +e
           uv run python scripts/runtime/verify_rf15_acceptance.py rf15-evidence.json > verifier.stdout 2> verifier.stderr
+          verifier_status=$?
+          cat verifier.stdout
+          cat verifier.stderr >&2
+          test "$verifier_status" -eq 0
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stdout)" -eq 1
           test "$(grep -c '^RF15_ACCEPTANCE_VERIFIED$' verifier.stderr || true)" -eq 0
       - name: Independent immutable RF15 matrix meta-gate

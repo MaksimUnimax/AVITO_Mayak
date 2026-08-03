@@ -351,9 +351,7 @@ TAMPER_PATHS.update(
         "beacon_isolation": ("physical_after", "beacon_id"),
         "absence_no_removal": ("physical_after", "listing_rows"),
         "authority_recheck": ("attempts", 0, "operation", "exception"),
-        "idempotency_replay_and_mismatch": (
-            "operation_mismatch", "exception", "class"
-        ),
+        "idempotency_replay_and_mismatch": ("operation_mismatch", "exception", "class"),
         "concurrent_baseline_serialization": ("physical_after", "listing_rows"),
         "parser_failure_no_advance": ("attempts", 0, "physical_after"),
         "raw_payload_snapshot_boundary": ("attempts", 0, "operation", "exception"),
@@ -401,7 +399,8 @@ def verify(data: dict[str, Any], output_dir: Path) -> None:
     rows = []
     original = {name: bool(CHECKERS[name](data)) for name in REQUIREMENT_IDS}
     if not all(original.values()):
-        raise ValueError("original evidence is not true for every requirement")
+        failed = [name for name, value in original.items() if not value]
+        raise ValueError(f"original evidence is false: {failed}")
     for name in REQUIREMENT_IDS:
         mutated = _tamper(data, name)
         after = {other: bool(CHECKERS[other](mutated)) for other in REQUIREMENT_IDS}
