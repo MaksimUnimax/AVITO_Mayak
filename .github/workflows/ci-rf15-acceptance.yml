@@ -141,16 +141,23 @@ jobs:
           print('RF15_ID_SET', sorted(set(ids)))
           print('RF15_REQUIREMENT_SET', sorted({row['requirement_id'] for row in requirements}))
           print('RF15_TAMPER_SET', sorted({row['requirement_id'] for row in tampers}))
-          assert len(ids) == len(set(ids)) == 29
-          assert len(requirements) == len(tampers) == 29
-          assert {row['requirement_id'] for row in requirements} == set(ids)
-          assert {row['requirement_id'] for row in tampers} == set(ids)
+          failures = []
+          if not len(ids) == len(set(ids)) == 29:
+              failures.append(f'ids={len(ids)} unique={len(set(ids))}')
+          if not len(requirements) == len(tampers) == 29:
+              failures.append(f'rows={len(requirements)} tampers={len(tampers)}')
+          if {row['requirement_id'] for row in requirements} != set(ids):
+              failures.append('requirement set mismatch')
+          if {row['requirement_id'] for row in tampers} != set(ids):
+              failures.append('tamper set mismatch')
           for row in requirements + tampers:
               rid = row['requirement_id']
-              print('RF15_VECTOR', rid, row['checker_before'].get(rid), row['checker_after'].get(rid), rid in row['changed_checker_ids'])
-              assert row['checker_before'][rid] is True
-              assert row['checker_after'][rid] is False
-              assert rid in row['changed_checker_ids']
+              vector = (row['checker_before'].get(rid), row['checker_after'].get(rid), rid in row['changed_checker_ids'])
+              if vector != (True, False, True):
+                  failures.append(f'{rid}={vector}')
+          if failures:
+              print('::error title=RF15 matrix meta-gate::' + '; '.join(failures))
+              raise SystemExit(1)
           print('RF15_MATRIX_META_GATE_VERIFIED')
           PY
       - if: always()
