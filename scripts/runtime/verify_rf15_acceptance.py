@@ -124,19 +124,24 @@ def _physical(case: Mapping[str, Any]) -> tuple[Mapping[str, Any], Mapping[str, 
     return before, after
 
 
-def _result(case: Mapping[str, Any], needle: str) -> Mapping[str, Any] | None:
+_MISSING = object()
+
+
+def _result(case: Mapping[str, Any], needle: str) -> Any:
     for operation in _ops(case):
         if (
             needle in str(operation.get("callable"))
             and "result" in operation
-            and isinstance(operation["result"], Mapping)
         ):
             return operation["result"]
-    return None
+    return _MISSING
 
 
 def _success(case: Mapping[str, Any], needle: str) -> bool:
-    return _result(case, needle) is not None
+    # Raw success is deliberately container-agnostic.  The operation
+    # recorder's result xor exception invariant is the only generic rule;
+    # requirement checkers below own their exact semantic shape assertions.
+    return _result(case, needle) is not _MISSING
 
 
 def _rejects(case: Mapping[str, Any], count: int | None, classes: set[str]) -> bool:
@@ -157,7 +162,7 @@ def _rejects(case: Mapping[str, Any], count: int | None, classes: set[str]) -> b
 def _terminal(case: Mapping[str, Any]) -> bool:
     before, after = _physical(case)
     result = _result(case, "commit_comparison")
-    return result is not None and before.get("run_rows") != after.get("run_rows")
+    return result is not _MISSING and before.get("run_rows") != after.get("run_rows")
 
 
 def _concurrent(case: Mapping[str, Any], needle: str) -> bool:
@@ -187,6 +192,8 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
         if name == "cadence_policy":
             result = case["operation"]["result"]
             return (
+                isinstance(result, Mapping)
+                and
                 result["basic"] == [300, 600]
                 and result["free"] == [10800, 21600]
                 and _rejects(case, 6, {"CadenceRejected"})
@@ -221,6 +228,7 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
         if name == "due_work_current_slot":
             return (
                 _success(case, "materialize_due_work")
+                and isinstance(_result(case, "materialize_due_work"), list)
                 and bool(after["work_rows"])
                 and all(
                     row["due_at"] <= case["operation"]["input"]["now"] for row in after["work_rows"]
@@ -229,6 +237,7 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
         if name == "due_work_coalescing":
             return (
                 _success(case, "materialize_due_work")
+                and isinstance(_result(case, "materialize_due_work"), list)
                 and len(after["work_rows"]) == 1
                 and _time(after["schedule_rows"][0]["next_due_at"])
                 > _time(case["operation"]["input"]["now"])
@@ -237,10 +246,7 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
             return (
                 _success(case, "record_parser_outcome")
                 and _success(case, "materialize_due_work")
-                and (
-                    isinstance(case["materialize_operation"].get("result"), list)
-                    or case["materialize_operation"].get("result") == {}
-                )
+                and case["materialize_operation"].get("result") == []
                 and len(after["work_rows"]) == len(before["work_rows"])
             )
         if name == "due_materialization_concurrency":
@@ -261,6 +267,7 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
         if name == "run_revision_pin":
             return (
                 _success(case, "start_run")
+                and isinstance(_result(case, "start_run"), Mapping)
                 and bool(after["run_rows"])
                 and after["run_rows"][0]["revision_no"]
                 == case["operation"]["result"]["revision_no"]
@@ -268,6 +275,7 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
         if name == "run_replay":
             return (
                 _success(case, "start_run")
+                and isinstance(_result(case, "start_run"), Mapping)
                 and len(after["run_rows"]) == len(before["run_rows"])
                 and (
                     case["operation"].get("result", {}).get("replayed") is True
@@ -356,6 +364,7 @@ def _check(name: str, case: Mapping[str, Any]) -> bool:
             result = _result(case, "commit_comparison")
             return (
                 _terminal(case)
+                and isinstance(result, Mapping)
                 and isinstance(result.get("event_ids"), list)
                 and result["event_ids"] == after["event_ids"]
             )
@@ -538,7 +547,7 @@ def build_representative_evidence() -> dict[str, Any]:
         "physical_after": _representative_physical(),
     }
     for name in ("due_work_current_slot", "due_work_coalescing"):
-        cases[name]["operation"] = _representative_operation("materialize_due_work", {})
+        cases[name]["operation"] = _representative_operation("materialize_due_work", [])
     cases["due_work_coalescing"]["operation"]["input"]["now"] = "2026-08-02T00:00:00+00:00"
     cases["parser_failure_no_advance"] = {
         "statuses": sorted(PARSER_FAILURES),
@@ -575,14 +584,14 @@ def build_representative_evidence() -> dict[str, Any]:
         "record_parser_outcome", {}, exception=None
     )
     cases["recovery_blocks_backlog"]["materialize_operation"] = _representative_operation(
-        "materialize_due_work", {}
+        "materialize_due_work", []
     )
     for name in ("due_materialization_concurrency", "claim_exclusivity"):
         callable_name = "materialize_due_work" if name.startswith("due_") else "claim_work"
         cases[name].update(
             {
-                "operation_a": _representative_operation(callable_name, {}, pid=11, offset=1),
-                "operation_b": _representative_operation(callable_name, {}, pid=12, offset=1),
+                "operation_a": _representative_operation(callable_name, [], pid=11, offset=1),
+                "operation_b": _representative_operation(callable_name, [], pid=12, offset=1),
             }
         )
     cases["claim_exclusivity"]["physical_before"]["work_rows"] = []

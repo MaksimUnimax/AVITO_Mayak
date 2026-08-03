@@ -52,6 +52,26 @@ def test_raw_operation_requires_result_or_exception() -> None:
         )
 
 
+def test_list_result_is_raw_success_but_not_a_mapping_contract() -> None:
+    operation = {
+        "callable": "materialize_due_work",
+        "input": {},
+        "result": ["work-id"],
+        "started_at": "2026-08-02T00:00:00+00:00",
+        "finished_at": "2026-08-02T00:00:01+00:00",
+        "backend_pid": 1,
+    }
+    case = {
+        "operation": operation,
+        "physical_before": V._representative_physical(work=[]),
+        "physical_after": V._representative_physical(
+            work=[{"id": "w", "state": "DUE", "due_at": "2026-08-02T00:00:00+00:00"}]
+        ),
+    }
+    assert V._success(case, "materialize_due_work")
+    assert not V._check("due_work_current_slot", case)
+
+
 def test_cadence_contract_is_actual_policy() -> None:
     assert V._check(
         "cadence_policy",
@@ -115,6 +135,17 @@ def test_producer_has_no_preoperation_session_autobegin_or_foreign_fixture_write
         and node.func.attr == "connection"
         for node in ast.walk(tree)
     )
+
+
+def test_fixture_proof_uses_fresh_connection_and_synthetic_only_queue_reset() -> None:
+    source_path = Path(__file__).parents[2] / "scripts/runtime/run_rf15_postgres_acceptance.py"
+    source = source_path.read_text()
+    assert "def _assert_committed_fixture" in source
+    assert "independent_connection" in source
+    assert "def _reset_synthetic_scan_state" in source
+    assert "https://synthetic.invalid/rf15" in source
+    assert "truncate table" not in source.lower()
+    assert "state in ('DUE', 'RETRY')" in source
 
 
 def test_terminal_concurrency_helper_has_no_scheduler_overlap_fixture() -> None:

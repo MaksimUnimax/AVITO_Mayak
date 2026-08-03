@@ -512,6 +512,80 @@ def _create_fixture(engine: Any) -> dict[str, str]:
     }
 
 
+def _reset_synthetic_scan_state(engine: Any) -> None:
+    """Remove only disposable RF15 Scan rows before the next measured case.
+
+    ``claim_work`` is intentionally global, so beacon-scoped observation is
+    not scenario isolation.  The acceptance database is disposable, but the
+    cleanup remains bounded to synthetic beacons created by this harness and
+    never performs a global table operation or touches non-synthetic resources.
+    """
+    synthetic = "https://synthetic.invalid/rf15"
+    with engine.begin() as connection:
+        params = {"source_url": synthetic}
+        for table in (
+            "scan_listing_observations",
+            "scan_beacon_listing_state",
+            "scan_anchors",
+            "scan_runs",
+            "scan_work_items",
+            "scan_schedules",
+        ):
+            connection.execute(
+                text(
+                    f"delete from mayak.{table} where beacon_id in ("
+                    "select id from mayak.beacon_beacons where source_url = :source_url)"
+                ),
+                params,
+            )
+        remaining = int(
+            connection.execute(
+                text(
+                    "select count(*) from mayak.scan_work_items "
+                    "where state in ('DUE', 'RETRY') and due_at <= now()"
+                )
+            ).scalar_one()
+        )
+        if remaining:
+            raise RuntimeError(
+                "acceptance database contains non-synthetic claimable Scan work; "
+                "refusing to measure a contaminated global queue"
+            )
+
+
+def _assert_committed_fixture(
+    engine: Any, fixture: dict[str, Any], *, expect_run: bool
+) -> dict[str, Any]:
+    """Prove fixture state through a fresh independent connection."""
+    with engine.connect() as probe:
+        physical = _physical(
+            probe,
+            beacon_id=fixture["beacon_id"],
+            schedule_id=fixture["schedule_id"],
+            work_id=fixture["work_id"],
+            run_id=fixture.get("run_id"),
+        )
+    if len(physical["schedule_rows"]) != 1 or len(physical["work_rows"]) != 1:
+        raise RuntimeError("fixture precondition is not durably visible")
+    if physical["work_rows"][0]["state"] != "CLAIMED":
+        raise RuntimeError("fixture claim is not durably visible")
+    runs = physical["run_rows"]
+    if expect_run:
+        if len(runs) != 1 or runs[0]["state"] != "RUNNING":
+            raise RuntimeError("fixture run is not durably visible")
+        if int(runs[0]["revision_no"]) != int(fixture["revision"]):
+            raise RuntimeError("fixture revision pin is not durably visible")
+    elif runs:
+        raise RuntimeError("fixture unexpectedly contains a run")
+    return {
+        "independent_connection": True,
+        "schedule": physical["schedule_rows"],
+        "work": physical["work_rows"],
+        "run": runs,
+        "revision": fixture["revision"],
+    }
+
+
 def prepare_claimed_run(
     engine: Any, *, scenario_id: str, interval_seconds: int = 300, start_run_now: bool = True
 ) -> dict[str, Any]:
@@ -568,7 +642,7 @@ def prepare_claimed_run(
             if start_run_now
             else None
         )
-    return {
+    result = {
         **fixture,
         "schedule_id": str(schedule.schedule_id),
         "work_id": str(claim.work_item_id),
@@ -578,6 +652,10 @@ def prepare_claimed_run(
         "now": now.isoformat(),
         "scenario_id": scenario_id,
     }
+    result["durable_precondition"] = _assert_committed_fixture(
+        engine, result, expect_run=start_run_now
+    )
+    return result
 
 
 def prepare_next_run(engine: Any, fixture: dict[str, Any], *, scenario_id: str) -> dict[str, Any]:
@@ -1869,6 +1947,7 @@ def main() -> int:
             with engine.connect() as connection:
                 captured_at = _now().isoformat()
                 try:
+                    _reset_synthetic_scan_state(engine)
                     cases[name] = runner(connection)
                 except Exception as exc:
                     harness_exceptions += 1
