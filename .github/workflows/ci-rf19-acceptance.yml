@@ -54,6 +54,7 @@ jobs:
       - name: Prove hosted environment parity
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
+        shell: bash
         run: |
           set -euo pipefail
           test -x "$(command -v git)"
