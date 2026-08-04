@@ -34,7 +34,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
-      docker:
+      dind:
         image: docker@sha256:a56b3bdde89315ed2cc0e4906e582b5033d93bf20d9cb9510c2cdd4e7f7690b1
         env: {DOCKER_TLS_CERTDIR: ''}
         options: >-
@@ -55,7 +55,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git docker.io docker-buildx
       - name: Check hosted Docker tooling
         env:
-          DOCKER_HOST: tcp://docker:2375
+          DOCKER_HOST: tcp://dind:2375
         run: |
           docker version
           docker buildx version
@@ -132,7 +132,7 @@ jobs:
           RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
           RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
           RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
-          DOCKER_HOST: tcp://docker:2375
+          DOCKER_HOST: tcp://dind:2375
         shell: bash
         run: |
           set -o pipefail
