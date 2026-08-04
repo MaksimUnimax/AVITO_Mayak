@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -52,61 +53,145 @@ class _AmbiguousOwner:
         )
 
 
-def host_postgres_publication_proof() -> tuple[bool, str]:
-    """Return a proof based on Docker metadata, never on container listen address."""
+_TECHNICAL_ID = "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-04"
+
+
+def _publication_state(info: dict[str, Any]) -> tuple[bool, dict[str, bool]]:
+    """Read both Docker publication surfaces and reject unknown/contradictory state."""
+    network_settings = info.get("NetworkSettings")
+    host_config = info.get("HostConfig")
+    if not isinstance(network_settings, dict) or not isinstance(host_config, dict):
+        raise RuntimeError("malformed PostgreSQL Docker metadata")
+    ports = network_settings.get("Ports")
+    bindings = host_config.get("PortBindings")
+    if not isinstance(ports, dict) or (bindings is not None and not isinstance(bindings, dict)):
+        raise RuntimeError("malformed PostgreSQL port metadata")
+    if "5432/tcp" not in ports:
+        raise RuntimeError("missing PostgreSQL 5432/tcp publication metadata")
+    network_value = ports["5432/tcp"]
+    if network_value is not None and not isinstance(network_value, list):
+        raise RuntimeError("malformed NetworkSettings.Ports metadata")
+    host_value = None if bindings is None else bindings.get("5432/tcp")
+    if host_value is not None and not isinstance(host_value, list):
+        raise RuntimeError("malformed HostConfig.PortBindings metadata")
+    network_published = network_value not in (None, [])
+    host_published = host_value not in (None, [])
+    if network_published != host_published:
+        raise RuntimeError("contradictory PostgreSQL publication metadata")
+    for value in (network_value or []) + (host_value or []):
+        if not isinstance(value, dict) or not value.get("HostPort"):
+            raise RuntimeError("malformed PostgreSQL host binding metadata")
+        if "HostIp" in value and not isinstance(value["HostIp"], str):
+            raise RuntimeError("malformed PostgreSQL host binding address")
+    return host_published, {
+        "network_settings_ports": network_published,
+        "host_config_port_bindings": host_published,
+    }
+
+
+def _endpoint_host(engine: Engine) -> str:
+    host = getattr(engine.url, "host", None)
+    if not isinstance(host, str) or not host or host in {"localhost", "127.0.0.1", "::1"}:
+        raise RuntimeError("RF20 PostgreSQL endpoint host is not a network endpoint")
+    return host.rstrip(".").lower()
+
+
+def host_postgres_publication_proof(
+    application_engine: Engine | None = None,
+    *,
+    endpoint_host: str | None = None,
+    endpoint_port: int = 5432,
+    expected_owner: str | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    """Prove the actual RF20 DB endpoint is one un-published owned container."""
+    if application_engine is not None:
+        endpoint_host = _endpoint_host(application_engine)
+        endpoint_port = int(getattr(application_engine.url, "port", None) or 5432)
+    if not endpoint_host or endpoint_port != 5432:
+        raise RuntimeError("RF20 PostgreSQL endpoint must be an internal 5432/tcp endpoint")
+    endpoint_host = endpoint_host.rstrip(".").lower()
+    owner = expected_owner or os.environ.get("RF20_POSTGRES_OWNER_LABEL", _TECHNICAL_ID)
     try:
         ids = subprocess.check_output(
             ["docker", "ps", "-q"], text=True, stderr=subprocess.DEVNULL
         ).splitlines()
         candidates: list[dict[str, Any]] = []
-        owned: list[dict[str, Any]] = []
         for container_id in ids:
+            if not container_id.strip():
+                continue
             info = json.loads(
                 subprocess.check_output(
                     ["docker", "inspect", container_id], text=True, stderr=subprocess.DEVNULL
                 )
             )[0]
             image = str(info.get("Config", {}).get("Image", ""))
+            networks = info.get("NetworkSettings", {}).get("Networks")
+            if not isinstance(networks, dict):
+                raise RuntimeError("malformed PostgreSQL network metadata")
             aliases = {
-                alias
-                for net in info.get("NetworkSettings", {}).get("Networks", {}).values()
+                alias.lower()
+                for net in networks.values()
+                if isinstance(net, dict)
                 for alias in net.get("Aliases") or []
+                if isinstance(alias, str)
             }
-            if image.startswith("postgres:") or "postgres" in aliases:
-                candidates.append(info)
-                owner = str(info.get("Config", {}).get("Labels", {}).get("com.mayak.owner", ""))
-                if owner.startswith("RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-"):
-                    owned.append(info)
-        if owned:
-            selected = owned
-            proof_prefix = "task-owned-postgres"
-            owned_networks = {
-                network
-                for info in owned
-                for network in info.get("NetworkSettings", {}).get("Networks", {})
-                if network not in {"bridge", "host", "none"}
+            name = str(info.get("Name", "")).lstrip("/").lower()
+            addresses = {
+                str(net.get("IPAddress", "")).lower()
+                for net in networks.values()
+                if isinstance(net, dict) and net.get("IPAddress")
             }
-            foreign_same_network = [
-                info
-                for info in candidates
-                if info not in owned
-                and owned_networks.intersection(info.get("NetworkSettings", {}).get("Networks", {}))
-            ]
-            if foreign_same_network:
-                raise RuntimeError("foreign PostgreSQL collision on task network")
-        else:
-            if len(candidates) != 1:
-                raise RuntimeError(f"expected one PostgreSQL service, found {len(candidates)}")
-            selected = candidates
-            proof_prefix = "unique-postgres"
-        for selected_info in selected:
-            ports = selected_info.get("NetworkSettings", {}).get("Ports")
-            if not isinstance(ports, dict) or "5432/tcp" not in ports:
-                raise RuntimeError("malformed PostgreSQL port metadata")
-            if not owned and ports["5432/tcp"] not in (None, []):
-                raise RuntimeError("PostgreSQL host publication detected")
-        return False, f"docker-inspect:{proof_prefix}:5432/tcp:project-scoped"
-    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+            if image.lower().startswith("postgres:") or "postgres" in aliases:
+                candidates.append({"info": info, "aliases": aliases, "name": name, "addresses": addresses})
+        matching = [
+            candidate
+            for candidate in candidates
+            if endpoint_host in candidate["aliases"]
+            or endpoint_host == candidate["name"]
+            or endpoint_host in candidate["addresses"]
+        ]
+        if len(matching) != 1:
+            raise RuntimeError("actual RF20 PostgreSQL endpoint is ambiguous or unresolved")
+        selected = matching[0]["info"]
+        labels = selected.get("Config", {}).get("Labels")
+        if not isinstance(labels, dict) or labels.get("com.mayak.owner") != owner:
+            raise RuntimeError("actual PostgreSQL endpoint is outside the current RF20 context")
+        selected_networks = selected.get("NetworkSettings", {}).get("Networks")
+        if not isinstance(selected_networks, dict) or not selected_networks:
+            raise RuntimeError("actual PostgreSQL endpoint has no inspectable network")
+        network_names = set(selected_networks)
+        if network_names.intersection({"bridge", "host", "none"}):
+            raise RuntimeError("RF20 PostgreSQL endpoint uses a non-project network")
+        foreign_same_network = [
+            candidate
+            for candidate in candidates
+            if candidate["info"] is not selected
+            and network_names.intersection(candidate["info"].get("NetworkSettings", {}).get("Networks", {}))
+        ]
+        if foreign_same_network:
+            raise RuntimeError("foreign PostgreSQL collision on actual RF20 network")
+        published, surfaces = _publication_state(selected)
+        container_id = str(selected.get("Id", ""))
+        if not container_id or not isinstance(selected.get("Config", {}).get("Image"), str):
+            raise RuntimeError("malformed selected PostgreSQL identity")
+        provenance = {
+            "schema": "RF20_POSTGRES_TOPOLOGY_PROVENANCE_V1",
+            "endpoint_resolved": True,
+            "endpoint_host": endpoint_host,
+            "endpoint_port": endpoint_port,
+            "association": "exact_network_alias_or_container_ip",
+            "candidate_count": len(matching),
+            "postgres_candidate_inventory_count": len(candidates),
+            "actual_endpoint_container_id": container_id[:12],
+            "selected_container_id": container_id[:12],
+            "selected_owner": owner,
+            "selected_networks": sorted(network_names),
+            "foreign_same_network_collision": False,
+            "host_publication": published,
+            "publication_surfaces": surfaces,
+        }
+        return published, "docker-inspect:actual-endpoint:5432/tcp:unpublished", provenance
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError, IndexError, TypeError) as exc:
         raise RuntimeError("PostgreSQL service inspection failed") from exc
 
 
@@ -615,7 +700,9 @@ def run_rf20_acceptance_scenario(
             foreign_denied = True
     httpx.Client.send = original_httpx_send  # type: ignore[method-assign]
     httpx.AsyncClient.send = original_async_httpx_send  # type: ignore[method-assign]
-    published, publication_proof = host_postgres_publication_proof()
+    published, publication_proof, topology_provenance = host_postgres_publication_proof(
+        application_engine
+    )
     details = [row["details"] for row in event_rows]
     correlation = next(
         (
@@ -639,7 +726,7 @@ def run_rf20_acceptance_scenario(
         f"{namespace} redacted finding" in json.dumps(d) for d in details
     )
     return {
-        "technical_id": "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-03",
+        "technical_id": _TECHNICAL_ID,
         "candidate_sha": candidate_sha,
         "postgresql_version": pg,
         "migration_head": head,
@@ -720,6 +807,7 @@ def run_rf20_acceptance_scenario(
         },
         "host_postgres_published": published,
         "host_postgres_publication_proof": publication_proof,
+        "postgres_topology_provenance": topology_provenance,
         "provider_boundary": {
             "composition": composition_component_class_names,
             "live_adapter_enabled": bool(live_provider_adapter_types),

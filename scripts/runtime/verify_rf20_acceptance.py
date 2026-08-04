@@ -20,11 +20,11 @@ def main() -> int:
         return 2
     try:
         evidence = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    except OSError, UnicodeError, json.JSONDecodeError:
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return 2
     if not isinstance(evidence, dict):
         return 2
-    if evidence.get("technical_id") != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-03":
+    if evidence.get("technical_id") != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-04":
         return 2
     expected_sha = os.environ.get("GITHUB_SHA")
     if (
@@ -129,6 +129,28 @@ def main() -> int:
         or not evidence.get("event_timestamps_aware")
         or not evidence.get("host_postgres_publication_proof")
         or evidence.get("host_postgres_published") is not False
+    ):
+        return 2
+    topology = evidence.get("postgres_topology_provenance")
+    if (
+        not isinstance(topology, dict)
+        or topology.get("schema") != "RF20_POSTGRES_TOPOLOGY_PROVENANCE_V1"
+        or topology.get("endpoint_resolved") is not True
+        or topology.get("association") != "exact_network_alias_or_container_ip"
+        or topology.get("candidate_count") != 1
+        or not isinstance(topology.get("selected_container_id"), str)
+        or not topology.get("selected_container_id")
+        or topology.get("actual_endpoint_container_id")
+        != topology.get("selected_container_id")
+        or topology.get("selected_owner") != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-04"
+        or not isinstance(topology.get("selected_networks"), list)
+        or not topology.get("selected_networks")
+        or topology.get("foreign_same_network_collision") is not False
+        or topology.get("host_publication") is not False
+        or topology.get("publication_surfaces") != {
+            "network_settings_ports": False,
+            "host_config_port_bindings": False,
+        }
     ):
         return 2
     if (

@@ -38,6 +38,7 @@ jobs:
           POSTGRES_PASSWORD: rf20_bootstrap_synthetic
           POSTGRES_DB: mayak
         options: >-
+          --label com.mayak.owner=RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-04
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
