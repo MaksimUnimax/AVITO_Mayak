@@ -28,6 +28,7 @@ jobs:
       RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
       RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
       RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
+      DOCKER_HOST: unix:///var/run/docker.sock
     services:
       postgres:
         image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
@@ -47,6 +48,10 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git docker.io docker-buildx
+      - name: Check hosted Docker tooling
+        run: |
+          docker version
+          docker buildx version
       - name: Create synthetic database secrets and aliases
         run: |
           install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
