@@ -606,7 +606,10 @@ class SupportRuntime:
             session, scope=self.IDEMPOTENCY_SCOPE, key=IdempotencyKey(value=idempotency_key),
             fingerprint=fingerprint, now=now,
         )
-        if decision.decision is IdempotencyDecision.MISMATCH:
+        if (
+            getattr(decision.decision, "decision", decision.decision)
+            is IdempotencyDecision.MISMATCH
+        ):
             raise IdempotencyConflict("idempotency fingerprint conflict")
         if decision.outcome is not None:
             return self._decode_replay(decision.outcome)
@@ -705,7 +708,10 @@ class SupportRuntime:
             fingerprint=fingerprint,
             now=now,
         )
-        if decision.decision is IdempotencyDecision.MISMATCH:
+        if (
+            getattr(decision.decision, "decision", decision.decision)
+            is IdempotencyDecision.MISMATCH
+        ):
             raise IdempotencyConflict("idempotency fingerprint conflict")
         if decision.outcome is not None:
             return self._decode_replay(decision.outcome)
@@ -794,7 +800,10 @@ class SupportRuntime:
             fingerprint=fp,
             now=now,
         )
-        if decision.decision is IdempotencyDecision.MISMATCH:
+        if (
+            getattr(decision.decision, "decision", decision.decision)
+            is IdempotencyDecision.MISMATCH
+        ):
             raise IdempotencyConflict("idempotency fingerprint conflict")
         if decision.outcome is not None:
             return self._decode_replay(decision.outcome)

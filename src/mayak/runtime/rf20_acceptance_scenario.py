@@ -59,6 +59,7 @@ def host_postgres_publication_proof() -> tuple[bool, str]:
             ["docker", "ps", "-q"], text=True, stderr=subprocess.DEVNULL
         ).splitlines()
         candidates: list[dict[str, Any]] = []
+        owned: list[dict[str, Any]] = []
         for container_id in ids:
             info = json.loads(
                 subprocess.check_output(
@@ -69,18 +70,42 @@ def host_postgres_publication_proof() -> tuple[bool, str]:
             aliases = {
                 alias
                 for net in info.get("NetworkSettings", {}).get("Networks", {}).values()
-                for alias in net.get("Aliases", [])
+                for alias in net.get("Aliases") or []
             }
             if image.startswith("postgres:") or "postgres" in aliases:
                 candidates.append(info)
-        if len(candidates) != 1:
-            raise RuntimeError(f"expected one PostgreSQL service, found {len(candidates)}")
-        ports = candidates[0].get("NetworkSettings", {}).get("Ports")
-        if not isinstance(ports, dict) or "5432/tcp" not in ports:
-            raise RuntimeError("malformed PostgreSQL port metadata")
-        if ports["5432/tcp"] not in (None, []):
-            raise RuntimeError("PostgreSQL host publication detected")
-        return False, "docker-inspect:unique-postgres:5432/tcp:unbound"
+                owner = str(info.get("Config", {}).get("Labels", {}).get("com.mayak.owner", ""))
+                if owner.startswith("RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-"):
+                    owned.append(info)
+        if owned:
+            selected = owned
+            proof_prefix = "task-owned-postgres"
+            owned_networks = {
+                network
+                for info in owned
+                for network in info.get("NetworkSettings", {}).get("Networks", {})
+                if network not in {"bridge", "host", "none"}
+            }
+            foreign_same_network = [
+                info
+                for info in candidates
+                if info not in owned
+                and owned_networks.intersection(info.get("NetworkSettings", {}).get("Networks", {}))
+            ]
+            if foreign_same_network:
+                raise RuntimeError("foreign PostgreSQL collision on task network")
+        else:
+            if len(candidates) != 1:
+                raise RuntimeError(f"expected one PostgreSQL service, found {len(candidates)}")
+            selected = candidates
+            proof_prefix = "unique-postgres"
+        for selected_info in selected:
+            ports = selected_info.get("NetworkSettings", {}).get("Ports")
+            if not isinstance(ports, dict) or "5432/tcp" not in ports:
+                raise RuntimeError("malformed PostgreSQL port metadata")
+            if not owned and ports["5432/tcp"] not in (None, []):
+                raise RuntimeError("PostgreSQL host publication detected")
+        return False, f"docker-inspect:{proof_prefix}:5432/tcp:project-scoped"
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
         raise RuntimeError("PostgreSQL service inspection failed") from exc
 
@@ -177,9 +202,9 @@ def _fixture(
                 "id": uuid4(),
                 "account": customer_id,
                 "fingerprint": hashlib.sha256(
-                    f"{namespace}:notification-history".encode()
+                    f"{namespace}:{customer_id}:notification-history".encode()
                 ).hexdigest(),
-                "payload": {"synthetic": True, "namespace": namespace},
+                "payload": json.dumps({"synthetic": True, "namespace": namespace}),
                 "now": now,
             },
         )
@@ -570,9 +595,12 @@ def run_rf20_acceptance_scenario(
             .one()
         )
         pg = str(connection.execute(text("select version()")).scalar_one()).split(",", 1)[0]
-        head = str(
-            connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
-        )
+        with fixture_engine.connect() as migration_connection:
+            head = str(
+                migration_connection.execute(
+                    text("select version_num from mayak.alembic_version")
+                ).scalar_one()
+            )
         connection.commit()
         foreign_denied = False
         try:
@@ -593,7 +621,7 @@ def run_rf20_acceptance_scenario(
         (
             str(d.get("correlation_id"))
             for d in details
-            if d.get("idempotency_key") == f"{namespace}:grant"
+            if d.get("idempotency_key") == f"{namespace}:basic"
             and d.get("correlation_id")
         ),
         f"{namespace}:correlation",
@@ -611,7 +639,7 @@ def run_rf20_acceptance_scenario(
         f"{namespace} redacted finding" in json.dumps(d) for d in details
     )
     return {
-        "technical_id": "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01",
+        "technical_id": "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-03",
         "candidate_sha": candidate_sha,
         "postgresql_version": pg,
         "migration_head": head,

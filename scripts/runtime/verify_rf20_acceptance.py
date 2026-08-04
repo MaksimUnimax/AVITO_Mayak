@@ -24,7 +24,7 @@ def main() -> int:
         return 2
     if not isinstance(evidence, dict):
         return 2
-    if evidence.get("technical_id") != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01":
+    if evidence.get("technical_id") != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-03":
         return 2
     expected_sha = os.environ.get("GITHUB_SHA")
     if (
