@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ubuntu:24.04
+      options: --volume /var/run/docker.sock:/var/run/docker.sock
     env:
       RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
       RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
@@ -34,13 +35,6 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
-      dind:
-        image: docker@sha256:a56b3bdde89315ed2cc0e4906e582b5033d93bf20d9cb9510c2cdd4e7f7690b1
-        env: {DOCKER_TLS_CERTDIR: ''}
-        options: >-
-          --privileged
-          --health-cmd "docker info"
-          --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.sha }}", fetch-depth: 0}
@@ -55,7 +49,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git docker.io docker-buildx
       - name: Check hosted Docker tooling
         env:
-          DOCKER_HOST: tcp://dind:2375
+          DOCKER_HOST: unix:///var/run/docker.sock
         run: |
           docker version
           docker buildx version
@@ -132,7 +126,7 @@ jobs:
           RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
           RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
           RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
-          DOCKER_HOST: tcp://dind:2375
+          DOCKER_HOST: unix:///var/run/docker.sock
         shell: bash
         run: |
           set -o pipefail
