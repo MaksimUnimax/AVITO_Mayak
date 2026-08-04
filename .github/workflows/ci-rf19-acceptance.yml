@@ -18,6 +18,14 @@ jobs:
       RF12_ACCEPTANCE_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
       MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
       MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+      RF15_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+      RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+      RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
+      RF18_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+      RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
+      RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+      RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
     services:
       postgres:
         image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
