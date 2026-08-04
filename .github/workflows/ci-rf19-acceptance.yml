@@ -74,7 +74,9 @@ jobs:
           test "${GIT_CONFIG_KEY_0:-}" = safe.directory
           test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
           test "$(git config --get-all safe.directory)" = "$workspace"
-          test "$(git config --show-scope --get-all safe.directory)" = "command\t$workspace"
+          safe_scope="$(git config --show-scope --get-all safe.directory)"
+          test "${safe_scope%%$'\t'*}" = command
+          test "${safe_scope#*$'\t'}" = "$workspace"
           ! git config --get-all safe.directory | grep -Fxq '*'
           test "$(git rev-parse --is-inside-work-tree)" = true
           test -e .git
