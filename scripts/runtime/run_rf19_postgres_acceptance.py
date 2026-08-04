@@ -63,7 +63,10 @@ def _database_cases(application_dsn: str, migration_dsn: str) -> dict[str, objec
         foreign_sequence_write_denied = all(
             not bool(
                 connection.execute(
-                    text("select has_sequence_privilege('mayak_application', :sequence_name, 'UPDATE')"),
+                    text(
+                        "select has_sequence_privilege("
+                        "'mayak_application'::name, cast(:sequence_name as text), 'UPDATE'::text)"
+                    ),
                     {"sequence_name": f"mayak.{sequence_name}"},
                 ).scalar_one()
             )
