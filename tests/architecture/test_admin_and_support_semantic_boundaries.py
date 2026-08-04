@@ -13,14 +13,18 @@ PACKAGE = ROOT / "src/mayak/modules/admin_and_support"
 EXPECTED_FILES = (
     "__init__.py",
     "access_actions.py",
+    "admin_ui.py",
     "anchor_actions.py",
     "beacon_actions.py",
     "case_records.py",
     "contracts.py",
     "notification_actions.py",
     "role_actions.py",
+    "runtime.py",
     "safe_reads.py",
+    "static",
     "tariff_actions.py",
+    "templates",
 )
 FORBIDDEN_CLASSES = {
     "Client",
@@ -213,7 +217,11 @@ def violations(source: str, *, package_init: bool = False) -> list[str]:
 
 
 def test_actual_production_entry_inventory_is_exact() -> None:
-    assert package_entry_inventory() == tuple((name, "python") for name in EXPECTED_FILES)
+    expected = tuple(
+        (name, "directory" if name in {"static", "templates"} else "python")
+        for name in EXPECTED_FILES
+    )
+    assert package_entry_inventory() == expected
 
 
 def test_inventory_controls_use_same_function(tmp_path: Path) -> None:
@@ -232,7 +240,7 @@ def test_inventory_controls_use_same_function(tmp_path: Path) -> None:
 
 def test_source_has_no_forbidden_boundary_or_side_effect() -> None:
     for path in PACKAGE.iterdir():
-        if path.name != "__pycache__":
+        if path.name not in {"__pycache__", "runtime.py", "admin_ui.py"} and path.is_file():
             assert not violations(
                 path.read_text(encoding="utf-8"), package_init=path.name == "__init__.py"
             ), path

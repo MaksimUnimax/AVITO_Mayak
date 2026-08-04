@@ -200,7 +200,7 @@ def test_case_indexes_are_exact() -> None:
     ]
     assert (
         predicate(value["ix_support_cases_open_pending_updated_at"])
-        == "state IN ('OPEN', 'PENDING')"
+        == "state IN ('OPEN', 'IN_PROGRESS', 'WAITING_FOR_EVIDENCE', 'ESCALATED', 'AMBIGUOUS')"
     )
     assert predicate(value["ix_support_cases_account_updated_at"]) == ""
     assert all(index.unique is False for index in value.values())

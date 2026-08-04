@@ -99,11 +99,12 @@ def test_metadata_schema_and_script_directory_have_one_boundary() -> None:
         "20260802_RF12_BASIC_BEACON_LIMIT.py",
         "20260802_RF13_beacon_runtime.py",
         "20260802_RF13_beacon_runtime_harden.py",
+        "20260804_RF20_admin_support_runtime.py",
     ]
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 19
-    assert scripts.get_heads() == ["RF13_BEACON_RUNTIME_HARDEN"]
+    assert len(revisions) == 20
+    assert scripts.get_heads() == ["RF20_ADMIN_SUPPORT_RUNTIME"]
     assert sum(script.is_branch_point for script in revisions) == 0
     bootstrap = scripts.get_revision("RF09_BOOTSTRAP")
     m01 = scripts.get_revision("RF09_M01")

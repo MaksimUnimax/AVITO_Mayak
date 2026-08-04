@@ -214,7 +214,9 @@ def _canonical(metadata: MetaData) -> tuple[Table, Table, Table]:
         "ix_support_cases_open_pending_updated_at",
         cases.c.state,
         cases.c.updated_at,
-        postgresql_where=text("state IN ('OPEN', 'PENDING')"),
+        postgresql_where=text(
+            "state IN ('OPEN', 'IN_PROGRESS', 'WAITING_FOR_EVIDENCE', 'ESCALATED', 'AMBIGUOUS')"
+        ),
     )
     Index("ix_support_cases_account_updated_at", cases.c.account_id, cases.c.updated_at)
 

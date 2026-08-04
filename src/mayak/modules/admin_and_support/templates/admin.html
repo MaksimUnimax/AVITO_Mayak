@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{{ title|e }}</title><link rel="stylesheet" href="/admin/static/admin.css"></head>
+<body>
+<main>
+<h1>{{ title|e }}</h1>
+{% if operator %}<p class="operator">Verified operator: {{ operator.role|e }}</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error|e }}</p>{% endif %}
+{% if summary %}<section><h2>Safe summary</h2><pre>{{ summary|tojson|e }}</pre></section>{% endif %}
+<section><h2>Open support case</h2><form method="post" action="/admin/cases"><label>Account <input required name="account_id"></label><label>Subject <input required name="subject"></label><label>Reason <input required name="reason"></label><label>Idempotency key <input required name="idempotency_key"></label><button type="submit">Open case</button></form></section>
+<section><h2>Cases</h2>{% if cases %}<ul>{% for case in cases %}<li><a href="/admin/account/{{ case.account_id }}">{{ case.subject|e }}</a> — {{ case.state|e }} — v{{ case.row_version }}</li>{% endfor %}</ul>{% else %}<p>No cases.</p>{% endif %}</section>
+</main>
+</body>
+</html>

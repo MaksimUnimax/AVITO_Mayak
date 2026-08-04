@@ -1,0 +1,95 @@
+name: RF20 Admin Support runtime acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rf20:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+      options: --volume /var/run/docker.sock:/var/run/docker.sock
+    env:
+      RF20_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF20_DATABASE_URL: postgresql+psycopg://mayak_application:rf20_application_synthetic@postgres:5432/mayak
+      MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: rf20_bootstrap_synthetic
+          POSTGRES_DB: mayak
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - name: Install hosted prerequisites
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14.6'}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: '0.11.31'}
+      - run: uv sync --frozen --all-groups --python 3.14.6
+      - name: Prove exact candidate and toolchain
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(python --version)" = "Python 3.14.6"
+          test "$(uv --version)" = "uv 0.11.31"
+          test -e .git
+          test -n "$(ldconfig -p | grep -F libsqlite3.so.0)"
+      - name: Bootstrap and migrate PostgreSQL 18
+        run: |
+          install -d -m 700 /run/secrets
+          printf '%s' 'rf20_bootstrap_synthetic' > /run/secrets/mayak_postgres_bootstrap_password
+          printf '%s' 'rf20_migration_synthetic' > /run/secrets/mayak_database_migration_password
+          printf '%s' 'rf20_application_synthetic' > /run/secrets/mayak_database_application_password
+          uv run python - <<'PY'
+          from mayak.persistence.bootstrap import bootstrap_database
+          from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
+          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='postgres')))
+          PY
+          uv run alembic upgrade head
+      - name: Grant exact RF20 application boundary
+        run: |
+          uv run python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          engine = create_engine(os.environ['RF20_MIGRATION_DSN'])
+          with engine.begin() as c:
+              c.execute(text('grant usage on schema mayak to mayak_application'))
+              c.execute(text('grant select, insert, update, delete on table mayak.support_cases, mayak.support_case_notes, mayak.support_case_events, mayak.platform_idempotency_records to mayak_application'))
+              c.execute(text('grant select on table mayak.identity_accounts to mayak_application'))
+          PY
+      - name: Focused RF20 tests
+        run: uv run pytest -q tests/runtime/test_rf20_admin_ui.py tests/runtime/test_support_schema.py tests/architecture/test_admin_and_support_semantic_boundaries.py tests/contract/test_admin_and_support_semantic_contract_exports.py
+      - name: Static and import gates
+        run: |
+          uv run ruff check src/mayak/modules/admin_and_support scripts/runtime/run_rf20_postgres_acceptance.py scripts/runtime/verify_rf20_acceptance.py alembic/versions/20260804_RF20_admin_support_runtime.py
+          uv run lint-imports
+      - name: RF20 PostgreSQL producer and verifier
+        run: |
+          uv run python scripts/runtime/run_rf20_postgres_acceptance.py --dsn "$RF20_DATABASE_URL" --fixture-dsn "$RF20_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf20-acceptance-evidence.json
+          uv run python scripts/runtime/verify_rf20_acceptance.py rf20-acceptance-evidence.json
+      - name: Full repository regression
+        run: uv run pytest -q 2>&1 | tee rf20-full-pytest.log
+      - name: Semantic artifact safety scan
+        run: |
+          ! rg -n -i 'bearer [A-Za-z0-9._~+/=-]{12,}|BEGIN .*PRIVATE KEY|raw_provider_payload' rf20-acceptance-evidence.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rf20-admin-support-acceptance
+          path: |
+            rf20-acceptance-evidence.json
+            rf20-full-pytest.log
