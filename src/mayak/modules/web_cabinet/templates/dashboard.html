@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="/cabinet/static/cabinet.css">
+</head>
+<body>
+<main class="cabinet">
+  <h1>{{ title }}</h1>
+  {% if error %}<p class="notice" role="alert">{{ error }}</p>{% endif %}
+  {% if dashboard %}
+    <p class="muted">Состояние формируется владельцами данных; значения браузера не являются полномочиями.</p>
+    <div class="grid">
+    {% for section in dashboard.sections %}
+      <section class="card" data-section="{{ section.key }}">
+        <h2>{{ section.key|e }}</h2>
+        <p class="state">{{ section.state|e }} · {{ section.freshness|e }}</p>
+        {% if section.message %}<p>{{ section.message|e }}</p>{% endif %}
+        {% if section.value is mapping %}
+          <dl>{% for key, value in section.value.items() %}<dt>{{ key|e }}</dt><dd>{{ value|e }}</dd>{% endfor %}</dl>
+        {% elif section.value %}<pre>{{ section.value|e }}</pre>
+        {% else %}<p class="muted">Нет безопасной проекции.</p>{% endif %}
+      </section>
+    {% endfor %}
+    </div>
+    <section class="card">
+      <h2>Beacon command</h2>
+      <form method="post" action="/cabinet/beacons/00000000-0000-0000-0000-000000000000/command">
+        <label>Action <select name="action"><option value="PAUSE">Pause</option><option value="RESUME">Resume</option><option value="ARCHIVE_TO_HISTORY">Archive</option><option value="RESTORE_FROM_HISTORY">Restore</option><option value="PATCH_CURRENT_CONFIGURATION">Patch</option></select></label>
+        <label>Expected version <input name="expected_row_version" type="number" min="1" required></label>
+        <label>Idempotency key <input name="idempotency_key" required></label>
+        <label>Fingerprint <input name="fingerprint" required></label>
+        <button type="submit">Submit</button>
+      </form>
+    </section>
+  {% else %}<p>Войдите через Identity session boundary.</p>{% endif %}
+</main>
+</body>
+</html>

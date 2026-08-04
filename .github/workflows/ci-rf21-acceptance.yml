@@ -1,0 +1,43 @@
+name: RF21 Web Cabinet acceptance
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rf21-acceptance:
+    runs-on: ubuntu-24.04
+    env:
+      MAYAK_PROVIDER_MODE: disabled
+      MAYAK_RUNTIME_PROFILE: acceptance
+    services:
+      postgres:
+        image: postgres:18.0
+        env:
+          POSTGRES_DB: mayak
+          POSTGRES_USER: migration
+          POSTGRES_PASSWORD: rf21-local-only
+        options: >-
+          --health-cmd "pg_isready -U migration -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14.6'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.31'
+      - run: uv sync --frozen
+      - run: uv run pytest -q tests/runtime/test_rf21_web_cabinet_runtime.py tests/runtime/test_rf21_evidence.py
+      - run: uv run ruff check src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py scripts/runtime
+      - run: uv run python scripts/runtime/run_rf21_postgres_acceptance.py --output rf21.json --candidate-sha "$GITHUB_SHA"
+      - run: uv run python scripts/runtime/verify_rf21_acceptance.py rf21.json --expected-sha "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rf21-web-cabinet-acceptance
+          path: rf21.json
