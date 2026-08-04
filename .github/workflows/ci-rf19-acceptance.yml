@@ -11,11 +11,11 @@ permissions:
 jobs:
   rf19:
     runs-on: ubuntu-latest
+    container: ubuntu:24.04
     services:
       postgres:
         image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
         env: {POSTGRES_USER: mayak, POSTGRES_PASSWORD: rf19_bootstrap_synthetic, POSTGRES_DB: mayak}
-        ports: ["127.0.0.1:5432:5432"]
         options: >-
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
@@ -29,29 +29,29 @@ jobs:
       - run: uv sync --frozen --all-groups --python 3.14.6
       - name: Create synthetic database secrets and aliases
         run: |
-          sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
+          install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
           umask 077
           printf '%s' 'rf19_bootstrap_synthetic' > /run/secrets/mayak_postgres_bootstrap_password
           printf '%s' 'rf19_migration_synthetic' > /run/secrets/mayak_database_migration_password
           printf '%s' 'rf19_application_synthetic' > /run/secrets/mayak_database_application_password
           {
-            echo 'RF19_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@127.0.0.1:5432/mayak'
-            echo 'RF19_DATABASE_URL=postgresql+psycopg://mayak_application:rf19_application_synthetic@127.0.0.1:5432/mayak'
-            echo 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@127.0.0.1:5432/mayak'
-            echo 'RF15_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@127.0.0.1:5432/mayak'
-            echo 'RF17_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@127.0.0.1:5432/mayak'
-            echo 'RF17_APPLICATION_DSN=postgresql+psycopg://mayak_application:rf19_application_synthetic@127.0.0.1:5432/mayak'
-            echo 'RF18_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@127.0.0.1:5432/mayak'
-            echo 'RF18_DATABASE_URL=postgresql+psycopg://mayak_application:rf19_application_synthetic@127.0.0.1:5432/mayak'
-            echo 'MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@127.0.0.1:5432/mayak'
-            echo 'MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@127.0.0.1:5432/mayak'
+            echo 'RF19_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak'
+            echo 'RF19_DATABASE_URL=postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak'
+            echo 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak'
+            echo 'RF15_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak'
+            echo 'RF17_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak'
+            echo 'RF17_APPLICATION_DSN=postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak'
+            echo 'RF18_MIGRATION_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak'
+            echo 'RF18_DATABASE_URL=postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak'
+            echo 'MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak'
+            echo 'MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak'
           } >> "$GITHUB_ENV"
       - name: Bootstrap and migrate current head
         run: |
           uv run python - <<'PY'
           from mayak.persistence.bootstrap import bootstrap_database
           from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
-          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='127.0.0.1')))
+          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='postgres')))
           PY
           uv run alembic upgrade head
       - name: Grant exact MAX application boundary
