@@ -12,7 +12,7 @@ jobs:
   rf19:
     runs-on: ubuntu-latest
     container:
-      image: node@sha256:7725a5c2c83eed1d36258c66efae14b1ceccd021db9ed1d9559d3335ed3d68ed
+      image: ubuntu:24.04
     env:
       RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
       RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
