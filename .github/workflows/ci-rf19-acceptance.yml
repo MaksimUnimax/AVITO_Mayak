@@ -42,6 +42,17 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0
       - uses: actions/checkout@v4
         with: {ref: "${{ github.sha }}", fetch-depth: 0}
+      - name: Configure process-local Git ownership trust
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$(pwd -P)"
+          test -d "$workspace/.git"
+          {
+            echo 'GIT_CONFIG_COUNT=1'
+            echo 'GIT_CONFIG_KEY_0=safe.directory'
+            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
+          } >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with: {python-version: '3.14.6'}
       - uses: astral-sh/setup-uv@v6
@@ -57,7 +68,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          workspace="$(pwd -P)"
           test -x "$(command -v git)"
+          test "${GIT_CONFIG_COUNT:-}" = 1
+          test "${GIT_CONFIG_KEY_0:-}" = safe.directory
+          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
+          test "$(git config --get-all safe.directory)" = "$workspace"
+          test "$(git config --show-scope --get-all safe.directory)" = "command\t$workspace"
+          ! git config --get-all safe.directory | grep -Fxq '*'
           test "$(git rev-parse --is-inside-work-tree)" = true
           test -e .git
           actual_head="$(git rev-parse HEAD)"
