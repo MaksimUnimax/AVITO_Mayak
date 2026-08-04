@@ -459,6 +459,18 @@ class IdentityRuntime:
             account_id=row["account_id"] if state is AuthSessionState.ACTIVE else None,
         )
 
+    def safe_account_summary(self, session: Session, account_id: UUID) -> dict[str, Any]:
+        """Customer-safe account projection owned by Identity."""
+        row = session.execute(
+            select(_ACCOUNTS.c.id, _ACCOUNTS.c.state).where(_ACCOUNTS.c.id == account_id)
+        ).mappings().one_or_none()
+        if row is None:
+            raise ValueError("account unavailable")
+        return {
+            "account_id": str(row["id"]), "state": str(row["state"]),
+            "owner": "identity_and_access",
+        }
+
     def _authenticated_session(
         self, session: Session, token: _RawSecret, expected_session: UUID | None = None
     ) -> _AuthenticatedSession | None:

@@ -469,6 +469,25 @@ class SupportRuntime:
             raise TargetNotFound("support case not found")
         return _support_case_view(row)
 
+    def customer_visible_summary(self, session: Session, account_id: UUID) -> dict[str, Any]:
+        """Public customer projection; private notes/events are never selected."""
+        cases = _table(session, "support_cases")
+        rows = session.execute(
+            select(cases.c.id, cases.c.state, cases.c.subject, cases.c.row_version,
+                   cases.c.created_at, cases.c.updated_at)
+            .where(cases.c.account_id == account_id)
+            .order_by(cases.c.updated_at.desc())
+            .limit(100)
+        ).mappings().all()
+        return {
+            "owner": "admin_and_support",
+            "account_id": str(account_id),
+            "cases": tuple({"case_id": str(row["id"]), "state": row["state"],
+                             "subject": row["subject"], "row_version": row["row_version"],
+                             "created_at": row["created_at"].isoformat(),
+                             "updated_at": row["updated_at"].isoformat()} for row in rows),
+        }
+
     def get_case_for_operator(
         self, session: Session, *, actor: VerifiedActor, case_id: UUID
     ) -> SupportCaseView:

@@ -1,4 +1,4 @@
-name: RF21 Web Cabinet acceptance
+name: RF21 Web Cabinet factual acceptance
 
 on:
   push:
@@ -13,30 +13,99 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       MAYAK_PROVIDER_MODE: disabled
-      MAYAK_RUNTIME_PROFILE: acceptance
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      RF21_DSN: postgresql+psycopg://mayak_application:rf21_application_synthetic@postgres:5432/mayak
+      RF21_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      MAYAK_DATABASE_URL: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+      RF12_ACCEPTANCE_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF15_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf21_application_synthetic@postgres:5432/mayak
+      RF18_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf21_application_synthetic@postgres:5432/mayak
+      RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf21_application_synthetic@postgres:5432/mayak
+      RF20_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak
+      RF20_DATABASE_URL: postgresql+psycopg://mayak_application:rf21_application_synthetic@postgres:5432/mayak
     services:
       postgres:
         image: postgres:18.0
         env:
           POSTGRES_DB: mayak
-          POSTGRES_USER: migration
-          POSTGRES_PASSWORD: rf21-local-only
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: rf21_bootstrap_synthetic
         options: >-
-          --health-cmd "pg_isready -U migration -d mayak"
+          --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14.6'
       - uses: astral-sh/setup-uv@v6
         with:
           version: '0.11.31'
-      - run: uv sync --frozen
-      - run: uv run pytest -q tests/runtime/test_rf21_web_cabinet_runtime.py tests/runtime/test_rf21_evidence.py
-      - run: uv run ruff check src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py scripts/runtime
-      - run: uv run python scripts/runtime/run_rf21_postgres_acceptance.py --output rf21.json --candidate-sha "$GITHUB_SHA"
-      - run: uv run python scripts/runtime/verify_rf21_acceptance.py rf21.json --expected-sha "$GITHUB_SHA"
+      - run: uv sync --frozen --all-groups --python 3.14.6
+      - run: uv run python -c 'import sys; assert sys.version_info[:3] == (3,14,6)'
+      - name: Bootstrap and migrate PostgreSQL 18
+        run: |
+          set -euo pipefail
+          install -d -m 700 /run/secrets
+          install -m 600 /dev/null /run/secrets/mayak_postgres_bootstrap_password
+          install -m 600 /dev/null /run/secrets/mayak_database_migration_password
+          install -m 600 /dev/null /run/secrets/mayak_database_application_password
+          python -c "from pathlib import Path; Path('/run/secrets/mayak_postgres_bootstrap_password').write_text('rf21_bootstrap_synthetic'); Path('/run/secrets/mayak_database_migration_password').write_text('rf21_migration_synthetic'); Path('/run/secrets/mayak_database_application_password').write_text('rf21_application_synthetic')"
+          uv run python - <<'PY'
+          from mayak.persistence.bootstrap import bootstrap_database
+          from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
+          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='postgres')))
+          PY
+          uv run alembic upgrade head
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine('postgresql+psycopg://mayak_migration:rf21_migration_synthetic@postgres:5432/mayak')
+          with engine.begin() as c:
+              c.execute(text('revoke all privileges on all tables in schema mayak from mayak_application'))
+              c.execute(text('grant usage on schema mayak to mayak_application'))
+              for statement in (
+                  'grant select, insert, update on table mayak.support_cases to mayak_application',
+                  'grant select, insert on table mayak.support_case_notes, mayak.support_case_events to mayak_application',
+                  'grant select, insert, update on table mayak.platform_idempotency_records to mayak_application',
+                  'grant select on table mayak.identity_accounts, mayak.identity_sessions, mayak.identity_role_assignments to mayak_application',
+                  'grant insert, update on table mayak.identity_role_assignments to mayak_application',
+                  'grant select, insert on table mayak.platform_audit_entries to mayak_application',
+                  'grant select, insert, update on table mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application',
+                  'grant select, insert on table mayak.entitlement_tariff_definitions to mayak_application',
+                  'grant select, insert, update on table mayak.entitlement_access_grants to mayak_application',
+                  'grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application',
+              ):
+                  c.execute(text(statement))
+              c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
+          PY
+      - run: uv run python -c 'import mayak.runtime.rf21_composition, mayak.modules.web_cabinet.web_ui'
+      - run: >-
+          uv run pytest -q
+          tests/runtime/test_rf21_*.py
+          tests/contract/test_rf21_*.py
+          tests/architecture/test_rf21_*.py
+          tests/runtime/test_identity_*.py
+          tests/runtime/test_rf20_*.py
+      - run: uv run ruff check src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py scripts/runtime/run_rf21_postgres_acceptance.py scripts/runtime/verify_rf21_acceptance.py
+      - run: uv run mypy src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py scripts/runtime/run_rf21_postgres_acceptance.py scripts/runtime/verify_rf21_acceptance.py
+      - run: uv run lint-imports
+      - run: uv run python scripts/runtime/run_rf21_postgres_acceptance.py --dsn "$RF21_MIGRATION_DSN" --repo-root . --candidate-sha "$GITHUB_SHA" --output rf21.json
+      - run: uv run python scripts/runtime/verify_rf21_acceptance.py rf21.json --repo-root . --expected-sha "$GITHUB_SHA"
+      - run: uv run pytest -q
+      - run: >-
+          ! rg -n '(https?://|token|cookie|password|secret|dsn)' rf21.json
       - uses: actions/upload-artifact@v4
         with:
           name: rf21-web-cabinet-acceptance

@@ -6,7 +6,7 @@ implementation dependency.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
@@ -30,6 +30,7 @@ class VerifiedWebCustomer:
     account_id: UUID
     session_id: UUID
     authority_reference: str
+    authority_context: Any = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +69,7 @@ class WebProjectionPort(Protocol):
 class WebBeaconPort(WebProjectionPort, Protocol):
     def command(self, session: Any, customer: VerifiedWebCustomer, *, beacon_id: UUID,
                 action: str, expected_row_version: int, idempotency_key: str,
-                fingerprint: str, patch: dict[str, Any] | None = None) -> Any: ...
+                patch: dict[str, Any] | None = None) -> Any: ...
 
 
 class WebRuntimeError(RuntimeError):
@@ -94,6 +95,8 @@ class WebCabinetRuntime:
         except Exception:
             sections.append(WebSection("account", WebRuntimeState.UNKNOWN,
                                        "identity_and_access", message="temporarily unavailable"))
+        if self.beacon is not None:
+            sections.append(self._read("beacons", self.beacon, session, customer))
         for port in self.projections:
             key = getattr(port, "key", getattr(port, "owner", "projection"))
             sections.append(self._read(key, port, session, customer))

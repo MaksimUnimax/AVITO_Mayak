@@ -58,10 +58,13 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
             if reference is None:
                 return render(request, error="Требуется проверенная сессия.", status_code=401)
             with session_factory() as session:
-                dashboard = runtime.dashboard(session, reference)
-            if dashboard is None:
+                customer = runtime.identity.resolve_session(session, reference)
+                if customer is None:
+                    return render(request, error="Требуется проверенная сессия.", status_code=401)
+                beacon_section = runtime.beacon_views(session, customer)
+            if beacon_section is None:
                 return render(request, error="Требуется проверенная сессия.", status_code=401)
-            return render(request, dashboard=dashboard)
+            return render(request, dashboard=WebDashboard(customer, (beacon_section,)))
         except Exception:
             return render(request, error="Состояние Beacon временно недоступно.", status_code=503)
 
@@ -85,8 +88,14 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
         try:
             body = (await request.body()).decode("utf-8")
             form = parse_qs(body, strict_parsing=True, keep_blank_values=False)
-            required = ("action", "expected_row_version", "idempotency_key", "fingerprint")
+            required = ("action", "expected_row_version", "idempotency_key")
             if any(len(form.get(name, ())) != 1 for name in required):
+                raise ValueError("malformed form")
+            allowed = {
+                "action", "expected_row_version", "idempotency_key",
+                "normalized_filter_values",
+            }
+            if set(form) - allowed or any(len(values) != 1 for values in form.values()):
                 raise ValueError("malformed form")
             reference = session_provider(request)
             if reference is None:
@@ -95,14 +104,16 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
                 customer = runtime.identity.resolve_session(session, reference)
                 if customer is None:
                     return render(request, error="Требуется проверенная сессия.", status_code=401)
-                runtime.execute_beacon_command(
-                    session, customer, beacon_id=beacon_id, action=form["action"][0],
-                    expected_row_version=int(form["expected_row_version"][0]),
-                    idempotency_key=form["idempotency_key"][0], fingerprint=form["fingerprint"][0],
-                    patch={"normalized_filter_values": form["normalized_filter_values"]}
-                    if "normalized_filter_values" in form else None,
-                )
-                dashboard = runtime.dashboard(session, reference)
+                with session.begin():
+                    runtime.execute_beacon_command(
+                        session, customer, beacon_id=beacon_id, action=form["action"][0],
+                        expected_row_version=int(form["expected_row_version"][0]),
+                        idempotency_key=form["idempotency_key"][0],
+                        patch={"normalized_filter_values": form["normalized_filter_values"][0]}
+                        if "normalized_filter_values" in form else None,
+                    )
+            with session_factory() as committed_session:
+                dashboard = runtime.dashboard(committed_session, reference)
             return render(request, dashboard=dashboard, error="Команда обработана.")
         except (KeyError, ValueError, UnicodeDecodeError):
             return render(request, error="Некорректная форма.", status_code=400)

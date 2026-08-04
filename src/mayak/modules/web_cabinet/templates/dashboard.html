@@ -25,16 +25,25 @@
       </section>
     {% endfor %}
     </div>
-    <section class="card">
-      <h2>Beacon command</h2>
-      <form method="post" action="/cabinet/beacons/00000000-0000-0000-0000-000000000000/command">
-        <label>Action <select name="action"><option value="PAUSE">Pause</option><option value="RESUME">Resume</option><option value="ARCHIVE_TO_HISTORY">Archive</option><option value="RESTORE_FROM_HISTORY">Restore</option><option value="PATCH_CURRENT_CONFIGURATION">Patch</option></select></label>
-        <label>Expected version <input name="expected_row_version" type="number" min="1" required></label>
-        <label>Idempotency key <input name="idempotency_key" required></label>
-        <label>Fingerprint <input name="fingerprint" required></label>
-        <button type="submit">Submit</button>
-      </form>
-    </section>
+    {% set beacon_section = dashboard.section('beacons') if dashboard.section is defined else none %}
+    {% if beacon_section and beacon_section.value %}
+      <section class="card">
+        <h2>Beacon commands</h2>
+        {% for beacon in beacon_section.value %}
+          <article class="beacon" data-beacon-id="{{ beacon.beacon_id }}">
+            <h3>{{ beacon.name|e }}</h3>
+            <p>{{ beacon.state|e }} · revision {{ beacon.current_revision_no|e }} · row {{ beacon.row_version|e }}</p>
+            <form method="post" action="/cabinet/beacons/{{ beacon.beacon_id }}/command">
+              <input type="hidden" name="action" value="PATCH_CURRENT_CONFIGURATION">
+              <input type="hidden" name="expected_row_version" value="{{ beacon.row_version }}">
+              <input type="hidden" name="idempotency_key" value="web-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
+              <label>Filter value <input name="normalized_filter_values" required></label>
+              <button type="submit">Обновить фильтр</button>
+            </form>
+          </article>
+        {% endfor %}
+      </section>
+    {% endif %}
   {% else %}<p>Войдите через Identity session boundary.</p>{% endif %}
 </main>
 </body>
