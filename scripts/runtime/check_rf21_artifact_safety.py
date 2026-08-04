@@ -20,10 +20,16 @@ def _values(value: Any) -> list[str]:
     return [value] if isinstance(value, str) else []
 
 
-METHOD = "rf21-semantic-artifact-scan/v2"
+METHOD = "rf21-semantic-artifact-scan/v3"
+EXPECTED_PAYLOADS = frozenset(("rf21.json", "rf21-full-pytest.log"))
+CLASSIFICATIONS = frozenset(("CLEAN",))
 
 
 def scan(paths: list[Path], manifest: Path | None = None) -> dict[str, object]:
+    if {path.name for path in paths} != EXPECTED_PAYLOADS or any(
+        path.name != str(path) or path.is_absolute() for path in paths
+    ):
+        raise SystemExit("scanner payload inventory must be exactly the two basenames")
     files: list[dict[str, object]] = []
     for path in paths:
         if not path.is_file():
@@ -38,12 +44,15 @@ def scan(paths: list[Path], manifest: Path | None = None) -> dict[str, object]:
         matches = [value for value in values if SECRET.search(value)]
         if matches:
             raise SystemExit("credential-looking artifact value")
-        files.append({"path": str(path), "sha256": hashlib.sha256(raw).hexdigest(),
-                      "finding_count": 0, "classification": "clean"})
+        files.append({"basename": path.name, "sha256": hashlib.sha256(raw).hexdigest(),
+                      "finding_count": 0, "classification": "CLEAN"})
     result: dict[str, object] = {"scanner_method": METHOD, "result": "PASS",
-                                 "finding_count": 0, "files": files}
+                                 "finding_count": 0, "payloads": files}
     if manifest is not None:
-        manifest.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+        serialized = json.dumps(result, indent=2, sort_keys=True) + "\n"
+        if any(SECRET.search(value) for value in _values(json.loads(serialized))):
+            raise SystemExit("credential-looking scanner manifest value")
+        manifest.write_text(serialized)
     print(json.dumps(result, sort_keys=True))
     return result
 

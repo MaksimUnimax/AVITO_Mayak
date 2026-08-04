@@ -64,6 +64,7 @@
               <input type="hidden" name="idempotency_key" value="web-restore-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
               <button type="submit">Восстановить</button>
             </form>
+            {% if beacon.state == 'ARCHIVED' %}
             <form method="post" action="/cabinet/beacons/{{ beacon.beacon_id }}/command">
               <input type="hidden" name="action" value="PERMANENT_DELETE">
               <input type="hidden" name="confirmation" value="confirmed">
@@ -71,6 +72,7 @@
               <input type="hidden" name="idempotency_key" value="web-permanent-delete-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
               <button type="submit">Удалить окончательно</button>
             </form>
+            {% endif %}
             {% endif %}
           </article>
         {% endfor %}

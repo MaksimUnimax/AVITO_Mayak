@@ -24,8 +24,10 @@ def test_producer_requires_a_reachable_explicit_database(tmp_path: Path) -> None
 
 def test_semantic_artifact_scan_allows_safe_security_field_names(tmp_path: Path) -> None:
     evidence = tmp_path / "rf21.json"
+    log = tmp_path / "rf21-full-pytest.log"
     evidence.write_text(json.dumps({"real_provider_token_reads": {"result": "NOT_APPLICABLE"}, "secrets_exposed": 0}))
-    result = subprocess.run([sys.executable, str(SCANNER), str(evidence)])
+    log.write_text("2 passed\n")
+    result = subprocess.run([sys.executable, str(SCANNER), "rf21.json", "rf21-full-pytest.log"], cwd=tmp_path)
     assert result.returncode == 0
 
 

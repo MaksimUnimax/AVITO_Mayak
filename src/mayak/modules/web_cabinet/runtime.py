@@ -151,12 +151,21 @@ class WebCabinetRuntime:
             return WebSection(key, WebRuntimeState.READY, port.owner, result,
                               WebReadFreshness.FRESH, (port.owner,))
         except PermissionError:
+            rollback = getattr(session, "rollback", None)
+            if callable(rollback):
+                rollback()
             return WebSection(key, WebRuntimeState.FORBIDDEN, port.owner,
                               freshness=WebReadFreshness.UNKNOWN, message="unavailable")
         except (KeyError, LookupError):
+            rollback = getattr(session, "rollback", None)
+            if callable(rollback):
+                rollback()
             return WebSection(key, WebRuntimeState.NOT_FOUND, port.owner,
                               freshness=WebReadFreshness.UNKNOWN, message="unavailable")
         except Exception:
+            rollback = getattr(session, "rollback", None)
+            if callable(rollback):
+                rollback()
             return WebSection(key, WebRuntimeState.UNKNOWN, port.owner,
                               freshness=WebReadFreshness.UNKNOWN, message="temporarily unavailable")
 

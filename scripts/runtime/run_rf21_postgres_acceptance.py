@@ -43,7 +43,7 @@ from mayak.modules.entitlements_and_billing.runtime import (
 )
 from mayak.modules.identity_and_access.contracts import SyntheticAcceptanceLoginRequest
 from mayak.modules.identity_and_access.runtime import IdentityRuntime
-from mayak.modules.notification_delivery.runtime import ingest_source, read_history
+from mayak.modules.notification_delivery.runtime import ingest_source
 from mayak.modules.notification_delivery.source_intake import (
     NotificationSourceEvent,
     NotificationSourceFamily,
@@ -53,10 +53,10 @@ from mayak.modules.web_cabinet.web_ui import build_web_router
 from mayak.platform.correlation import CorrelationContext, CorrelationId
 from mayak.runtime.rf20_composition import build_rf20_composition
 from mayak.runtime.rf21_composition import CustomerIdentityAuthorityAdapter, build_rf21_runtime
-from mayak.runtime.rf21_observers import ProviderTransportObserver, scan_source_semantics
+from mayak.runtime.rf21_observers import production_provider_transport_guard, scan_source_semantics
 from mayak.runtime.settings import ProviderUpdateMode, RuntimeProfile
 
-TECHNICAL_ID = "RF21-WEB-CABINET-RUNTIME-01-CORRECTIVE-03"
+TECHNICAL_ID = "RF21-WEB-CABINET-RUNTIME-01-CORRECTIVE-04"
 
 
 def _heads(root: Path) -> tuple[str, ...]:
@@ -238,6 +238,8 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
         session_provider=lambda request: active_token["value"],
     ))
     app_engine = create_engine(dsn, pool_pre_ping=True)
+    provider_guard = production_provider_transport_guard()
+    provider_transport = provider_guard.__enter__()
     try:
         with app_engine.connect() as connection:
             application_user = str(connection.execute(text("select current_user")).scalar_one())
@@ -299,10 +301,13 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
             beacon_adapter.command = original_command  # type: ignore[method-assign]
             with Session(app_engine) as reopened:
                 rollback_after = beacon.get(reopened, actor_reference=fixture["token"], beacon_id=rollback_beacon)
-            a_notifications = read_history(Session(app_engine), account_id=fixture["account"],
-                                            actor_account_id=fixture["account"], limit=20)
-            b_notifications = read_history(Session(app_engine), account_id=fixture["foreign_account"],
-                                            actor_account_id=fixture["foreign_account"], limit=20)
+            # Notification verdicts come from the actual RF21 dashboard
+            # projection, never from a detached owner read.
+            active_token["value"] = fixture["token"]
+            a_projection = client.get("/cabinet")
+            active_token["value"] = fixture["foreign_token"]
+            b_projection = client.get("/cabinet")
+            active_token["value"] = fixture["token"]
             post_form = {
                 "action": "PATCH_CURRENT_CONFIGURATION",
                 "expected_row_version": str(rollback_before),
@@ -345,10 +350,6 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
             source_paths = tuple((root / "src/mayak/modules/web_cabinet").glob("*.py")) + (root / "src/mayak/runtime/rf21_composition.py",)
             direct_dml = any(isinstance(node, (ast.Import, ast.ImportFrom)) and "sqlalchemy" in ast.unparse(node)
                              for path in source_paths for node in ast.walk(ast.parse(path.read_text())))
-            provider_transport = ProviderTransportObserver(
-                "telegram_adapter.transport.TelegramBotApiTransport|"
-                "max_adapter.transport.MaxHttpTransport"
-            )
             semantic_source = "\n".join(path.read_text() for path in source_paths)
             semantic = scan_source_semantics(semantic_source, subject="RF21-Web-source")
             return {
@@ -387,6 +388,7 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
                     "public_marker_visible": public_marker in html,
                     "private_marker_visible": private_marker in html,
                     "foreign_excludes_primary": public_marker not in foreign_dashboard.text,
+                    "method": "SupportWebAdapter.customer_visible_summary",
                 },
                 "lifecycle": {
                     "patch": patch.status_code == 200 and persisted.current_revision_no is not None,
@@ -402,12 +404,11 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
                     "revision_unchanged_after_reopen": rollback_after.current_revision_no == rollback_before_view.current_revision_no,
                 },
                 "notification_isolation": {
-                    "a_visible": any(str(item.account_id) == str(fixture["account"]) and
-                                     f"rf21-listing-a-{run_ref}" in item.listing_reference_ids for item in a_notifications),
-                    "a_excludes_b": all(str(item.account_id) != str(fixture["foreign_account"]) for item in a_notifications),
-                    "b_visible": any(str(item.account_id) == str(fixture["foreign_account"]) and
-                                     f"rf21-listing-b-{run_ref}" in item.listing_reference_ids for item in b_notifications),
-                    "b_excludes_a": all(str(item.account_id) != str(fixture["account"]) for item in b_notifications),
+                    "method": "NotificationWebAdapter.read:RF21-WebDashboard",
+                    "a_visible": f"rf21-listing-a-{run_ref}" in a_projection.text,
+                    "a_excludes_b": f"rf21-listing-b-{run_ref}" not in a_projection.text,
+                    "b_visible": f"rf21-listing-b-{run_ref}" in b_projection.text,
+                    "b_excludes_a": f"rf21-listing-a-{run_ref}" not in b_projection.text,
                 },
                 "lifecycle_status_codes": {
                     "archive": archive.status_code, "restore": restore.status_code,
@@ -416,6 +417,7 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
                 },
             }
     finally:
+        provider_guard.__exit__(None, None, None)
         app_engine.dispose()
 
 
