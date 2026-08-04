@@ -99,7 +99,22 @@ jobs:
           tests/runtime/test_rf19_max_adapter_runtime.py
       - run: uv run python scripts/runtime/run_rf19_postgres_acceptance.py --dsn "$RF19_DATABASE_URL" --fixture-dsn "$RF19_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf19-acceptance-evidence.json
       - run: uv run python scripts/runtime/verify_rf19_acceptance.py rf19-acceptance-evidence.json
-      - run: uv run pytest -q
+      - name: Hosted full repository regression
+        env:
+          RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF12_ACCEPTANCE_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF15_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
+          RF18_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
+          RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
+          RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf19_application_synthetic@postgres:5432/mayak
+        run: uv run pytest -q
       - name: Semantic artifact safety scan
         run: |
           uv run python - <<'PY'
