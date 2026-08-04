@@ -41,6 +41,10 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: {version: '0.11.31'}
       - run: uv sync --frozen --all-groups --python 3.14.6
+      - name: Install hosted full-suite git prerequisite
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
       - name: Create synthetic database secrets and aliases
         run: |
           install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
