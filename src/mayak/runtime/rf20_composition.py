@@ -7,6 +7,7 @@ not accepted by this adapter.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -37,9 +38,20 @@ from mayak.modules.entitlements_and_billing.runtime import (
 )
 from mayak.modules.identity_and_access.contracts import RoleMutationRequest
 from mayak.modules.identity_and_access.runtime import IdentityRuntime
-from mayak.modules.notification_delivery.runtime import read_history
+from mayak.modules.notification_delivery.read_model import (
+    NotificationReadAudience,
+    NotificationReadAuthorizationScope,
+)
+from mayak.modules.notification_delivery.runtime import (
+    AccountScopeConflict,
+    read_history_for_authorized_scope,
+)
 from mayak.persistence.metadata import metadata
 from mayak.platform.correlation import CorrelationContext, CorrelationId
+from mayak.platform.correlation_context import (
+    correlation_context_scope,
+    current_correlation_context,
+)
 
 if TYPE_CHECKING:
     from mayak.modules.admin_and_support.runtime import SupportRuntime
@@ -138,13 +150,18 @@ class IdentityAuthorityAdapter:
                 "ENTITLEMENTS_MANUAL_ACCESS_ADMIN",
             }) if actor.role == "ADMIN" else frozenset()
         )
+        bound_context = current_correlation_context()
         return AuthorityFacts(
             actor_id=actor.actor_account_id,
             account_id=target,
             capabilities=capabilities,
-            scope=actor.authorization_scope,
+            scope="account_id",
             authorization_reference=actor.authorization_reference,
-            audit_reference=actor.authorization_reference,
+            audit_reference=(
+                bound_context.correlation_id.value
+                if bound_context is not None
+                else actor.authorization_reference
+            ),
         )
 
     def resolve(
@@ -262,30 +279,47 @@ class EntitlementsSupportAdapter:
             return OwningOutcome(
                 "entitlements_and_billing", "tariff-policy", OutcomeClass.POLICY_BLOCKED
             )
-        now = datetime.now(UTC)
-        result = self.owner.assign_access(
-            session, token, tariff=TariffName.BASIC, starts_at=now,
-            ends_at=now + timedelta(days=30), reason=reason,
-            idempotency_key=idempotency_key, target_account_id=target_account_id,
-        )
+        correlation = current_correlation_context()
+        with (correlation_context_scope(correlation) if correlation is not None else nullcontext()):
+            if action == "BOOTSTRAP_TARIFFS":
+                result = self.owner.bootstrap_tariffs(
+                    session, token, idempotency_key, effective_at=datetime.now(UTC),
+                    target_account_id=target_account_id,
+                )
+            else:
+                now = datetime.now(UTC)
+                result = self.owner.assign_access(
+                    session, token, tariff=TariffName.BASIC, starts_at=now,
+                    ends_at=now + timedelta(days=30), reason=reason,
+                    idempotency_key=idempotency_key, target_account_id=target_account_id,
+                )
         return self._outcome(result.state, result.resource_id)
 
     def execute_access_action(
         self, session: Session, *, actor: VerifiedActor, target: UUID, action: str,
-        reason: str, idempotency_key: str,
+        reason: str, idempotency_key: str, target_account_id: UUID,
     ) -> OwningOutcome:
         self.calls += 1
         token = actor.identity_session_reference
-        if action != "GRANT_ACCESS" or token is None:
+        if token is None or action not in {"GRANT_ACCESS", "REVOKE_ACCESS"}:
             return OwningOutcome(
                 "entitlements_and_billing", "access-policy", OutcomeClass.POLICY_BLOCKED
             )
-        now = datetime.now(UTC)
-        result = self.owner.manual_access_create(
-            session, token, starts_at=now, ends_at=now + timedelta(days=30),
-            idempotency_key=idempotency_key, reason=reason,
-            target_account_id=target,
-        )
+        correlation = current_correlation_context()
+        with (correlation_context_scope(correlation) if correlation is not None else nullcontext()):
+            if action == "REVOKE_ACCESS":
+                result = self.owner.manual_access_revoke(
+                    session, token, grant_id=target, idempotency_key=idempotency_key,
+                    reason=reason, target_account_id=target_account_id,
+                )
+            else:
+                now = datetime.now(UTC)
+                result = self.owner.manual_access_create(
+                    session, token, starts_at=now, ends_at=now + timedelta(days=30),
+                    idempotency_key=idempotency_key, reason=reason,
+                    target_account_id=target_account_id,
+                    granted_capability="SCAN", granted_scope="ACCOUNT",
+                )
         return self._outcome(result.state, result.resource_id)
 
     def safe_summary(
@@ -326,7 +360,24 @@ class NotificationDiagnosticsAdapter:
         self, session: Session, *, actor: VerifiedActor, target: UUID
     ) -> dict[str, Any]:
         self.calls += 1
-        history = read_history(session, account_id=target, actor_account_id=actor.actor_account_id)
+        audience = (
+            NotificationReadAudience.ADMIN
+            if actor.role == "ADMIN" else NotificationReadAudience.SUPPORT
+        )
+        scope = NotificationReadAuthorizationScope(
+            scope_id=f"rf20-notification:{target}", audience=audience, authorized=True,
+            account_id=str(target), beacon_scope_ids=(),
+            authorization_reference_id=actor.authorization_reference,
+            evidence_reference_ids=(f"rf20-identity:{actor.authorization_reference}",),
+            freshness_reference_ids=("rf20-session-active",),
+            provenance_reference_ids=("rf20-server-composition",),
+        )
+        try:
+            history = read_history_for_authorized_scope(
+                session, authorization_scope=scope, account_id=target,
+            )
+        except (AccountScopeConflict, TypeError, ValueError) as exc:
+            raise AuthorizationDenied("notification diagnostics authorization failed") from exc
         return {"owner": "notification_delivery", "history_count": len(history), "redacted": True}
 
 

@@ -182,6 +182,7 @@ EXPECTED_PACKAGE_EXPORTS = (
     "resolve_reconciliation",
     "run_worker_cycle",
     "read_history",
+    "read_history_for_authorized_scope",
     "ND14_TASK_ID",
     "NotificationDeferredRuntimeAuthority",
     "NotificationDeferredRuntimeGateStatus",

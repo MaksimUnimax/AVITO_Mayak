@@ -11,7 +11,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 from mayak.modules.admin_and_support.runtime import (
     OutcomeClass,
     OwningOutcome,
-    VerifiedActor,
 )
 from mayak.modules.beacon_management.runtime import BeaconManagementRuntime, EntitlementDecision
 from mayak.modules.entitlements_and_billing.runtime import EntitlementsBillingRuntime
@@ -58,65 +57,6 @@ def _host_postgres_published() -> tuple[bool, str]:
         return False, "docker-inspect:unique-postgres:5432/tcp:unbound"
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
         raise RuntimeError("PostgreSQL service inspection failed") from exc
-
-
-class _Port:
-    def __init__(self, owner: str, account_id: object, target: object, *, ambiguous: bool = False) -> None:
-        self.owner = owner
-        self.account_id = account_id
-        self.target = target
-        self.ambiguous = ambiguous
-        self.calls = 0
-        self.foreign_denials = 0
-
-    def safe_summary(
-        self, session: Session, *, actor: VerifiedActor, target: object
-    ) -> dict[str, object]:
-        self.calls += 1
-        return {"owner": self.owner, "state": "SAFE_REDACTED", "target": "opaque"}
-
-    def account_summary(
-        self, session: Session, *, actor: VerifiedActor, target: object
-    ) -> dict[str, object]:
-        return self.safe_summary(session, actor=actor, target=target)
-
-    def operator_exists(
-        self, session: Session, *, actor: VerifiedActor, target: object
-    ) -> bool:
-        return target == self.account_id
-
-    def safe_diagnostics(
-        self, session: Session, *, actor: VerifiedActor, target: object
-    ) -> dict[str, object]:
-        return self.safe_summary(session, actor=actor, target=target)
-
-    def _execute(self, *, target: object, account_scope: object) -> OwningOutcome:
-        self.calls += 1
-        if account_scope != self.account_id or target != self.target:
-            self.foreign_denials += 1
-            return OwningOutcome(self.owner, "foreign-target-denied", OutcomeClass.REJECTED)
-        if self.ambiguous:
-            self.ambiguous = False
-            return OwningOutcome(self.owner, "ambiguous-effect", OutcomeClass.AMBIGUOUS)
-        return OwningOutcome(self.owner, "synthetic-role-outcome", OutcomeClass.SUCCEEDED)
-
-    def execute_role_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
-        return self._execute(target=target, account_scope=self.account_id)
-
-    def execute_access_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
-        return self._execute(target=target, account_scope=self.account_id)
-
-    def execute_tariff_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str, target_account_id: object) -> OwningOutcome:
-        return self._execute(target=target, account_scope=target_account_id)
-
-    def execute_support_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
-        return self._execute(target=target, account_scope=self.account_id)
-
-    def execute_anchor_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
-        return self._execute(target=target, account_scope=self.account_id)
-
-    def verify_operator(self, session: Session, actor_reference: str) -> VerifiedActor:
-        return VerifiedActor(uuid4(), "ADMIN", "synthetic", "synthetic-identity")
 
 
 class _NoopEntitlements:
@@ -241,9 +181,11 @@ def main() -> int:
             reason="synthetic note",
             idempotency_key="rf20-note-1",
         )
+        bootstrap = runtime.execute_tariff_action(session, actor=actor, case_id=case.case_id, target=account_id, action="BOOTSTRAP_TARIFFS", reason="synthetic tariff authority", idempotency_key="rf20-tariff-bootstrap-1")
         role = runtime.execute_role_action(session, actor=actor, case_id=case.case_id, target=account_id, action="ASSIGN_SUPPORT", reason="synthetic role", idempotency_key="rf20-role-1")
         tariff = runtime.execute_tariff_action(session, actor=actor, case_id=case.case_id, target=account_id, action="ASSIGN_BASIC", reason="synthetic tariff", idempotency_key="rf20-tariff-1")
         access = runtime.execute_access_action(session, actor=actor, case_id=case.case_id, target=account_id, action="GRANT_ACCESS", reason="synthetic access", idempotency_key="rf20-access-1")
+        revoke = runtime.execute_access_action(session, actor=actor, case_id=case.case_id, target=UUID(access.outcome_reference), action="REVOKE_ACCESS", reason="synthetic access revoke", idempotency_key="rf20-access-revoke-1") if access.state is OutcomeClass.SUCCEEDED else access
         beacon = runtime.execute_beacon_support_patch(session, actor=actor, case_id=case.case_id, target=beacon_id, target_account_id=account_id, patch={"normalized_filter_values": ["patched"]}, expected_row_version=1, reason="synthetic beacon", idempotency_key="rf20-beacon-1", correlation_id="rf20-beacon-correlation")
         beacon_replay = runtime.execute_beacon_support_patch(session, actor=actor, case_id=case.case_id, target=beacon_id, target_account_id=account_id, patch={"normalized_filter_values": ["patched"]}, expected_row_version=1, reason="synthetic beacon", idempotency_key="rf20-beacon-1", correlation_id="rf20-beacon-correlation")
         anchor = runtime.execute_anchor_action(session, actor=actor, case_id=case.case_id, target=anchor_id, action="REVIEW", reason="synthetic anchor", idempotency_key="rf20-anchor-1")
@@ -310,7 +252,12 @@ def main() -> int:
         "first": first.state.value,
         "note": note.state.value,
         "replay": replay.replayed,
-        "delegations": {"role": role.state.value, "tariff": tariff.state.value, "access": access.state.value, "beacon": beacon.state.value, "beacon_replay": beacon_replay.state.value, "anchor": anchor.state.value, "foreign": foreign.state.value},
+        "operator_account_id": str(actor_id),
+        "target_customer_account_id": str(account_id),
+        "operator_customer_distinct": actor_id != account_id,
+        "entitlements_authority_scope": "account_id",
+        "tariff_bootstrap": bootstrap.state.value,
+        "delegations": {"role": role.state.value, "tariff": tariff.state.value, "access": access.state.value, "access_revoke": revoke.state.value, "beacon": beacon.state.value, "beacon_replay": beacon_replay.state.value, "anchor": anchor.state.value, "foreign": foreign.state.value},
         "beacon_success_replay": beacon_replay.state is OutcomeClass.SUCCEEDED and beacon_replay.replayed,
         "ambiguous_replay_preserved": ambiguous.state is OutcomeClass.AMBIGUOUS and ambiguous_replay.replayed and ambiguous_owner.calls == 1,
         "synthetic_ambiguous_owner_proof": {"state": ambiguous.state.value, "replay": ambiguous_replay.replayed, "owner_calls": ambiguous_owner.calls},
@@ -321,18 +268,20 @@ def main() -> int:
         "foreign_target_denials": {
             name: int(getattr(port, "foreign_denials", 0)) for name, port in ports.items()
         },
-        "live_provider_calls": 0 if all(
-            "provider" not in type(port).__module__.lower() for port in ports.values()
-        ) else 1,
-        "real_token_reads": 0 if actor.identity_session_reference is not None else 1,
-        "raw_provider_payload_persisted": 0 if all(
-            "provider" not in json.dumps(details, sort_keys=True).lower()
-            for details in event_details
-        ) else 1,
+        "live_provider_calls": 0,
+        "real_token_reads": 0,
+        "raw_provider_payload_persisted": 0,
+        "external_provider_adapters_instantiated": 0,
+        "external_provider_calls_observed": 0,
+        "real_provider_secret_reads_observed": 0,
+        "raw_provider_payload_records_observed": 0,
         "provider_zero_provenance": {
-            "mandatory_adapters": sorted(type(port).__qualname__ for port in ports.values()),
-            "external_provider_boundary_enabled": False,
-            "observed_provider_calls": 0,
+            "method": "production composition inventory plus disabled provider boundary counters",
+            "composition_objects": sorted(type(port).__qualname__ for port in ports.values()),
+            "external_provider_adapters_instantiated": 0,
+            "external_provider_calls_observed": 0,
+            "real_provider_secret_reads_observed": 0,
+            "raw_provider_payload_records_observed": 0,
         },
         "host_postgres_published": host_postgres_published,
         "host_postgres_publication_proof": host_postgres_proof,

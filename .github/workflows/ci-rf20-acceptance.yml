@@ -142,6 +142,10 @@ jobs:
               c.execute(text('grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application'))
               c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
           PY
+      - name: RF20 direct-test matrix gate
+        env:
+          RF20_REQUIRE_POSTGRES: "1"
+        run: uv run python scripts/runtime/verify_rf20_direct_test_matrix.py
       - name: Focused RF20 tests
         env:
           RF20_REQUIRE_POSTGRES: "1"
@@ -150,7 +154,9 @@ jobs:
           tests/runtime/test_rf20_admin_ui.py
           tests/runtime/test_rf20_admin_support_runtime.py
           tests/runtime/test_rf20_composition.py
+          tests/runtime/test_rf20_corrective_direct.py
           tests/runtime/test_rf20_postgres_acceptance.py
+          tests/runtime/test_rf17_notification_delivery_runtime.py
           tests/runtime/test_support_schema.py
           tests/architecture/test_admin_and_support_semantic_boundaries.py
           tests/contract/test_admin_and_support_semantic_contract_exports.py

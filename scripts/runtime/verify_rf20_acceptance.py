@@ -40,6 +40,11 @@ def main() -> int:
         "correlation_count",
         "causation_count",
         "host_postgres_publication_proof",
+        "operator_account_id",
+        "target_customer_account_id",
+        "operator_customer_distinct",
+        "entitlements_authority_scope",
+        "provider_zero_provenance",
     }
     if (
         not isinstance(data, dict)
@@ -47,6 +52,23 @@ def main() -> int:
         or data["technical_id"] != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01"
     ):
         return 2
+    if (
+        data["operator_account_id"] == data["target_customer_account_id"]
+        or data["operator_customer_distinct"] is not True
+        or data["entitlements_authority_scope"] != "account_id"
+    ):
+        return 2
+    provenance = data["provider_zero_provenance"]
+    if not isinstance(provenance, dict) or provenance.get("method") != "production composition inventory plus disabled provider boundary counters":
+        return 2
+    for field in (
+        "external_provider_adapters_instantiated",
+        "external_provider_calls_observed",
+        "real_provider_secret_reads_observed",
+        "raw_provider_payload_records_observed",
+    ):
+        if provenance.get(field) != 0 or data.get(field) != 0:
+            return 2
     if (
         not str(data["postgresql_version"]).startswith("PostgreSQL 18")
         or data["migration_head"] != "RF20_ADMIN_SUPPORT_RUNTIME"
@@ -90,10 +112,12 @@ def main() -> int:
         return 2
     if data.get("beacon_success_replay") is not True:
         return 2
-    required_delegations = {"role", "tariff", "access", "beacon", "beacon_replay", "anchor", "foreign"}
+    required_delegations = {"role", "tariff", "access", "access_revoke", "beacon", "beacon_replay", "anchor", "foreign"}
     if not required_delegations <= data["delegations"].keys():
         return 2
     if data["ambiguous_replay_preserved"] is not True:
+        return 2
+    if data.get("tariff_bootstrap") != "SUCCEEDED":
         return 2
     if any(int(data["port_calls"].get(name, 0)) < 1 for name in ("identity", "entitlements_tariff", "entitlements_access", "beacon", "scan", "notification")):
         return 2

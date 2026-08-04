@@ -204,6 +204,7 @@ commit_outcome = _runtime.commit_outcome
 resolve_reconciliation = _runtime.resolve_reconciliation
 run_worker_cycle = _runtime.run_worker_cycle
 read_history = _runtime.read_history
+read_history_for_authorized_scope = _runtime.read_history_for_authorized_scope
 
 __all__ = (
     "MODULE_ID",
@@ -350,6 +351,7 @@ __all__ = (
     "resolve_reconciliation",
     "run_worker_cycle",
     "read_history",
+    "read_history_for_authorized_scope",
     "ND14_TASK_ID",
     "NotificationDeferredRuntimeAuthority",
     "NotificationDeferredRuntimeGateStatus",

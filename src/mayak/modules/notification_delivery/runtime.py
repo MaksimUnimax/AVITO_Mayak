@@ -28,6 +28,7 @@ from mayak.persistence.metadata import metadata
 from .attempt import NotificationProviderOutcomeClass
 from .delivery_plan import NotificationDeliveryPlanDecision
 from .eligibility import NotificationChannelClass, NotificationEligibilityDecision
+from .read_model import NotificationReadAudience, NotificationReadAuthorizationScope
 from .source_intake import (
     NotificationSourceEvent,
     NotificationSourceIntakeDecision,
@@ -232,7 +233,7 @@ def _canonical_source_payload(source: NotificationSourceEvent) -> dict[str, obje
     safe_refs = tuple(sorted(source.safe_listing_reference_ids))
     if any(not _safe_text(item) for item in safe_refs):
         raise InvalidNotificationSource("listing references are not safe opaque references")
-    safe_fields = {
+    safe_fields: dict[str, object] = {
         "source_identity": source.idempotency_key.value,
         "source_event_id": source.source_event_id,
         "source_fact_id": source.source_fact_id,
@@ -935,6 +936,51 @@ def read_history(
         raise ValueError("bounded history limit is required")
     if actor_account_id is None or actor_account_id != account_id:
         raise AccountScopeConflict("requester is not authorized for this account")
+    return _read_history_rows(session, account_id=account_id, beacon_id=beacon_id, limit=limit)
+
+
+def read_history_for_authorized_scope(
+    session: Session,
+    *,
+    authorization_scope: NotificationReadAuthorizationScope,
+    account_id: UUID,
+    beacon_id: UUID | None = None,
+    limit: int = 100,
+) -> tuple[NotificationHistoryEntry, ...]:
+    """Read history for an already verified Notification Admin/Support scope."""
+    if not isinstance(authorization_scope, NotificationReadAuthorizationScope):
+        raise AccountScopeConflict("notification authorization scope is invalid")
+    if not authorization_scope.authorized or authorization_scope.audience not in {
+        NotificationReadAudience.ADMIN,
+        NotificationReadAudience.SUPPORT,
+    }:
+        raise AccountScopeConflict("notification privileged read is not authorized")
+    if authorization_scope.account_id != str(account_id):
+        raise AccountScopeConflict("notification scope account mismatch")
+    if not 1 <= limit <= 1000:
+        raise ValueError("bounded history limit is required")
+    if beacon_id is not None and authorization_scope.beacon_scope_ids and str(beacon_id) not in authorization_scope.beacon_scope_ids:
+        raise AccountScopeConflict("notification Beacon scope mismatch")
+    try:
+        return _read_history_rows(
+            session,
+            account_id=account_id,
+            beacon_id=beacon_id,
+            beacon_scope_ids=authorization_scope.beacon_scope_ids,
+            limit=limit,
+        )
+    except (TypeError, ValueError) as exc:
+        raise AccountScopeConflict("notification Beacon scope is malformed") from exc
+
+
+def _read_history_rows(
+    session: Session,
+    *,
+    account_id: UUID,
+    beacon_id: UUID | None,
+    beacon_scope_ids: tuple[str, ...] = (),
+    limit: int,
+) -> tuple[NotificationHistoryEntry, ...]:
     events, outbox, endpoints, attempts, recs = (
         _table(name)
         for name in (
@@ -957,6 +1003,8 @@ def read_history(
     )
     if beacon_id is not None:
         query = query.where(events.c.beacon_id == beacon_id)
+    elif beacon_scope_ids:
+        query = query.where(events.c.beacon_id.in_(tuple(UUID(value) for value in beacon_scope_ids)))
     query = query.order_by(
         events.c.created_at.desc(), events.c.id, outbox.c.id, attempts.c.attempt_number
     ).limit(limit)
@@ -1012,4 +1060,5 @@ __all__ = (
     "resolve_reconciliation",
     "run_worker_cycle",
     "read_history",
+    "read_history_for_authorized_scope",
 )

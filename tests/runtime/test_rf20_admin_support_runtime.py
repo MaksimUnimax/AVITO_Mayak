@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from pathlib import Path
 from uuid import uuid4
 
 from mayak.contracts.results import CommonOutcome, Result
@@ -59,3 +60,15 @@ def test_owner_command_ports_have_explicit_signatures() -> None:
 def test_notification_diagnostics_is_a_runtime_facade_method() -> None:
     assert hasattr(SupportRuntime, "notification_diagnostics")
     assert "account_id" in inspect.signature(SupportRuntime.notification_diagnostics).parameters
+
+
+def test_delegated_commands_require_case_target_scope() -> None:
+    source = Path("src/mayak/modules/admin_and_support/runtime.py").read_text(encoding="utf-8")
+    assert "case-target-mismatch" in source
+    assert 'owner_kind in {"role", "tariff"}' in source
+
+
+def test_unsupported_action_is_policy_blocked_without_owner_call() -> None:
+    source = Path("src/mayak/modules/admin_and_support/runtime.py").read_text(encoding="utf-8")
+    assert 'action not in allowed' in source
+    assert '"unsupported-action"' in source

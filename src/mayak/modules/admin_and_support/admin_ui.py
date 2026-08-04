@@ -184,6 +184,33 @@ def build_admin_router(
                 {"title": "Case error", "cases": (), "summary": None, "error": str(exc)},
             )
 
+    @router.post("/cases/{case_id}/assignment", response_class=HTMLResponse)
+    async def assignment(request: Request, case_id: UUID) -> Any:
+        try:
+            operator = actor(request)
+            form = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
+            with sessions.begin() as session:
+                case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
+                result = runtime.assign_case(
+                    session, actor=operator, case_id=case_id,
+                    assignee_account_id=UUID(form["assignee_account_id"][0]),
+                    reason=form["reason"][0], idempotency_key=form["idempotency_key"][0],
+                )
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Case assigned", "operator": operator, "cases": (case,),
+                "case": case, "summary": {"result": result}, "error": None,
+            })
+        except TargetNotFound:
+            raise HTTPException(status_code=404, detail="not found") from None
+        except AuthorizationDenied:
+            raise HTTPException(status_code=403, detail="forbidden") from None
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed assignment") from None
+        except SupportRuntimeError as exc:
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Assignment error", "cases": (), "summary": None, "error": str(exc),
+            })
+
     @router.get("/cases/{case_id}", response_class=HTMLResponse)
     def case_detail(request: Request, case_id: UUID) -> Any:
         try:
@@ -192,9 +219,15 @@ def build_admin_router(
                 case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
                 notes = runtime.list_internal_notes(session, actor=operator, case_id=case_id)
                 events = runtime.list_events(session, actor=operator, case_id=case_id)
+                beacon_summary = None
+                if hasattr(runtime, "beacon"):
+                    beacon_summary = runtime.beacon.safe_summary(
+                        session, actor=operator, target=case.account_id
+                    )
             return _TEMPLATES.TemplateResponse(request, "admin.html", {
                 "title": "Support case", "operator": operator, "cases": (case,),
-                "case": case, "notes": notes, "events": events, "summary": None, "error": None,
+                "case": case, "notes": notes, "events": events, "beacon_summary": beacon_summary,
+                "summary": None, "error": None,
             })
         except AuthorizationDenied:
             raise HTTPException(status_code=403, detail="forbidden") from None
@@ -231,6 +264,31 @@ def build_admin_router(
                 "title": "Case error", "cases": (), "summary": None, "error": str(exc),
             })
 
+    @router.post("/cases/{case_id}/escalate", response_class=HTMLResponse)
+    async def escalate(request: Request, case_id: UUID) -> Any:
+        try:
+            operator = actor(request)
+            form = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
+            with sessions.begin() as session:
+                case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
+                result = runtime.escalate_case(
+                    session, actor=operator, case_id=case_id, reason=form["reason"][0],
+                    idempotency_key=form["idempotency_key"][0],
+                )
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Case escalated", "operator": operator, "cases": (case,),
+                "case": case, "summary": {"result": result}, "error": None,
+            })
+        except TargetNotFound:
+            raise HTTPException(status_code=404, detail="not found") from None
+        except AuthorizationDenied:
+            raise HTTPException(status_code=403, detail="forbidden") from None
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed escalation") from None
+        except SupportRuntimeError as exc:
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Escalation error", "cases": (), "summary": None, "error": str(exc),
+            })
     @router.post("/cases/{case_id}/beacon-patch", response_class=HTMLResponse)
     async def beacon_patch(request: Request, case_id: UUID) -> Any:
         """Typed Beacon command; the case, not the browser, supplies account scope."""

@@ -23,7 +23,11 @@ from mayak.contracts.idempotency import IdempotencyDecision
 from mayak.contracts.results import CommonOutcome, Result
 from mayak.persistence.idempotency import PostgresTerminalIdempotencyRepository
 from mayak.persistence.metadata import metadata
-from mayak.platform.correlation_context import current_correlation_context
+from mayak.platform.correlation import CorrelationContext, CorrelationId
+from mayak.platform.correlation_context import (
+    correlation_context_scope,
+    current_correlation_context,
+)
 from mayak.platform.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
 
 from .contracts import SupportCaseState
@@ -122,6 +126,7 @@ class EntitlementsPort(Protocol):
         action: str,
         reason: str,
         idempotency_key: str,
+        target_account_id: UUID,
     ) -> "OwningOutcome": ...
 
     def safe_summary(
@@ -177,6 +182,7 @@ class SupportCaseView:
     case_id: UUID
     account_id: UUID
     opened_by_account_id: UUID
+    assigned_to_account_id: UUID | None
     state: str
     subject: str
     row_version: int
@@ -692,6 +698,13 @@ class SupportRuntime:
             outcome = OwningOutcome(
                 "admin_and_support", "unsupported-action", OutcomeClass.POLICY_BLOCKED,
             )
+        elif (
+            owner_kind in {"role", "tariff"}
+            or (owner_kind == "access" and action == "GRANT_ACCESS")
+        ) and target != case.account_id:
+            outcome = OwningOutcome(
+                "admin_and_support", "case-target-mismatch", OutcomeClass.POLICY_BLOCKED,
+            )
         elif owner_kind == "tariff":
             outcome = port(
                 session, actor=actor, target=target, action=action, reason=reason,
@@ -704,7 +717,15 @@ class SupportRuntime:
             }
             if owner_kind == "role":
                 arguments["correlation_id"] = correlation
-            outcome = port(**arguments)
+            if owner_kind == "access":
+                arguments["target_account_id"] = case.account_id
+            if owner_kind in {"tariff", "access"}:
+                with correlation_context_scope(
+                    CorrelationContext(correlation_id=CorrelationId(value=correlation))
+                ):
+                    outcome = port(**arguments)
+            else:
+                outcome = port(**arguments)
         result = self._record_event(
             session,
             case_id=case_id,
