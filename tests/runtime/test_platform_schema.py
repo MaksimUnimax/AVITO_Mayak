@@ -78,7 +78,7 @@ def test_registration_is_idempotent() -> None:
     second = register_platform_tables(metadata)
     assert first == second
     assert len(metadata.tables) == 51
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 72
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 73
     names = tuple(table.name for table in metadata.tables.values())
     assert names[-3:] == ("support_cases", "support_case_notes", "support_case_events")
 

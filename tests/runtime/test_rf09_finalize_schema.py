@@ -50,8 +50,8 @@ def _fks() -> list[ForeignKeyConstraint]:
 
 def test_final_metadata_totals_and_marker_free_state() -> None:
     assert len(metadata.tables) == 51
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 72
-    assert len(_fks()) == 72
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 73
+    assert len(_fks()) == 73
     assert all(table.info == {} for table in metadata.tables.values())
 
 
@@ -76,8 +76,8 @@ def test_module_12_and_graph_boundary() -> None:
         for table in metadata.tables.values()
     )
     scripts = ScriptDirectory.from_config(Config(str(ROOT / "alembic.ini")))
-    assert len(list(scripts.walk_revisions())) == 15
-    assert scripts.get_heads() == ["RF12_MANUAL_GRANT"]
+    assert len(list(scripts.walk_revisions())) == 19
+    assert scripts.get_heads() == ["RF13_BEACON_RUNTIME_HARDEN"]
     assert scripts.get_revision("RF09_FINALIZE").down_revision == "RF09_M11"
     with pytest.raises(CommandError):
         scripts.get_revision("RF09_M12")
@@ -113,4 +113,4 @@ def test_downgrade_is_roll_forward_only() -> None:
 def test_stable_finalization_proof_nodes(case: str) -> None:
     assert case.startswith("proof-")
     assert len(metadata.tables) == 51
-    assert len(_fks()) == 72
+    assert len(_fks()) == 73

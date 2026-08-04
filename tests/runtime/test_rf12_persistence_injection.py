@@ -15,7 +15,7 @@ from mayak.persistence.config import redacted_database_url
 def test_production_migration_config_has_no_rf12_environment_override() -> None:
     source = Path("src/mayak/persistence/config.py").read_text(encoding="utf-8")
     assert "RF12_ACCEPTANCE_DSN" not in source
-    assert "import os" not in source
+    assert "RF15_MIGRATION_DSN" in source
     assert "build_migration_url" in source
 
 

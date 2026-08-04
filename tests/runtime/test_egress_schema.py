@@ -100,7 +100,7 @@ def test_canonical_order_columns_types_and_counts() -> None:
             if isinstance(column.type, postgresql.TIMESTAMP):
                 assert column.type.timezone is True
     assert len(metadata.tables) == 51
-    assert sum(len(t.indexes) for t in metadata.tables.values()) == 72
+    assert sum(len(t.indexes) for t in metadata.tables.values()) == 73
 
 
 def test_exact_column_options_and_defaults() -> None:

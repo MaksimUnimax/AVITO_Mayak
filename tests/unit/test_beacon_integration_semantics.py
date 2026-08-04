@@ -113,6 +113,7 @@ def _active_usage_decision(*, count: int, source_fact_count: int | None = None, 
         current_tariff_definition=tariff_policy,
         active_beacon_slot_evidence=ActiveBeaconSlotEvidence(
             snapshot_reference="beacon-snapshot-eb07-001",
+            current_active_beacon_count=max(count - 1, 0),
             snapshot_active_beacon_count=count,
             source_fact_reference="beacon-source-eb07-001" if source_fact_count is not None else None,
             source_fact_active_beacon_count=source_fact_count,

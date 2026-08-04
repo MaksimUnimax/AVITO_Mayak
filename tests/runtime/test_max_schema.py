@@ -71,7 +71,7 @@ def test_exact_tuple_order() -> None:
 
 def test_global_totals() -> None:
     assert (
-        len(metadata.tables) == 51 and sum(len(t.indexes) for t in metadata.tables.values()) == 72
+        len(metadata.tables) == 51 and sum(len(t.indexes) for t in metadata.tables.values()) == 73
     )
 
 

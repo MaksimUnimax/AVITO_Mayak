@@ -20,8 +20,13 @@ def _evidence() -> dict:
         {"case_id": "generic_empty", "classifier_status": "EMPTY_RESPONSE"},
         {"case_id": "generic_items_empty", "classifier_status": "EMPTY_RESPONSE"},
         *({"case_id": name, "classifier_status": "REJECTED"} for name in (
-            "captcha", "rate_restricted", "malformed_bytes", "incomplete", "partial",
-            "unsupported", "redirect", "stale_profile", "missing_profile", "disputed_profile",
+            "generic_items_one", "generic_items_empty_proof", "arbitrary_parseable_json",
+            "generic_challenge", "syntactically_valid_json_list",
+        )),
+        *({"case_id": name, "classifier_status": "REJECTED"} for name in (
+            "captcha", "rate_restricted", "malformed_bytes", "oversized_body", "incomplete",
+            "partial", "unsupported", "redirect", "403", "429", "500", "timeout",
+            "network_failure", "stale_profile", "missing_profile", "disputed_profile",
         )),
     ]
     snapshot = [{"table": "identity_accounts", "rows": [{"id": "account-1", "status": "active"}]}]
@@ -38,10 +43,48 @@ def _evidence() -> dict:
                 "trusted_handler_calls_after": 1,
                 "trusted_observed_request_url": "https://synthetic.invalid/expected",
                 "trusted_resolved_target": "https://synthetic.invalid/expected",
-                "mismatch_scenarios": [{
-                    "handler_calls_before": 0, "handler_calls_after": 0,
-                    "transport_status": "NOT_SENT", "observed_request_url": None,
-                } for _ in range(5)],
+                "mismatch_scenarios": [
+                    {
+                        "scenario_id": "source_identity_mismatch",
+                        "handler_calls_before": 0, "handler_calls_after": 0,
+                        "transport_status": "NOT_SENT", "observed_request_url": None,
+                        "reason_code": "SOURCE_IDENTITY_MISMATCH",
+                        "input_source_reference_id": "input-source",
+                        "expected_source_reference_id": "expected-source",
+                    },
+                    {
+                        "scenario_id": "provenance_mismatch",
+                        "handler_calls_before": 0, "handler_calls_after": 0,
+                        "transport_status": "NOT_SENT", "observed_request_url": None,
+                        "reason_code": "PROVENANCE_MISMATCH",
+                        "input_provenance_reference": "input-provenance",
+                        "expected_provenance_reference": "expected-provenance",
+                    },
+                    {
+                        "scenario_id": "profile_identity_version_mismatch",
+                        "handler_calls_before": 0, "handler_calls_after": 0,
+                        "transport_status": "NOT_SENT", "observed_request_url": None,
+                        "reason_code": "PROFILE_IDENTITY_VERSION_MISMATCH",
+                        "input_profile_version": "input-profile",
+                        "expected_profile_version": "expected-profile",
+                    },
+                    {
+                        "scenario_id": "authority_proof_mismatch",
+                        "handler_calls_before": 0, "handler_calls_after": 0,
+                        "transport_status": "NOT_SENT", "observed_request_url": None,
+                        "reason_code": "AUTHORITY_IDENTITY_MISMATCH",
+                        "attempted_authority_identity": "input-authority",
+                        "expected_authority_identity": "expected-authority",
+                    },
+                    {
+                        "scenario_id": "invalid_final_target",
+                        "handler_calls_before": 0, "handler_calls_after": 0,
+                        "transport_status": "NOT_SENT", "observed_request_url": None,
+                        "reason_code": "TRUSTED_TARGET_POLICY_MISMATCH",
+                        "attempted_target": "input-target",
+                        "expected_target": "expected-target",
+                    },
+                ],
             },
             "classifier": {"cases": cases},
         },
@@ -57,6 +100,7 @@ def _evidence() -> dict:
                 "call_end_a": 14, "call_end_b": 15,
                 "physical_rows": 1, "actual_result_id_a": "outcome-1",
                 "actual_result_id_b": "outcome-1", "fingerprint": "fingerprint",
+                "replay_a": False, "replay_b": True,
             },
             "snapshot_bytes": 100,
             "raw_payload_operations": {

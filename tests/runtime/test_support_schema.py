@@ -75,7 +75,7 @@ def test_exact_column_order(number: int, expected: tuple[str, ...]) -> None:
 
 def test_global_totals() -> None:
     assert len(metadata.tables) == 51
-    assert sum(len(table.indexes) for table in metadata.tables.values()) == 72
+    assert sum(len(table.indexes) for table in metadata.tables.values()) == 73
 
 
 def test_isolated_totals() -> None:

@@ -436,7 +436,10 @@ def _active_beacon_count_decision(
             usage_consumption_outcome=_usage_terminal_outcome(usage_decision),
         )
 
-    if usage_decision.active_beacon_count != request.requested_active_beacon_count:
+    if (
+        usage_decision.active_beacon_count is None
+        or usage_decision.active_beacon_count + 1 != request.requested_active_beacon_count
+    ):
         return _build_decision(
             request,
             outcome=BeaconIntegrationOutcome.AMBIGUOUS,
