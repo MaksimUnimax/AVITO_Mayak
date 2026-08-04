@@ -137,11 +137,23 @@ jobs:
               c.execute(text('grant insert, update on table mayak.identity_role_assignments to mayak_application'))
               c.execute(text('grant insert on table mayak.platform_audit_entries to mayak_application'))
               c.execute(text('grant select, insert, update on table mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application'))
-              c.execute(text('grant select on table mayak.entitlement_tariff_definitions to mayak_application'))
+              c.execute(text('grant select, insert on table mayak.entitlement_tariff_definitions to mayak_application'))
               c.execute(text('grant select, insert, update on table mayak.entitlement_access_grants to mayak_application'))
               c.execute(text('grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application'))
               c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
           PY
+      # The direct matrix gate (verify_rf20_direct_test_matrix.py) remains before the
+      # producer invocation; import parity is
+      # deliberately run immediately before that matrix and blocks focused PG tests.
+      - name: RF20 installed-package import parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          outside="$(mktemp -d)"
+          (cd "$outside" && uv run --project "$GITHUB_WORKSPACE" python -c 'from mayak.runtime.rf20_acceptance_scenario import run_rf20_acceptance_scenario; assert callable(run_rf20_acceptance_scenario)')
+          (cd "$outside" && uv run --project "$GITHUB_WORKSPACE" pytest --collect-only -q "$GITHUB_WORKSPACE/tests/runtime/test_rf20_postgres_acceptance.py")
+          (cd "$outside" && uv run --project "$GITHUB_WORKSPACE" python "$GITHUB_WORKSPACE/scripts/runtime/run_rf20_postgres_acceptance.py" --help >/dev/null)
+          echo 'outside-repo installed-package import parity PASS'
       - name: RF20 direct-test matrix gate
         env:
           RF20_REQUIRE_POSTGRES: "1"
@@ -162,7 +174,7 @@ jobs:
           tests/contract/test_admin_and_support_semantic_contract_exports.py
       - name: Static and import gates
         run: |
-          uv run ruff check src/mayak/modules/admin_and_support src/mayak/runtime/rf20_composition.py src/mayak/modules/beacon_management/runtime.py scripts/runtime/run_rf20_postgres_acceptance.py scripts/runtime/verify_rf20_acceptance.py tests/runtime/test_rf20_*.py
+          uv run ruff check src/mayak/runtime/rf20_acceptance_scenario.py src/mayak/modules/admin_and_support src/mayak/runtime/rf20_composition.py src/mayak/modules/beacon_management/runtime.py scripts/runtime/run_rf20_postgres_acceptance.py scripts/runtime/verify_rf20_acceptance.py tests/runtime/test_rf20_*.py
           uv run mypy src/mayak/modules/admin_and_support src/mayak/runtime/rf20_composition.py src/mayak/modules/beacon_management/runtime.py
           uv run lint-imports
       - name: RF20 PostgreSQL producer and verifier

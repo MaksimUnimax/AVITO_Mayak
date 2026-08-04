@@ -8,7 +8,7 @@ from functools import lru_cache
 import pytest
 from sqlalchemy import create_engine
 
-from scripts.runtime.rf20_acceptance_scenario import run_rf20_acceptance_scenario
+from mayak.runtime.rf20_acceptance_scenario import run_rf20_acceptance_scenario
 
 
 def _engines():
@@ -41,10 +41,10 @@ def _pg_probe() -> dict[str, object]:
 
 def test_pg_support_case_round_trip_maps_physical_id_to_case_id() -> None:
     e = _pg_probe()
-    assert (
-        e["physical_case_id"] == e["support_case_id"] == e["support_case_id"]
-        and e["case_projection_match"] is True
-    )
+    assert e["physical_case_id"] == e["support_case_id"]
+    assert e["runtime_get_case_id"] == e["support_case_id"]
+    assert e["runtime_list_case_id"] == e["support_case_id"]
+    assert e["case_projection_match"] is True
 
 
 def test_pg_support_open_get_and_list_round_trip() -> None:
@@ -58,7 +58,7 @@ def test_pg_support_assignment_persists_operator() -> None:
 
 def test_pg_support_note_persists_and_is_not_duplicated_into_event_details() -> None:
     e = _pg_probe()
-    assert e["note"] is True and e["note_leakage"] is False
+    assert e["note"] is True and e["note_body_in_event_details"] is False
 
 
 def test_pg_support_escalation_persists() -> None:
@@ -75,12 +75,16 @@ def test_pg_support_close_requires_and_persists_evidence() -> None:
 
 
 def test_pg_support_stale_row_version_is_rejected() -> None:
-    # Beacon replay uses the persisted owner row version and is a real stale-safe command.
-    assert _pg_probe()["stale_beacon"] == "CONFLICT"
+    e = _pg_probe()
+    assert e["support_stale_row_version"] == "CONFLICT"
+    assert e["support_stale_state_unchanged"] is True
 
 
 def test_pg_same_key_same_fingerprint_concurrent_command_has_one_effect() -> None:
-    assert _pg_probe()["concurrency"]["one_logical_effect"] is True
+    e = _pg_probe()
+    assert e["concurrency"]["one_logical_effect"] is True
+    assert e["concurrency"]["owner_effect_count"] == 1
+    assert e["concurrency"]["owner_resource_count"] == 1
 
 
 def test_pg_same_key_different_fingerprint_is_conflict() -> None:
@@ -132,7 +136,10 @@ def test_pg_actual_beacon_support_patch_mutates_once() -> None:
 
 
 def test_pg_beacon_success_replay_adds_no_second_revision() -> None:
-    assert _pg_probe()["beacon_replay_flag"] is True
+    e = _pg_probe()
+    assert e["beacon_replay_flag"] is True
+    assert e["beacon_revision_count_after_first"] == e["beacon_revision_count_before"] + 1
+    assert e["beacon_revision_count_after_replay"] == e["beacon_revision_count_after_first"]
 
 
 def test_pg_notification_admin_privileged_read_is_target_scoped() -> None:
@@ -140,7 +147,9 @@ def test_pg_notification_admin_privileged_read_is_target_scoped() -> None:
 
 
 def test_pg_notification_privileged_read_is_read_only() -> None:
-    assert _pg_probe()["notification_read_only"] is True
+    e = _pg_probe()
+    assert e["notification_read_only"] is True
+    assert e["notification_before_snapshot"] == e["notification_after_snapshot"]
 
 
 def test_pg_operator_and_customer_accounts_remain_distinct() -> None:

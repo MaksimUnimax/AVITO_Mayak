@@ -15,7 +15,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, text
 
-from scripts.runtime.rf20_acceptance_scenario import run_rf20_acceptance_scenario
+from mayak.runtime.rf20_acceptance_scenario import run_rf20_acceptance_scenario
 
 
 def main() -> int:

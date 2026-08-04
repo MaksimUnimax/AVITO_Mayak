@@ -87,7 +87,6 @@ def main() -> int:
         "notification_read_only",
         "direct_foreign_dml_denied",
         "correlation_equality",
-        "note_leakage",
     )
     if any(evidence.get(key) is not True for key in required_true):
         return 2
@@ -103,6 +102,8 @@ def main() -> int:
         or evidence.get("foreign_beacon") != "POLICY_BLOCKED"
         or evidence.get("foreign_beacon_replay") is not True
         or evidence.get("stale_beacon") != "CONFLICT"
+        or evidence.get("support_stale_row_version") != "CONFLICT"
+        or evidence.get("support_stale_state_unchanged") is not True
     ):
         return 2
     if (
@@ -116,19 +117,36 @@ def main() -> int:
         not isinstance(concurrency, dict)
         or concurrency.get("independent_sessions") != 2
         or concurrency.get("one_logical_effect") is not True
+        or concurrency.get("owner_effect_count") != 1
+        or concurrency.get("owner_resource_count") != 1
     ):
         return 2
     if evidence.get("operator_account_id") == evidence.get("customer_account_id"):
         return 2
     if (
-        not evidence.get("event_timestamps_aware")
+        evidence.get("note_body_in_event_details") is not False
+        or evidence.get("note_leakage") is not False
+        or not evidence.get("event_timestamps_aware")
         or not evidence.get("host_postgres_publication_proof")
         or evidence.get("host_postgres_published") is not False
     ):
         return 2
-    if not isinstance(evidence.get("rf20_correlation_id"), str) or evidence.get(
-        "entitlements_owner_correlation"
-    ) != evidence.get("rf20_correlation_id"):
+    if (
+        not isinstance(evidence.get("rf20_correlation_id"), str)
+        or evidence.get("entitlements_owner_correlation") is None
+        or evidence.get("correlation_equality") is not True
+        or evidence.get("entitlements_owner_correlation")
+        != evidence.get("rf20_correlation_id")
+    ):
+        return 2
+    if (
+        evidence.get("beacon_revision_count_after_first")
+        != evidence.get("beacon_revision_count_before", -1) + 1
+        or evidence.get("beacon_revision_count_after_replay")
+        != evidence.get("beacon_revision_count_after_first")
+        or evidence.get("notification_before_snapshot")
+        != evidence.get("notification_after_snapshot")
+    ):
         return 2
     provider = evidence.get("provider_boundary")
     if (

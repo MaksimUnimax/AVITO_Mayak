@@ -8,19 +8,26 @@ collision-safe namespaces.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
+import httpx
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from mayak.modules.admin_and_support.contracts import SupportCaseState
-from mayak.modules.admin_and_support.runtime import IdempotencyConflict, OutcomeClass, OwningOutcome
+from mayak.modules.admin_and_support.runtime import (
+    IdempotencyConflict,
+    OutcomeClass,
+    OwningOutcome,
+    StaleCase,
+)
 from mayak.modules.beacon_management.runtime import BeaconManagementRuntime, EntitlementDecision
 from mayak.modules.entitlements_and_billing.runtime import EntitlementsBillingRuntime
 from mayak.modules.identity_and_access.runtime import IdentityRuntime
@@ -78,6 +85,36 @@ def host_postgres_publication_proof() -> tuple[bool, str]:
         raise RuntimeError("PostgreSQL service inspection failed") from exc
 
 
+def _notification_snapshot(session: Session, account_id: UUID) -> dict[str, int]:
+    return {
+        "events": int(session.execute(text(
+            "select count(*) from mayak.notification_events where account_id=:account"
+        ), {"account": account_id}).scalar_one()),
+        "outbox": int(session.execute(text(
+            "select count(*) from mayak.notification_outbox o "
+            "join mayak.notification_events e on e.id=o.event_id where e.account_id=:account"
+        ), {"account": account_id}).scalar_one()),
+        "attempts": int(session.execute(text(
+            "select count(*) from mayak.notification_delivery_attempts a "
+            "join mayak.notification_outbox o on o.id=a.outbox_id "
+            "join mayak.notification_events e on e.id=o.event_id where e.account_id=:account"
+        ), {"account": account_id}).scalar_one()),
+        "reconciliations": int(session.execute(text(
+            "select count(*) from mayak.notification_delivery_reconciliations r "
+            "join mayak.notification_delivery_attempts a on a.id=r.attempt_id "
+            "join mayak.notification_outbox o on o.id=a.outbox_id "
+            "join mayak.notification_events e on e.id=o.event_id where e.account_id=:account"
+        ), {"account": account_id}).scalar_one()),
+        "endpoints": int(session.execute(text(
+            "select count(*) from mayak.notification_endpoints where account_id=:account"
+        ), {"account": account_id}).scalar_one()),
+    }
+
+
+def _notification_snapshot_connection(connection: Any, account_id: UUID) -> dict[str, int]:
+    return _notification_snapshot(connection, account_id)
+
+
 def _fixture(
     fixture_engine: Engine, operator_id: UUID, customer_id: UUID, beacon_id: UUID, namespace: str
 ) -> tuple[Any, UUID]:
@@ -130,6 +167,22 @@ def _fixture(
             ),
             {"revision": revision_id, "beacon": beacon_id},
         )
+        connection.execute(
+            text(
+                "insert into mayak.notification_events "
+                "(id,account_id,beacon_id,run_id,source_effect_fingerprint,event_code,payload,created_at) "
+                "values (:id,:account,null,null,:fingerprint,'RF20_SYNTHETIC_HISTORY',:payload,:now)"
+            ),
+            {
+                "id": uuid4(),
+                "account": customer_id,
+                "fingerprint": hashlib.sha256(
+                    f"{namespace}:notification-history".encode()
+                ).hexdigest(),
+                "payload": {"synthetic": True, "namespace": namespace},
+                "now": now,
+            },
+        )
     identity = IdentityRuntime()
     with Session(fixture_engine) as session:
         issued = identity.issue_session(session, operator_id)
@@ -151,6 +204,39 @@ def run_rf20_acceptance_scenario(
         entitlements=EntitlementsBillingRuntime(IdentityAuthorityAdapter(identity)),
         beacon=BeaconManagementRuntime(IdentityAuthorityAdapter(identity), _NoopEntitlements()),
     )
+    composition_component_class_names = sorted(
+        {
+            type(x).__qualname__
+            for x in (
+                composition.identity,
+                composition.entitlements,
+                composition.beacon,
+                composition.scan,
+                composition.notification,
+            )
+        }
+    )
+    live_provider_adapter_types = [
+        name
+        for name in composition_component_class_names
+        if any(marker in name.lower() for marker in ("telegram", "max", "avito", "payment", "live"))
+    ]
+    provider_http_calls = 0
+    original_httpx_send = httpx.Client.send
+    original_async_httpx_send = httpx.AsyncClient.send
+
+    def observed_http_send(*args: Any, **kwargs: Any) -> Any:
+        nonlocal provider_http_calls
+        provider_http_calls += 1
+        raise RuntimeError("RF20 provider HTTP boundary invoked")
+
+    async def observed_async_http_send(*args: Any, **kwargs: Any) -> Any:
+        nonlocal provider_http_calls
+        provider_http_calls += 1
+        raise RuntimeError("RF20 provider HTTP boundary invoked")
+
+    httpx.Client.send = observed_http_send  # type: ignore[method-assign]
+    httpx.AsyncClient.send = observed_async_http_send  # type: ignore[method-assign]
     runtime = composition.runtime()
     with Session(application_engine) as session:
         actor = composition.identity.verify_operator(session, issued.token)
@@ -168,6 +254,7 @@ def run_rf20_acceptance_scenario(
     with Session(application_engine) as session:
         fetched = runtime.get_case(session, case_id)
         listed = runtime.list_cases(session, actor=actor, account_id=customer_id)
+        stale_case_version = fetched.row_version
         assigned = runtime.assign_case(
             session,
             actor=actor,
@@ -257,6 +344,12 @@ def run_rf20_acceptance_scenario(
             reason="synthetic role",
             idempotency_key=f"{namespace}:role",
         )
+        beacon_revision_count_before = int(
+            session.execute(
+                text("select count(*) from mayak.beacon_configuration_revisions where beacon_id=:id"),
+                {"id": beacon_id},
+            ).scalar_one()
+        )
         beacon = runtime.execute_beacon_support_patch(
             session,
             actor=actor,
@@ -268,6 +361,12 @@ def run_rf20_acceptance_scenario(
             reason="synthetic beacon",
             idempotency_key=f"{namespace}:beacon",
             correlation_id=f"{namespace}:correlation",
+        )
+        beacon_revision_count_after_first = int(
+            session.execute(
+                text("select count(*) from mayak.beacon_configuration_revisions where beacon_id=:id"),
+                {"id": beacon_id},
+            ).scalar_one()
         )
         beacon_replay = runtime.execute_beacon_support_patch(
             session,
@@ -281,6 +380,12 @@ def run_rf20_acceptance_scenario(
             idempotency_key=f"{namespace}:beacon",
             correlation_id=f"{namespace}:correlation",
         )
+        beacon_revision_count_after_replay = int(
+            session.execute(
+                text("select count(*) from mayak.beacon_configuration_revisions where beacon_id=:id"),
+                {"id": beacon_id},
+            ).scalar_one()
+        )
         scan = runtime.execute_anchor_action(
             session,
             actor=actor,
@@ -290,9 +395,11 @@ def run_rf20_acceptance_scenario(
             reason="synthetic scan",
             idempotency_key=f"{namespace}:scan",
         )
+        notification_before_snapshot = _notification_snapshot(session, customer_id)
         diagnostics_before = runtime.notification_diagnostics(
             session, actor=actor, account_id=customer_id
         )
+        notification_after_snapshot = _notification_snapshot(session, customer_id)
         foreign_target = uuid4()
         foreign = runtime.execute_beacon_support_patch(
             session,
@@ -332,7 +439,7 @@ def run_rf20_acceptance_scenario(
         )
         ambiguous_owner = _AmbiguousOwner()
         real_beacon = runtime.beacon
-        runtime.beacon = ambiguous_owner
+        runtime.beacon = cast(Any, ambiguous_owner)
         ambiguous = runtime.execute_beacon_support_patch(
             session,
             actor=actor,
@@ -359,21 +466,63 @@ def run_rf20_acceptance_scenario(
         )
         runtime.beacon = real_beacon
 
-        def concurrent_note() -> str:
+        support_stale_row_version = "NOT_ATTEMPTED"
+        support_stale_state_unchanged = False
+        before_stale = runtime.get_case(session, case_id)
+        try:
+            runtime.transition_case(
+                session,
+                actor=actor,
+                case_id=case_id,
+                target_state=SupportCaseState.IN_PROGRESS,
+                expected_row_version=stale_case_version,
+                reason="stale support case proof",
+                idempotency_key=f"{namespace}:stale-support",
+            )
+        except StaleCase:
+            support_stale_row_version = "CONFLICT"
+            after_stale = runtime.get_case(session, case_id)
+            support_stale_state_unchanged = (
+                after_stale.state == before_stale.state
+                and after_stale.row_version == before_stale.row_version
+            )
+        session.commit()
+
+        def concurrent_access() -> str:
             with Session(application_engine) as independent:
-                result = runtime.add_internal_note(
+                result = runtime.execute_access_action(
                     independent,
                     actor=actor,
                     case_id=case_id,
-                    body=f"{namespace} concurrent",
+                    target=customer_id,
+                    action="GRANT_ACCESS",
                     reason="concurrency proof",
-                    idempotency_key=f"{namespace}:concurrent-note",
+                    idempotency_key=f"{namespace}:concurrent-grant",
                 )
                 independent.commit()
                 return result.state.value + (":REPLAY" if result.replayed else ":FIRST")
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            concurrent_results = tuple(pool.map(lambda _: concurrent_note(), (0, 1)))
+            concurrent_results = tuple(pool.map(lambda _: concurrent_access(), (0, 1)))
+        concurrent_owner_resource_count = int(
+            session.execute(
+                text(
+                    "select count(*) from mayak.entitlement_access_grants "
+                    "where account_id=:account and reason='concurrency proof'"
+                ),
+                {"account": customer_id},
+            ).scalar_one()
+        )
+        concurrent_owner_effect_count = int(
+            session.execute(
+                text(
+                    "select count(*) from mayak.support_case_events "
+                    "where case_id=:case and details->>'idempotency_key'=:key "
+                    "and event_code='GRANT_ACCESS'"
+                ),
+                {"case": case_id, "key": f"{namespace}:concurrent-grant"},
+            ).scalar_one()
+        )
         current = runtime.get_case(session, case_id)
         resolved = runtime.transition_case(
             session,
@@ -398,6 +547,10 @@ def run_rf20_acceptance_scenario(
         )
         session.commit()
     with application_engine.connect() as connection:
+        physical_case_id = connection.execute(
+            text("select id from mayak.support_cases where id=:id"),
+            {"id": case_id},
+        ).scalar_one()
         event_rows = (
             connection.execute(
                 text(
@@ -432,15 +585,30 @@ def run_rf20_acceptance_scenario(
                 )
         except Exception:
             foreign_denied = True
+    httpx.Client.send = original_httpx_send  # type: ignore[method-assign]
+    httpx.AsyncClient.send = original_async_httpx_send  # type: ignore[method-assign]
     published, publication_proof = host_postgres_publication_proof()
     details = [row["details"] for row in event_rows]
     correlation = next(
         (
             str(d.get("correlation_id"))
             for d in details
-            if d.get("owning_module") == "entitlements_and_billing" and d.get("correlation_id")
+            if d.get("idempotency_key") == f"{namespace}:grant"
+            and d.get("correlation_id")
         ),
         f"{namespace}:correlation",
+    )
+    with fixture_engine.connect() as audit_connection:
+        owner_audit_correlation = audit_connection.execute(
+            text(
+                "select correlation_id from mayak.platform_audit_entries "
+                "where actor_account_id=:operator and action_code='ACCESS_ASSIGN' "
+                "order by created_at desc limit 1"
+            ),
+            {"operator": operator_id},
+        ).scalar_one_or_none()
+    note_body_in_event_details = any(
+        f"{namespace} redacted finding" in json.dumps(d) for d in details
     )
     return {
         "technical_id": "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01",
@@ -453,17 +621,27 @@ def run_rf20_acceptance_scenario(
         "operator_customer_distinct": operator_id != customer_id,
         "operator_session_reference": actor.authorization_reference,
         "support_case_id": str(case_id),
-        "physical_case_id": str(case_id),
-        "case_projection_match": fetched.case_id == case_id == listed[0].case_id,
+        "physical_case_id": str(physical_case_id),
+        "runtime_get_case_id": str(fetched.case_id),
+        "runtime_list_case_id": str(listed[0].case_id),
+        "case_projection_match": all(
+            value == str(physical_case_id)
+            for value in (opened.outcome_reference, str(fetched.case_id), str(listed[0].case_id))
+        ),
         "open": opened.state.value == "SUCCEEDED",
         "assignment": assigned.state.value == "SUCCEEDED"
         and assigned_case.assigned_to_account_id == operator_id,
         "note": note.state.value == "SUCCEEDED",
         "note_replay": note_replay.replayed,
         "fingerprint_conflict": fingerprint_conflict,
-        "note_leakage": any(f"{namespace} redacted finding" in json.dumps(d) for d in details),
+        "note_body_in_event_details": note_body_in_event_details,
+        "note_leakage": note_body_in_event_details,
         "event_timestamps_aware": bool(event_rows)
-        and all(row["created_at"].tzinfo and row["created_at"].utcoffset() for row in event_rows),
+        and all(
+            row["created_at"].tzinfo is not None
+            and row["created_at"].utcoffset() is not None
+            for row in event_rows
+        ),
         "support_lifecycle": {
             "escalated": escalated.state.value == "SUCCEEDED",
             "resolved": resolved.state.value == "SUCCEEDED",
@@ -482,23 +660,25 @@ def run_rf20_acceptance_scenario(
         "scan": scan.state.value,
         "notification_diagnostics": diagnostics_before["history_count"] >= 0,
         "notification_count": diagnostics_before["history_count"],
-        "notification_read_only": True,
+        "notification_read_only": notification_before_snapshot == notification_after_snapshot,
+        "notification_before_snapshot": notification_before_snapshot,
+        "notification_after_snapshot": notification_after_snapshot,
         "foreign_beacon": foreign.state.value,
         "foreign_beacon_replay": foreign_replay.replayed,
         "stale_beacon": stale_beacon.state.value,
+        "support_stale_row_version": support_stale_row_version,
+        "support_stale_state_unchanged": support_stale_state_unchanged,
         "ambiguity": ambiguous.state.value,
         "ambiguity_replay": ambiguous_replay.replayed,
         "ambiguous_owner_calls": ambiguous_owner.calls,
         "rf20_correlation_id": correlation,
-        "entitlements_owner_correlation": next(
-            (
-                d.get("correlation_id")
-                for d in details
-                if d.get("owning_module") == "entitlements_and_billing"
-            ),
-            None,
-        ),
-        "correlation_equality": any(d.get("correlation_id") == correlation for d in details),
+        "entitlements_owner_correlation": str(owner_audit_correlation)
+        if owner_audit_correlation is not None
+        else None,
+        "correlation_equality": owner_audit_correlation == correlation,
+        "beacon_revision_count_before": beacon_revision_count_before,
+        "beacon_revision_count_after_first": beacon_revision_count_after_first,
+        "beacon_revision_count_after_replay": beacon_revision_count_after_replay,
         "direct_foreign_dml_denied": foreign_denied,
         "final_case_state": final["state"],
         "concurrency": {
@@ -507,50 +687,31 @@ def run_rf20_acceptance_scenario(
             "one_logical_effect": sorted(x.split(":", 1)[0] for x in concurrent_results)
             == ["SUCCEEDED", "SUCCEEDED"]
             and sum(x.endswith(":FIRST") for x in concurrent_results) == 1,
+            "owner_effect_count": concurrent_owner_effect_count,
+            "owner_resource_count": concurrent_owner_resource_count,
         },
         "host_postgres_published": published,
         "host_postgres_publication_proof": publication_proof,
         "provider_boundary": {
-            "composition": sorted(
-                {
-                    type(x).__qualname__
-                    for x in (
-                        composition.identity,
-                        composition.entitlements,
-                        composition.beacon,
-                        composition.scan,
-                        composition.notification,
-                    )
-                }
-            ),
-            "live_adapter_enabled": False,
-            "boundary_invoked": False,
+            "composition": composition_component_class_names,
+            "live_adapter_enabled": bool(live_provider_adapter_types),
+            "boundary_invoked": provider_http_calls > 0,
             "secret_source_requested": False,
             "raw_provider_payload_fields": False,
         },
         "provider_zero_provenance": {
-            "composition_component_class_names": sorted(
-                {
-                    type(x).__qualname__
-                    for x in (
-                        composition.identity,
-                        composition.entitlements,
-                        composition.beacon,
-                        composition.scan,
-                        composition.notification,
-                    )
-                }
-            ),
-            "live_provider_adapter_instantiated": False,
-            "provider_boundary_invoked": False,
+            "composition_component_class_names": composition_component_class_names,
+            "live_provider_adapter_types": live_provider_adapter_types,
+            "live_provider_adapter_instantiated": bool(live_provider_adapter_types),
+            "provider_boundary_invoked": provider_http_calls > 0,
             "provider_secret_source_requested": False,
             "raw_provider_payload_fields": False,
-            "external_provider_calls_observed": 0,
+            "external_provider_calls_observed": provider_http_calls,
             "real_provider_secret_reads_observed": 0,
             "raw_provider_payload_records_observed": 0,
         },
-        "provider_calls": 0,
-        "live_provider_calls": 0,
+        "provider_calls": provider_http_calls,
+        "live_provider_calls": len(live_provider_adapter_types),
         "real_token_reads": 0,
         "raw_provider_payload_persisted": 0,
     }
