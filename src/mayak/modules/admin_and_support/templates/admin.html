@@ -8,7 +8,11 @@
 {% if error %}<p class="error" role="alert">{{ error|e }}</p>{% endif %}
 {% if summary %}<section><h2>Safe summary</h2><pre>{{ summary|tojson|e }}</pre></section>{% endif %}
 <section><h2>Open support case</h2><form method="post" action="/admin/cases"><label>Account <input required name="account_id"></label><label>Subject <input required name="subject"></label><label>Reason <input required name="reason"></label><label>Idempotency key <input required name="idempotency_key"></label><button type="submit">Open case</button></form></section>
-<section><h2>Cases</h2>{% if cases %}<ul>{% for case in cases %}<li><a href="/admin/account/{{ case.account_id }}">{{ case.subject|e }}</a> — {{ case.state|e }} — v{{ case.row_version }}</li>{% endfor %}</ul>{% else %}<p>No cases.</p>{% endif %}</section>
+<section><h2>Cases</h2>{% if cases %}<ul>{% for case in cases %}<li><a href="/admin/cases/{{ case.case_id }}">{{ case.subject|e }}</a> — {{ case.state|e }} — v{{ case.row_version }}</li>{% endfor %}</ul>{% else %}<p>No cases.</p>{% endif %}</section>
+{% if case %}<section><h2>Case detail</h2><p>Account {{ case.account_id|e }} · state {{ case.state|e }} · version {{ case.row_version }}</p>
+<form method="post" action="/admin/cases/{{ case.case_id }}/transition"><input type="hidden" name="row_version" value="{{ case.row_version|e }}"><label>State <select name="state"><option>IN_PROGRESS</option><option>WAITING_FOR_EVIDENCE</option><option>RESOLVED</option><option>CLOSED</option></select></label><label>Reason <input required name="reason"></label><label>Evidence <input name="evidence"></label><label>Idempotency key <input required name="idempotency_key"></label><button type="submit">Transition</button></form>
+<h3>Owning-module commands</h3>{% for family in ('role','tariff','access','beacon','anchor') %}<form method="post" action="/admin/cases/{{ case.case_id }}/actions/{{ family|e }}"><input required name="target" placeholder="domain target UUID"><input required name="action" placeholder="action"><input required name="reason" placeholder="reason"><input required name="idempotency_key" placeholder="idempotency key"><button type="submit">{{ family|e }} action</button></form>{% endfor %}
+<h3>Internal notes</h3>{% for note in notes %}<p class="internal-note">{{ note.body|e }}</p>{% else %}<p>No internal notes.</p>{% endfor %}<h3>Audit timeline</h3><ul>{% for event in events %}<li>{{ event.event_code|e }} — {{ event.reason|e }}</li>{% else %}<li>No events.</li>{% endfor %}</ul></section>{% endif %}
 </main>
 </body>
 </html>

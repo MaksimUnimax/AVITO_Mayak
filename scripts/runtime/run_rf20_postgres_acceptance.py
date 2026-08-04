@@ -1,5 +1,7 @@
 """Produce deterministic, redacted RF20 PostgreSQL acceptance evidence."""
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import argparse
@@ -21,9 +23,13 @@ from mayak.modules.admin_and_support.runtime import (
 
 
 class _Port:
-    def __init__(self, owner: str) -> None:
+    def __init__(self, owner: str, account_id: object, target: object, *, ambiguous: bool = False) -> None:
         self.owner = owner
+        self.account_id = account_id
+        self.target = target
+        self.ambiguous = ambiguous
         self.calls = 0
+        self.foreign_denials = 0
 
     def safe_summary(
         self, session: Session, *, actor: VerifiedActor, target: object
@@ -41,11 +47,20 @@ class _Port:
     ) -> dict[str, object]:
         return self.safe_summary(session, actor=actor, target=target)
 
-    def execute_role_action(self, session: Session, **kwargs: object) -> OwningOutcome:
+    def _execute(self, **kwargs: object) -> OwningOutcome:
         self.calls += 1
+        if kwargs.get("account_id") != self.account_id or kwargs.get("target") != self.target:
+            self.foreign_denials += 1
+            return OwningOutcome(self.owner, "foreign-target-denied", OutcomeClass.REJECTED)
+        if self.ambiguous:
+            self.ambiguous = False
+            return OwningOutcome(self.owner, "ambiguous-effect", OutcomeClass.AMBIGUOUS)
         return OwningOutcome(self.owner, "synthetic-role-outcome", OutcomeClass.SUCCEEDED)
 
+    def execute_role_action(self, session: Session, **kwargs: object) -> OwningOutcome:
+        return self._execute(**kwargs)
     execute_access_action = execute_role_action
+    execute_tariff_action = execute_role_action
     execute_support_action = execute_role_action
     execute_anchor_action = execute_role_action
 
@@ -66,8 +81,13 @@ def main() -> int:
     fixture_engine = create_engine(args.fixture_dsn, pool_pre_ping=True)
     actor_id, account_id = uuid4(), uuid4()
     now = datetime.now(UTC)
+    beacon_id, anchor_id = uuid4(), uuid4()
     ports = {
-        name: _Port(name) for name in ("identity", "entitlements", "beacon", "scan", "notification")
+        "identity": _Port("identity", account_id, account_id),
+        "entitlements": _Port("entitlements", account_id, account_id),
+        "beacon": _Port("beacon", account_id, beacon_id, ambiguous=True),
+        "scan": _Port("scan", account_id, anchor_id),
+        "notification": _Port("notification", account_id, account_id),
     }
     runtime = SupportRuntime(
         identity=ports["identity"],
@@ -104,7 +124,7 @@ def main() -> int:
         session.commit()
     with Session(engine) as session:
         # The case id is the authoritative event target, not browser input.
-        case = runtime.list_cases(session, account_id=account_id)[0]
+        case = runtime.list_cases(session, actor=actor, account_id=account_id)[0]
         note = runtime.add_internal_note(
             session,
             actor=actor,
@@ -121,6 +141,13 @@ def main() -> int:
             reason="synthetic note",
             idempotency_key="rf20-note-1",
         )
+        role = runtime.execute_role_action(session, actor=actor, case_id=case.case_id, target=account_id, action="ASSIGN_SUPPORT", reason="synthetic role", idempotency_key="rf20-role-1")
+        tariff = runtime.execute_tariff_action(session, actor=actor, case_id=case.case_id, target=account_id, action="ASSIGN_BASIC", reason="synthetic tariff", idempotency_key="rf20-tariff-1")
+        access = runtime.execute_access_action(session, actor=actor, case_id=case.case_id, target=account_id, action="GRANT_ACCESS", reason="synthetic access", idempotency_key="rf20-access-1")
+        beacon = runtime.execute_beacon_action(session, actor=actor, case_id=case.case_id, target=beacon_id, action="CORRECT", reason="synthetic beacon", idempotency_key="rf20-beacon-1")
+        beacon_replay = runtime.execute_beacon_action(session, actor=actor, case_id=case.case_id, target=beacon_id, action="CORRECT", reason="synthetic beacon", idempotency_key="rf20-beacon-1")
+        anchor = runtime.execute_anchor_action(session, actor=actor, case_id=case.case_id, target=anchor_id, action="CORRECT", reason="synthetic anchor", idempotency_key="rf20-anchor-1")
+        foreign = runtime.execute_beacon_action(session, actor=actor, case_id=case.case_id, target=uuid4(), action="CORRECT", reason="foreign target", idempotency_key="rf20-foreign-1")
         session.commit()
     with engine.connect() as connection:
         counts = {
@@ -153,8 +180,11 @@ def main() -> int:
         "first": first.state.value,
         "note": note.state.value,
         "replay": replay.replayed,
+        "delegations": {"role": role.state.value, "tariff": tariff.state.value, "access": access.state.value, "beacon": beacon.state.value, "beacon_replay": beacon_replay.state.value, "anchor": anchor.state.value, "foreign": foreign.state.value},
+        "ambiguous_replay_preserved": beacon_replay.state is OutcomeClass.AMBIGUOUS,
         "foreign_write_denied": foreign_write_denied,
         "port_calls": {name: port.calls for name, port in ports.items()},
+        "foreign_target_denials": {name: port.foreign_denials for name, port in ports.items()},
         "live_provider_calls": 0,
         "real_token_reads": 0,
         "raw_provider_payload_persisted": 0,

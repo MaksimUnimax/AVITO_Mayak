@@ -17,11 +17,22 @@ jobs:
     env:
       RF20_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
       RF20_DATABASE_URL: postgresql+psycopg://mayak_application:rf20_application_synthetic@postgres:5432/mayak
+      RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF12_ACCEPTANCE_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
       MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
       MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF15_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf20_application_synthetic@postgres:5432/mayak
+      RF18_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf20_application_synthetic@postgres:5432/mayak
+      RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf20_migration_synthetic@postgres:5432/mayak
+      RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf20_application_synthetic@postgres:5432/mayak
     services:
       postgres:
-        image: postgres:18-bookworm
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
         env:
           POSTGRES_USER: mayak
           POSTGRES_PASSWORD: rf20_bootstrap_synthetic
@@ -30,25 +41,64 @@ jobs:
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
-      - name: Install hosted prerequisites
+      - name: Install pre-checkout hosted prerequisites
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
+        with: {ref: "${{ github.sha }}", fetch-depth: 0}
+      - name: Configure process-local Git ownership trust
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$(pwd -P)"
+          test -d "$workspace/.git"
+          {
+            echo 'GIT_CONFIG_COUNT=1'
+            echo 'GIT_CONFIG_KEY_0=safe.directory'
+            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
+          } >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with: {python-version: '3.14.6'}
       - uses: astral-sh/setup-uv@v6
         with: {version: '0.11.31'}
       - run: uv sync --frozen --all-groups --python 3.14.6
-      - name: Prove exact candidate and toolchain
+      - name: Install hosted Docker tooling
         run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io docker-buildx
+      - name: Prove hosted environment parity
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+        shell: bash
+        run: |
+          set -euo pipefail
+          workspace="$(pwd -P)"
+          test -x "$(command -v git)"
+          test "${GIT_CONFIG_COUNT:-}" = 1
+          test "${GIT_CONFIG_KEY_0:-}" = safe.directory
+          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
+          test "$(git config --get-all safe.directory)" = "$workspace"
+          safe_scope="$(git config --show-scope --get-all safe.directory)"
+          test "${safe_scope%%$'\t'*}" = command
+          test "${safe_scope#*$'\t'}" = "$workspace"
+          ! git config --get-all safe.directory | grep -Fxq '*'
+          test "$(git rev-parse --is-inside-work-tree)" = true
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD^{tree} >/dev/null
           test "$(python --version)" = "Python 3.14.6"
           test "$(uv --version)" = "uv 0.11.31"
           test -e .git
           test -n "$(ldconfig -p | grep -F libsqlite3.so.0)"
-      - name: Bootstrap and migrate PostgreSQL 18
+          uv run python - <<'PY'
+          import _sqlite3, sqlite3
+          c = sqlite3.connect(':memory:')
+          assert c.execute('select 1').fetchone() == (1,)
+          c.close()
+          print('sqlite parity verified', sqlite3.sqlite_version, _sqlite3.__file__)
+          PY
+          docker version
+          docker buildx version
         run: |
           install -d -m 700 /run/secrets
           printf '%s' 'rf20_bootstrap_synthetic' > /run/secrets/mayak_postgres_bootstrap_password
@@ -67,9 +117,15 @@ jobs:
           from sqlalchemy import create_engine, text
           engine = create_engine(os.environ['RF20_MIGRATION_DSN'])
           with engine.begin() as c:
+              c.execute(text("""do $$ declare r record; begin
+                for r in select table_schema, table_name from information_schema.tables where table_schema='mayak' and table_name <> 'alembic_version'
+                loop execute format('revoke insert, update, delete, truncate, references, trigger on table %I.%I from mayak_application', r.table_schema, r.table_name); end loop; end $$;"""))
               c.execute(text('grant usage on schema mayak to mayak_application'))
-              c.execute(text('grant select, insert, update, delete on table mayak.support_cases, mayak.support_case_notes, mayak.support_case_events, mayak.platform_idempotency_records to mayak_application'))
+              c.execute(text('grant select, insert, update on table mayak.support_cases to mayak_application'))
+              c.execute(text('grant select, insert on table mayak.support_case_notes, mayak.support_case_events to mayak_application'))
+              c.execute(text('grant select, insert, update on table mayak.platform_idempotency_records to mayak_application'))
               c.execute(text('grant select on table mayak.identity_accounts to mayak_application'))
+              c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
           PY
       - name: Focused RF20 tests
         run: uv run pytest -q tests/runtime/test_rf20_admin_ui.py tests/runtime/test_support_schema.py tests/architecture/test_admin_and_support_semantic_boundaries.py tests/contract/test_admin_and_support_semantic_contract_exports.py
@@ -82,10 +138,34 @@ jobs:
           uv run python scripts/runtime/run_rf20_postgres_acceptance.py --dsn "$RF20_DATABASE_URL" --fixture-dsn "$RF20_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf20-acceptance-evidence.json
           uv run python scripts/runtime/verify_rf20_acceptance.py rf20-acceptance-evidence.json
       - name: Full repository regression
-        run: uv run pytest -q 2>&1 | tee rf20-full-pytest.log
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run pytest -q 2>&1 | tee rf20-full-pytest.log
       - name: Semantic artifact safety scan
         run: |
-          ! rg -n -i 'bearer [A-Za-z0-9._~+/=-]{12,}|BEGIN .*PRIVATE KEY|raw_provider_payload' rf20-acceptance-evidence.json
+          uv run python - <<'PY'
+          import json, re
+          from pathlib import Path
+          evidence = json.loads(Path('rf20-acceptance-evidence.json').read_text())
+          safe_zero = {'live_provider_calls','real_token_reads','raw_provider_payload_persisted'}
+          patterns = (re.compile(r'-----BEGIN [^-]*PRIVATE KEY-----'), re.compile(r'(?i)authorization\s*[:=]\s*\S+'), re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{12,}'), re.compile(r'(?i)webappdata'))
+          def walk(value, path=()):
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      if str(key).lower() in safe_zero:
+                          continue
+                      walk(child, path + (str(key),))
+              elif isinstance(value, list):
+                  for i, child in enumerate(value): walk(child, path + (str(i),))
+              elif isinstance(value, str):
+                  if any(pattern.search(value) for pattern in patterns):
+                      raise SystemExit(f'sensitive material at {".".join(path)}')
+          walk(evidence)
+          for key in safe_zero:
+              if evidence.get(key) != 0: raise SystemExit(f'{key} must equal zero')
+          print('RF20 semantic artifact safety verified')
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

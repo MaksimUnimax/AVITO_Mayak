@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, sessionmaker
 
+from .contracts import SupportCaseState
 from .runtime import (
     AuthorizationDenied,
     SupportRuntime,
@@ -57,7 +58,7 @@ def build_admin_router(
                 {"title": "Admin", "error": "unauthenticated", "cases": (), "summary": None},
             )
         with sessions() as session:
-            cases = runtime.list_cases(session, limit=20)
+            cases = runtime.list_cases(session, actor=operator, limit=20)
         return _TEMPLATES.TemplateResponse(
             request,
             "admin.html",
@@ -78,7 +79,7 @@ def build_admin_router(
                 summary = runtime.safe_account_summary(
                     session, actor=operator, account_id=account_id
                 )
-                cases = runtime.list_cases(session, account_id=account_id)
+                cases = runtime.list_cases(session, actor=operator, account_id=account_id)
             return _TEMPLATES.TemplateResponse(
                 request,
                 "admin.html",
@@ -92,6 +93,8 @@ def build_admin_router(
             )
         except AuthorizationDenied:
             raise HTTPException(status_code=403, detail="forbidden") from None
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed form") from None
         except SupportRuntimeError as exc:
             return _TEMPLATES.TemplateResponse(
                 request,
@@ -130,6 +133,8 @@ def build_admin_router(
             )
         except AuthorizationDenied:
             raise HTTPException(status_code=403, detail="forbidden") from None
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed form") from None
         except SupportRuntimeError as exc:
             return _TEMPLATES.TemplateResponse(
                 request,
@@ -146,7 +151,7 @@ def build_admin_router(
                 form[name][0] for name in ("body", "reason", "idempotency_key")
             )
             with sessions.begin() as session:
-                case = runtime.get_case(session, case_id)
+                case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
                 result = runtime.add_internal_note(
                     session,
                     actor=operator,
@@ -170,12 +175,119 @@ def build_admin_router(
             raise HTTPException(status_code=404, detail="not found") from None
         except AuthorizationDenied:
             raise HTTPException(status_code=403, detail="forbidden") from None
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed form") from None
         except SupportRuntimeError as exc:
             return _TEMPLATES.TemplateResponse(
                 request,
                 "admin.html",
                 {"title": "Case error", "cases": (), "summary": None, "error": str(exc)},
             )
+
+    @router.get("/cases/{case_id}", response_class=HTMLResponse)
+    def case_detail(request: Request, case_id: UUID) -> Any:
+        try:
+            operator = actor(request)
+            with sessions() as session:
+                case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
+                notes = runtime.list_internal_notes(session, actor=operator, case_id=case_id)
+                events = runtime.list_events(session, actor=operator, case_id=case_id)
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Support case", "operator": operator, "cases": (case,),
+                "case": case, "notes": notes, "events": events, "summary": None, "error": None,
+            })
+        except AuthorizationDenied:
+            raise HTTPException(status_code=403, detail="forbidden") from None
+        except TargetNotFound:
+            raise HTTPException(status_code=404, detail="not found") from None
+
+    @router.post("/cases/{case_id}/transition", response_class=HTMLResponse)
+    async def transition(request: Request, case_id: UUID) -> Any:
+        try:
+            operator = actor(request)
+            form = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
+            state = form["state"][0]
+            evidence = form.get("evidence", [None])[0]
+            with sessions.begin() as session:
+                case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
+                result = runtime.transition_case(
+                    session, actor=operator, case_id=case_id,
+                    target_state=SupportCaseState(state),
+                    expected_row_version=int(form["row_version"][0]), reason=form["reason"][0],
+                    idempotency_key=form["idempotency_key"][0], evidence_reference=evidence,
+                )
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Case transition", "operator": operator, "cases": (case,),
+                "summary": {"result": result}, "error": None,
+            })
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed form") from None
+        except AuthorizationDenied:
+            raise HTTPException(status_code=403, detail="forbidden") from None
+        except TargetNotFound:
+            raise HTTPException(status_code=404, detail="not found") from None
+        except SupportRuntimeError as exc:
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Case error", "cases": (), "summary": None, "error": str(exc),
+            })
+
+    @router.post("/cases/{case_id}/actions/{family}", response_class=HTMLResponse)
+    async def delegated_action(request: Request, case_id: UUID, family: str) -> Any:
+        try:
+            operator = actor(request)
+            form = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
+            target = UUID(form["target"][0])
+            values = {
+                "actor": operator, "case_id": case_id, "target": target,
+                "action": form["action"][0], "reason": form["reason"][0],
+                "idempotency_key": form["idempotency_key"][0],
+            }
+            handlers = {
+                "role": runtime.execute_role_action,
+                "tariff": runtime.execute_tariff_action,
+                "access": runtime.execute_access_action,
+                "beacon": runtime.execute_beacon_action,
+                "anchor": runtime.execute_anchor_action,
+            }
+            handler = handlers.get(family)
+            if handler is None:
+                raise HTTPException(status_code=400, detail="unsupported action")
+            with sessions.begin() as session:
+                result = handler(session, **values)
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Owning-module action", "operator": operator, "cases": (),
+                "summary": {"result": result}, "error": None,
+            })
+        except HTTPException:
+            raise
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed form") from None
+        except AuthorizationDenied:
+            raise HTTPException(status_code=403, detail="forbidden") from None
+        except TargetNotFound:
+            raise HTTPException(status_code=404, detail="not found") from None
+        except SupportRuntimeError as exc:
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Action error", "cases": (), "summary": None, "error": str(exc),
+            })
+
+    @router.get("/cases/{case_id}/notification-diagnostics", response_class=HTMLResponse)
+    def notification_diagnostics(request: Request, case_id: UUID) -> Any:
+        try:
+            operator = actor(request)
+            with sessions() as session:
+                case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
+                diagnostics = runtime.notification.safe_diagnostics(
+                    session, actor=operator, target=case.account_id
+                )
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Notification diagnostics", "operator": operator, "cases": (case,),
+                "summary": diagnostics, "error": None,
+            })
+        except AuthorizationDenied:
+            raise HTTPException(status_code=403, detail="forbidden") from None
+        except TargetNotFound:
+            raise HTTPException(status_code=404, detail="not found") from None
 
     return router
 

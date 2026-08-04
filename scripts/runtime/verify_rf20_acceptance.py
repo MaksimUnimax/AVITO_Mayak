@@ -1,8 +1,12 @@
 """Fail-closed verifier for RF20 semantic acceptance evidence."""
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -25,6 +29,10 @@ def main() -> int:
         "real_token_reads",
         "raw_provider_payload_persisted",
         "host_postgres_published",
+        "delegations",
+        "port_calls",
+        "foreign_target_denials",
+        "ambiguous_replay_preserved",
     }
     if (
         not isinstance(data, dict)
@@ -35,7 +43,11 @@ def main() -> int:
     if (
         not str(data["postgresql_version"]).startswith("PostgreSQL 18")
         or not data["migration_head"]
+        or re.fullmatch(r"[0-9a-f]{40}", str(data["candidate_sha"])) is None
     ):
+        return 2
+    expected_sha = os.environ.get("GITHUB_SHA")
+    if expected_sha and data["candidate_sha"] != expected_sha:
         return 2
     if data["foreign_write_denied"] is not True or data["host_postgres_published"] is not False:
         return 2
@@ -50,6 +62,15 @@ def main() -> int:
     ):
         return 2
     if data.get("replay") is not True:
+        return 2
+    required_delegations = {"role", "tariff", "access", "beacon", "beacon_replay", "anchor", "foreign"}
+    if not required_delegations <= data["delegations"].keys():
+        return 2
+    if data["ambiguous_replay_preserved"] is not True:
+        return 2
+    if any(int(data["port_calls"].get(name, 0)) < 1 for name in ("identity", "entitlements", "beacon", "scan")):
+        return 2
+    if int(data["foreign_target_denials"].get("beacon", 0)) < 1:
         return 2
     print("RF20 PostgreSQL evidence verified")
     return 0

@@ -97,6 +97,11 @@ class IdentityPort(Protocol):
 
 
 class EntitlementsPort(Protocol):
+    def execute_tariff_action(
+        self, session: Session, *, actor: VerifiedActor, target: UUID, action: str,
+        reason: str, idempotency_key: str, account_id: UUID
+    ) -> "OwningOutcome": ...
+
     def execute_access_action(
         self,
         session: Session,
@@ -231,6 +236,7 @@ class SupportRuntime:
         idempotency_key: str,
         correlation_id: str = "rf20",
     ) -> MutationResult:
+        self._require_operator(actor)
         if not reason.strip() or not subject.strip():
             raise ValueError("subject and reason are required")
         return self._case_mutation(
@@ -256,6 +262,7 @@ class SupportRuntime:
         reason: str,
         idempotency_key: str,
     ) -> MutationResult:
+        self._require_operator(actor)
         clean = body.strip()
         if not clean or len(clean) > 65536:
             raise ValueError("note body must be non-empty and bounded")
@@ -296,6 +303,7 @@ class SupportRuntime:
         idempotency_key: str,
         evidence_reference: str | None = None,
     ) -> MutationResult:
+        self._require_operator(actor)
         if (
             target_state in {SupportCaseState.RESOLVED, SupportCaseState.CLOSED}
             and not evidence_reference
@@ -327,18 +335,50 @@ class SupportRuntime:
             raise TargetNotFound("support case not found")
         return SupportCaseView(**row)
 
+    def get_case_for_operator(
+        self, session: Session, *, actor: VerifiedActor, case_id: UUID
+    ) -> SupportCaseView:
+        self._require_operator(actor)
+        return self.get_case(session, case_id)
+
+    def list_internal_notes(
+        self, session: Session, *, actor: VerifiedActor, case_id: UUID
+    ) -> tuple[dict[str, Any], ...]:
+        self._require_operator(actor)
+        notes = _table(session, "support_case_notes")
+        return tuple(dict(row) for row in session.execute(
+            select(notes).where(notes.c.case_id == case_id).order_by(notes.c.created_at)
+        ).mappings())
+
+    def list_events(
+        self, session: Session, *, actor: VerifiedActor, case_id: UUID
+    ) -> tuple[dict[str, Any], ...]:
+        self._require_operator(actor)
+        events = _table(session, "support_case_events")
+        return tuple(dict(row) for row in session.execute(
+            select(events).where(events.c.case_id == case_id).order_by(events.c.created_at)
+        ).mappings())
+
     def list_cases(
-        self, session: Session, *, account_id: UUID | None = None, limit: int = 100
+        self, session: Session, *, actor: VerifiedActor, account_id: UUID | None = None,
+        limit: int = 100
     ) -> tuple[SupportCaseView, ...]:
+        self._require_operator(actor)
         cases = _table(session, "support_cases")
         statement = select(cases).order_by(cases.c.updated_at.desc()).limit(min(max(limit, 1), 100))
         if account_id is not None:
             statement = statement.where(cases.c.account_id == account_id)
         return tuple(SupportCaseView(**row) for row in session.execute(statement).mappings())
 
+    @staticmethod
+    def _require_operator(actor: VerifiedActor) -> None:
+        if not actor.verified or actor.role not in {"ADMIN", "SUPPORT"}:
+            raise AuthorizationDenied("verified operator authority required")
+
     def safe_account_summary(
         self, session: Session, *, actor: VerifiedActor, account_id: UUID
     ) -> dict[str, Any]:
+        self._require_operator(actor)
         return {
             "account": self.identity.account_summary(session, actor=actor, target=account_id),
             "entitlements": self.entitlements.safe_summary(session, actor=actor, target=account_id),
@@ -392,6 +432,15 @@ class SupportRuntime:
             reason=reason,
             key=idempotency_key,
             port=self.entitlements.execute_access_action,
+        )
+
+    def execute_tariff_action(
+        self, session: Session, *, actor: VerifiedActor, case_id: UUID, target: UUID,
+        action: str, reason: str, idempotency_key: str
+    ) -> MutationResult:
+        return self._delegated(
+            session, actor=actor, case_id=case_id, target=target, action=action,
+            reason=reason, key=idempotency_key, port=self.entitlements.execute_tariff_action,
         )
 
     def execute_beacon_action(
@@ -450,9 +499,8 @@ class SupportRuntime:
         key: str,
         port: Any,
     ) -> MutationResult:
+        self._require_operator(actor)
         case = self.get_case(session, case_id)
-        if case.account_id != target:
-            raise AuthorizationDenied("target is outside support case scope")
         fingerprint = _fingerprint(
             action,
             {
@@ -474,9 +522,8 @@ class SupportRuntime:
             raise IdempotencyConflict("idempotency fingerprint conflict")
         if decision.outcome is not None:
             return self._decode_replay(decision.outcome)
-        outcome = port(
-            session, actor=actor, target=target, action=action, reason=reason, idempotency_key=key
-        )
+        outcome = port(session, actor=actor, target=target, account_id=case.account_id,
+                       action=action, reason=reason, idempotency_key=key)
         result = self._record_event(
             session,
             case_id=case_id,
@@ -484,6 +531,7 @@ class SupportRuntime:
             action=action,
             reason=reason,
             key=key,
+            fingerprint=fingerprint.value,
             owner=outcome.owner,
             outcome=outcome,
         )
@@ -498,8 +546,6 @@ class SupportRuntime:
             expires_at=now + timedelta(days=14),
             now=now,
         )
-        if outcome.outcome_class in {OutcomeClass.AMBIGUOUS, OutcomeClass.RECONCILIATION_REQUIRED}:
-            raise ReconciliationRequired("owning-module outcome requires reconciliation")
         return result
 
     def _case_mutation(
@@ -550,6 +596,8 @@ class SupportRuntime:
             action=action,
             reason=reason,
             key=key,
+            fingerprint=fp.value,
+            metadata=values,
             owner="admin_and_support",
             outcome=OwningOutcome("admin_and_support", str(case_id), OutcomeClass.SUCCEEDED),
         )
@@ -630,8 +678,10 @@ class SupportRuntime:
         action: str,
         reason: str,
         key: str,
+        fingerprint: str,
         owner: str,
         outcome: OwningOutcome,
+        metadata: dict[str, Any] | None = None,
     ) -> MutationResult:
         events = _table(session, "support_case_events")
         event_id = uuid4()
@@ -644,12 +694,14 @@ class SupportRuntime:
                 reason=reason.strip(),
                 details={
                     "idempotency_key": key,
-                    "fingerprint": "redacted-by-platform",
+                    "fingerprint": fingerprint,
                     "owning_module": owner,
                     "outcome_reference": outcome.outcome_reference,
                     "outcome_class": outcome.outcome_class.value,
-                    "correlation_id": "rf20",
+                    "correlation_id": f"rf20:{case_id}",
                     "causation_id": key,
+                    "audit_result": "RECORDED",
+                    **(metadata or {}),
                 },
             )
         )
@@ -664,8 +716,17 @@ class SupportRuntime:
 
     @staticmethod
     def _common(result: MutationResult) -> CommonOutcome:
+        result_code = {
+            OutcomeClass.SUCCEEDED: Result.SUCCEEDED,
+            OutcomeClass.REPLAYED: Result.SUCCEEDED,
+            OutcomeClass.REJECTED: Result.REJECTED,
+            OutcomeClass.CONFLICT: Result.CONFLICT,
+            OutcomeClass.POLICY_BLOCKED: Result.REJECTED,
+            OutcomeClass.AMBIGUOUS: Result.AMBIGUOUS,
+            OutcomeClass.RECONCILIATION_REQUIRED: Result.AMBIGUOUS,
+        }.get(result.state, Result.REJECTED)
         return CommonOutcome(
-            result=Result.SUCCEEDED,
+            result=result_code,
             reason_code="RF20_SUPPORT_MUTATION",
             details=(
                 json.dumps(
@@ -686,9 +747,14 @@ class SupportRuntime:
         if outcome.reason_code != "RF20_SUPPORT_MUTATION" or len(outcome.details) != 1:
             raise ReconciliationRequired("stored support outcome is invalid")
         data = json.loads(outcome.details[0])
+        terminal = OutcomeClass(data["state"])
         return MutationResult(
             action=data["action"],
-            state=OutcomeClass.REPLAYED,
+            state=(
+                terminal
+                if terminal in {OutcomeClass.AMBIGUOUS, OutcomeClass.RECONCILIATION_REQUIRED}
+                else OutcomeClass.REPLAYED
+            ),
             target=data["target"],
             owning_module=data["owning_module"],
             outcome_reference=data["outcome_reference"],

@@ -11,7 +11,7 @@ from mayak.modules.admin_and_support.runtime import VerifiedActor
 
 
 class _UiRuntime:
-    def list_cases(self, session, *, account_id=None, limit=100):
+    def list_cases(self, session, *, actor, account_id=None, limit=100):
         return ()
 
     def safe_account_summary(self, session, *, actor, account_id):
