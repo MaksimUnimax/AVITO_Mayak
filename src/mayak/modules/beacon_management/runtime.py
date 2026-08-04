@@ -82,6 +82,20 @@ class ResolvedActor:
 
 
 @dataclass(frozen=True, slots=True)
+class VerifiedSupportAuthority:
+    """Verified operator authority and explicit target-account scope."""
+
+    operator_account_id: UUID
+    target_account_id: UUID
+    reference: str
+    verified: bool = True
+
+    def __post_init__(self) -> None:
+        if not self.verified or self.operator_account_id == self.target_account_id:
+            raise BeaconRuntimeError("distinct verified support authority required")
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedSystemActor:
     """Service authority; it is never an account owner."""
 
@@ -290,8 +304,11 @@ class BeaconManagementRuntime:
         *,
         account_id: UUID | None = None,
         system_actor: bool = False,
+        correlation: CorrelationContext | None = None,
     ) -> None:
-        correlation = CorrelationContext(correlation_id=CorrelationId(value=str(uuid4())))
+        correlation = correlation or CorrelationContext(
+            correlation_id=CorrelationId(value=str(uuid4()))
+        )
         context = AuditContext(
             actor_category=(
                 AuditActorCategory.SERVICE if system_actor else AuditActorCategory.OPERATOR
@@ -545,20 +562,73 @@ class BeaconManagementRuntime:
         expected_row_version: int,
         idempotency_key: str,
     ) -> BeaconCommandResult:
+        actor = self._authority(session, actor_reference, None)
+        return self._patch_as_actor(
+            session, actor=actor, target_account_id=actor.account_id, beacon_id=beacon_id,
+            patch=patch, expected_row_version=expected_row_version,
+            idempotency_key=idempotency_key,
+        )
+
+    def patch_current_configuration_for_support(
+        self,
+        session: Session,
+        *,
+        authority: VerifiedSupportAuthority,
+        beacon_id: UUID,
+        patch: dict[str, Any],
+        expected_row_version: int,
+        idempotency_key: str,
+        reason: str,
+        correlation: CorrelationContext,
+    ) -> BeaconCommandResult:
+        """Cross-account support patch; owner DML stays in Beacon Management."""
+        row_account = session.execute(
+            select(_BEACONS.c.account_id).where(_BEACONS.c.id == beacon_id)
+        ).scalar_one_or_none()
+        if not authority.verified or row_account != authority.target_account_id:
+            raise BeaconRuntimeError("beacon target account mismatch")
+        actor = ResolvedActor(
+            actor_id=authority.operator_account_id,
+            account_id=authority.operator_account_id,
+            verified=True,
+            reference=authority.reference,
+        )
+        return self._patch_as_actor(
+            session, actor=actor, target_account_id=authority.target_account_id,
+            beacon_id=beacon_id, patch=patch, expected_row_version=expected_row_version,
+            idempotency_key=idempotency_key, strict_expected_row_version=True,
+            audit_reason=reason, correlation=correlation,
+        )
+
+    def _patch_as_actor(
+        self,
+        session: Session,
+        *,
+        actor: ResolvedActor,
+        target_account_id: UUID,
+        beacon_id: UUID,
+        patch: dict[str, Any],
+        expected_row_version: int,
+        idempotency_key: str,
+        strict_expected_row_version: bool = False,
+        audit_reason: str = "CONFIGURATION_PATCHED",
+        correlation: CorrelationContext | None = None,
+    ) -> BeaconCommandResult:
         if "source_url" in patch:
             raise BeaconRuntimeError("source URL cannot be patched")
-        actor = self._authority(session, actor_reference, None)
         # PATCH is field-scoped last-write-wins.  Serialize the owner account,
         # then reread authoritative state; expected_row_version is an
         # observation/precondition for callers, not a stale whole-form reject.
-        self._lock(session, actor.account_id)
+        self._lock(session, target_account_id)
         row = (
             session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id).with_for_update())
             .mappings()
             .one_or_none()
         )
-        if row is None or row["account_id"] != actor.account_id:
+        if row is None or row["account_id"] != target_account_id:
             raise BeaconRuntimeError("beacon unavailable")
+        if strict_expected_row_version and row["row_version"] != expected_row_version:
+            raise ConflictError("stale patch")
         fp = self._fingerprint("patch", {"beacon": beacon_id, "patch": patch})
         replay = self._begin(session, idempotency_key, fp)
         if replay:
@@ -597,7 +667,7 @@ class BeaconManagementRuntime:
                 warning_codes=current["warning_codes"],
                 filter_candidate=current["filter_candidate"],
                 accepted_filter=accepted,
-                created_by_account_id=actor.account_id,
+                created_by_account_id=target_account_id,
                 created_at=now,
                 catalog_version_id=current["catalog_version_id"],
             )
@@ -629,7 +699,10 @@ class BeaconManagementRuntime:
                     row_version=1,
                 )
             )
-        self._audit(session, actor, "BEACON_PATCHED", beacon_id, "CONFIGURATION_PATCHED")
+        self._audit(
+            session, actor, "BEACON_PATCHED", beacon_id, audit_reason,
+            account_id=actor.account_id, correlation=correlation,
+        )
         return self._finish(
             session,
             idempotency_key,
@@ -638,7 +711,7 @@ class BeaconManagementRuntime:
                 result=Result.SUCCEEDED,
                 reason_code="PATCHED",
                 beacon_id=beacon_id,
-                account_id=actor.account_id,
+                account_id=target_account_id,
                 state=row["state"],
                 revision_no=revision_no,
                 row_version=version,

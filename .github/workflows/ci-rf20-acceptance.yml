@@ -133,10 +133,24 @@ jobs:
               c.execute(text('grant select, insert on table mayak.support_case_notes, mayak.support_case_events to mayak_application'))
               c.execute(text('grant select, insert, update on table mayak.platform_idempotency_records to mayak_application'))
               c.execute(text('grant select on table mayak.identity_accounts to mayak_application'))
+              c.execute(text('grant select on table mayak.identity_sessions, mayak.identity_role_assignments to mayak_application'))
+              c.execute(text('grant insert, update on table mayak.identity_role_assignments to mayak_application'))
+              c.execute(text('grant insert on table mayak.platform_audit_entries to mayak_application'))
+              c.execute(text('grant select, insert, update on table mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application'))
               c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
           PY
       - name: Focused RF20 tests
-        run: uv run pytest -q tests/runtime/test_rf20_admin_ui.py tests/runtime/test_support_schema.py tests/architecture/test_admin_and_support_semantic_boundaries.py tests/contract/test_admin_and_support_semantic_contract_exports.py
+        env:
+          RF20_REQUIRE_POSTGRES: "1"
+        run: >-
+          uv run pytest -q
+          tests/runtime/test_rf20_admin_ui.py
+          tests/runtime/test_rf20_admin_support_runtime.py
+          tests/runtime/test_rf20_composition.py
+          tests/runtime/test_rf20_postgres_acceptance.py
+          tests/runtime/test_support_schema.py
+          tests/architecture/test_admin_and_support_semantic_boundaries.py
+          tests/contract/test_admin_and_support_semantic_contract_exports.py
       - name: Static and import gates
         run: |
           uv run ruff check src/mayak/modules/admin_and_support scripts/runtime/run_rf20_postgres_acceptance.py scripts/runtime/verify_rf20_acceptance.py alembic/versions/20260804_RF20_admin_support_runtime.py

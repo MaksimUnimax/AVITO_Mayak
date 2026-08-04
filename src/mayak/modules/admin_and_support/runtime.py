@@ -15,7 +15,7 @@ from enum import StrEnum
 from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import Table, select, update
+from sqlalchemy import Table, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
@@ -66,7 +66,7 @@ class OutcomeClass(StrEnum):
 ROLE_ACTIONS = frozenset({"ASSIGN_SUPPORT", "ASSIGN_ADMIN", "REVOKE_SUPPORT", "REVOKE_ADMIN"})
 TARIFF_ACTIONS = frozenset({"ASSIGN_BASIC", "BOOTSTRAP_TARIFFS"})
 ACCESS_ACTIONS = frozenset({"GRANT_ACCESS", "REVOKE_ACCESS"})
-BEACON_ACTIONS = frozenset({"RENAME", "PATCH"})
+BEACON_ACTIONS = frozenset({"PATCH_CURRENT_CONFIGURATION"})
 ANCHOR_ACTIONS = frozenset({"REVIEW", "PREPARE_CORRECTION"})
 
 
@@ -79,6 +79,7 @@ class VerifiedActor:
     authorization_scope: str
     authorization_reference: str
     verified: bool = True
+    identity_session_reference: Any | None = None
 
     def __post_init__(self) -> None:
         if not self.verified or self.role not in {"ADMIN", "SUPPORT"}:
@@ -103,6 +104,8 @@ class IdentityPort(Protocol):
         self, session: Session, *, actor: VerifiedActor, target: UUID
     ) -> dict[str, Any]: ...
 
+    def operator_exists(self, session: Session, *, actor: VerifiedActor, target: UUID) -> bool: ...
+
 class EntitlementsPort(Protocol):
     def execute_tariff_action(
         self, session: Session, *, actor: VerifiedActor, target: UUID, action: str,
@@ -126,6 +129,12 @@ class EntitlementsPort(Protocol):
 
 
 class BeaconPort(Protocol):
+    def execute_support_patch(
+        self, session: Session, *, actor: VerifiedActor, target: UUID,
+        target_account_id: UUID, patch: dict[str, Any], expected_row_version: int,
+        reason: str, idempotency_key: str, correlation_id: str,
+    ) -> "OwningOutcome": ...
+
     def execute_support_action(
         self,
         session: Session,
@@ -207,8 +216,10 @@ def _fingerprint(action: str, values: dict[str, Any]) -> IdempotencyFingerprint:
     return IdempotencyFingerprint(value=hashlib.sha256(canonical.encode()).hexdigest())
 
 
-def _correlation_id() -> str:
+def _command_correlation(correlation_id: str | None) -> str:
     context = current_correlation_context()
+    if correlation_id and correlation_id != "rf20":
+        return correlation_id
     return context.correlation_id.value if context is not None else f"rf20:{uuid4()}"
 
 
@@ -237,6 +248,23 @@ class SupportRuntime:
     def _now() -> datetime:
         return datetime.now(UTC)
 
+    def _lock_idempotency(self, session: Session, key: str) -> None:
+        """Serialize the complete RF20 command on PostgreSQL.
+
+        The lock is transaction-scoped and deliberately precedes the first
+        idempotency read.  SQLite/unit doubles do not expose PostgreSQL
+        advisory locks, so they retain their existing deterministic behavior;
+        PostgreSQL is the authority for RF20 acceptance.
+        """
+        bind = session.get_bind()
+        if bind.dialect.name != "postgresql":
+            return
+        digest = hashlib.sha256(
+            f"{self.IDEMPOTENCY_SCOPE.value}:{key.strip()}".encode("utf-8")
+        ).digest()
+        lock_key = int.from_bytes(digest[:8], "big", signed=True)
+        session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+
     def open_case(
         self,
         session: Session,
@@ -246,7 +274,7 @@ class SupportRuntime:
         subject: str,
         reason: str,
         idempotency_key: str,
-        correlation_id: str = "rf20",
+        correlation_id: str | None = None,
     ) -> MutationResult:
         self._require_operator(actor)
         if not reason.strip() or not subject.strip():
@@ -259,6 +287,7 @@ class SupportRuntime:
             reason=reason,
             key=idempotency_key,
             values={"subject": subject},
+            correlation_id=correlation_id,
             operation=lambda case_id, now: self._insert_case(
                 session, case_id, actor, account_id, subject, now
             ),
@@ -300,6 +329,7 @@ class SupportRuntime:
             reason=reason,
             key=idempotency_key,
             values={"case_id": str(case_id), "body": clean},
+            correlation_id=None,
             operation=lambda _case_id, now: self._insert_note(session, case_id, actor, clean, now),
         )
 
@@ -322,6 +352,37 @@ class SupportRuntime:
         ):
             raise ValueError("resolution/close requires safe evidence")
         case = self.get_case(session, case_id)
+        allowed_transitions = {
+            SupportCaseState.OPEN: {
+                SupportCaseState.IN_PROGRESS,
+                SupportCaseState.WAITING_FOR_EVIDENCE,
+                SupportCaseState.ESCALATED,
+                SupportCaseState.REJECTED,
+            },
+            SupportCaseState.IN_PROGRESS: {
+                SupportCaseState.WAITING_FOR_EVIDENCE,
+                SupportCaseState.ESCALATED,
+                SupportCaseState.RESOLVED,
+                SupportCaseState.CLOSED,
+            },
+            SupportCaseState.WAITING_FOR_EVIDENCE: {
+                SupportCaseState.IN_PROGRESS,
+                SupportCaseState.ESCALATED,
+                SupportCaseState.RESOLVED,
+                SupportCaseState.CLOSED,
+            },
+            SupportCaseState.ESCALATED: {
+                SupportCaseState.IN_PROGRESS,
+                SupportCaseState.RESOLVED,
+                SupportCaseState.CLOSED,
+            },
+            SupportCaseState.RESOLVED: {SupportCaseState.CLOSED},
+            SupportCaseState.CLOSED: set(),
+            SupportCaseState.REJECTED: set(),
+            SupportCaseState.AMBIGUOUS: set(),
+        }
+        if target_state not in allowed_transitions.get(SupportCaseState(case.state), set()):
+            raise SupportRuntimeError("invalid support case transition")
         return self._case_mutation(
             session,
             actor=actor,
@@ -335,9 +396,59 @@ class SupportRuntime:
                 "state": target_state.value,
                 "evidence": evidence_reference,
             },
+            correlation_id=None,
             operation=lambda _case_id, now: self._update_case(
                 session, case_id, target_state.value, expected_row_version, now
             ),
+        )
+
+    def assign_case(
+        self,
+        session: Session,
+        *,
+        actor: VerifiedActor,
+        case_id: UUID,
+        assignee_account_id: UUID,
+        reason: str,
+        idempotency_key: str,
+    ) -> MutationResult:
+        self._require_operator(actor)
+        case = self.get_case(session, case_id)
+        if not reason.strip() or not self.identity.operator_exists(
+            session, actor=actor, target=assignee_account_id
+        ):
+            raise AuthorizationDenied("assignment target is not an active operator")
+        return self._case_mutation(
+            session,
+            actor=actor,
+            account_id=case.account_id,
+            action="ASSIGN_CASE",
+            reason=reason,
+            key=idempotency_key,
+            values={"case_id": str(case_id), "assignee": str(assignee_account_id)},
+            correlation_id=None,
+            operation=lambda _case_id, now: self._assign_case(
+                session, case_id, assignee_account_id, now
+            ),
+        )
+
+    def escalate_case(
+        self,
+        session: Session,
+        *,
+        actor: VerifiedActor,
+        case_id: UUID,
+        reason: str,
+        idempotency_key: str,
+    ) -> MutationResult:
+        return self.transition_case(
+            session,
+            actor=actor,
+            case_id=case_id,
+            target_state=SupportCaseState.ESCALATED,
+            expected_row_version=self.get_case(session, case_id).row_version,
+            reason=reason,
+            idempotency_key=idempotency_key,
         )
 
     def get_case(self, session: Session, case_id: UUID) -> SupportCaseView:
@@ -481,6 +592,61 @@ class SupportRuntime:
             owner_kind="beacon",
         )
 
+    def execute_beacon_support_patch(
+        self, session: Session, *, actor: VerifiedActor, case_id: UUID, target: UUID,
+        target_account_id: UUID,
+        patch: dict[str, Any], expected_row_version: int, reason: str,
+        idempotency_key: str, correlation_id: str,
+    ) -> MutationResult:
+        """Typed RF20 command carrying Beacon owner preconditions."""
+        self._require_operator(actor)
+        case = self.get_case(session, case_id)
+        if target_account_id != case.account_id:
+            raise TargetNotFound("Beacon target must match support-case account")
+        action = "PATCH_CURRENT_CONFIGURATION"
+        fingerprint = _fingerprint(
+            action,
+            {"actor": str(actor.actor_account_id), "target": str(target),
+             "account": str(target_account_id), "patch": patch,
+             "expected_row_version": expected_row_version, "reason": reason.strip()},
+        )
+        now = self._now()
+        correlation = _command_correlation(correlation_id)
+        causation = f"{action}:{idempotency_key}"
+        self._lock_idempotency(session, idempotency_key)
+        decision = self._idempotency.evaluate(
+            session, scope=self.IDEMPOTENCY_SCOPE, key=IdempotencyKey(value=idempotency_key),
+            fingerprint=fingerprint, now=now,
+        )
+        if decision.decision is IdempotencyDecision.MISMATCH:
+            raise IdempotencyConflict("idempotency fingerprint conflict")
+        if decision.outcome is not None:
+            return self._decode_replay(decision.outcome)
+        outcome = self.beacon.execute_support_patch(
+            session, actor=actor, target=target, target_account_id=target_account_id,
+            patch=patch, expected_row_version=expected_row_version, reason=reason,
+            idempotency_key=idempotency_key, correlation_id=correlation_id,
+        )
+        result = outcome if isinstance(outcome, MutationResult) else MutationResult(
+            action="PATCH_CURRENT_CONFIGURATION", state=outcome.outcome_class,
+            target=str(target), owning_module=outcome.owner,
+            outcome_reference=outcome.outcome_reference,
+        )
+        self._record_event(
+            session, case_id=case_id, actor=actor, action=action, reason=reason,
+            key=idempotency_key, fingerprint=fingerprint.value, owner=outcome.owner,
+            outcome=outcome,
+            metadata={"domain_target": str(target), "target_account": str(target_account_id)},
+            created_at=now, correlation_id=correlation, causation_id=causation,
+        )
+        self._idempotency.record_terminal(
+            session, record_id=uuid4(), scope=self.IDEMPOTENCY_SCOPE,
+            key=IdempotencyKey(value=idempotency_key), fingerprint=fingerprint,
+            outcome=self._common(result), created_at=now,
+            expires_at=now + timedelta(days=14), now=now,
+        )
+        return result
+
     def execute_anchor_action(
         self,
         session: Session,
@@ -523,6 +689,7 @@ class SupportRuntime:
         key: str,
         port: Any,
         owner_kind: str,
+        correlation_id: str | None = None,
     ) -> MutationResult:
         self._require_operator(actor)
         case = self.get_case(session, case_id)
@@ -540,6 +707,9 @@ class SupportRuntime:
             },
         )
         now = self._now()
+        correlation = _command_correlation(correlation_id)
+        causation = f"{action}:{key}"
+        self._lock_idempotency(session, key)
         decision = self._idempotency.evaluate(
             session,
             scope=self.IDEMPOTENCY_SCOPE,
@@ -576,6 +746,9 @@ class SupportRuntime:
             owner=outcome.owner,
             outcome=outcome,
             metadata={"domain_target": str(target)},
+            created_at=now,
+            correlation_id=correlation,
+            causation_id=causation,
         )
         self._idempotency.record_terminal(
             session,
@@ -601,6 +774,7 @@ class SupportRuntime:
         key: str,
         values: dict[str, Any],
         operation: Any,
+        correlation_id: str | None,
     ) -> MutationResult:
         fp = _fingerprint(
             action,
@@ -612,6 +786,9 @@ class SupportRuntime:
             },
         )
         now = self._now()
+        correlation = _command_correlation(correlation_id)
+        causation = f"{action}:{key}"
+        self._lock_idempotency(session, key)
         decision = self._idempotency.evaluate(
             session,
             scope=self.IDEMPOTENCY_SCOPE,
@@ -642,6 +819,9 @@ class SupportRuntime:
             metadata=values,
             owner="admin_and_support",
             outcome=OwningOutcome("admin_and_support", str(case_id), OutcomeClass.SUCCEEDED),
+            created_at=now,
+            correlation_id=correlation,
+            causation_id=causation,
         )
         self._idempotency.record_terminal(
             session,
@@ -694,6 +874,23 @@ class SupportRuntime:
             raise StaleCase("support case row version changed")
         return case_id
 
+    def _assign_case(
+        self, session: Session, case_id: UUID, assignee: UUID, now: datetime
+    ) -> UUID:
+        cases = _table(session, "support_cases")
+        changed = cast(CursorResult[Any], session.execute(
+            update(cases)
+            .where(cases.c.id == case_id)
+            .values(
+                assigned_to_account_id=assignee,
+                updated_at=now,
+                row_version=cases.c.row_version + 1,
+            )
+        )).rowcount
+        if changed != 1:
+            raise TargetNotFound("support case not found")
+        return case_id
+
     def _insert_note(
         self, session: Session, case_id: UUID, actor: VerifiedActor, body: str, now: datetime
     ) -> UUID:
@@ -724,9 +921,15 @@ class SupportRuntime:
         owner: str,
         outcome: OwningOutcome,
         metadata: dict[str, Any] | None = None,
+        created_at: datetime | None = None,
+        correlation_id: str | None = None,
+        causation_id: str | None = None,
     ) -> MutationResult:
         events = _table(session, "support_case_events")
         event_id = uuid4()
+        factual_created_at = created_at or self._now()
+        if factual_created_at.tzinfo is None or factual_created_at.utcoffset() is None:
+            raise ValueError("support event timestamp must be timezone-aware")
         session.execute(
             events.insert().values(
                 id=event_id,
@@ -740,14 +943,15 @@ class SupportRuntime:
                     "owning_module": owner,
                     "outcome_reference": outcome.outcome_reference,
                     "outcome_class": outcome.outcome_class.value,
-                    "correlation_id": _correlation_id(),
-                    "causation_id": f"{action}:{key}",
+                    "correlation_id": correlation_id or _command_correlation(None),
+                    "causation_id": causation_id or f"{action}:{key}",
                     "audit_result": "RECORDED",
                     **{
                         key: value for key, value in (metadata or {}).items()
                         if key not in {"body", "raw_provider_payload", "token", "password"}
                     },
                 },
+                created_at=factual_created_at,
             )
         )
         return MutationResult(

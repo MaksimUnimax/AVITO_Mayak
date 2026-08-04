@@ -19,6 +19,7 @@ from .runtime import (
     ResolvedActor,
     ResolvedSystemActor,
     SystemAuthorityPort,
+    VerifiedSupportAuthority,
 )
 
 MODULE_ID = BEACON_MANAGEMENT_MODULE_ID
@@ -39,4 +40,5 @@ __all__ = (
     "ResolvedActor",
     "ResolvedSystemActor",
     "SystemAuthorityPort",
+    "VerifiedSupportAuthority",
 )

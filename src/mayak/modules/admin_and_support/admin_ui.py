@@ -237,6 +237,8 @@ def build_admin_router(
             operator = actor(request)
             form = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
             target = UUID(form["target"][0])
+            if len(form.get("action", ())) != 1:
+                raise ValueError("exactly one action is required")
             action = form["action"][0]
             reason = form["reason"][0]
             idempotency_key = form["idempotency_key"][0]

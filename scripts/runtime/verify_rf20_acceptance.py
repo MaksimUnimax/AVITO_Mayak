@@ -36,6 +36,10 @@ def main() -> int:
         "adapter_signature_evidence",
         "audit_metadata",
         "note_body_in_event_details",
+        "event_timestamps_aware",
+        "correlation_count",
+        "causation_count",
+        "host_postgres_publication_proof",
     }
     if (
         not isinstance(data, dict)
@@ -52,7 +56,12 @@ def main() -> int:
     expected_sha = os.environ.get("GITHUB_SHA")
     if expected_sha and data["candidate_sha"] != expected_sha:
         return 2
-    if data["foreign_write_denied"] is not True or data["host_postgres_published"] is not False:
+    if (
+        data["foreign_write_denied"] is not True
+        or data["host_postgres_published"] is not False
+        or not isinstance(data["host_postgres_publication_proof"], str)
+        or not data["host_postgres_publication_proof"]
+    ):
         return 2
     required_adapters = {
         "identity", "entitlements_tariff", "entitlements_access", "beacon", "scan", "notification"
@@ -60,6 +69,10 @@ def main() -> int:
     if set(data["adapter_signature_evidence"]) != required_adapters:
         return 2
     if data["note_body_in_event_details"] is not False:
+        return 2
+    if data["event_timestamps_aware"] is not True:
+        return 2
+    if int(data["correlation_count"]) < 1 or int(data["causation_count"]) < 1:
         return 2
     if any(value is not True for value in data["audit_metadata"].values()):
         return 2
