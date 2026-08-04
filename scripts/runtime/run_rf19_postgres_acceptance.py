@@ -54,23 +54,15 @@ def _database_cases(application_dsn: str, migration_dsn: str) -> dict[str, objec
                 text("select table_name from information_schema.tables where table_schema='mayak' and table_name like 'max_%' order by table_name")
             )
         ]
-        sequences = [
-            row[0]
-            for row in connection.execute(
-                text("select sequence_name from information_schema.sequences where sequence_schema='mayak' order by sequence_name")
-            )
-        ]
-        foreign_sequence_write_denied = all(
-            not bool(
-                connection.execute(
-                    text(
-                        "select has_sequence_privilege("
-                        "'mayak_application'::name, cast(:sequence_name as text), 'UPDATE'::text)"
-                    ),
-                    {"sequence_name": f"mayak.{sequence_name}"},
-                ).scalar_one()
-            )
-            for sequence_name in sequences
+        foreign_sequence_write_denied = bool(
+            connection.execute(
+                text(
+                    "select coalesce(bool_and(not has_sequence_privilege("
+                    "'mayak_application'::name, "
+                    "format('%I.%I', sequence_schema, sequence_name), 'UPDATE'::text)), true) "
+                    "from information_schema.sequences where sequence_schema = 'mayak'"
+                )
+            ).scalar_one()
         )
         _ = version
 
