@@ -212,6 +212,21 @@ def _fingerprint(action: str, values: dict[str, Any]) -> IdempotencyFingerprint:
     return IdempotencyFingerprint(value=hashlib.sha256(canonical.encode()).hexdigest())
 
 
+def _support_case_view(row: Any) -> SupportCaseView:
+    """Project the physical support-case row into the public runtime view."""
+    return SupportCaseView(
+        case_id=row["id"],
+        account_id=row["account_id"],
+        opened_by_account_id=row["opened_by_account_id"],
+        assigned_to_account_id=row["assigned_to_account_id"],
+        state=row["state"],
+        subject=row["subject"],
+        row_version=row["row_version"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
 def _command_correlation(correlation_id: str | None) -> str:
     context = current_correlation_context()
     if correlation_id and correlation_id != "rf20":
@@ -452,7 +467,7 @@ class SupportRuntime:
         row = session.execute(select(cases).where(cases.c.id == case_id)).mappings().one_or_none()
         if row is None:
             raise TargetNotFound("support case not found")
-        return SupportCaseView(**row)
+        return _support_case_view(row)
 
     def get_case_for_operator(
         self, session: Session, *, actor: VerifiedActor, case_id: UUID
@@ -487,7 +502,7 @@ class SupportRuntime:
         statement = select(cases).order_by(cases.c.updated_at.desc()).limit(min(max(limit, 1), 100))
         if account_id is not None:
             statement = statement.where(cases.c.account_id == account_id)
-        return tuple(SupportCaseView(**row) for row in session.execute(statement).mappings())
+        return tuple(_support_case_view(row) for row in session.execute(statement).mappings())
 
     @staticmethod
     def _require_operator(actor: VerifiedActor) -> None:
@@ -705,11 +720,6 @@ class SupportRuntime:
             outcome = OwningOutcome(
                 "admin_and_support", "case-target-mismatch", OutcomeClass.POLICY_BLOCKED,
             )
-        elif owner_kind == "tariff":
-            outcome = port(
-                session, actor=actor, target=target, action=action, reason=reason,
-                idempotency_key=key, target_account_id=case.account_id,
-            )
         else:
             arguments = {
                 "session": session, "actor": actor, "target": target, "action": action,
@@ -717,14 +727,11 @@ class SupportRuntime:
             }
             if owner_kind == "role":
                 arguments["correlation_id"] = correlation
-            if owner_kind == "access":
-                arguments["target_account_id"] = case.account_id
             if owner_kind in {"tariff", "access"}:
-                with correlation_context_scope(
-                    CorrelationContext(correlation_id=CorrelationId(value=correlation))
-                ):
-                    outcome = port(**arguments)
-            else:
+                arguments["target_account_id"] = case.account_id
+            with correlation_context_scope(
+                CorrelationContext(correlation_id=CorrelationId(value=correlation))
+            ):
                 outcome = port(**arguments)
         result = self._record_event(
             session,

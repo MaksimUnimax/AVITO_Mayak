@@ -1,6 +1,10 @@
-"""Fail-closed verifier for RF20 semantic acceptance evidence."""
-
-# ruff: noqa: E501
+"""Fail-closed verifier for the structured RF20 scenario evidence.
+Provider-zero evidence is accepted only from the structured provider_zero_provenance
+inventory emitted by the shared scenario.
+The inventory includes external_provider_calls_observed and
+real_provider_secret_reads_observed as explicit boundary measurements.
+It also records raw_provider_payload_records_observed.
+"""
 
 from __future__ import annotations
 
@@ -15,113 +19,131 @@ def main() -> int:
     if len(sys.argv) != 2:
         return 2
     try:
-        data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        evidence = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    except OSError, UnicodeError, json.JSONDecodeError:
         return 2
-    required = {
-        "technical_id",
-        "candidate_sha",
-        "postgresql_version",
-        "migration_head",
-        "support_counts",
-        "foreign_write_denied",
-        "live_provider_calls",
-        "real_token_reads",
-        "raw_provider_payload_persisted",
-        "host_postgres_published",
-        "delegations",
-        "port_calls",
-        "foreign_target_denials",
-        "ambiguous_replay_preserved",
-        "adapter_signature_evidence",
-        "audit_metadata",
-        "note_body_in_event_details",
-        "event_timestamps_aware",
-        "correlation_count",
-        "causation_count",
-        "host_postgres_publication_proof",
-        "operator_account_id",
-        "target_customer_account_id",
-        "operator_customer_distinct",
-        "entitlements_authority_scope",
-        "provider_zero_provenance",
-    }
-    if (
-        not isinstance(data, dict)
-        or not required <= data.keys()
-        or data["technical_id"] != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01"
-    ):
+    if not isinstance(evidence, dict):
         return 2
-    if (
-        data["operator_account_id"] == data["target_customer_account_id"]
-        or data["operator_customer_distinct"] is not True
-        or data["entitlements_authority_scope"] != "account_id"
-    ):
-        return 2
-    provenance = data["provider_zero_provenance"]
-    if not isinstance(provenance, dict) or provenance.get("method") != "production composition inventory plus disabled provider boundary counters":
-        return 2
-    for field in (
-        "external_provider_adapters_instantiated",
-        "external_provider_calls_observed",
-        "real_provider_secret_reads_observed",
-        "raw_provider_payload_records_observed",
-    ):
-        if provenance.get(field) != 0 or data.get(field) != 0:
-            return 2
-    if (
-        not str(data["postgresql_version"]).startswith("PostgreSQL 18")
-        or data["migration_head"] != "RF20_ADMIN_SUPPORT_RUNTIME"
-        or re.fullmatch(r"[0-9a-f]{40}", str(data["candidate_sha"])) is None
-    ):
+    if evidence.get("technical_id") != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01":
         return 2
     expected_sha = os.environ.get("GITHUB_SHA")
-    if expected_sha and data["candidate_sha"] != expected_sha:
+    if (
+        not expected_sha
+        or evidence.get("candidate_sha") != expected_sha
+        or re.fullmatch(r"[0-9a-f]{40}", str(evidence.get("candidate_sha"))) is None
+    ):
+        return 2
+    provenance = evidence.get("provider_zero_provenance")
+    if (
+        not isinstance(provenance, dict)
+        or any(
+            provenance.get(key) is not False
+            for key in (
+                "live_provider_adapter_instantiated",
+                "provider_boundary_invoked",
+                "provider_secret_source_requested",
+                "raw_provider_payload_fields",
+            )
+        )
+        or any(
+            provenance.get(key) != 0
+            for key in (
+                "external_provider_calls_observed",
+                "real_provider_secret_reads_observed",
+                "raw_provider_payload_records_observed",
+            )
+        )
+        or any(
+            evidence.get(key) != 0
+            for key in (
+                "live_provider_calls",
+                "real_token_reads",
+                "raw_provider_payload_persisted",
+            )
+        )
+    ):
+        return 2
+    if not str(evidence.get("postgresql_version", "")).startswith("PostgreSQL 18"):
+        return 2
+    if evidence.get("migration_head") != "RF20_ADMIN_SUPPORT_RUNTIME":
+        return 2
+    required_true = (
+        "operator_customer_distinct",
+        "case_projection_match",
+        "open",
+        "assignment",
+        "note",
+        "note_replay",
+        "fingerprint_conflict",
+        "tariff_bootstrap",
+        "basic_assignment",
+        "access_grant",
+        "access_revoke",
+        "identity_role_mutation",
+        "beacon",
+        "beacon_replay",
+        "beacon_replay_flag",
+        "notification_diagnostics",
+        "notification_read_only",
+        "direct_foreign_dml_denied",
+        "correlation_equality",
+        "note_leakage",
+    )
+    if any(evidence.get(key) is not True for key in required_true):
+        return 2
+    lifecycle = evidence.get("support_lifecycle")
+    if (
+        not isinstance(lifecycle, dict)
+        or any(lifecycle.get(key) is not True for key in ("escalated", "resolved", "closed"))
+        or lifecycle.get("final_state") != "CLOSED"
+    ):
         return 2
     if (
-        data["foreign_write_denied"] is not True
-        or data["host_postgres_published"] is not False
-        or not isinstance(data["host_postgres_publication_proof"], str)
-        or not data["host_postgres_publication_proof"]
+        evidence.get("scan") != "POLICY_BLOCKED"
+        or evidence.get("foreign_beacon") != "POLICY_BLOCKED"
+        or evidence.get("foreign_beacon_replay") is not True
+        or evidence.get("stale_beacon") != "CONFLICT"
     ):
         return 2
-    required_adapters = {
-        "identity", "entitlements_tariff", "entitlements_access", "beacon", "scan", "notification"
-    }
-    if set(data["adapter_signature_evidence"]) != required_adapters:
-        return 2
-    if data["note_body_in_event_details"] is not False:
-        return 2
-    if data["event_timestamps_aware"] is not True:
-        return 2
-    if int(data["correlation_count"]) < 1 or int(data["causation_count"]) < 1:
-        return 2
-    if any(value is not True for value in data["audit_metadata"].values()):
-        return 2
-    if any(
-        data[name] != 0
-        for name in ("live_provider_calls", "real_token_reads", "raw_provider_payload_persisted")
+    if (
+        evidence.get("ambiguity") != "AMBIGUOUS"
+        or evidence.get("ambiguity_replay") is not True
+        or evidence.get("ambiguous_owner_calls") != 1
     ):
         return 2
-    if any(
-        int(data["support_counts"].get(name, 0)) < 1
-        for name in ("support_cases", "support_case_notes", "support_case_events")
+    concurrency = evidence.get("concurrency")
+    if (
+        not isinstance(concurrency, dict)
+        or concurrency.get("independent_sessions") != 2
+        or concurrency.get("one_logical_effect") is not True
     ):
         return 2
-    if data.get("replay") is not True:
+    if evidence.get("operator_account_id") == evidence.get("customer_account_id"):
         return 2
-    if data.get("beacon_success_replay") is not True:
+    if (
+        not evidence.get("event_timestamps_aware")
+        or not evidence.get("host_postgres_publication_proof")
+        or evidence.get("host_postgres_published") is not False
+    ):
         return 2
-    required_delegations = {"role", "tariff", "access", "access_revoke", "beacon", "beacon_replay", "anchor", "foreign"}
-    if not required_delegations <= data["delegations"].keys():
+    if not isinstance(evidence.get("rf20_correlation_id"), str) or evidence.get(
+        "entitlements_owner_correlation"
+    ) != evidence.get("rf20_correlation_id"):
         return 2
-    if data["ambiguous_replay_preserved"] is not True:
-        return 2
-    if data.get("tariff_bootstrap") != "SUCCEEDED":
-        return 2
-    if any(int(data["port_calls"].get(name, 0)) < 1 for name in ("identity", "entitlements_tariff", "entitlements_access", "beacon", "scan", "notification")):
-        return 2
-    if int(data["foreign_target_denials"].get("beacon", 0)) < 1:
+    provider = evidence.get("provider_boundary")
+    if (
+        not isinstance(provider, dict)
+        or any(
+            provider.get(key) is not False
+            for key in (
+                "live_adapter_enabled",
+                "boundary_invoked",
+                "secret_source_requested",
+                "raw_provider_payload_fields",
+            )
+        )
+        or evidence.get("provider_calls") != 0
+    ):
         return 2
     print("RF20 PostgreSQL evidence verified")
     return 0

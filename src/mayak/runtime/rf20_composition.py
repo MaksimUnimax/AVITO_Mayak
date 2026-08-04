@@ -275,7 +275,7 @@ class EntitlementsSupportAdapter:
     ) -> OwningOutcome:
         self.calls += 1
         token = actor.identity_session_reference
-        if action != "ASSIGN_BASIC" or token is None:
+        if action not in {"BOOTSTRAP_TARIFFS", "ASSIGN_BASIC"} or token is None:
             return OwningOutcome(
                 "entitlements_and_billing", "tariff-policy", OutcomeClass.POLICY_BLOCKED
             )

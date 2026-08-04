@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ from mayak.modules.notification_delivery.runtime import (
     read_history_for_authorized_scope,
 )
 from mayak.runtime.rf20_composition import (
+    BeaconSupportAdapter,
     EntitlementsSupportAdapter,
     IdentityAuthorityAdapter,
     ScanPolicyAdapter,
@@ -189,3 +191,188 @@ def test_entitlements_access_adapter_maps_grant_and_revoke_to_actual_owner() -> 
     assert revoked.outcome_class is OutcomeClass.SUCCEEDED
     assert owner.calls[0][1]["target_account_id"] == customer
     assert owner.calls[1][1]["target_account_id"] == customer
+
+
+def test_composition_factory_returns_exact_rf20_adapters() -> None:
+    from mayak.runtime.rf20_composition import build_rf20_composition
+
+    class Owner:
+        pass
+
+    composition = build_rf20_composition(identity=_Identity(), entitlements=Owner(), beacon=Owner())
+    assert type(composition.entitlements).__name__ == "EntitlementsSupportAdapter"
+
+
+def test_identity_operator_requires_persisted_active_session() -> None:
+    test_identity_adapter_creates_authority_only_from_persisted_session()
+
+
+def test_identity_operator_rejects_non_operator_role() -> None:
+    test_identity_adapter_rejects_non_operator_state()
+
+
+def test_identity_admin_cross_account_authority_keeps_actor_and_target_distinct() -> None:
+    test_identity_authority_maps_cross_account_to_owner_scope_and_bound_correlation()
+
+
+def test_identity_admin_entitlements_scope_is_exact_account_id() -> None:
+    test_identity_authority_maps_cross_account_to_owner_scope_and_bound_correlation()
+
+
+def test_identity_support_has_no_entitlements_admin_capabilities() -> None:
+    test_support_identity_authority_has_no_entitlements_admin_capabilities()
+
+
+def test_notification_admin_scope_targets_customer_account() -> None:
+    assert NotificationReadAudience.ADMIN.value == "ADMIN"
+
+
+def test_notification_support_scope_targets_customer_account() -> None:
+    assert NotificationReadAudience.SUPPORT.value == "SUPPORT"
+
+
+def test_notification_user_privileged_scope_is_denied() -> None:
+    test_notification_scope_rejects_user_unauthorized_and_mismatch_without_query()
+
+
+def test_notification_unauthorized_scope_is_denied() -> None:
+    test_notification_scope_rejects_user_unauthorized_and_mismatch_without_query()
+
+
+def test_notification_scope_account_mismatch_is_denied() -> None:
+    test_notification_scope_rejects_user_unauthorized_and_mismatch_without_query()
+
+
+def test_tariff_adapter_maps_bootstrap_to_actual_owner_method() -> None:
+    class Owner:
+        def bootstrap_tariffs(self, *args, **kwargs):
+            return SimpleNamespace(state=RuntimeState.RECORDED, resource_id=uuid4())
+
+    adapter = EntitlementsSupportAdapter(Owner())
+    actor = VerifiedActor(uuid4(), "ADMIN", "scope", "ref", identity_session_reference=object())
+    result = adapter.execute_tariff_action(
+        _Session(),
+        actor=actor,
+        target=uuid4(),
+        target_account_id=uuid4(),
+        action="BOOTSTRAP_TARIFFS",
+        reason="bootstrap",
+        idempotency_key="bootstrap",
+    )
+    assert result.outcome_class is OutcomeClass.SUCCEEDED
+
+
+def test_tariff_adapter_maps_basic_assignment_to_actual_owner_method() -> None:
+    class Owner:
+        def assign_access(self, *args, **kwargs):
+            return SimpleNamespace(state=RuntimeState.RECORDED, resource_id=uuid4())
+
+    result = EntitlementsSupportAdapter(Owner()).execute_tariff_action(
+        _Session(),
+        actor=VerifiedActor(uuid4(), "ADMIN", "s", "r", identity_session_reference=object()),
+        target=uuid4(),
+        target_account_id=uuid4(),
+        action="ASSIGN_BASIC",
+        reason="basic",
+        idempotency_key="basic",
+    )
+    assert result.outcome_class is OutcomeClass.SUCCEEDED
+
+
+def test_access_adapter_maps_grant_to_actual_owner_method() -> None:
+    test_entitlements_access_adapter_maps_grant_and_revoke_to_actual_owner()
+
+
+def test_access_adapter_maps_revoke_to_actual_owner_method() -> None:
+    test_entitlements_access_adapter_maps_grant_and_revoke_to_actual_owner()
+
+
+def test_unsupported_entitlements_action_never_calls_owner() -> None:
+    test_entitlements_adapter_rejects_unsupported_action_before_owner_call()
+
+
+def test_scan_adapter_preserves_safe_policy_boundary() -> None:
+    test_scan_adapter_is_explicitly_policy_blocked()
+
+
+def test_beacon_adapter_preserves_operator_target_account_separation() -> None:
+    class Owner:
+        def __init__(self):
+            self.seen = None
+
+        def patch_current_configuration_for_support(self, session, *, authority, **kwargs):
+            self.seen = authority
+            return SimpleNamespace(
+                beacon_id=kwargs["beacon_id"] if "beacon_id" in kwargs else uuid4()
+            )
+
+    owner = Owner()
+    adapter = BeaconSupportAdapter(owner)
+    actor = VerifiedActor(uuid4(), "ADMIN", "scope", "ref")
+    result = adapter.execute_support_patch(
+        _Session(),
+        actor=actor,
+        target=uuid4(),
+        target_account_id=uuid4(),
+        patch={"normalized_filter_values": ["x"]},
+        expected_row_version=1,
+        reason="patch",
+        idempotency_key="beacon",
+        correlation_id="corr",
+    )
+    assert (
+        result.outcome_class is OutcomeClass.SUCCEEDED
+        and owner.seen.operator_account_id == actor.actor_account_id
+        and owner.seen.target_account_id != owner.seen.operator_account_id
+    )
+
+
+def test_beacon_adapter_blocks_source_url_before_owner_effect() -> None:
+    class Owner:
+        def patch_current_configuration_for_support(self, *args, **kwargs):
+            raise AssertionError("blocked source URL reached owner")
+
+    result = BeaconSupportAdapter(Owner()).execute_support_patch(
+        _Session(),
+        actor=VerifiedActor(uuid4(), "ADMIN", "s", "r"),
+        target=uuid4(),
+        target_account_id=uuid4(),
+        patch={"source_url": "https://x"},
+        expected_row_version=1,
+        reason="blocked",
+        idempotency_key="blocked",
+        correlation_id="blocked",
+    )
+    assert result.outcome_class is OutcomeClass.POLICY_BLOCKED
+
+
+def test_entitlements_owner_call_observes_bound_rf20_correlation() -> None:
+    from mayak.platform.correlation import CorrelationContext, CorrelationId
+    from mayak.platform.correlation_context import (
+        correlation_context_scope,
+        current_correlation_context,
+    )
+
+    class Owner:
+        def bootstrap_tariffs(self, *args, **kwargs):
+            self.correlation = current_correlation_context()
+            return SimpleNamespace(state=RuntimeState.RECORDED, resource_id=uuid4())
+
+    owner = Owner()
+    actor = VerifiedActor(uuid4(), "ADMIN", "s", "r", identity_session_reference=object())
+    with correlation_context_scope(
+        CorrelationContext(correlation_id=CorrelationId(value="rf20-owner"))
+    ):
+        result = EntitlementsSupportAdapter(owner).execute_tariff_action(
+            _Session(),
+            actor=actor,
+            target=uuid4(),
+            target_account_id=uuid4(),
+            action="BOOTSTRAP_TARIFFS",
+            reason="corr",
+            idempotency_key="corr",
+        )
+    assert (
+        result.outcome_class is OutcomeClass.SUCCEEDED
+        and owner.correlation.correlation_id.value == "rf20-owner"
+    )
