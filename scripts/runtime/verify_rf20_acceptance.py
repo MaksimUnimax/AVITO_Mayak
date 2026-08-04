@@ -44,7 +44,7 @@ def main() -> int:
     if (
         not isinstance(data, dict)
         or not required <= data.keys()
-        or data["technical_id"] != "RF20-ADMIN-SUPPORT-RUNTIME-01"
+        or data["technical_id"] != "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01"
     ):
         return 2
     if (
@@ -88,12 +88,14 @@ def main() -> int:
         return 2
     if data.get("replay") is not True:
         return 2
+    if data.get("beacon_success_replay") is not True:
+        return 2
     required_delegations = {"role", "tariff", "access", "beacon", "beacon_replay", "anchor", "foreign"}
     if not required_delegations <= data["delegations"].keys():
         return 2
     if data["ambiguous_replay_preserved"] is not True:
         return 2
-    if any(int(data["port_calls"].get(name, 0)) < 1 for name in ("identity", "entitlements", "beacon", "scan")):
+    if any(int(data["port_calls"].get(name, 0)) < 1 for name in ("identity", "entitlements_tariff", "entitlements_access", "beacon", "scan", "notification")):
         return 2
     if int(data["foreign_target_denials"].get("beacon", 0)) < 1:
         return 2

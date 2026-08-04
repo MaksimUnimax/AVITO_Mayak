@@ -98,6 +98,7 @@ class IdentityPort(Protocol):
         action: str,
         reason: str,
         idempotency_key: str,
+        correlation_id: str | None = None,
     ) -> "OwningOutcome": ...
 
     def account_summary(
@@ -133,17 +134,6 @@ class BeaconPort(Protocol):
         self, session: Session, *, actor: VerifiedActor, target: UUID,
         target_account_id: UUID, patch: dict[str, Any], expected_row_version: int,
         reason: str, idempotency_key: str, correlation_id: str,
-    ) -> "OwningOutcome": ...
-
-    def execute_support_action(
-        self,
-        session: Session,
-        *,
-        actor: VerifiedActor,
-        target: UUID,
-        action: str,
-        reason: str,
-        idempotency_key: str,
     ) -> "OwningOutcome": ...
 
     def safe_summary(
@@ -569,29 +559,6 @@ class SupportRuntime:
             owner_kind="tariff",
         )
 
-    def execute_beacon_action(
-        self,
-        session: Session,
-        *,
-        actor: VerifiedActor,
-        case_id: UUID,
-        target: UUID,
-        action: str,
-        reason: str,
-        idempotency_key: str,
-    ) -> MutationResult:
-        return self._delegated(
-            session,
-            actor=actor,
-            case_id=case_id,
-            target=target,
-            action=action,
-            reason=reason,
-            key=idempotency_key,
-            port=self.beacon.execute_support_action,
-            owner_kind="beacon",
-        )
-
     def execute_beacon_support_patch(
         self, session: Session, *, actor: VerifiedActor, case_id: UUID, target: UUID,
         target_account_id: UUID,
@@ -625,7 +592,7 @@ class SupportRuntime:
         outcome = self.beacon.execute_support_patch(
             session, actor=actor, target=target, target_account_id=target_account_id,
             patch=patch, expected_row_version=expected_row_version, reason=reason,
-            idempotency_key=idempotency_key, correlation_id=correlation_id,
+            idempotency_key=idempotency_key, correlation_id=correlation,
         )
         result = outcome if isinstance(outcome, MutationResult) else MutationResult(
             action="PATCH_CURRENT_CONFIGURATION", state=outcome.outcome_class,
@@ -731,10 +698,13 @@ class SupportRuntime:
                 idempotency_key=key, target_account_id=case.account_id,
             )
         else:
-            outcome = port(
-                session, actor=actor, target=target, action=action, reason=reason,
-                idempotency_key=key,
-            )
+            arguments = {
+                "session": session, "actor": actor, "target": target, "action": action,
+                "reason": reason, "idempotency_key": key,
+            }
+            if owner_kind == "role":
+                arguments["correlation_id"] = correlation
+            outcome = port(**arguments)
         result = self._record_event(
             session,
             case_id=case_id,

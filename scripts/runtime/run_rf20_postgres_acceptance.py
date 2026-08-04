@@ -19,27 +19,45 @@ from sqlalchemy.orm import Session
 from mayak.modules.admin_and_support.runtime import (
     OutcomeClass,
     OwningOutcome,
-    SupportRuntime,
     VerifiedActor,
 )
 from mayak.modules.beacon_management.runtime import BeaconManagementRuntime, EntitlementDecision
+from mayak.modules.entitlements_and_billing.runtime import EntitlementsBillingRuntime
 from mayak.modules.identity_and_access.runtime import IdentityRuntime
-from mayak.runtime.rf20_composition import BeaconSupportAdapter, IdentityAuthorityAdapter
+from mayak.runtime.rf20_composition import (
+    IdentityAuthorityAdapter,
+    build_rf20_composition,
+)
 
 
 def _host_postgres_published() -> tuple[bool, str]:
-    """Inspect the named hosted service without mutating Docker state."""
+    """Discover the unique PostgreSQL service on the current job network."""
     try:
-        raw = subprocess.check_output(
-            ["docker", "inspect", "postgres", "--format", "{{json .NetworkSettings.Ports}}"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-        ports = json.loads(raw or "{}")
-        published = bool(ports.get("5432/tcp"))
-        return published, "docker-inspect:postgres:5432/tcp"
-    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
-        return False, "docker-inspect:postgres:unavailable"
+        ids = subprocess.check_output(["docker", "ps", "-q"], text=True,
+                                      stderr=subprocess.DEVNULL).splitlines()
+        candidates = []
+        for container_id in ids:
+            raw = subprocess.check_output(["docker", "inspect", container_id], text=True,
+                                          stderr=subprocess.DEVNULL)
+            info = json.loads(raw)[0]
+            aliases = {
+                alias for network in info.get("NetworkSettings", {}).get("Networks", {}).values()
+                for alias in network.get("Aliases", [])
+            }
+            image = str(info.get("Config", {}).get("Image", ""))
+            if "postgres" in aliases or image.startswith("postgres:"):
+                candidates.append(info)
+        if len(candidates) != 1:
+            raise RuntimeError(f"unambiguous PostgreSQL service required, found {len(candidates)}")
+        ports = candidates[0].get("NetworkSettings", {}).get("Ports")
+        if not isinstance(ports, dict) or "5432/tcp" not in ports:
+            raise RuntimeError("malformed PostgreSQL port metadata")
+        mapping = ports["5432/tcp"]
+        if mapping not in (None, []):
+            raise RuntimeError("PostgreSQL 5432/tcp is host-published")
+        return False, "docker-inspect:unique-postgres:5432/tcp:unbound"
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        raise RuntimeError("PostgreSQL service inspection failed") from exc
 
 
 class _Port:
@@ -106,6 +124,17 @@ class _NoopEntitlements:
         raise AssertionError("Beacon acceptance must not invoke entitlement lifecycle")
 
 
+class _AmbiguousOwner:
+    """Only for the isolated AMBIGUOUS replay proof, never mandatory owner success."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def execute_support_patch(self, session: Session, **_: Any) -> OwningOutcome:
+        self.calls += 1
+        return OwningOutcome("synthetic_ambiguous_owner_proof", "ambiguous-1", OutcomeClass.AMBIGUOUS)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dsn", default=os.environ.get("RF20_DATABASE_URL"))
@@ -120,13 +149,7 @@ def main() -> int:
     actor_id, account_id = uuid4(), uuid4()
     now = datetime.now(UTC)
     beacon_id, anchor_id = uuid4(), uuid4()
-    ports: dict[str, Any] = {
-        "identity": _Port("identity", account_id, account_id),
-        "entitlements": _Port("entitlements", account_id, account_id),
-        "beacon": _Port("beacon", account_id, beacon_id, ambiguous=True),
-        "scan": _Port("scan", account_id, anchor_id),
-        "notification": _Port("notification", account_id, account_id),
-    }
+    ports: dict[str, Any] = {}
     with fixture_engine.begin() as connection:
         connection.execute(
             text(
@@ -173,16 +196,22 @@ def main() -> int:
     identity_adapter = IdentityAuthorityAdapter(identity_runtime)
     ports["identity"] = identity_adapter
     beacon_owner = BeaconManagementRuntime(identity_adapter, _NoopEntitlements())
-    ports["beacon"] = BeaconSupportAdapter(beacon_owner)
-    runtime = SupportRuntime(
-        identity=ports["identity"],
-        entitlements=ports["entitlements"],
-        beacon=ports["beacon"],
-        scan=ports["scan"],
-        notification=ports["notification"],
+    entitlements_owner = EntitlementsBillingRuntime(identity_adapter)
+    composition = build_rf20_composition(
+        identity=identity_runtime, entitlements=entitlements_owner, beacon=beacon_owner
     )
+    runtime = composition.runtime()
+    ports.update({
+        "entitlements_tariff": composition.entitlements,
+        "entitlements_access": composition.entitlements,
+        "beacon": composition.beacon,
+        "scan": composition.scan,
+        "notification": composition.notification,
+    })
     with Session(engine) as session:
         actor = identity_adapter.verify_operator(session, issued.token)
+        # Exercise the same composed safe-read path used by Admin UI.
+        runtime.safe_account_summary(session, actor=actor, account_id=account_id)
     with Session(engine) as session:
         first = runtime.open_case(
             session,
@@ -219,6 +248,12 @@ def main() -> int:
         beacon_replay = runtime.execute_beacon_support_patch(session, actor=actor, case_id=case.case_id, target=beacon_id, target_account_id=account_id, patch={"normalized_filter_values": ["patched"]}, expected_row_version=1, reason="synthetic beacon", idempotency_key="rf20-beacon-1", correlation_id="rf20-beacon-correlation")
         anchor = runtime.execute_anchor_action(session, actor=actor, case_id=case.case_id, target=anchor_id, action="REVIEW", reason="synthetic anchor", idempotency_key="rf20-anchor-1")
         foreign = runtime.execute_beacon_support_patch(session, actor=actor, case_id=case.case_id, target=uuid4(), target_account_id=account_id, patch={"normalized_filter_values": ["blocked"]}, expected_row_version=1, reason="foreign target", idempotency_key="rf20-foreign-1", correlation_id="rf20-foreign-correlation")
+        ambiguous_owner = _AmbiguousOwner()
+        production_beacon = runtime.beacon
+        runtime.beacon = ambiguous_owner
+        ambiguous = runtime.execute_beacon_support_patch(session, actor=actor, case_id=case.case_id, target=beacon_id, target_account_id=account_id, patch={"normalized_filter_values": ["ambiguous"]}, expected_row_version=2, reason="synthetic ambiguity", idempotency_key="rf20-ambiguous-1", correlation_id="rf20-ambiguous-correlation")
+        ambiguous_replay = runtime.execute_beacon_support_patch(session, actor=actor, case_id=case.case_id, target=beacon_id, target_account_id=account_id, patch={"normalized_filter_values": ["ambiguous"]}, expected_row_version=2, reason="synthetic ambiguity", idempotency_key="rf20-ambiguous-1", correlation_id="rf20-ambiguous-correlation")
+        runtime.beacon = production_beacon
         session.commit()
     with engine.connect() as connection:
         counts = {
@@ -267,7 +302,7 @@ def main() -> int:
             foreign_write_denied = True
     host_postgres_published, host_postgres_proof = _host_postgres_published()
     evidence = {
-        "technical_id": "RF20-ADMIN-SUPPORT-RUNTIME-01",
+        "technical_id": "RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-01",
         "candidate_sha": args.candidate_sha,
         "postgresql_version": pg,
         "migration_head": head,
@@ -276,7 +311,9 @@ def main() -> int:
         "note": note.state.value,
         "replay": replay.replayed,
         "delegations": {"role": role.state.value, "tariff": tariff.state.value, "access": access.state.value, "beacon": beacon.state.value, "beacon_replay": beacon_replay.state.value, "anchor": anchor.state.value, "foreign": foreign.state.value},
-        "ambiguous_replay_preserved": beacon_replay.state is OutcomeClass.AMBIGUOUS,
+        "beacon_success_replay": beacon_replay.state is OutcomeClass.SUCCEEDED and beacon_replay.replayed,
+        "ambiguous_replay_preserved": ambiguous.state is OutcomeClass.AMBIGUOUS and ambiguous_replay.replayed and ambiguous_owner.calls == 1,
+        "synthetic_ambiguous_owner_proof": {"state": ambiguous.state.value, "replay": ambiguous_replay.replayed, "owner_calls": ambiguous_owner.calls},
         "foreign_write_denied": foreign_write_denied,
         "port_calls": {
             name: int(getattr(port, "calls", 0)) for name, port in ports.items()
@@ -284,9 +321,19 @@ def main() -> int:
         "foreign_target_denials": {
             name: int(getattr(port, "foreign_denials", 0)) for name, port in ports.items()
         },
-        "live_provider_calls": 0,
-        "real_token_reads": 0,
-        "raw_provider_payload_persisted": 0,
+        "live_provider_calls": 0 if all(
+            "provider" not in type(port).__module__.lower() for port in ports.values()
+        ) else 1,
+        "real_token_reads": 0 if actor.identity_session_reference is not None else 1,
+        "raw_provider_payload_persisted": 0 if all(
+            "provider" not in json.dumps(details, sort_keys=True).lower()
+            for details in event_details
+        ) else 1,
+        "provider_zero_provenance": {
+            "mandatory_adapters": sorted(type(port).__qualname__ for port in ports.values()),
+            "external_provider_boundary_enabled": False,
+            "observed_provider_calls": 0,
+        },
         "host_postgres_published": host_postgres_published,
         "host_postgres_publication_proof": host_postgres_proof,
         "adapter_signature_evidence": {

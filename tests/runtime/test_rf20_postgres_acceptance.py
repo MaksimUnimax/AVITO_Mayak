@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -39,11 +40,39 @@ def test_postgresql_advisory_lock_serializes_independent_transactions() -> None:
     engine = _engine()
     lock_key = 87200420
 
-    def acquire() -> int:
-        with engine.begin() as connection:
-            return int(connection.execute(
-                text("select pg_advisory_xact_lock(:key), 1"), {"key": lock_key}
-            ).scalar_one())
+    entered = Barrier(2)
+    released = Barrier(2)
+
+    def acquire() -> bool:
+        with engine.connect() as connection:
+            transaction = connection.begin()
+            try:
+                # pg_advisory_xact_lock returns void; select a separate
+                # boolean marker and never coerce the void expression.
+                connection.execute(text("select pg_advisory_xact_lock(:key)"), {"key": lock_key})
+                entered.wait(timeout=5)
+                released.wait(timeout=5)
+                transaction.commit()
+                return True
+            except BaseException:
+                transaction.rollback()
+                raise
+
+    def contender() -> bool:
+        with engine.connect() as connection:
+            entered.wait(timeout=5)
+            with connection.begin():
+                # A second independent transaction can only complete after A
+                # commits.  pg_try_advisory_xact_lock must be false while A
+                # owns the protected section.
+                blocked = connection.execute(
+                    text("select pg_try_advisory_xact_lock(:key)"), {"key": lock_key}
+                ).scalar_one()
+                released.wait(timeout=5)
+                return blocked is False
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        assert sorted(pool.map(lambda _: acquire(), range(2))) == [1, 1]
+        first = pool.submit(acquire)
+        second = pool.submit(contender)
+        assert first.result(timeout=10) is True
+        assert second.result(timeout=10) is True

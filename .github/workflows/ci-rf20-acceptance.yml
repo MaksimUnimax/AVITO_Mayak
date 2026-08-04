@@ -137,6 +137,9 @@ jobs:
               c.execute(text('grant insert, update on table mayak.identity_role_assignments to mayak_application'))
               c.execute(text('grant insert on table mayak.platform_audit_entries to mayak_application'))
               c.execute(text('grant select, insert, update on table mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application'))
+              c.execute(text('grant select on table mayak.entitlement_tariff_definitions to mayak_application'))
+              c.execute(text('grant select, insert, update on table mayak.entitlement_access_grants to mayak_application'))
+              c.execute(text('grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application'))
               c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
           PY
       - name: Focused RF20 tests
@@ -153,7 +156,8 @@ jobs:
           tests/contract/test_admin_and_support_semantic_contract_exports.py
       - name: Static and import gates
         run: |
-          uv run ruff check src/mayak/modules/admin_and_support scripts/runtime/run_rf20_postgres_acceptance.py scripts/runtime/verify_rf20_acceptance.py alembic/versions/20260804_RF20_admin_support_runtime.py
+          uv run ruff check src/mayak/modules/admin_and_support src/mayak/runtime/rf20_composition.py src/mayak/modules/beacon_management/runtime.py scripts/runtime/run_rf20_postgres_acceptance.py scripts/runtime/verify_rf20_acceptance.py tests/runtime/test_rf20_*.py
+          uv run mypy src/mayak/modules/admin_and_support src/mayak/runtime/rf20_composition.py src/mayak/modules/beacon_management/runtime.py
           uv run lint-imports
       - name: RF20 PostgreSQL producer and verifier
         run: |
@@ -189,9 +193,10 @@ jobs:
           print('RF20 semantic artifact safety verified')
           PY
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: success()
         with:
           name: rf20-admin-support-acceptance
           path: |
             rf20-acceptance-evidence.json
             rf20-full-pytest.log
+          if-no-files-found: error

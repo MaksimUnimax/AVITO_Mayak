@@ -231,6 +231,42 @@ def build_admin_router(
                 "title": "Case error", "cases": (), "summary": None, "error": str(exc),
             })
 
+    @router.post("/cases/{case_id}/beacon-patch", response_class=HTMLResponse)
+    async def beacon_patch(request: Request, case_id: UUID) -> Any:
+        """Typed Beacon command; the case, not the browser, supplies account scope."""
+        try:
+            operator = actor(request)
+            form = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
+            beacon_id = UUID(form["beacon_id"][0])
+            field = form["patch_field"][0]
+            value = form["patch_value"][0]
+            if field != "normalized_filter_values" or not value.strip():
+                raise ValueError("unsupported Beacon patch field")
+            with sessions.begin() as session:
+                case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
+                result = runtime.execute_beacon_support_patch(
+                    session, actor=operator, case_id=case_id, target=beacon_id,
+                    target_account_id=case.account_id,
+                    patch={field: [value.strip()]},
+                    expected_row_version=int(form["expected_row_version"][0]),
+                    reason=form["reason"][0], idempotency_key=form["idempotency_key"][0],
+                    correlation_id=form.get("correlation_id", ["rf20-ui"])[0],
+                )
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Beacon patch", "operator": operator, "cases": (case,),
+                "summary": {"result": result}, "error": None,
+            })
+        except (KeyError, ValueError, UnicodeDecodeError):
+            raise HTTPException(status_code=400, detail="malformed Beacon patch") from None
+        except AuthorizationDenied:
+            raise HTTPException(status_code=403, detail="forbidden") from None
+        except TargetNotFound:
+            raise HTTPException(status_code=404, detail="not found") from None
+        except SupportRuntimeError as exc:
+            return _TEMPLATES.TemplateResponse(request, "admin.html", {
+                "title": "Beacon patch error", "cases": (), "summary": None, "error": str(exc),
+            })
+
     @router.post("/cases/{case_id}/actions/{family}", response_class=HTMLResponse)
     async def delegated_action(request: Request, case_id: UUID, family: str) -> Any:
         try:
@@ -248,8 +284,6 @@ def build_admin_router(
                 handler = runtime.execute_tariff_action
             elif family == "access":
                 handler = runtime.execute_access_action
-            elif family == "beacon":
-                handler = runtime.execute_beacon_action
             elif family == "anchor":
                 handler = runtime.execute_anchor_action
             else:

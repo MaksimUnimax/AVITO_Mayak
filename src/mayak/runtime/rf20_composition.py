@@ -7,8 +7,9 @@ not accepted by this adapter.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -23,6 +24,8 @@ from mayak.modules.admin_and_support.runtime import (
 )
 from mayak.modules.beacon_management.runtime import (
     BeaconManagementRuntime,
+    BeaconRuntimeError,
+    ConflictError,
     ResolvedActor,
     VerifiedSupportAuthority,
 )
@@ -37,6 +40,9 @@ from mayak.modules.identity_and_access.runtime import IdentityRuntime
 from mayak.modules.notification_delivery.runtime import read_history
 from mayak.persistence.metadata import metadata
 from mayak.platform.correlation import CorrelationContext, CorrelationId
+
+if TYPE_CHECKING:
+    from mayak.modules.admin_and_support.runtime import SupportRuntime
 
 _ACCOUNTS = metadata.tables["mayak.identity_accounts"]
 _ROLES = metadata.tables["mayak.identity_role_assignments"]
@@ -79,6 +85,7 @@ class IdentityAuthorityAdapter:
         action: str,
         reason: str,
         idempotency_key: str,
+        correlation_id: str | None = None,
     ) -> Any:
         self.calls += 1
         token = actor.identity_session_reference
@@ -100,7 +107,9 @@ class IdentityAuthorityAdapter:
                 role_code=role,
                 reason=reason,
                 idempotency_key=IdempotencyKey(value=idempotency_key),
-                correlation=CorrelationContext(correlation_id=CorrelationId(value=str(uuid4()))),
+                correlation=CorrelationContext(
+                    correlation_id=CorrelationId(value=correlation_id or str(uuid4()))
+                ),
             ),
             token,
             revoke=action.startswith("REVOKE_"),
@@ -117,18 +126,22 @@ class IdentityAuthorityAdapter:
 
     def authority(self, session: Session, actor_reference: Any, target: UUID) -> AuthorityFacts:
         actor = self.verify_operator(session, actor_reference)
-        if actor.actor_account_id != target:
-            raise PermissionError("identity account scope mismatch")
+        target_state = session.execute(
+            select(_ACCOUNTS.c.state).where(_ACCOUNTS.c.id == target)
+        ).scalar_one_or_none()
+        if target_state != "ACTIVE":
+            raise PermissionError("target account unavailable")
+        capabilities = (
+            frozenset({
+                "ENTITLEMENTS_TARIFF_ADMIN",
+                "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN",
+                "ENTITLEMENTS_MANUAL_ACCESS_ADMIN",
+            }) if actor.role == "ADMIN" else frozenset()
+        )
         return AuthorityFacts(
             actor_id=actor.actor_account_id,
             account_id=target,
-            capabilities=frozenset(
-                {
-                    "ENTITLEMENTS_TARIFF_ADMIN",
-                    "ENTITLEMENTS_TARIFF_ASSIGN_ADMIN",
-                    "ENTITLEMENTS_MANUAL_ACCESS_ADMIN",
-                }
-            ),
+            capabilities=capabilities,
             scope=actor.authorization_scope,
             authorization_reference=actor.authorization_reference,
             audit_reference=actor.authorization_reference,
@@ -189,32 +202,47 @@ class BeaconSupportAdapter:
     def __init__(self, runtime: BeaconManagementRuntime) -> None:
         self.runtime = runtime
         self.calls = 0
+        self.foreign_denials = 0
 
     def execute_support_patch(
         self, session: Session, *, actor: VerifiedActor, target: UUID,
         target_account_id: UUID, patch: dict[str, Any], expected_row_version: int,
         reason: str, idempotency_key: str, correlation_id: str,
     ) -> OwningOutcome:
-        if target != target_account_id or not patch or "source_url" in patch:
+        if not patch or "source_url" in patch:
             return OwningOutcome(self.owner, "beacon-policy", OutcomeClass.POLICY_BLOCKED)
         self.calls += 1
-        result = self.runtime.patch_current_configuration_for_support(
+        try:
+            result = self.runtime.patch_current_configuration_for_support(
+                session,
+                authority=VerifiedSupportAuthority(
+                    operator_account_id=actor.actor_account_id,
+                    target_account_id=target_account_id,
+                    reference=actor.authorization_reference,
+                ),
+                beacon_id=target, patch=patch, expected_row_version=expected_row_version,
+                idempotency_key=idempotency_key, reason=reason,
+                correlation=CorrelationContext(correlation_id=CorrelationId(value=correlation_id)),
+            )
+        except ConflictError:
+            return OwningOutcome(self.owner, "stale-beacon", OutcomeClass.CONFLICT)
+        except BeaconRuntimeError:
+            self.foreign_denials += 1
+            return OwningOutcome(self.owner, "beacon-policy", OutcomeClass.POLICY_BLOCKED)
+        return OwningOutcome(self.owner, str(result.beacon_id), OutcomeClass.SUCCEEDED)
+
+    def safe_summary(
+        self, session: Session, *, actor: VerifiedActor, target: UUID
+    ) -> dict[str, Any]:
+        self.calls += 1
+        return self.runtime.safe_summary_for_support(
             session,
             authority=VerifiedSupportAuthority(
                 operator_account_id=actor.actor_account_id,
-                target_account_id=target_account_id,
+                target_account_id=target,
                 reference=actor.authorization_reference,
             ),
-            beacon_id=target,
-            patch=patch,
-            expected_row_version=expected_row_version,
-            idempotency_key=idempotency_key,
-            reason=reason,
-            correlation=CorrelationContext(
-                correlation_id=CorrelationId(value=correlation_id)
-            ),
         )
-        return OwningOutcome(self.owner, str(result.beacon_id), OutcomeClass.SUCCEEDED)
 
 
 class EntitlementsSupportAdapter:
@@ -222,11 +250,13 @@ class EntitlementsSupportAdapter:
 
     def __init__(self, owner: EntitlementsBillingRuntime) -> None:
         self.owner = owner
+        self.calls = 0
 
     def execute_tariff_action(
         self, session: Session, *, actor: VerifiedActor, target: UUID, action: str,
         reason: str, idempotency_key: str, target_account_id: UUID,
     ) -> OwningOutcome:
+        self.calls += 1
         token = actor.identity_session_reference
         if action != "ASSIGN_BASIC" or token is None:
             return OwningOutcome(
@@ -244,6 +274,7 @@ class EntitlementsSupportAdapter:
         self, session: Session, *, actor: VerifiedActor, target: UUID, action: str,
         reason: str, idempotency_key: str,
     ) -> OwningOutcome:
+        self.calls += 1
         token = actor.identity_session_reference
         if action != "GRANT_ACCESS" or token is None:
             return OwningOutcome(
@@ -260,6 +291,7 @@ class EntitlementsSupportAdapter:
     def safe_summary(
         self, session: Session, *, actor: VerifiedActor, target: UUID
     ) -> dict[str, Any]:
+        self.calls += 1
         result = self.owner.evaluate_effective(session, target, at=datetime.now(UTC))
         return {
             "owner": "entitlements_and_billing",
@@ -287,9 +319,13 @@ class EntitlementsSupportAdapter:
 class NotificationDiagnosticsAdapter:
     """Read-only RF20 façade over Notification history."""
 
+    def __init__(self) -> None:
+        self.calls = 0
+
     def safe_diagnostics(
         self, session: Session, *, actor: VerifiedActor, target: UUID
     ) -> dict[str, Any]:
+        self.calls += 1
         history = read_history(session, account_id=target, actor_account_id=actor.actor_account_id)
         return {"owner": "notification_delivery", "history_count": len(history), "redacted": True}
 
@@ -297,7 +333,14 @@ class NotificationDiagnosticsAdapter:
 class ScanPolicyAdapter:
     """Current Scan public runtime has no destructive RF20 command."""
 
-    def execute_anchor_action(self, **_: Any) -> OwningOutcome:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def execute_anchor_action(
+        self, session: Session, *, actor: VerifiedActor, target: UUID, action: str,
+        reason: str, idempotency_key: str,
+    ) -> OwningOutcome:
+        self.calls += 1
         return OwningOutcome(
             "scan_orchestration", "scan-anchor-policy", OutcomeClass.POLICY_BLOCKED,
             "safe review/preparation only",
@@ -306,16 +349,49 @@ class ScanPolicyAdapter:
     def safe_summary(
         self, session: Session, *, actor: VerifiedActor, target: UUID
     ) -> dict[str, Any]:
+        self.calls += 1
         return {"owner": "scan_orchestration", "state": "SAFE_REVIEW_ONLY", "redacted": True}
+
+
+@dataclass(frozen=True, slots=True)
+class RF20Composition:
+    """Production-shaped RF20 owner wiring used by both HTTP and acceptance."""
+
+    identity: IdentityAuthorityAdapter
+    entitlements: EntitlementsSupportAdapter
+    beacon: BeaconSupportAdapter
+    scan: ScanPolicyAdapter
+    notification: NotificationDiagnosticsAdapter
+
+    def runtime(self) -> "SupportRuntime":
+        from mayak.modules.admin_and_support.runtime import SupportRuntime
+
+        return SupportRuntime(
+            identity=self.identity, entitlements=self.entitlements, beacon=self.beacon,
+            scan=self.scan, notification=self.notification,
+        )
+
+
+def build_rf20_composition(
+    *, identity: IdentityRuntime, entitlements: EntitlementsBillingRuntime,
+    beacon: BeaconManagementRuntime,
+) -> RF20Composition:
+    identity_adapter = IdentityAuthorityAdapter(identity)
+    return RF20Composition(
+        identity=identity_adapter,
+        entitlements=EntitlementsSupportAdapter(entitlements),
+        beacon=BeaconSupportAdapter(beacon),
+        scan=ScanPolicyAdapter(),
+        notification=NotificationDiagnosticsAdapter(),
+    )
 
 
 __all__ = [
     "BeaconSupportAdapter",
+    "RF20Composition",
+    "build_rf20_composition",
     "EntitlementsSupportAdapter",
     "IdentityAuthorityAdapter",
     "NotificationDiagnosticsAdapter",
     "ScanPolicyAdapter",
 ]
-
-
-__all__ = ["IdentityAuthorityAdapter"]

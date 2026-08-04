@@ -37,7 +37,10 @@ def test_identity_adapter_rejects_non_operator_state() -> None:
 
 
 def test_scan_adapter_is_explicitly_policy_blocked() -> None:
-    result = ScanPolicyAdapter().execute_anchor_action()
+    result = ScanPolicyAdapter().execute_anchor_action(
+        object(), actor=VerifiedActor(uuid4(), "ADMIN", "scope", "ref"),
+        target=uuid4(), action="RESET", reason="review", idempotency_key="scan-1",
+    )
     assert result.outcome_class is OutcomeClass.POLICY_BLOCKED
 
 

@@ -667,7 +667,10 @@ class BeaconManagementRuntime:
                 warning_codes=current["warning_codes"],
                 filter_candidate=current["filter_candidate"],
                 accepted_filter=accepted,
-                created_by_account_id=target_account_id,
+                # The revision creator is the verified support operator.  The
+                # customer account remains explicit in Beacon ownership and
+                # the audit target; these identities must not be conflated.
+                created_by_account_id=actor.actor_id,
                 created_at=now,
                 catalog_version_id=current["catalog_version_id"],
             )
@@ -1125,6 +1128,23 @@ class BeaconManagementRuntime:
             .all()
         )
         return tuple(self._view(row) for row in rows)
+
+    def safe_summary_for_support(
+        self, session: Session, *, authority: VerifiedSupportAuthority
+    ) -> dict[str, Any]:
+        """Redacted owner read for Admin Support; no mutation or foreign table read."""
+        if not authority.verified or authority.operator_account_id == authority.target_account_id:
+            raise BeaconRuntimeError("distinct verified support authority required")
+        row = session.execute(
+            select(_BEACONS.c.id, _BEACONS.c.state, _BEACONS.c.row_version).where(
+                _BEACONS.c.account_id == authority.target_account_id
+            )
+        ).mappings().all()
+        return {
+            "owner": "beacon_management", "account_id": str(authority.target_account_id),
+            "count": len(row), "states": sorted({str(item["state"]) for item in row}),
+            "row_versions": [int(item["row_version"]) for item in row], "redacted": True,
+        }
 
     def history(
         self, session: Session, *, actor_reference: str, beacon_id: UUID
