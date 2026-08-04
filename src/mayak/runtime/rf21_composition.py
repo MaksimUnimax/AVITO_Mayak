@@ -10,13 +10,18 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from mayak.modules.beacon_management.runtime import BeaconManagementRuntime, ResolvedActor
+from mayak.modules.beacon_management.runtime import (
+    BeaconManagementRuntime,
+    BeaconRuntimeError,
+    ResolvedActor,
+)
 from mayak.modules.entitlements_and_billing.runtime import EntitlementsBillingRuntime
 from mayak.modules.identity_and_access.runtime import IdentityRuntime
 from mayak.modules.max_adapter.runtime import max_readiness
 from mayak.modules.notification_delivery.runtime import read_history
 from mayak.modules.scan_orchestration.read_models import current_listing_state, recent_runs
 from mayak.modules.telegram_adapter.runtime import telegram_readiness
+from mayak.modules.web_cabinet.beacon_commands import WebBeaconCommandKind
 from mayak.modules.web_cabinet.runtime import VerifiedWebCustomer, WebRuntimeState, WebSection
 
 
@@ -91,30 +96,40 @@ class BeaconWebAdapter:
         authority = (customer.authority_context
                      if customer.authority_context is not None
                      else customer.authority_reference)
-        view = self.runtime.get(session, actor_reference=authority,
-                                beacon_id=beacon_id)
-        history = self.runtime.history(session, actor_reference=authority,
-                                       beacon_id=beacon_id)
+        try:
+            view = self.runtime.get(session, actor_reference=authority,
+                                    beacon_id=beacon_id)
+            history = self.runtime.history(session, actor_reference=authority,
+                                           beacon_id=beacon_id)
+        except BeaconRuntimeError as exc:
+            raise PermissionError("Beacon is unavailable for this customer") from exc
         return {"beacon": view, "history": history, "owner": self.owner}
 
     def command(self, session: Any, customer: VerifiedWebCustomer, *, beacon_id: UUID,
-                action: str, expected_row_version: int, idempotency_key: str,
+                action: WebBeaconCommandKind, expected_row_version: int, idempotency_key: str,
                 patch: dict[str, Any] | None = None) -> Any:
         self.calls += 1
+        try:
+            action = WebBeaconCommandKind(action)
+        except ValueError as exc:
+            raise ValueError("unsupported Web Beacon command") from exc
         args = dict(session=session, actor_reference=customer.authority_context,
                     beacon_id=beacon_id, idempotency_key=idempotency_key,
                     expected_row_version=expected_row_version)
-        if action == "PATCH_CURRENT_CONFIGURATION":
+        if action is WebBeaconCommandKind.PATCH_CURRENT_CONFIGURATION:
             if not patch:
                 raise ValueError("patch required")
-            args.update(patch=patch)
+            args.update(patch=patch, strict_expected_row_version=True)
             return self.runtime.patch(**args)
-        methods = {"ARCHIVE_TO_HISTORY": "archive", "RESTORE_FROM_HISTORY": "restore",
-                   "DELETE_TO_HISTORY": "user_delete", "PERMANENT_DELETE": "permanent_delete",
-                   "PAUSE": "pause", "RESUME": "resume", "ACTIVATE": "activate"}
+        methods = {
+            WebBeaconCommandKind.ARCHIVE_TO_HISTORY: "archive",
+            WebBeaconCommandKind.RESTORE_FROM_HISTORY: "restore",
+            WebBeaconCommandKind.DELETE_TO_HISTORY: "user_delete",
+            WebBeaconCommandKind.PERMANENT_DELETE: "permanent_delete",
+        }
         method = methods.get(action)
         if method is None:
-            raise ValueError("unsupported Beacon command")
+            raise ValueError("unsupported Web Beacon command")
         return getattr(self.runtime, method)(**args)
 
 

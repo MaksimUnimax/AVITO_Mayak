@@ -11,6 +11,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import UUID
 
+from .beacon_commands import WebBeaconCommandKind
 from .read_models import WebReadFreshness
 
 
@@ -68,7 +69,7 @@ class WebProjectionPort(Protocol):
 
 class WebBeaconPort(WebProjectionPort, Protocol):
     def command(self, session: Any, customer: VerifiedWebCustomer, *, beacon_id: UUID,
-                action: str, expected_row_version: int, idempotency_key: str,
+                action: WebBeaconCommandKind, expected_row_version: int, idempotency_key: str,
                 patch: dict[str, Any] | None = None) -> Any: ...
 
 

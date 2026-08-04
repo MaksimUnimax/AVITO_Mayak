@@ -561,12 +561,14 @@ class BeaconManagementRuntime:
         patch: dict[str, Any],
         expected_row_version: int,
         idempotency_key: str,
+        strict_expected_row_version: bool = False,
     ) -> BeaconCommandResult:
         actor = self._authority(session, actor_reference, None)
         return self._patch_as_actor(
             session, actor=actor, target_account_id=actor.account_id, beacon_id=beacon_id,
             patch=patch, expected_row_version=expected_row_version,
             idempotency_key=idempotency_key,
+            strict_expected_row_version=strict_expected_row_version,
         )
 
     def patch_current_configuration_for_support(
@@ -627,12 +629,12 @@ class BeaconManagementRuntime:
         )
         if row is None or row["account_id"] != target_account_id:
             raise BeaconRuntimeError("beacon unavailable")
-        if strict_expected_row_version and row["row_version"] != expected_row_version:
-            raise ConflictError("stale patch")
         fp = self._fingerprint("patch", {"beacon": beacon_id, "patch": patch})
         replay = self._begin(session, idempotency_key, fp)
         if replay:
             return replay
+        if strict_expected_row_version and row["row_version"] != expected_row_version:
+            raise ConflictError("stale patch")
         current = (
             session.execute(
                 select(_REVISIONS).where(

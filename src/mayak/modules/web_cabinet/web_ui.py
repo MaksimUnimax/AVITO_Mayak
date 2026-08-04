@@ -11,7 +11,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from .runtime import WebCabinetRuntime, WebDashboard, WebRuntimeError
+from .beacon_commands import WebBeaconCommandKind
+from .runtime import WebCabinetRuntime, WebDashboard, WebRuntimeError, WebRuntimeState
 
 _ROOT = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_ROOT / "templates"))
@@ -79,6 +80,10 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
                 if customer is None:
                     return render(request, error="Требуется проверенная сессия.", status_code=401)
                 detail = runtime.beacon_detail(session, customer, beacon_id)
+            if detail.state is WebRuntimeState.FORBIDDEN:
+                return render(request, error="Beacon недоступен.", status_code=403)
+            if detail.state in {WebRuntimeState.NOT_FOUND, WebRuntimeState.UNKNOWN}:
+                return render(request, error="Beacon недоступен.", status_code=404)
             return render(request, dashboard=WebDashboard(customer, (detail,)))
         except Exception:
             return render(request, error="Beacon недоступен.", status_code=404)
@@ -93,7 +98,7 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
                 raise ValueError("malformed form")
             allowed = {
                 "action", "expected_row_version", "idempotency_key",
-                "normalized_filter_values",
+                "normalized_filter_values", "confirmation", "history_entry", "entitlement_recheck",
             }
             if set(form) - allowed or any(len(values) != 1 for values in form.values()):
                 raise ValueError("malformed form")
@@ -104,12 +109,36 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
                 customer = runtime.identity.resolve_session(session, reference)
                 if customer is None:
                     return render(request, error="Требуется проверенная сессия.", status_code=401)
+                # Identity validation is a read transaction; the mutation owns
+                # the following transaction explicitly.
+                commit_read = getattr(session, "commit", None)
+                if callable(commit_read):
+                    commit_read()
                 with session.begin():
+                    try:
+                        command_kind = WebBeaconCommandKind(form["action"][0])
+                    except ValueError as exc:
+                        raise ValueError("unsupported Web command") from exc
+                    if (command_kind is WebBeaconCommandKind.DELETE_TO_HISTORY
+                            and "confirmation" not in form):
+                        raise ValueError("delete confirmation required")
+                    if command_kind is WebBeaconCommandKind.RESTORE_FROM_HISTORY and not {
+                        "history_entry", "entitlement_recheck"
+                    }.issubset(form):
+                        raise ValueError("restore evidence required")
+                    if command_kind is WebBeaconCommandKind.PERMANENT_DELETE and not {
+                        "history_entry", "confirmation"
+                    }.issubset(form):
+                        raise ValueError("permanent delete confirmation required")
                     runtime.execute_beacon_command(
-                        session, customer, beacon_id=beacon_id, action=form["action"][0],
+                        session, customer, beacon_id=beacon_id, action=command_kind,
                         expected_row_version=int(form["expected_row_version"][0]),
                         idempotency_key=form["idempotency_key"][0],
-                        patch={"normalized_filter_values": form["normalized_filter_values"][0]}
+                        patch={"normalized_filter_values": [
+                            value.strip()
+                            for value in form["normalized_filter_values"][0].split(",")
+                            if value.strip()
+                        ]}
                         if "normalized_filter_values" in form else None,
                     )
             with session_factory() as committed_session:

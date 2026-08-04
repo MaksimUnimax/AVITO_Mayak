@@ -40,6 +40,38 @@
               <label>Filter value <input name="normalized_filter_values" required></label>
               <button type="submit">Обновить фильтр</button>
             </form>
+            {% if beacon.state == 'ACTIVE' %}
+            <form method="post" action="/cabinet/beacons/{{ beacon.beacon_id }}/command">
+              <input type="hidden" name="action" value="ARCHIVE_TO_HISTORY">
+              <input type="hidden" name="expected_row_version" value="{{ beacon.row_version }}">
+              <input type="hidden" name="idempotency_key" value="web-archive-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
+              <button type="submit">Архивировать</button>
+            </form>
+            <form method="post" action="/cabinet/beacons/{{ beacon.beacon_id }}/command">
+              <input type="hidden" name="action" value="DELETE_TO_HISTORY">
+              <input type="hidden" name="confirmation" value="confirmed">
+              <input type="hidden" name="expected_row_version" value="{{ beacon.row_version }}">
+              <input type="hidden" name="idempotency_key" value="web-delete-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
+              <button type="submit">Удалить в историю</button>
+            </form>
+            {% elif beacon.state in ('ARCHIVED', 'DELETED') %}
+            <form method="post" action="/cabinet/beacons/{{ beacon.beacon_id }}/command">
+              <input type="hidden" name="action" value="RESTORE_FROM_HISTORY">
+              <input type="hidden" name="history_entry" value="current-history-entry">
+              <input type="hidden" name="entitlement_recheck" value="server-recheck-required">
+              <input type="hidden" name="expected_row_version" value="{{ beacon.row_version }}">
+              <input type="hidden" name="idempotency_key" value="web-restore-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
+              <button type="submit">Восстановить</button>
+            </form>
+            <form method="post" action="/cabinet/beacons/{{ beacon.beacon_id }}/command">
+              <input type="hidden" name="action" value="PERMANENT_DELETE">
+              <input type="hidden" name="history_entry" value="current-history-entry">
+              <input type="hidden" name="confirmation" value="confirmed">
+              <input type="hidden" name="expected_row_version" value="{{ beacon.row_version }}">
+              <input type="hidden" name="idempotency_key" value="web-permanent-delete-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
+              <button type="submit">Удалить окончательно</button>
+            </form>
+            {% endif %}
           </article>
         {% endfor %}
       </section>

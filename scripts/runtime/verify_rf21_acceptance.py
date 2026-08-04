@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Fail-closed verifier for factual RF21 evidence."""
+# ruff: noqa: E501
+"""Fail-closed verifier for executable RF21 observations."""
 from __future__ import annotations
 
 import argparse
@@ -10,28 +11,8 @@ from pathlib import Path
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 
-TECHNICAL_ID = "RF21-WEB-CABINET-RUNTIME-01"
-REQUIRED_TRUE = (
-    "production_composition_exercised", "identity_session_verified",
-    "beacon_mutation_persisted_after_reopen", "idempotent_replay",
-    "idempotency_mismatch_conflict", "strict_stale_command_conflict",
-    "lww_patch_preserved_unrelated_state", "foreign_account_denied",
-    "foreign_beacon_read_denied", "foreign_beacon_mutation_denied",
-    "notification_account_scope",
-)
-REQUIRED_FALSE = ("browser_account_override_accepted", "browser_actor_override_accepted",
-                  "browser_role_override_accepted")
-REQUIRED_ZERO = ("external_frontend_assets", "live_provider_calls",
-                 "real_provider_token_reads", "raw_provider_payload_persisted",
-                 "direct_foreign_web_dml", "secrets_exposed")
-OWNERS = {
-    "account_summary_owner": "identity_and_access", "beacon_read_owner": "beacon_management",
-    "beacon_mutation_owner": "beacon_management",
-    "entitlement_read_owner": "entitlements_and_billing",
-    "scan_read_owner": "scan_orchestration", "notification_read_owner": "notification_delivery",
-    "telegram_read_owner": "telegram_adapter", "max_read_owner": "max_adapter",
-    "support_read_owner": "admin_and_support",
-}
+TECHNICAL_ID = "RF21-WEB-CABINET-RUNTIME-01-CORRECTIVE-02"
+OWNERS = ("identity", "account", "entitlements", "beacon", "scan", "notification", "telegram", "max", "support")
 
 
 def verify(path: Path, *, expected_sha: str | None = None, root: Path = Path.cwd()) -> None:
@@ -48,26 +29,53 @@ def verify(path: Path, *, expected_sha: str | None = None, root: Path = Path.cwd
     heads = ScriptDirectory.from_config(Config(str(root / "alembic.ini"))).get_heads()
     if data.get("migration_head") not in heads:
         raise SystemExit("migration head is not the repository head")
-    for key, owner in OWNERS.items():
-        if data.get(key) != owner:
-            raise SystemExit(f"invalid owner provenance: {key}")
-    for key in REQUIRED_TRUE:
-        if data.get(key) is not True:
-            raise SystemExit(f"factual assertion failed: {key}")
-    for key in REQUIRED_FALSE:
-        if data.get(key) is not False:
-            raise SystemExit(f"browser authority override accepted: {key}")
-    for key in REQUIRED_ZERO:
-        if data.get(key) != 0:
-            raise SystemExit(f"unsafe observation: {key}")
-    provenance = data.get("provenance")
-    if not isinstance(provenance, dict) or not provenance.get("database_queries"):
-        raise SystemExit("missing factual provenance")
-    if data.get("dashboard_beacon_count", 0) < 1:
+    if data.get("production_scenario_uses_application_role") is not True:
+        raise SystemExit("production scenario did not use application role")
+    http = data.get("http")
+    required_http = ("dashboard_get", "beacon_list_get", "beacon_detail_get", "patch_post", "foreign_get_denied",
+                     "foreign_post_denied", "browser_overrides_denied", "replay", "mismatch", "strict_stale")
+    if not isinstance(http, dict) or any(http.get(key) is not True for key in required_http):
+        raise SystemExit("required Web HTTP observation missing or failed")
+    if data.get("persisted") is not True or data.get("lww_preserved") is not True:
+        raise SystemExit("mutation persistence/LWW observation failed")
+    if int(data.get("dashboard_beacon_count", 0)) < 1:
         raise SystemExit("dashboard Beacon observation required")
+    provenance = data.get("provenance")
+    if not isinstance(provenance, dict) or not all(provenance.get(key) for key in ("database_queries", "http_requests", "owner_operations")):
+        raise SystemExit("missing factual provenance")
+    owners = data.get("owner_provenance")
+    if not isinstance(owners, dict) or any(owners.get(key) not in {"database_query", "owner_operation", "http_request"} for key in OWNERS):
+        raise SystemExit("missing owner-operation provenance")
+    assets = data.get("external_asset_scan")
+    transport = data.get("provider_transport")
+    dml = data.get("direct_web_dml_scan")
+    if not isinstance(assets, dict) or assets.get("count") != 0 or assets.get("provenance") != "rendered_html_scan":
+        raise SystemExit("external asset scan failed")
+    if not isinstance(transport, dict) or transport.get("count") != 0 or transport.get("provenance") != "instrumented_transport_disabled":
+        raise SystemExit("provider transport observation failed")
+    if not isinstance(dml, dict) or dml.get("found") is not False or dml.get("provenance") != "source_ast_scan":
+        raise SystemExit("direct Web DML scan failed")
+    security = data.get("security")
+    if not isinstance(security, dict) or security.get("artifact_secret_scan", {}).get("result") != "PASS":
+        raise SystemExit("artifact semantic safety failed")
     if data.get("support_private_note_leakage") is not False:
         raise SystemExit("support private-note leakage")
-    print("RF21 evidence verified")
+    lifecycle = data.get("lifecycle")
+    if not isinstance(lifecycle, dict) or any(lifecycle.get(key) is not True for key in (
+        "patch", "archive", "delete", "restore", "permanent_delete", "history_reloaded",
+    )):
+        raise SystemExit("complete Web lifecycle observation required")
+    rollback = data.get("rollback")
+    if not isinstance(rollback, dict) or any(rollback.get(key) is not True for key in (
+        "request_rejected", "state_unchanged_after_reopen", "revision_unchanged_after_reopen",
+    )):
+        raise SystemExit("database-derived rollback proof required")
+    notification = data.get("notification_isolation")
+    if not isinstance(notification, dict) or any(notification.get(key) is not True for key in (
+        "a_visible", "a_excludes_b", "b_visible", "b_excludes_a",
+    )):
+        raise SystemExit("two-account Notification isolation proof required")
+    print("RF21 executable-provenance evidence verified")
 
 
 def main() -> int:
