@@ -1,6 +1,9 @@
 """MAX Adapter module package."""
 
+# ruff: noqa: E501
+
 from mayak.platform.boundaries import MAX_ADAPTER_MODULE_ID
+
 from .contracts import (
     MaxAccountLinkReference,
     MaxAdapterReadModel,
@@ -22,13 +25,35 @@ from .contracts import (
     MaxReconciliationRecord,
     MaxReconciliationState,
     MaxRetryRecommendation,
+    MaxUpdateAdmissionState,
     MaxUpdateDeduplicationRecord,
     MaxUpdateDeduplicationState,
     MaxUpdateIntakeRecord,
     MaxUpdateIntakeState,
-    MaxUpdateAdmissionState,
     MaxUpdateSourceKind,
     MaxUpdateStructuralClass,
+)
+from .mini_app import MaxMiniAppValidation, validate_webapp_data
+from .runtime import (
+    MaxAdapterRuntime,
+    MaxDeliveryMappingResult,
+    MaxIdentityConflict,
+    MaxIdentityMappingResult,
+    MaxInputRejected,
+    MaxIntakeOutcome,
+    MaxIntakeResult,
+    MaxNonceResult,
+    MaxReadiness,
+    MaxRuntimeError,
+    max_readiness,
+    webhook_authenticity,
+)
+from .transport import (
+    FakeMaxTransport,
+    HttpxMaxTransport,
+    MaxTransportClass,
+    MaxTransportResult,
+    MaxUpdateBatch,
 )
 
 MODULE_ID = MAX_ADAPTER_MODULE_ID
@@ -62,4 +87,23 @@ __all__ = [
     "MaxUpdateAdmissionState",
     "MaxUpdateSourceKind",
     "MaxUpdateStructuralClass",
+    "MaxAdapterRuntime",
+    "MaxDeliveryMappingResult",
+    "MaxIdentityConflict",
+    "MaxIdentityMappingResult",
+    "MaxInputRejected",
+    "MaxIntakeOutcome",
+    "MaxIntakeResult",
+    "MaxNonceResult",
+    "MaxReadiness",
+    "MaxRuntimeError",
+    "max_readiness",
+    "webhook_authenticity",
+    "FakeMaxTransport",
+    "HttpxMaxTransport",
+    "MaxTransportClass",
+    "MaxTransportResult",
+    "MaxUpdateBatch",
+    "MaxMiniAppValidation",
+    "validate_webapp_data",
 ]

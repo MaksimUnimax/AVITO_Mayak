@@ -199,7 +199,7 @@ def build_migration_url(
     # the PostgreSQL service selected by the workflow without changing global
     # configuration or secret-file semantics for normal runtime use.
     hosted_url = os.environ.get("RF15_MIGRATION_DSN") or os.environ.get("RF15_DSN")
-    if hosted_url:
+    if settings is None and hosted_url:
         return make_url(hosted_url)
     settings = settings or MigrationDatabaseSettings(
         secret_path=secret_path or MIGRATION_SECRET_PATH
