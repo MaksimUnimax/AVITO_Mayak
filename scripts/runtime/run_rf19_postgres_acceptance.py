@@ -41,7 +41,7 @@ def _count(engine: object, table: str) -> int:
         return int(connection.execute(text(f"select count(*) from mayak.{table}")).scalar_one())
 
 
-def _database_cases(application_dsn: str, migration_dsn: str) -> dict[str, object]:
+def _database_cases(application_dsn: str, migration_dsn: str, candidate_sha: str) -> dict[str, object]:
     application = create_engine(application_dsn, pool_pre_ping=True)
     migration = create_engine(migration_dsn, pool_pre_ping=True)
     with migration.connect() as connection:
@@ -132,7 +132,7 @@ def _database_cases(application_dsn: str, migration_dsn: str) -> dict[str, objec
 
     evidence = {
         "technical_id": "RF19-MAX-ADAPTER-RUNTIME-01",
-        "candidate_sha": os.environ.get("GITHUB_SHA", "unknown"),
+        "candidate_sha": candidate_sha,
         "postgresql_version": postgres_version,
         "migration_head": head,
         "max_table_names": tables,
@@ -160,12 +160,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dsn", default=os.environ.get("RF19_DATABASE_URL"))
     parser.add_argument("--fixture-dsn", default=os.environ.get("RF19_MIGRATION_DSN"))
+    parser.add_argument("--candidate-sha", default=os.environ.get("GITHUB_SHA", "unknown"))
     parser.add_argument("--output", default="rf19-acceptance-evidence.json")
     args = parser.parse_args()
     if not args.dsn or not args.fixture_dsn:
         print("RF19 application and migration DSNs are required")
         return 2
-    evidence = _database_cases(args.dsn, args.fixture_dsn)
+    evidence = _database_cases(args.dsn, args.fixture_dsn, args.candidate_sha)
     Path(args.output).write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(args.output)
     return 0
