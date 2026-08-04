@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   rf21-acceptance:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
+      options: --volume /var/run/docker.sock:/var/run/docker.sock
     env:
       MAYAK_PROVIDER_MODE: disabled
       MAYAK_RUNTIME_PROFILE: synthetic_acceptance
@@ -35,7 +38,7 @@ jobs:
       RF20_DATABASE_URL: postgresql+psycopg://mayak_application:rf21_application_synthetic@postgres:5432/mayak
     services:
       postgres:
-        image: postgres:18.0
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
         env:
           POSTGRES_DB: mayak
           POSTGRES_USER: mayak
@@ -44,9 +47,22 @@ jobs:
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
+      - name: Install pre-checkout hosted prerequisites
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Configure process-local Git ownership trust
+        run: |
+          workspace="$(pwd -P)"
+          {
+            echo 'GIT_CONFIG_COUNT=1'
+            echo 'GIT_CONFIG_KEY_0=safe.directory'
+            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
+          } >> "$GITHUB_ENV"
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14.6'
@@ -54,7 +70,25 @@ jobs:
         with:
           version: '0.11.31'
       - run: uv sync --frozen --all-groups --python 3.14.6
-      - run: uv run python -c 'import sys; assert sys.version_info[:3] == (3,14,6)'
+      - name: Install hosted Docker tooling
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io docker-buildx
+      - name: Prove RF20-equivalent runner parity
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+        run: |
+          set -euo pipefail
+          python --version | grep -Fx 'Python 3.14.6'
+          uv -V | grep -Fx 'uv 0.11.31'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$(ldconfig -p | grep -F libsqlite3.so.0)"
+          uv run python - <<'PY'
+          import sqlite3
+          assert sqlite3.connect(':memory:').execute('select 1').fetchone() == (1,)
+          PY
+          docker version
+          docker buildx version
       - name: Bootstrap and migrate PostgreSQL 18
         run: |
           set -euo pipefail
@@ -98,11 +132,10 @@ jobs:
           tests/architecture/test_rf21_*.py
           tests/runtime/test_identity_*.py
           tests/runtime/test_rf20_*.py
-      - run: uv run ruff check src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py scripts/runtime/run_rf21_postgres_acceptance.py scripts/runtime/verify_rf21_acceptance.py
-      - run: uv run mypy src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py scripts/runtime/run_rf21_postgres_acceptance.py scripts/runtime/verify_rf21_acceptance.py
+      - run: uv run ruff check src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py src/mayak/runtime/rf21_observers.py scripts/runtime/run_rf21_postgres_acceptance.py scripts/runtime/verify_rf21_acceptance.py scripts/runtime/check_rf21_artifact_safety.py
+      - run: uv run mypy src/mayak/modules/web_cabinet src/mayak/runtime/rf21_composition.py src/mayak/runtime/rf21_observers.py scripts/runtime/run_rf21_postgres_acceptance.py scripts/runtime/verify_rf21_acceptance.py scripts/runtime/check_rf21_artifact_safety.py
       - run: uv run lint-imports
       - run: uv run python scripts/runtime/run_rf21_postgres_acceptance.py --dsn "$RF21_DSN" --fixture-dsn "$RF21_MIGRATION_DSN" --repo-root . --candidate-sha "$GITHUB_SHA" --output rf21.json
-      - run: uv run python scripts/runtime/verify_rf21_acceptance.py rf21.json --repo-root . --expected-sha "$GITHUB_SHA"
       - name: Recreate clean broad-regression database
         run: |
           set -euo pipefail
@@ -124,10 +157,13 @@ jobs:
                   "grant select, insert, update on table mayak.support_cases to mayak_application",
                   "grant select, insert on table mayak.support_case_notes, mayak.support_case_events to mayak_application",
                   "grant select, insert, update on table mayak.platform_idempotency_records to mayak_application",
-                  "grant select on table mayak.identity_accounts, mayak.identity_sessions, mayak.identity_role_assignments to mayak_application",
+                  "grant select, update, references on table mayak.identity_accounts to mayak_application",
+                  "grant select on table mayak.identity_sessions, mayak.identity_role_assignments to mayak_application",
                   "grant insert, update on table mayak.identity_role_assignments to mayak_application",
                   "grant select, insert on table mayak.platform_audit_entries to mayak_application",
                   "grant select, insert, update on table mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application",
+                  "grant select, insert, references on table mayak.beacon_lifecycle_events to mayak_application",
+                  "grant references on table mayak.beacon_beacons, mayak.platform_audit_entries to mayak_application",
                   "grant select, insert on table mayak.entitlement_tariff_definitions to mayak_application",
                   "grant select, insert, update on table mayak.entitlement_access_grants to mayak_application",
                   "grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application",
@@ -139,12 +175,16 @@ jobs:
         run: |
           set -o pipefail
           uv run pytest -q 2>&1 | tee rf21-full-pytest.log
-      - run: uv run python scripts/runtime/check_rf21_artifact_safety.py rf21.json > rf21-artifact-safety.json
+      - name: Independent scan of every upload candidate
+        run: |
+          uv run python scripts/runtime/check_rf21_artifact_safety.py --manifest rf21-safety-manifest.json rf21.json rf21-full-pytest.log
+      - name: Final digest-bound RF21 verifier
+        run: uv run python scripts/runtime/verify_rf21_acceptance.py rf21.json --repo-root . --expected-sha "$GITHUB_SHA" --scanner-manifest rf21-safety-manifest.json
       - uses: actions/upload-artifact@v4
         with:
           name: rf21-web-cabinet-acceptance
           path: |
             rf21.json
             rf21-full-pytest.log
-            rf21-artifact-safety.json
+            rf21-safety-manifest.json
           if-no-files-found: error

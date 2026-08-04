@@ -12,6 +12,8 @@ from mayak.modules.web_cabinet.web_ui import build_web_router
 class _Session:
     def __enter__(self) -> "_Session": return self
     def __exit__(self, *args: object) -> None: return None
+    def commit(self) -> None: return None
+    def begin(self) -> "_Session": return self
 
 
 class _Identity:
@@ -55,3 +57,34 @@ def test_missing_identity_session_is_safe() -> None:
     assert response.status_code == 401
     assert "traceback" not in response.text.lower()
     assert "session" not in response.text.lower() or "сессия" in response.text.lower()
+
+
+def test_destructive_confirmation_is_exact_and_browser_authority_is_not_accepted() -> None:
+    class Beacon:
+        owner = "beacon_management"
+        key = "beacons"
+
+        def read(self, session: object, customer: VerifiedWebCustomer) -> tuple[object, ...]:
+            return ()
+
+        def command(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("owner mutation must not be reached")
+
+    app = FastAPI()
+    runtime = WebCabinetRuntime(_Identity(), _Identity(), beacon=Beacon())
+    app.include_router(build_web_router(runtime=runtime, session_factory=_Session,
+                                        session_provider=lambda request: "verified"))
+    client = TestClient(app)
+    endpoint = "/cabinet/beacons/00000000-0000-0000-0000-000000000001/command"
+    base = {"action": "DELETE_TO_HISTORY", "expected_row_version": "1",
+            "idempotency_key": "delete-test"}
+    for confirmation in (None, "", "no"):
+        payload = dict(base)
+        if confirmation is not None:
+            payload["confirmation"] = confirmation
+        response = client.post(endpoint, data=payload)
+        assert response.status_code == 400
+    placeholder = {"action": "RESTORE_FROM_HISTORY", "expected_row_version": "1",
+                   "idempotency_key": "restore-test", "history_entry": "browser",
+                   "entitlement_recheck": "browser"}
+    assert client.post(endpoint, data=placeholder).status_code == 400

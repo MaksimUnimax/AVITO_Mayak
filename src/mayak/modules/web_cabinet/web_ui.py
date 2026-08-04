@@ -12,7 +12,13 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from .beacon_commands import WebBeaconCommandKind
-from .runtime import WebCabinetRuntime, WebDashboard, WebRuntimeError, WebRuntimeState
+from .runtime import (
+    WebCabinetRuntime,
+    WebConflictError,
+    WebDashboard,
+    WebRuntimeError,
+    WebRuntimeState,
+)
 
 _ROOT = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_ROOT / "templates"))
@@ -82,23 +88,25 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
                 detail = runtime.beacon_detail(session, customer, beacon_id)
             if detail.state is WebRuntimeState.FORBIDDEN:
                 return render(request, error="Beacon недоступен.", status_code=403)
-            if detail.state in {WebRuntimeState.NOT_FOUND, WebRuntimeState.UNKNOWN}:
+            if detail.state is WebRuntimeState.NOT_FOUND:
                 return render(request, error="Beacon недоступен.", status_code=404)
+            if detail.state is WebRuntimeState.UNKNOWN:
+                return render(request, error="Beacon временно недоступен.", status_code=503)
             return render(request, dashboard=WebDashboard(customer, (detail,)))
         except Exception:
-            return render(request, error="Beacon недоступен.", status_code=404)
+            return render(request, error="Beacon временно недоступен.", status_code=503)
 
     @router.post("/beacons/{beacon_id}/command", response_class=HTMLResponse)
     async def beacon_command(request: Request, beacon_id: UUID) -> HTMLResponse:
         try:
             body = (await request.body()).decode("utf-8")
-            form = parse_qs(body, strict_parsing=True, keep_blank_values=False)
+            form = parse_qs(body, strict_parsing=True, keep_blank_values=True)
             required = ("action", "expected_row_version", "idempotency_key")
             if any(len(form.get(name, ())) != 1 for name in required):
                 raise ValueError("malformed form")
             allowed = {
                 "action", "expected_row_version", "idempotency_key",
-                "normalized_filter_values", "confirmation", "history_entry", "entitlement_recheck",
+                "normalized_filter_values", "confirmation",
             }
             if set(form) - allowed or any(len(values) != 1 for values in form.values()):
                 raise ValueError("malformed form")
@@ -119,17 +127,11 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
                         command_kind = WebBeaconCommandKind(form["action"][0])
                     except ValueError as exc:
                         raise ValueError("unsupported Web command") from exc
-                    if (command_kind is WebBeaconCommandKind.DELETE_TO_HISTORY
-                            and "confirmation" not in form):
-                        raise ValueError("delete confirmation required")
-                    if command_kind is WebBeaconCommandKind.RESTORE_FROM_HISTORY and not {
-                        "history_entry", "entitlement_recheck"
-                    }.issubset(form):
-                        raise ValueError("restore evidence required")
-                    if command_kind is WebBeaconCommandKind.PERMANENT_DELETE and not {
-                        "history_entry", "confirmation"
-                    }.issubset(form):
-                        raise ValueError("permanent delete confirmation required")
+                    if command_kind in {
+                        WebBeaconCommandKind.DELETE_TO_HISTORY,
+                        WebBeaconCommandKind.PERMANENT_DELETE,
+                    } and form.get("confirmation") != ["confirmed"]:
+                        raise ValueError("exact destructive confirmation required")
                     runtime.execute_beacon_command(
                         session, customer, beacon_id=beacon_id, action=command_kind,
                         expected_row_version=int(form["expected_row_version"][0]),
@@ -146,10 +148,12 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
             return render(request, dashboard=dashboard, error="Команда обработана.")
         except (KeyError, ValueError, UnicodeDecodeError):
             return render(request, error="Некорректная форма.", status_code=400)
+        except WebConflictError:
+            return render(request, error="Команда устарела или уже использована.", status_code=409)
         except (PermissionError, WebRuntimeError):
             return render(request, error="Команда недоступна.", status_code=403)
         except Exception:
-            return render(request, error="Не удалось обработать команду.", status_code=409)
+            return render(request, error="Временная ошибка. Попробуйте позже.", status_code=503)
 
     return router
 

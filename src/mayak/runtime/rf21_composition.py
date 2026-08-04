@@ -13,6 +13,7 @@ from uuid import UUID
 from mayak.modules.beacon_management.runtime import (
     BeaconManagementRuntime,
     BeaconRuntimeError,
+    ConflictError,
     ResolvedActor,
 )
 from mayak.modules.entitlements_and_billing.runtime import EntitlementsBillingRuntime
@@ -22,7 +23,12 @@ from mayak.modules.notification_delivery.runtime import read_history
 from mayak.modules.scan_orchestration.read_models import current_listing_state, recent_runs
 from mayak.modules.telegram_adapter.runtime import telegram_readiness
 from mayak.modules.web_cabinet.beacon_commands import WebBeaconCommandKind
-from mayak.modules.web_cabinet.runtime import VerifiedWebCustomer, WebRuntimeState, WebSection
+from mayak.modules.web_cabinet.runtime import (
+    VerifiedWebCustomer,
+    WebConflictError,
+    WebRuntimeState,
+    WebSection,
+)
 
 
 class IdentityWebAdapter:
@@ -101,6 +107,8 @@ class BeaconWebAdapter:
                                     beacon_id=beacon_id)
             history = self.runtime.history(session, actor_reference=authority,
                                            beacon_id=beacon_id)
+        except ConflictError as exc:
+            raise WebConflictError("Beacon command conflict") from exc
         except BeaconRuntimeError as exc:
             raise PermissionError("Beacon is unavailable for this customer") from exc
         return {"beacon": view, "history": history, "owner": self.owner}
@@ -120,7 +128,12 @@ class BeaconWebAdapter:
             if not patch:
                 raise ValueError("patch required")
             args.update(patch=patch, strict_expected_row_version=True)
-            return self.runtime.patch(**args)
+            try:
+                return self.runtime.patch(**args)
+            except ConflictError as exc:
+                raise WebConflictError("Beacon command conflict") from exc
+            except BeaconRuntimeError as exc:
+                raise PermissionError("Beacon command is unavailable for this customer") from exc
         methods = {
             WebBeaconCommandKind.ARCHIVE_TO_HISTORY: "archive",
             WebBeaconCommandKind.RESTORE_FROM_HISTORY: "restore",
@@ -130,7 +143,12 @@ class BeaconWebAdapter:
         method = methods.get(action)
         if method is None:
             raise ValueError("unsupported Web Beacon command")
-        return getattr(self.runtime, method)(**args)
+        try:
+            return getattr(self.runtime, method)(**args)
+        except ConflictError as exc:
+            raise WebConflictError("Beacon command conflict") from exc
+        except BeaconRuntimeError as exc:
+            raise PermissionError("Beacon command is unavailable for this customer") from exc
 
 
 class EntitlementWebAdapter:

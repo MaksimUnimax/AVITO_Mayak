@@ -77,6 +77,14 @@ class WebRuntimeError(RuntimeError):
     """Safe boundary error; the router never exposes its text."""
 
 
+class WebConflictError(WebRuntimeError):
+    """A stale or idempotency conflict, safe to expose as HTTP 409."""
+
+
+class WebTemporaryError(WebRuntimeError):
+    """An owner/projection failure that is not an authoritative 404."""
+
+
 @dataclass(slots=True)
 class WebCabinetRuntime:
     identity: WebCustomerPort
@@ -154,4 +162,4 @@ class WebCabinetRuntime:
 
 
 __all__ = ["VerifiedWebCustomer", "WebCabinetRuntime", "WebDashboard", "WebRuntimeState",
-           "WebSection", "WebRuntimeError"]
+           "WebSection", "WebRuntimeError", "WebConflictError", "WebTemporaryError"]

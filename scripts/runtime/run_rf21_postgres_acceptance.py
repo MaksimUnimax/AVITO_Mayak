@@ -28,6 +28,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from mayak.contracts.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
+from mayak.modules.admin_and_support.runtime import VerifiedActor
 from mayak.modules.beacon_management.contracts import (
     BeaconParserEvidenceReference,
     BeaconParserOutcomeStatus,
@@ -52,9 +53,10 @@ from mayak.modules.web_cabinet.web_ui import build_web_router
 from mayak.platform.correlation import CorrelationContext, CorrelationId
 from mayak.runtime.rf20_composition import build_rf20_composition
 from mayak.runtime.rf21_composition import CustomerIdentityAuthorityAdapter, build_rf21_runtime
+from mayak.runtime.rf21_observers import ProviderTransportObserver, scan_source_semantics
 from mayak.runtime.settings import ProviderUpdateMode, RuntimeProfile
 
-TECHNICAL_ID = "RF21-WEB-CABINET-RUNTIME-01-CORRECTIVE-02"
+TECHNICAL_ID = "RF21-WEB-CABINET-RUNTIME-01-CORRECTIVE-03"
 
 
 def _heads(root: Path) -> tuple[str, ...]:
@@ -173,6 +175,25 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
         notification_session.commit()
     notification_engine.dispose()
     support = build_rf20_composition(identity=identity, entitlements=entitlements, beacon=beacon).runtime()
+    public_marker = f"RF21-PUBLIC-SUPPORT-{run_ref}"
+    private_marker = f"RF21-INTERNAL-NOTE-{run_ref}"
+    # Seed support through its public owner APIs using synthetic operator
+    # authority; the Web projection must show only the public case subject.
+    with Session(create_engine(fixture_dsn)) as support_session, support_session.begin():
+        operator = VerifiedActor(
+            actor_account_id=fixture["account"], role="SUPPORT", authorization_scope="account_id",
+            authorization_reference=fixture["token"].reveal(),
+        )
+        opened = support.open_case(
+            support_session, actor=operator, account_id=fixture["account"],
+            subject=public_marker, reason="RF21 synthetic privacy canary",
+            idempotency_key=f"rf21-support-open-{run_ref}",
+        )
+        support.add_internal_note(
+            support_session, actor=operator, case_id=UUID(opened.outcome_reference), body=private_marker,
+            reason="RF21 synthetic privacy canary",
+            idempotency_key=f"rf21-support-note-{run_ref}",
+        )
     runtime = build_rf21_runtime(identity=identity, beacon=beacon, entitlements=entitlements,
                                  support=support, settings=settings)
     rollback_beacon: UUID
@@ -211,9 +232,10 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
             starts_at=now, ends_at=now.replace(year=now.year + 1), reason="RF21 acceptance",
             idempotency_key=f"rf21-entitlement-{run_ref}", target_account_id=fixture["account"])
     app = FastAPI()
+    active_token = {"value": fixture["token"]}
     app.include_router(build_web_router(
         runtime=runtime, session_factory=lambda: Session(app_engine),
-        session_provider=lambda request: fixture["token"],
+        session_provider=lambda request: active_token["value"],
     ))
     app_engine = create_engine(dsn, pool_pre_ping=True)
     try:
@@ -238,8 +260,7 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
                 archived = beacon.get(reopened, actor_reference=fixture["token"], beacon_id=fixture["beacon"])
             restore = client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data={
                 "action": "RESTORE_FROM_HISTORY", "expected_row_version": str(archived.row_version),
-                "idempotency_key": f"rf21-web-restore-{run_ref}", "history_entry": "latest",
-                "entitlement_recheck": "owner-evaluated"})
+                "idempotency_key": f"rf21-web-restore-{run_ref}"})
             with Session(app_engine) as reopened:
                 restored = beacon.get(reopened, actor_reference=fixture["token"], beacon_id=fixture["beacon"])
             delete_missing = client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data={
@@ -252,11 +273,10 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
                 deleted = beacon.get(reopened, actor_reference=fixture["token"], beacon_id=fixture["beacon"])
             permanent_missing = client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data={
                 "action": "PERMANENT_DELETE", "expected_row_version": str(deleted.row_version),
-                "idempotency_key": f"rf21-web-permanent-missing-{run_ref}", "history_entry": "latest"})
+                "idempotency_key": f"rf21-web-permanent-missing-{run_ref}"})
             permanent = client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data={
                 "action": "PERMANENT_DELETE", "expected_row_version": str(deleted.row_version),
-                "idempotency_key": f"rf21-web-permanent-{run_ref}", "history_entry": "latest",
-                "confirmation": "confirmed"})
+                "idempotency_key": f"rf21-web-permanent-{run_ref}", "confirmation": "confirmed"})
             with Session(app_engine) as reopened:
                 lifecycle = beacon.get(reopened, actor_reference=fixture["token"], beacon_id=fixture["beacon"])
                 lifecycle_history = beacon.history(reopened, actor_reference=fixture["token"], beacon_id=fixture["beacon"])
@@ -283,40 +303,91 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
                                             actor_account_id=fixture["account"], limit=20)
             b_notifications = read_history(Session(app_engine), account_id=fixture["foreign_account"],
                                             actor_account_id=fixture["foreign_account"], limit=20)
-            replay = client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data=form)
-            mismatch = client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data={**form, "normalized_filter_values": "city:rotterdam"})
-            stale = client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data={**form, "idempotency_key": f"rf21-stale-{run_ref}", "expected_row_version": "1"})
-            foreign_post = client.post(f"/cabinet/beacons/{fixture['foreign_beacon']}/command", data={**form, "idempotency_key": f"rf21-foreign-{run_ref}"})
+            post_form = {
+                "action": "PATCH_CURRENT_CONFIGURATION",
+                "expected_row_version": str(rollback_before),
+                "idempotency_key": f"rf21-web-replay-{run_ref}",
+                "normalized_filter_values": "city:utrecht",
+            }
+            first_replay_target = client.post(
+                f"/cabinet/beacons/{rollback_beacon}/command", data=post_form
+            )
+            replay = client.post(
+                f"/cabinet/beacons/{rollback_beacon}/command", data=post_form
+            )
+            mismatch = client.post(
+                f"/cabinet/beacons/{rollback_beacon}/command",
+                data={**post_form, "normalized_filter_values": "city:rotterdam"},
+            )
+            stale = client.post(
+                f"/cabinet/beacons/{rollback_beacon}/command",
+                data={**post_form, "idempotency_key": f"rf21-stale-{run_ref}",
+                      "expected_row_version": str(rollback_before)},
+            )
+            with Session(app_engine) as foreign_session:
+                foreign_row_version = beacon.get(
+                    foreign_session, actor_reference=fixture["foreign_token"],
+                    beacon_id=fixture["foreign_beacon"],
+                ).row_version
+            foreign_post = client.post(
+                f"/cabinet/beacons/{fixture['foreign_beacon']}/command",
+                data={**form, "idempotency_key": f"rf21-foreign-{run_ref}",
+                      "expected_row_version": str(foreign_row_version)},
+            )
             overrides = [client.post(f"/cabinet/beacons/{fixture['beacon']}/command", data={**form, key: str(fixture['foreign_account'])}) for key in ("account_id", "actor", "role")]
             html = dashboard.text + listing.text + detail.text + patch.text
+            active_token["value"] = fixture["foreign_token"]
+            foreign_dashboard = client.get("/cabinet")
+            active_token["value"] = fixture["token"]
             asset_refs = re.findall(r"<(?:link|script|img|iframe)\b[^>]+(?:src|href)=[\"']([^\"']+)", html, re.I)
             external_assets = sum(ref.startswith(("http://", "https://", "//")) or "fonts.googleapis" in ref.lower() for ref in asset_refs)
             # The source scan is an executed AST check, not a claimed runtime counter.
             source_paths = tuple((root / "src/mayak/modules/web_cabinet").glob("*.py")) + (root / "src/mayak/runtime/rf21_composition.py",)
             direct_dml = any(isinstance(node, (ast.Import, ast.ImportFrom)) and "sqlalchemy" in ast.unparse(node)
                              for path in source_paths for node in ast.walk(ast.parse(path.read_text())))
-            provider_calls: list[str] = []
+            provider_transport = ProviderTransportObserver(
+                "telegram_adapter.transport.TelegramBotApiTransport|"
+                "max_adapter.transport.MaxHttpTransport"
+            )
+            semantic_source = "\n".join(path.read_text() for path in source_paths)
+            semantic = scan_source_semantics(semantic_source, subject="RF21-Web-source")
             return {
                 "application_user": application_user,
                 "production_role_observed": application_user == "mayak_application",
                 "http": {"dashboard_get": dashboard.status_code == 200, "beacon_list_get": listing.status_code == 200,
                          "beacon_detail_get": detail.status_code == 200, "patch_post": patch.status_code == 200,
                          "foreign_get_denied": foreign_get.status_code in {403, 404},
-                         "foreign_post_denied": foreign_post.status_code in {403, 404, 409},
+                         "foreign_post_denied": foreign_post.status_code in {403, 404},
                          "browser_overrides_denied": all(response.status_code in {400, 403, 409} for response in overrides),
-                         "replay": replay.status_code == 200, "mismatch": mismatch.status_code == 409,
-                         "strict_stale": stale.status_code == 409},
+                         "replay": first_replay_target.status_code == 200 and replay.status_code == 200,
+                         "mismatch": mismatch.status_code == 409,
+                         "strict_stale": stale.status_code == 409,
+                         "diagnostic_statuses": {
+                             "foreign_post": foreign_post.status_code,
+                             "first_replay_target": first_replay_target.status_code,
+                             "replay": replay.status_code,
+                             "mismatch": mismatch.status_code,
+                             "stale": stale.status_code,
+                         }},
                 "persisted": persisted.current_revision_no is not None,
                 "lww_preserved": persisted.source_url == f"https://example.test/rf21-primary-{run_ref}",
                 "dashboard_beacon_count": html.count("data-beacon-id"),
                 "external_asset_scan": {"count": external_assets, "provenance": "rendered_html_scan"},
-                "provider_transport": {"count": len(provider_calls), "provenance": "instrumented_transport_disabled"},
-                "direct_web_dml_scan": {"found": direct_dml, "provenance": "source_ast_scan"},
+                "provider_transport": provider_transport.observation().as_dict(),
+                "direct_web_dml_scan": {"found": direct_dml, "method": "source_ast_scan",
+                                        "measured": not direct_dml},
+                "security_semantics": semantic,
                 "owner_provenance": {"identity": "owner_operation", "account": "database_query",
                     "entitlements": "owner_operation", "beacon": "http_request", "scan": "owner_operation",
                     "notification": "owner_operation", "telegram": "owner_operation", "max": "owner_operation",
                     "support": "owner_operation"},
                 "support_private_note_leakage": "INTERNAL" in html,
+                "support_projection": {
+                    "ready": "data-section=\"support\"" in html,
+                    "public_marker_visible": public_marker in html,
+                    "private_marker_visible": private_marker in html,
+                    "foreign_excludes_primary": public_marker not in foreign_dashboard.text,
+                },
                 "lifecycle": {
                     "patch": patch.status_code == 200 and persisted.current_revision_no is not None,
                     "archive": archive.status_code == 200 and archived.state == "ARCHIVED",
@@ -326,7 +397,7 @@ def _scenario(dsn: str, fixture_dsn: str, root: Path) -> dict[str, Any]:
                     "history_reloaded": len(lifecycle_history) >= 4,
                 },
                 "rollback": {
-                    "request_rejected": rollback_response.status_code == 409,
+                    "request_rejected": rollback_response.status_code == 503,
                     "state_unchanged_after_reopen": rollback_after.row_version == rollback_before,
                     "revision_unchanged_after_reopen": rollback_after.current_revision_no == rollback_before_view.current_revision_no,
                 },
@@ -362,9 +433,14 @@ def run(*, dsn: str, fixture_dsn: str, output: Path, candidate_sha: str, root: P
     data = {"technical_id": TECHNICAL_ID, "candidate_sha": candidate_sha,
             "postgresql_version": version, "migration_head": head, "migration_heads_observed": list(_heads(root)),
             "production_scenario_uses_application_role": scenario["production_role_observed"], **scenario,
-            "security": {"artifact_secret_scan": {"result": "PASS", "provenance": "semantic_value_scan"},
-                          "real_provider_token_reads": {"result": "NOT_APPLICABLE", "provenance": "credential_disabled_semantic_adapter"},
-                          "raw_provider_payload_persistence": {"result": "NOT_APPLICABLE", "provenance": "owner_safe_projection_contract"}},
+            "security": {"token_access": {"result": "PASS" if scenario["security_semantics"]["token_access"] else "FAIL",
+                                            "method": "executed_ast_semantic_observer"},
+                          "raw_provider_payload": {"result": "PASS" if scenario["security_semantics"]["raw_provider_payload"] else "FAIL",
+                                                    "method": "executed_ast_semantic_observer"},
+                          "direct_web_dml": {"result": "PASS" if scenario["security_semantics"]["direct_web_dml"] else "FAIL",
+                                             "method": "executed_ast_semantic_observer"},
+                          "external_assets": {"result": "PASS" if scenario["external_asset_scan"]["count"] == 0 else "FAIL",
+                                               "method": "rendered_html_observer"}},
             "provenance": {"database_queries": ["server_version", "migration_head"], "http_requests": 7,
                            "owner_operations": ["Identity.validate_session", "Support.customer_visible_summary"],
                            "rendered_html_scan": True, "source_ast_scan": True, "instrumented_transport": True}}

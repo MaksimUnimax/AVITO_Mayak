@@ -2,6 +2,7 @@
 """Fail-closed semantic scan of RF21 JSON values (keys are not scanned)."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -19,15 +20,41 @@ def _values(value: Any) -> list[str]:
     return [value] if isinstance(value, str) else []
 
 
-def scan(path: Path) -> None:
-    data = json.loads(path.read_text())
-    matches = [value for value in _values(data) if SECRET.search(value)]
-    if matches:
-        raise SystemExit("credential-looking artifact value")
-    print(json.dumps({"path": str(path), "result": "PASS", "method": "semantic_value_scan"}))
+METHOD = "rf21-semantic-artifact-scan/v2"
+
+
+def scan(paths: list[Path], manifest: Path | None = None) -> dict[str, object]:
+    files: list[dict[str, object]] = []
+    for path in paths:
+        if not path.is_file():
+            raise SystemExit(f"missing upload candidate: {path}")
+        raw = path.read_bytes()
+        # JSON is inspected semantically; text logs/manifests are inspected as
+        # text.  In both cases the digest is of the exact upload bytes.
+        try:
+            values = _values(json.loads(raw)) if path.suffix == ".json" else [raw.decode()]
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise SystemExit(f"malformed scan candidate: {path}") from exc
+        matches = [value for value in values if SECRET.search(value)]
+        if matches:
+            raise SystemExit("credential-looking artifact value")
+        files.append({"path": str(path), "sha256": hashlib.sha256(raw).hexdigest(),
+                      "finding_count": 0, "classification": "clean"})
+    result: dict[str, object] = {"scanner_method": METHOD, "result": "PASS",
+                                 "finding_count": 0, "files": files}
+    if manifest is not None:
+        manifest.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(result, sort_keys=True))
+    return result
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: check_rf21_artifact_safety.py evidence.json")
-    scan(Path(sys.argv[1]))
+    if len(sys.argv) < 2:
+        raise SystemExit("usage: check_rf21_artifact_safety.py [--manifest PATH] FILE ...")
+    args = sys.argv[1:]
+    manifest = None
+    if args[:1] == ["--manifest"]:
+        if len(args) < 3:
+            raise SystemExit("manifest path and at least one file are required")
+        manifest, args = Path(args[1]), args[2:]
+    scan([Path(arg) for arg in args], manifest)
