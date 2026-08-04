@@ -99,6 +99,7 @@ jobs:
           PY
           docker version
           docker buildx version
+      - name: Bootstrap and migrate PostgreSQL 18
         run: |
           install -d -m 700 /run/secrets
           printf '%s' 'rf20_bootstrap_synthetic' > /run/secrets/mayak_postgres_bootstrap_password
