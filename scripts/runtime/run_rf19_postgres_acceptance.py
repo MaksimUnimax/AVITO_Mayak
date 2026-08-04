@@ -54,6 +54,21 @@ def _database_cases(application_dsn: str, migration_dsn: str) -> dict[str, objec
                 text("select table_name from information_schema.tables where table_schema='mayak' and table_name like 'max_%' order by table_name")
             )
         ]
+        sequences = [
+            row[0]
+            for row in connection.execute(
+                text("select sequence_name from information_schema.sequences where sequence_schema='mayak' order by sequence_name")
+            )
+        ]
+        foreign_sequence_write_denied = all(
+            not bool(
+                connection.execute(
+                    text("select has_sequence_privilege('mayak_application', :sequence_name, 'UPDATE')"),
+                    {"sequence_name": f"mayak.{sequence_name}"},
+                ).scalar_one()
+            )
+            for sequence_name in sequences
+        )
         _ = version
 
     before = {name: _count(application, name) for name in TABLES}
@@ -135,6 +150,7 @@ def _database_cases(application_dsn: str, migration_dsn: str) -> dict[str, objec
         "delivery_mapping": {"created": delivery is not None, "replay": delivery_replay.replay},
         "nonce": {"accepted": nonce.accepted, "replay": nonce_replay.replay},
         "foreign_write_denied": foreign_write_denied,
+        "foreign_sequence_write_denied": foreign_sequence_write_denied,
         "live_network_call_count": 0,
         "real_secret_read_count": 0,
         "raw_provider_payload_persisted_count": 0,

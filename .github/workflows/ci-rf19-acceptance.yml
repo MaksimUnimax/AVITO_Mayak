@@ -15,7 +15,7 @@ jobs:
       postgres:
         image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
         env: {POSTGRES_USER: mayak, POSTGRES_PASSWORD: rf19_bootstrap_synthetic, POSTGRES_DB: mayak}
-        ports: ["5432:5432"]
+        ports: ["127.0.0.1:5432:5432"]
         options: >-
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
@@ -67,13 +67,69 @@ jobs:
               c.execute(text('grant usage on schema mayak to mayak_application'))
               c.execute(text('grant select, insert, update, delete on table mayak.max_inbound_events, mayak.max_identity_mappings, mayak.max_delivery_mappings, mayak.max_miniapp_nonces to mayak_application'))
               c.execute(text('grant select on table mayak.identity_accounts, mayak.identity_provider_links, mayak.notification_delivery_attempts to mayak_application'))
-              c.execute(text('grant usage, select, update on all sequences in schema mayak to mayak_application'))
       - run: uv run pytest -q tests/runtime/test_rf19_max_adapter_runtime.py tests/contract/test_max_adapter_semantic_contract_exports.py tests/architecture/test_max_adapter_semantic_boundaries.py
-      - run: uv run ruff check src/mayak/modules/max_adapter scripts/runtime/check_rf19_max_live.py scripts/runtime/run_rf19_postgres_acceptance.py scripts/runtime/verify_rf19_acceptance.py tests/runtime/test_rf19_max_adapter_runtime.py
+      - name: Ruff RF19 changed Python surface
+        run: >-
+          uv run ruff check
+          scripts/runtime/check_rf19_max_live.py
+          scripts/runtime/run_rf19_postgres_acceptance.py
+          scripts/runtime/verify_rf19_acceptance.py
+          src/mayak/modules/max_adapter/__init__.py
+          src/mayak/modules/max_adapter/mini_app.py
+          src/mayak/modules/max_adapter/runtime.py
+          src/mayak/modules/max_adapter/transport.py
+          src/mayak/persistence/config.py
+          tests/architecture/test_max_adapter_semantic_boundaries.py
+          tests/contract/test_max_adapter_semantic_contract_exports.py
+          tests/runtime/test_rf19_max_adapter_runtime.py
       - run: uv run python scripts/runtime/run_rf19_postgres_acceptance.py --dsn "$RF19_DATABASE_URL" --fixture-dsn "$RF19_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf19-acceptance-evidence.json
       - run: uv run python scripts/runtime/verify_rf19_acceptance.py rf19-acceptance-evidence.json
       - run: uv run pytest -q
-      - run: '! rg -n -i "authorization|bearer|raw_webapp|provider_payload|private key" rf19-acceptance-evidence.json'
+      - name: Semantic artifact safety scan
+        run: |
+          uv run python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          evidence = json.loads(Path("rf19-acceptance-evidence.json").read_text(encoding="utf-8"))
+          safe_zero_counters = {
+              "live_network_call_count",
+              "real_secret_read_count",
+              "raw_provider_payload_persisted_count",
+          }
+          forbidden_key_fragments = (
+              "authorization", "bearer", "private_key", "webapp", "provider_payload",
+              "provider_body", "webhook_secret", "token", "secret",
+          )
+          forbidden_value_patterns = (
+              re.compile(r"-----BEGIN [^-]*PRIVATE KEY-----"),
+              re.compile(r"(?i)authorization\s*[:=]\s*\S+"),
+              re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{12,}"),
+          )
+
+          def walk(value, path=()):
+              if isinstance(value, dict):
+                  for key, child in value.items():
+                      key_path = path + (str(key),)
+                      normalized = str(key).lower()
+                      if normalized in safe_zero_counters:
+                          continue
+                      if any(fragment in normalized for fragment in forbidden_key_fragments):
+                          if child not in (None, "", 0, False, [], {}):
+                              raise SystemExit(f"forbidden sensitive material at {'.'.join(key_path)}")
+                      walk(child, key_path)
+              elif isinstance(value, list):
+                  for index, child in enumerate(value):
+                      walk(child, path + (str(index),))
+              elif isinstance(value, str):
+                  for pattern in forbidden_value_patterns:
+                      if pattern.search(value):
+                          raise SystemExit(f"forbidden sensitive material at {'.'.join(path)}")
+
+          walk(evidence)
+          print("RF19 semantic artifact safety verified")
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -21,6 +21,7 @@ REQUIRED = {
     "postgresql_version",
     "migration_head",
     "foreign_write_denied",
+    "foreign_sequence_write_denied",
     "inbound",
     "identity_mapping",
     "delivery_mapping",
@@ -66,7 +67,11 @@ def main() -> int:
         return 2
     if not str(data["postgresql_version"]).startswith("PostgreSQL 18"):
         return 2
-    if not data["migration_head"] or data["foreign_write_denied"] is not True:
+    if (
+        not data["migration_head"]
+        or data["foreign_write_denied"] is not True
+        or data["foreign_sequence_write_denied"] is not True
+    ):
         return 2
     if data["inbound"].get("first") != "NORMALIZED_UPDATE_ACCEPTED":
         return 2
