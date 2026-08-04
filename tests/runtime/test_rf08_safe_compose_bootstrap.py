@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.runtime import prepare_file_secrets, rf08_docker_authority
+from scripts.runtime import prepare_file_secrets, rf08_docker_authority, rf08_docker_context
 from scripts.runtime import safe_compose_bootstrap as scb
 from scripts.runtime.rf08_docker_authority import GatewayAuthority
 from scripts.runtime.rf09_public_bootstrap_adapter import (
@@ -326,6 +326,90 @@ def test_build_input_digest_follows_copy_inputs_and_includes_readme() -> None:
     assert "Dockerfile" not in paths
     assert not any("__pycache__" in path or path.endswith((".pyc", ".pyo")) for path in paths)
     assert deterministic_build_input_digest(tree, gateway=GatewayAuthority())
+
+
+def test_clean_context_uses_exact_command_local_git_trust_and_sanitized_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for relative in (
+        "Dockerfile",
+        ".dockerignore",
+        "pyproject.toml",
+        "uv.lock",
+        "README.md",
+        "alembic.ini",
+    ):
+        (repo / relative).write_text(relative, encoding="utf-8")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text("app = True\n", encoding="utf-8")
+    (repo / "alembic").mkdir()
+    (repo / "alembic" / "README").write_text("migration\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    commit_env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "test",
+        "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "test",
+        "GIT_COMMITTER_EMAIL": "test@example.invalid",
+    }
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "fixture"], check=True, env=commit_env)
+    if os.geteuid() != 0:
+        pytest.skip("owner-mismatch security fixture requires root")
+    for path in (repo, *repo.rglob("*")):
+        os.chown(path, 65534, 65534)
+    plain = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+        },
+    )
+    assert plain.returncode == 128
+    assert "dubious ownership" in plain.stderr
+
+    observed: list[tuple[list[str], dict[str, str] | None]] = []
+    real_check_output = subprocess.check_output
+    real_run = subprocess.run
+
+    def record_check_output(args: list[str], **kwargs: object) -> bytes:
+        observed.append((args, kwargs.get("env")))  # type: ignore[arg-type]
+        return real_check_output(args, **kwargs)
+
+    def record_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        # check_output delegates to subprocess.run; record only the archive's
+        # direct run so each of the helper's three Git calls appears once.
+        if args and args[0] == "git" and kwargs.get("stdout") is not subprocess.PIPE:
+            observed.append((args, kwargs.get("env")))  # type: ignore[arg-type]
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(rf08_docker_context.subprocess, "check_output", record_check_output)
+    monkeypatch.setattr(rf08_docker_context.subprocess, "run", record_run)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "safe.directory")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "*")
+
+    rf08_docker_context.materialize_clean_context(repo, tmp_path / "contexts", "test-run")
+
+    git_calls = [item for item in observed if item[0] and item[0][0] == "git"]
+    assert [call[0][3:] for call in git_calls] == [
+        ["-C", str(repo.resolve()), "rev-parse", "HEAD"],
+        ["-C", str(repo.resolve()), "rev-parse", "HEAD^{tree}"],
+        ["-C", str(repo.resolve()), "archive", "--format=tar", "HEAD"],
+    ]
+    for args, env in git_calls:
+        assert args[:2] == ["git", "-c"]
+        assert args[2] == f"safe.directory={repo.resolve()}"
+        assert env == {
+            "PATH": os.environ.get("PATH", ""),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+        }
 
 
 def test_independent_verifier_rejects_missing_test_counts_and_sensitive_material(

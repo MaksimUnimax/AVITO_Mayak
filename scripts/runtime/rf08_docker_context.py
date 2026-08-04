@@ -42,8 +42,22 @@ def _safe_relative(path: str) -> str:
     return p.as_posix()
 
 
+def _git_command(repo: Path, *arguments: str) -> list[str]:
+    """Build a Git command with exact, command-local repository trust."""
+    resolved_repo = repo.resolve()
+    return [
+        "git",
+        "-c",
+        f"safe.directory={resolved_repo}",
+        "-C",
+        str(resolved_repo),
+        *arguments,
+    ]
+
+
 def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dict[str, str]:
     """Export the exact clean candidate Git tree and return safe identities."""
+    repo = repo.resolve()
     destination = destination.resolve()
     if destination == Path("/") or destination in destination.parents:
         raise ValueError("invalid context destination")
@@ -53,20 +67,24 @@ def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dic
     source.parent.mkdir(mode=0o700, parents=True)
     source.parent.chmod(0o700)
     archive = source.parent / "source.tar"
-    env = {"PATH": os.environ.get("PATH", "")}
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
     source_sha = subprocess.check_output(
-        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        _git_command(repo, "rev-parse", "HEAD"),
         text=True,
         env=env,
     ).strip()
     tree = subprocess.check_output(
-        ["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"],
+        _git_command(repo, "rev-parse", "HEAD^{tree}"),
         text=True,
         env=env,
     ).strip()
     with archive.open("wb") as stream:
         subprocess.run(
-            ["git", "-C", str(repo), "archive", "--format=tar", "HEAD"],
+            _git_command(repo, "archive", "--format=tar", "HEAD"),
             stdout=stream,
             stderr=subprocess.DEVNULL,
             check=True,
