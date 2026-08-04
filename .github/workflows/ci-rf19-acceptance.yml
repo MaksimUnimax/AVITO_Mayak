@@ -11,7 +11,9 @@ permissions:
 jobs:
   rf19:
     runs-on: ubuntu-latest
-    container: ubuntu:24.04
+    container:
+      image: ubuntu:24.04
+      options: --volume /var/run/docker.sock:/var/run/docker.sock
     env:
       RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
       RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
@@ -44,7 +46,7 @@ jobs:
       - name: Install hosted full-suite git prerequisite
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git docker.io docker-buildx
       - name: Create synthetic database secrets and aliases
         run: |
           install -d -m 700 -o "$(id -u)" -g "$(id -g)" /run/secrets
