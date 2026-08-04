@@ -70,7 +70,8 @@ jobs:
           python --version
           uv -V
           python --version | grep -Fx 'Python 3.14.6' >/dev/null || { echo 'python-version failed'; exit 1; }
-          uv -V | grep -Fx 'uv 0.11.31' >/dev/null || { echo 'uv-version failed'; exit 1; }
+          uv_version="$(uv -V | sed -E 's/^(uv [0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          test "$uv_version" = 'uv 0.11.31' || { echo 'uv-version failed'; exit 1; }
       - name: Install hosted Docker tooling
         run: |
           apt-get update
