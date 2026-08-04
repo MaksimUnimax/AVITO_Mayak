@@ -36,6 +36,10 @@ jobs:
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
+      - name: Install pre-checkout hosted prerequisites
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0
       - uses: actions/checkout@v4
         with: {ref: "${{ github.sha }}", fetch-depth: 0}
       - uses: actions/setup-python@v5
@@ -43,14 +47,32 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: {version: '0.11.31'}
       - run: uv sync --frozen --all-groups --python 3.14.6
-      - name: Install hosted full-suite git prerequisite
+      - name: Install hosted Docker tooling
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git docker.io docker-buildx
-      - name: Check hosted Docker tooling
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io docker-buildx
+      - name: Prove hosted environment parity
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
         run: |
+          set -euo pipefail
+          test -x "$(command -v git)"
+          test "$(git rev-parse --is-inside-work-tree)" = true
+          test -e .git
+          actual_head="$(git rev-parse HEAD)"
+          test "$actual_head" = "$GITHUB_SHA"
+          git rev-parse HEAD^{tree} >/dev/null
+          test -n "$(ldconfig -p | grep -F 'libsqlite3.so.0')"
+          uv run python - <<'PY'
+          import _sqlite3
+          import sqlite3
+
+          connection = sqlite3.connect(":memory:")
+          connection.execute("select 1")
+          connection.close()
+          print(f"sqlite={sqlite3.sqlite_version}")
+          print(f"sqlite_extension={_sqlite3.__file__}")
+          PY
           docker version
           docker buildx version
       - name: Create synthetic database secrets and aliases
