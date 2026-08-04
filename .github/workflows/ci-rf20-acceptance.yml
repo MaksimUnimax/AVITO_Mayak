@@ -63,6 +63,14 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: {version: '0.11.31'}
       - run: uv sync --frozen --all-groups --python 3.14.6
+      - name: Prove exact Python and uv versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python --version
+          uv -V
+          python --version | grep -Fx 'Python 3.14.6' >/dev/null || { echo 'python-version failed'; exit 1; }
+          uv -V | grep -Fx 'uv 0.11.31' >/dev/null || { echo 'uv-version failed'; exit 1; }
       - name: Install hosted Docker tooling
         run: |
           apt-get update
@@ -86,8 +94,6 @@ jobs:
           test "$(git rev-parse --is-inside-work-tree)" = true
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git rev-parse HEAD^{tree} >/dev/null
-          test "$(python --version)" = "Python 3.14.6"
-          test "$(uv --version)" = "uv 0.11.31"
           test -e .git
           test -n "$(ldconfig -p | grep -F libsqlite3.so.0)"
           uv run python - <<'PY'

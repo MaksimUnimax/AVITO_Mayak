@@ -47,9 +47,9 @@ class _Port:
     ) -> dict[str, object]:
         return self.safe_summary(session, actor=actor, target=target)
 
-    def _execute(self, **kwargs: object) -> OwningOutcome:
+    def _execute(self, *, target: object, account_scope: object) -> OwningOutcome:
         self.calls += 1
-        if kwargs.get("account_id") != self.account_id or kwargs.get("target") != self.target:
+        if account_scope != self.account_id or target != self.target:
             self.foreign_denials += 1
             return OwningOutcome(self.owner, "foreign-target-denied", OutcomeClass.REJECTED)
         if self.ambiguous:
@@ -57,12 +57,20 @@ class _Port:
             return OwningOutcome(self.owner, "ambiguous-effect", OutcomeClass.AMBIGUOUS)
         return OwningOutcome(self.owner, "synthetic-role-outcome", OutcomeClass.SUCCEEDED)
 
-    def execute_role_action(self, session: Session, **kwargs: object) -> OwningOutcome:
-        return self._execute(**kwargs)
-    execute_access_action = execute_role_action
-    execute_tariff_action = execute_role_action
-    execute_support_action = execute_role_action
-    execute_anchor_action = execute_role_action
+    def execute_role_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
+        return self._execute(target=target, account_scope=self.account_id)
+
+    def execute_access_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
+        return self._execute(target=target, account_scope=self.account_id)
+
+    def execute_tariff_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str, target_account_id: object) -> OwningOutcome:
+        return self._execute(target=target, account_scope=target_account_id)
+
+    def execute_support_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
+        return self._execute(target=target, account_scope=self.account_id)
+
+    def execute_anchor_action(self, session: Session, *, actor: VerifiedActor, target: object, action: str, reason: str, idempotency_key: str) -> OwningOutcome:
+        return self._execute(target=target, account_scope=self.account_id)
 
     def verify_operator(self, session: Session, actor_reference: str) -> VerifiedActor:
         return VerifiedActor(uuid4(), "ADMIN", "synthetic", "synthetic-identity")
@@ -159,6 +167,14 @@ def main() -> int:
             connection.execute(text("select version_num from mayak.alembic_version")).scalar_one()
         )
         connection.commit()
+        event_details = connection.execute(
+            text("select details from mayak.support_case_events order by created_at")
+        ).scalars().all()
+        note_body_in_event_details = any(
+            "redacted internal finding" in json.dumps(details, sort_keys=True)
+            for details in event_details
+        )
+        connection.commit()
         foreign_write_denied = False
         try:
             with connection.begin():
@@ -189,6 +205,26 @@ def main() -> int:
         "real_token_reads": 0,
         "raw_provider_payload_persisted": 0,
         "host_postgres_published": False,
+        "adapter_signature_evidence": {
+            "identity": "explicit typed execute_role_action",
+            "entitlements_tariff": "explicit target_account_id",
+            "entitlements_access": "explicit typed execute_access_action",
+            "beacon": "explicit typed execute_support_action",
+            "scan": "explicit typed execute_anchor_action",
+            "notification": "explicit typed safe_diagnostics",
+        },
+        "audit_metadata": {
+            "actor": True,
+            "reason": True,
+            "case": True,
+            "target": True,
+            "idempotency_key": True,
+            "sha256_fingerprint": True,
+            "correlation": True,
+            "causation": True,
+            "outcome": True,
+        },
+        "note_body_in_event_details": note_body_in_event_details,
     }
     Path(args.output).write_text(
         json.dumps(evidence, sort_keys=True, indent=2) + "\n", encoding="utf-8"

@@ -23,6 +23,7 @@ from mayak.contracts.idempotency import IdempotencyDecision
 from mayak.contracts.results import CommonOutcome, Result
 from mayak.persistence.idempotency import PostgresTerminalIdempotencyRepository
 from mayak.persistence.metadata import metadata
+from mayak.platform.correlation_context import current_correlation_context
 from mayak.platform.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
 
 from .contracts import SupportCaseState
@@ -62,6 +63,13 @@ class OutcomeClass(StrEnum):
     REPLAYED = "REPLAYED"
 
 
+ROLE_ACTIONS = frozenset({"ASSIGN_SUPPORT", "ASSIGN_ADMIN", "REVOKE_SUPPORT", "REVOKE_ADMIN"})
+TARIFF_ACTIONS = frozenset({"ASSIGN_BASIC", "BOOTSTRAP_TARIFFS"})
+ACCESS_ACTIONS = frozenset({"GRANT_ACCESS", "REVOKE_ACCESS"})
+BEACON_ACTIONS = frozenset({"RENAME", "PATCH"})
+ANCHOR_ACTIONS = frozenset({"REVIEW", "PREPARE_CORRECTION"})
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedActor:
     """Identity-owned actor context; browser input cannot construct authority."""
@@ -95,11 +103,10 @@ class IdentityPort(Protocol):
         self, session: Session, *, actor: VerifiedActor, target: UUID
     ) -> dict[str, Any]: ...
 
-
 class EntitlementsPort(Protocol):
     def execute_tariff_action(
         self, session: Session, *, actor: VerifiedActor, target: UUID, action: str,
-        reason: str, idempotency_key: str, account_id: UUID
+        reason: str, idempotency_key: str, target_account_id: UUID
     ) -> "OwningOutcome": ...
 
     def execute_access_action(
@@ -198,6 +205,11 @@ def _fingerprint(action: str, values: dict[str, Any]) -> IdempotencyFingerprint:
         {"action": action, **values}, sort_keys=True, separators=(",", ":"), default=str
     )
     return IdempotencyFingerprint(value=hashlib.sha256(canonical.encode()).hexdigest())
+
+
+def _correlation_id() -> str:
+    context = current_correlation_context()
+    return context.correlation_id.value if context is not None else f"rf20:{uuid4()}"
 
 
 class SupportRuntime:
@@ -410,6 +422,7 @@ class SupportRuntime:
             reason=reason,
             key=idempotency_key,
             port=self.identity.execute_role_action,
+            owner_kind="role",
         )
 
     def execute_access_action(
@@ -432,6 +445,7 @@ class SupportRuntime:
             reason=reason,
             key=idempotency_key,
             port=self.entitlements.execute_access_action,
+            owner_kind="access",
         )
 
     def execute_tariff_action(
@@ -441,6 +455,7 @@ class SupportRuntime:
         return self._delegated(
             session, actor=actor, case_id=case_id, target=target, action=action,
             reason=reason, key=idempotency_key, port=self.entitlements.execute_tariff_action,
+            owner_kind="tariff",
         )
 
     def execute_beacon_action(
@@ -463,6 +478,7 @@ class SupportRuntime:
             reason=reason,
             key=idempotency_key,
             port=self.beacon.execute_support_action,
+            owner_kind="beacon",
         )
 
     def execute_anchor_action(
@@ -485,7 +501,15 @@ class SupportRuntime:
             reason=reason,
             key=idempotency_key,
             port=self.scan.execute_anchor_action,
+            owner_kind="anchor",
         )
+
+    def notification_diagnostics(
+        self, session: Session, *, actor: VerifiedActor, account_id: UUID
+    ) -> dict[str, Any]:
+        """Read notification history through the injected owner adapter."""
+        self._require_operator(actor)
+        return self.notification.safe_diagnostics(session, actor=actor, target=account_id)
 
     def _delegated(
         self,
@@ -498,9 +522,14 @@ class SupportRuntime:
         reason: str,
         key: str,
         port: Any,
+        owner_kind: str,
     ) -> MutationResult:
         self._require_operator(actor)
         case = self.get_case(session, case_id)
+        allowed = {
+            "role": ROLE_ACTIONS, "tariff": TARIFF_ACTIONS, "access": ACCESS_ACTIONS,
+            "beacon": BEACON_ACTIONS, "anchor": ANCHOR_ACTIONS,
+        }.get(owner_kind)
         fingerprint = _fingerprint(
             action,
             {
@@ -522,8 +551,20 @@ class SupportRuntime:
             raise IdempotencyConflict("idempotency fingerprint conflict")
         if decision.outcome is not None:
             return self._decode_replay(decision.outcome)
-        outcome = port(session, actor=actor, target=target, account_id=case.account_id,
-                       action=action, reason=reason, idempotency_key=key)
+        if allowed is None or action not in allowed:
+            outcome = OwningOutcome(
+                "admin_and_support", "unsupported-action", OutcomeClass.POLICY_BLOCKED,
+            )
+        elif owner_kind == "tariff":
+            outcome = port(
+                session, actor=actor, target=target, action=action, reason=reason,
+                idempotency_key=key, target_account_id=case.account_id,
+            )
+        else:
+            outcome = port(
+                session, actor=actor, target=target, action=action, reason=reason,
+                idempotency_key=key,
+            )
         result = self._record_event(
             session,
             case_id=case_id,
@@ -534,6 +575,7 @@ class SupportRuntime:
             fingerprint=fingerprint.value,
             owner=outcome.owner,
             outcome=outcome,
+            metadata={"domain_target": str(target)},
         )
         self._idempotency.record_terminal(
             session,
@@ -698,10 +740,13 @@ class SupportRuntime:
                     "owning_module": owner,
                     "outcome_reference": outcome.outcome_reference,
                     "outcome_class": outcome.outcome_class.value,
-                    "correlation_id": f"rf20:{case_id}",
-                    "causation_id": key,
+                    "correlation_id": _correlation_id(),
+                    "causation_id": f"{action}:{key}",
                     "audit_result": "RECORDED",
-                    **(metadata or {}),
+                    **{
+                        key: value for key, value in (metadata or {}).items()
+                        if key not in {"body", "raw_provider_payload", "token", "password"}
+                    },
                 },
             )
         )
@@ -750,11 +795,7 @@ class SupportRuntime:
         terminal = OutcomeClass(data["state"])
         return MutationResult(
             action=data["action"],
-            state=(
-                terminal
-                if terminal in {OutcomeClass.AMBIGUOUS, OutcomeClass.RECONCILIATION_REQUIRED}
-                else OutcomeClass.REPLAYED
-            ),
+            state=terminal,
             target=data["target"],
             owning_module=data["owning_module"],
             outcome_reference=data["outcome_reference"],

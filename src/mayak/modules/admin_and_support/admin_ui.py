@@ -237,23 +237,31 @@ def build_admin_router(
             operator = actor(request)
             form = parse_qs((await request.body()).decode("utf-8"), strict_parsing=True)
             target = UUID(form["target"][0])
-            values = {
-                "actor": operator, "case_id": case_id, "target": target,
-                "action": form["action"][0], "reason": form["reason"][0],
-                "idempotency_key": form["idempotency_key"][0],
-            }
-            handlers = {
-                "role": runtime.execute_role_action,
-                "tariff": runtime.execute_tariff_action,
-                "access": runtime.execute_access_action,
-                "beacon": runtime.execute_beacon_action,
-                "anchor": runtime.execute_anchor_action,
-            }
-            handler = handlers.get(family)
-            if handler is None:
+            action = form["action"][0]
+            reason = form["reason"][0]
+            idempotency_key = form["idempotency_key"][0]
+            if family == "role":
+                handler = runtime.execute_role_action
+            elif family == "tariff":
+                handler = runtime.execute_tariff_action
+            elif family == "access":
+                handler = runtime.execute_access_action
+            elif family == "beacon":
+                handler = runtime.execute_beacon_action
+            elif family == "anchor":
+                handler = runtime.execute_anchor_action
+            else:
                 raise HTTPException(status_code=400, detail="unsupported action")
             with sessions.begin() as session:
-                result = handler(session, **values)
+                result = handler(
+                    session,
+                    actor=operator,
+                    case_id=case_id,
+                    target=target,
+                    action=action,
+                    reason=reason,
+                    idempotency_key=idempotency_key,
+                )
             return _TEMPLATES.TemplateResponse(request, "admin.html", {
                 "title": "Owning-module action", "operator": operator, "cases": (),
                 "summary": {"result": result}, "error": None,
@@ -277,8 +285,8 @@ def build_admin_router(
             operator = actor(request)
             with sessions() as session:
                 case = runtime.get_case_for_operator(session, actor=operator, case_id=case_id)
-                diagnostics = runtime.notification.safe_diagnostics(
-                    session, actor=operator, target=case.account_id
+                diagnostics = runtime.notification_diagnostics(
+                    session, actor=operator, account_id=case.account_id
                 )
             return _TEMPLATES.TemplateResponse(request, "admin.html", {
                 "title": "Notification diagnostics", "operator": operator, "cases": (case,),

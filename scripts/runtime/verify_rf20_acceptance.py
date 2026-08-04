@@ -33,6 +33,9 @@ def main() -> int:
         "port_calls",
         "foreign_target_denials",
         "ambiguous_replay_preserved",
+        "adapter_signature_evidence",
+        "audit_metadata",
+        "note_body_in_event_details",
     }
     if (
         not isinstance(data, dict)
@@ -42,7 +45,7 @@ def main() -> int:
         return 2
     if (
         not str(data["postgresql_version"]).startswith("PostgreSQL 18")
-        or not data["migration_head"]
+        or data["migration_head"] != "RF20_ADMIN_SUPPORT_RUNTIME"
         or re.fullmatch(r"[0-9a-f]{40}", str(data["candidate_sha"])) is None
     ):
         return 2
@@ -50,6 +53,15 @@ def main() -> int:
     if expected_sha and data["candidate_sha"] != expected_sha:
         return 2
     if data["foreign_write_denied"] is not True or data["host_postgres_published"] is not False:
+        return 2
+    required_adapters = {
+        "identity", "entitlements_tariff", "entitlements_access", "beacon", "scan", "notification"
+    }
+    if set(data["adapter_signature_evidence"]) != required_adapters:
+        return 2
+    if data["note_body_in_event_details"] is not False:
+        return 2
+    if any(value is not True for value in data["audit_metadata"].values()):
         return 2
     if any(
         data[name] != 0
