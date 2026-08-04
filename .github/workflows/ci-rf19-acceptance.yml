@@ -67,6 +67,7 @@ jobs:
               c.execute(text('grant usage on schema mayak to mayak_application'))
               c.execute(text('grant select, insert, update, delete on table mayak.max_inbound_events, mayak.max_identity_mappings, mayak.max_delivery_mappings, mayak.max_miniapp_nonces to mayak_application'))
               c.execute(text('grant select on table mayak.identity_accounts, mayak.identity_provider_links, mayak.notification_delivery_attempts to mayak_application'))
+              c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
       - run: uv run pytest -q tests/runtime/test_rf19_max_adapter_runtime.py tests/contract/test_max_adapter_semantic_contract_exports.py tests/architecture/test_max_adapter_semantic_boundaries.py
       - name: Ruff RF19 changed Python surface
         run: >-
