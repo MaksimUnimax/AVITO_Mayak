@@ -65,6 +65,54 @@ class SecretPreparationError(Exception):
     """Constant, safe diagnostic exception."""
 
 
+class OwnershipAuthority:
+    """Filesystem ownership capability; production uses the kernel directly."""
+
+    def owner(self, path: Path) -> tuple[int, int]:
+        info = path.stat()
+        return info.st_uid, info.st_gid
+
+    def chown_fd(self, path: Path, fd: int, uid: int, gid: int) -> None:
+        os.fchown(fd, uid, gid)
+
+    def chown_path(self, path: Path, uid: int, gid: int) -> None:
+        os.chown(path, uid, gid)
+
+    def record(self, path: Path, uid: int, gid: int) -> None:
+        del path, uid, gid
+
+
+class HermeticOwnershipAuthority(OwnershipAuthority):
+    """Task-scoped ownership metadata for tests that cannot perform chown."""
+
+    _XATTR = b"user.avito_mayak_rf08_owner"
+
+    def owner(self, path: Path) -> tuple[int, int]:
+        try:
+            raw = os.getxattr(path, self._XATTR)
+        except OSError:
+            return super().owner(path)
+        try:
+            uid, gid = (int(value) for value in raw.decode("ascii").split(":", 1))
+        except ValueError, UnicodeError:
+            raise SecretPreparationError("ownership metadata is invalid") from None
+        return uid, gid
+
+    def chown_fd(self, path: Path, fd: int, uid: int, gid: int) -> None:
+        del fd
+        os.setxattr(path, self._XATTR, f"{uid}:{gid}".encode("ascii"))
+
+    def chown_path(self, path: Path, uid: int, gid: int) -> None:
+        os.setxattr(path, self._XATTR, f"{uid}:{gid}".encode("ascii"))
+
+    def record(self, path: Path, uid: int, gid: int) -> None:
+        os.setxattr(path, self._XATTR, f"{uid}:{gid}".encode("ascii"))
+
+
+def _owner(path: Path, ownership: OwnershipAuthority | None) -> tuple[int, int]:
+    return (ownership or OwnershipAuthority()).owner(path)
+
+
 def prepare_consumer_binding(
     root: Path,
     generation_id: str,
@@ -73,6 +121,7 @@ def prepare_consumer_binding(
     postgres_gid: int,
     reader_uid: int = RUNTIME_UID,
     reader_gid: int = RUNTIME_GID,
+    ownership: OwnershipAuthority | None = None,
 ) -> dict[str, object]:
     """Validate the application consumer copy for one immutable generation.
 
@@ -80,9 +129,15 @@ def prepare_consumer_binding(
     returns metadata and a boolean equality result only; secret bytes never
     cross this API boundary.
     """
-    root = _safe_root(root)
+    root = _safe_root(root, ownership=ownership)
     generation = _generation(root, generation_id)
-    validate_generation(root, generation_id, postgres_uid=postgres_uid, postgres_gid=postgres_gid)
+    validate_generation(
+        root,
+        generation_id,
+        postgres_uid=postgres_uid,
+        postgres_gid=postgres_gid,
+        ownership=ownership,
+    )
     source = generation / _FILES["application_password"][0]
     consumer = root / "active" / _FILES["application_password"][0]
     root_resolved = root.resolve(strict=True)
@@ -99,7 +154,7 @@ def prepare_consumer_binding(
         raise SecretPreparationError("consumer copy is not a regular file")
     source_info = source_resolved.stat()
     consumer_info = consumer_resolved.stat()
-    if (consumer_info.st_uid, consumer_info.st_gid) != (reader_uid, reader_gid):
+    if _owner(consumer_resolved, ownership) != (reader_uid, reader_gid):
         raise SecretPreparationError("consumer owner mismatch")
     mode = stat.S_IMODE(consumer_info.st_mode)
     if mode not in (0o400, 0o600) or mode & 0o077:
@@ -134,7 +189,9 @@ def _failpoint(stage: str) -> None:
     raise SecretPreparationError("controlled failpoint")
 
 
-def _safe_root(root: Path, *, create: bool = True) -> Path:
+def _safe_root(
+    root: Path, *, create: bool = True, ownership: OwnershipAuthority | None = None
+) -> Path:
     root = root.absolute()
     if root.exists() and root.is_symlink():
         raise SecretPreparationError("target root must not be a symlink")
@@ -144,10 +201,11 @@ def _safe_root(root: Path, *, create: bool = True) -> Path:
         raise SecretPreparationError("target root must not contain symlinks")
     if create:
         root.mkdir(mode=ROOT_MODE, parents=True, exist_ok=True)
+        (ownership or OwnershipAuthority()).record(root, 0, 0)
         _failpoint("after-root-creation")
     if (
         not root.is_dir()
-        or root.stat().st_uid != 0
+        or _owner(root, ownership) != (0, 0)
         or stat.S_IMODE(root.stat().st_mode) != ROOT_MODE
     ):
         raise SecretPreparationError("target root ownership or mode is invalid")
@@ -185,11 +243,21 @@ def _write_all(fd: int, data: bytes) -> None:
         view = view[os.write(fd, view) :]
 
 
-def _write_regular(path: Path, value: bytes, uid: int, gid: int, mode: int) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
+def _write_regular(
+    path: Path,
+    value: bytes,
+    uid: int,
+    gid: int,
+    mode: int,
+    ownership: OwnershipAuthority | None = None,
+) -> None:
+    open_mode = 0o600 if isinstance(ownership, HermeticOwnershipAuthority) else mode
+    fd = os.open(
+        path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), open_mode
+    )
     try:
+        (ownership or OwnershipAuthority()).chown_fd(path, fd, uid, gid)
         os.fchmod(fd, mode)
-        os.fchown(fd, uid, gid)
         _write_all(fd, value)
         _failpoint("after-each-secret-file-write")
         os.fsync(fd)
@@ -237,7 +305,7 @@ def _read_manifest(
         raise SecretPreparationError("manifest missing")
     try:
         value = json.loads(path.read_text(encoding="ascii"))
-    except (OSError, UnicodeError, ValueError):
+    except OSError, UnicodeError, ValueError:
         raise SecretPreparationError("manifest invalid") from None
     expected = _manifest(expected_id, postgres_uid, postgres_gid)
     if value != expected:
@@ -245,11 +313,19 @@ def _read_manifest(
     return value
 
 
-def _validate_generation_path(generation: Path, postgres_uid: int, postgres_gid: int) -> None:
+def _validate_generation_path(
+    generation: Path,
+    postgres_uid: int,
+    postgres_gid: int,
+    ownership: OwnershipAuthority | None = None,
+) -> None:
     if not generation.is_dir() or generation.is_symlink():
         raise SecretPreparationError("generation incomplete")
     generation_info = generation.stat()
-    if generation_info.st_uid != 0 or stat.S_IMODE(generation_info.st_mode) != ROOT_MODE:
+    if (
+        _owner(generation, ownership) != (0, 0)
+        or stat.S_IMODE(generation_info.st_mode) != ROOT_MODE
+    ):
         raise SecretPreparationError("generation directory ownership or mode is invalid")
     generation_id = generation.name
     _safe_generation_id(generation_id)
@@ -268,14 +344,15 @@ def _validate_generation_path(generation: Path, postgres_uid: int, postgres_gid:
             if logical_name == "postgres_bootstrap"
             else (RUNTIME_UID, RUNTIME_GID)
         )
-        if (info.st_uid, info.st_gid) != (uid, gid):
+        if _owner(path, ownership) != (uid, gid):
             raise SecretPreparationError("owner mismatch")
         if stat.S_IMODE(info.st_mode) != MODE:
             raise SecretPreparationError("mode mismatch")
     manifest_info = (generation / MANIFEST_NAME).stat()
-    if (manifest_info.st_uid, manifest_info.st_gid) != (0, 0) or stat.S_IMODE(
-        manifest_info.st_mode
-    ) != 0o600:
+    if (
+        _owner(generation / MANIFEST_NAME, ownership) != (0, 0)
+        or stat.S_IMODE(manifest_info.st_mode) != 0o600
+    ):
         raise SecretPreparationError("manifest invalid")
     first = (generation / _FILES["postgres_bootstrap"][0]).read_bytes()
     second = (generation / _FILES["runtime_bootstrap"][0]).read_bytes()
@@ -284,21 +361,34 @@ def _validate_generation_path(generation: Path, postgres_uid: int, postgres_gid:
 
 
 def validate_generation(
-    root: Path, generation_id: str, *, postgres_uid: int, postgres_gid: int
+    root: Path,
+    generation_id: str,
+    *,
+    postgres_uid: int,
+    postgres_gid: int,
+    ownership: OwnershipAuthority | None = None,
 ) -> None:
-    root = _safe_root(root)
-    _validate_generation_path(_generation(root, generation_id), postgres_uid, postgres_gid)
+    root = _safe_root(root, ownership=ownership)
+    _validate_generation_path(
+        _generation(root, generation_id), postgres_uid, postgres_gid, ownership
+    )
 
 
 def prepare_generation(
-    root: Path, *, postgres_uid: int, postgres_gid: int, generation_id: str | None = None
+    root: Path,
+    *,
+    postgres_uid: int,
+    postgres_gid: int,
+    generation_id: str | None = None,
+    ownership: OwnershipAuthority | None = None,
 ) -> str:
-    root = _safe_root(root)
+    root = _safe_root(root, ownership=ownership)
     sets = root / "sets"
     if sets.is_symlink():
         raise SecretPreparationError("sets directory is invalid")
     sets.mkdir(mode=ROOT_MODE, exist_ok=True)
-    if stat.S_IMODE(sets.stat().st_mode) != ROOT_MODE or sets.stat().st_uid != 0:
+    (ownership or OwnershipAuthority()).record(sets, 0, 0)
+    if stat.S_IMODE(sets.stat().st_mode) != ROOT_MODE or _owner(sets, ownership) != (0, 0):
         raise SecretPreparationError("sets directory ownership or mode is invalid")
     _failpoint("after-sets-directory-creation")
     generation_id = generation_id or f"g-{secrets.token_hex(12)}"
@@ -307,6 +397,7 @@ def prepare_generation(
     if generation.exists():
         raise SecretPreparationError("generation already exists")
     generation.mkdir(mode=ROOT_MODE)
+    (ownership or OwnershipAuthority()).record(generation, 0, 0)
     try:
         bootstrap = _secret()
         values = {
@@ -322,22 +413,22 @@ def prepare_generation(
                 if logical_name == "postgres_bootstrap"
                 else (RUNTIME_UID, RUNTIME_GID)
             )
-            _write_regular(generation / filename, values[logical_name], uid, gid, MODE)
+            _write_regular(generation / filename, values[logical_name], uid, gid, MODE, ownership)
         manifest = json.dumps(
             _manifest(generation_id, postgres_uid, postgres_gid),
             sort_keys=True,
             separators=(",", ":"),
         ).encode("ascii")
-        _write_regular(generation / MANIFEST_NAME, manifest, 0, 0, 0o600)
+        _write_regular(generation / MANIFEST_NAME, manifest, 0, 0, 0o600, ownership)
         _failpoint("after-manifest-write")
         _fsync_directory(generation)
         _fsync_directory(sets)
         _failpoint("after-generation-directory-fsync")
-        _validate_generation_path(generation, postgres_uid, postgres_gid)
+        _validate_generation_path(generation, postgres_uid, postgres_gid, ownership)
         return generation_id
     except SecretPreparationError:
         raise
-    except (OSError, ValueError):
+    except OSError, ValueError:
         raise SecretPreparationError("generation preparation failed") from None
 
 
@@ -354,26 +445,51 @@ def _active_id(root: Path) -> str:
     return generation_id
 
 
-def show_active_safe(root: Path, *, postgres_uid: int, postgres_gid: int) -> dict[str, object]:
-    root = _safe_root(root)
+def show_active_safe(
+    root: Path, *, postgres_uid: int, postgres_gid: int, ownership: OwnershipAuthority | None = None
+) -> dict[str, object]:
+    root = _safe_root(root, ownership=ownership)
     generation_id = _active_id(root)
-    validate_generation(root, generation_id, postgres_uid=postgres_uid, postgres_gid=postgres_gid)
+    validate_generation(
+        root,
+        generation_id,
+        postgres_uid=postgres_uid,
+        postgres_gid=postgres_gid,
+        ownership=ownership,
+    )
     return {"generation_id": generation_id, "target": f"sets/{generation_id}"}
 
 
-def validate(root: Path, *, postgres_uid: int, postgres_gid: int) -> None:
+def validate(
+    root: Path, *, postgres_uid: int, postgres_gid: int, ownership: OwnershipAuthority | None = None
+) -> None:
     """Validate the managed active generation (compatibility convenience API)."""
-    root = _safe_root(root)
+    root = _safe_root(root, ownership=ownership)
     validate_generation(
-        root, _active_id(root), postgres_uid=postgres_uid, postgres_gid=postgres_gid
+        root,
+        _active_id(root),
+        postgres_uid=postgres_uid,
+        postgres_gid=postgres_gid,
+        ownership=ownership,
     )
 
 
 def activate_generation(
-    root: Path, generation_id: str, *, postgres_uid: int, postgres_gid: int
+    root: Path,
+    generation_id: str,
+    *,
+    postgres_uid: int,
+    postgres_gid: int,
+    ownership: OwnershipAuthority | None = None,
 ) -> str | None:
-    root = _safe_root(root)
-    validate_generation(root, generation_id, postgres_uid=postgres_uid, postgres_gid=postgres_gid)
+    root = _safe_root(root, ownership=ownership)
+    validate_generation(
+        root,
+        generation_id,
+        postgres_uid=postgres_uid,
+        postgres_gid=postgres_gid,
+        ownership=ownership,
+    )
     previous: str | None = None
     try:
         previous = _active_id(root)
@@ -393,7 +509,7 @@ def activate_generation(
         _failpoint("after-parent-directory-fsync")
     except SecretPreparationError:
         raise
-    except (OSError, ValueError):
+    except OSError, ValueError:
         raise SecretPreparationError("activation failed") from None
     finally:
         if temporary.is_symlink():
@@ -402,20 +518,35 @@ def activate_generation(
 
 
 def rollback_activation(
-    root: Path, generation_id: str, *, postgres_uid: int, postgres_gid: int
+    root: Path,
+    generation_id: str,
+    *,
+    postgres_uid: int,
+    postgres_gid: int,
+    ownership: OwnershipAuthority | None = None,
 ) -> None:
     _failpoint("during-rollback-pointer-replacement")
-    activate_generation(root, generation_id, postgres_uid=postgres_uid, postgres_gid=postgres_gid)
+    activate_generation(
+        root,
+        generation_id,
+        postgres_uid=postgres_uid,
+        postgres_gid=postgres_gid,
+        ownership=ownership,
+    )
 
 
-def recover(root: Path, *, postgres_uid: int, postgres_gid: int) -> str | None:
-    root = _safe_root(root)
+def recover(
+    root: Path, *, postgres_uid: int, postgres_gid: int, ownership: OwnershipAuthority | None = None
+) -> str | None:
+    root = _safe_root(root, ownership=ownership)
     for candidate in root.glob(".active-*"):
         if candidate.is_symlink():
             candidate.unlink()
     try:
         active = _active_id(root)
-        validate_generation(root, active, postgres_uid=postgres_uid, postgres_gid=postgres_gid)
+        validate_generation(
+            root, active, postgres_uid=postgres_uid, postgres_gid=postgres_gid, ownership=ownership
+        )
         return active
     except SecretPreparationError:
         pass
@@ -431,10 +562,14 @@ def recover(root: Path, *, postgres_uid: int, postgres_gid: int) -> str | None:
         for candidate in candidates:
             try:
                 validate_generation(
-                    root, candidate.name, postgres_uid=postgres_uid, postgres_gid=postgres_gid
+                    root,
+                    candidate.name,
+                    postgres_uid=postgres_uid,
+                    postgres_gid=postgres_gid,
+                    ownership=ownership,
                 )
                 valid.append((candidate.stat().st_mtime_ns, candidate.name))
-            except (SecretPreparationError, OSError):
+            except SecretPreparationError, OSError:
                 if (
                     candidate.is_dir()
                     and not candidate.is_symlink()
@@ -450,14 +585,23 @@ def recover(root: Path, *, postgres_uid: int, postgres_gid: int) -> str | None:
     if not valid:
         raise SecretPreparationError("recovery failed")
     return activate_generation(
-        root, max(valid)[1], postgres_uid=postgres_uid, postgres_gid=postgres_gid
+        root,
+        max(valid)[1],
+        postgres_uid=postgres_uid,
+        postgres_gid=postgres_gid,
+        ownership=ownership,
     )
 
 
 def cleanup_retired(
-    root: Path, *, keep: Iterable[str], postgres_uid: int, postgres_gid: int
+    root: Path,
+    *,
+    keep: Iterable[str],
+    postgres_uid: int,
+    postgres_gid: int,
+    ownership: OwnershipAuthority | None = None,
 ) -> list[str]:
-    root = _safe_root(root)
+    root = _safe_root(root, ownership=ownership)
     active = _active_id(root)
     keep_set = set(keep) | {active}
     removed: list[str] = []
@@ -468,7 +612,7 @@ def cleanup_retired(
         if candidate.is_symlink() or not candidate.is_dir():
             continue
         try:
-            _validate_generation_path(candidate, postgres_uid, postgres_gid)
+            _validate_generation_path(candidate, postgres_uid, postgres_gid, ownership)
         except SecretPreparationError:
             continue
         for child in candidate.iterdir():
@@ -541,7 +685,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             cleanup_retired(args.root, keep=args.keep, **common)
         return 0
-    except (SecretPreparationError, OSError, ValueError, TypeError):
+    except SecretPreparationError, OSError, ValueError, TypeError:
         return 1
 
 

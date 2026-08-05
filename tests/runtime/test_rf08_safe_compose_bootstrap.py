@@ -2,6 +2,7 @@ import ast
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -35,6 +36,8 @@ from scripts.runtime.safe_compose_bootstrap import (
     validate_source_identity,
 )
 from scripts.runtime.verify_rf08_authoritative_evidence import STAGES, verify_evidence
+
+TEST_OWNERSHIP = prepare_file_secrets.HermeticOwnershipAuthority()
 
 
 def test_source_identity_contract_rejects_historical_parent_and_accepts_exact_shape() -> None:
@@ -178,7 +181,16 @@ def test_prepare_jsonlog_runtime_keeps_repo_compose_immutable(
     repo_root = Path(__file__).parents[2]
     repo_compose = repo_root / "compose.yaml"
     before_blob = subprocess.check_output(
-        ["git", "-C", str(repo_root), "hash-object", "compose.yaml"], text=True
+        [
+            "git",
+            "-c",
+            f"safe.directory={repo_root.resolve()}",
+            "-C",
+            str(repo_root),
+            "hash-object",
+            "compose.yaml",
+        ],
+        text=True,
     ).strip()
     before_digest = hashlib.sha256(repo_compose.read_bytes()).hexdigest()
     runtime_root = tmp_path / "runtime"
@@ -188,7 +200,7 @@ def test_prepare_jsonlog_runtime_keeps_repo_compose_immutable(
     monkeypatch.setattr(scb, "JSON_LOG_OVERRIDE", runtime_root / "postgres-jsonlog.override.yaml")
     monkeypatch.setattr(scb, "RUNTIME_COMPOSE_FILE", runtime_root / "compose.runtime.yaml")
 
-    log_dir = scb.prepare_jsonlog_runtime("run-immutable")
+    log_dir = scb.prepare_jsonlog_runtime("run-immutable", ownership=TEST_OWNERSHIP)
 
     assert log_dir == runtime_root / "postgres-jsonlog" / "run-immutable"
     assert scb.RUNTIME_COMPOSE_FILE.exists()
@@ -204,7 +216,16 @@ def test_prepare_jsonlog_runtime_keeps_repo_compose_immutable(
     assert hashlib.sha256(repo_compose.read_bytes()).hexdigest() == before_digest
     assert (
         subprocess.check_output(
-            ["git", "-C", str(repo_root), "hash-object", "compose.yaml"], text=True
+            [
+                "git",
+                "-c",
+                f"safe.directory={repo_root.resolve()}",
+                "-C",
+                str(repo_root),
+                "hash-object",
+                "compose.yaml",
+            ],
+            text=True,
         ).strip()
         == before_blob
     )
@@ -255,6 +276,7 @@ def test_canonical_stage34_uses_transcript_and_accepts_exact_78(
         "generations": {},
         "b_correlation_id": "rf08b_test01",
         "source_sha": "0" * 40,
+        "transient_runtime_root": tmp_path / "transient-runtime",
     }
     spec = canonical_stage_spec(ctx, "APPLICATION_AUTH_REJECTION_B", Path(__file__).parents[2])
     assert spec.exit_policy == EXACT_EXIT(78)
@@ -290,6 +312,7 @@ def test_stage34_rejects_wrong_exit(
         "generations": {},
         "b_correlation_id": "rf08b_test01",
         "source_sha": "0" * 40,
+        "transient_runtime_root": tmp_path / "transient-runtime",
     }
     spec = canonical_stage_spec(ctx, "APPLICATION_AUTH_REJECTION_B", Path(__file__).parents[2])
     with pytest.raises(ProtocolFailure):
@@ -318,14 +341,63 @@ def test_default_zero_policy_rejects_nonzero_and_d_requires_70() -> None:
     assert ProtocolTranscript((abrupt.name,)).execute(abrupt).status == "PASS"
 
 
-def test_build_input_digest_follows_copy_inputs_and_includes_readme() -> None:
-    tree = Path(__file__).parents[2]
-    manifest = build_input_manifest(tree, gateway=GatewayAuthority())
+def test_build_input_digest_follows_copy_inputs_and_includes_readme(tmp_path: Path) -> None:
+    source_tree = Path(__file__).parents[2]
+    tree = tmp_path / "source-repo"
+    tree.mkdir()
+    for relative in (
+        "Dockerfile",
+        ".dockerignore",
+        "pyproject.toml",
+        "uv.lock",
+        "README.md",
+        "alembic.ini",
+    ):
+        shutil.copy2(source_tree / relative, tree / relative)
+    for relative in ("src", "alembic"):
+        shutil.copytree(
+            source_tree / relative,
+            tree / relative,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info"),
+        )
+    git_env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "rf08-test",
+        "GIT_AUTHOR_EMAIL": "rf08-test@example.invalid",
+        "GIT_COMMITTER_NAME": "rf08-test",
+        "GIT_COMMITTER_EMAIL": "rf08-test@example.invalid",
+    }
+    subprocess.run(["git", "init", "-q", str(tree)], check=True, env=git_env)
+    subprocess.run(["git", "-C", str(tree), "add", "."], check=True, env=git_env)
+    subprocess.run(["git", "-C", str(tree), "commit", "-qm", "fixture"], check=True, env=git_env)
+    runtime_root = tmp_path / "rf08-transient-runtime"
+    runtime_root.mkdir()
+    canonical_root = Path("/opt/avito-mayak-runtime")
+    assert runtime_root.resolve() != canonical_root
+    assert canonical_root not in runtime_root.resolve().parents
+    canonical_build_root = canonical_root / "rf08-secret-delivery" / "build-context"
+    canonical_state = (
+        canonical_root.exists(),
+        canonical_root.stat().st_mtime_ns if canonical_root.exists() else None,
+        canonical_build_root.exists(),
+        canonical_build_root.stat().st_mtime_ns if canonical_build_root.exists() else None,
+    )
+
+    manifest = build_input_manifest(tree, gateway=GatewayAuthority(), runtime_root=runtime_root)
     paths = {item["path"] for item in manifest}
     assert "README.md" in paths
     assert "Dockerfile" not in paths
     assert not any("__pycache__" in path or path.endswith((".pyc", ".pyo")) for path in paths)
-    assert deterministic_build_input_digest(tree, gateway=GatewayAuthority())
+    assert deterministic_build_input_digest(
+        tree, gateway=GatewayAuthority(), runtime_root=runtime_root
+    )
+    assert not (runtime_root / "build-context").exists()
+    assert canonical_state == (
+        canonical_root.exists(),
+        canonical_root.stat().st_mtime_ns if canonical_root.exists() else None,
+        canonical_build_root.exists(),
+        canonical_build_root.stat().st_mtime_ns if canonical_build_root.exists() else None,
+    )
 
 
 def test_clean_context_uses_exact_command_local_git_trust_and_sanitized_env(
@@ -490,13 +562,13 @@ def test_b_binding_is_active_generation_scoped_and_constant_time_equal(
         (*prepare_file_secrets._ALLOWED_ROOTS, tmp_path),
     )
     generation = prepare_file_secrets.prepare_generation(
-        tmp_path, postgres_uid=999, postgres_gid=999
+        tmp_path, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
     )
     prepare_file_secrets.activate_generation(
-        tmp_path, generation, postgres_uid=999, postgres_gid=999
+        tmp_path, generation, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
     )
     binding = prepare_file_secrets.prepare_consumer_binding(
-        tmp_path, generation, postgres_uid=999, postgres_gid=999
+        tmp_path, generation, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
     )
     assert binding["generation_id"] == generation
     assert binding["constant_time_equal"] is True

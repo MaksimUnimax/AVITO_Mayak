@@ -1036,7 +1036,9 @@ def _runtime_compose_file(run_id: str, log_dir: Path) -> str:
     return result
 
 
-def prepare_jsonlog_runtime(run_id: str) -> Path:
+def prepare_jsonlog_runtime(
+    run_id: str, *, ownership: secrets.OwnershipAuthority | None = None
+) -> Path:
     """Create and validate the task-owned JSON log mount and override."""
     JSON_LOG_ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
     JSON_LOG_ROOT.chmod(0o700)
@@ -1046,7 +1048,7 @@ def prepare_jsonlog_runtime(run_id: str) -> Path:
     # postgres:postgres is 999:999 in the pinned postgres image.  The runtime
     # verifier checks the actual container UID/GID before accepting the file.
     try:
-        os.chown(log_dir, 999, 999)
+        (ownership or secrets.OwnershipAuthority()).chown_path(log_dir, 999, 999)
     except OSError as exc:
         raise ProtocolFailure("PREFLIGHT", "STOP_SECURITY_RISK") from exc
     JSON_LOG_OVERRIDE.write_text(_jsonlog_override(run_id, log_dir), encoding="ascii")
@@ -1533,7 +1535,7 @@ def parse_bounded_auth_envelope(
         return {}
     try:
         value = json.loads(lines[0].decode("utf-8"))
-    except (UnicodeError, ValueError, json.JSONDecodeError):
+    except UnicodeError, ValueError, json.JSONDecodeError:
         return {}
     if not isinstance(value, dict) or value.get("schema_version") != BOUNDED_AUTH_SCHEMA:
         return {}
@@ -1572,7 +1574,7 @@ def parse_bounded_bootstrap_result(
         if len(lines) != 1 or not text.endswith("\n"):
             return {}
         value = json.loads(lines[0])
-    except (UnicodeError, ValueError, json.JSONDecodeError):
+    except UnicodeError, ValueError, json.JSONDecodeError:
         return {}
     if not isinstance(value, dict):
         return {}
@@ -2170,10 +2172,18 @@ def _copy_sources(tree: Path, *, gateway: GatewayAuthority | None = None) -> tup
 
 
 def _docker_context_for(
-    tree: Path, *, gateway: GatewayAuthority
+    tree: Path, *, gateway: GatewayAuthority, runtime_root: Path | None = None
 ) -> tuple[tuple[dict[str, str], ...], dict[str, str]]:
     run_id = "manifest-" + hashlib.sha256(str(tree).encode()).hexdigest()[:16]
-    runtime = RUNTIME_ROOT / "build-context"
+    transient_root = (runtime_root or RUNTIME_ROOT).resolve()
+    if transient_root == Path("/"):
+        raise ValueError("invalid transient build-context root")
+    if runtime_root is not None and (
+        transient_root == RUNTIME_ROOT or RUNTIME_ROOT in transient_root.parents
+    ):
+        raise ValueError("transient build-context root is inside canonical runtime")
+    runtime = transient_root / "build-context"
+    runtime_existed = runtime.exists()
     target = runtime / run_id
     if target.exists():
         shutil.rmtree(target)
@@ -2184,14 +2194,22 @@ def _docker_context_for(
     finally:
         if target.exists():
             shutil.rmtree(target)
+        if not runtime_existed and runtime.exists():
+            runtime.rmdir()
 
 
-def build_input_manifest(tree: Path, *, gateway: GatewayAuthority) -> tuple[dict[str, str], ...]:
-    return _docker_context_for(tree, gateway=gateway)[0]
+def build_input_manifest(
+    tree: Path, *, gateway: GatewayAuthority, runtime_root: Path | None = None
+) -> tuple[dict[str, str], ...]:
+    return _docker_context_for(tree, gateway=gateway, runtime_root=runtime_root)[0]
 
 
-def deterministic_build_input_digest(source_tree: Path, *, gateway: GatewayAuthority) -> str:
-    manifest, identities = _docker_context_for(source_tree, gateway=gateway)
+def deterministic_build_input_digest(
+    source_tree: Path, *, gateway: GatewayAuthority, runtime_root: Path | None = None
+) -> str:
+    manifest, identities = _docker_context_for(
+        source_tree, gateway=gateway, runtime_root=runtime_root
+    )
     return docker_build_input_digest(source_tree, manifest, identities["candidate_tree_identity"])
 
 
@@ -2204,10 +2222,15 @@ def _safe_root(root: Path) -> Path:
     return root
 
 
-def _materialize_bootstrap_adapter(source_tree: Path) -> Path:
+def _materialize_bootstrap_adapter(source_tree: Path, runtime_root: Path | None = None) -> Path:
     """Create a task-owned, non-secret readable adapter mount outside source."""
     source = source_tree / "scripts/runtime/rf09_public_bootstrap_adapter.py"
-    target = RUNTIME_ROOT / "rf09_public_bootstrap_adapter.py"
+    transient_root = (runtime_root or RUNTIME_ROOT).resolve()
+    if runtime_root is not None and (
+        transient_root == RUNTIME_ROOT or RUNTIME_ROOT in transient_root.parents
+    ):
+        raise ValueError("transient adapter root is inside canonical runtime")
+    target = transient_root / "rf09_public_bootstrap_adapter.py"
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.copyfile(source, target)
     target.chmod(0o644)
@@ -2367,7 +2390,7 @@ class PrivateCommandRunner:
                 leaked,
                 True,
             )
-        except (OSError, UnicodeError, ValueError):
+        except OSError, UnicodeError, ValueError:
             return PrivateCommandResult(
                 stage, _command_id(stage, payload), code, executed, {}, True, True, False, leaked
             )
@@ -2414,7 +2437,7 @@ def _parse_stage_output(
                 "api_bind_host": api_bind_host,
                 "secret_wiring": all("file" in value for value in secret_files.values()),
             }
-        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+        except KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError:
             return {}
     if stage == "IMAGE_INPUT_DIGEST":
         return {"build_input_digest": text}
@@ -2449,7 +2472,7 @@ def _parse_stage_output(
                 "environment_entries": len(config.get("Env", [])),
                 "action": "REUSED",
             }
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        except KeyError, TypeError, ValueError, json.JSONDecodeError:
             return (
                 {"resolution_error": "OBSERVATION_FAILURE"}
                 if stage == "APPLICATION_IMAGE_RESOLUTION"
@@ -2469,7 +2492,7 @@ def _parse_stage_output(
             ):
                 return {}
             return value
-        except (TypeError, ValueError, json.JSONDecodeError):
+        except TypeError, ValueError, json.JSONDecodeError:
             return {}
     if stage.startswith("MIGRATION_HEAD") or stage == "POST_RECOVERY_MIGRATION_HEAD":
         return {"observed_migration_head": text or MIGRATION_HEAD}
@@ -2483,7 +2506,7 @@ def _parse_stage_output(
     if stage == "APPLICATION_AUTH_REJECTION_B_CLASSIFY":
         try:
             event = json.loads(text)
-        except (TypeError, ValueError, json.JSONDecodeError):
+        except TypeError, ValueError, json.JSONDecodeError:
             return {}
         if not isinstance(event, dict):
             return {}
@@ -2523,7 +2546,7 @@ def _parse_stage_output(
                 "restart_count": int(restart_count),
                 "health_status": health_status,
             }
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return {}
     if stage == "ABRUPT_ACTIVATION_D_EXIT_70":
         return {"child_exit_code": code, "stdout_scanned": True, "stderr_scanned": True}
@@ -2960,6 +2983,11 @@ def _command_spec(
     )
 
 
+def _transient_runtime_root(ctx: Mapping[str, object]) -> Path | None:
+    value = ctx.get("transient_runtime_root")
+    return value if isinstance(value, Path) else None
+
+
 def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSpec, ...]:
     specs: list[StageSpec] = []
     probe_contract = build_application_probe_contract(str(ctx.get("image_id", "mayak-api")))
@@ -2994,7 +3022,16 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 "schema_version": "rf08-docker-native-context-v2",
                 "candidate_source_sha": cast(str, ctx["source_sha"]),
                 "candidate_tree_identity": subprocess.check_output(
-                    ["git", "-C", str(source_tree), "rev-parse", "HEAD^{tree}"], text=True
+                    [
+                        "git",
+                        "-c",
+                        f"safe.directory={source_tree.resolve()}",
+                        "-C",
+                        str(source_tree),
+                        "rev-parse",
+                        "HEAD^{tree}",
+                    ],
+                    text=True,
                 ).strip(),
                 "archive_sha256": "",
                 "docker_native_export_identity": {},
@@ -3460,7 +3497,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                     "foreign_resource_mutation": False,
                 }
                 adapter_path = _materialize_bootstrap_adapter(
-                    source_tree or Path(__file__).resolve().parents[2]
+                    source_tree or Path(__file__).resolve().parents[2], _transient_runtime_root(ctx)
                 )
                 bootstrap = stage_runner.run(
                     _docker(
@@ -4144,7 +4181,7 @@ def _operation_specs(ctx: dict[str, object], source_tree: Path) -> tuple[StageSp
                 command = _docker(("up", "-d", "--force-recreate", service))
             elif "DATABASE_BOOTSTRAP" in stage:
                 adapter_path = _materialize_bootstrap_adapter(
-                    source_tree or Path(__file__).resolve().parents[2]
+                    source_tree or Path(__file__).resolve().parents[2], _transient_runtime_root(ctx)
                 )
 
                 def database_bootstrap_command(
@@ -4254,15 +4291,33 @@ def run_protocol(
             {
                 "source_sha": source_sha,
                 "candidate_parent_sha": subprocess.check_output(
-                    ["git", "-C", str(source_tree or Path(__file__).resolve().parents[2]), "rev-parse", "HEAD^"],
+                    [
+                        "git",
+                        "-C",
+                        str(source_tree or Path(__file__).resolve().parents[2]),
+                        "rev-parse",
+                        "HEAD^",
+                    ],
                     text=True,
                 ).strip(),
                 "authoritative_origin_main_sha": subprocess.check_output(
-                    ["git", "-C", str(source_tree or Path(__file__).resolve().parents[2]), "rev-parse", "origin/main"],
+                    [
+                        "git",
+                        "-C",
+                        str(source_tree or Path(__file__).resolve().parents[2]),
+                        "rev-parse",
+                        "origin/main",
+                    ],
                     text=True,
                 ).strip(),
                 "candidate_tree_sha": subprocess.check_output(
-                    ["git", "-C", str(source_tree or Path(__file__).resolve().parents[2]), "rev-parse", "HEAD^{tree}"],
+                    [
+                        "git",
+                        "-C",
+                        str(source_tree or Path(__file__).resolve().parents[2]),
+                        "rev-parse",
+                        "HEAD^{tree}",
+                    ],
                     text=True,
                 ).strip(),
                 "image_id": next(
@@ -4300,7 +4355,7 @@ def run_protocol(
                 ),
             },
         )
-    except (OSError, ValueError, RuntimeError, ProtocolFailure, secrets.SecretPreparationError):
+    except OSError, ValueError, RuntimeError, ProtocolFailure, secrets.SecretPreparationError:
         return SafeRecord("FAIL", transcript.stage_sequence, transcript.entries)
 
 

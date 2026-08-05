@@ -54,7 +54,7 @@ def test_rf23_docker_authority_separates_host_capabilities_from_runner_pins() ->
     assert "RUNNER_SOURCE_IDENTITY_FROM_HOST_PROVENANCE" in source
     assert '--group-add "$SOCKET_GID"' in source
     assert '--user "$RUNNER_UID:$RUNNER_GID"' in source
-    assert 'stat -c \'%g\' /var/run/docker.sock' in source
+    assert "stat -c '%g' /var/run/docker.sock" in source
     assert "chmod /var/run/docker.sock" not in source
     assert "chown /var/run/docker.sock" not in source
     assert "--privileged" not in source
@@ -74,7 +74,7 @@ def test_rf23_checkout_path_is_dynamic_and_runner_workspace_is_stable() -> None:
 
 def test_rf23_focused_layout_proof_cannot_replace_normal_acceptance() -> None:
     source = ORCHESTRATOR.read_text(encoding="utf-8")
-    assert 'RF23_FOCUSED_ONLY:-0' in source
+    assert "RF23_FOCUSED_ONLY:-0" in source
     assert "RF23_FOCUSED_LAYOUT_PROOF_PASS" in source
     assert 'RF23_FOCUSED_ONLY="$FOCUSED_ONLY"' in source
     assert "RF23_FOCUSED_ONLY" in source
@@ -86,11 +86,11 @@ def test_rf23_focused_layout_proof_cannot_replace_normal_acceptance() -> None:
 def test_rf23_active_provenance_is_c07_and_c05_is_absent_from_acceptance_scope() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     source = ORCHESTRATOR.read_text(encoding="utf-8")
-    active = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-07"
+    active = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-08"
     assert f"RF23_TECHNICAL_ID: {active}" in workflow
     assert 'TECHNICAL_ID="$RF23_TECHNICAL_ID"' in source
-    assert 'RF23_TECHNICAL_ID:-' not in source
-    assert 'RF23_TECHNICAL_ID:?RF23_TECHNICAL_ID is required' in source
+    assert "RF23_TECHNICAL_ID:-" not in source
+    assert "RF23_TECHNICAL_ID:?RF23_TECHNICAL_ID is required" in source
     assert "CORRECTIVE-05" not in workflow
     assert "CORRECTIVE-05" not in source
     assert "CORRECTIVE-03" not in workflow
@@ -110,8 +110,8 @@ def test_rf23_evidence_tools_require_explicit_technical_id() -> None:
     assert 'parser.add_argument("--expected-tree", required=True)' in probe
     assert 'parser.add_argument("--expected-sha", required=True)' in producer
     assert 'parser.add_argument("--expected-tree", required=True)' in producer
-    assert "evidence.get(\"technical_id\") != expected_technical_id" in producer
-    assert "evidence.get(\"technical_id\") != expected_technical_id" in verifier
+    assert 'evidence.get("technical_id") != expected_technical_id' in producer
+    assert 'evidence.get("technical_id") != expected_technical_id' in verifier
     assert "expected_technical_id is None" in verifier
 
 
@@ -136,10 +136,13 @@ def test_rf23_nonroot_state_is_ephemeral_and_identity_preflight_cannot_accept() 
     assert "/opt/uv-cache" not in dockerfile + source
     assert "/root" not in dockerfile + source
     assert "RF23_IDENTITY_PREFLIGHT_PASS" in source
-    assert "rf23-evidence.json" not in source.split("RF23_IDENTITY_PREFLIGHT_PASS", 1)[0].split(
-        'if [[ "${1:-}" == "--identity-preflight-only" ]]', 1
-    )[-1]
-    assert "uv venv \"$UV_PROJECT_ENVIRONMENT\"" in source
+    assert (
+        "rf23-evidence.json"
+        not in source.split("RF23_IDENTITY_PREFLIGHT_PASS", 1)[0].split(
+            'if [[ "${1:-}" == "--identity-preflight-only" ]]', 1
+        )[-1]
+    )
+    assert 'uv venv "$UV_PROJECT_ENVIRONMENT"' in source
     assert "RF23_EXPECTED_RUNNER_UID" in source
     assert "RF23_EXPECTED_RUNNER_GID" in source
     assert "id -G" in source
@@ -149,7 +152,7 @@ def test_rf23_identity_overrides_are_test_only_and_checkout_is_workspace() -> No
     source = ORCHESTRATOR.read_text(encoding="utf-8")
     assert "overrides are permitted only for identity preflight" in source
     assert "--identity-preflight-only" in source
-    assert "--mount \"type=bind,src=$ROOT,dst=$CONTAINER_ROOT,readonly\"" in source
+    assert '--mount "type=bind,src=$ROOT,dst=$CONTAINER_ROOT,readonly"' in source
     assert "CONTAINER_ROOT=/workspace" in source
     assert "/home/runner/work" not in source
     assert "src=/opt/avito-mayak" not in source
@@ -157,7 +160,7 @@ def test_rf23_identity_overrides_are_test_only_and_checkout_is_workspace() -> No
 
 def _evidence() -> dict[str, object]:
     return {
-        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-07",
+        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-08",
         "candidate_sha": "a" * 40,
         "candidate_tree_identity": "b" * 40,
         "observation_source": "live_http_and_process_local_git",
@@ -266,7 +269,7 @@ def _verify(evidence: Path, log: Path, manifest: Path) -> subprocess.CompletedPr
             "--expected-tree",
             "b" * 40,
             "--expected-technical-id",
-            "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-07",
+            "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-08",
             "--manifest",
             str(manifest),
             "--pytest-log",

@@ -100,6 +100,7 @@ run_inside() {
   local source_sha="${RF23_SOURCE_SHA:?RF23_SOURCE_SHA is required}"
   local source_tree="${RF23_SOURCE_TREE:?RF23_SOURCE_TREE is required}"
   export PYTHONPATH=.
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$CONTAINER_ROOT"
   export MAYAK_RUNTIME_PROFILE=synthetic_acceptance
   export MAYAK_ENVIRONMENT_ID=avito-mayak-rf23-c07
   export MAYAK_DATABASE_HOST=mayak-postgres MAYAK_DATABASE_PORT=5432
@@ -225,7 +226,11 @@ PY
   uv run lint-imports
   uv run pytest -q tests/runtime/test_rf08_safe_compose_bootstrap.py::test_build_input_digest_follows_copy_inputs_and_includes_readme
 
-  git status --short --branch | tee rf23-local-status.log
+  if git -C "$CONTAINER_ROOT" rev-parse HEAD >/dev/null 2>&1; then
+    git -C "$CONTAINER_ROOT" status --short --branch | tee rf23-local-status.log
+  else
+    printf '%s\n' "RUNNER_STATUS_FROM_HOST_PROVENANCE" | tee rf23-local-status.log
+  fi
   if [[ "${RF23_RESUME_AFTER_FULL:-0}" == 1 ]]; then
     test -s rf23-full-pytest.log
   else
@@ -251,6 +256,7 @@ with e.begin() as c:
  assert row == 1, row
 PY
 
+  : > rf23-api.log
   env -u MAYAK_DATABASE_URL -u MAYAK_RF10_POSTGRES_DSN -u MAYAK_RF11_POSTGRES_DSN \
     -u MAYAK_RF11_POSTGRES_PASSWORD_FILE \
     MAYAK_PROCESS_KIND=mayak-api MAYAK_SOURCE_SHA="$source_sha" \
@@ -326,10 +332,16 @@ docker run -d --name "$RF23_DB" --network "$RF23_NETWORK" --network-alias mayak-
   postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296 >/dev/null
 for _ in $(seq 1 60); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$RF23_DB")" == healthy ]] && break; sleep 2; done
 [[ "$(docker inspect -f '{{.State.Health.Status}}' "$RF23_DB")" == healthy ]] || die "postgres did not become healthy"
+GIT_COMMON_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+GIT_ADMIN_MOUNT=()
+if [[ -n "$GIT_COMMON_DIR" && -d "$GIT_COMMON_DIR" ]]; then
+  GIT_ADMIN_MOUNT=(--mount "type=bind,src=$GIT_COMMON_DIR,dst=$GIT_COMMON_DIR,readonly")
+fi
 docker run --name "$RF23_RUNNER" --network "$RF23_NETWORK" --user "$RUNNER_UID:$RUNNER_GID" --group-add "$SOCKET_GID" \
   --add-host host.docker.internal:host-gateway --mount type=bind,src="$ROOT",dst="$CONTAINER_ROOT" \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
   --mount type=bind,src="$SECRETS",dst=/run/secrets,readonly \
+  "${GIT_ADMIN_MOUNT[@]}" \
   -e RF23_NETWORK -e RF23_DB -e RF23_TECHNICAL_ID -e RF23_SOURCE_SHA -e RF23_SOURCE_TREE -e RF20_POSTGRES_OWNER_LABEL="$OWNER_LABEL" \
   -e RF23_FOCUSED_ONLY="$FOCUSED_ONLY" -e RF23_RESUME_AFTER_FULL="${RF23_RESUME_AFTER_FULL:-0}" \
   -e RF23_EXPECTED_RUNNER_UID -e RF23_EXPECTED_RUNNER_GID -e RF23_DOCKER_SOCKET_UID -e RF23_DOCKER_SOCKET_GID -e RF23_DOCKER_SOCKET_MODE \

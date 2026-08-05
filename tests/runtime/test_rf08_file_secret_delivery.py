@@ -22,6 +22,8 @@ from scripts.runtime.prepare_file_secrets import (
     validate_generation,
 )
 
+TEST_OWNERSHIP = module.HermeticOwnershipAuthority()
+
 
 def root_for(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(module, "_ALLOWED_ROOTS", (tmp_path,))
@@ -38,8 +40,12 @@ def metadata(root: Path, generation: str) -> dict[str, tuple[bytes, int, int, in
 
 
 def make_active(root: Path) -> str:
-    generation = prepare_generation(root, postgres_uid=999, postgres_gid=999)
-    activate_generation(root, generation, postgres_uid=999, postgres_gid=999)
+    generation = prepare_generation(
+        root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+    )
+    activate_generation(
+        root, generation, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+    )
     return generation
 
 
@@ -66,7 +72,9 @@ def test_initial_generation_layout_manifest_owners_modes_and_equality(tmp_path, 
     for path in directory.iterdir():
         if path.name != MANIFEST_NAME:
             assert stat.S_IMODE(path.stat().st_mode) == MODE
-    validate_generation(root, generation, postgres_uid=999, postgres_gid=999)
+    validate_generation(
+        root, generation, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+    )
 
 
 def test_manifest_unknown_file_copy_mode_owner_and_pointer_rejected(tmp_path, monkeypatch):
@@ -75,19 +83,28 @@ def test_manifest_unknown_file_copy_mode_owner_and_pointer_rejected(tmp_path, mo
     directory = root / "sets" / generation
     (directory / "unexpected").write_text("x")
     with pytest.raises(SecretPreparationError):
-        validate_generation(root, generation, postgres_uid=999, postgres_gid=999)
+        validate_generation(
+            root, generation, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+        )
     (directory / "unexpected").unlink()
     os.chmod(directory / "mayak_database_application_password", 0o600)
     with pytest.raises(SecretPreparationError):
-        validate_generation(root, generation, postgres_uid=999, postgres_gid=999)
+        validate_generation(
+            root, generation, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+        )
     os.chmod(directory / "mayak_database_application_password", MODE)
-    (directory / "mayak_postgres_bootstrap_password_runtime").write_bytes(b"different")
+    changed = directory / "mayak_postgres_bootstrap_password_runtime"
+    os.chmod(changed, 0o600)
+    changed.write_bytes(b"different")
+    os.chmod(changed, MODE)
     with pytest.raises(SecretPreparationError):
-        validate_generation(root, generation, postgres_uid=999, postgres_gid=999)
+        validate_generation(
+            root, generation, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+        )
     (root / "active").unlink()
     (root / "active").symlink_to("../../outside")
     with pytest.raises(SecretPreparationError):
-        show_active_safe(root, postgres_uid=999, postgres_gid=999)
+        show_active_safe(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
 
 
 def test_rotation_failure_preserves_existing_set_and_unrelated_file(tmp_path, monkeypatch):
@@ -98,9 +115,14 @@ def test_rotation_failure_preserves_existing_set_and_unrelated_file(tmp_path, mo
     before = metadata(root, first)
     monkeypatch.setenv(module.FAILPOINT_ENV, "after-each-secret-file-write")
     with pytest.raises(SecretPreparationError):
-        prepare_generation(root, postgres_uid=999, postgres_gid=999)
+        prepare_generation(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
     monkeypatch.delenv(module.FAILPOINT_ENV)
-    assert show_active_safe(root, postgres_uid=999, postgres_gid=999)["generation_id"] == first
+    assert (
+        show_active_safe(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)[
+            "generation_id"
+        ]
+        == first
+    )
     assert metadata(root, first) == before
     assert unrelated.read_text() == "preserve"
 
@@ -133,24 +155,30 @@ def test_failpoint_recovery_has_one_complete_active_generation(tmp_path, monkeyp
             "before-parent-directory-fsync",
             "after-parent-directory-fsync",
         }:
-            second = prepare_generation(root, postgres_uid=999, postgres_gid=999)
+            second = prepare_generation(
+                root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+            )
             with pytest.raises(SecretPreparationError):
-                activate_generation(root, second, postgres_uid=999, postgres_gid=999)
+                activate_generation(
+                    root, second, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+                )
         else:
             with pytest.raises(SecretPreparationError):
-                prepare_generation(root, postgres_uid=999, postgres_gid=999)
+                prepare_generation(
+                    root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+                )
     finally:
         monkeypatch.delenv(module.FAILPOINT_ENV)
-    active = recover(root, postgres_uid=999, postgres_gid=999)
+    active = recover(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
     assert active in {first, *[p.name for p in (root / "sets").iterdir()]}
-    validate_generation(root, active, postgres_uid=999, postgres_gid=999)
+    validate_generation(root, active, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
     if active == first:
         assert metadata(root, first) == before
 
 
 def test_abrupt_child_termination_and_recovery(tmp_path, monkeypatch):
-    root = Path("/opt/avito-mayak-runtime/rf08-secret-delivery") / f"test-abrupt-{os.getpid()}"
-    monkeypatch.setattr(module, "_ALLOWED_ROOTS", (Path("/opt/avito-mayak-runtime"),))
+    root = tmp_path / f"test-abrupt-{os.getpid()}"
+    monkeypatch.setattr(module, "_ALLOWED_ROOTS", (tmp_path,))
     first = make_active(root)
     env = os.environ | {
         "PYTHONPATH": str(Path.cwd()),
@@ -159,8 +187,9 @@ def test_abrupt_child_termination_and_recovery(tmp_path, monkeypatch):
     }
     child_code = (
         "from pathlib import Path; import scripts.runtime.prepare_file_secrets as s; "
-        "s._ALLOWED_ROOTS=(Path('/opt/avito-mayak-runtime'),); "
-        f"s.prepare_generation(Path({str(root)!r}), postgres_uid=999, postgres_gid=999)"
+        f"s._ALLOWED_ROOTS=(Path({str(tmp_path)!r}),); "
+        f"s.prepare_generation(Path({str(root)!r}), postgres_uid=999, postgres_gid=999, "
+        "ownership=s.HermeticOwnershipAuthority())"
     )
     child = subprocess.run(
         [
@@ -173,8 +202,8 @@ def test_abrupt_child_termination_and_recovery(tmp_path, monkeypatch):
         text=True,
     )
     assert child.returncode != 0 and child.stdout == child.stderr == ""
-    assert recover(root, postgres_uid=999, postgres_gid=999) == first
-    validate_generation(root, first, postgres_uid=999, postgres_gid=999)
+    assert recover(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP) == first
+    validate_generation(root, first, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
     for path in sorted(root.rglob("*"), reverse=True):
         if path.is_file() or path.is_symlink():
             path.unlink()
@@ -186,23 +215,34 @@ def test_abrupt_child_termination_and_recovery(tmp_path, monkeypatch):
 def test_rollback_and_cleanup_failpoints_preserve_active(tmp_path, monkeypatch):
     root = root_for(tmp_path, monkeypatch)
     first = make_active(root)
-    second = prepare_generation(root, postgres_uid=999, postgres_gid=999)
+    second = prepare_generation(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
     monkeypatch.setenv(module.FAILPOINT_ENV, "during-rollback-pointer-replacement")
     with pytest.raises(SecretPreparationError):
-        module.rollback_activation(root, first, postgres_uid=999, postgres_gid=999)
+        module.rollback_activation(
+            root, first, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+        )
     monkeypatch.setenv(module.FAILPOINT_ENV, "during-retired-generation-cleanup")
     with pytest.raises(SecretPreparationError):
-        cleanup_retired(root, keep=(first,), postgres_uid=999, postgres_gid=999)
+        cleanup_retired(
+            root, keep=(first,), postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+        )
     monkeypatch.delenv(module.FAILPOINT_ENV)
-    assert show_active_safe(root, postgres_uid=999, postgres_gid=999)["generation_id"] == first
+    assert (
+        show_active_safe(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)[
+            "generation_id"
+        ]
+        == first
+    )
     assert (root / "sets" / second).exists()
 
 
 def test_cleanup_only_removes_valid_retired_generations(tmp_path, monkeypatch):
     root = root_for(tmp_path, monkeypatch)
     first = make_active(root)
-    second = prepare_generation(root, postgres_uid=999, postgres_gid=999)
-    activate_generation(root, second, postgres_uid=999, postgres_gid=999)
-    assert first in cleanup_retired(root, keep=(), postgres_uid=999, postgres_gid=999)
+    second = prepare_generation(root, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
+    activate_generation(root, second, postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP)
+    assert first in cleanup_retired(
+        root, keep=(), postgres_uid=999, postgres_gid=999, ownership=TEST_OWNERSHIP
+    )
     assert not (root / "sets" / first).exists()
     assert (root / "sets" / second).exists()
