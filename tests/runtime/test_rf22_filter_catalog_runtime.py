@@ -1,12 +1,17 @@
+# ruff: noqa: E501
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import MetaData, create_engine
+from sqlalchemy.orm import Session
 
 from mayak.modules.filter_catalog import (
     CapabilityEnvelope,
     DependencyEnvelope,
+    DraftValueInput,
     EvidenceEnvelope,
     FilterDependencyKind,
     WarningEnvelope,
@@ -18,6 +23,7 @@ from mayak.modules.filter_catalog.contracts import (
     FilterDefinitionState,
     FilterValueKind,
 )
+from mayak.modules.filter_catalog.runtime import FilterCatalogRuntime
 from mayak.modules.filter_catalog.value_dependency_semantics import (
     FilterSemanticExposureReason,
     FilterSemanticExposureRequest,
@@ -27,8 +33,27 @@ from mayak.modules.filter_catalog.value_dependency_semantics import (
     evaluate_multivalue_preservation,
     validate_range_value,
 )
+from mayak.persistence.schema.filter_catalog import register_filter_catalog_tables
 
 
+@pytest.fixture(scope="module")
+def direct_runtime() -> tuple[FilterCatalogRuntime, object, object, dict[str, object]]:
+    application_dsn = os.getenv("RF22_DSN") or os.getenv("RF22_DATABASE_URL")
+    migration_dsn = os.getenv("RF22_MIGRATION_DSN")
+    if not application_dsn or not migration_dsn:
+        pytest.skip("RF22 PostgreSQL acceptance DSNs are required for direct runtime cases")
+    from scripts.runtime.run_rf22_postgres_acceptance import _seed
+
+    migration = create_engine(migration_dsn)
+    app = create_engine(application_dsn)
+    data = _seed(migration)
+    session = Session(app)
+    runtime = FilterCatalogRuntime(session)
+    catalog = runtime.load_catalog("SYNTHETIC_CATALOG_V1").catalog
+    yield runtime, catalog, migration, data
+    session.close()
+    app.dispose()
+    migration.dispose()
 def _evidence() -> dict:
     return {
         "schema_version": "rf22-filter-evidence/v1",
@@ -221,3 +246,76 @@ def test_runtime_range_normalization_preserves_decimal_boundaries() -> None:
     assert result.decision.value == "VALID"
     assert result.lower_value == Decimal("10")
     assert result.upper_value == Decimal("20")
+
+
+@pytest.mark.parametrize(
+    ("method", "case_id"),
+    (("load_catalog", "published"), ("builder_context", "exact-scope"), ("validate_draft", "required-missing")),
+)
+def test_rf22_direct_acceptance_calls_production_runtime(
+    direct_runtime: tuple[FilterCatalogRuntime, object, object, dict[str, object]],
+    method: str,
+    case_id: str,
+) -> None:
+    runtime, catalog, _migration, data = direct_runtime
+    if method == "load_catalog":
+        assert runtime.load_catalog("SYNTHETIC_CATALOG_V1").version_code == "SYNTHETIC_CATALOG_V1"
+    elif method == "builder_context":
+        context = runtime.builder_context(
+            catalog,
+            beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+            provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+            category_scope_reference_id="SYNTHETIC_CATEGORY",
+            geography_scope_reference_id="SYNTHETIC_GEO",
+        )
+        scalar = next(item for item in context.field_entries if item.field_definition.builder_field_id.endswith("SCALAR_FIELD"))
+        assert scalar.field_definition.filter_capability_profile_id == str(data["expected_scalar_profile"])
+    else:
+        result = runtime.validate_draft(
+            catalog,
+            builder_draft_id=f"DIRECT_{case_id}",
+            beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+            provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+            category_scope_reference_id="SYNTHETIC_CATEGORY",
+            geography_scope_reference_id="SYNTHETIC_GEO",
+            fields=(DraftValueInput(field_code="MULTI_FIELD", value_reference_ids=("OPTION_A",)),),
+        )
+        assert "REQUIRED_FIELD_MISSING" in {item.value for item in result.outcome.reason_codes}
+
+
+def test_rf22_direct_cycle_is_loaded_from_postgres_and_blocks(
+    direct_runtime: tuple[FilterCatalogRuntime, object, object, dict[str, object]],
+) -> None:
+    runtime, _catalog, migration, data = direct_runtime
+    dependencies = register_filter_catalog_tables(MetaData(schema="mayak"))[3]
+    with migration.begin() as connection:
+        connection.execute(
+            dependencies.update()
+            .where(dependencies.c.id == data["excludes"])
+            .values(
+                rule={
+                    "schema_version": "rf22-filter-dependency/v1",
+                    "dependency_kind": "REQUIRES",
+                    "condition_code": "OPTION_A",
+                    "outcome_code": "OPTION_A",
+                    "evidence_reference_ids": [str(data["evidence"])],
+                }
+            ),
+        )
+    cycle_runtime = FilterCatalogRuntime(runtime.session)
+    cycle_catalog = cycle_runtime.load_catalog("SYNTHETIC_CATALOG_V1").catalog
+    result = cycle_runtime.validate_draft(
+        cycle_catalog,
+        builder_draft_id="DIRECT_CYCLE",
+        beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+        provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+        category_scope_reference_id="SYNTHETIC_CATEGORY",
+        geography_scope_reference_id="SYNTHETIC_GEO",
+        fields=(
+            DraftValueInput(field_code="SCALAR_FIELD", value_reference_ids=("OPTION_A",)),
+            DraftValueInput(field_code="MULTI_FIELD", value_reference_ids=("OPTION_A",)),
+        ),
+    )
+    scalar = next(item for item in result.semantic_outcomes if item.filter_definition_id == str(data["scalar"]))
+    assert scalar.decision.value == "BLOCKED"
+    assert [reason.value for reason in scalar.reason_codes] == ["DEPENDENCY_GRAPH_CYCLE"]

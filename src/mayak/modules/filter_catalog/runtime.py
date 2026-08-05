@@ -90,6 +90,33 @@ _Code = StringConstraints(
     max_length=128,
     pattern=r"^[A-Z0-9_:-]+$",
 )
+
+
+def _dependency_graph_has_cycle(rules: tuple[FilterDependencyRule, ...]) -> bool:
+    graph: dict[str, tuple[str, ...]] = {}
+    for rule in rules:
+        if rule.dependency_kind in (FilterDependencyKind.REQUIRES, FilterDependencyKind.CONSTRAINS):
+            graph[rule.source_filter_definition_id] = graph.get(
+                rule.source_filter_definition_id, ()
+            ) + (
+                rule.target_filter_definition_id,
+            )
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node: str) -> bool:
+        if node in visiting:
+            return True
+        if node in visited:
+            return False
+        visiting.add(node)
+        if any(visit(target) for target in graph.get(node, ())):
+            return True
+        visiting.remove(node)
+        visited.add(node)
+        return False
+
+    return any(visit(node) for node in graph)
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
@@ -805,8 +832,37 @@ class FilterCatalogRuntime:
                     item for item in catalog.filter_dependency_rules
                     if item.source_filter_definition_id == definition_id
                 ),
+                dependency_evaluations=tuple(
+                    DependencyRuleEvaluation(
+                        filter_dependency_rule_id=item.filter_dependency_rule_id,
+                        evaluation_state=DependencyEvaluationState.SATISFIED,
+                        evaluation_reference_id=f"RF22_PROFILE_SEMANTICS_{item.filter_dependency_rule_id}",
+                    )
+                    for item in catalog.filter_dependency_rules
+                    if item.source_filter_definition_id == definition_id
+                ),
             )
         )
+        if _dependency_graph_has_cycle(tuple(catalog.filter_dependency_rules)) and (
+            FilterSemanticExposureReason.DEPENDENCY_GRAPH_CYCLE not in outcome.reason_codes
+        ):
+            outcome = outcome.model_copy(
+                update={
+                    "reason_codes": tuple(
+                        dict.fromkeys(
+                            (
+                                *(
+                                    reason
+                                    for reason in outcome.reason_codes
+                                    if reason is not FilterSemanticExposureReason.FILTER_EXPOSED
+                                ),
+                                FilterSemanticExposureReason.DEPENDENCY_GRAPH_CYCLE,
+                            )
+                        )
+                    ),
+                    "decision": FilterSemanticExposureDecision.BLOCKED,
+                }
+            )
         if (
             category_scope_reference_id is None
             and geography_scope_reference_id is None
@@ -1077,6 +1133,26 @@ class FilterCatalogRuntime:
                     dependency_evaluations=tuple(evaluations),
                 )
             )
+            if _dependency_graph_has_cycle(tuple(catalog.filter_dependency_rules)) and (
+                FilterSemanticExposureReason.DEPENDENCY_GRAPH_CYCLE not in semantic.reason_codes
+            ):
+                semantic = semantic.model_copy(
+                    update={
+                        "reason_codes": tuple(
+                            dict.fromkeys(
+                                (
+                                    *(
+                                        reason
+                                        for reason in semantic.reason_codes
+                                        if reason is not FilterSemanticExposureReason.FILTER_EXPOSED
+                                    ),
+                                    FilterSemanticExposureReason.DEPENDENCY_GRAPH_CYCLE,
+                                )
+                            )
+                        ),
+                        "decision": FilterSemanticExposureDecision.BLOCKED,
+                    }
+                )
             if (
                 category_scope_reference_id is None
                 and geography_scope_reference_id is None

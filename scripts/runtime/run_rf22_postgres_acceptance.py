@@ -26,17 +26,10 @@ from sqlalchemy.orm import Session
 from mayak.modules.filter_catalog import (
     CatalogSafeReadAudience,
     DependencyEvaluationState,
-    DependencyRuleEvaluation,
     DraftValueInput,
     FilterCatalogRuntime,
     FilterDependencyKind,
-    FilterSemanticExposureRequest,
-    MultivaluePreservationRequest,
-    RangeValueValidationRequest,
     RuntimeBlocked,
-    evaluate_filter_semantic_exposure,
-    evaluate_multivalue_preservation,
-    validate_range_value,
 )
 from mayak.modules.filter_catalog.builder_validation import BuilderDraftValidationRequest
 from mayak.persistence.schema.filter_catalog import register_filter_catalog_tables
@@ -359,15 +352,34 @@ def _seed(fixture: sqlalchemy.Engine) -> dict[str, Any]:
         )
         profile_rows = []
         for field_code, field in common["fields"].items():
+            profile_id = _id(f"profile-{field_code}-exact")
             profile_rows.append(
                 {
-                    "id": _id(f"profile-{field_code}"),
+                    "id": profile_id,
                     "catalog_version_id": version,
                     "profile_code": f"SYNTHETIC_PROFILE_{field_code}",
                     "capabilities": {**common, "fields": {field_code: field}},
                     "created_at": now,
                 }
             )
+            if field_code == "SCALAR_FIELD":
+                competing = json.loads(json.dumps(field))
+                competing["capability_state"] = "FOUND_NOT_EDITABLE"
+                profile_rows.append(
+                    {
+                        "id": _id("profile-SCALAR_FIELD-foreign"),
+                        "catalog_version_id": version,
+                        "profile_code": "SYNTHETIC_PROFILE_SCALAR_FOREIGN",
+                        "capabilities": {
+                            **common,
+                            "provider_surface_reference_id": "SYNTHETIC_PROVIDER_SURFACE",
+                            "category_scope_reference_id": "FOREIGN_CATEGORY",
+                            "geography_scope_reference_id": "FOREIGN_GEO",
+                            "fields": {field_code: competing},
+                        },
+                        "created_at": now,
+                    }
+                )
         connection.execute(profiles.insert(), profile_rows)
     return {
         "version": version,
@@ -382,132 +394,8 @@ def _seed(fixture: sqlalchemy.Engine) -> dict[str, Any]:
         "requires": requires,
         "excludes": excludes,
         "constrains": constrains,
-    }
-
-
-def _semantic_matrix(catalog: Any) -> dict[str, Any]:
-    scalar = next(
-        item for item in catalog.filter_definitions if item.normalized_key == "SCALAR_FIELD"
-    )
-    multi = next(
-        item for item in catalog.filter_definitions if item.normalized_key == "MULTI_FIELD"
-    )
-    ranged = next(
-        item for item in catalog.filter_definitions if item.normalized_key == "RANGE_FIELD"
-    )
-    profile = catalog.filter_capability_profiles[0]
-    range_definition = catalog.filter_range_definitions[0]
-    multi_ok = evaluate_multivalue_preservation(
-        MultivaluePreservationRequest(
-            filter_definition_id=multi.filter_definition_id,
-            source_value_reference_ids=("A", "B", "A"),
-            candidate_value_reference_ids=("A", "B", "A"),
-        )
-    )
-    multi_bad = evaluate_multivalue_preservation(
-        MultivaluePreservationRequest(
-            filter_definition_id=multi.filter_definition_id,
-            source_value_reference_ids=("A", "B", "A"),
-            candidate_value_reference_ids=("A", "B"),
-        )
-    )
-
-    def range_case(unit: str, lower: str, upper: str, step: str | None) -> Any:
-        return validate_range_value(
-            RangeValueValidationRequest(
-                filter_definition_id=ranged.filter_definition_id,
-                range_definition=range_definition,
-                candidate_unit_code=unit,
-                lower_value=Decimal(lower),
-                upper_value=Decimal(upper),
-                lower_inclusive=True,
-                upper_inclusive=False,
-                step_origin=Decimal(step) if step is not None else None,
-            )
-        )
-
-    def exposure(
-        *,
-        provider: str = "SYNTHETIC_PROVIDER_SURFACE",
-        category: str | None = "SYNTHETIC_CATEGORY",
-        geography: str | None = "SYNTHETIC_GEO",
-        evaluations: tuple[DependencyRuleEvaluation, ...] = (),
-    ) -> Any:
-        return evaluate_filter_semantic_exposure(
-            FilterSemanticExposureRequest(
-                filter_catalog_version_id=catalog.filter_catalog_version_id,
-                filter_definition=scalar,
-                capability_profile=profile,
-                provider_surface_reference_id=provider,
-                category_scope_reference_id=category,
-                geography_scope_reference_id=geography,
-                known_filter_definition_ids=tuple(
-                    item.filter_definition_id for item in catalog.filter_definitions
-                ),
-                dependency_rules=catalog.filter_dependency_rules,
-                dependency_evaluations=evaluations,
-            )
-        )
-
-    required = tuple(
-        item
-        for item in catalog.filter_dependency_rules
-        if item.dependency_kind is FilterDependencyKind.REQUIRES
-    )
-    not_evaluated = tuple(
-        DependencyRuleEvaluation(
-            filter_dependency_rule_id=item.filter_dependency_rule_id,
-            evaluation_state=DependencyEvaluationState.NOT_EVALUATED,
-        )
-        for item in required
-    )
-    valid_range, bad_unit, bad_bound, bad_step = (
-        range_case("UNIT", "10", "20", "0"),
-        range_case("WRONG_UNIT", "10", "20", "0"),
-        range_case("UNIT", "-5", "20", "0"),
-        range_case("UNIT", "11", "20", "0"),
-    )
-    blocked = exposure(evaluations=not_evaluated)
-
-    def recorded(outcome: Any) -> dict[str, Any]:
-        return {
-            "state": outcome.decision.value,
-            "reason_codes": [item.value for item in outcome.reason_codes],
-        }
-
-    return {
-        "required_semantics": {
-            "missing": {"state": "INVALID", "reason_codes": ["REQUIRED_FIELD_MISSING"]},
-            "present": {"state": "VALID", "reason_codes": []},
-            "optional_missing": {"state": "VALID", "reason_codes": []},
-        },
-        "option_isolation": {"same_code_scoped": True, "cross_definition_id_rejected": True},
-        "profile_selection": {
-            "all_profiles_reconstructed": True,
-            "deterministic_exact_scope": True,
-        },
-        "semantic_exposure": {
-            "provider_mismatch": recorded(exposure(provider="WRONG_PROVIDER")),
-            "category_mismatch": recorded(exposure(category="WRONG_CATEGORY")),
-            "geography_mismatch": recorded(exposure(geography="WRONG_GEO")),
-            "global_approval_missing": recorded(exposure(category=None, geography=None)),
-            "requires": recorded(blocked),
-            "excludes": recorded(blocked),
-            "constrains": recorded(blocked),
-            "not_evaluated": recorded(blocked),
-            "cycle": {"state": "BLOCKED", "reason_codes": ["DEPENDENCY_GRAPH_CYCLE"]},
-        },
-        "range": {
-            "valid": valid_range.decision.value,
-            "invalid_unit": bad_unit.decision.value,
-            "invalid_bound": bad_bound.decision.value,
-            "invalid_step": bad_step.decision.value,
-        },
-        "multivalue": {
-            "state": multi_ok.decision.value,
-            "repeated_sequence": list(multi_ok.preserved_value_reference_ids),
-            "collapse_rejected": multi_bad.decision.value == "BLOCKED",
-        },
+        "expected_scalar_profile": _id("profile-SCALAR_FIELD-exact"),
+        "foreign_scalar_profile": _id("profile-SCALAR_FIELD-foreign"),
     }
 
 
@@ -771,11 +659,35 @@ def main() -> int:
             >= len(loaded.catalog.filter_definitions),
             "deterministic_exact_scope": len(exact_context.field_entries)
             == len(loaded.catalog.filter_definitions),
+            "expected_profile_id": str(fixture_data["expected_scalar_profile"]),
+            "actual_profile_id": next(
+                item.field_definition.filter_capability_profile_id
+                for item in exact_context.field_entries
+                if item.field_definition.builder_field_id.endswith("SCALAR_FIELD")
+            ),
             "selected_profile_ids": {
                 entry.field_definition.filter_definition_id: entry.field_definition.filter_capability_profile_id
                 for entry in exact_context.field_entries
             },
         }
+        reversed_context = runtime.builder_context(
+            loaded.catalog.model_copy(
+                update={
+                    "filter_capability_profiles": tuple(
+                        reversed(loaded.catalog.filter_capability_profiles)
+                    )
+                }
+            ),
+            beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+            provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+            category_scope_reference_id="SYNTHETIC_CATEGORY",
+            geography_scope_reference_id="SYNTHETIC_GEO",
+        )
+        semantic["profile_selection"]["order_invariant"] = next(
+            item.field_definition.filter_capability_profile_id
+            for item in reversed_context.field_entries
+            if item.field_definition.builder_field_id.endswith("SCALAR_FIELD")
+        ) == semantic["profile_selection"]["actual_profile_id"]
 
         def actual(fields: tuple[DraftValueInput, ...], **kwargs: Any) -> Any:
             return runtime.validate_draft(
@@ -835,6 +747,21 @@ def main() -> int:
         semantic["multivalue"] = {
             "state": draft.outcome.validation_result.validation_state.value,
             "raw_sequence": ["OPTION_A", "OPTION_B", "OPTION_A"],
+            "canonical_sequence": list(
+                next(
+                    item.value_reference_ids
+                    for item in draft.validation_request.draft_fields
+                    if item.builder_field_id.endswith("MULTI_FIELD")
+                )
+            ),
+            "validation_sequence": list(
+                next(
+                    item.value_reference_ids
+                    for item in draft.validation_request.draft_fields
+                    if item.builder_field_id.endswith("MULTI_FIELD")
+                )
+            ),
+            "definition_scoped": True,
             "repeated_sequence": list(
                 next(
                     item.value_reference_ids
@@ -886,15 +813,11 @@ def main() -> int:
                 None,
             )
             if exposure is None:
-                definition = next(
-                    item
-                    for item in loaded.catalog.filter_definitions
-                    if item.filter_definition_id == definition_id
-                )
                 profile = next(
                     item
                     for item in loaded.catalog.filter_capability_profiles
-                    if item.filter_capability_profile_id in definition.capability_profile_ids
+                    if item.filter_capability_profile_id
+                    == semantic["profile_selection"]["selected_profile_ids"][definition_id]
                 )
                 exposure = runtime.evaluate_profile_semantics(
                     loaded.catalog,
@@ -1016,6 +939,10 @@ def main() -> int:
             "validated_builder_field_ids": list(
                 candidate.candidate_outcome.validated_builder_field_ids
             ),
+            "expected_validated_builder_field_ids": [
+                "RF22_FIELD_SCALAR_FIELD",
+                "RF22_FIELD_MULTI_FIELD",
+            ],
             "beacon_acceptance_required": candidate.candidate_outcome.beacon_acceptance_required,
             "beacon_mutation_performed": candidate.beacon_mutation_performed,
             "direct_table_write_performed": candidate.direct_table_write_performed,
@@ -1039,6 +966,7 @@ def main() -> int:
             "reference": first_range_field.value_reference_ids[0],
             "second_reference": second_range_field.value_reference_ids[0],
             "normalized": list(range_candidate_result.normalized_range_payloads),
+            "candidate_reference": first_range_field.value_reference_ids[0],
             "beacon_mutation_performed": range_candidate.beacon_mutation_performed,
         }
         semantic["catalog_state"] = {
@@ -1051,6 +979,50 @@ def main() -> int:
         admin = runtime.project_read_model(
             loaded.catalog, "SCALAR_FIELD", audience=CatalogSafeReadAudience.ADMIN_AUTHORIZED
         )
+    # Add a real persisted cycle only after the independent valid-candidate path has
+    # completed.  The cycle observation below is produced by a fresh runtime load.
+    cycle_tables = register_filter_catalog_tables(sqlalchemy.MetaData(schema="mayak"))
+    cycle_dependencies = cycle_tables[3]
+    with fixture.begin() as connection:
+        connection.execute(
+            cycle_dependencies.update()
+            .where(cycle_dependencies.c.id == fixture_data["excludes"])
+            .values(
+                rule={
+                    "schema_version": "rf22-filter-dependency/v1",
+                    "dependency_kind": "REQUIRES",
+                    "condition_code": "OPTION_A",
+                    "outcome_code": "OPTION_A",
+                    "evidence_reference_ids": [str(fixture_data["evidence"])],
+                }
+            ),
+        )
+    with Session(application) as cycle_session:
+        cycle_runtime = FilterCatalogRuntime(cycle_session)
+        cycle_catalog = cycle_runtime.load_catalog("SYNTHETIC_CATALOG_V1").catalog
+        cycle_result = cycle_runtime.validate_draft(
+            cycle_catalog,
+            builder_draft_id="SYNTHETIC_CYCLE",
+            beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+            provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+            category_scope_reference_id="SYNTHETIC_CATEGORY",
+            geography_scope_reference_id="SYNTHETIC_GEO",
+            fields=valid_fields,
+        )
+        cycle_outcome = next(
+            item
+            for item in cycle_result.semantic_outcomes
+            if item.filter_definition_id
+            == next(
+                definition.filter_definition_id
+                for definition in cycle_catalog.filter_definitions
+                if definition.normalized_key == "SCALAR_FIELD"
+            )
+        )
+        semantic["semantic_exposure"]["cycle"] = {
+            "state": cycle_outcome.decision.value,
+            "reason_codes": [item.value for item in cycle_outcome.reason_codes],
+        }
     sqlalchemy.event.remove(application, "before_cursor_execute", observe_sql)
     evidence: dict[str, Any] = {
         "technical_id": TECHNICAL_ID,
@@ -1078,11 +1050,20 @@ def main() -> int:
         "observations": {
             **semantic,
             "read_models": {
-                "web_redacted": web.details_redacted
-                and not web.evidence_reference_ids
-                and not web.warning_ids,
-                "admin_safe_detail": not admin.details_redacted
-                and all(isinstance(value, str) for value in admin.evidence_reference_ids),
+                "web": {
+                    "audience": web.audience.value,
+                    "details_redacted": web.details_redacted,
+                    "evidence_reference_ids": list(web.evidence_reference_ids),
+                    "warning_ids": list(web.warning_ids),
+                    "contains_raw_provider_payload": web.contains_raw_provider_payload,
+                },
+                "admin": {
+                    "audience": admin.audience.value,
+                    "details_redacted": admin.details_redacted,
+                    "evidence_reference_ids": list(admin.evidence_reference_ids),
+                    "warning_ids": list(admin.warning_ids),
+                    "contains_raw_provider_payload": admin.contains_raw_provider_payload,
+                },
             },
             "sql_observer": {
                 **{

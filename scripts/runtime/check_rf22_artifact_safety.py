@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Exact-payload RF22 safety scanner and digest manifest producer."""
 
 from __future__ import annotations
@@ -47,7 +48,8 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=Path("rf22-safety-manifest.json"))
     args = parser.parse_args()
     if tuple(path.name for path in args.paths) != EXPECTED or any(
-        ".." in path.parts for path in args.paths
+        path.name not in EXPECTED or path.name != path.parts[-1] or ".." in path.parts
+        for path in args.paths
     ):
         raise SystemExit(
             "RF22 safety scanner requires exact payloads: rf22.json rf22-full-pytest.log"
@@ -66,9 +68,7 @@ def main() -> int:
                 findings.append(f"malformed JSON: {exc}")
         elif FORBIDDEN.search(raw.decode("utf-8", errors="replace")):
             findings.append(f"credential-like value in {path.name}")
-        payloads.append(
-            {"basename": path.name, "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
-        )
+        payloads.append({"basename": path.name, "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()})
     manifest = {
         "scanner_method": VERSION,
         "payloads": payloads,

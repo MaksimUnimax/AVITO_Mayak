@@ -191,7 +191,7 @@ jobs:
       - name: RF22 artifact safety scanner
         run: uv run python scripts/runtime/check_rf22_artifact_safety.py rf22.json rf22-full-pytest.log --manifest rf22-safety-manifest.json
       - name: Final RF22 verifier
-        run: uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA" --manifest rf22-safety-manifest.json
+        run: uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA" --manifest rf22-safety-manifest.json --pytest-log rf22-full-pytest.log
       - uses: actions/upload-artifact@v4
         if: success()
         with:
