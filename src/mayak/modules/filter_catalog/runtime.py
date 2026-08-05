@@ -580,8 +580,7 @@ class FilterCatalogRuntime:
                     "dependency_rule_ids": tuple(
                         rule.filter_dependency_rule_id
                         for rule in dependencies
-                        if item.filter_definition_id
-                        in (rule.source_filter_definition_id, rule.target_filter_definition_id)
+                        if item.filter_definition_id == rule.source_filter_definition_id
                     )
                 }
             )
@@ -633,18 +632,25 @@ class FilterCatalogRuntime:
             ]
             if len(applicable) > 1:
                 raise RuntimeBlocked("contradictory capability profiles match exact scope")
-            profile = (
-                applicable[0]
-                if applicable
-                else next(
-                    (
-                        profiles[item]
-                        for item in sorted(definition.capability_profile_ids)
-                        if item in profiles
-                    ),
-                    None,
-                )
-            )
+            # A profile from another provider/category/geography is never a safe
+            # fallback.  The server must either select an exact profile or an
+            # explicitly approved global-scope profile below.
+            profile = applicable[0] if applicable else None
+            if profile is None and global_scope_approval_reference_id is not None:
+                global_profiles = [
+                    profiles[item]
+                    for item in definition.capability_profile_ids
+                    if item in profiles
+                    and profiles[item].provider_surface_reference_id
+                    == provider_surface_reference_id
+                    and (
+                        profiles[item].category_scope_reference_id is None
+                        or profiles[item].geography_scope_reference_id is None
+                    )
+                ]
+                if len(global_profiles) > 1:
+                    raise RuntimeBlocked("ambiguous global-scope capability profiles")
+                profile = global_profiles[0] if global_profiles else None
             if profile is None:
                 continue
             exact_scope = (
@@ -667,6 +673,18 @@ class FilterCatalogRuntime:
                 self._profile_evidence.get(profile.filter_capability_profile_id, ())
             )
             relevant_evidence_ids.update(
+                option_evidence_id
+                for option in catalog.filter_option_definitions
+                if option.filter_definition_id == definition.filter_definition_id
+                for option_evidence_id in option.evidence_reference_ids
+            )
+            relevant_evidence_ids.update(
+                range_evidence_id
+                for range_definition in catalog.filter_range_definitions
+                if range_definition.filter_definition_id == definition.filter_definition_id
+                for range_evidence_id in range_definition.evidence_reference_ids
+            )
+            relevant_evidence_ids.update(
                 evidence_id
                 for warning in catalog.compatibility_warnings
                 if warning.subject_reference_id == definition.filter_definition_id
@@ -679,10 +697,14 @@ class FilterCatalogRuntime:
                 in (rule.source_filter_definition_id, rule.target_filter_definition_id)
                 for evidence_id in rule.evidence_reference_ids
             )
-            evidence_ok = all(
-                item.evidence_state is FilterEvidenceState.CURRENT and not item.refresh_required
+            evidence_by_id = {
+                item.evidence_reference_id: item
                 for item in self._evidence_by_catalog.get(catalog.filter_catalog_version_id, ())
-                if item.evidence_reference_id in relevant_evidence_ids
+            }
+            evidence_ok = relevant_evidence_ids <= set(evidence_by_id) and all(
+                evidence_by_id[item].evidence_state is FilterEvidenceState.CURRENT
+                and not evidence_by_id[item].refresh_required
+                for item in relevant_evidence_ids
             )
             category_ok = True
             if category_scope_reference_id is not None:
@@ -746,6 +768,64 @@ class FilterCatalogRuntime:
             beacon_revision_id=beacon_revision_id,
             field_entries=tuple(entries),
         )
+
+    def evaluate_profile_semantics(
+        self,
+        catalog: CatalogReadModel,
+        *,
+        definition_id: str,
+        profile_id: str,
+        provider_surface_reference_id: str,
+        category_scope_reference_id: str | None,
+        geography_scope_reference_id: str | None,
+        global_scope_approval_reference_id: str | None = None,
+    ) -> Any:
+        """Evaluate one persisted profile without selecting a fallback profile."""
+        definition = next(
+            item for item in catalog.filter_definitions
+            if item.filter_definition_id == definition_id
+        )
+        profile = next(
+            item for item in catalog.filter_capability_profiles
+            if item.filter_capability_profile_id == profile_id
+        )
+        outcome = evaluate_filter_semantic_exposure(
+            FilterSemanticExposureRequest(
+                filter_catalog_version_id=catalog.filter_catalog_version_id,
+                filter_definition=definition,
+                capability_profile=profile,
+                provider_surface_reference_id=provider_surface_reference_id,
+                category_scope_reference_id=category_scope_reference_id,
+                geography_scope_reference_id=geography_scope_reference_id,
+                global_scope_approval_reference_id=global_scope_approval_reference_id,
+                known_filter_definition_ids=tuple(
+                    item.filter_definition_id for item in catalog.filter_definitions
+                ),
+                dependency_rules=tuple(
+                    item for item in catalog.filter_dependency_rules
+                    if item.source_filter_definition_id == definition_id
+                ),
+            )
+        )
+        if (
+            category_scope_reference_id is None
+            and geography_scope_reference_id is None
+            and global_scope_approval_reference_id is None
+            and outcome.decision is FilterSemanticExposureDecision.BLOCKED
+            and FilterSemanticExposureReason.GLOBAL_SCOPE_APPROVAL_REQUIRED
+            not in outcome.reason_codes
+        ):
+            outcome = outcome.model_copy(
+                update={
+                    "reason_codes": tuple(
+                        dict.fromkeys(
+                            (*outcome.reason_codes,
+                             FilterSemanticExposureReason.GLOBAL_SCOPE_APPROVAL_REQUIRED)
+                        )
+                    )
+                }
+            )
+        return outcome
 
     def validate_draft(
         self,
@@ -942,7 +1022,14 @@ class FilterCatalogRuntime:
                         or field.upper_value is not None
                     )
 
-                active = present(source)
+                active = present(source) and (
+                    rule.condition_code in (source.value_reference_ids if source else ())
+                    or (
+                        source is not None
+                        and not source.value_reference_ids
+                        and (source.lower_value is not None or source.upper_value is not None)
+                    )
+                )
                 satisfied = True
                 if active:
                     if rule.dependency_kind is FilterDependencyKind.REQUIRES:
@@ -950,7 +1037,16 @@ class FilterCatalogRuntime:
                     elif rule.dependency_kind is FilterDependencyKind.EXCLUDES:
                         satisfied = not present(target)
                     else:
-                        target_values = target.value_reference_ids if target is not None else ()
+                        target_values = (
+                            tuple(
+                                option_codes.get(rule.target_filter_definition_id, {}).get(
+                                    value, value
+                                )
+                                for value in target.value_reference_ids
+                            )
+                            if target is not None
+                            else ()
+                        )
                         satisfied = present(target) and set(target_values) <= set(
                             self._dependency_envelopes[
                                 rule.filter_dependency_rule_id
@@ -981,6 +1077,26 @@ class FilterCatalogRuntime:
                     dependency_evaluations=tuple(evaluations),
                 )
             )
+            if (
+                category_scope_reference_id is None
+                and geography_scope_reference_id is None
+                and global_scope_approval_reference_id is None
+                and semantic.decision is FilterSemanticExposureDecision.BLOCKED
+                and FilterSemanticExposureReason.GLOBAL_SCOPE_APPROVAL_REQUIRED
+                not in semantic.reason_codes
+            ):
+                semantic = semantic.model_copy(
+                    update={
+                        "reason_codes": tuple(
+                            dict.fromkeys(
+                                (
+                                    *semantic.reason_codes,
+                                    FilterSemanticExposureReason.GLOBAL_SCOPE_APPROVAL_REQUIRED,
+                                )
+                            )
+                        )
+                    }
+                )
             semantic_outcomes.append(semantic)
             if semantic.decision is FilterSemanticExposureDecision.BLOCKED:
                 if FilterSemanticExposureReason.CATALOG_VERSION_MISMATCH in semantic.reason_codes:
@@ -1169,10 +1285,11 @@ class FilterCatalogRuntime:
             in (rule.source_filter_definition_id, rule.target_filter_definition_id)
             for dependency_evidence_id in rule.evidence_reference_ids
         )
-        current = all(
-            item.evidence_state is FilterEvidenceState.CURRENT and not item.refresh_required
-            for item in evidence
-            if item.evidence_reference_id in relevant_evidence_ids
+        evidence_by_id = {item.evidence_reference_id: item for item in evidence}
+        current = relevant_evidence_ids <= set(evidence_by_id) and all(
+            evidence_by_id[item].evidence_state is FilterEvidenceState.CURRENT
+            and not evidence_by_id[item].refresh_required
+            for item in relevant_evidence_ids
         )
         warning_ids = tuple(
             warning.catalog_compatibility_warning_id

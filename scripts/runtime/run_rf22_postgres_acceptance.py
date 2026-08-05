@@ -38,6 +38,7 @@ from mayak.modules.filter_catalog import (
     evaluate_multivalue_preservation,
     validate_range_value,
 )
+from mayak.modules.filter_catalog.builder_validation import BuilderDraftValidationRequest
 from mayak.persistence.schema.filter_catalog import register_filter_catalog_tables
 
 TECHNICAL_ID = "RF22-FILTER-CATALOG-BUILDER-RUNTIME-01"
@@ -531,6 +532,28 @@ def main() -> int:
                 )
             )
         )
+        select_proof = all(
+            connection.execute(
+                sqlalchemy.text(f"SELECT 1 FROM mayak.{table} LIMIT 1")
+            ).fetchall()
+            is not None
+            for table in TABLES
+        )
+    permission_probe = {
+        "application_select_succeeds": select_proof,
+        "application_insert_denied": _denied(
+            application,
+            "INSERT INTO mayak.filter_catalog_versions (id, version_code, provenance_ref, evidence_fingerprint, state, created_at) VALUES ('00000000-0000-0000-0000-000000000001', 'RF22_PERMISSION_PROBE', 'RF22', 'RF22', 'DRAFT', now())",
+        ),
+        "application_update_denied": _denied(
+            application,
+            "UPDATE mayak.filter_catalog_versions SET version_code = version_code WHERE false",
+        ),
+        "application_delete_denied": _denied(
+            application,
+            "DELETE FROM mayak.filter_catalog_versions WHERE false",
+        ),
+    }
     with fixture.connect() as connection:
         migration_user = str(
             connection.execute(sqlalchemy.text("SELECT current_user")).scalar_one()
@@ -640,6 +663,78 @@ def main() -> int:
             beacon_id="SYNTHETIC_BEACON",
             beacon_acceptance_boundary_reference_id="SYNTHETIC_BEACON_ACCEPTANCE",
         )
+        optional_missing_result = runtime.validate_draft(
+            loaded.catalog,
+            builder_draft_id="SYNTHETIC_OPTIONAL_MISSING",
+            beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+            provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+            category_scope_reference_id="SYNTHETIC_CATEGORY",
+            geography_scope_reference_id="SYNTHETIC_GEO",
+            fields=valid_fields,
+        )
+        range_candidate_draft = runtime.validate_draft(
+            loaded.catalog,
+            builder_draft_id="SYNTHETIC_RANGE_CANDIDATE",
+            beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+            provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+            category_scope_reference_id="SYNTHETIC_CATEGORY",
+            geography_scope_reference_id="SYNTHETIC_GEO",
+            fields=(
+                valid_fields[0],
+                DraftValueInput(field_code="MULTI_FIELD", value_reference_ids=("OPTION_A",)),
+                DraftValueInput(
+                    field_code="RANGE_FIELD",
+                    unit_code="UNIT",
+                    lower_value=Decimal("10"),
+                    upper_value=Decimal("20"),
+                    step_origin=Decimal("0"),
+                ),
+            ),
+        )
+        if range_candidate_draft.outcome.validation_result.validation_state.value != "VALID":
+            raise RuntimeError(
+                "range candidate validation failed: "
+                + json.dumps({
+                    "reasons": [item.value for item in range_candidate_draft.outcome.reason_codes],
+                    "semantic": [
+                        {
+                            "definition": item.filter_definition_id,
+                            "reasons": [reason.value for reason in item.reason_codes],
+                        }
+                        for item in range_candidate_draft.semantic_outcomes
+                    ],
+                })
+            )
+        range_request = range_candidate_draft.validation_request
+        if not isinstance(range_request, BuilderDraftValidationRequest):
+            raise RuntimeError("range candidate validation request was not retained")
+        range_candidate = runtime.prepare_candidate(
+            range_request,
+            range_candidate_draft.outcome,
+            beacon_id="SYNTHETIC_BEACON",
+            beacon_acceptance_boundary_reference_id="SYNTHETIC_BEACON_ACCEPTANCE",
+        )
+        range_candidate_result = range_candidate_draft.model_copy(
+            update={"candidate": range_candidate}
+        )
+        second_range_result = runtime.validate_draft(
+            loaded.catalog,
+            builder_draft_id="SYNTHETIC_RANGE_CANDIDATE_TWO",
+            beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+            provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+            category_scope_reference_id="SYNTHETIC_CATEGORY",
+            geography_scope_reference_id="SYNTHETIC_GEO",
+            fields=(
+                valid_fields[0],
+                DraftValueInput(
+                    field_code="RANGE_FIELD",
+                    unit_code="UNIT",
+                    lower_value=Decimal("15"),
+                    upper_value=Decimal("25"),
+                    step_origin=Decimal("0"),
+                ),
+            ),
+        )
         semantic: dict[str, Any] = {
             "required_semantics": {"missing": {}, "present": {}},
             "semantic_exposure": {"cycle": {}},
@@ -676,6 +771,10 @@ def main() -> int:
             >= len(loaded.catalog.filter_definitions),
             "deterministic_exact_scope": len(exact_context.field_entries)
             == len(loaded.catalog.filter_definitions),
+            "selected_profile_ids": {
+                entry.field_definition.filter_definition_id: entry.field_definition.filter_capability_profile_id
+                for entry in exact_context.field_entries
+            },
         }
 
         def actual(fields: tuple[DraftValueInput, ...], **kwargs: Any) -> Any:
@@ -735,6 +834,7 @@ def main() -> int:
         }
         semantic["multivalue"] = {
             "state": draft.outcome.validation_result.validation_state.value,
+            "raw_sequence": ["OPTION_A", "OPTION_B", "OPTION_A"],
             "repeated_sequence": list(
                 next(
                     item.value_reference_ids
@@ -759,18 +859,51 @@ def main() -> int:
             ).outcome.validation_result.validation_state.value
             != "VALID",
         }
+        candidate_multi = next(
+            item for item in candidate.field_candidates if item.builder_field_id.endswith("MULTI_FIELD")
+        )
+        semantic["multivalue"]["candidate_sequence"] = list(candidate_multi.value_reference_ids)
 
-        def observed_semantic(result: Any, field_code: str) -> dict[str, Any]:
+        def observed_semantic(
+            result: Any,
+            field_code: str,
+            *,
+            provider: str = "SYNTHETIC_PROVIDER_SURFACE",
+            category: str | None = "SYNTHETIC_CATEGORY",
+            geography: str | None = "SYNTHETIC_GEO",
+        ) -> dict[str, Any]:
             definition_id = next(
                 item.filter_definition_id
                 for item in loaded.catalog.filter_definitions
                 if item.normalized_key == field_code
             )
             exposure = next(
-                item
-                for item in result.semantic_outcomes
-                if item.filter_definition_id == definition_id
+                (
+                    item
+                    for item in result.semantic_outcomes
+                    if item.filter_definition_id == definition_id
+                ),
+                None,
             )
+            if exposure is None:
+                definition = next(
+                    item
+                    for item in loaded.catalog.filter_definitions
+                    if item.filter_definition_id == definition_id
+                )
+                profile = next(
+                    item
+                    for item in loaded.catalog.filter_capability_profiles
+                    if item.filter_capability_profile_id in definition.capability_profile_ids
+                )
+                exposure = runtime.evaluate_profile_semantics(
+                    loaded.catalog,
+                    definition_id=definition_id,
+                    profile_id=profile.filter_capability_profile_id,
+                    provider_surface_reference_id=provider,
+                    category_scope_reference_id=category,
+                    geography_scope_reference_id=geography,
+                )
             return {
                 "state": exposure.decision.value,
                 "reason_codes": [reason.value for reason in exposure.reason_codes],
@@ -837,10 +970,10 @@ def main() -> int:
             },
         )
         semantic["semantic_exposure"] = {
-            "provider_mismatch": observed_semantic(provider_case, "SCALAR_FIELD"),
-            "category_mismatch": observed_semantic(category_case, "SCALAR_FIELD"),
-            "geography_mismatch": observed_semantic(geography_case, "SCALAR_FIELD"),
-            "global_approval_missing": observed_semantic(global_case, "SCALAR_FIELD"),
+            "provider_mismatch": observed_semantic(provider_case, "SCALAR_FIELD", provider="WRONG_PROVIDER"),
+            "category_mismatch": observed_semantic(category_case, "SCALAR_FIELD", category="WRONG_CATEGORY"),
+            "geography_mismatch": observed_semantic(geography_case, "SCALAR_FIELD", geography="WRONG_GEO"),
+            "global_approval_missing": observed_semantic(global_case, "SCALAR_FIELD", category=None, geography=None),
             "requires": observed_semantic(requires_case, "SCALAR_FIELD"),
             "excludes": observed_semantic(excludes_case, "MULTI_FIELD"),
             "constrains": observed_semantic(constrains_case, "RANGE_FIELD"),
@@ -856,8 +989,8 @@ def main() -> int:
             "reason_codes": [item.value for item in draft.outcome.reason_codes],
         }
         semantic["required_semantics"]["optional_missing"] = {
-            "state": draft.outcome.validation_result.validation_state.value,
-            "reason_codes": [],
+            "state": optional_missing_result.outcome.validation_result.validation_state.value,
+            "reason_codes": [item.value for item in optional_missing_result.outcome.reason_codes],
             "subject": "RANGE_FIELD",
         }
         semantic["conflicts"] = {
@@ -887,6 +1020,26 @@ def main() -> int:
             "beacon_mutation_performed": candidate.beacon_mutation_performed,
             "direct_table_write_performed": candidate.direct_table_write_performed,
             "runtime_or_persistence_performed": candidate.runtime_or_persistence_performed,
+        }
+        range_candidate = range_candidate_result.candidate
+        if range_candidate is None:
+            raise RuntimeError("range candidate was not prepared")
+        second_range_request = second_range_result.validation_request
+        if not isinstance(second_range_request, BuilderDraftValidationRequest):
+            raise RuntimeError("second range validation request was not retained")
+        first_range_field = next(
+            item for item in range_candidate.field_candidates if item.builder_field_id.endswith("RANGE_FIELD")
+        )
+        second_range_field = next(
+            item for item in second_range_request.draft_fields
+            if item.builder_field_id.endswith("RANGE_FIELD")
+        )
+        semantic["range_candidate"] = {
+            "state": range_candidate.candidate_outcome.candidate_state.value,
+            "reference": first_range_field.value_reference_ids[0],
+            "second_reference": second_range_field.value_reference_ids[0],
+            "normalized": list(range_candidate_result.normalized_range_payloads),
+            "beacon_mutation_performed": range_candidate.beacon_mutation_performed,
         }
         semantic["catalog_state"] = {
             "published_loaded": loaded.version_code == "SYNTHETIC_CATALOG_V1",
@@ -970,6 +1123,7 @@ def main() -> int:
                     .read_bytes()
                 ).hexdigest(),
             },
+            "permission_boundary": permission_probe,
         },
     }
     args.output.write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n", encoding="utf-8")

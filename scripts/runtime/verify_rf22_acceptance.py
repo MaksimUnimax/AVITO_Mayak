@@ -62,6 +62,11 @@ def main() -> int:
         _fail("identity mismatch")
     if evidence.get("postgres_major") != 18 or evidence.get("catalog_tables") != TABLES:
         _fail("PostgreSQL 18 or exact seven-table observation missing")
+    if (
+        evidence.get("application_role") != "mayak_application"
+        or evidence.get("migration_role") != "mayak_migration"
+    ):
+        _fail("application/migration role identity mismatch")
     observations: Any = evidence.get("observations")
     if not isinstance(observations, dict):
         _fail("structured observations missing")
@@ -72,9 +77,12 @@ def main() -> int:
         "reason_codes", []
     ):
         _fail("required missing observation failed")
-    if required.get("present", {}).get("state") != "VALID" or required.get(
-        "optional_missing", {}
-    ).get("state") not in {"VALID", "INVALID"}:
+    optional = required.get("optional_missing", {})
+    if (
+        required.get("present", {}).get("state") != "VALID"
+        or optional.get("state") != "VALID"
+        or "REQUIRED_FIELD_MISSING" in optional.get("reason_codes", [])
+    ):
         _fail("required propagation observation failed")
     option = _obs(observations, "option_isolation")
     if (
@@ -83,24 +91,27 @@ def main() -> int:
     ):
         _fail("option isolation observation failed")
     profile = _obs(observations, "profile_selection")
-    if (
-        profile.get("all_profiles_reconstructed") is not True
+    if (profile.get("all_profiles_reconstructed") is not True
         or profile.get("deterministic_exact_scope") is not True
-    ):
+        or not isinstance(profile.get("selected_profile_ids"), dict)
+        or not profile.get("selected_profile_ids")):
         _fail("profile selection observation failed")
     semantic = _obs(observations, "semantic_exposure")
-    for name in (
-        "provider_mismatch",
-        "category_mismatch",
-        "geography_mismatch",
-        "global_approval_missing",
-        "requires",
-        "excludes",
-        "constrains",
-        "not_evaluated",
-        "cycle",
-    ):
-        if not isinstance(semantic.get(name), dict) or semantic[name].get("state") != "BLOCKED":
+    expected_reasons = {
+        "provider_mismatch": {"PROVIDER_SURFACE_MISMATCH"},
+        "category_mismatch": {"CATEGORY_SCOPE_MISMATCH"},
+        "geography_mismatch": {"GEOGRAPHY_SCOPE_MISMATCH"},
+        "global_approval_missing": {"GLOBAL_SCOPE_APPROVAL_REQUIRED"},
+        "requires": {"DEPENDENCY_BLOCKED"},
+        "excludes": {"DEPENDENCY_BLOCKED"},
+        "constrains": {"DEPENDENCY_BLOCKED"},
+        "not_evaluated": {"DEPENDENCY_NOT_EVALUATED"},
+        "cycle": {"DEPENDENCY_GRAPH_CYCLE"},
+    }
+    for name, expected in expected_reasons.items():
+        value = semantic.get(name)
+        if (not isinstance(value, dict) or value.get("state") != "BLOCKED"
+                or not expected.intersection(value.get("reason_codes", []))):
             _fail(f"semantic observation failed: {name}")
     conflicts = _obs(observations, "conflicts")
     if (
@@ -113,6 +124,23 @@ def main() -> int:
         candidate.get("validated_builder_field_ids"), list
     ):
         _fail("candidate result missing")
+    if (
+        candidate.get("beacon_mutation_performed") is not False
+        or candidate.get("direct_table_write_performed") is not False
+    ):
+        _fail("candidate mutation invariant failed")
+    multivalue = _obs(observations, "multivalue")
+    if (multivalue.get("raw_sequence") != ["OPTION_A", "OPTION_B", "OPTION_A"]
+            or multivalue.get("repeated_sequence") != multivalue.get("candidate_sequence")
+            or multivalue.get("candidate_sequence", [])[0]
+            != multivalue.get("candidate_sequence", [None])[-1]
+    ):
+        _fail("multivalue sequence was not preserved")
+    range_candidate = _obs(observations, "range_candidate")
+    if (range_candidate.get("state") != "PREPARED"
+            or range_candidate.get("reference") == range_candidate.get("second_reference")
+            or range_candidate.get("beacon_mutation_performed") is not False):
+        _fail("range candidate preservation failed")
     sql = _obs(observations, "sql_observer")
     if (
         sql.get("insert_count") != 0
@@ -124,6 +152,17 @@ def main() -> int:
     provider = _obs(observations, "provider_observer")
     if provider.get("call_count") != 0 or provider.get("forbidden_import_count") != 0:
         _fail("provider boundary failed")
+    permissions = _obs(observations, "permission_boundary")
+    if any(
+        permissions.get(name) is not True
+        for name in (
+            "application_select_succeeds",
+            "application_insert_denied",
+            "application_update_denied",
+            "application_delete_denied",
+        )
+    ):
+        _fail("application permission boundary failed")
     if evidence.get("raw_provider_payload_persisted") is not False:
         _fail("raw provider payload invariant missing")
     if evidence.get("catalog_tables") != TABLES:

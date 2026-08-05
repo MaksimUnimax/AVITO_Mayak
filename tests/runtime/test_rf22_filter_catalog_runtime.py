@@ -11,6 +11,22 @@ from mayak.modules.filter_catalog import (
     FilterDependencyKind,
     WarningEnvelope,
 )
+from mayak.modules.filter_catalog.contracts import (
+    FilterCapabilityProfile,
+    FilterCapabilityState,
+    FilterDefinition,
+    FilterDefinitionState,
+    FilterValueKind,
+)
+from mayak.modules.filter_catalog.value_dependency_semantics import (
+    FilterSemanticExposureReason,
+    FilterSemanticExposureRequest,
+    MultivaluePreservationRequest,
+    RangeValueValidationRequest,
+    evaluate_filter_semantic_exposure,
+    evaluate_multivalue_preservation,
+    validate_range_value,
+)
 
 
 def _evidence() -> dict:
@@ -80,3 +96,128 @@ def test_rf22_capability_range_and_warning_are_strict() -> None:
             outcome_code="SYNTHETIC_ALLOWED",
             evidence_reference_ids=("SYNTHETIC_EVIDENCE",),
         )
+
+
+def _semantic_fixture() -> tuple[FilterDefinition, FilterCapabilityProfile]:
+    definition = FilterDefinition(
+        filter_definition_id="DEF_A",
+        filter_catalog_version_id="CATALOG",
+        normalized_key="FIELD_A",
+        safe_label="Field A",
+        value_kind=FilterValueKind.SCALAR,
+        definition_state=FilterDefinitionState.APPROVED,
+        evidence_reference_ids=("EVIDENCE",),
+        capability_profile_ids=("PROFILE",),
+    )
+    profile = FilterCapabilityProfile(
+        filter_capability_profile_id="PROFILE",
+        filter_catalog_version_id="CATALOG",
+        provider_surface_reference_id="PROVIDER",
+        category_scope_reference_id="CATEGORY",
+        geography_scope_reference_id="GEO",
+        capability_state=FilterCapabilityState.EDITABLE,
+        evidence_reference_ids=("EVIDENCE",),
+    )
+    return definition, profile
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    (
+        ("provider_surface_reference_id", FilterSemanticExposureReason.PROVIDER_SURFACE_MISMATCH),
+        ("category_scope_reference_id", FilterSemanticExposureReason.CATEGORY_SCOPE_MISMATCH),
+        ("geography_scope_reference_id", FilterSemanticExposureReason.GEOGRAPHY_SCOPE_MISMATCH),
+    ),
+)
+def test_runtime_semantic_mismatch_requires_exact_reason(field: str, expected: object) -> None:
+    definition, profile = _semantic_fixture()
+    values = {
+        "provider_surface_reference_id": "PROVIDER",
+        "category_scope_reference_id": "CATEGORY",
+        "geography_scope_reference_id": "GEO",
+        field: "WRONG",
+    }
+    result = evaluate_filter_semantic_exposure(
+        FilterSemanticExposureRequest(
+            filter_catalog_version_id="CATALOG",
+            filter_definition=definition,
+            capability_profile=profile,
+            known_filter_definition_ids=("DEF_A",),
+            **values,
+        )
+    )
+    assert result.decision.value == "BLOCKED"
+    assert expected in result.reason_codes
+
+
+def test_runtime_global_scope_missing_scopes_blocks() -> None:
+    definition, profile = _semantic_fixture()
+    result = evaluate_filter_semantic_exposure(
+        FilterSemanticExposureRequest(
+            filter_catalog_version_id="CATALOG",
+            filter_definition=definition,
+            capability_profile=profile,
+            provider_surface_reference_id="PROVIDER",
+            category_scope_reference_id=None,
+            geography_scope_reference_id=None,
+            known_filter_definition_ids=("DEF_A",),
+        )
+    )
+    assert result.decision.value == "BLOCKED"
+    assert FilterSemanticExposureReason.CATEGORY_SCOPE_REQUIRED in result.reason_codes
+    assert FilterSemanticExposureReason.GEOGRAPHY_SCOPE_REQUIRED in result.reason_codes
+
+
+def test_runtime_multivalue_preserves_order_and_repetition() -> None:
+    result = evaluate_multivalue_preservation(
+        MultivaluePreservationRequest(
+            filter_definition_id="DEF_MULTI",
+            source_value_reference_ids=("A", "B", "A"),
+            candidate_value_reference_ids=("A", "B", "A"),
+        )
+    )
+    assert result.preserved_value_reference_ids == ("A", "B", "A")
+    assert result.candidate_changed is False
+
+
+def test_runtime_multivalue_collapse_is_blocked() -> None:
+    result = evaluate_multivalue_preservation(
+        MultivaluePreservationRequest(
+            filter_definition_id="DEF_MULTI",
+            source_value_reference_ids=("A", "B", "A"),
+            candidate_value_reference_ids=("A", "B"),
+        )
+    )
+    assert result.decision.value == "BLOCKED"
+    assert "REPEATED_VALUE_COLLAPSE_DETECTED" in result.reason_codes
+
+
+def test_runtime_range_normalization_preserves_decimal_boundaries() -> None:
+    from mayak.modules.filter_catalog.contracts import FilterRangeDefinition
+
+    definition = FilterRangeDefinition(
+        filter_range_definition_id="RANGE",
+        filter_definition_id="DEF_RANGE",
+        unit_code="UNIT",
+        lower_bound=Decimal("0"),
+        upper_bound=Decimal("100"),
+        lower_inclusive=True,
+        upper_inclusive=False,
+        step=Decimal("5"),
+        evidence_reference_ids=("EVIDENCE",),
+    )
+    result = validate_range_value(
+        RangeValueValidationRequest(
+            filter_definition_id="DEF_RANGE",
+            range_definition=definition,
+            candidate_unit_code="UNIT",
+            lower_value=Decimal("10"),
+            upper_value=Decimal("20"),
+            lower_inclusive=True,
+            upper_inclusive=False,
+            step_origin=Decimal("0"),
+        )
+    )
+    assert result.decision.value == "VALID"
+    assert result.lower_value == Decimal("10")
+    assert result.upper_value == Decimal("20")
