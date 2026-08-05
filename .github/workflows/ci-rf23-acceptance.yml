@@ -12,12 +12,13 @@ jobs:
   acceptance:
     runs-on: ubuntu-24.04
     env:
-      RF23_TECHNICAL_ID: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-06
+      RF23_TECHNICAL_ID: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-07
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - name: Verify hosted Docker and checkout prerequisites
         run: |
           set -euo pipefail

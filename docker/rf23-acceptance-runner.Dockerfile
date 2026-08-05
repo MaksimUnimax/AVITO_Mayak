@@ -12,8 +12,10 @@ RUN apt-get update \
     && chmod 0755 /usr/local/lib/docker/cli-plugins/docker-buildx \
     && rm -rf /var/lib/apt/lists/*
 
-ENV UV_PROJECT_ENVIRONMENT=/opt/rf23-venv \
-    UV_CACHE_DIR=/opt/uv-cache \
+ENV HOME=/tmp/rf23-home \
+    XDG_CACHE_HOME=/tmp/rf23-xdg-cache \
+    UV_PROJECT_ENVIRONMENT=/tmp/rf23-venv \
+    UV_CACHE_DIR=/tmp/rf23-uv-cache \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 

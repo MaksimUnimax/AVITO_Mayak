@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-TECHNICAL_ID="${RF23_TECHNICAL_ID:-RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-06}"
+: "${RF23_TECHNICAL_ID:?RF23_TECHNICAL_ID is required}"
+TECHNICAL_ID="$RF23_TECHNICAL_ID"
 OWNER_LABEL="$TECHNICAL_ID"
 IMAGE="${RF23_RUNNER_IMAGE:-mayak-rf23-acceptance-runner:python3.14.6-uv0.11.31}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONTAINER_ROOT=/workspace
+IDENTITY_PREFLIGHT_ONLY=0
+if [[ "${1:-}" == "--identity-preflight-only" ]]; then IDENTITY_PREFLIGHT_ONLY=1; fi
 
 redact() { sed -E 's#(postgresql\+?[^:]*://[^:]+:)[^@]+@#\1<redacted>@#g'; }
 die() { echo "RF23 acceptance failed: $*" >&2; exit 1; }
@@ -32,6 +35,19 @@ host_docker_capability_preflight() {
 
 acceptance_runner_toolchain_preflight() {
   test -S /var/run/docker.sock || die "Docker socket unavailable inside acceptance runner"
+  test "$(id -u)" = "${RF23_EXPECTED_RUNNER_UID:?RF23_EXPECTED_RUNNER_UID is required}" \
+    || die "runner effective UID does not match requested UID"
+  test "$(id -g)" = "${RF23_EXPECTED_RUNNER_GID:?RF23_EXPECTED_RUNNER_GID is required}" \
+    || die "runner effective primary GID does not match requested GID"
+  id -G | tr ' ' '\n' | grep -Fx "${RF23_DOCKER_SOCKET_GID:?RF23_DOCKER_SOCKET_GID is required}" >/dev/null \
+    || die "Docker socket supplementary GID is not effective"
+  test "$(stat -c '%u' /var/run/docker.sock)" = "${RF23_DOCKER_SOCKET_UID:?RF23_DOCKER_SOCKET_UID is required}"
+  test "$(stat -c '%g' /var/run/docker.sock)" = "$RF23_DOCKER_SOCKET_GID"
+  mkdir -p "$HOME" "$XDG_CACHE_HOME" "$(dirname "$UV_PROJECT_ENVIRONMENT")" "$UV_CACHE_DIR"
+  test -w "$HOME" && test -w "$XDG_CACHE_HOME" && test -w "$(dirname "$UV_PROJECT_ENVIRONMENT")" \
+    && test -w "$UV_CACHE_DIR"
+  touch "$HOME/.rf23-home-probe" "$UV_CACHE_DIR/.rf23-cache-probe"
+  rm -f "$HOME/.rf23-home-probe" "$UV_CACHE_DIR/.rf23-cache-probe"
   test "$(python -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')" = "3.14.6" \
     || die "unexpected acceptance-runner Python version"
   uv --version | grep -Fx 'uv 0.11.31 (x86_64-unknown-linux-musl)' >/dev/null \
@@ -47,7 +63,11 @@ acceptance_runner_toolchain_preflight() {
   test -n "$server_version" -a -n "$client_api" -a -n "$server_api" \
     || die "acceptance-runner Docker server/API evidence is incomplete"
   docker info >/dev/null || die "acceptance-runner Docker API negotiation failed"
-  printf 'RUNNER_DOCKER_CLIENT_VERSION=%s\nRUNNER_DOCKER_BUILDX_VERSION=%s\nRUNNER_OBSERVED_SERVER_VERSION=%s\nRUNNER_OBSERVED_SERVER_API_VERSION=%s\n' \
+  uv venv "$UV_PROJECT_ENVIRONMENT" --python python >/dev/null
+  test -x "$UV_PROJECT_ENVIRONMENT/bin/python"
+  test -r "$CONTAINER_ROOT/pyproject.toml"
+  printf 'RUNNER_UID=%s\nRUNNER_PRIMARY_GID=%s\nRUNNER_SUPPLEMENTARY_GIDS=%s\nRUNNER_DOCKER_SOCKET_UID=%s\nRUNNER_DOCKER_SOCKET_GID=%s\nRUNNER_DOCKER_SOCKET_MODE=%s\nRUNNER_HOME=%s\nRUNNER_UV_PROJECT_ENVIRONMENT=%s\nRUNNER_UV_CACHE=%s\nRUNNER_DOCKER_CLIENT_VERSION=%s\nRUNNER_DOCKER_BUILDX_VERSION=%s\nRUNNER_OBSERVED_SERVER_VERSION=%s\nRUNNER_OBSERVED_SERVER_API_VERSION=%s\n' \
+    "$(id -u)" "$(id -g)" "$(id -G | tr ' ' ',')" "$(stat -c '%u' /var/run/docker.sock)" "$RF23_DOCKER_SOCKET_GID" "$(stat -c '%a' /var/run/docker.sock)" "$HOME" "$UV_PROJECT_ENVIRONMENT" "$UV_CACHE_DIR" \
     "$client_version" "$buildx_version" "$server_version" "$server_api"
 }
 
@@ -68,6 +88,7 @@ docker_capability_probe() (
   docker volume create --label com.avito-mayak.technical-id="$TECHNICAL_ID" --label com.avito-mayak.project-owned=true "$volume" >/dev/null
   docker volume inspect "$volume" >/dev/null
   docker create --name "$container" --network "$network" \
+    --user "$RUNNER_UID:$RUNNER_GID" --group-add "$SOCKET_GID" \
     --mount "type=volume,src=$volume,dst=/tmp/rf23-capability" \
     --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
     "$IMAGE" -c 'test -S /var/run/docker.sock && test -d /tmp/rf23-capability' >/dev/null
@@ -80,7 +101,7 @@ run_inside() {
   local source_tree="${RF23_SOURCE_TREE:?RF23_SOURCE_TREE is required}"
   export PYTHONPATH=.
   export MAYAK_RUNTIME_PROFILE=synthetic_acceptance
-  export MAYAK_ENVIRONMENT_ID=avito-mayak-rf23-c06
+  export MAYAK_ENVIRONMENT_ID=avito-mayak-rf23-c07
   export MAYAK_DATABASE_HOST=mayak-postgres MAYAK_DATABASE_PORT=5432
   export MAYAK_DATABASE_NAME=mayak
   export MAYAK_DATABASE_APPLICATION_USER=mayak_application
@@ -110,6 +131,10 @@ run_inside() {
   test "$(python -c 'import sys; print(sys.version_info[:3])')" = "(3, 14, 6)"
   uv --version | grep -Fx 'uv 0.11.31 (x86_64-unknown-linux-musl)'
   acceptance_runner_toolchain_preflight
+  if [[ "$IDENTITY_PREFLIGHT_ONLY" == 1 ]]; then
+    echo "RF23_IDENTITY_PREFLIGHT_PASS"
+    exit 0
+  fi
   getent hosts mayak-postgres
   if git -C "$CONTAINER_ROOT" rev-parse HEAD >/dev/null 2>&1; then
     test "$(git -C "$CONTAINER_ROOT" rev-parse HEAD)" = "$source_sha"
@@ -241,6 +266,7 @@ PY
 }
 
 if [[ "${1:-}" == "--inside-runner" ]]; then
+  if [[ "${RF23_IDENTITY_PREFLIGHT_ONLY:-0}" == 1 ]]; then IDENTITY_PREFLIGHT_ONLY=1; fi
   run_inside
   exit 0
 fi
@@ -251,14 +277,36 @@ docker build -f "$ROOT/docker/rf23-acceptance-runner.Dockerfile" -t "$IMAGE" "$R
 export RF23_TECHNICAL_ID="$TECHNICAL_ID"
 export RF23_SOURCE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
 export RF23_SOURCE_TREE="$(git -C "$ROOT" rev-parse HEAD^{tree})"
+RUNNER_UID="${RF23_RUNNER_UID:-$(id -u)}"
+RUNNER_GID="${RF23_RUNNER_GID:-$(id -g)}"
+SOCKET_UID="$(stat -c '%u' /var/run/docker.sock)"
+SOCKET_GID="$(stat -c '%g' /var/run/docker.sock)"
+SOCKET_MODE="$(stat -c '%a' /var/run/docker.sock)"
+[[ "$RUNNER_UID" =~ ^[0-9]+$ && "$RUNNER_GID" =~ ^[0-9]+$ ]] || die "runner UID/GID must be numeric"
+if [[ -n "${RF23_RUNNER_UID:-}" || -n "${RF23_RUNNER_GID:-}" ]] && [[ "${1:-}" != "--identity-preflight-only" ]]; then
+  die "runner UID/GID overrides are permitted only for identity preflight"
+fi
+export RF23_EXPECTED_RUNNER_UID="$RUNNER_UID" RF23_EXPECTED_RUNNER_GID="$RUNNER_GID"
+export RF23_DOCKER_SOCKET_UID="$SOCKET_UID" RF23_DOCKER_SOCKET_GID="$SOCKET_GID" RF23_DOCKER_SOCKET_MODE="$SOCKET_MODE"
+if [[ "${1:-}" == "--identity-preflight-only" ]]; then
+  docker run --rm --name "rf23-identity-preflight-${GITHUB_RUN_ID:-local}-$(date +%s%N)" \
+    --user "$RUNNER_UID:$RUNNER_GID" --group-add "$SOCKET_GID" \
+    --mount "type=bind,src=$ROOT,dst=$CONTAINER_ROOT,readonly" \
+    --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+    -e RF23_TECHNICAL_ID -e RF23_SOURCE_SHA -e RF23_SOURCE_TREE \
+    -e RF23_EXPECTED_RUNNER_UID -e RF23_EXPECTED_RUNNER_GID \
+    -e RF23_DOCKER_SOCKET_UID -e RF23_DOCKER_SOCKET_GID -e RF23_DOCKER_SOCKET_MODE \
+    -e RF23_IDENTITY_PREFLIGHT_ONLY=1 "$IMAGE" "$CONTAINER_ROOT/scripts/runtime/run_rf23_acceptance_chain.sh" --inside-runner
+  exit 0
+fi
 RUN_SUFFIX="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$(date +%s%N)"
-export RF23_NETWORK="rf23-c06-network-$RUN_SUFFIX"
-export RF23_DB="rf23-c06-postgres-$RUN_SUFFIX"
-export RF23_RUNNER="rf23-c06-runner-$RUN_SUFFIX"
+export RF23_NETWORK="rf23-c07-network-$RUN_SUFFIX"
+export RF23_DB="rf23-c07-postgres-$RUN_SUFFIX"
+export RF23_RUNNER="rf23-c07-runner-$RUN_SUFFIX"
 FOCUSED_ONLY=0
 if [[ "${1:-}" == "--focused-only" ]]; then FOCUSED_ONLY=1; fi
 docker_capability_probe
-SECRETS="$(mktemp -d /tmp/rf23-c06-secrets.XXXXXX)"; chmod 700 "$SECRETS"
+SECRETS="$(mktemp -d /tmp/rf23-c07-secrets.XXXXXX)"; chmod 700 "$SECRETS"
 cleanup() {
   docker rm -f "$RF23_RUNNER" "$RF23_DB" >/dev/null 2>&1 || true
   docker network rm "$RF23_NETWORK" >/dev/null 2>&1 || true
@@ -278,10 +326,11 @@ docker run -d --name "$RF23_DB" --network "$RF23_NETWORK" --network-alias mayak-
   postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296 >/dev/null
 for _ in $(seq 1 60); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$RF23_DB")" == healthy ]] && break; sleep 2; done
 [[ "$(docker inspect -f '{{.State.Health.Status}}' "$RF23_DB")" == healthy ]] || die "postgres did not become healthy"
-docker run --name "$RF23_RUNNER" --network "$RF23_NETWORK" --user "$(id -u):$(id -g)" \
+docker run --name "$RF23_RUNNER" --network "$RF23_NETWORK" --user "$RUNNER_UID:$RUNNER_GID" --group-add "$SOCKET_GID" \
   --add-host host.docker.internal:host-gateway --mount type=bind,src="$ROOT",dst="$CONTAINER_ROOT" \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
   --mount type=bind,src="$SECRETS",dst=/run/secrets,readonly \
   -e RF23_NETWORK -e RF23_DB -e RF23_TECHNICAL_ID -e RF23_SOURCE_SHA -e RF23_SOURCE_TREE -e RF20_POSTGRES_OWNER_LABEL="$OWNER_LABEL" \
   -e RF23_FOCUSED_ONLY="$FOCUSED_ONLY" -e RF23_RESUME_AFTER_FULL="${RF23_RESUME_AFTER_FULL:-0}" \
-  -e UV_PROJECT_ENVIRONMENT=/opt/rf23-venv "$IMAGE" "$CONTAINER_ROOT/scripts/runtime/run_rf23_acceptance_chain.sh" --inside-runner 2>&1 | redact
+  -e RF23_EXPECTED_RUNNER_UID -e RF23_EXPECTED_RUNNER_GID -e RF23_DOCKER_SOCKET_UID -e RF23_DOCKER_SOCKET_GID -e RF23_DOCKER_SOCKET_MODE \
+  "$IMAGE" "$CONTAINER_ROOT/scripts/runtime/run_rf23_acceptance_chain.sh" --inside-runner 2>&1 | redact
