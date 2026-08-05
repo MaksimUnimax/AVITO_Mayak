@@ -48,15 +48,62 @@ def test_rf23_docker_authority_separates_host_capabilities_from_runner_pins() ->
     assert "docker start -a" in source
     assert "docker inspect" in source
     assert "--mount type=bind,src=/var/run/docker.sock" in source
+    assert "RF23_SOURCE_SHA" in source
+    assert "RF23_SOURCE_TREE" in source
+    assert "RUNNER_SOURCE_IDENTITY_FROM_HOST_PROVENANCE" in source
 
 
-def test_rf23_active_provenance_is_c05_and_c03_is_absent_from_acceptance_scope() -> None:
+def test_rf23_checkout_path_is_dynamic_and_runner_workspace_is_stable() -> None:
+    source = ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"' in source
+    assert "CONTAINER_ROOT=/workspace" in source
+    assert 'src="$ROOT",dst="$CONTAINER_ROOT"' in source
+    assert 'src="$ROOT",dst="$ROOT"' not in source
+    assert "src=/opt/avito-mayak" not in source
+    assert "/home/runner/work" not in source
+    assert "mkdir -p /opt/avito-mayak" not in source
+    assert "--mount type=bind,src=/var/run/docker.sock" in source
+
+
+def test_rf23_focused_layout_proof_cannot_replace_normal_acceptance() -> None:
+    source = ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'RF23_FOCUSED_ONLY:-0' in source
+    assert "RF23_FOCUSED_LAYOUT_PROOF_PASS" in source
+    assert 'RF23_FOCUSED_ONLY="$FOCUSED_ONLY"' in source
+    assert "RF23_FOCUSED_ONLY" in source
+    assert "uv run pytest -q" in source
+    assert "uv run python scripts/runtime/probe_rf23_runtime.py" in source
+    assert "uv run pytest -q 2>&1 | tee rf23-full-pytest.log" in source
+
+
+def test_rf23_active_provenance_is_c06_and_c05_is_absent_from_acceptance_scope() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     source = ORCHESTRATOR.read_text(encoding="utf-8")
-    assert "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05" in workflow
-    assert "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05" in source
+    active = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-06"
+    assert f"RF23_TECHNICAL_ID: {active}" in workflow
+    assert active in source
+    assert "CORRECTIVE-05" not in workflow
+    assert "CORRECTIVE-05" not in source
     assert "CORRECTIVE-03" not in workflow
     assert "rf23-c03" not in source
+
+
+def test_rf23_evidence_tools_require_explicit_technical_id() -> None:
+    probe = (ROOT / "scripts/runtime/probe_rf23_runtime.py").read_text(encoding="utf-8")
+    producer = (ROOT / "scripts/runtime/run_rf23_postgres_acceptance.py").read_text(
+        encoding="utf-8"
+    )
+    verifier = VERIFY.read_text(encoding="utf-8")
+    assert 'parser.add_argument("--expected-technical-id", required=True)' in probe
+    assert 'parser.add_argument("--expected-technical-id", required=True)' in producer
+    assert 'parser.add_argument("--expected-technical-id", required=True)' in verifier
+    assert 'parser.add_argument("--expected-sha", required=True)' in probe
+    assert 'parser.add_argument("--expected-tree", required=True)' in probe
+    assert 'parser.add_argument("--expected-sha", required=True)' in producer
+    assert 'parser.add_argument("--expected-tree", required=True)' in producer
+    assert "evidence.get(\"technical_id\") != expected_technical_id" in producer
+    assert "evidence.get(\"technical_id\") != expected_technical_id" in verifier
+    assert "expected_technical_id is None" in verifier
 
 
 def test_rf23_topology_proof_remains_task_owned_without_host_postgres_publish() -> None:
@@ -65,13 +112,14 @@ def test_rf23_topology_proof_remains_task_owned_without_host_postgres_publish() 
     assert 'com.mayak.owner="$OWNER_LABEL"' in source
     assert "postgres:18-bookworm@sha256:" in source
     assert "--network-alias mayak-postgres" in source
+    assert "type=tmpfs,dst=/var/lib/postgresql" in source
     assert "MAYAK_API_HOST_PORT=disabled" in source
     assert "-p " not in source
 
 
 def _evidence() -> dict[str, object]:
     return {
-        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05",
+        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-06",
         "candidate_sha": "a" * 40,
         "candidate_tree_identity": "b" * 40,
         "observation_source": "live_http_and_process_local_git",
@@ -179,6 +227,8 @@ def _verify(evidence: Path, log: Path, manifest: Path) -> subprocess.CompletedPr
             "a" * 40,
             "--expected-tree",
             "b" * 40,
+            "--expected-technical-id",
+            "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-06",
             "--manifest",
             str(manifest),
             "--pytest-log",

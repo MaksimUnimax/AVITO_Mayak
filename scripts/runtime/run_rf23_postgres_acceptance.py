@@ -13,20 +13,28 @@ from check_rf23_artifact_safety import transport_inventory
 
 
 def observe(
-    base: str, repo_root: Path, pytest_log: Path | None = None, runtime_probe: Path | None = None
+    base: str,
+    repo_root: Path,
+    pytest_log: Path | None = None,
+    runtime_probe: Path | None = None,
+    expected_technical_id: str = "",
+    expected_sha: str = "",
+    expected_tree: str = "",
 ) -> dict[str, object]:
     """Bind producer evidence to a separately executed factual probe."""
     if runtime_probe is None or not runtime_probe.is_file():
         raise ValueError("RF23 runtime probe artifact is required")
     evidence = json.loads(runtime_probe.read_text(encoding="utf-8"))
-    expected_sha = subprocess.check_output(
-        ["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True
-    ).strip()
-    expected_tree = subprocess.check_output(
-        ["git", "-C", str(repo_root), "rev-parse", "HEAD^{tree}"], text=True
-    ).strip()
+    if not expected_sha:
+        expected_sha = subprocess.check_output(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True
+        ).strip()
+    if not expected_tree:
+        expected_tree = subprocess.check_output(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD^{tree}"], text=True
+        ).strip()
     if (
-        evidence.get("technical_id") != "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05"
+        evidence.get("technical_id") != expected_technical_id
         or evidence.get("candidate_sha") != expected_sha
         or evidence.get("candidate_tree_identity") != expected_tree
     ):
@@ -50,9 +58,15 @@ if __name__ == "__main__":
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--pytest-log", type=Path)
     parser.add_argument("--runtime-probe", required=True, type=Path)
+    parser.add_argument("--expected-technical-id", required=True)
+    parser.add_argument("--expected-sha", required=True)
+    parser.add_argument("--expected-tree", required=True)
     args = parser.parse_args()
     evidence = observe(
-        args.base_url, Path(args.repo_root).resolve(), args.pytest_log, args.runtime_probe
+        args.base_url, Path(args.repo_root).resolve(), args.pytest_log, args.runtime_probe,
+        args.expected_technical_id,
+        args.expected_sha,
+        args.expected_tree,
     )
     Path(args.output).write_text(
         json.dumps(evidence, sort_keys=True, indent=2) + "\n", encoding="utf-8"

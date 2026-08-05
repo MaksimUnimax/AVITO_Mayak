@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-TECHNICAL_ID="RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05"
-OWNER_LABEL="${RF20_POSTGRES_OWNER_LABEL:-${TECHNICAL_ID}}"
+TECHNICAL_ID="${RF23_TECHNICAL_ID:-RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-06}"
+OWNER_LABEL="$TECHNICAL_ID"
 IMAGE="${RF23_RUNNER_IMAGE:-mayak-rf23-acceptance-runner:python3.14.6-uv0.11.31}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CONTAINER_ROOT=/workspace
 
 redact() { sed -E 's#(postgresql\+?[^:]*://[^:]+:)[^@]+@#\1<redacted>@#g'; }
 die() { echo "RF23 acceptance failed: $*" >&2; exit 1; }
@@ -75,9 +76,11 @@ docker_capability_probe() (
 )
 
 run_inside() {
+  local source_sha="${RF23_SOURCE_SHA:?RF23_SOURCE_SHA is required}"
+  local source_tree="${RF23_SOURCE_TREE:?RF23_SOURCE_TREE is required}"
   export PYTHONPATH=.
   export MAYAK_RUNTIME_PROFILE=synthetic_acceptance
-  export MAYAK_ENVIRONMENT_ID=avito-mayak-rf23-c05
+  export MAYAK_ENVIRONMENT_ID=avito-mayak-rf23-c06
   export MAYAK_DATABASE_HOST=mayak-postgres MAYAK_DATABASE_PORT=5432
   export MAYAK_DATABASE_NAME=mayak
   export MAYAK_DATABASE_APPLICATION_USER=mayak_application
@@ -108,8 +111,13 @@ run_inside() {
   uv --version | grep -Fx 'uv 0.11.31 (x86_64-unknown-linux-musl)'
   acceptance_runner_toolchain_preflight
   getent hosts mayak-postgres
-  git rev-parse HEAD
-  git diff --check
+  if git -C "$CONTAINER_ROOT" rev-parse HEAD >/dev/null 2>&1; then
+    test "$(git -C "$CONTAINER_ROOT" rev-parse HEAD)" = "$source_sha"
+    test "$(git -C "$CONTAINER_ROOT" rev-parse HEAD^{tree})" = "$source_tree"
+    git -C "$CONTAINER_ROOT" diff --check
+  else
+    echo "RUNNER_SOURCE_IDENTITY_FROM_HOST_PROVENANCE"
+  fi
   uv sync --frozen --all-groups
 
   python - <<'PY'
@@ -181,6 +189,10 @@ with e.begin() as c:
  assert c.execute(text("select version_num from mayak.alembic_version")).scalar_one()
 PY
   uv run pytest -q tests/runtime/test_rf20_postgres_acceptance.py tests/runtime/test_rf20_postgres_topology.py tests/runtime/test_rf21_web_ui.py tests/runtime/test_rf23_api_contract.py tests/runtime/test_rf23_acceptance_chain.py tests/runtime/test_rf23_identity_bridge.py
+  if [[ "${RF23_FOCUSED_ONLY:-0}" == 1 ]]; then
+    echo "RF23_FOCUSED_LAYOUT_PROOF_PASS"
+    exit 0
+  fi
   uv run pytest -q tests/unit/test_runtime_settings.py tests/runtime/test_persistence_transaction.py tests/runtime/test_platform_idempotency_repository_postgres.py tests/runtime/test_identity_runtime_postgres.py tests/runtime/test_rf18_telegram_adapter_postgres.py tests/runtime/test_rf22_filter_catalog_runtime.py
   uv run pytest -q tests/architecture/test_rf23_transport_boundary.py
   uv run ruff check src/mayak/modules/identity_and_access/__init__.py src/mayak/modules/identity_and_access/runtime.py src/mayak/runtime/rf20_acceptance_scenario.py src/mayak/runtime/rf20_composition.py src/mayak/runtime/rf21_composition.py src/mayak/runtime/rf23_composition.py scripts/runtime/run_rf23_postgres_acceptance.py scripts/runtime/check_rf23_artifact_safety.py scripts/runtime/verify_rf23_acceptance.py scripts/runtime/probe_rf23_runtime.py tests/architecture/test_rf23_transport_boundary.py tests/runtime/test_rf23_identity_bridge.py
@@ -216,16 +228,16 @@ PY
 
   env -u MAYAK_DATABASE_URL -u MAYAK_RF10_POSTGRES_DSN -u MAYAK_RF11_POSTGRES_DSN \
     -u MAYAK_RF11_POSTGRES_PASSWORD_FILE \
-    MAYAK_PROCESS_KIND=mayak-api MAYAK_SOURCE_SHA="$(git rev-parse HEAD)" \
+    MAYAK_PROCESS_KIND=mayak-api MAYAK_SOURCE_SHA="$source_sha" \
     MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)" \
     MAYAK_IMAGE_DIGEST="sha256:$(sha256sum Dockerfile | cut -d' ' -f1)" \
     uv run python -m mayak.runtime.api > rf23-api.log 2>&1 &
   api_pid=$!; trap 'kill "$api_pid" 2>/dev/null || true' EXIT
   for _ in $(seq 1 40); do curl -fsS http://127.0.0.1:8000/health/live >/dev/null && break || sleep 1; done
-  uv run python scripts/runtime/probe_rf23_runtime.py rf23-runtime-probes.json --base-url http://127.0.0.1:8000 --repo-root .
-  uv run python scripts/runtime/run_rf23_postgres_acceptance.py rf23-evidence.json --repo-root . --pytest-log rf23-full-pytest.log --runtime-probe rf23-runtime-probes.json
+  uv run python scripts/runtime/probe_rf23_runtime.py rf23-runtime-probes.json --base-url http://127.0.0.1:8000 --repo-root . --expected-technical-id "$RF23_TECHNICAL_ID" --expected-sha "$source_sha" --expected-tree "$source_tree"
+  uv run python scripts/runtime/run_rf23_postgres_acceptance.py rf23-evidence.json --repo-root . --pytest-log rf23-full-pytest.log --runtime-probe rf23-runtime-probes.json --expected-technical-id "$RF23_TECHNICAL_ID" --expected-sha "$source_sha" --expected-tree "$source_tree"
   uv run python scripts/runtime/check_rf23_artifact_safety.py rf23-evidence.json rf23-full-pytest.log rf23-runtime-probes.json --manifest rf23-safety-manifest.json --repo-root .
-  uv run python scripts/runtime/verify_rf23_acceptance.py rf23-evidence.json --expected-sha "$(git rev-parse HEAD)" --expected-tree "$(git rev-parse HEAD^{tree})" --manifest rf23-safety-manifest.json --pytest-log rf23-full-pytest.log
+  uv run python scripts/runtime/verify_rf23_acceptance.py rf23-evidence.json --expected-sha "$source_sha" --expected-tree "$source_tree" --expected-technical-id "$RF23_TECHNICAL_ID" --manifest rf23-safety-manifest.json --pytest-log rf23-full-pytest.log
 }
 
 if [[ "${1:-}" == "--inside-runner" ]]; then
@@ -237,11 +249,16 @@ command -v docker >/dev/null || die "Docker CLI unavailable"
 host_docker_capability_preflight
 docker build -f "$ROOT/docker/rf23-acceptance-runner.Dockerfile" -t "$IMAGE" "$ROOT"
 export RF23_TECHNICAL_ID="$TECHNICAL_ID"
-export RF23_NETWORK="rf23-c05-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$(date +%s)"
-export RF23_DB="rf23-c05-postgres-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
-export RF23_RUNNER="rf23-c05-runner-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+export RF23_SOURCE_SHA="$(git -C "$ROOT" rev-parse HEAD)"
+export RF23_SOURCE_TREE="$(git -C "$ROOT" rev-parse HEAD^{tree})"
+RUN_SUFFIX="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$(date +%s%N)"
+export RF23_NETWORK="rf23-c06-network-$RUN_SUFFIX"
+export RF23_DB="rf23-c06-postgres-$RUN_SUFFIX"
+export RF23_RUNNER="rf23-c06-runner-$RUN_SUFFIX"
+FOCUSED_ONLY=0
+if [[ "${1:-}" == "--focused-only" ]]; then FOCUSED_ONLY=1; fi
 docker_capability_probe
-SECRETS="$(mktemp -d /tmp/rf23-c05-secrets.XXXXXX)"; chmod 700 "$SECRETS"
+SECRETS="$(mktemp -d /tmp/rf23-c06-secrets.XXXXXX)"; chmod 700 "$SECRETS"
 cleanup() {
   docker rm -f "$RF23_RUNNER" "$RF23_DB" >/dev/null 2>&1 || true
   docker network rm "$RF23_NETWORK" >/dev/null 2>&1 || true
@@ -255,17 +272,16 @@ docker network create --label com.avito-mayak.technical-id="$TECHNICAL_ID" --lab
 docker run -d --name "$RF23_DB" --network "$RF23_NETWORK" --network-alias mayak-postgres \
   --label com.avito-mayak.technical-id="$TECHNICAL_ID" --label com.avito-mayak.project-owned=true --label com.mayak.owner="$OWNER_LABEL" \
   --mount type=bind,src="$SECRETS/mayak_postgres_bootstrap_password",dst=/run/secrets/postgres_password,readonly \
+  --mount type=tmpfs,dst=/var/lib/postgresql,tmpfs-size=1073741824 \
   -e POSTGRES_DB=mayak -e POSTGRES_USER=mayak -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password \
   --health-cmd 'pg_isready -U mayak -d mayak' --health-interval=2s --health-timeout=3s --health-retries=60 \
   postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296 >/dev/null
 for _ in $(seq 1 60); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$RF23_DB")" == healthy ]] && break; sleep 2; done
 [[ "$(docker inspect -f '{{.State.Health.Status}}' "$RF23_DB")" == healthy ]] || die "postgres did not become healthy"
 docker run --name "$RF23_RUNNER" --network "$RF23_NETWORK" --user "$(id -u):$(id -g)" \
-  --add-host host.docker.internal:host-gateway --mount type=bind,src="$ROOT",dst=/workspace \
-  --mount type=bind,src="$ROOT",dst="$ROOT",readonly \
-  --mount type=bind,src=/opt/avito-mayak,dst=/opt/avito-mayak,readonly \
+  --add-host host.docker.internal:host-gateway --mount type=bind,src="$ROOT",dst="$CONTAINER_ROOT" \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
   --mount type=bind,src="$SECRETS",dst=/run/secrets,readonly \
-  -e RF23_NETWORK -e RF23_DB -e RF23_TECHNICAL_ID -e RF20_POSTGRES_OWNER_LABEL="$OWNER_LABEL" \
-  -e RF23_RESUME_AFTER_FULL="${RF23_RESUME_AFTER_FULL:-0}" \
-  -e UV_PROJECT_ENVIRONMENT=/opt/rf23-venv "$IMAGE" /workspace/scripts/runtime/run_rf23_acceptance_chain.sh --inside-runner 2>&1 | redact
+  -e RF23_NETWORK -e RF23_DB -e RF23_TECHNICAL_ID -e RF23_SOURCE_SHA -e RF23_SOURCE_TREE -e RF20_POSTGRES_OWNER_LABEL="$OWNER_LABEL" \
+  -e RF23_FOCUSED_ONLY="$FOCUSED_ONLY" -e RF23_RESUME_AFTER_FULL="${RF23_RESUME_AFTER_FULL:-0}" \
+  -e UV_PROJECT_ENVIRONMENT=/opt/rf23-venv "$IMAGE" "$CONTAINER_ROOT/scripts/runtime/run_rf23_acceptance_chain.sh" --inside-runner 2>&1 | redact

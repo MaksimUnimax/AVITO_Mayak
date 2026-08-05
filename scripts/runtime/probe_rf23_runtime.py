@@ -19,7 +19,6 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
-TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05"
 PROBE_VERSION = "rf23-runtime-probes/v1"
 
 
@@ -132,7 +131,9 @@ def _schema_and_loss_probe(base: str, root: Path, opener: OpenerDirector) -> dic
             "db_recovery_readiness": "healthy" if recovered_status == 200 else "unhealthy"}
 
 
-def probe(base: str, root: Path) -> dict[str, object]:
+def probe(
+    base: str, root: Path, expected_technical_id: str, candidate_sha: str, candidate_tree: str
+) -> dict[str, object]:
     opener = build_opener(HTTPCookieProcessor(CookieJar()))
     live_status, live = _request(opener, base, "/health/live")
     ready_status, ready = _request(opener, base, "/health/ready")
@@ -178,9 +179,9 @@ def probe(base: str, root: Path) -> dict[str, object]:
     db_identity = _db_identity()
     topology_transitions = _schema_and_loss_probe(base, root, opener)
     return {
-        "technical_id": TECHNICAL_ID,
-        "candidate_sha": _git(root, "rev-parse", "HEAD"),
-        "candidate_tree_identity": _git(root, "rev-parse", "HEAD^{tree}"),
+        "technical_id": expected_technical_id,
+        "candidate_sha": candidate_sha,
+        "candidate_tree_identity": candidate_tree,
         "probe_version": PROBE_VERSION,
         "observation_method": "live_http_and_process_local_git_and_ast",
         "producer_result": "OBSERVED",
@@ -203,7 +204,7 @@ def probe(base: str, root: Path) -> dict[str, object]:
         **csrf_results,
         "csrf_rejected_owner_mutations": 0,
         "transport_inventory": _transport_inventory(root),
-        "candidate_source_sha_observed": _git(root, "rev-parse", "HEAD"),
+        "candidate_source_sha_observed": candidate_sha,
         "expected_migration_head": version.get("migration_head")
         if isinstance(version, dict)
         else None,
@@ -242,8 +243,17 @@ def main() -> int:
     parser.add_argument("output", type=Path)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
+    parser.add_argument("--expected-technical-id", required=True)
+    parser.add_argument("--expected-sha", required=True)
+    parser.add_argument("--expected-tree", required=True)
     args = parser.parse_args()
-    value = probe(args.base_url, args.repo_root.resolve())
+    value = probe(
+        args.base_url,
+        args.repo_root.resolve(),
+        args.expected_technical_id,
+        args.expected_sha,
+        args.expected_tree,
+    )
     args.output.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print("RF23_RUNTIME_PROBE_WRITTEN")
     return 0

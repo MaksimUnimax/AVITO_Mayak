@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 from typing import Any, NoReturn
 
-TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05"
 LEGACY_TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02"
 SCANNER = "rf23-safety-scanner/v1"
 SUMMARY = re.compile(
@@ -106,18 +105,18 @@ def verify(
     expected_tree: str | None = None,
     manifest: str | None = None,
     pytest_log: str | None = None,
+    expected_technical_id: str | None = None,
 ) -> bool:
     root = Path(path).resolve().parent
     try:
         evidence: Any = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
-    if not isinstance(evidence, dict) or evidence.get("technical_id") not in (
-        TECHNICAL_ID,
-        LEGACY_TECHNICAL_ID,
-    ):
+    if not isinstance(evidence, dict) or expected_technical_id is None:
         return False
-    corrective_02 = evidence.get("technical_id") == LEGACY_TECHNICAL_ID
+    if evidence.get("technical_id") != expected_technical_id:
+        return False
+    corrective_02 = expected_technical_id == LEGACY_TECHNICAL_ID
     if not corrective_02:
         probe_path = evidence.get("probe_artifact")
         if (
@@ -310,6 +309,7 @@ if __name__ == "__main__":
     parser.add_argument("evidence")
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--expected-tree", required=True)
+    parser.add_argument("--expected-technical-id", required=True)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--pytest-log", required=True)
     args = parser.parse_args()
@@ -319,6 +319,7 @@ if __name__ == "__main__":
             args.evidence,
             expected_sha=args.expected_sha,
             expected_tree=args.expected_tree,
+            expected_technical_id=args.expected_technical_id,
             manifest=args.manifest,
             pytest_log=args.pytest_log,
         )
