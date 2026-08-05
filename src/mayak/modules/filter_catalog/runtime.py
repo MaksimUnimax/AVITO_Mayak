@@ -7,6 +7,7 @@ to the accepted Module 13 semantic contracts.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Any, Literal, Mapping, TypeVar, cast
@@ -32,7 +33,9 @@ from .beacon_override_candidate import (
 from .builder_validation import (
     BuilderClientValidationState,
     BuilderDraftFieldInput,
+    BuilderDraftValidationReason,
     BuilderDraftValidationRequest,
+    BuilderDraftValidationState,
     BuilderFieldServerContext,
     BuilderFieldServerEntry,
     BuilderServerValueValidationState,
@@ -67,10 +70,16 @@ from .safe_read_models import (
     CatalogSafeReadSurfaceState,
 )
 from .value_dependency_semantics import (
+    DependencyEvaluationState,
+    DependencyRuleEvaluation,
+    FilterSemanticExposureDecision,
+    FilterSemanticExposureReason,
+    FilterSemanticExposureRequest,
     MultivaluePreservationDecision,
     MultivaluePreservationRequest,
     RangeValueValidationDecision,
     RangeValueValidationRequest,
+    evaluate_filter_semantic_exposure,
     evaluate_multivalue_preservation,
     validate_range_value,
 )
@@ -231,6 +240,30 @@ class DraftValueInput(_Envelope):
     client_validation_state: BuilderClientValidationState = BuilderClientValidationState.NOT_RUN
 
 
+class RuntimeServerAuthority(_Envelope):
+    """References observed by the runtime from its owning boundaries."""
+
+    catalog_version_id: OpaqueReferenceId
+    beacon_revision_id: OpaqueReferenceId
+    provider_surface_reference_id: OpaqueReferenceId
+    category_scope_reference_id: OpaqueReferenceId | None = None
+    geography_scope_reference_id: OpaqueReferenceId | None = None
+    global_scope_approval_reference_id: OpaqueReferenceId | None = None
+
+
+class RuntimeUntrustedDraft(_Envelope):
+    """References and values supplied by an untrusted builder client."""
+
+    catalog_version_id: OpaqueReferenceId
+    beacon_revision_id: OpaqueReferenceId
+    fields: tuple[DraftValueInput, ...] = ()
+
+
+class RuntimeDraftRequest(_Envelope):
+    server: RuntimeServerAuthority
+    submitted: RuntimeUntrustedDraft
+
+
 class CatalogLoadResult(_Envelope):
     catalog: CatalogReadModel
     version_code: str
@@ -241,6 +274,9 @@ class CatalogLoadResult(_Envelope):
 class RuntimeDraftResult(_Envelope):
     outcome: Any
     candidate: Any | None = None
+    semantic_outcomes: tuple[Any, ...] = ()
+    normalized_range_payloads: tuple[Mapping[str, object], ...] = ()
+    validation_request: Any | None = None
 
 
 class FilterCatalogRuntime:
@@ -262,6 +298,9 @@ class FilterCatalogRuntime:
         self._evidence_by_catalog: dict[str, tuple[FilterEvidenceReference, ...]] = {}
         self._dependency_envelopes: dict[str, DependencyEnvelope] = {}
         self._catalog_states: dict[str, CatalogPublicationState] = {}
+        self._profile_fields: dict[str, CapabilityFieldEnvelope] = {}
+        self._profile_evidence: dict[str, tuple[str, ...]] = {}
+        self._profile_by_scope: dict[tuple[str, str | None, str | None], list[str]] = {}
 
     @staticmethod
     def _uuid(value: object) -> UUID:
@@ -356,6 +395,9 @@ class FilterCatalogRuntime:
         ] = {}
         for profile in profile_rows:
             capability_env = self._parse(CapabilityEnvelope, profile["capabilities"], "capability")
+            for field in capability_env.fields.values():
+                if field.definition_id not in {str(item["id"]) for item in definition_rows}:
+                    raise RuntimeBlocked("capability profile references unknown definition")
             for code, field in capability_env.fields.items():
                 profiles_by_definition.setdefault(field.definition_id, []).append(
                     (cast(Mapping[str, object], profile), capability_env, field)
@@ -370,96 +412,132 @@ class FilterCatalogRuntime:
             evidence_id = str(definition["evidence_id"]) if definition["evidence_id"] else None
             if evidence_id is None or evidence_id not in evidence_by_id:
                 raise RuntimeBlocked("definition references missing evidence")
-            fields = profiles_by_definition.get(definition_id, [])
+            fields = sorted(
+                profiles_by_definition.get(definition_id, []), key=lambda item: str(item[0]["id"])
+            )
             if not fields:
                 raise RuntimeBlocked("definition has no capability profile field")
-            first_profile, first_env, first_field = fields[0]
             definition_code = str(definition["field_code"])
-            if (
-                definition_code not in first_env.fields
-                or first_field.definition_id != definition_id
-            ):
-                raise RuntimeBlocked("capability field is not linked to its physical definition")
-            if any(field != first_field for _, _, field in fields[1:]):
-                raise RuntimeBlocked("ambiguous incompatible capability profiles")
             physical_options = options_by_definition.get(definition_id, [])
             physical_codes = tuple(str(item["option_code"]) for item in physical_options)
-            metadata_codes = tuple(item.option_code for item in first_field.options)
-            if physical_codes != metadata_codes:
-                raise RuntimeBlocked("option inventory does not exactly match capability metadata")
-            if not set(first_field.evidence_reference_ids) <= set(evidence_by_id):
-                raise RuntimeBlocked("capability references missing evidence")
-            for physical, meta in zip(physical_options, first_field.options):
-                if str(physical["id"]) != meta.option_id:
-                    raise RuntimeBlocked("option metadata ID does not match physical option")
-                if not set(meta.evidence_reference_ids) <= set(evidence_by_id):
-                    raise RuntimeBlocked("option references missing evidence")
-                if str(physical["label"]) != meta.safe_label:
-                    raise RuntimeBlocked("contradictory option metadata")
-                option_defs.append(
-                    FilterOptionDefinition(
-                        filter_option_id=str(physical["id"]),
-                        filter_definition_id=definition_id,
-                        canonical_value_code=meta.option_code,
-                        safe_label=meta.safe_label,
-                        definition_state=meta.definition_state,
-                        evidence_reference_ids=meta.evidence_reference_ids,
+            profile_ids: list[str] = []
+            stable_kind: FilterValueKind | None = None
+            range_id: str | None = None
+            for profile_row, capability_env, field in fields:
+                if (
+                    definition_code not in capability_env.fields
+                    or field.definition_id != definition_id
+                ):
+                    raise RuntimeBlocked(
+                        "capability field is not linked to its physical definition"
+                    )
+                if stable_kind is None:
+                    stable_kind = field.value_kind
+                elif stable_kind is not field.value_kind:
+                    raise RuntimeBlocked("capability profiles contradict value kind")
+                metadata_codes = tuple(item.option_code for item in field.options)
+                if physical_codes != metadata_codes:
+                    raise RuntimeBlocked(
+                        "option inventory does not exactly match capability metadata"
+                    )
+                if not set(field.evidence_reference_ids) <= set(evidence_by_id):
+                    raise RuntimeBlocked("capability references missing evidence")
+                for physical, meta in zip(physical_options, field.options):
+                    if (
+                        str(physical["id"]) != meta.option_id
+                        or str(physical["label"]) != meta.safe_label
+                    ):
+                        raise RuntimeBlocked("contradictory option metadata")
+                    if not set(meta.evidence_reference_ids) <= set(evidence_by_id):
+                        raise RuntimeBlocked("option references missing evidence")
+                    if not any(
+                        item.filter_option_id == str(physical["id"]) for item in option_defs
+                    ):
+                        option_defs.append(
+                            FilterOptionDefinition(
+                                filter_option_id=str(physical["id"]),
+                                filter_definition_id=definition_id,
+                                canonical_value_code=meta.option_code,
+                                safe_label=meta.safe_label,
+                                definition_state=meta.definition_state,
+                                evidence_reference_ids=meta.evidence_reference_ids,
+                            )
+                        )
+                profile_id = str(profile_row["id"])
+                profile_ids.append(profile_id)
+                self._profile_fields[profile_id] = field
+                self._profile_evidence[profile_id] = tuple(field.evidence_reference_ids)
+                self._profile_by_scope.setdefault(
+                    (
+                        str(capability_env.provider_surface_reference_id),
+                        capability_env.category_scope_reference_id,
+                        capability_env.geography_scope_reference_id,
+                    ),
+                    [],
+                ).append(profile_id)
+                profiles.append(
+                    FilterCapabilityProfile(
+                        filter_capability_profile_id=profile_id,
+                        filter_catalog_version_id=catalog_id,
+                        provider_surface_reference_id=capability_env.provider_surface_reference_id,
+                        category_scope_reference_id=capability_env.category_scope_reference_id,
+                        geography_scope_reference_id=capability_env.geography_scope_reference_id,
+                        capability_state=field.capability_state,
+                        evidence_reference_ids=field.evidence_reference_ids,
+                        warning_ids=field.warning_ids,
                     )
                 )
-            profile_id = str(first_profile["id"])
-            profile_model = FilterCapabilityProfile(
-                filter_capability_profile_id=profile_id,
-                filter_catalog_version_id=catalog_id,
-                provider_surface_reference_id=first_env.provider_surface_reference_id,
-                category_scope_reference_id=first_env.category_scope_reference_id,
-                geography_scope_reference_id=first_env.geography_scope_reference_id,
-                capability_state=first_field.capability_state,
-                evidence_reference_ids=first_field.evidence_reference_ids,
-                warning_ids=first_field.warning_ids,
-            )
-            profiles.append(profile_model)
-            for warning in first_field.compatibility_warnings:
-                if not set(warning.evidence_reference_ids) <= set(evidence_by_id):
-                    raise RuntimeBlocked("warning references missing evidence")
-                warnings.append(
-                    CatalogCompatibilityWarning(
-                        catalog_compatibility_warning_id=warning.warning_id,
-                        compatibility_state=warning.compatibility_state,
-                        subject_reference_id=definition_id,
-                        safe_code=warning.safe_code,
-                        evidence_reference_ids=warning.evidence_reference_ids,
-                        blocks_editability=warning.blocks_editability,
-                    )
-                )
-            range_id = None
-            if first_field.range_definition is not None:
-                r = first_field.range_definition
-                if not set(r.evidence_reference_ids) <= set(evidence_by_id):
-                    raise RuntimeBlocked("range references missing evidence")
-                range_id = r.range_definition_id
-                ranges.append(
-                    FilterRangeDefinition(
-                        filter_range_definition_id=range_id,
-                        filter_definition_id=definition_id,
-                        unit_code=r.unit_code,
-                        lower_bound=r.lower_bound,
-                        upper_bound=r.upper_bound,
-                        lower_inclusive=r.lower_inclusive,
-                        upper_inclusive=r.upper_inclusive,
-                        step=r.step,
-                        evidence_reference_ids=r.evidence_reference_ids,
-                    )
-                )
+                for warning in field.compatibility_warnings:
+                    if not set(warning.evidence_reference_ids) <= set(evidence_by_id):
+                        raise RuntimeBlocked("warning references missing evidence")
+                    if not any(
+                        item.catalog_compatibility_warning_id == warning.warning_id
+                        for item in warnings
+                    ):
+                        warnings.append(
+                            CatalogCompatibilityWarning(
+                                catalog_compatibility_warning_id=warning.warning_id,
+                                compatibility_state=warning.compatibility_state,
+                                subject_reference_id=definition_id,
+                                safe_code=warning.safe_code,
+                                evidence_reference_ids=warning.evidence_reference_ids,
+                                blocks_editability=warning.blocks_editability,
+                            )
+                        )
+                if field.range_definition is not None:
+                    r = field.range_definition
+                    if not set(r.evidence_reference_ids) <= set(evidence_by_id):
+                        raise RuntimeBlocked("range references missing evidence")
+                    if range_id is None:
+                        range_id = r.range_definition_id
+                    elif range_id != r.range_definition_id:
+                        raise RuntimeBlocked("capability profiles contradict range identity")
+                    if not any(
+                        item.filter_range_definition_id == r.range_definition_id for item in ranges
+                    ):
+                        ranges.append(
+                            FilterRangeDefinition(
+                                filter_range_definition_id=r.range_definition_id,
+                                filter_definition_id=definition_id,
+                                unit_code=r.unit_code,
+                                lower_bound=r.lower_bound,
+                                upper_bound=r.upper_bound,
+                                lower_inclusive=r.lower_inclusive,
+                                upper_inclusive=r.upper_inclusive,
+                                step=r.step,
+                                evidence_reference_ids=r.evidence_reference_ids,
+                            )
+                        )
             definitions.append(
                 FilterDefinition(
                     filter_definition_id=definition_id,
                     filter_catalog_version_id=catalog_id,
                     normalized_key=str(definition["field_code"]),
                     safe_label=str(definition["label"]),
-                    value_kind=FilterValueKind(str(first_field.value_kind)),
+                    value_kind=cast(FilterValueKind, stable_kind),
                     definition_state=FilterDefinitionState(str(definition["support_state"])),
                     evidence_reference_ids=(evidence_id,),
-                    capability_profile_ids=(profile_id,),
+                    capability_profile_ids=tuple(profile_ids),
                     filter_option_ids=tuple(str(item["id"]) for item in physical_options),
                     filter_range_definition_id=range_id,
                 )
@@ -538,29 +616,73 @@ class FilterCatalogRuntime:
         provider_surface_reference_id: str,
         category_scope_reference_id: str | None,
         geography_scope_reference_id: str | None,
+        global_scope_approval_reference_id: str | None = None,
     ) -> BuilderFieldServerContext:
         entries: list[BuilderFieldServerEntry] = []
         profiles = {
             item.filter_capability_profile_id: item for item in catalog.filter_capability_profiles
         }
         for definition in catalog.filter_definitions:
-            profile = next(
-                (profiles[item] for item in definition.capability_profile_ids if item in profiles),
-                None,
+            applicable = [
+                profiles[item]
+                for item in definition.capability_profile_ids
+                if item in profiles
+                and profiles[item].provider_surface_reference_id == provider_surface_reference_id
+                and profiles[item].category_scope_reference_id == category_scope_reference_id
+                and profiles[item].geography_scope_reference_id == geography_scope_reference_id
+            ]
+            if len(applicable) > 1:
+                raise RuntimeBlocked("contradictory capability profiles match exact scope")
+            profile = (
+                applicable[0]
+                if applicable
+                else next(
+                    (
+                        profiles[item]
+                        for item in sorted(definition.capability_profile_ids)
+                        if item in profiles
+                    ),
+                    None,
+                )
             )
             if profile is None:
                 continue
-            required_scope = (category_scope_reference_id, geography_scope_reference_id)
-            scope_ok = (
+            exact_scope = (
                 profile.provider_surface_reference_id == provider_surface_reference_id
-                and profile.category_scope_reference_id == required_scope[0]
-                and profile.geography_scope_reference_id == required_scope[1]
+                and profile.category_scope_reference_id == category_scope_reference_id
+                and profile.geography_scope_reference_id == geography_scope_reference_id
+            )
+            scope_ok = exact_scope or (
+                global_scope_approval_reference_id is not None
+                and profile.provider_surface_reference_id == provider_surface_reference_id
+                and (
+                    profile.category_scope_reference_id is None
+                    or profile.geography_scope_reference_id is None
+                )
+            )
+            relevant_evidence_ids = set(definition.evidence_reference_ids) | set(
+                profile.evidence_reference_ids
+            )
+            relevant_evidence_ids.update(
+                self._profile_evidence.get(profile.filter_capability_profile_id, ())
+            )
+            relevant_evidence_ids.update(
+                evidence_id
+                for warning in catalog.compatibility_warnings
+                if warning.subject_reference_id == definition.filter_definition_id
+                for evidence_id in warning.evidence_reference_ids
+            )
+            relevant_evidence_ids.update(
+                evidence_id
+                for rule in catalog.filter_dependency_rules
+                if definition.filter_definition_id
+                in (rule.source_filter_definition_id, rule.target_filter_definition_id)
+                for evidence_id in rule.evidence_reference_ids
             )
             evidence_ok = all(
                 item.evidence_state is FilterEvidenceState.CURRENT and not item.refresh_required
                 for item in self._evidence_by_catalog.get(catalog.filter_catalog_version_id, ())
-                if item.evidence_reference_id
-                in set(definition.evidence_reference_ids) | set(profile.evidence_reference_ids)
+                if item.evidence_reference_id in relevant_evidence_ids
             )
             category_ok = True
             if category_scope_reference_id is not None:
@@ -605,7 +727,7 @@ class FilterCatalogRuntime:
                 capability_state=profile.capability_state
                 if scope_ok and category_ok and not blocking_warning
                 else FilterCapabilityState.CATEGORY_INCOMPATIBLE,
-                required=False,
+                required=self._profile_fields[profile.filter_capability_profile_id].required,
                 filter_option_ids=definition.filter_option_ids,
                 filter_range_definition_id=definition.filter_range_definition_id,
                 warning_ids=profile.warning_ids,
@@ -634,7 +756,11 @@ class FilterCatalogRuntime:
         provider_surface_reference_id: str,
         category_scope_reference_id: str | None,
         geography_scope_reference_id: str | None,
-        fields: tuple[DraftValueInput, ...],
+        submitted_catalog_version_id: str | None = None,
+        submitted_beacon_revision_id: str | None = None,
+        global_scope_approval_reference_id: str | None = None,
+        dependency_evaluation_overrides: Mapping[str, DependencyEvaluationState] | None = None,
+        fields: tuple[DraftValueInput, ...] = (),
     ) -> RuntimeDraftResult:
         """Convert raw draft values into the accepted server-owned validation request."""
         context = self.builder_context(
@@ -643,17 +769,17 @@ class FilterCatalogRuntime:
             provider_surface_reference_id=provider_surface_reference_id,
             category_scope_reference_id=category_scope_reference_id,
             geography_scope_reference_id=geography_scope_reference_id,
+            global_scope_approval_reference_id=global_scope_approval_reference_id,
         )
         by_code = {item.normalized_key: item for item in catalog.filter_definitions}
         by_field = {item.field_definition.builder_field_id: item for item in context.field_entries}
-        option_codes = {
-            item.filter_definition_id: {
-                item.canonical_value_code: item.filter_option_id
-                for item in catalog.filter_option_definitions
-            }
-            for item in catalog.filter_option_definitions
-        }
+        option_codes: dict[str, dict[str, str]] = {}
+        for item in catalog.filter_option_definitions:
+            option_codes.setdefault(item.filter_definition_id, {})[item.canonical_value_code] = (
+                item.filter_option_id
+            )
         converted: list[BuilderDraftFieldInput] = []
+        normalized_ranges: list[Mapping[str, object]] = []
         for raw in fields:
             definition = by_code.get(raw.field_code)
             if definition is None:
@@ -694,7 +820,7 @@ class FilterCatalogRuntime:
                 if range_definition is None or raw.unit_code is None:
                     valid = False
                 else:
-                    outcome = validate_range_value(
+                    range_outcome = validate_range_value(
                         RangeValueValidationRequest(
                             filter_definition_id=definition.filter_definition_id,
                             range_definition=range_definition,
@@ -706,7 +832,33 @@ class FilterCatalogRuntime:
                             step_origin=raw.step_origin,
                         )
                     )
-                    valid = valid and outcome.decision is RangeValueValidationDecision.VALID
+                    valid = valid and range_outcome.decision is RangeValueValidationDecision.VALID
+                    if valid:
+                        canonical = "|".join(
+                            (
+                                raw.unit_code,
+                                str(raw.lower_value),
+                                str(raw.upper_value),
+                                str(raw.lower_inclusive),
+                                str(raw.upper_inclusive),
+                                str(raw.step_origin),
+                            )
+                        )
+                        values = (
+                            "RF22_RANGE_"
+                            + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32],
+                        )
+                        normalized_ranges.append(
+                            {
+                                "filter_definition_id": definition.filter_definition_id,
+                                "unit_code": raw.unit_code,
+                                "lower_value": str(raw.lower_value),
+                                "upper_value": str(raw.upper_value),
+                                "lower_inclusive": raw.lower_inclusive,
+                                "upper_inclusive": raw.upper_inclusive,
+                                "step_origin": str(raw.step_origin),
+                            }
+                        )
             if definition.value_kind is FilterValueKind.MULTIVALUE and valid:
                 multivalue_outcome = evaluate_multivalue_preservation(
                     MultivaluePreservationRequest(
@@ -729,15 +881,191 @@ class FilterCatalogRuntime:
                     client_reported_enabled=raw.client_reported_enabled,
                 )
             )
+        submitted_version = submitted_catalog_version_id or catalog.filter_catalog_version_id
+        submitted_beacon = submitted_beacon_revision_id or beacon_revision_id
         request = BuilderDraftValidationRequest(
             builder_draft_validation_result_id=f"RF22_VALIDATION_{builder_draft_id}",
             builder_draft_id=builder_draft_id,
-            filter_catalog_version_id=catalog.filter_catalog_version_id,
-            beacon_revision_id=beacon_revision_id,
+            filter_catalog_version_id=submitted_version,
+            beacon_revision_id=submitted_beacon,
             server_context=context,
             draft_fields=tuple(converted),
         )
-        return RuntimeDraftResult(outcome=validate_builder_draft(request))
+        outcome = validate_builder_draft(request)
+        submitted_by_definition = {
+            by_code[field.field_code].filter_definition_id: field
+            for field in fields
+            if field.field_code in by_code
+        }
+        semantic_outcomes: list[Any] = []
+        semantic_reasons: set[BuilderDraftValidationReason] = set()
+        profiles_by_id = {
+            item.filter_capability_profile_id: item for item in catalog.filter_capability_profiles
+        }
+        for definition in catalog.filter_definitions:
+            entry = next(
+                (
+                    item
+                    for item in context.field_entries
+                    if item.field_definition.filter_definition_id == definition.filter_definition_id
+                ),
+                None,
+            )
+            if entry is None:
+                continue
+            profile = profiles_by_id[entry.field_definition.filter_capability_profile_id]
+            rules = tuple(
+                rule
+                for rule in catalog.filter_dependency_rules
+                if rule.filter_dependency_rule_id in definition.dependency_rule_ids
+            )
+            evaluations: list[DependencyRuleEvaluation] = []
+            for rule in rules:
+                override = (dependency_evaluation_overrides or {}).get(
+                    rule.filter_dependency_rule_id
+                )
+                if override is DependencyEvaluationState.NOT_EVALUATED:
+                    evaluations.append(
+                        DependencyRuleEvaluation(
+                            filter_dependency_rule_id=rule.filter_dependency_rule_id,
+                            evaluation_state=override,
+                        )
+                    )
+                    continue
+                source = submitted_by_definition.get(rule.source_filter_definition_id)
+                target = submitted_by_definition.get(rule.target_filter_definition_id)
+
+                def present(field: DraftValueInput | None) -> bool:
+                    return field is not None and (
+                        bool(field.value_reference_ids)
+                        or field.lower_value is not None
+                        or field.upper_value is not None
+                    )
+
+                active = present(source)
+                satisfied = True
+                if active:
+                    if rule.dependency_kind is FilterDependencyKind.REQUIRES:
+                        satisfied = present(target)
+                    elif rule.dependency_kind is FilterDependencyKind.EXCLUDES:
+                        satisfied = not present(target)
+                    else:
+                        target_values = target.value_reference_ids if target is not None else ()
+                        satisfied = present(target) and set(target_values) <= set(
+                            self._dependency_envelopes[
+                                rule.filter_dependency_rule_id
+                            ].allowed_target_value_reference_ids
+                        )
+                evaluations.append(
+                    DependencyRuleEvaluation(
+                        filter_dependency_rule_id=rule.filter_dependency_rule_id,
+                        evaluation_state=DependencyEvaluationState.SATISFIED
+                        if satisfied
+                        else DependencyEvaluationState.BLOCKED,
+                        evaluation_reference_id=f"RF22_DEPENDENCY_EVAL_{rule.filter_dependency_rule_id}",
+                    )
+                )
+            semantic = evaluate_filter_semantic_exposure(
+                FilterSemanticExposureRequest(
+                    filter_catalog_version_id=catalog.filter_catalog_version_id,
+                    filter_definition=definition,
+                    capability_profile=profile,
+                    provider_surface_reference_id=provider_surface_reference_id,
+                    category_scope_reference_id=category_scope_reference_id,
+                    geography_scope_reference_id=geography_scope_reference_id,
+                    global_scope_approval_reference_id=global_scope_approval_reference_id,
+                    known_filter_definition_ids=tuple(
+                        item.filter_definition_id for item in catalog.filter_definitions
+                    ),
+                    dependency_rules=rules,
+                    dependency_evaluations=tuple(evaluations),
+                )
+            )
+            semantic_outcomes.append(semantic)
+            if semantic.decision is FilterSemanticExposureDecision.BLOCKED:
+                if FilterSemanticExposureReason.CATALOG_VERSION_MISMATCH in semantic.reason_codes:
+                    semantic_reasons.add(BuilderDraftValidationReason.CATALOG_VERSION_MISMATCH)
+                elif any(
+                    reason in semantic.reason_codes
+                    for reason in (
+                        FilterSemanticExposureReason.DEPENDENCY_NOT_EVALUATED,
+                        FilterSemanticExposureReason.DEPENDENCY_BLOCKED,
+                        FilterSemanticExposureReason.DEPENDENCY_GRAPH_CYCLE,
+                        FilterSemanticExposureReason.DEPENDENCY_RULE_SET_MISMATCH,
+                        FilterSemanticExposureReason.DEPENDENCY_EVALUATION_SET_MISMATCH,
+                    )
+                ):
+                    semantic_reasons.add(BuilderDraftValidationReason.SERVER_VALUE_NOT_EVALUATED)
+                else:
+                    semantic_reasons.add(BuilderDraftValidationReason.FIELD_NOT_ENABLED)
+        if semantic_reasons:
+            result = outcome.validation_result.model_copy(
+                update={
+                    "validation_state": BuilderDraftValidationState.BLOCKED,
+                    "accepted_builder_field_ids": (),
+                    "rejected_builder_field_ids": tuple(
+                        dict.fromkeys(
+                            result_id
+                            for result_id in (
+                                field.builder_field_id for field in request.draft_fields
+                            )
+                        )
+                    ),
+                }
+            )
+            outcome = outcome.model_copy(
+                update={
+                    "validation_result": result,
+                    "reason_codes": tuple(
+                        dict.fromkeys((*outcome.reason_codes, *semantic_reasons))
+                    ),
+                }
+            )
+        return RuntimeDraftResult(
+            outcome=outcome,
+            semantic_outcomes=tuple(semantic_outcomes),
+            normalized_range_payloads=tuple(normalized_ranges),
+            validation_request=request,
+        )
+
+    def validate_and_prepare_candidate(
+        self,
+        catalog: CatalogReadModel,
+        *,
+        beacon_id: str,
+        beacon_acceptance_boundary_reference_id: str,
+        **draft: Any,
+    ) -> RuntimeDraftResult:
+        result = self.validate_draft(catalog, **draft)
+        request = result.validation_request
+        if not isinstance(request, BuilderDraftValidationRequest):
+            raise RuntimeBlocked("validation request was not retained for candidate preparation")
+        candidate = self.prepare_candidate(
+            request,
+            result.outcome,
+            beacon_id=beacon_id,
+            beacon_acceptance_boundary_reference_id=beacon_acceptance_boundary_reference_id,
+        )
+        return result.model_copy(update={"candidate": candidate})
+
+    def validate_runtime_request(
+        self, catalog: CatalogReadModel, request: RuntimeDraftRequest
+    ) -> RuntimeDraftResult:
+        """Validate an authority-split request without accepting client context fields."""
+        if request.server.catalog_version_id != catalog.filter_catalog_version_id:
+            raise RuntimeBlocked("server authority does not identify the loaded catalog")
+        return self.validate_draft(
+            catalog,
+            builder_draft_id=f"RF22_REQUEST_{request.submitted.catalog_version_id}_{request.submitted.beacon_revision_id}",
+            beacon_revision_id=request.server.beacon_revision_id,
+            submitted_catalog_version_id=request.submitted.catalog_version_id,
+            submitted_beacon_revision_id=request.submitted.beacon_revision_id,
+            provider_surface_reference_id=request.server.provider_surface_reference_id,
+            category_scope_reference_id=request.server.category_scope_reference_id,
+            geography_scope_reference_id=request.server.geography_scope_reference_id,
+            global_scope_approval_reference_id=request.server.global_scope_approval_reference_id,
+            fields=request.submitted.fields,
+        )
 
     def prepare_candidate(
         self,
@@ -816,11 +1144,35 @@ class FilterCatalogRuntime:
                 details_redacted=True,
             )
         evidence = self._evidence_by_catalog.get(catalog.filter_catalog_version_id, ())
+        relevant_evidence_ids = set(definition.evidence_reference_ids) | set(
+            profile.evidence_reference_ids
+        )
+        relevant_evidence_ids.update(
+            self._profile_evidence.get(profile.filter_capability_profile_id, ())
+        )
+        for option in catalog.filter_option_definitions:
+            if option.filter_definition_id == definition.filter_definition_id:
+                relevant_evidence_ids.update(option.evidence_reference_ids)
+        for range_definition in catalog.filter_range_definitions:
+            if range_definition.filter_definition_id == definition.filter_definition_id:
+                relevant_evidence_ids.update(range_definition.evidence_reference_ids)
+        relevant_evidence_ids.update(
+            warning_evidence_id
+            for warning in catalog.compatibility_warnings
+            if warning.subject_reference_id == definition.filter_definition_id
+            for warning_evidence_id in warning.evidence_reference_ids
+        )
+        relevant_evidence_ids.update(
+            dependency_evidence_id
+            for rule in catalog.filter_dependency_rules
+            if definition.filter_definition_id
+            in (rule.source_filter_definition_id, rule.target_filter_definition_id)
+            for dependency_evidence_id in rule.evidence_reference_ids
+        )
         current = all(
             item.evidence_state is FilterEvidenceState.CURRENT and not item.refresh_required
             for item in evidence
-            if item.evidence_reference_id
-            in set(definition.evidence_reference_ids) | set(profile.evidence_reference_ids)
+            if item.evidence_reference_id in relevant_evidence_ids
         )
         warning_ids = tuple(
             warning.catalog_compatibility_warning_id
@@ -849,11 +1201,7 @@ class FilterCatalogRuntime:
             explanation_codes=explanations,
             warning_ids=warning_ids if audience is CatalogSafeReadAudience.ADMIN_AUTHORIZED else (),
             evidence_reference_ids=(
-                tuple(
-                    sorted(
-                        set(definition.evidence_reference_ids) | set(profile.evidence_reference_ids)
-                    )
-                )
+                tuple(sorted(relevant_evidence_ids))
                 if audience is CatalogSafeReadAudience.ADMIN_AUTHORIZED
                 else ()
             ),
@@ -870,6 +1218,9 @@ __all__ = (
     "DependencyEnvelope",
     "WarningEnvelope",
     "DraftValueInput",
+    "RuntimeServerAuthority",
+    "RuntimeUntrustedDraft",
+    "RuntimeDraftRequest",
     "CatalogLoadResult",
     "RuntimeDraftResult",
     "FilterCatalogRuntime",

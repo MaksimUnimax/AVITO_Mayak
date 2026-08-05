@@ -1,89 +1,144 @@
-"""Fail-closed verifier for the redacted RF22 producer artifact."""
+"""Fail-closed verifier for structured, digest-bound RF22 observations."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
+from typing import Any, cast
 
 TECHNICAL_ID = "RF22-FILTER-CATALOG-BUILDER-RUNTIME-01"
-TABLES = {
-    "filter_catalog_versions",
-    "filter_definitions",
-    "filter_options",
-    "filter_dependencies",
-    "filter_category_applicability",
-    "filter_evidence_references",
-    "filter_capability_profiles",
-}
-REQUIRED_TRUE = (
-    "application_select_proof",
-    "application_insert_denied",
-    "application_update_denied",
-    "application_delete_denied",
-    "published_catalog_loaded",
-    "draft_catalog_blocked",
-    "option_validation",
-    "unknown_option_rejected",
-    "multivalue_preserved",
-    "range_valid",
-    "range_unit_rejected",
-    "range_bound_rejected",
-    "range_step_rejected",
-    "requires_cases",
-    "excludes_cases",
-    "constrains_cases",
-    "all_blocked_cases",
-    "valid_draft",
-    "client_authority_blocked",
-    "catalog_conflict",
-    "beacon_revision_conflict",
-    "candidate_prepared",
-    "beacon_acceptance_required",
-    "web_redacted",
-    "admin_safe_detail",
-    "zero_beacon_mutations",
-    "zero_foreign_mutations",
-    "zero_provider_calls",
-    "zero_raw_payload",
-    "synthetic_only",
-    "no_global_scope_assumption",
+TABLES = sorted(
+    {
+        "filter_catalog_versions",
+        "filter_definitions",
+        "filter_options",
+        "filter_dependencies",
+        "filter_category_applicability",
+        "filter_evidence_references",
+        "filter_capability_profiles",
+    }
 )
+LEGACY_KEYS = {
+    "REQUIRED_TRUE",
+    "candidate_prepared",
+    "catalog_conflict",
+    "zero_provider_calls",
+    "valid_draft",
+}
 
 
 def _fail(message: str) -> None:
     raise SystemExit(f"RF22 verification failed: {message}")
 
 
+def _obs(observations: dict[str, object], name: str) -> dict[str, Any]:
+    value = observations.get(name)
+    if not isinstance(value, dict):
+        _fail(f"structured observation missing: {name}")
+    return cast(dict[str, Any], value)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("artifact", type=Path)
     parser.add_argument("--candidate-sha", required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
     args = parser.parse_args()
     try:
-        evidence = json.loads(args.artifact.read_text(encoding="utf-8"))
+        evidence: Any = json.loads(args.artifact.read_text(encoding="utf-8"))
+        manifest: Any = json.loads(args.manifest.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         _fail(f"artifact unreadable: {exc}")
-    if evidence.get("technical_id") != TECHNICAL_ID:
-        _fail("technical ID mismatch")
-    if evidence.get("candidate_sha") != args.candidate_sha:
-        _fail("candidate SHA mismatch")
-    if evidence.get("postgres_major") != 18:
-        _fail("PostgreSQL 18 observation missing")
-    if evidence.get("catalog_tables") != sorted(TABLES):
-        _fail("exact seven-table inventory missing")
-    if evidence.get("synthetic_catalog_version") != "SYNTHETIC_CATALOG_V1":
-        _fail("synthetic catalog marker missing")
+    if not isinstance(evidence, dict) or not isinstance(manifest, dict):
+        _fail("root documents must be objects")
+    if LEGACY_KEYS.intersection(evidence) or "required_true" in evidence:
+        _fail("legacy boolean evidence shape is forbidden")
+    if (
+        evidence.get("technical_id") != TECHNICAL_ID
+        or evidence.get("candidate_sha") != args.candidate_sha
+    ):
+        _fail("identity mismatch")
+    if evidence.get("postgres_major") != 18 or evidence.get("catalog_tables") != TABLES:
+        _fail("PostgreSQL 18 or exact seven-table observation missing")
+    observations: Any = evidence.get("observations")
+    if not isinstance(observations, dict):
+        _fail("structured observations missing")
+    required = _obs(observations, "required_semantics")
+    if required.get("missing", {}).get(
+        "state"
+    ) != "INVALID" or "REQUIRED_FIELD_MISSING" not in required.get("missing", {}).get(
+        "reason_codes", []
+    ):
+        _fail("required missing observation failed")
+    if required.get("present", {}).get("state") != "VALID" or required.get(
+        "optional_missing", {}
+    ).get("state") not in {"VALID", "INVALID"}:
+        _fail("required propagation observation failed")
+    option = _obs(observations, "option_isolation")
+    if (
+        option.get("same_code_scoped") is not True
+        or option.get("cross_definition_id_rejected") is not True
+    ):
+        _fail("option isolation observation failed")
+    profile = _obs(observations, "profile_selection")
+    if (
+        profile.get("all_profiles_reconstructed") is not True
+        or profile.get("deterministic_exact_scope") is not True
+    ):
+        _fail("profile selection observation failed")
+    semantic = _obs(observations, "semantic_exposure")
+    for name in (
+        "provider_mismatch",
+        "category_mismatch",
+        "geography_mismatch",
+        "global_approval_missing",
+        "requires",
+        "excludes",
+        "constrains",
+        "not_evaluated",
+        "cycle",
+    ):
+        if not isinstance(semantic.get(name), dict) or semantic[name].get("state") != "BLOCKED":
+            _fail(f"semantic observation failed: {name}")
+    conflicts = _obs(observations, "conflicts")
+    if (
+        conflicts.get("catalog", {}).get("reason_code") != "CATALOG_VERSION_MISMATCH"
+        or conflicts.get("beacon", {}).get("reason_code") != "BEACON_REVISION_MISMATCH"
+    ):
+        _fail("actual conflict observations missing")
+    candidate = _obs(observations, "candidate_preparation")
+    if candidate.get("state") != "PREPARED" or not isinstance(
+        candidate.get("validated_builder_field_ids"), list
+    ):
+        _fail("candidate result missing")
+    sql = _obs(observations, "sql_observer")
+    if (
+        sql.get("insert_count") != 0
+        or sql.get("update_count") != 0
+        or sql.get("delete_count") != 0
+        or sql.get("foreign_table_access_count") != 0
+    ):
+        _fail("SQL observer detected mutation or foreign access")
+    provider = _obs(observations, "provider_observer")
+    if provider.get("call_count") != 0 or provider.get("forbidden_import_count") != 0:
+        _fail("provider boundary failed")
     if evidence.get("raw_provider_payload_persisted") is not False:
         _fail("raw provider payload invariant missing")
+    if evidence.get("catalog_tables") != TABLES:
+        _fail("table inventory mismatch")
+    payloads = manifest.get("payloads")
     if (
-        evidence.get("beacon_mutation_count") != 0
-        or evidence.get("foreign_table_mutation_count") != 0
+        manifest.get("classification") != "CLEAN"
+        or not isinstance(payloads, list)
+        or [item.get("basename") for item in payloads] != ["rf22.json", "rf22-full-pytest.log"]
     ):
-        _fail("mutation boundary failed")
-    for name in REQUIRED_TRUE:
-        if evidence.get(name) is not True:
-            _fail(f"missing measured observation: {name}")
+        _fail("invalid scanner manifest")
+    for item in payloads:
+        path = args.artifact.parent / str(item["basename"])
+        if hashlib.sha256(path.read_bytes()).hexdigest() != item.get("sha256"):
+            _fail(f"payload digest mismatch: {item.get('basename')}")
     print("RF22_ACCEPTANCE_VERIFIED")
     return 0
 

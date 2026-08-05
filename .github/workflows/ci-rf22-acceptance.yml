@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0 docker.io
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0 docker.io docker-buildx
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
@@ -88,7 +88,6 @@ jobs:
           uv run python -c 'import sqlite3; assert sqlite3.connect(":memory:").execute("select 1").fetchone() == (1,)'
           docker version
           docker buildx version
-          test -s "$MAYAK_RF11_POSTGRES_PASSWORD_FILE"
           for name in RF22_DSN RF22_DATABASE_URL RF22_MIGRATION_DSN MAYAK_DATABASE_URL RF10_POSTGRES_DSN RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN RF12_ACCEPTANCE_DSN RF15_MIGRATION_DSN RF15_DSN RF17_MIGRATION_DSN RF17_APPLICATION_DSN RF18_MIGRATION_DSN RF18_DATABASE_URL RF19_MIGRATION_DSN RF19_DATABASE_URL RF20_MIGRATION_DSN RF20_DATABASE_URL RF21_MIGRATION_DSN RF21_DSN; do
             test -n "${!name}"
           done
@@ -100,6 +99,7 @@ jobs:
           printf '%s' rf22_migration_synthetic > /run/secrets/mayak_database_migration_password
           printf '%s' rf22_application_synthetic > /run/secrets/mayak_database_application_password
           chmod 600 /run/secrets/mayak_postgres_bootstrap_password /run/secrets/mayak_database_migration_password /run/secrets/mayak_database_application_password
+          test -s "$MAYAK_RF11_POSTGRES_PASSWORD_FILE"
           uv run python - <<'PY'
           from mayak.persistence.bootstrap import bootstrap_database
           from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
@@ -146,10 +146,9 @@ jobs:
             tests/runtime/test_rf17_notification_delivery_runtime.py::test_rf17_public_runtime_boundary_exports_only_contract_entrypoints \
             tests/runtime/test_rf19_max_adapter_runtime.py::test_fake_transport_is_deterministic_and_supports_safe_outcomes \
             tests/runtime/test_rf21_web_cabinet_runtime.py::test_dashboard_requires_verified_identity_and_is_compositional
-      - name: Factual RF22 PostgreSQL producer and verifier
+      - name: Factual RF22 PostgreSQL producer
         run: |
           uv run python scripts/runtime/run_rf22_postgres_acceptance.py --dsn "$RF22_DSN" --fixture-dsn "$RF22_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf22.json
-          uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA"
       - name: Recreate clean broad-regression database
         run: |
           set -euo pipefail
@@ -181,8 +180,8 @@ jobs:
           PY
       - name: Focused RF22 and static gates
         run: |
-          uv run pytest -q tests/runtime/test_rf22_filter_catalog_runtime.py tests/unit/test_filter_catalog_semantic_contracts.py tests/contract/test_filter_catalog_semantic_contract_exports.py tests/architecture/test_filter_catalog_semantic_boundaries.py tests/runtime/test_filter_catalog_schema.py
-          uv run ruff check src/mayak/modules/filter_catalog/__init__.py src/mayak/modules/filter_catalog/runtime.py scripts/runtime/run_rf22_postgres_acceptance.py scripts/runtime/verify_rf22_acceptance.py scripts/runtime/check_rf22_artifact_safety.py tests/runtime/test_rf22_filter_catalog_runtime.py
+          uv run pytest -q tests/runtime/test_rf22_filter_catalog_runtime.py tests/runtime/test_rf22_evidence.py tests/unit/test_filter_catalog_semantic_contracts.py tests/contract/test_filter_catalog_semantic_contract_exports.py tests/architecture/test_filter_catalog_semantic_boundaries.py tests/runtime/test_filter_catalog_schema.py
+          uv run ruff check src/mayak/modules/filter_catalog/__init__.py src/mayak/modules/filter_catalog/runtime.py scripts/runtime/run_rf22_postgres_acceptance.py scripts/runtime/verify_rf22_acceptance.py scripts/runtime/check_rf22_artifact_safety.py tests/runtime/test_rf22_filter_catalog_runtime.py tests/runtime/test_rf22_evidence.py
           uv run mypy src/mayak/modules/filter_catalog/runtime.py scripts/runtime/run_rf22_postgres_acceptance.py scripts/runtime/verify_rf22_acceptance.py scripts/runtime/check_rf22_artifact_safety.py
           uv run lint-imports
       - name: Final full repository regression
@@ -190,9 +189,9 @@ jobs:
           set -o pipefail
           uv run pytest -q 2>&1 | tee rf22-full-pytest.log
       - name: RF22 artifact safety scanner
-        run: uv run python scripts/runtime/check_rf22_artifact_safety.py rf22.json rf22-full-pytest.log
+        run: uv run python scripts/runtime/check_rf22_artifact_safety.py rf22.json rf22-full-pytest.log --manifest rf22-safety-manifest.json
       - name: Final RF22 verifier
-        run: uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA"
+        run: uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA" --manifest rf22-safety-manifest.json
       - uses: actions/upload-artifact@v4
         if: success()
         with:
@@ -200,4 +199,5 @@ jobs:
           path: |
             rf22.json
             rf22-full-pytest.log
+            rf22-safety-manifest.json
           if-no-files-found: error

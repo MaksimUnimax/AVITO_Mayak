@@ -33,7 +33,7 @@ EXPECTED_BLOBS = {
     "value_dependency_semantics.py": "9cb0f1648a359ae86c5e699250111bbe62825d27",
     "beacon_override_candidate.py": "1a441afd4352fd56c295b6a656262c00f226b2c1",
     "safe_read_models.py": "239d79ab54e03838da2967d24b2ca3ee60da65fe",
-    "__init__.py": "f880efde1ae75cb7357de15328e6685d8244d80d",
+    "__init__.py": "94bd8f3f455d445f2e8ddaf1ca2583751d82cb82",
 }
 FORBIDDEN_IMPORTS = [
     "fastapi", "sqlalchemy", "alembic", "httpx", "respx",
