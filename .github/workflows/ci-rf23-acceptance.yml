@@ -18,11 +18,16 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Install Docker and checkout prerequisites
+      - name: Verify hosted Docker and checkout prerequisites
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates docker.io git
+          command -v docker
+          command -v git
+          test -S /var/run/docker.sock
+          docker version
+          docker info
+          docker buildx version
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Run the authoritative RF23 acceptance chain
         run: scripts/runtime/run_rf23_acceptance_chain.sh
       - name: Upload authoritative RF23 evidence
@@ -30,7 +35,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rf23-cross-module-api-command-wiring
-          if-no-files-found: ignore
+          if-no-files-found: error
           path: |
             rf23-evidence.json
             rf23-runtime-probes.json

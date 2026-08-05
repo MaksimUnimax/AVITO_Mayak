@@ -5,8 +5,51 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT / ".github/workflows/ci-rf23-acceptance.yml"
+ORCHESTRATOR = ROOT / "scripts/runtime/run_rf23_acceptance_chain.sh"
 SCAN = ROOT / "scripts/runtime/check_rf23_artifact_safety.py"
 VERIFY = ROOT / "scripts/runtime/verify_rf23_acceptance.py"
+
+
+def test_rf23_hosted_bootstrap_uses_existing_docker_and_authoritative_chain() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "apt-get install" not in workflow
+    assert "docker.io" not in workflow
+    assert "test -S /var/run/docker.sock" in workflow
+    assert "docker version" in workflow
+    assert "docker info" in workflow
+    assert "docker buildx version" in workflow
+    assert 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"' in workflow
+    assert "scripts/runtime/run_rf23_acceptance_chain.sh" in workflow
+    assert "if-no-files-found: error" in workflow
+
+
+def test_rf23_docker_authority_pins_client_but_proves_server_capabilities() -> None:
+    source = ORCHESTRATOR.read_text(encoding="utf-8")
+    assert 'test "$client_version" = "29.2.1"' in source
+    assert "docker info" in source
+    assert "docker buildx version" in source
+    assert 'test -n "$server_version"' in source
+    assert 'test -n "$server_api"' in source
+    assert "29.2.1/29.2.1" not in source
+    assert "docker network create" in source
+    assert "docker network inspect" in source
+    assert "docker volume create" in source
+    assert "docker volume inspect" in source
+    assert "docker create" in source
+    assert "docker start -a" in source
+    assert "docker inspect" in source
+    assert "--mount type=bind,src=/var/run/docker.sock" in source
+
+
+def test_rf23_topology_proof_remains_task_owned_without_host_postgres_publish() -> None:
+    source = ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "com.avito-mayak.project-owned=true" in source
+    assert 'com.mayak.owner="$OWNER_LABEL"' in source
+    assert "postgres:18-bookworm@sha256:" in source
+    assert "--network-alias mayak-postgres" in source
+    assert "MAYAK_API_HOST_PORT=disabled" in source
+    assert "-p " not in source
 
 
 def _evidence() -> dict[str, object]:

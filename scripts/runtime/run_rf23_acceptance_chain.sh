@@ -9,6 +9,48 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 redact() { sed -E 's#(postgresql\+?[^:]*://[^:]+:)[^@]+@#\1<redacted>@#g'; }
 die() { echo "RF23 acceptance failed: $*" >&2; exit 1; }
 
+docker_capability_preflight() {
+  test -S /var/run/docker.sock || die "Docker socket unavailable"
+
+  local client_version server_version client_api server_api
+  client_version="$(docker version --format '{{.Client.Version}}')" || die "Docker daemon did not answer version request"
+  server_version="$(docker version --format '{{.Server.Version}}')" || die "Docker server version unavailable"
+  client_api="$(docker version --format '{{.Client.APIVersion}}')" || die "Docker client API version unavailable"
+  server_api="$(docker version --format '{{.Server.APIVersion}}')" || die "Docker server API version unavailable"
+  test -n "$client_version" || die "Docker client version is empty"
+  test -n "$server_version" || die "Docker server version is empty"
+  test -n "$client_api" || die "Docker client API version is empty"
+  test -n "$server_api" || die "Docker server API version is empty"
+  test "$client_version" = "29.2.1" || die "unexpected RF23 acceptance Docker client: $client_version"
+  docker info >/dev/null || die "Docker daemon info request failed"
+  docker buildx version | grep -F 'v0.31.1' >/dev/null || die "unexpected RF23 acceptance buildx client"
+  echo "Docker capability proof: client=$client_version server=$server_version client_api=$client_api server_api=$server_api"
+}
+
+docker_capability_probe() (
+  set -Eeuo pipefail
+  local suffix="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$(date +%s%N)"
+  local network="rf23-capability-network-$suffix"
+  local volume="rf23-capability-volume-$suffix"
+  local container="rf23-capability-container-$suffix"
+  cleanup() {
+    docker rm -f "$container" >/dev/null 2>&1 || true
+    docker volume rm "$volume" >/dev/null 2>&1 || true
+    docker network rm "$network" >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT
+  docker network create --label com.avito-mayak.technical-id="$TECHNICAL_ID" --label com.avito-mayak.project-owned=true "$network" >/dev/null
+  docker network inspect "$network" >/dev/null
+  docker volume create --label com.avito-mayak.technical-id="$TECHNICAL_ID" --label com.avito-mayak.project-owned=true "$volume" >/dev/null
+  docker volume inspect "$volume" >/dev/null
+  docker create --name "$container" --network "$network" \
+    --mount "type=volume,src=$volume,dst=/tmp/rf23-capability" \
+    --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
+    "$IMAGE" -c 'test -S /var/run/docker.sock && test -d /tmp/rf23-capability' >/dev/null
+  docker start -a "$container" >/dev/null
+  docker inspect "$container" >/dev/null
+)
+
 run_inside() {
   export PYTHONPATH=.
   export MAYAK_RUNTIME_PROFILE=synthetic_acceptance
@@ -41,9 +83,7 @@ run_inside() {
   uv --version
   test "$(python -c 'import sys; print(sys.version_info[:3])')" = "(3, 14, 6)"
   uv --version | grep -Fx 'uv 0.11.31 (x86_64-unknown-linux-musl)'
-  docker version --format '{{.Client.Version}}/{{.Server.Version}}' | grep -F '29.2.1/29.2.1'
-  docker buildx version | grep -F 'v0.31.1'
-  test -S /var/run/docker.sock
+  docker_capability_preflight
   getent hosts mayak-postgres
   git rev-parse HEAD
   git diff --check
@@ -171,11 +211,13 @@ if [[ "${1:-}" == "--inside-runner" ]]; then
 fi
 
 command -v docker >/dev/null || die "Docker CLI unavailable"
+docker_capability_preflight
 docker build -f "$ROOT/docker/rf23-acceptance-runner.Dockerfile" -t "$IMAGE" "$ROOT"
 export RF23_TECHNICAL_ID="$TECHNICAL_ID"
 export RF23_NETWORK="rf23-c03-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-$(date +%s)"
 export RF23_DB="rf23-c03-postgres-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 export RF23_RUNNER="rf23-c03-runner-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+docker_capability_probe
 SECRETS="$(mktemp -d /tmp/rf23-c03-secrets.XXXXXX)"; chmod 700 "$SECRETS"
 cleanup() {
   docker rm -f "$RF23_RUNNER" "$RF23_DB" >/dev/null 2>&1 || true
