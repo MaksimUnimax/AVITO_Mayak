@@ -1,0 +1,203 @@
+name: RF22 Filter Catalog Builder acceptance
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rf22:
+    runs-on: ubuntu-24.04
+    container:
+      image: ubuntu:24.04
+      options: --volume /var/run/docker.sock:/var/run/docker.sock
+    env:
+      MAYAK_PROVIDER_MODE: disabled
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      RF22_DSN: postgresql+psycopg://mayak_application:rf22_application_synthetic@postgres:5432/mayak
+      RF22_DATABASE_URL: postgresql+psycopg://mayak_application:rf22_application_synthetic@postgres:5432/mayak
+      RF22_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      MAYAK_DATABASE_URL: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+      RF12_ACCEPTANCE_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF15_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf22_application_synthetic@postgres:5432/mayak
+      RF18_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf22_application_synthetic@postgres:5432/mayak
+      RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf22_application_synthetic@postgres:5432/mayak
+      RF20_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF20_DATABASE_URL: postgresql+psycopg://mayak_application:rf22_application_synthetic@postgres:5432/mayak
+      RF20_POSTGRES_OWNER_LABEL: RF22-FILTER-CATALOG-BUILDER-RUNTIME-01
+      RF21_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf22_migration_synthetic@postgres:5432/mayak
+      RF21_DSN: postgresql+psycopg://mayak_application:rf22_application_synthetic@postgres:5432/mayak
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+        env:
+          POSTGRES_DB: mayak
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: rf22_bootstrap_synthetic
+        options: >-
+          --label com.mayak.owner=RF22-FILTER-CATALOG-BUILDER-RUNTIME-01
+          --label com.mayak.task=rf22-filter-catalog-builder-runtime-01
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - name: Install runner prerequisites
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0 docker.io
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Configure process-local Git ownership trust
+        run: |
+          set -euo pipefail
+          workspace="$(pwd -P)"
+          {
+            echo GIT_CONFIG_COUNT=1
+            echo GIT_CONFIG_KEY_0=safe.directory
+            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
+          } >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14.6'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.31'
+      - run: uv sync --frozen --all-groups --python 3.14.6
+      - name: Prove complete runner and environment matrix parity
+        run: |
+          set -euo pipefail
+          python --version | grep -Fx 'Python 3.14.6'
+          uv -V | grep -Fx 'uv 0.11.31'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -n "$(ldconfig -p | grep -F libsqlite3.so.0)"
+          uv run python -c 'import sqlite3; assert sqlite3.connect(":memory:").execute("select 1").fetchone() == (1,)'
+          docker version
+          docker buildx version
+          test -s "$MAYAK_RF11_POSTGRES_PASSWORD_FILE"
+          for name in RF22_DSN RF22_DATABASE_URL RF22_MIGRATION_DSN MAYAK_DATABASE_URL RF10_POSTGRES_DSN RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN RF12_ACCEPTANCE_DSN RF15_MIGRATION_DSN RF15_DSN RF17_MIGRATION_DSN RF17_APPLICATION_DSN RF18_MIGRATION_DSN RF18_DATABASE_URL RF19_MIGRATION_DSN RF19_DATABASE_URL RF20_MIGRATION_DSN RF20_DATABASE_URL RF21_MIGRATION_DSN RF21_DSN; do
+            test -n "${!name}"
+          done
+      - name: Create synthetic password files and bootstrap PostgreSQL
+        run: |
+          set -euo pipefail
+          install -d -m 700 /run/secrets
+          printf '%s' rf22_bootstrap_synthetic > /run/secrets/mayak_postgres_bootstrap_password
+          printf '%s' rf22_migration_synthetic > /run/secrets/mayak_database_migration_password
+          printf '%s' rf22_application_synthetic > /run/secrets/mayak_database_application_password
+          chmod 600 /run/secrets/mayak_postgres_bootstrap_password /run/secrets/mayak_database_migration_password /run/secrets/mayak_database_application_password
+          uv run python - <<'PY'
+          from mayak.persistence.bootstrap import bootstrap_database
+          from mayak.persistence.config import BootstrapDatabaseSettings, DatabaseEndpoint
+          bootstrap_database(settings=BootstrapDatabaseSettings(endpoint=DatabaseEndpoint(host='postgres')))
+          PY
+          uv run alembic upgrade head
+      - name: Apply accepted broad grants and Filter Catalog SELECT-only boundary
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine('${{ env.RF22_MIGRATION_DSN }}')
+          with engine.begin() as c:
+              c.execute(text('revoke all privileges on all tables in schema mayak from mayak_application'))
+              c.execute(text('grant usage on schema mayak to mayak_application'))
+              for statement in (
+                  'grant select on table mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles to mayak_application',
+                  'grant select, insert, update on table mayak.support_cases to mayak_application',
+                  'grant select, insert on table mayak.support_case_notes, mayak.support_case_events to mayak_application',
+                  'grant select, insert, update on table mayak.platform_idempotency_records to mayak_application',
+                  'grant select, update, references on table mayak.identity_accounts to mayak_application',
+                  'grant select, insert, update on table mayak.identity_role_assignments to mayak_application',
+                  'grant select on table mayak.identity_sessions to mayak_application',
+                  'grant select, insert, references on table mayak.platform_audit_entries to mayak_application',
+                  'grant select, insert, update, references on table mayak.beacon_beacons to mayak_application',
+                  'grant select, insert, update on table mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application',
+                  'grant select, insert, references on table mayak.beacon_lifecycle_events to mayak_application',
+                  'grant select, insert on table mayak.entitlement_tariff_definitions to mayak_application',
+                  'grant select, insert, update on table mayak.entitlement_access_grants to mayak_application',
+                  'grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application',
+              ):
+                  c.execute(text(statement))
+              c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
+          PY
+      - name: Representative PostgreSQL gate before full suite
+        run: |
+          set -euo pipefail
+          export PYTHONPATH=.
+          uv run pytest -q \
+            tests/runtime/test_persistence_transaction.py::test_postgres_transaction_boundary_commits_insert \
+            tests/runtime/test_identity_runtime_postgres.py::test_synthetic_login_sessions_and_actor_spoofing_are_durable \
+            tests/runtime/test_rf12_persistence_injection.py::test_redacted_database_url_string_runtime_regression \
+            tests/runtime/test_rf18_telegram_adapter_postgres.py::test_rf18_postgres_gate_requires_explicit_task_database \
+            tests/runtime/test_rf20_postgres_acceptance.py::test_pg_direct_unrelated_foreign_dml_is_denied \
+            tests/runtime/test_rf17_notification_delivery_runtime.py::test_rf17_public_runtime_boundary_exports_only_contract_entrypoints \
+            tests/runtime/test_rf19_max_adapter_runtime.py::test_fake_transport_is_deterministic_and_supports_safe_outcomes \
+            tests/runtime/test_rf21_web_cabinet_runtime.py::test_dashboard_requires_verified_identity_and_is_compositional
+      - name: Factual RF22 PostgreSQL producer and verifier
+        run: |
+          uv run python scripts/runtime/run_rf22_postgres_acceptance.py --dsn "$RF22_DSN" --fixture-dsn "$RF22_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf22.json
+          uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA"
+      - name: Recreate clean broad-regression database
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine('${{ env.RF22_MIGRATION_DSN }}')
+          with engine.begin() as c:
+              c.execute(text('drop schema if exists mayak cascade'))
+              c.execute(text('create schema mayak authorization mayak_migration'))
+          PY
+          uv run alembic upgrade head
+      - name: Reapply broad grants with Filter Catalog SELECT-only
+        run: |
+          # The same grant boundary is intentionally repeated after clean recreation.
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine('${{ env.RF22_MIGRATION_DSN }}')
+          with engine.begin() as c:
+              c.execute(text('revoke all privileges on all tables in schema mayak from mayak_application'))
+              c.execute(text('grant usage on schema mayak to mayak_application'))
+              c.execute(text('grant select on table mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles to mayak_application'))
+              c.execute(text('grant select, insert, update on table mayak.support_cases, mayak.platform_idempotency_records, mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides, mayak.entitlement_access_grants to mayak_application'))
+              c.execute(text('grant select, insert on table mayak.support_case_notes, mayak.support_case_events, mayak.platform_audit_entries, mayak.entitlement_tariff_definitions to mayak_application'))
+              c.execute(text('grant select, update, references on table mayak.identity_accounts to mayak_application'))
+              c.execute(text('grant select on table mayak.identity_sessions, mayak.identity_role_assignments to mayak_application'))
+              c.execute(text('grant insert, update on table mayak.identity_role_assignments to mayak_application'))
+              c.execute(text('grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application'))
+              c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
+          PY
+      - name: Focused RF22 and static gates
+        run: |
+          uv run pytest -q tests/runtime/test_rf22_filter_catalog_runtime.py tests/unit/test_filter_catalog_semantic_contracts.py tests/contract/test_filter_catalog_semantic_contract_exports.py tests/architecture/test_filter_catalog_semantic_boundaries.py tests/runtime/test_filter_catalog_schema.py
+          uv run ruff check src/mayak/modules/filter_catalog/__init__.py src/mayak/modules/filter_catalog/runtime.py scripts/runtime/run_rf22_postgres_acceptance.py scripts/runtime/verify_rf22_acceptance.py scripts/runtime/check_rf22_artifact_safety.py tests/runtime/test_rf22_filter_catalog_runtime.py
+          uv run mypy src/mayak/modules/filter_catalog/runtime.py scripts/runtime/run_rf22_postgres_acceptance.py scripts/runtime/verify_rf22_acceptance.py scripts/runtime/check_rf22_artifact_safety.py
+          uv run lint-imports
+      - name: Final full repository regression
+        run: |
+          set -o pipefail
+          uv run pytest -q 2>&1 | tee rf22-full-pytest.log
+      - name: RF22 artifact safety scanner
+        run: uv run python scripts/runtime/check_rf22_artifact_safety.py rf22.json rf22-full-pytest.log
+      - name: Final RF22 verifier
+        run: uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: rf22-filter-catalog-builder-acceptance
+          path: |
+            rf22.json
+            rf22-full-pytest.log
+          if-no-files-found: error
