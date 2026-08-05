@@ -10,6 +10,7 @@ services:
       args:
         SOURCE_SHA: ${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
         LOCK_IDENTITY: ${MAYAK_LOCK_IDENTITY:?MAYAK_LOCK_IDENTITY must be set}
+        BUILD_INPUT_DIGEST: ${MAYAK_BUILD_INPUT_DIGEST:?MAYAK_BUILD_INPUT_DIGEST must be set}
     platform: linux/amd64
     user: "10001:10001"
     command: ["python", "-m", "mayak.runtime.api"]
@@ -32,8 +33,11 @@ services:
       MAYAK_LOCK_IDENTITY: ${MAYAK_LOCK_IDENTITY:?MAYAK_LOCK_IDENTITY must be set}
       MAYAK_IMAGE_DIGEST: ${MAYAK_IMAGE_DIGEST:?MAYAK_IMAGE_DIGEST must be set}
       MAYAK_PROCESS_KIND: mayak-api
-      MAYAK_API_BIND_HOST: 127.0.0.1
+      # Bind the process on the container interface; host publication remains loopback-only.
+      MAYAK_API_BIND_HOST: 0.0.0.0
       MAYAK_API_INTERNAL_PORT: "8000"
+      MAYAK_API_HOST_PORT: "18085"
+      MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
       MAYAK_DATABASE_HOST: mayak-postgres
       MAYAK_DATABASE_PORT: "5432"
       MAYAK_AVITO_LIVE_ENABLED: "false"

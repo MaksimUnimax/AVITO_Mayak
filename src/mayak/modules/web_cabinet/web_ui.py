@@ -1,4 +1,5 @@
 """Isolated server-rendered customer Web Cabinet router."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -24,19 +25,31 @@ _ROOT = Path(__file__).parent
 _TEMPLATES = Jinja2Templates(directory=str(_ROOT / "templates"))
 
 
-def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[], Any],
-                     session_provider: Callable[[Request], Any]) -> APIRouter:
-    router = APIRouter(prefix="/cabinet", tags=["web-cabinet"])
+def build_web_router(
+    *,
+    runtime: WebCabinetRuntime,
+    session_factory: Callable[[], Any],
+    session_provider: Callable[[Request], Any],
+    prefix: str = "/cabinet",
+) -> APIRouter:
+    router = APIRouter(prefix=prefix, tags=["web-cabinet"])
 
     @router.get("/static/cabinet.css", include_in_schema=False)
     def cabinet_css() -> FileResponse:
         return FileResponse(_ROOT / "static" / "cabinet.css", media_type="text/css")
 
-    def render(request: Request, *, dashboard: Any = None, error: str | None = None,
-               status_code: int = 200) -> HTMLResponse:
-        response = _TEMPLATES.TemplateResponse(request, "dashboard.html", {
-            "title": "Web Cabinet", "dashboard": dashboard, "error": error,
-        })
+    def render(
+        request: Request, *, dashboard: Any = None, error: str | None = None, status_code: int = 200
+    ) -> HTMLResponse:
+        response = _TEMPLATES.TemplateResponse(
+            request,
+            "dashboard.html",
+            {
+                "title": "Web Cabinet",
+                "dashboard": dashboard,
+                "error": error,
+            },
+        )
         response.status_code = status_code
         return response
 
@@ -54,9 +67,12 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
             value = get_dashboard(request)
         except Exception:
             return render(request, error="Временная ошибка. Попробуйте позже.", status_code=503)
-        return render(request, dashboard=value,
-                      error=None if value is not None else "Требуется проверенная сессия.",
-                      status_code=200 if value is not None else 401)
+        return render(
+            request,
+            dashboard=value,
+            error=None if value is not None else "Требуется проверенная сессия.",
+            status_code=200 if value is not None else 401,
+        )
 
     @router.get("/beacons", response_class=HTMLResponse)
     def beacons(request: Request) -> HTMLResponse:
@@ -105,8 +121,11 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
             if any(len(form.get(name, ())) != 1 for name in required):
                 raise ValueError("malformed form")
             allowed = {
-                "action", "expected_row_version", "idempotency_key",
-                "normalized_filter_values", "confirmation",
+                "action",
+                "expected_row_version",
+                "idempotency_key",
+                "normalized_filter_values",
+                "confirmation",
             }
             if set(form) - allowed or any(len(values) != 1 for values in form.values()):
                 raise ValueError("malformed form")
@@ -133,24 +152,30 @@ def build_web_router(*, runtime: WebCabinetRuntime, session_factory: Callable[[]
                     } and form.get("confirmation") != ["confirmed"]:
                         raise ValueError("exact destructive confirmation required")
                     runtime.execute_beacon_command(
-                        session, customer, beacon_id=beacon_id, action=command_kind,
+                        session,
+                        customer,
+                        beacon_id=beacon_id,
+                        action=command_kind,
                         expected_row_version=int(form["expected_row_version"][0]),
                         idempotency_key=form["idempotency_key"][0],
-                        patch={"normalized_filter_values": [
-                            value.strip()
-                            for value in form["normalized_filter_values"][0].split(",")
-                            if value.strip()
-                        ]}
-                        if "normalized_filter_values" in form else None,
+                        patch={
+                            "normalized_filter_values": [
+                                value.strip()
+                                for value in form["normalized_filter_values"][0].split(",")
+                                if value.strip()
+                            ]
+                        }
+                        if "normalized_filter_values" in form
+                        else None,
                     )
             with session_factory() as committed_session:
                 dashboard = runtime.dashboard(committed_session, reference)
             return render(request, dashboard=dashboard, error="Команда обработана.")
-        except (KeyError, ValueError, UnicodeDecodeError):
+        except KeyError, ValueError, UnicodeDecodeError:
             return render(request, error="Некорректная форма.", status_code=400)
         except WebConflictError:
             return render(request, error="Команда устарела или уже использована.", status_code=409)
-        except (PermissionError, WebRuntimeError):
+        except PermissionError, WebRuntimeError:
             return render(request, error="Команда недоступна.", status_code=403)
         except Exception:
             return render(request, error="Временная ошибка. Попробуйте позже.", status_code=503)

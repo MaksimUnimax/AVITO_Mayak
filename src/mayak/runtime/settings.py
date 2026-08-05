@@ -256,7 +256,10 @@ class MayakRuntimeSettings(BaseSettings):
             RuntimeProfile.OPERATOR_ACCEPTANCE,
             RuntimeProfile.PRODUCTION,
         }:
-            if self.api.bind_host != "127.0.0.1" or self.database.host != "mayak-postgres":
+            if (
+                self.api.bind_host != "127.0.0.1"
+                and not (self.api.bind_host == "0.0.0.0" and self.api.host_port is not None)
+            ) or self.database.host != "mayak-postgres":
                 raise ValueError("acceptance boundary violation")
         if (
             self.runtime.profile is RuntimeProfile.PRODUCTION
