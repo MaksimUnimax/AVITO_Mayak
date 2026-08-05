@@ -118,6 +118,19 @@ class _RawSecret:
 
 
 @dataclass(frozen=True, slots=True)
+class SessionReference:
+    """Opaque browser-session handle owned and consumed by Identity."""
+
+    _material: str
+
+    def __repr__(self) -> str:
+        return "SessionReference(<redacted>)"
+
+    def __str__(self) -> str:
+        return "<redacted>"
+
+
+@dataclass(frozen=True, slots=True)
 class _IssuedSession:
     metadata: SafeSessionMetadata
     token: _RawSecret
@@ -170,6 +183,60 @@ class IdentityRuntime:
         self.verifier = verifier
         self.idempotency = PostgresTerminalIdempotencyRepository()
         self.audit = PostgresAuditRepository()
+
+    def create_session_reference(self, cookie_value: str) -> SessionReference:
+        if not cookie_value:
+            raise ValueError("session cookie is empty")
+        return SessionReference(cookie_value)
+
+    def issued_session_reference(self, issued: _IssuedSession) -> SessionReference:
+        """Project an issued session into the public opaque reference bridge."""
+        if not isinstance(issued, _IssuedSession):
+            raise TypeError("Identity issued session required")
+        return SessionReference(issued.token._material)
+
+    def validate_session_reference(
+        self, session: Session, reference: SessionReference
+    ) -> SessionValidationOutcome:
+        if not isinstance(reference, SessionReference):
+            raise TypeError("Identity session reference required")
+        return self.validate_session(session, _RawSecret(reference._material))
+
+    def revoke_session_reference(
+        self,
+        session: Session,
+        reference: SessionReference,
+        *,
+        idempotency_key: Any,
+        correlation: CorrelationContext,
+    ) -> AuthSessionState:
+        if not isinstance(reference, SessionReference):
+            raise TypeError("Identity session reference required")
+        return self.revoke_my_session(
+            session, _RawSecret(reference._material),
+            idempotency_key=idempotency_key, correlation=correlation,
+        )
+
+    def mutate_role_reference(
+        self,
+        session: Session,
+        request: RoleMutationRequest,
+        reference: SessionReference,
+        *,
+        revoke: bool = False,
+    ) -> RoleAssignmentState:
+        """Apply an Identity role command from the public opaque bridge."""
+        if not isinstance(reference, SessionReference):
+            raise TypeError("Identity session reference required")
+        return self.mutate_role(
+            session, request, _RawSecret(reference._material), revoke=revoke
+        )
+
+    def synthetic_login_for_browser(
+        self, session: Session, request: SyntheticAcceptanceLoginRequest
+    ) -> tuple[SyntheticAcceptanceLoginOutcome, str | None]:
+        outcome, issued = self.synthetic_login(session, request)
+        return outcome, None if issued is None else issued.token.reveal()
 
     @staticmethod
     def _lock_key(key: Any) -> int:

@@ -9,8 +9,8 @@ import re
 from pathlib import Path
 from typing import Any, NoReturn
 
-TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02"
-LEGACY_TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-01"
+TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-03"
+LEGACY_TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02"
 SCANNER = "rf23-safety-scanner/v1"
 SUMMARY = re.compile(
     r"^(?:=|\s)*(?P<parts>(?:[0-9][0-9,]*\s+(?:passed|skipped|failed|errors?)(?:,?\s*|$))+).*\bin\s+[0-9.]+s(?:\s+\([^)]*\))?.*=*$"
@@ -44,7 +44,7 @@ def _pytest_log(path: Path) -> None:
         _fail(f"pytest log is not green: {matches[0]}")
 
 
-def _manifest(path: Path, *, root: Path) -> None:
+def _manifest(path: Path, *, root: Path, require_probe: bool = False) -> None:
     try:
         value: Any = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -59,9 +59,13 @@ def _manifest(path: Path, *, root: Path) -> None:
     ):
         _fail("scanner manifest is not a clean PASS")
     payloads = value.get("payloads")
-    if not isinstance(payloads, list) or [
-        x.get("basename") for x in payloads if isinstance(x, dict)
-    ] != ["rf23-evidence.json", "rf23-full-pytest.log"]:
+    expected_payloads = ["rf23-evidence.json", "rf23-full-pytest.log"]
+    if require_probe:
+        expected_payloads.append("rf23-runtime-probes.json")
+    if (
+        not isinstance(payloads, list)
+        or [x.get("basename") for x in payloads if isinstance(x, dict)] != expected_payloads
+    ):
         _fail("scanner manifest payload inventory is not exact")
     for item in payloads:
         if not isinstance(item, dict) or set(item) != {
@@ -77,7 +81,7 @@ def _manifest(path: Path, *, root: Path) -> None:
         basename = item["basename"]
         if (
             not isinstance(basename, str)
-            or basename not in {"rf23-evidence.json", "rf23-full-pytest.log"}
+            or basename not in set(expected_payloads)
             or Path(basename).name != basename
         ):
             _fail("unsafe scanner payload identity")
@@ -109,12 +113,23 @@ def verify(
     except (OSError, json.JSONDecodeError):
         return False
     if not isinstance(evidence, dict) or evidence.get("technical_id") not in (
-        None,
         TECHNICAL_ID,
         LEGACY_TECHNICAL_ID,
     ):
         return False
-    corrective_02 = evidence.get("technical_id") == TECHNICAL_ID
+    corrective_02 = evidence.get("technical_id") == LEGACY_TECHNICAL_ID
+    if not corrective_02:
+        probe_path = evidence.get("probe_artifact")
+        if (
+            not isinstance(probe_path, str)
+            or Path(probe_path).resolve() != root / "rf23-runtime-probes.json"
+        ):
+            return False
+        if (
+            evidence.get("probe_version") != "rf23-runtime-probes/v1"
+            or evidence.get("observation_method") != "live_http_and_process_local_git_and_ast"
+        ):
+            return False
     required = (
         "candidate_sha",
         "candidate_tree_identity",
@@ -280,7 +295,11 @@ def verify(
         _pytest_log(log_path)
         if evidence.get("pytest_log_sha256") != hashlib.sha256(log_path.read_bytes()).hexdigest():
             return False
-        _manifest(Path(manifest) if manifest else root / "rf23-safety-manifest.json", root=root)
+        _manifest(
+            Path(manifest) if manifest else root / "rf23-safety-manifest.json",
+            root=root,
+            require_probe=not corrective_02,
+        )
     except SystemExit:
         return False
     return True

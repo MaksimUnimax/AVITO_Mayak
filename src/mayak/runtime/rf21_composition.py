@@ -43,12 +43,10 @@ class IdentityWebAdapter:
     def resolve_session(self, session: Any, session_reference: Any) -> VerifiedWebCustomer | None:
         self.calls += 1
         try:
-            identity_reference = (
-                session_reference._value_as_secret()
-                if hasattr(session_reference, "_value_as_secret")
-                else session_reference
-            )
-            result = self.runtime.validate_session(session, identity_reference)
+            resolver = getattr(self.runtime, "validate_session_reference", None)
+            if resolver is None:
+                resolver = self.runtime.validate_session
+            result = resolver(session, session_reference)
         except (TypeError, ValueError):
             return None
         if result.account_id is None or result.metadata is None:
@@ -57,7 +55,7 @@ class IdentityWebAdapter:
             result.account_id,
             result.metadata.session_id,
             f"identity-session:{result.metadata.session_id}",
-            authority_context=identity_reference,
+            authority_context=session_reference,
         )
 
     def account_summary(self, session: Any, customer: VerifiedWebCustomer) -> dict[str, str]:
@@ -77,12 +75,10 @@ class CustomerIdentityAuthorityAdapter:
     def resolve(
         self, session: Any, *, actor_reference: Any, requested_account_id: UUID | None
     ) -> ResolvedActor:
-        identity_reference = (
-            actor_reference._value_as_secret()
-            if hasattr(actor_reference, "_value_as_secret")
-            else actor_reference
-        )
-        validation = self.runtime.validate_session(session, identity_reference)
+        resolver = getattr(self.runtime, "validate_session_reference", None)
+        if resolver is None:
+            resolver = self.runtime.validate_session
+        validation = resolver(session, actor_reference)
         if validation.account_id is None or validation.metadata is None:
             raise PermissionError("active Identity session required")
         if requested_account_id is not None and requested_account_id != validation.account_id:

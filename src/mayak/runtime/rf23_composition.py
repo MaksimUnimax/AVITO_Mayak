@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeAlias, cast
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -18,12 +18,13 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from mayak.contracts.idempotency import IdempotencyKey
 from mayak.modules.beacon_management.runtime import (
     BeaconManagementRuntime,
     EntitlementDecision,
 )
 from mayak.modules.entitlements_and_billing.runtime import EntitlementsBillingRuntime
-from mayak.modules.identity_and_access.runtime import IdentityRuntime
+from mayak.modules.identity_and_access import IdentityRuntime, SessionReference
 from mayak.modules.notification_delivery.runtime import read_history
 from mayak.persistence.config import ApplicationDatabaseSettings, DatabaseEndpoint
 from mayak.persistence.engine import create_application_engine
@@ -53,22 +54,7 @@ class CustomerEntitlementPort:
         return EntitlementDecision(allowed=allowed, reference="entitlements-runtime")
 
 
-@dataclass(frozen=True, slots=True)
-class CustomerSessionReference:
-    """Opaque transport reference; its repr/str never contains cookie material."""
-
-    _value: str
-
-    def __repr__(self) -> str:
-        return "CustomerSessionReference(<redacted>)"
-
-    def __str__(self) -> str:
-        return "<redacted>"
-
-    def _value_as_secret(self) -> Any:
-        from mayak.modules.identity_and_access.runtime import _RawSecret
-
-        return _RawSecret(self._value)
+CustomerSessionReference: TypeAlias = SessionReference
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,26 +86,20 @@ class RF23Composition:
         return self.sessions()
 
     def customer_session(self, cookie_value: str) -> CustomerSessionReference:
-        if not cookie_value:
-            raise ValueError("session cookie is empty")
-        return CustomerSessionReference(cookie_value)
+        return self.identity.create_session_reference(cookie_value)
 
     def validate_customer_session(self, session: Session, cookie_value: str) -> Any:
-        return self.identity.validate_session(
-            session, self.customer_session(cookie_value)._value_as_secret()
+        return self.identity.validate_session_reference(
+            session, self.customer_session(cookie_value)
         )
 
     def validate_session_reference(
         self, session: Session, reference: CustomerSessionReference
     ) -> Any:
-        return self.identity.validate_session(session, reference._value_as_secret())
-
-    def _secret(self, reference: CustomerSessionReference) -> Any:
-        return reference._value_as_secret()
+        return self.identity.validate_session_reference(session, reference)
 
     def synthetic_login(self, session: Session, request: Any) -> tuple[Any, str | None]:
-        outcome, issued = self.identity.synthetic_login(session, request)
-        return outcome, None if issued is None else issued.token.reveal()
+        return self.identity.synthetic_login_for_browser(session, request)
 
     def revoke_session(
         self,
@@ -129,10 +109,10 @@ class RF23Composition:
         idempotency_key: str,
         correlation: Any,
     ) -> Any:
-        return self.identity.revoke_my_session(
+        return self.identity.revoke_session_reference(
             session,
-            self._secret(reference),
-            idempotency_key=idempotency_key,
+            reference,
+            idempotency_key=IdempotencyKey(value=idempotency_key),
             correlation=correlation,
         )
 
@@ -243,9 +223,7 @@ class RF23Composition:
         )
 
     def operator_validation(self, session: Session, cookie_value: str) -> Any:
-        return self.rf20.identity.verify_operator(
-            session, self.customer_session(cookie_value)._value_as_secret()
-        )
+        return self.rf20.identity.verify_operator(session, self.customer_session(cookie_value))
 
     @staticmethod
     def safe_error_status(exc: Exception) -> int:

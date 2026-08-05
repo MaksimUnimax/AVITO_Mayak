@@ -3,6 +3,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
 TRANSPORT = ROOT / "src/mayak/entrypoints/api"
+INTEGRATION = (
+    ROOT / "src/mayak/runtime/rf21_composition.py",
+    ROOT / "src/mayak/runtime/rf23_composition.py",
+)
 FORBIDDEN_MODULES = {
     "mayak.persistence.schema",
     "mayak.modules.identity_and_access.runtime",
@@ -37,6 +41,40 @@ def _inventory(source: str) -> dict[str, int]:
     }
 
 
+def _integration_inventory(source: str) -> dict[str, int]:
+    tree = ast.parse(source)
+    private_imports = private_refs = duck_typing = secret_reveals = 0
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            private_imports += sum(alias.name.startswith("_") for alias in node.names)
+        if isinstance(node, ast.Name) and node.id == "_RawSecret":
+            private_refs += 1
+        if isinstance(node, ast.Attribute) and node.attr == "_value_as_secret":
+            private_refs += 1
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "hasattr"
+        ):
+            if any(
+                isinstance(arg, ast.Constant) and arg.value == "_value_as_secret"
+                for arg in node.args
+            ):
+                duck_typing += 1
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "reveal"
+        ):
+            secret_reveals += 1
+    return {
+        "private_imports": private_imports,
+        "private_refs": private_refs,
+        "duck_typing": duck_typing,
+        "secret_reveals": secret_reveals,
+    }
+
+
 def test_rf23_transport_ast_inventory_is_clean() -> None:
     inventory = {key: 0 for key in ("forbidden", "private", "read_model", "dml")}
     for path in TRANSPORT.rglob("*.py"):
@@ -60,3 +98,21 @@ def test_rf23_transport_gate_rejects_adversarial_forbidden_import() -> None:
         == 1
     )
     assert _inventory("session.execute(text('select 1'))")["dml"] == 1
+
+
+def test_rf23_integration_boundary_is_clean() -> None:
+    inventory = {
+        key: 0 for key in ("private_imports", "private_refs", "duck_typing", "secret_reveals")
+    }
+    for path in INTEGRATION:
+        current = _integration_inventory(path.read_text(encoding="utf-8"))
+        for key in inventory:
+            inventory[key] += current[key]
+    assert inventory == {key: 0 for key in inventory}
+
+
+def test_rf23_integration_gate_rejects_each_private_pattern() -> None:
+    assert _integration_inventory("from x import _RawSecret")["private_imports"] == 1
+    assert _integration_inventory("x._value_as_secret()")["private_refs"] == 1
+    assert _integration_inventory('hasattr(x, "_value_as_secret")')["duck_typing"] == 1
+    assert _integration_inventory("issued.token.reveal()")["secret_reveals"] == 1

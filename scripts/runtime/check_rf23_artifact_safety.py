@@ -42,7 +42,16 @@ def transport_inventory(repo_root: Path) -> dict[str, int]:
         "mayak.modules.max_adapter.runtime",
         "mayak.modules.beacon_management.runtime",
     }
-    result = {"forbidden": 0, "private_identity": 0, "owner_read_model": 0, "direct_dml": 0}
+    result = {
+        "forbidden": 0,
+        "private_identity": 0,
+        "owner_read_model": 0,
+        "direct_dml": 0,
+        "integration_private_imports": 0,
+        "integration_private_refs": 0,
+        "integration_duck_typing": 0,
+        "integration_secret_reveals": 0,
+    }
     root = repo_root / "src/mayak/entrypoints/api"
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -66,6 +75,36 @@ def transport_inventory(repo_root: Path) -> dict[str, int]:
                 and node.func.attr in {"insert", "update", "delete", "execute"}
             ):
                 result["direct_dml"] += 1
+    for path in (
+        repo_root / "src/mayak/runtime/rf21_composition.py",
+        repo_root / "src/mayak/runtime/rf23_composition.py",
+    ):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                result["integration_private_imports"] += sum(
+                    alias.name.startswith("_") for alias in node.names
+                )
+            if isinstance(node, ast.Name) and node.id == "_RawSecret":
+                result["integration_private_refs"] += 1
+            if isinstance(node, ast.Attribute) and node.attr == "_value_as_secret":
+                result["integration_private_refs"] += 1
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "hasattr"
+            ):
+                if any(
+                    isinstance(arg, ast.Constant) and arg.value == "_value_as_secret"
+                    for arg in node.args
+                ):
+                    result["integration_duck_typing"] += 1
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "reveal"
+            ):
+                result["integration_secret_reveals"] += 1
     return result
 
 
@@ -86,18 +125,22 @@ def _find(value: object, path: str = "$") -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("paths", nargs=2, type=Path)
+    parser.add_argument("paths", nargs="+", type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     args = parser.parse_args()
-    if tuple(path.name for path in args.paths) != EXPECTED or any(
-        path.name != path.parts[-1] or ".." in path.parts for path in args.paths
+    if (
+        len(args.paths) not in (2, 3)
+        or tuple(path.name for path in args.paths[:2]) != EXPECTED
+        or any(path.name != path.parts[-1] or ".." in path.parts for path in args.paths)
     ):
         raise SystemExit(
             "RF23 safety scanner requires exact payloads: rf23-evidence.json rf23-full-pytest.log"
         )
 
     findings: list[str] = []
+    if len(args.paths) == 3 and args.paths[2].name != "rf23-runtime-probes.json":
+        findings.append("runtime probe basename is not exact")
     transport = transport_inventory(args.repo_root.resolve())
     if any(transport.values()):
         findings.append(f"transport boundary violations: {transport}")
@@ -107,7 +150,7 @@ def main() -> int:
             findings.append(f"missing payload: {path.name}")
             continue
         raw = path.read_bytes()
-        if path.name == EXPECTED[0]:
+        if path.name in {EXPECTED[0], "rf23-runtime-probes.json"}:
             try:
                 findings.extend(_find(json.loads(raw.decode("utf-8"))))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -125,12 +168,17 @@ def main() -> int:
                 "finding_count": len(findings),
             }
         )
+    expected_payload_count = len(args.paths)
     manifest = {
         "scanner_method": VERSION,
         "payloads": payloads,
         "finding_count": len(findings),
-        "classification": "PASS" if not findings and len(payloads) == 2 else "BLOCKED",
-        "scanner_result": "PASS" if not findings and len(payloads) == 2 else "FAIL",
+        "classification": "PASS"
+        if not findings and len(payloads) == expected_payload_count
+        else "BLOCKED",
+        "scanner_result": "PASS"
+        if not findings and len(payloads) == expected_payload_count
+        else "FAIL",
         "findings": findings,
         "transport_inventory": transport,
     }

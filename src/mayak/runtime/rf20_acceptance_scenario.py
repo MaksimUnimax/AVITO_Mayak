@@ -142,7 +142,9 @@ def host_postgres_publication_proof(
                 if isinstance(net, dict) and net.get("IPAddress")
             }
             if image.lower().startswith("postgres:") or "postgres" in aliases:
-                candidates.append({"info": info, "aliases": aliases, "name": name, "addresses": addresses})
+                candidates.append(
+                    {"info": info, "aliases": aliases, "name": name, "addresses": addresses}
+                )
         matching = [
             candidate
             for candidate in candidates
@@ -150,9 +152,19 @@ def host_postgres_publication_proof(
             or endpoint_host == candidate["name"]
             or endpoint_host in candidate["addresses"]
         ]
-        if len(matching) != 1:
+        owned_matching = [
+            candidate
+            for candidate in matching
+            if isinstance(candidate["info"].get("Config", {}).get("Labels"), dict)
+            and candidate["info"]["Config"]["Labels"].get("com.mayak.owner") == owner
+        ]
+        if len(owned_matching) > 1:
             raise RuntimeError("actual RF20 PostgreSQL endpoint is ambiguous or unresolved")
-        selected = matching[0]["info"]
+        if len(owned_matching) == 0:
+            if len(matching) == 1:
+                raise RuntimeError("actual PostgreSQL endpoint is outside the current RF20 context")
+            raise RuntimeError("actual RF20 PostgreSQL endpoint is ambiguous or unresolved")
+        selected = owned_matching[0]["info"]
         labels = selected.get("Config", {}).get("Labels")
         if not isinstance(labels, dict) or labels.get("com.mayak.owner") != owner:
             raise RuntimeError("actual PostgreSQL endpoint is outside the current RF20 context")
@@ -180,7 +192,7 @@ def host_postgres_publication_proof(
             "endpoint_host": endpoint_host,
             "endpoint_port": endpoint_port,
             "association": "exact_network_alias_or_container_ip",
-            "candidate_count": len(matching),
+            "candidate_count": len(owned_matching),
             "postgres_candidate_inventory_count": len(candidates),
             "actual_endpoint_container_id": container_id[:12],
             "selected_container_id": container_id[:12],
@@ -349,7 +361,9 @@ def run_rf20_acceptance_scenario(
     httpx.AsyncClient.send = observed_async_http_send  # type: ignore[method-assign]
     runtime = composition.runtime()
     with Session(application_engine) as session:
-        actor = composition.identity.verify_operator(session, issued.token)
+        actor = composition.identity.verify_operator(
+            session, identity.issued_session_reference(issued)
+        )
         runtime.safe_account_summary(session, actor=actor, account_id=customer_id)
         opened = runtime.open_case(
             session,

@@ -70,7 +70,10 @@ class IdentityAuthorityAdapter:
 
     def verify_operator(self, session: Session, session_reference: Any) -> VerifiedActor:
         self.calls += 1
-        validation = self.identity.validate_session(session, session_reference)
+        resolver = getattr(self.identity, "validate_session_reference", None)
+        if resolver is None:
+            resolver = self.identity.validate_session
+        validation = resolver(session, session_reference)
         account_id = validation.account_id
         if account_id is None:
             raise AuthorizationDenied("active Identity session required")
@@ -111,7 +114,7 @@ class IdentityAuthorityAdapter:
         }.get(action)
         if role is None:
             raise AuthorizationDenied("unsupported Identity role action")
-        state = self.identity.mutate_role(
+        state = self.identity.mutate_role_reference(
             session,
             RoleMutationRequest(
                 session_id=UUID(actor.authorization_reference.split(":", 1)[1]),

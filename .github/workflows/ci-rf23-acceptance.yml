@@ -8,207 +8,32 @@ on:
 permissions:
   contents: read
 
-env:
-  RF23_TECHNICAL_ID: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02
-  MAYAK_RUNTIME_PROFILE: synthetic_acceptance
-  MAYAK_ENVIRONMENT_ID: avito-mayak-rf23-ci
-  MAYAK_DATABASE_HOST: postgres
-  MAYAK_DATABASE_PORT: "5432"
-  MAYAK_DATABASE_NAME: mayak
-  MAYAK_DATABASE_APPLICATION_USER: mayak_application
-  MAYAK_DATABASE_MIGRATION_USER: mayak_migration
-  RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF12_ACCEPTANCE_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF15_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF17_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF17_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  RF18_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF18_DATABASE_URL: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  RF19_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF19_DATABASE_URL: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  RF20_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF20_DATABASE_URL: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  RF21_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF21_DSN: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  RF22_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF22_DSN: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  RF22_DATABASE_URL: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  RF23_MIGRATION_DSN: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  RF23_APPLICATION_DSN: postgresql+psycopg://mayak_application:rf23_application_synthetic@postgres:5432/mayak
-  MAYAK_DATABASE_URL: postgresql+psycopg://mayak_migration:rf23_migration_synthetic@postgres:5432/mayak
-  MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
-  PYTHONPATH: .
-
 jobs:
   acceptance:
     runs-on: ubuntu-24.04
-    container:
-      image: ubuntu:24.04
-      options: --volume /var/run/docker.sock:/var/run/docker.sock
-    services:
-      postgres:
-        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
-        env:
-          POSTGRES_DB: mayak
-          POSTGRES_USER: mayak
-          POSTGRES_PASSWORD: rf23_bootstrap_synthetic
-        options: >-
-          --label com.avito-mayak.technical-id=RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02
-          --label com.mayak.owner=RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-04
-          --health-cmd "pg_isready -U mayak -d mayak"
-          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      RF20_POSTGRES_OWNER_LABEL: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-03
     steps:
-      - name: Install runner prerequisites
-        run: |
-          set -euo pipefail
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git libsqlite3-0 docker.io docker-buildx curl
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.14.6'
-      - uses: astral-sh/setup-uv@v6
-        with:
-          version: '0.11.31'
-      - name: Prove single runner namespace
+      - name: Install Docker and checkout prerequisites
         run: |
           set -euo pipefail
-          python --version | grep -Fx 'Python 3.14.6'
-          uv -V | grep -Fx 'uv 0.11.31'
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          docker version
-          docker buildx version
-          test "$(stat -c '%d:%i' .)" = "$(stat -c '%d:%i' .)"
-      - run: uv sync --frozen --all-groups --python 3.14.6
-      - name: Create task-local synthetic secret files
-        run: |
-          set -euo pipefail
-          install -d -m 700 /run/secrets
-          printf '%s' rf23_bootstrap_synthetic > /run/secrets/mayak_postgres_bootstrap_password
-          printf '%s' rf23_migration_synthetic > /run/secrets/mayak_database_migration_password
-          printf '%s' rf23_application_synthetic > /run/secrets/mayak_database_application_password
-          chmod 600 /run/secrets/mayak_postgres_bootstrap_password /run/secrets/mayak_database_migration_password /run/secrets/mayak_database_application_password
-          test "$(stat -c '%a' /run/secrets/mayak_database_migration_password)" = 600
-      - name: Bootstrap roles, migrate from zero, and apply accepted grants
-        run: |
-          set -euo pipefail
-          uv run python -m mayak.persistence.bootstrap
-          uv run alembic upgrade head
-          uv run python - <<'PY'
-          import os
-          from sqlalchemy import create_engine, text
-          engine = create_engine(os.environ['RF23_MIGRATION_DSN'])
-          with engine.begin() as c:
-              c.execute(text('revoke all privileges on all tables in schema mayak from mayak_application'))
-              c.execute(text('grant usage on schema mayak to mayak_application'))
-              for statement in (
-                  'grant select on table mayak.alembic_version to mayak_application',
-                  'grant select on table mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles to mayak_application',
-                  'grant select, insert, update on table mayak.support_cases to mayak_application',
-                  'grant select, insert on table mayak.support_case_notes, mayak.support_case_events to mayak_application',
-                  'grant select, insert, update on table mayak.platform_idempotency_records to mayak_application',
-                  'grant select, update, references on table mayak.identity_accounts to mayak_application',
-                  'grant select, insert, update on table mayak.identity_role_assignments to mayak_application',
-                  'grant select on table mayak.identity_sessions to mayak_application',
-                  'grant select, insert on table mayak.platform_audit_entries to mayak_application',
-                  'grant select, insert, update on table mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application',
-                  'grant select, insert, references on table mayak.beacon_lifecycle_events to mayak_application',
-                  'grant select, insert on table mayak.entitlement_tariff_definitions to mayak_application',
-                  'grant select, insert, update on table mayak.entitlement_access_grants to mayak_application',
-                  'grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application',
-              ):
-                  c.execute(text(statement))
-              c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
-              assert c.execute(text('select current_user')).scalar_one() == 'mayak_migration'
-              assert c.execute(text("select has_schema_privilege('mayak_application','mayak','CREATE')")).scalar_one() is False
-          PY
-          uv run alembic current | grep -F '(head)'
-      - name: Previous settings failure node and representative PostgreSQL gate
-        run: |
-          set -euo pipefail
-          uv run pytest -q tests/runtime/test_settings.py
-          uv run pytest -q tests/runtime/test_persistence_transaction.py tests/runtime/test_platform_idempotency_repository_postgres.py tests/runtime/test_identity_runtime_postgres.py tests/runtime/test_rf18_telegram_adapter_postgres.py tests/runtime/test_rf20_postgres_acceptance.py tests/runtime/test_rf22_filter_catalog_runtime.py tests/runtime/test_rf23_api_contract.py
-      - name: Focused RF23 static and architecture gates
-        run: |
-          uv run pytest -q tests/architecture/test_rf23_transport_boundary.py tests/runtime/test_rf23_api_contract.py tests/runtime/test_rf23_acceptance_chain.py tests/runtime/test_rf21_web_ui.py tests/runtime/test_rf20_admin_ui.py
-          uv run ruff check src/mayak/entrypoints/api src/mayak/runtime/api.py src/mayak/runtime/rf23_composition.py src/mayak/runtime/settings.py scripts/runtime/run_rf23_postgres_acceptance.py scripts/runtime/verify_rf23_acceptance.py scripts/runtime/check_rf23_artifact_safety.py
-          uv run mypy src/mayak/entrypoints/api src/mayak/runtime/api.py src/mayak/runtime/rf23_composition.py scripts/runtime/run_rf23_postgres_acceptance.py scripts/runtime/verify_rf23_acceptance.py scripts/runtime/check_rf23_artifact_safety.py
-          uv run lint-imports
-      - name: Actual API runtime and factual producer
-        run: |
-          set -euo pipefail
-          MAYAK_PROCESS_KIND=mayak-api MAYAK_SOURCE_SHA="$GITHUB_SHA" MAYAK_LOCK_IDENTITY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef MAYAK_IMAGE_DIGEST=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef uv run python -m mayak.runtime.api > rf23-api.log 2>&1 &
-          api_pid=$!
-          trap 'kill "$api_pid" 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/health/live && break || sleep 1; done
-      - name: Docker Compose validation and image gate
-        run: |
-          set -euo pipefail
-          export MAYAK_SOURCE_SHA="$GITHUB_SHA"
-          export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
-          export MAYAK_BUILD_INPUT_DIGEST="$(sha256sum Dockerfile | cut -d' ' -f1)"
-          export MAYAK_IMAGE_DIGEST="sha256:$MAYAK_BUILD_INPUT_DIGEST"
-          docker compose -f compose.yaml --profile runtime-foundation config >/dev/null
-          docker compose -f compose.yaml --profile runtime-foundation build mayak-api
-      - name: Recreate clean database and run full repository regression
-        run: |
-          set -euo pipefail
-          uv run python - <<'PY'
-          import os
-          import psycopg
-          from pathlib import Path
-          with psycopg.connect(host='postgres', dbname='mayak', user='mayak', password=Path('/run/secrets/mayak_postgres_bootstrap_password').read_text()) as c:
-              c.execute('drop schema if exists mayak cascade')
-              c.commit()
-          PY
-          uv run python -m mayak.persistence.bootstrap
-          uv run alembic upgrade head
-          uv run python - <<'PY'
-          import os
-          from sqlalchemy import create_engine, text
-          grants = (
-              'grant select on table mayak.alembic_version to mayak_application',
-              'grant select on table mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles to mayak_application',
-              'grant select, insert, update on table mayak.support_cases to mayak_application',
-              'grant select, insert on table mayak.support_case_notes, mayak.support_case_events to mayak_application',
-              'grant select, insert, update on table mayak.platform_idempotency_records to mayak_application',
-              'grant select, update, references on table mayak.identity_accounts to mayak_application',
-              'grant select, insert, update on table mayak.identity_role_assignments to mayak_application',
-              'grant select on table mayak.identity_sessions to mayak_application',
-              'grant select, insert on table mayak.platform_audit_entries to mayak_application',
-              'grant select, insert, update on table mayak.beacon_beacons, mayak.beacon_configuration_revisions, mayak.beacon_filter_overrides to mayak_application',
-              'grant select, insert, references on table mayak.beacon_lifecycle_events to mayak_application',
-              'grant select, insert on table mayak.entitlement_tariff_definitions to mayak_application',
-              'grant select, insert, update on table mayak.entitlement_access_grants to mayak_application',
-              'grant select on table mayak.notification_events, mayak.notification_outbox, mayak.notification_endpoints, mayak.notification_delivery_attempts, mayak.notification_delivery_reconciliations to mayak_application',
-          )
-          with create_engine(os.environ['RF23_MIGRATION_DSN']).begin() as c:
-              c.execute(text('revoke all privileges on all tables in schema mayak from mayak_application'))
-              c.execute(text('grant usage on schema mayak to mayak_application'))
-              for grant in grants: c.execute(text(grant))
-              c.execute(text('revoke all on all sequences in schema mayak from mayak_application'))
-          PY
-          uv run pytest -q 2>&1 | tee rf23-full-pytest.log
-      - name: Rebind final producer, scan manifest, and verify fail-closed acceptance
-        run: |
-          set -euo pipefail
-          uv run python scripts/runtime/run_rf23_postgres_acceptance.py rf23-evidence.json --repo-root . --pytest-log rf23-full-pytest.log
-          uv run python scripts/runtime/check_rf23_artifact_safety.py rf23-evidence.json rf23-full-pytest.log --manifest rf23-safety-manifest.json --repo-root .
-          uv run python scripts/runtime/verify_rf23_acceptance.py rf23-evidence.json --expected-sha "$GITHUB_SHA" --expected-tree "$(git rev-parse HEAD^{tree})" --manifest rf23-safety-manifest.json --pytest-log rf23-full-pytest.log
-          test -s rf23-safety-manifest.json
-      - uses: actions/upload-artifact@v4
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates docker.io git
+      - name: Run the authoritative RF23 acceptance chain
+        run: scripts/runtime/run_rf23_acceptance_chain.sh
+      - name: Upload authoritative RF23 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: rf23-cross-module-api-command-wiring
+          if-no-files-found: ignore
           path: |
             rf23-evidence.json
+            rf23-runtime-probes.json
             rf23-api.log
             rf23-full-pytest.log
             rf23-safety-manifest.json
-          if-no-files-found: error

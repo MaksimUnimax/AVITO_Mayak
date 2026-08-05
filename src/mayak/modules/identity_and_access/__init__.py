@@ -63,6 +63,7 @@ __all__ = [
     "TargetScopeKind",
     "TargetSessionRevocationRequest",
     "IdentityRuntime",
+    "SessionReference",
     "ProviderIdentityClaim",
     "AdminRecoveryRequest",
     "AdminRecoveryState",
@@ -75,4 +76,8 @@ def __getattr__(name: str) -> Any:
         from .runtime import IdentityRuntime
 
         return IdentityRuntime
+    if name == "SessionReference":
+        from .runtime import SessionReference
+
+        return SessionReference
     raise AttributeError(name)
