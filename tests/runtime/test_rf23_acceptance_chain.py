@@ -24,13 +24,21 @@ def test_rf23_hosted_bootstrap_uses_existing_docker_and_authoritative_chain() ->
     assert "if-no-files-found: error" in workflow
 
 
-def test_rf23_docker_authority_pins_client_but_proves_server_capabilities() -> None:
+def test_rf23_docker_authority_separates_host_capabilities_from_runner_pins() -> None:
     source = ORCHESTRATOR.read_text(encoding="utf-8")
-    assert 'test "$client_version" = "29.2.1"' in source
-    assert "docker info" in source
-    assert "docker buildx version" in source
-    assert 'test -n "$server_version"' in source
-    assert 'test -n "$server_api"' in source
+    host = source.split("acceptance_runner_toolchain_preflight()", 1)[0]
+    runner = source.split("acceptance_runner_toolchain_preflight()", 1)[1].split(
+        "docker_capability_probe()", 1
+    )[0]
+    assert "host_docker_capability_preflight" in source
+    assert "acceptance_runner_toolchain_preflight" in source
+    assert 'test "$client_version" = "29.2.1"' not in host
+    assert "v0.31.1" not in host
+    assert 'test "$server_version" = ' not in host
+    assert 'test "$client_version" = "29.2.1"' in runner
+    assert 'test "$buildx_version" = "v0.31.1"' in runner
+    assert "docker info" in runner
+    assert 'test -n "$server_version" -a -n "$client_api" -a -n "$server_api"' in runner
     assert "29.2.1/29.2.1" not in source
     assert "docker network create" in source
     assert "docker network inspect" in source
@@ -40,6 +48,15 @@ def test_rf23_docker_authority_pins_client_but_proves_server_capabilities() -> N
     assert "docker start -a" in source
     assert "docker inspect" in source
     assert "--mount type=bind,src=/var/run/docker.sock" in source
+
+
+def test_rf23_active_provenance_is_c05_and_c03_is_absent_from_acceptance_scope() -> None:
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    source = ORCHESTRATOR.read_text(encoding="utf-8")
+    assert "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05" in workflow
+    assert "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05" in source
+    assert "CORRECTIVE-03" not in workflow
+    assert "rf23-c03" not in source
 
 
 def test_rf23_topology_proof_remains_task_owned_without_host_postgres_publish() -> None:
@@ -54,7 +71,7 @@ def test_rf23_topology_proof_remains_task_owned_without_host_postgres_publish() 
 
 def _evidence() -> dict[str, object]:
     return {
-        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02",
+        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05",
         "candidate_sha": "a" * 40,
         "candidate_tree_identity": "b" * 40,
         "observation_source": "live_http_and_process_local_git",
@@ -120,13 +137,30 @@ def _run(
     evidence = tmp_path / "rf23-evidence.json"
     log = tmp_path / "rf23-full-pytest.log"
     manifest = tmp_path / "rf23-safety-manifest.json"
-    evidence.write_text(json.dumps(_evidence()), encoding="utf-8")
+    evidence_data = _evidence()
+    evidence_data.update(
+        {
+            "probe_artifact": (tmp_path / "rf23-runtime-probes.json").resolve().as_posix(),
+            "probe_version": "rf23-runtime-probes/v1",
+            "observation_method": "live_http_and_process_local_git_and_ast",
+        }
+    )
+    (tmp_path / "rf23-runtime-probes.json").write_text("{}", encoding="utf-8")
+    evidence.write_text(json.dumps(evidence_data), encoding="utf-8")
     log.write_text(summary, encoding="utf-8")
     evidence_data = json.loads(evidence.read_text(encoding="utf-8"))
     evidence_data["pytest_log_sha256"] = hashlib.sha256(log.read_bytes()).hexdigest()
     evidence.write_text(json.dumps(evidence_data), encoding="utf-8")
     result = subprocess.run(
-        [sys.executable, str(SCAN), str(evidence), str(log), "--manifest", str(manifest)],
+        [
+            sys.executable,
+            str(SCAN),
+            str(evidence),
+            str(log),
+            str(tmp_path / "rf23-runtime-probes.json"),
+            "--manifest",
+            str(manifest),
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -290,7 +324,15 @@ def test_rf23_verifier_rejects_complete_material_adversarial_matrix(tmp_path: Pa
             data["password"] = "secret"
             evidence.write_text(json.dumps(data), encoding="utf-8")
             subprocess.run(
-                [sys.executable, str(SCAN), str(evidence), str(log), "--manifest", str(manifest)],
+                [
+                    sys.executable,
+                    str(SCAN),
+                    str(evidence),
+                    str(log),
+                    str(case_dir / "rf23-runtime-probes.json"),
+                    "--manifest",
+                    str(manifest),
+                ],
                 check=False,
             )
         elif field == "producer_digest":

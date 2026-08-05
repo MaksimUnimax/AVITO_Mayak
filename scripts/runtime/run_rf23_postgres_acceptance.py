@@ -26,7 +26,7 @@ def observe(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD^{tree}"], text=True
     ).strip()
     if (
-        evidence.get("technical_id") != "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-03"
+        evidence.get("technical_id") != "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-05"
         or evidence.get("candidate_sha") != expected_sha
         or evidence.get("candidate_tree_identity") != expected_tree
     ):
