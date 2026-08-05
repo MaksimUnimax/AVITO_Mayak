@@ -11,7 +11,7 @@ VERIFY = ROOT / "scripts/runtime/verify_rf23_acceptance.py"
 
 def _evidence() -> dict[str, object]:
     return {
-        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-01",
+        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02",
         "candidate_sha": "a" * 40,
         "candidate_tree_identity": "b" * 40,
         "observation_source": "live_http_and_process_local_git",
@@ -24,7 +24,10 @@ def _evidence() -> dict[str, object]:
         "route_inventory": ["/health/live", "/health/ready", "/version", "/acceptance/login"],
         "health": {"status": 200},
         "readiness": {"status": 200},
-        "version": {"status": 200},
+        "version": {
+            "status": 200,
+            "body": {"migration_head": "rf23_head", "migration_revision": "rf23_head"},
+        },
         "authentication_outcomes": "proven",
         "authorization_outcomes": "proven",
         "idempotency": "proven",
@@ -48,6 +51,23 @@ def _evidence() -> dict[str, object]:
         "runtime_profile": "synthetic_acceptance",
         "db_loss_readiness": "unhealthy",
         "db_recovery_readiness": "healthy",
+        "transport_inventory": {
+            "forbidden": 0,
+            "private_identity": 0,
+            "owner_read_model": 0,
+            "direct_dml": 0,
+        },
+        "expected_migration_head": "rf23_head",
+        "observed_migration_revision": "rf23_head",
+        "current_schema_readiness": True,
+        "stale_schema_readiness": "rejected",
+        "same_origin_allowed": "allowed",
+        "cross_origin_rejected": "rejected",
+        "missing_origin_rejected": "rejected",
+        "malformed_origin_rejected": "rejected",
+        "csrf_rejected_owner_mutations": 0,
+        "beacon_create_unknown_field_rejected": True,
+        "beacon_create_forged_authority_rejected": True,
     }
 
 
@@ -148,7 +168,8 @@ def test_rf23_verifier_rejects_complete_material_adversarial_matrix(tmp_path: Pa
         "idempotency key not required": ("idempotency", "not_required"),
         "same-key conflict flipped": ("explicit_http_error_mapping", "missing_conflict"),
         "same-key different-fingerprint conflict flipped": (
-            "idempotency_conflict_outcome", "accepted"
+            "idempotency_conflict_outcome",
+            "accepted",
         ),
         "duplicate domain effect count": ("duplicate_domain_effect_count", 1),
         "healthy readiness falsified": ("readiness", {"status": 500}),
@@ -173,8 +194,37 @@ def test_rf23_verifier_rejects_complete_material_adversarial_matrix(tmp_path: Pa
         "scanned-artifact substitution": ("artifact_substitution", None),
         "real sensitive finding inserted": ("sensitive", None),
         "producer artifact digest mismatch": ("producer_digest", None),
+        "private Identity import falsely reported zero": (
+            "transport_inventory",
+            {"forbidden": 1, "private_identity": 1, "owner_read_model": 0, "direct_dml": 0},
+        ),
+        "owner runtime import falsely reported zero": (
+            "transport_inventory",
+            {"forbidden": 1, "private_identity": 0, "owner_read_model": 0, "direct_dml": 0},
+        ),
+        "owner read-model import falsely reported zero": (
+            "transport_inventory",
+            {"forbidden": 1, "private_identity": 0, "owner_read_model": 1, "direct_dml": 0},
+        ),
+        "cross-origin mutation changed to allowed": ("cross_origin_rejected", "allowed"),
+        "missing-Origin mutation changed to allowed": ("missing_origin_rejected", "allowed"),
+        "malformed-Origin mutation changed to allowed": ("malformed_origin_rejected", "allowed"),
+        "CSRF owner mutation count changed": ("csrf_rejected_owner_mutations", 1),
+        "expected migration head tampered": ("expected_migration_head", "tampered"),
+        "observed migration stale while ready": ("observed_migration_revision", "stale"),
+        "stale-schema rejection removed": ("stale_schema_readiness", "allowed"),
+        "version migration head omitted": (
+            "version",
+            {"status": 200, "body": {"migration_revision": "rf23_head"}},
+        ),
+        "version observed revision omitted": (
+            "version",
+            {"status": 200, "body": {"migration_head": "rf23_head"}},
+        ),
+        "strict DTO unknown-field accepted": ("beacon_create_unknown_field_rejected", False),
+        "forged authority field accepted": ("beacon_create_forged_authority_rejected", False),
     }
-    assert len(mutations) >= 35
+    assert len(mutations) > 38
     for case, (field, value) in mutations.items():
         case_dir = tmp_path / case.replace(" ", "_")
         case_dir.mkdir()

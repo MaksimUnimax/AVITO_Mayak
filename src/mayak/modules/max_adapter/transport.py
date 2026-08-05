@@ -119,7 +119,7 @@ class HttpxMaxTransport:
                 params=params,
             )
             body = response.content
-        except httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError:
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError):
             return MaxTransportResult(
                 MaxTransportClass.AMBIGUOUS,
                 reason_code="transport_failure",
@@ -164,7 +164,7 @@ class HttpxMaxTransport:
             )
         try:
             payload = json.loads(body)
-        except UnicodeDecodeError, json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             return MaxTransportResult(
                 MaxTransportClass.MALFORMED,
                 reason_code="malformed_json",
@@ -214,7 +214,7 @@ class HttpxMaxTransport:
                 params={"marker": marker, "limit": limit, "timeout": timeout},
             )
             body = response.content
-        except httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError, httpx.HTTPError:
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError, httpx.HTTPError):
             return MaxUpdateBatch(MaxTransportClass.AMBIGUOUS, reason_code="transport_failure")
         if len(body) > self._limit:
             return MaxUpdateBatch(MaxTransportClass.MALFORMED, reason_code="response_too_large")
@@ -228,7 +228,7 @@ class HttpxMaxTransport:
             )
         try:
             payload = json.loads(body)
-        except UnicodeDecodeError, json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             return MaxUpdateBatch(MaxTransportClass.MALFORMED, reason_code="malformed_json")
         updates = payload.get("updates") if isinstance(payload, Mapping) else None
         if not isinstance(updates, list) or any(not isinstance(item, Mapping) for item in updates):

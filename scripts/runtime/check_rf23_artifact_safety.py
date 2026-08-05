@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import re
@@ -31,6 +32,43 @@ RAW_KEYS = {
 }
 
 
+def transport_inventory(repo_root: Path) -> dict[str, int]:
+    forbidden = {
+        "mayak.persistence.schema",
+        "mayak.modules.identity_and_access.runtime",
+        "mayak.modules.notification_delivery.runtime",
+        "mayak.modules.scan_orchestration.read_models",
+        "mayak.modules.telegram_adapter.runtime",
+        "mayak.modules.max_adapter.runtime",
+        "mayak.modules.beacon_management.runtime",
+    }
+    result = {"forbidden": 0, "private_identity": 0, "owner_read_model": 0, "direct_dml": 0}
+    root = repo_root / "src/mayak/entrypoints/api"
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                modules = [module]
+                if module == "mayak.modules.identity_and_access.runtime":
+                    result["private_identity"] += sum(
+                        alias.name.startswith("_") for alias in node.names
+                    )
+            else:
+                modules = []
+            result["forbidden"] += sum(module in forbidden for module in modules)
+            result["owner_read_model"] += sum(module.endswith(".read_models") for module in modules)
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"insert", "update", "delete", "execute"}
+            ):
+                result["direct_dml"] += 1
+    return result
+
+
 def _find(value: object, path: str = "$") -> list[str]:
     findings: list[str] = []
     if isinstance(value, dict):
@@ -50,6 +88,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("paths", nargs=2, type=Path)
     parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     if tuple(path.name for path in args.paths) != EXPECTED or any(
         path.name != path.parts[-1] or ".." in path.parts for path in args.paths
@@ -59,6 +98,9 @@ def main() -> int:
         )
 
     findings: list[str] = []
+    transport = transport_inventory(args.repo_root.resolve())
+    if any(transport.values()):
+        findings.append(f"transport boundary violations: {transport}")
     payloads: list[dict[str, object]] = []
     for path in args.paths:
         if not path.is_file():
@@ -90,6 +132,7 @@ def main() -> int:
         "classification": "PASS" if not findings and len(payloads) == 2 else "BLOCKED",
         "scanner_result": "PASS" if not findings and len(payloads) == 2 else "FAIL",
         "findings": findings,
+        "transport_inventory": transport,
     }
     args.manifest.write_text(
         json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8"

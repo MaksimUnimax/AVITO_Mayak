@@ -9,7 +9,8 @@ import re
 from pathlib import Path
 from typing import Any, NoReturn
 
-TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-01"
+TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02"
+LEGACY_TECHNICAL_ID = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-01"
 SCANNER = "rf23-safety-scanner/v1"
 SUMMARY = re.compile(
     r"^(?:=|\s)*(?P<parts>(?:[0-9][0-9,]*\s+(?:passed|skipped|failed|errors?)(?:,?\s*|$))+).*\bin\s+[0-9.]+s(?:\s+\([^)]*\))?.*=*$"
@@ -64,7 +65,13 @@ def _manifest(path: Path, *, root: Path) -> None:
         _fail("scanner manifest payload inventory is not exact")
     for item in payloads:
         if not isinstance(item, dict) or set(item) != {
-            "path", "basename", "size", "sha256", "result", "classification", "finding_count"
+            "path",
+            "basename",
+            "size",
+            "sha256",
+            "result",
+            "classification",
+            "finding_count",
         }:
             _fail("malformed scanner payload entry")
         basename = item["basename"]
@@ -99,10 +106,15 @@ def verify(
     root = Path(path).resolve().parent
     try:
         evidence: Any = json.loads(Path(path).read_text(encoding="utf-8"))
-    except OSError, json.JSONDecodeError:
+    except (OSError, json.JSONDecodeError):
         return False
-    if not isinstance(evidence, dict) or evidence.get("technical_id") not in (None, TECHNICAL_ID):
+    if not isinstance(evidence, dict) or evidence.get("technical_id") not in (
+        None,
+        TECHNICAL_ID,
+        LEGACY_TECHNICAL_ID,
+    ):
         return False
+    corrective_02 = evidence.get("technical_id") == TECHNICAL_ID
     required = (
         "candidate_sha",
         "candidate_tree_identity",
@@ -143,6 +155,48 @@ def verify(
         or evidence.get("candidate_sha") != expected_sha
     ):
         return False
+    if corrective_02:
+        inventory = evidence.get("transport_inventory")
+        if not isinstance(inventory, dict) or any(
+            inventory.get(key) != 0
+            for key in ("forbidden", "private_identity", "owner_read_model", "direct_dml")
+        ):
+            return False
+        if not evidence.get("expected_migration_head") or evidence.get(
+            "expected_migration_head"
+        ) != evidence.get("observed_migration_revision"):
+            return False
+        version_body = (
+            evidence.get("version", {}).get("body", {})
+            if isinstance(evidence.get("version"), dict)
+            else {}
+        )
+        if (
+            not isinstance(version_body, dict)
+            or not version_body.get("migration_head")
+            or not version_body.get("migration_revision")
+        ):
+            return False
+        if evidence.get("stale_schema_readiness") != "rejected":
+            return False
+        if any(
+            evidence.get(key) != "rejected"
+            for key in (
+                "cross_origin_rejected",
+                "missing_origin_rejected",
+                "malformed_origin_rejected",
+            )
+        ):
+            return False
+        if (
+            evidence.get("same_origin_allowed") != "allowed"
+            or evidence.get("csrf_rejected_owner_mutations") != 0
+        ):
+            return False
+        if not evidence.get("beacon_create_unknown_field_rejected") or not evidence.get(
+            "beacon_create_forged_authority_rejected"
+        ):
+            return False
     if expected_tree is None or evidence.get("candidate_tree_identity") != expected_tree:
         return False
     if (
@@ -172,11 +226,18 @@ def verify(
         or evidence["version"].get("status") != 200
     ):
         return False
-    if any(evidence.get(key) != "proven" for key in (
-        "authentication_outcomes", "authorization_outcomes", "idempotency",
-        "cross_account_denial", "unauthorized_admin_mutation", "explicit_http_error_mapping",
-        "idempotency_conflict_outcome",
-    )):
+    if any(
+        evidence.get(key) != "proven"
+        for key in (
+            "authentication_outcomes",
+            "authorization_outcomes",
+            "idempotency",
+            "cross_account_denial",
+            "unauthorized_admin_mutation",
+            "explicit_http_error_mapping",
+            "idempotency_conflict_outcome",
+        )
+    ):
         return False
     if evidence.get("optional_provider_state") != "disabled":
         return False

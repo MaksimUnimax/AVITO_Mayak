@@ -53,7 +53,7 @@ def validate_webapp_data(
             or (int(time.time() if now is None else now) - auth_date) > max_age_seconds
         ):
             return MaxMiniAppValidation("STALE", reason_code="auth_date_outside_policy")
-    except KeyError, ValueError:
+    except (KeyError, ValueError):
         return MaxMiniAppValidation("MALFORMED", reason_code="invalid_auth_date")
     user = values.get("user")
     if not user:
@@ -62,7 +62,7 @@ def validate_webapp_data(
         import json
 
         user_ref = str(json.loads(user)["id"])
-    except KeyError, TypeError, ValueError, json.JSONDecodeError:
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return MaxMiniAppValidation("MALFORMED", reason_code="invalid_user")
     return MaxMiniAppValidation(
         "VERIFIED", user_ref, "verified", hashlib.sha256(data.encode()).hexdigest()

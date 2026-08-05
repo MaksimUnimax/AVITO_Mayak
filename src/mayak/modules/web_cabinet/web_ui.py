@@ -171,11 +171,11 @@ def build_web_router(
             with session_factory() as committed_session:
                 dashboard = runtime.dashboard(committed_session, reference)
             return render(request, dashboard=dashboard, error="Команда обработана.")
-        except KeyError, ValueError, UnicodeDecodeError:
+        except (KeyError, ValueError, UnicodeDecodeError):
             return render(request, error="Некорректная форма.", status_code=400)
         except WebConflictError:
             return render(request, error="Команда устарела или уже использована.", status_code=409)
-        except PermissionError, WebRuntimeError:
+        except (PermissionError, WebRuntimeError):
             return render(request, error="Команда недоступна.", status_code=403)
         except Exception:
             return render(request, error="Временная ошибка. Попробуйте позже.", status_code=503)

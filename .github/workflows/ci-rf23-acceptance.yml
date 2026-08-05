@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  RF23_TECHNICAL_ID: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-01
+  RF23_TECHNICAL_ID: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02
   MAYAK_RUNTIME_PROFILE: synthetic_acceptance
   MAYAK_ENVIRONMENT_ID: avito-mayak-rf23-ci
   MAYAK_DATABASE_HOST: postgres
@@ -57,7 +57,7 @@ jobs:
           POSTGRES_USER: mayak
           POSTGRES_PASSWORD: rf23_bootstrap_synthetic
         options: >-
-          --label com.avito-mayak.technical-id=RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-01
+          --label com.avito-mayak.technical-id=RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-02
           --label com.mayak.owner=RF20-ADMIN-SUPPORT-RUNTIME-01-CORRECTIVE-04
           --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
@@ -137,7 +137,7 @@ jobs:
           uv run pytest -q tests/runtime/test_persistence_transaction.py tests/runtime/test_platform_idempotency_repository_postgres.py tests/runtime/test_identity_runtime_postgres.py tests/runtime/test_rf18_telegram_adapter_postgres.py tests/runtime/test_rf20_postgres_acceptance.py tests/runtime/test_rf22_filter_catalog_runtime.py tests/runtime/test_rf23_api_contract.py
       - name: Focused RF23 static and architecture gates
         run: |
-          uv run pytest -q tests/architecture/test_rf23_transport_boundary.py tests/runtime/test_rf23_api_contract.py
+          uv run pytest -q tests/architecture/test_rf23_transport_boundary.py tests/runtime/test_rf23_api_contract.py tests/runtime/test_rf23_acceptance_chain.py tests/runtime/test_rf21_web_ui.py tests/runtime/test_rf20_admin_ui.py
           uv run ruff check src/mayak/entrypoints/api src/mayak/runtime/api.py src/mayak/runtime/rf23_composition.py src/mayak/runtime/settings.py scripts/runtime/run_rf23_postgres_acceptance.py scripts/runtime/verify_rf23_acceptance.py scripts/runtime/check_rf23_artifact_safety.py
           uv run mypy src/mayak/entrypoints/api src/mayak/runtime/api.py src/mayak/runtime/rf23_composition.py scripts/runtime/run_rf23_postgres_acceptance.py scripts/runtime/verify_rf23_acceptance.py scripts/runtime/check_rf23_artifact_safety.py
           uv run lint-imports
@@ -200,7 +200,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run python scripts/runtime/run_rf23_postgres_acceptance.py rf23-evidence.json --repo-root . --pytest-log rf23-full-pytest.log
-          uv run python scripts/runtime/check_rf23_artifact_safety.py rf23-evidence.json rf23-full-pytest.log --manifest rf23-safety-manifest.json
+          uv run python scripts/runtime/check_rf23_artifact_safety.py rf23-evidence.json rf23-full-pytest.log --manifest rf23-safety-manifest.json --repo-root .
           uv run python scripts/runtime/verify_rf23_acceptance.py rf23-evidence.json --expected-sha "$GITHUB_SHA" --expected-tree "$(git rev-parse HEAD^{tree})" --manifest rf23-safety-manifest.json --pytest-log rf23-full-pytest.log
           test -s rf23-safety-manifest.json
       - uses: actions/upload-artifact@v4
