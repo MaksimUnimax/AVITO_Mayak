@@ -1118,6 +1118,22 @@ class BeaconManagementRuntime:
             raise BeaconRuntimeError("beacon unavailable")
         return self._view(row)
 
+    def current_for_scan(self, session: Session, *, beacon_id: UUID) -> BeaconView:
+        """Return the owner-approved current snapshot for Scan orchestration.
+
+        This is a read-only owner boundary for the durable worker.  It does not
+        establish customer authority and cannot mutate Beacon state; Scan still
+        rechecks lifecycle and revision before committing a comparison.
+        """
+        row = (
+            session.execute(select(_BEACONS).where(_BEACONS.c.id == beacon_id))
+            .mappings()
+            .one_or_none()
+        )
+        if row is None:
+            raise BeaconRuntimeError("beacon unavailable")
+        return self._view(row)
+
     def list(self, session: Session, *, actor_reference: str) -> tuple[BeaconView, ...]:
         actor = self._authority(session, actor_reference, None)
         rows = (

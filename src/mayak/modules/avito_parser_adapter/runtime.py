@@ -77,6 +77,7 @@ from .contracts import (
 class SyntheticScenario(StrEnum):
     USABLE_CONFIGURATION = "usable_configuration"
     USABLE_LISTING_PAGE = "usable_listing_page"
+    USABLE_LISTING_PAGE_WITH_NEW = "usable_listing_page_with_new_listing"
     CLEAN_EMPTY = "clean_empty"
     EMPTY_WITHOUT_PROOF = "empty_without_proof"
     CAPTCHA = "captcha"
@@ -636,6 +637,7 @@ class SyntheticParserProvider:
         page = None
         if name in (
             "usable_listing_page",
+            "usable_listing_page_with_new_listing",
             "clean_empty",
             "empty_without_proof",
             "captcha",
@@ -1045,7 +1047,7 @@ def _synthetic_page(
     final_status = status or ParserOutcomeStatus.RESULT_AMBIGUOUS
     candidates: tuple[NormalizedListingCandidate, ...] = ()
     cards: tuple[ListingCardCandidate, ...] = ()
-    if name == "usable_listing_page":
+    if name in {"usable_listing_page", "usable_listing_page_with_new_listing"}:
         evidence = _evidence("listing", "synthetic-1")
         fields = tuple(
             ListingFieldCandidate(
@@ -1065,11 +1067,18 @@ def _synthetic_page(
             )
         )
         card = ListingCardCandidate("card::1", fields, evidence_references=(evidence,))
-        candidates = (
+        candidates_list = [
             NormalizedListingCandidate(
                 "listing::1", ListingCandidateStatus.USABLE, card, evidence_references=(evidence,)
-            ),
-        )
+            )
+        ]
+        if name == "usable_listing_page_with_new_listing":
+            candidates_list.append(
+                NormalizedListingCandidate(
+                    "listing::2", ListingCandidateStatus.USABLE, card, evidence_references=(evidence,)
+                )
+            )
+        candidates = tuple(candidates_list)
         cards = (card,)
     positions = tuple(
         ObservedListingPosition(f"position::{i}", item.listing_candidate_id, i)

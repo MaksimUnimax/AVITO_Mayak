@@ -55,11 +55,11 @@ class ScheduleService:
         self.repo, self.beacon, self.entitlement = repository, beacon, entitlement
 
     def create_or_update(self, command: ScheduleCommand) -> ScheduleResult:
-        current = self.beacon.current(command.beacon_id)
-        decision = self.entitlement.current(command.beacon_id, current.account_id)
-        validate_cadence(decision, command.interval_seconds)
         schedules = _table("scan_schedules")
         with self.repo.session.begin():
+            current = self.beacon.current(command.beacon_id)
+            decision = self.entitlement.current(command.beacon_id, current.account_id)
+            validate_cadence(decision, command.interval_seconds)
             row = (
                 self.repo.session.execute(
                     select(schedules)
@@ -120,8 +120,8 @@ def start_run(
     repo: ScanRepository, claim: WorkClaim, beacon: BeaconPort, now: datetime | None = None
 ) -> RunResult:
     moment = now or datetime.now(UTC)
-    current = beacon.current(claim.beacon_id)
     with repo.session.begin():
+        current = beacon.current(claim.beacon_id)
         return repo.start_run(claim, current.revision_no, moment)
 
 
@@ -158,6 +158,8 @@ def commit_comparison(
     trusted_beacon = beacon.current(run.beacon_id)
     trusted_entitlement = entitlement.current(run.beacon_id, trusted_beacon.account_id)
     trusted_parser = parser.resolve(parser_outcome_id, run_id=run.run_id, beacon_id=run.beacon_id)
+    session = repo.session
+    session.commit()
     if trusted_parser.outcome_id != parser_outcome_id or not trusted_parser.comparison_eligible:
         raise DependencyBlocked(
             f"parser outcome {trusted_parser.status} is not comparison eligible"
@@ -182,7 +184,6 @@ def commit_comparison(
             sort_keys=True,
         ).encode()
     ).hexdigest()
-    session = repo.session
     schedules, work, runs, observations, listings, anchors = (
         _table(name)
         for name in (
@@ -496,6 +497,7 @@ def record_parser_outcome(
     """Durably classify a non-comparison result without touching listing state."""
     moment = now or datetime.now(UTC)
     outcome = parser.resolve(parser_outcome_id, run_id=run.run_id, beacon_id=run.beacon_id)
+    repo.session.commit()
     ambiguous = outcome.status in {
         ParserStatus.PARTIAL,
         ParserStatus.RESULT_AMBIGUOUS,

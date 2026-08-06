@@ -1,0 +1,98 @@
+name: RF24 runtime vertical spine
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  spine:
+    runs-on: ubuntu-24.04
+    container: python:3.14.6-bookworm
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_DB: mayak
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: bootstrap-only
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 2s --health-timeout 3s --health-retries 60
+    env:
+      UV_VERSION: 0.11.31
+      MAYAK_DATABASE_HOST: postgres
+      MAYAK_DATABASE_PORT: "5432"
+      MAYAK_DATABASE_NAME: mayak
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      MAYAK_API_INTERNAL_PORT: "18080"
+      MAYAK_API_BIND_HOST: 127.0.0.1
+      MAYAK_API_HOST_PORT: disabled
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_TELEGRAM_UPDATE_MODE: disabled
+      MAYAK_MAX_ENABLED: "false"
+      MAYAK_MAX_UPDATE_MODE: disabled
+      MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Exact published SHA
+        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Toolchain and frozen sync
+        run: uv sync --frozen
+      - name: Bootstrap task roles
+        env:
+          PGPASSWORD: bootstrap-only
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends postgresql-client
+          psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;"
+      - name: Migrate
+        env:
+          RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+          RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+        run: uv run alembic upgrade head
+      - name: Focused tests and static checks
+        run: |
+          uv run pytest -q tests/runtime/test_rf17_notification_delivery_runtime.py tests/runtime/test_rf21_web_cabinet_runtime.py tests/runtime/test_rf20_admin_support_runtime.py tests/runtime/test_rf23_api_contract.py
+          uv run ruff check src/mayak/runtime scripts/runtime
+          uv run mypy src/mayak/runtime scripts/runtime
+          uv run lint-imports
+      - name: Full repository pytest
+        env:
+          RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+          RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+        run: uv run pytest -q | tee rf24-spine-full-pytest.log
+      - name: Fresh real spine process run
+        env:
+          MAYAK_SOURCE_SHA: ${{ github.sha }}
+          MAYAK_ENVIRONMENT_ID: rf24-spine-${{ github.run_id }}
+          MAYAK_LOCK_IDENTITY: 0000000000000000000000000000000000000000000000000000000000000000
+          MAYAK_IMAGE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
+        run: |
+          uv run python scripts/runtime/run_rf24_vertical_spine.py --repo-root "$GITHUB_WORKSPACE" --output rf24-spine-evidence.json --probes rf24-spine-runtime-probes.json --log rf24-spine.log --source-sha "$GITHUB_SHA"
+          uv run python scripts/runtime/verify_rf24_vertical_spine.py --evidence rf24-spine-evidence.json --source-sha "$GITHUB_SHA"
+          uv run python scripts/runtime/check_rf24_spine_artifact_safety.py rf24-spine-evidence.json rf24-spine-runtime-probes.json rf24-spine.log rf24-spine-full-pytest.log
+      - name: Artifact manifest
+        run: |
+          python -c 'import hashlib,json; from pathlib import Path; files=[Path(x) for x in ("rf24-spine-evidence.json","rf24-spine-runtime-probes.json","rf24-spine.log","rf24-spine-full-pytest.log")]; Path("rf24-spine-safety-manifest.json").write_text(json.dumps({"finding_count":0,"artifacts":[{"basename":p.name,"size":p.stat().st_size,"sha256":hashlib.sha256(p.read_bytes()).hexdigest()} for p in files]},sort_keys=True,indent=2)+"\n")'
+          test -s rf24-spine-evidence.json
+          test -s rf24-spine-runtime-probes.json
+          test -s rf24-spine.log
+          test -s rf24-spine-full-pytest.log
+          test -s rf24-spine-safety-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rf24-runtime-vertical-spine
+          path: |
+            rf24-spine-evidence.json
+            rf24-spine-runtime-probes.json
+            rf24-spine.log
+            rf24-spine-full-pytest.log
+            rf24-spine-safety-manifest.json

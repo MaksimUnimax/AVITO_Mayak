@@ -19,6 +19,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from mayak.contracts.idempotency import IdempotencyKey
+from mayak.modules.beacon_management.contracts import (
+    BeaconParserEvidenceReference,
+    BeaconParserOutcomeStatus,
+    ExtractedSearchConfigurationSnapshot,
+)
 from mayak.modules.beacon_management.runtime import (
     BeaconManagementRuntime,
     EntitlementDecision,
@@ -169,6 +174,84 @@ class RF23Composition:
             source_url=source_url,
             name=name,
             idempotency_key=idempotency_key,
+        )
+
+    def beacon_accept_snapshot(
+        self,
+        session: Session,
+        reference: CustomerSessionReference,
+        beacon_id: Any,
+        *,
+        expected_row_version: int,
+        idempotency_key: str,
+    ) -> Any:
+        """Expose the accepted owner command needed by the RF24 synthetic setup."""
+        snapshot = ExtractedSearchConfigurationSnapshot(
+            snapshot_id=f"rf24:{beacon_id}:configuration",
+            parser_outcome_status=BeaconParserOutcomeStatus.CLEAN,
+            accepted_as_clean=True,
+            normalized_filter_values=("synthetic",),
+            evidence_reference=f"rf24:{beacon_id}:evidence",
+            parser_evidence_reference=BeaconParserEvidenceReference(
+                evidence_reference=f"rf24:{beacon_id}:evidence"
+            ),
+        )
+        return self.beacon.accept_snapshot(
+            session,
+            actor_reference=cast(Any, reference),
+            beacon_id=beacon_id,
+            snapshot=snapshot,
+            idempotency_key=idempotency_key,
+            expected_row_version=expected_row_version,
+        )
+
+    def scan_schedule_create_or_update(
+        self, session: Session, beacon_id: Any, *, interval_seconds: int, next_due_at: datetime
+    ) -> Any:
+        from mayak.modules.scan_orchestration.contracts import ScheduleCommand
+        from mayak.modules.scan_orchestration.repository import ScanRepository
+        from mayak.modules.scan_orchestration.services import ScheduleService
+        from mayak.runtime.rf24_composition import ScanBeaconAdapter, ScanEntitlementAdapter
+
+        return ScheduleService(
+            ScanRepository(session),
+            ScanBeaconAdapter(self.beacon).bind(session),
+            ScanEntitlementAdapter(self.entitlements).bind(session),
+        ).create_or_update(
+            ScheduleCommand(
+                beacon_id=beacon_id,
+                interval_seconds=interval_seconds,
+                next_due_at=next_due_at,
+            )
+        )
+
+    def establish_acceptance_access(
+        self, session: Session, reference: CustomerSessionReference, account_id: Any
+    ) -> Any:
+        from datetime import timedelta
+
+        from mayak.modules.entitlements_and_billing.contracts import TariffName
+        from mayak.modules.entitlements_and_billing.runtime import EntitlementsBillingRuntime
+        from mayak.runtime.rf24_composition import AcceptanceEntitlementAuthority
+
+        owner = EntitlementsBillingRuntime(AcceptanceEntitlementAuthority(self.identity))
+        now = datetime.now(UTC)
+        owner.bootstrap_tariffs(
+            session,
+            cast(Any, reference),
+            f"rf24:tariffs:{account_id}",
+            effective_at=now,
+            target_account_id=account_id,
+        )
+        return owner.assign_access(
+            session,
+            cast(Any, reference),
+            tariff=TariffName.FREE,
+            starts_at=now,
+            ends_at=now + timedelta(days=1),
+            reason="RF24 synthetic acceptance access",
+            idempotency_key=f"rf24:free-access:{account_id}",
+            target_account_id=account_id,
         )
 
     def beacon_lifecycle(

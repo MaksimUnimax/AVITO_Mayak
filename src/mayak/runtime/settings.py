@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 from enum import StrEnum
@@ -58,6 +59,8 @@ CANONICAL_NON_SECRET_ENV_KEYS = (
     "MAYAK_BACKUP_ROOT",
     "MAYAK_BACKUP_RETENTION_DAYS",
     "MAYAK_SECRETS_DIR",
+    "MAYAK_SYNTHETIC_SCENARIO",
+    "MAYAK_SYNTHETIC_SCENARIO_RUN_ID",
 )
 
 
@@ -259,7 +262,13 @@ class MayakRuntimeSettings(BaseSettings):
             if (
                 self.api.bind_host != "127.0.0.1"
                 and not (self.api.bind_host == "0.0.0.0" and self.api.host_port is not None)
-            ) or self.database.host != "mayak-postgres":
+            ) or (
+                self.database.host != "mayak-postgres"
+                and not (
+                    self.runtime.profile is RuntimeProfile.SYNTHETIC_ACCEPTANCE
+                    and ipaddress.ip_address(self.database.host).is_private
+                )
+            ):
                 raise ValueError("acceptance boundary violation")
         if (
             self.runtime.profile is RuntimeProfile.PRODUCTION

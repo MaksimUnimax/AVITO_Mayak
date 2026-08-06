@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import platform
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from typing import Any, Iterator
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -42,6 +43,12 @@ class BeaconCreateDTO(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     source_url: str = Field(min_length=1, max_length=4096)
     name: str = Field(min_length=1, max_length=255)
+
+
+class ScanScheduleDTO(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    interval_seconds: int = Field(gt=0)
+    next_due_at: datetime
 
 
 def _json(value: Any) -> Any:
@@ -236,6 +243,22 @@ def create_app(
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"status": "logged_out"}
 
+    @app.post("/acceptance/entitlement", tags=["acceptance"])
+    def acceptance_entitlement(request: Request, key: str = Depends(require_key)) -> Any:
+        if settings.runtime.profile is not RuntimeProfile.SYNTHETIC_ACCEPTANCE:
+            raise HTTPException(404, "not found")
+        raw, validation = customer(request)
+        try:
+            with db() as session:
+                outcome = composition.establish_acceptance_access(
+                    session, raw, validation.account_id
+                )
+                session.commit()
+                return _json(outcome)
+        except Exception as exc:
+            LOGGER.exception("RF24 acceptance entitlement setup failed")
+            raise _safe_error(exc, composition) from None
+
     api = APIRouter(prefix="/api/v1")
 
     @api.get("/account")
@@ -311,6 +334,27 @@ def create_app(
         except Exception as exc:
             raise _safe_error(exc, composition) from None
 
+    @api.post("/beacons/{beacon_id}/scan-schedule")
+    def scan_schedule(
+        request: Request, beacon_id: UUID, payload: ScanScheduleDTO
+    ) -> Any:
+        if settings.runtime.profile is not RuntimeProfile.SYNTHETIC_ACCEPTANCE:
+            raise HTTPException(404, "not found")
+        customer(request)
+        try:
+            with db() as session:
+                result = composition.scan_schedule_create_or_update(
+                    session,
+                    beacon_id,
+                    interval_seconds=payload.interval_seconds,
+                    next_due_at=payload.next_due_at.astimezone(UTC),
+                )
+                session.commit()
+                return _json(result)
+        except Exception as exc:
+            LOGGER.exception("RF24 scan schedule setup failed")
+            raise _safe_error(exc, composition) from None
+
     @api.post("/beacons/{beacon_id}/{action}")
     def beacon_lifecycle(
         request: Request,
@@ -320,7 +364,24 @@ def create_app(
         key: str = Depends(require_key),
     ) -> Any:
         raw, _ = customer(request)
+        if action == "accept-synthetic-snapshot":
+            if settings.runtime.profile is not RuntimeProfile.SYNTHETIC_ACCEPTANCE:
+                raise HTTPException(404, "not found")
+            try:
+                with db() as session:
+                    result = composition.beacon_accept_snapshot(
+                        session,
+                        raw,
+                        beacon_id,
+                        expected_row_version=expected_row_version,
+                        idempotency_key=key,
+                    )
+                    session.commit()
+                    return _json(result)
+            except Exception as exc:
+                raise _safe_error(exc, composition) from None
         if action not in {
+            "activate",
             "pause",
             "resume",
             "archive",
