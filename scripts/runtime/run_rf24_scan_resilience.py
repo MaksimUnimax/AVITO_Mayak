@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -89,13 +90,21 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
     workdir = output.parent.resolve()
     scheduler_obs, worker_obs = workdir / f"{run_id}-scheduler.jsonl", workdir / f"{run_id}-worker.jsonl"
     base_env = {k: v for k, v in os.environ.items() if not k.startswith("MAYAK_")}
+    requested_port = int(os.environ.get("MAYAK_API_INTERNAL_PORT", "18080"))
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", requested_port))
+            internal_port = requested_port
+        except OSError:
+            probe.bind(("127.0.0.1", 0))
+            internal_port = int(probe.getsockname()[1])
     base_env.update({"MAYAK_RUNTIME_PROFILE": "synthetic_acceptance", "MAYAK_ENVIRONMENT_ID": run_id, "MAYAK_SOURCE_SHA": actual,
         "MAYAK_LOCK_IDENTITY": "0" * 64, "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
         "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id, "MAYAK_DATABASE_HOST": os.environ.get("MAYAK_DATABASE_HOST", "postgres"),
         "MAYAK_DATABASE_PORT": os.environ.get("MAYAK_DATABASE_PORT", "5432"), "MAYAK_DATABASE_NAME": "mayak",
         "MAYAK_DATABASE_APPLICATION_USER": "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
         "MAYAK_SECRETS_DIR": os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"), "MAYAK_API_BIND_HOST": "127.0.0.1",
-        "MAYAK_API_INTERNAL_PORT": os.environ.get("MAYAK_API_INTERNAL_PORT", "18080"), "MAYAK_API_HOST_PORT": "disabled",
+        "MAYAK_API_INTERNAL_PORT": str(internal_port), "MAYAK_API_HOST_PORT": "disabled",
         "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true", "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
         "MAYAK_AVITO_LIVE_ENABLED": "false", "MAYAK_TELEGRAM_ENABLED": "false", "MAYAK_MAX_ENABLED": "false",
         "MAYAK_WORKER_POLL_INTERVAL_SECONDS": "1", "MAYAK_WORKER_LEASE_SECONDS": "3", "MAYAK_SCHEDULER_POLL_INTERVAL_SECONDS": "1",
