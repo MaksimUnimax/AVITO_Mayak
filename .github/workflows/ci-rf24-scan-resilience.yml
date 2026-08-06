@@ -85,29 +85,12 @@ jobs:
           uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
           uv run python scripts/runtime/build_rf24_scan_resilience_manifest.py --output rf24-scan-resilience-safety-manifest.json --source-sha "$GITHUB_SHA" --run-id "$(python -c 'import json; print(json.load(open("rf24-scan-resilience-evidence.json"))["acceptance_run_id"])')" rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
           uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-safety-manifest.json
-      - name: Collect task-owned resilience diagnostics
-        if: always()
-        run: |
-          for path in rf24-api.log rf24-worker.log rf24-scheduler.log rf24-scan-resilience.log; do
-            if test -f "$path"; then
-              echo "=== $path ==="
-              head -50 "$path"
-              tail -50 "$path"
-              tail -50 "$path" | while IFS= read -r line; do
-                echo "::warning title=$path::$line"
-              done
-            fi
-          done
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: rf24-scan-runtime-resilience
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             rf24-scan-resilience-evidence.json
             rf24-scan-resilience-process-probes.json
             rf24-scan-resilience.log
             rf24-scan-resilience-safety-manifest.json
-            rf24-api.log
-            rf24-worker.log
-            rf24-scheduler.log
