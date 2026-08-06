@@ -63,7 +63,13 @@ jobs:
         env:
           PGPASSWORD: bootstrap-only
         run: |
-          apt-get update && apt-get install -y --no-install-recommends postgresql-client docker.io docker-buildx
+          apt-get update && apt-get install -y --no-install-recommends postgresql-client docker.io curl
+          install -d -m 755 /usr/libexec/docker/cli-plugins
+          curl --fail --silent --show-error --location \
+            --output /usr/libexec/docker/cli-plugins/docker-buildx \
+            https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64
+          chmod 755 /usr/libexec/docker/cli-plugins/docker-buildx
+          docker buildx version | grep -F 'v0.31.1'
           psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;"
           install -d -m 700 /run/secrets
           printf '%s' 'rf24_bootstrap_synthetic' > /run/secrets/mayak_postgres_bootstrap_password
