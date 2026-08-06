@@ -232,6 +232,22 @@ class IdentityRuntime:
             session, request, _RawSecret(reference._material), revoke=revoke
         )
 
+    def bootstrap_admin_reference(
+        self,
+        session: Session,
+        reference: SessionReference,
+        *,
+        idempotency_key: Any,
+        correlation: CorrelationContext,
+    ) -> RoleAssignmentState:
+        """Public opaque bridge to the accepted synthetic bootstrap command."""
+        if not isinstance(reference, SessionReference):
+            raise TypeError("Identity session reference required")
+        return self.bootstrap_admin(
+            session, _RawSecret(reference._material), idempotency_key=idempotency_key,
+            correlation=correlation,
+        )
+
     def synthetic_login_for_browser(
         self, session: Session, request: SyntheticAcceptanceLoginRequest
     ) -> tuple[SyntheticAcceptanceLoginOutcome, str | None]:

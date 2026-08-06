@@ -30,7 +30,12 @@ def run_once(
         made = materialize_due_work(
             composition.scan_repository(session), moment, composition.settings.worker.batch_size
         )
-    LOGGER.info("scheduler materialized=%d", len(made))
+        message = (
+            f"scheduler process=mayak-scheduler materialized={len(made)} "
+            f"work_item_ids={','.join(str(item) for item in made) or 'none'}"
+        )
+        LOGGER.info(message)
+        print(message, flush=True)
     return len(made)
 
 

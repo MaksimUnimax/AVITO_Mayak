@@ -223,6 +223,24 @@ def create_app(
             session.commit()
             return {"account_id": str(outcome.account_id), "state": outcome.state.value}
 
+    @app.post("/acceptance/admin/bootstrap", tags=["acceptance"])
+    def acceptance_admin_bootstrap(
+        request: Request, key: str = Depends(require_key)
+    ) -> Any:
+        if settings.runtime.profile is not RuntimeProfile.SYNTHETIC_ACCEPTANCE:
+            raise HTTPException(404, "not found")
+        raw = token(request)
+        if raw is None:
+            raise HTTPException(401, "authentication required")
+        reference = composition.customer_session(raw)
+        with db() as session:
+            validation = composition.validate_session_reference(session, reference)
+            if validation.account_id is None or validation.metadata is None:
+                raise HTTPException(401, "authentication required")
+            state = composition.bootstrap_admin(session, reference, idempotency_key=key)
+            session.commit()
+            return {"account_id": str(validation.account_id), "state": state.value}
+
     @app.post("/acceptance/logout", tags=["acceptance"])
     def acceptance_logout(
         request: Request, response: Response, key: str = Depends(require_key)

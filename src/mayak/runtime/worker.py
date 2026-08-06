@@ -79,11 +79,20 @@ def process_once(
             composition.settings.worker.lease_seconds,
         )
         processed = 0
-        LOGGER.info("worker claims=%d", len(claims))
+        LOGGER.info(
+            "worker process=%s claims=%d work_item_ids=%s",
+            "mayak-worker",
+            len(claims),
+            ",".join(str(item.work_item_id) for item in claims) or "none",
+        )
         for claim in claims:
             try:
                 beacon = composition.scan_beacon(session)
                 run = start_run(repo, claim, beacon, now=moment)
+                LOGGER.info(
+                    "worker claim work_item_id=%s schedule_id=%s run_id=%s",
+                    claim.work_item_id, claim.schedule_id, run.run_id,
+                )
                 scenario = _scenario(session, run.beacon_id)
                 if scenario == "route_failure":
                     scenario = "transport_unavailable"

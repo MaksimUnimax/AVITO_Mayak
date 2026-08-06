@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeAlias, cast
+from uuid import uuid4
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -34,6 +35,7 @@ from mayak.modules.notification_delivery.runtime import read_history
 from mayak.persistence.config import ApplicationDatabaseSettings, DatabaseEndpoint
 from mayak.persistence.engine import create_application_engine
 from mayak.persistence.session import create_session_factory
+from mayak.platform.correlation import CorrelationContext, CorrelationId
 from mayak.runtime.rf20_composition import build_rf20_composition
 from mayak.runtime.rf21_composition import (
     CustomerIdentityAuthorityAdapter,
@@ -105,6 +107,14 @@ class RF23Composition:
 
     def synthetic_login(self, session: Session, request: Any) -> tuple[Any, str | None]:
         return self.identity.synthetic_login_for_browser(session, request)
+
+    def bootstrap_admin(
+        self, session: Session, reference: CustomerSessionReference, *, idempotency_key: str
+    ) -> Any:
+        return self.identity.bootstrap_admin_reference(
+            session, reference, idempotency_key=IdempotencyKey(value=idempotency_key),
+            correlation=CorrelationContext(correlation_id=CorrelationId(value=str(uuid4()))),
+        )
 
     def revoke_session(
         self,

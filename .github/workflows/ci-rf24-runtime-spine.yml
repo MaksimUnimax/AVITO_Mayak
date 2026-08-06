@@ -92,7 +92,7 @@ jobs:
           psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;"
       - name: Focused tests and static checks
         run: |
-          uv run pytest -q tests/runtime/test_rf17_notification_delivery_runtime.py tests/runtime/test_rf21_web_cabinet_runtime.py tests/runtime/test_rf20_admin_support_runtime.py tests/runtime/test_rf23_api_contract.py
+          uv run pytest -q tests/runtime/test_rf17_notification_delivery_runtime.py tests/runtime/test_rf21_web_cabinet_runtime.py tests/runtime/test_rf20_admin_support_runtime.py tests/runtime/test_rf23_api_contract.py tests/runtime/test_rf24_acceptance_integrity.py
           uv run ruff check src/mayak/runtime scripts/runtime
           uv run mypy --explicit-package-bases src/mayak/runtime scripts/runtime/run_rf24_vertical_spine.py scripts/runtime/verify_rf24_vertical_spine.py scripts/runtime/check_rf24_spine_artifact_safety.py
           uv run lint-imports
@@ -125,7 +125,8 @@ jobs:
           done
       - name: Artifact manifest
         run: |
-          python -c 'import hashlib,json; from pathlib import Path; files=[Path(x) for x in ("rf24-spine-evidence.json","rf24-spine-runtime-probes.json","rf24-spine.log","rf24-spine-full-pytest.log")]; Path("rf24-spine-safety-manifest.json").write_text(json.dumps({"finding_count":0,"artifacts":[{"basename":p.name,"size":p.stat().st_size,"sha256":hashlib.sha256(p.read_bytes()).hexdigest()} for p in files]},sort_keys=True,indent=2)+"\n")'
+          python -c 'import hashlib,importlib.util,json; from pathlib import Path; spec=importlib.util.spec_from_file_location("rf24scanner", "scripts/runtime/check_rf24_spine_artifact_safety.py"); mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); files=[Path(x) for x in ("rf24-spine-evidence.json","rf24-spine-runtime-probes.json","rf24-spine.log","rf24-spine-full-pytest.log")]; findings=mod.findings(files); assert not findings, [(p.name,c) for p,c in findings]; Path("rf24-spine-safety-manifest.json").write_text(json.dumps({"finding_count":len(findings),"artifacts":[{"basename":p.name,"size":p.stat().st_size,"sha256":hashlib.sha256(p.read_bytes()).hexdigest()} for p in files]},sort_keys=True,indent=2)+"\n")'
+          uv run python scripts/runtime/check_rf24_spine_artifact_safety.py rf24-spine-safety-manifest.json
           test -s rf24-spine-evidence.json
           test -s rf24-spine-runtime-probes.json
           test -s rf24-spine.log
