@@ -63,7 +63,7 @@ jobs:
         env:
           PGPASSWORD: bootstrap-only
         run: |
-          apt-get update && apt-get install -y --no-install-recommends postgresql-client docker.io
+          apt-get update && apt-get install -y --no-install-recommends postgresql-client docker.io docker-buildx
           psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;"
           install -d -m 700 /run/secrets
           printf '%s' 'rf24_bootstrap_synthetic' > /run/secrets/mayak_postgres_bootstrap_password
