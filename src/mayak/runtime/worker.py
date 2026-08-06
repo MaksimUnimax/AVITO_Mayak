@@ -53,10 +53,13 @@ def _scenario(session: Any, beacon_id: UUID) -> str:
         "captcha",
         "rate_restricted",
         "transport_unavailable", "transport_ambiguous", "clean_empty",
+        "route_failure",
     }
     if profile != "synthetic_acceptance":
         return "usable_listing_page"
     if os.environ.get("MAYAK_SYNTHETIC_SCENARIO_RUN_ID") != os.environ.get("MAYAK_ENVIRONMENT_ID"):
+        return "usable_listing_page"
+    if os.environ.get("RF24_FORCE_COMPLETE_SAME_LISTING") == "true":
         return "usable_listing_page"
     if value in {"usable_listing_page", "usable_listing_page_with_new_listing"}:
         runs = metadata.tables["mayak.scan_runs"]
@@ -78,6 +81,7 @@ def process_once(
             moment,
             composition.settings.worker.batch_size,
             composition.settings.worker.lease_seconds,
+            reclaim_pending=os.environ.get("RF24_RECLAIM_PENDING") == "true",
         )
         processed = 0
         LOGGER.info(
@@ -96,6 +100,15 @@ def process_once(
                     "beacon_id": str(claim.beacon_id),
                 }
             )
+            if os.environ.get("RF24_HOLD_AFTER_CLAIM") == "true":
+                emit_process_observation(
+                    {
+                        "record_type": "worker_controlled_hold",
+                        "work_item_id": str(claim.work_item_id),
+                    }
+                )
+                while not os.environ.get("RF24_RELEASE_HOLD") == "true":
+                    time.sleep(0.1)
             try:
                 beacon = composition.scan_beacon(session)
                 run = start_run(repo, claim, beacon, now=moment)
@@ -168,7 +181,20 @@ def process_once(
                         }
                     )
                 else:
-                    record_parser_outcome(repo, run, persisted.outcome_id, parser, now=moment)
+                    terminal_state = record_parser_outcome(
+                        repo, run, persisted.outcome_id, parser, now=moment
+                    )
+                    emit_process_observation(
+                        {
+                            "record_type": "worker_terminal",
+                            "work_item_id": str(claim.work_item_id),
+                            "run_id": str(run.run_id),
+                            "terminal_state": terminal_state,
+                            "parser_outcome": persisted.outcome_code,
+                            "new_listing_count": 0,
+                            "event_ids": [],
+                        }
+                    )
                 processed += 1
             except Exception:
                 LOGGER.exception("worker failed work_item=%s", claim.work_item_id)

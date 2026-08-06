@@ -110,10 +110,22 @@ def materialize_due_work(repo: ScanRepository, now: datetime, limit: int) -> lis
 
 
 def claim_work(
-    repo: ScanRepository, now: datetime, limit: int, lease_seconds: int
+    repo: ScanRepository,
+    now: datetime,
+    limit: int,
+    lease_seconds: int,
+    *,
+    reclaim_pending: bool = False,
 ) -> list[WorkClaim]:
     with repo.session.begin():
-        return repo.claim(now, limit, lease_seconds)
+        return repo.claim(now, limit, lease_seconds, reclaim_pending=reclaim_pending)
+
+
+def reclaim_work(
+    repo: ScanRepository, work_item_id: UUID, now: datetime, lease_seconds: int
+) -> WorkClaim:
+    with repo.session.begin():
+        return repo.reclaim_reconciliation(work_item_id, now, lease_seconds)
 
 
 def start_run(
@@ -569,6 +581,7 @@ __all__ = [
     "commit_comparison",
     "materialize_due_work",
     "record_parser_outcome",
+    "reclaim_work",
     "start_run",
     "validate_cadence",
 ]

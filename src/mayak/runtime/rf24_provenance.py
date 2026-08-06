@@ -43,6 +43,7 @@ def emit_process_observation(record: dict[str, Any]) -> None:
         "observed_at": datetime.now().astimezone().isoformat(),
         **record,
     }
+    safe.setdefault("process_generation", os.environ.get("RF24_PROCESS_GENERATION", "unknown"))
     if safe.get("acceptance_run_id") != run_id or safe.get("process_kind") != process_kind:
         raise RuntimeError("RF24 provenance identity mismatch")
     encoded = (json.dumps(safe, sort_keys=True, separators=(",", ":")) + "\n").encode()

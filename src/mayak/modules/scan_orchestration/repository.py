@@ -111,7 +111,9 @@ class ScanRepository:
                 raise LeaseConflict("schedule cursor changed while materializing due work")
         return made
 
-    def claim(self, now: datetime, limit: int, lease_seconds: int) -> list[WorkClaim]:
+    def claim(
+        self, now: datetime, limit: int, lease_seconds: int, *, reclaim_pending: bool = False
+    ) -> list[WorkClaim]:
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be explicit and positive")
         work = _table("scan_work_items")
@@ -122,9 +124,10 @@ class ScanRepository:
             .where(work.c.state == "CLAIMED", work.c.lease_expires_at < now)
             .values(state="PENDING_RECONCILIATION", row_version=work.c.row_version + 1)
         )
+        claimable = ["DUE", "RETRY"] + (["PENDING_RECONCILIATION"] if reclaim_pending else [])
         rows = self.session.execute(
             select(work)
-            .where((work.c.state.in_(["DUE", "RETRY"])) & (work.c.due_at <= now))
+            .where((work.c.state.in_(claimable)) & (work.c.due_at <= now))
             .order_by(work.c.due_at, work.c.id)
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -176,6 +179,34 @@ class ScanRepository:
         )
         if changed.rowcount != 1:
             raise LeaseConflict("claim reconciliation lost its lease guard")
+
+    def reclaim_reconciliation(
+        self, work_item_id: UUID, now: datetime, lease_seconds: int
+    ) -> WorkClaim:
+        """Assign an expired, explicitly reconciled work item to a new owner.
+
+        This is the owner-owned recovery transition used by deterministic
+        acceptance runtimes; it never fabricates a terminal business result.
+        """
+        work = _table("scan_work_items")
+        row = self.session.execute(
+            select(work).where(work.c.id == work_item_id).with_for_update()
+        ).mappings().one()
+        if row["state"] != "PENDING_RECONCILIATION":
+            raise LeaseConflict("work item is not awaiting reconciliation")
+        token = uuid4()
+        expiry = now + timedelta(seconds=lease_seconds)
+        changed = self.session.execute(
+            update(work).where(work.c.id == work_item_id, work.c.row_version == row["row_version"])
+            .values(state="CLAIMED", lease_started_at=now, lease_expires_at=expiry,
+                    lease_token=token, attempt_count=row["attempt_count"] + 1,
+                    row_version=row["row_version"] + 1)
+        )
+        if changed.rowcount != 1:
+            raise LeaseConflict("reconciliation owner transition lost")
+        return WorkClaim(
+            work_item_id, row["beacon_id"], row["schedule_id"], row["due_at"], token, now, expiry
+        )
 
     def start_run(self, claim: WorkClaim, beacon_revision: int, now: datetime) -> RunResult:
         work, runs = _table("scan_work_items"), _table("scan_runs")

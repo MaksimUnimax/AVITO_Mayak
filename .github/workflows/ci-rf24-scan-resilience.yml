@@ -1,0 +1,77 @@
+name: RF24 scan runtime resilience
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  resilience:
+    runs-on: ubuntu-24.04
+    container: python:3.14.6-bookworm
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+        env:
+          POSTGRES_DB: mayak
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: bootstrap-only
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 2s --health-timeout 3s --health-retries 60
+    env:
+      UV_VERSION: 0.11.31
+      MAYAK_DATABASE_HOST: postgres
+      MAYAK_DATABASE_PORT: "5432"
+      MAYAK_DATABASE_NAME: mayak
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      MAYAK_API_INTERNAL_PORT: "18080"
+      MAYAK_API_BIND_HOST: 127.0.0.1
+      MAYAK_API_HOST_PORT: disabled
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_MAX_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: ${{ env.UV_VERSION }}, enable-cache: true}
+      - name: Exact SHA and frozen dependencies
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          uv sync --frozen --all-groups --python 3.14.6
+      - name: Bootstrap PostgreSQL 18 and migrate
+        env: {PGPASSWORD: bootstrap-only, RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak}
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends postgresql-client
+          psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;"
+          install -d -m 700 /run/secrets
+          printf '%s' migration-only > /run/secrets/mayak_database_migration_password
+          printf '%s' application-only > /run/secrets/mayak_database_application_password
+          chmod 600 /run/secrets/mayak_database_*_password
+          uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -c "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;"
+      - name: Focused tests and affected gates
+        run: |
+          uv run pytest -q tests/runtime/test_rf24_scan_resilience.py tests/runtime/test_rf24_scan_resilience_integrity.py
+          uv run ruff check src/mayak/runtime/rf24_scan_resilience.py src/mayak/runtime/rf24_provenance.py src/mayak/runtime/worker.py src/mayak/modules/scan_orchestration/repository.py src/mayak/modules/scan_orchestration/services.py scripts/runtime/run_rf24_scan_resilience.py scripts/runtime/verify_rf24_scan_resilience.py scripts/runtime/check_rf24_scan_resilience_artifact_safety.py scripts/runtime/build_rf24_scan_resilience_manifest.py tests/runtime/test_rf24_scan_resilience.py tests/runtime/test_rf24_scan_resilience_integrity.py
+          uv run mypy --explicit-package-bases scripts/runtime/run_rf24_scan_resilience.py scripts/runtime/verify_rf24_scan_resilience.py src/mayak/runtime/rf24_scan_resilience.py
+          uv run lint-imports
+      - name: Execute seven real scenarios
+        run: |
+          uv run python scripts/runtime/run_rf24_scan_resilience.py --repo-root "$GITHUB_WORKSPACE" --output rf24-scan-resilience-evidence.json --probes rf24-scan-resilience-process-probes.json --log rf24-scan-resilience.log --source-sha "$GITHUB_SHA"
+          uv run python scripts/runtime/verify_rf24_scan_resilience.py --evidence rf24-scan-resilience-evidence.json --source-sha "$GITHUB_SHA"
+          uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
+          uv run python scripts/runtime/build_rf24_scan_resilience_manifest.py --output rf24-scan-resilience-safety-manifest.json --source-sha "$GITHUB_SHA" --run-id "$(python -c 'import json; print(json.load(open("rf24-scan-resilience-evidence.json"))["acceptance_run_id"])')" rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
+          uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-safety-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rf24-scan-runtime-resilience
+          if-no-files-found: error
+          path: |
+            rf24-scan-resilience-evidence.json
+            rf24-scan-resilience-process-probes.json
+            rf24-scan-resilience.log
+            rf24-scan-resilience-safety-manifest.json
