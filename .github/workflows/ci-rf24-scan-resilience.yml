@@ -34,6 +34,10 @@ jobs:
       MAYAK_TELEGRAM_ENABLED: "false"
       MAYAK_MAX_ENABLED: "false"
     steps:
+      - name: Install git for exact source identity gate
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
