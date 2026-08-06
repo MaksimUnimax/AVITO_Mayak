@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import platform
 from contextlib import contextmanager
 from typing import Any, Iterator
@@ -23,6 +24,7 @@ from mayak.runtime.rf23_composition import (
 from mayak.runtime.settings import MayakRuntimeSettings, RuntimeProfile, load_runtime_settings
 
 SESSION_COOKIE = "mayak_session"
+LOGGER = logging.getLogger("mayak.api")
 
 
 class LoginDTO(BaseModel):
@@ -143,7 +145,9 @@ def create_app(
                 not migration.structurally_valid
                 or migration.expected_head != migration.observed_revision
             ):
+                LOGGER.info("health readiness result=unhealthy category=schema_not_current")
                 return JSONResponse({"status": "not_ready", "reason": "schema not current"}, 503)
+            LOGGER.info("health readiness result=healthy category=database_current")
             return JSONResponse(
                 {
                     "status": "ready",
@@ -152,7 +156,11 @@ def create_app(
                     "providers": {"telegram": "disabled", "max": "disabled"},
                 }
             )
-        except Exception:
+        except Exception as exc:
+            LOGGER.info(
+                "health readiness result=unhealthy category=db_connectivity exception_class=%s",
+                type(exc).__name__,
+            )
             return JSONResponse({"status": "not_ready", "reason": "core runtime unavailable"}, 503)
 
     @app.get("/version", tags=["health"])

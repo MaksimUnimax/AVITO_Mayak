@@ -10,7 +10,12 @@ import re
 from pathlib import Path
 
 VERSION = "rf23-safety-scanner/v1"
-EXPECTED = ("rf23-evidence.json", "rf23-full-pytest.log")
+EXPECTED = (
+    "rf23-evidence.json",
+    "rf23-full-pytest.log",
+    "rf23-runtime-probes.json",
+    "rf23-api.log",
+)
 FORBIDDEN = re.compile(
     r"-----BEGIN .*PRIVATE KEY-----|Bearer\s+[A-Za-z0-9._~-]{20,}|"
     r"postgres(?:ql)?://[^\s:]+:[^\s@]+@",
@@ -130,17 +135,16 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     if (
-        len(args.paths) not in (2, 3)
-        or tuple(path.name for path in args.paths[:2]) != EXPECTED
+        len(args.paths) != len(EXPECTED)
+        or tuple(path.name for path in args.paths) != EXPECTED
         or any(path.name != path.parts[-1] or ".." in path.parts for path in args.paths)
     ):
         raise SystemExit(
-            "RF23 safety scanner requires exact payloads: rf23-evidence.json rf23-full-pytest.log"
+            "RF23 safety scanner requires exact payloads: "
+            "rf23-evidence.json rf23-full-pytest.log rf23-runtime-probes.json rf23-api.log"
         )
 
     findings: list[str] = []
-    if len(args.paths) == 3 and args.paths[2].name != "rf23-runtime-probes.json":
-        findings.append("runtime probe basename is not exact")
     transport = transport_inventory(args.repo_root.resolve())
     if any(transport.values()):
         findings.append(f"transport boundary violations: {transport}")
@@ -150,6 +154,8 @@ def main() -> int:
             findings.append(f"missing payload: {path.name}")
             continue
         raw = path.read_bytes()
+        if path.name == "rf23-api.log" and not raw:
+            findings.append("API log is zero bytes")
         if path.name in {EXPECTED[0], "rf23-runtime-probes.json"}:
             try:
                 findings.extend(_find(json.loads(raw.decode("utf-8"))))

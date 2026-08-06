@@ -60,7 +60,7 @@ def _manifest(path: Path, *, root: Path, require_probe: bool = False) -> None:
     payloads = value.get("payloads")
     expected_payloads = ["rf23-evidence.json", "rf23-full-pytest.log"]
     if require_probe:
-        expected_payloads.append("rf23-runtime-probes.json")
+        expected_payloads.extend(("rf23-runtime-probes.json", "rf23-api.log"))
     if (
         not isinstance(payloads, list)
         or [x.get("basename") for x in payloads if isinstance(x, dict)] != expected_payloads
@@ -88,6 +88,8 @@ def _manifest(path: Path, *, root: Path, require_probe: bool = False) -> None:
         if item["path"] != target.resolve().as_posix() or not target.is_file():
             _fail(f"scanner payload path binding failed: {basename}")
         raw = target.read_bytes()
+        if basename == "rf23-api.log" and not raw:
+            _fail("API log is zero bytes")
         if item["size"] != len(raw) or item["sha256"] != hashlib.sha256(raw).hexdigest():
             _fail(f"scanner payload digest binding failed: {basename}")
         if (
@@ -139,6 +141,7 @@ def verify(
         "application_current_user",
         "migration_revision",
         "pytest_log_sha256",
+        "api_log_sha256",
         "route_inventory",
         "health",
         "readiness",
@@ -293,6 +296,14 @@ def verify(
         log_path = Path(pytest_log) if pytest_log else root / "rf23-full-pytest.log"
         _pytest_log(log_path)
         if evidence.get("pytest_log_sha256") != hashlib.sha256(log_path.read_bytes()).hexdigest():
+            return False
+        api_log_path = root / "rf23-api.log"
+        if (
+            not api_log_path.is_file()
+            or not api_log_path.read_bytes()
+            or evidence.get("api_log_sha256")
+            != hashlib.sha256(api_log_path.read_bytes()).hexdigest()
+        ):
             return False
         _manifest(
             Path(manifest) if manifest else root / "rf23-safety-manifest.json",

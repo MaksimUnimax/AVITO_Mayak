@@ -83,10 +83,10 @@ def test_rf23_focused_layout_proof_cannot_replace_normal_acceptance() -> None:
     assert "uv run pytest -q 2>&1 | tee rf23-full-pytest.log" in source
 
 
-def test_rf23_active_provenance_is_c07_and_c05_is_absent_from_acceptance_scope() -> None:
+def test_rf23_active_provenance_is_c10_and_c05_is_absent_from_acceptance_scope() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     source = ORCHESTRATOR.read_text(encoding="utf-8")
-    active = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-09"
+    active = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-10"
     assert f"RF23_TECHNICAL_ID: {active}" in workflow
     assert 'TECHNICAL_ID="$RF23_TECHNICAL_ID"' in source
     assert "RF23_TECHNICAL_ID:-" not in source
@@ -121,7 +121,7 @@ def test_rf23_topology_proof_remains_task_owned_without_host_postgres_publish() 
     assert 'com.mayak.owner="$OWNER_LABEL"' in source
     assert "postgres:18-bookworm@sha256:" in source
     assert "--network-alias mayak-postgres" in source
-    assert "type=tmpfs,dst=/var/lib/postgresql" in source
+    assert 'type=bind,src="$PGDATA",dst=/var/lib/postgresql' in source
     assert "MAYAK_API_HOST_PORT=disabled" in source
     assert "\n  -p " not in source
 
@@ -160,7 +160,7 @@ def test_rf23_identity_overrides_are_test_only_and_checkout_is_workspace() -> No
 
 def _evidence() -> dict[str, object]:
     return {
-        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-09",
+        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-10",
         "candidate_sha": "a" * 40,
         "candidate_tree_identity": "b" * 40,
         "observation_source": "live_http_and_process_local_git",
@@ -235,10 +235,14 @@ def _run(
         }
     )
     (tmp_path / "rf23-runtime-probes.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "rf23-api.log").write_text("api process start\n", encoding="utf-8")
     evidence.write_text(json.dumps(evidence_data), encoding="utf-8")
     log.write_text(summary, encoding="utf-8")
     evidence_data = json.loads(evidence.read_text(encoding="utf-8"))
     evidence_data["pytest_log_sha256"] = hashlib.sha256(log.read_bytes()).hexdigest()
+    evidence_data["api_log_sha256"] = hashlib.sha256(
+        (tmp_path / "rf23-api.log").read_bytes()
+    ).hexdigest()
     evidence.write_text(json.dumps(evidence_data), encoding="utf-8")
     result = subprocess.run(
         [
@@ -247,6 +251,7 @@ def _run(
             str(evidence),
             str(log),
             str(tmp_path / "rf23-runtime-probes.json"),
+            str(tmp_path / "rf23-api.log"),
             "--manifest",
             str(manifest),
         ],
@@ -269,7 +274,7 @@ def _verify(evidence: Path, log: Path, manifest: Path) -> subprocess.CompletedPr
             "--expected-tree",
             "b" * 40,
             "--expected-technical-id",
-            "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-09",
+            "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-10",
             "--manifest",
             str(manifest),
             "--pytest-log",
@@ -290,7 +295,16 @@ def test_rf23_verifier_rejects_digest_valid_failing_log(tmp_path: Path) -> None:
     evidence, log, manifest = _run(tmp_path)
     log.write_text("===== 1 passed, 1 failed in 0.01s =====", encoding="utf-8")
     rerun = subprocess.run(
-        [sys.executable, str(SCAN), str(evidence), str(log), "--manifest", str(manifest)],
+        [
+            sys.executable,
+            str(SCAN),
+            str(evidence),
+            str(log),
+            str(tmp_path / "rf23-runtime-probes.json"),
+            str(tmp_path / "rf23-api.log"),
+            "--manifest",
+            str(manifest),
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -305,6 +319,33 @@ def test_rf23_verifier_rejects_missing_log_and_manifest(tmp_path: Path) -> None:
     assert _verify(evidence, log, manifest).returncode != 0
     evidence, log, manifest = _run(tmp_path)
     manifest.unlink()
+    assert _verify(evidence, log, manifest).returncode != 0
+
+
+def test_rf23_verifier_rejects_missing_or_changed_api_log(tmp_path: Path) -> None:
+    evidence, log, manifest = _run(tmp_path)
+    api_log = tmp_path / "rf23-api.log"
+    api_log.unlink()
+    assert _verify(evidence, log, manifest).returncode != 0
+
+    evidence, log, manifest = _run(tmp_path)
+    api_log.write_text("tampered runtime evidence\n", encoding="utf-8")
+    rerun = subprocess.run(
+        [
+            sys.executable,
+            str(SCAN),
+            str(evidence),
+            str(log),
+            str(tmp_path / "rf23-runtime-probes.json"),
+            str(api_log),
+            "--manifest",
+            str(manifest),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert rerun.returncode == 0
     assert _verify(evidence, log, manifest).returncode != 0
 
 

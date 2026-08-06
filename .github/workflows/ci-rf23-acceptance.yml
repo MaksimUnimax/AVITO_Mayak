@@ -12,7 +12,7 @@ jobs:
   acceptance:
     runs-on: ubuntu-24.04
     env:
-      RF23_TECHNICAL_ID: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-09
+      RF23_TECHNICAL_ID: RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-10
     steps:
       - uses: actions/checkout@v4
         with:
