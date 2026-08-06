@@ -111,6 +111,15 @@ jobs:
           uv run python scripts/runtime/run_rf24_vertical_spine.py --repo-root "$GITHUB_WORKSPACE" --output rf24-spine-evidence.json --probes rf24-spine-runtime-probes.json --log rf24-spine.log --source-sha "$GITHUB_SHA"
           uv run python scripts/runtime/verify_rf24_vertical_spine.py --evidence rf24-spine-evidence.json --source-sha "$GITHUB_SHA"
           uv run python scripts/runtime/check_rf24_spine_artifact_safety.py rf24-spine-evidence.json rf24-spine-runtime-probes.json rf24-spine.log rf24-spine-full-pytest.log
+      - name: RF24 process diagnostics on failure
+        if: failure()
+        run: |
+          for path in rf24-api.log rf24-worker.log rf24-scheduler.log; do
+            if test -f "$path"; then
+              echo "--- $path ---"
+              tail -n 160 "$path"
+            fi
+          done
       - name: Artifact manifest
         run: |
           python -c 'import hashlib,json; from pathlib import Path; files=[Path(x) for x in ("rf24-spine-evidence.json","rf24-spine-runtime-probes.json","rf24-spine.log","rf24-spine-full-pytest.log")]; Path("rf24-spine-safety-manifest.json").write_text(json.dumps({"finding_count":0,"artifacts":[{"basename":p.name,"size":p.stat().st_size,"sha256":hashlib.sha256(p.read_bytes()).hexdigest()} for p in files]},sort_keys=True,indent=2)+"\n")'
