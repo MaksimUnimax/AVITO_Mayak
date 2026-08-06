@@ -8,8 +8,12 @@ import time
 from datetime import UTC, datetime
 from types import FrameType
 
+from sqlalchemy import select
+
 from mayak.modules.scan_orchestration.services import materialize_due_work
+from mayak.persistence.metadata import metadata
 from mayak.runtime.rf24_composition import RF24RuntimeComposition, build_rf24_composition
+from mayak.runtime.rf24_provenance import emit_process_observation
 from mayak.runtime.settings import load_runtime_settings
 
 LOGGER = logging.getLogger("mayak.scheduler")
@@ -30,6 +34,23 @@ def run_once(
         made = materialize_due_work(
             composition.scan_repository(session), moment, composition.settings.worker.batch_size
         )
+        if made:
+            work = metadata.tables["mayak.scan_work_items"]
+            rows = session.execute(
+                select(work.c.id, work.c.schedule_id, work.c.beacon_id, work.c.due_at)
+                .where(work.c.id.in_(made))
+            ).mappings()
+            for row in rows:
+                emit_process_observation(
+                    {
+                        "record_type": "scheduler_materialization",
+                        "materialized_count": len(made),
+                        "schedule_id": str(row["schedule_id"]),
+                        "work_item_id": str(row["id"]),
+                        "beacon_id": str(row["beacon_id"]),
+                        "due_at": row["due_at"].isoformat(),
+                    }
+                )
         message = (
             f"scheduler process=mayak-scheduler materialized={len(made)} "
             f"work_item_ids={','.join(str(item) for item in made) or 'none'}"

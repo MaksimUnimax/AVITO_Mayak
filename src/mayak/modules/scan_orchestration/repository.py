@@ -90,9 +90,11 @@ class ScanRepository:
                         row_version=1,
                     )
                     .on_conflict_do_nothing(index_elements=["schedule_id", "due_at"])
+                    .returning(work.c.id)
                 )
-                if result.rowcount == 1:
-                    made.append(wid)
+                inserted_id = result.scalar_one_or_none()
+                if inserted_id is not None:
+                    made.append(inserted_id)
             next_due = original_due
             while next_due <= now:
                 next_due += timedelta(seconds=row["interval_seconds"])

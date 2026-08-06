@@ -60,7 +60,8 @@ def _decode_body(raw: bytes) -> object:
     except (UnicodeDecodeError, json.JSONDecodeError):
         text = raw[:2048].decode("utf-8", "replace")
         markers = tuple(sorted(set(re.findall(r"Web Cabinet|Admin|DELIVERED|SUCCEEDED_[A-Z]+", text))))
-        return {"bytes": len(raw), "markers": markers}
+        references = tuple(sorted(set(re.findall(r"[0-9a-f]{8}-[0-9a-f-]{27,36}", text, re.I))))
+        return {"bytes": len(raw), "markers": markers, "opaque_references": references[:32]}
 
 
 def request(
@@ -104,14 +105,14 @@ def _json_payload(payload: object) -> dict[str, Any]:
 
 
 def _db_provenance(beacon_id: str) -> list[dict[str, object]]:
-    """Read only the accepted scheduler/work/run provenance; never write business state."""
+    """Read-only durable cross-check; it is never used as process provenance."""
     try:
         import psycopg
         host = os.environ.get("MAYAK_DATABASE_HOST", "mayak-postgres")
         port = os.environ.get("MAYAK_DATABASE_PORT", "5432")
         user = os.environ.get("MAYAK_DATABASE_APPLICATION_USER", "mayak_application")
         database = os.environ.get("MAYAK_DATABASE_NAME", "mayak")
-        secret_dir = Path(os.environ.get("MAYAK_RUNTIME_SECRETS_DIR", "/run/secrets"))
+        secret_dir = Path(os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"))
         password_path = secret_dir / "mayak_database_application_password"
         password = password_path.read_text(encoding="utf-8").strip() if password_path.exists() else None
         with psycopg.connect(host=host, port=int(port), user=user, dbname=database, password=password) as conn:
@@ -134,6 +135,44 @@ def _db_provenance(beacon_id: str) -> list[dict[str, object]]:
         return []
 
 
+def _read_jsonl(path: Path, *, process_kind: str, run_id: str) -> list[dict[str, Any]]:
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError(f"missing {process_kind} observation file")
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines()[:128]:
+        item = json.loads(line)
+        if not isinstance(item, dict) or item.get("process_kind") != process_kind or item.get("acceptance_run_id") != run_id:
+            raise RuntimeError(f"invalid {process_kind} observation identity")
+        rows.append(item)
+    return rows
+
+
+def _db_snapshot(account_id: str, beacon_id: str) -> dict[str, object]:
+    """Bounded read-only snapshot used to calculate observed acceptance deltas."""
+    import psycopg
+    host = os.environ.get("MAYAK_DATABASE_HOST", "mayak-postgres")
+    port = os.environ.get("MAYAK_DATABASE_PORT", "5432")
+    user = os.environ.get("MAYAK_DATABASE_APPLICATION_USER", "mayak_application")
+    database = os.environ.get("MAYAK_DATABASE_NAME", "mayak")
+    secret_dir = Path(os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"))
+    password_path = secret_dir / "mayak_database_application_password"
+    password = password_path.read_text(encoding="utf-8").strip() if password_path.exists() else None
+    with psycopg.connect(host=host, port=int(port), user=user, dbname=database, password=password) as conn:
+        with conn.cursor() as cursor:
+            result: dict[str, object] = {}
+            queries = {
+                "listing_identities": ("SELECT external_listing_key FROM mayak.scan_beacon_listing_state WHERE beacon_id=%s ORDER BY external_listing_key", (beacon_id,)),
+                "scan_new_listing_events": ("SELECT id FROM mayak.notification_events WHERE account_id=%s AND beacon_id=%s AND event_code='NEW_LISTINGS_FOUND' ORDER BY id", (account_id, beacon_id)),
+                "notification_events": ("SELECT id, payload->>'source_event_id' FROM mayak.notification_events WHERE account_id=%s AND beacon_id=%s ORDER BY id", (account_id, beacon_id)),
+                "outbox_records": ("SELECT id, event_id FROM mayak.notification_outbox WHERE event_id IN (SELECT id FROM mayak.notification_events WHERE account_id=%s AND beacon_id=%s) ORDER BY id", (account_id, beacon_id)),
+                "delivery_attempts": ("SELECT a.id, a.outbox_id, a.state, e.provider_code FROM mayak.notification_delivery_attempts a JOIN mayak.notification_outbox o ON o.id=a.outbox_id JOIN mayak.notification_endpoints e ON e.id=o.endpoint_id WHERE o.event_id IN (SELECT id FROM mayak.notification_events WHERE account_id=%s AND beacon_id=%s) ORDER BY a.id", (account_id, beacon_id)),
+            }
+            for name, (query, params) in queries.items():
+                cursor.execute(query, params)
+                result[name] = [tuple(str(value) for value in row) for row in cursor.fetchall()]
+            return result
+
+
 def _run_records(scan_payload: object) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     if not isinstance(scan_payload, list):
@@ -151,6 +190,9 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
     run_id = f"rf24-spine-{uuid4()}"
     port = os.environ.get("MAYAK_API_INTERNAL_PORT", "18080")
     base = f"http://127.0.0.1:{port}"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    scheduler_observations = log.parent / f"rf24-{run_id}-scheduler-observations.jsonl"
+    worker_observations = log.parent / f"rf24-{run_id}-worker-observations.jsonl"
     env = {k: v for k, v in os.environ.items() if not k.startswith("MAYAK_")}
     env.update({
         "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance", "MAYAK_SOURCE_SHA": actual_sha,
@@ -159,11 +201,14 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         "MAYAK_DATABASE_HOST": os.environ.get("MAYAK_DATABASE_HOST", "mayak-postgres"),
         "MAYAK_DATABASE_PORT": "5432", "MAYAK_DATABASE_NAME": "mayak",
         "MAYAK_DATABASE_APPLICATION_USER": "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
+        "MAYAK_SECRETS_DIR": os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"),
         "MAYAK_API_BIND_HOST": "127.0.0.1", "MAYAK_API_INTERNAL_PORT": port, "MAYAK_API_HOST_PORT": "disabled",
         "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true", "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
         "MAYAK_AVITO_LIVE_ENABLED": "false", "MAYAK_TELEGRAM_ENABLED": "false", "MAYAK_TELEGRAM_UPDATE_MODE": "disabled",
         "MAYAK_MAX_ENABLED": "false", "MAYAK_MAX_UPDATE_MODE": "disabled", "MAYAK_PROCESS_KIND": "mayak-api",
         "MAYAK_WORKER_POLL_INTERVAL_SECONDS": "1", "MAYAK_SCHEDULER_POLL_INTERVAL_SECONDS": "1",
+        "RF24_SCHEDULER_OBSERVATIONS": str(scheduler_observations),
+        "RF24_WORKER_OBSERVATIONS": str(worker_observations),
     })
     handles: list[tuple[str, subprocess.Popen[str], Path, Any]] = []
     for kind, module in (("api", "mayak.runtime.api"), ("worker", "mayak.runtime.worker"), ("scheduler", "mayak.runtime.scheduler")):
@@ -203,13 +248,16 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         version = int(_json_payload(snapshot.payload).get("row_version", version + 1))
         activated = request(f"{base}/api/v1/beacons/{beacon_id}/activate?expected_row_version={version}", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:activate")
         schedule = request(f"{base}/api/v1/beacons/{beacon_id}/scan-schedule", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:schedule", body={"interval_seconds": 10800, "next_due_at": (datetime.now(UTC) - timedelta(seconds=5)).isoformat()})
+        baseline_before = _db_snapshot(account_id, beacon_id)
         scan = SafeResponse(0, [])
         for _ in range(40):
             scan = request(f"{base}/api/v1/scans", session_cookie=cookie)
             if any(r.get("state") == "SUCCEEDED_BASELINE" for r in _run_records(scan.payload)):
                 break
             time.sleep(0.5)
+        baseline_after = _db_snapshot(account_id, beacon_id)
         second_schedule = request(f"{base}/api/v1/beacons/{beacon_id}/scan-schedule", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:schedule-2", body={"interval_seconds": 10800, "next_due_at": (datetime.now(UTC) - timedelta(seconds=5)).isoformat()})
+        difference_before = _db_snapshot(account_id, beacon_id)
         second = SafeResponse(0, [])
         for _ in range(40):
             second = request(f"{base}/api/v1/scans", session_cookie=cookie)
@@ -218,15 +266,60 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             time.sleep(0.5)
         notifications = request(f"{base}/api/v1/notifications", session_cookie=cookie)
         cabinet = request(f"{base}/web/", session_cookie=cookie)
-        admin = request(f"{base}/admin/account/{account_id}", session_cookie=login._session_cookie)
-        provenance = _db_provenance(beacon_id)
-        if len(provenance) < 2:
-            raise RuntimeError("scheduler provenance is incomplete")
-        first, second_provenance = provenance[-2], provenance[-1]
+        admin = request(
+            f"{base}/admin/account/{account_id}",
+            session_cookie=login._session_cookie,
+        )
+        scheduler_records = [r for r in _read_jsonl(scheduler_observations, process_kind="mayak-scheduler", run_id=run_id) if r.get("record_type") == "scheduler_materialization" and r.get("materialized_count", 0) >= 1]
+        worker_records = _read_jsonl(worker_observations, process_kind="mayak-worker", run_id=run_id)
+        claims = [r for r in worker_records if r.get("record_type") == "worker_claim"]
+        terminals = [r for r in worker_records if r.get("record_type") == "worker_terminal"]
+        if len(scheduler_records) < 2 or len(claims) < 2 or len(terminals) < 2:
+            raise RuntimeError("process-originated RF24 provenance is incomplete")
+        first, second_provenance = scheduler_records[0], scheduler_records[1]
+        claim_by_work = {r["work_item_id"]: r for r in claims}
+        terminal_by_work = {r["work_item_id"]: r for r in terminals}
+        if first["work_item_id"] == second_provenance["work_item_id"]:
+            raise RuntimeError("scheduler did not emit two distinct work IDs")
+        durable = _db_provenance(beacon_id)
+        durable_by_work = {r["work_item_id"]: r for r in durable}
+        for item in (first, second_provenance):
+            if item["work_item_id"] not in claim_by_work or item["work_item_id"] not in terminal_by_work or item["work_item_id"] not in durable_by_work:
+                raise RuntimeError("process and durable provenance do not correlate")
+        first_terminal, second_terminal = terminal_by_work[first["work_item_id"]], terminal_by_work[second_provenance["work_item_id"]]
+        difference_after = _db_snapshot(account_id, beacon_id)
         notification_payload = _safe_payload(notifications.payload)
         event_id = None
         if isinstance(notification_payload, list) and notification_payload and isinstance(notification_payload[0], dict):
             event_id = notification_payload[0].get("event_id")
+        before_events = cast(list[tuple[str, ...]], difference_before.get("notification_events", []))
+        after_events = cast(list[tuple[str, ...]], difference_after.get("notification_events", []))
+        before_event_ids = {item[0] for item in before_events if isinstance(item, tuple)}
+        difference_event_ids = [row[0] for row in after_events if isinstance(row, tuple) and row[0] not in before_event_ids]
+        if len(difference_event_ids) != 1 or event_id != difference_event_ids[0]:
+            raise RuntimeError("actual Notification event does not match durable delta")
+        before_outbox = cast(list[tuple[str, ...]], difference_before.get("outbox_records", []))
+        before_attempts = cast(list[tuple[str, ...]], difference_before.get("delivery_attempts", []))
+        after_outbox = cast(list[tuple[str, ...]], difference_after.get("outbox_records", []))
+        after_attempts = cast(list[tuple[str, ...]], difference_after.get("delivery_attempts", []))
+        outbox_delta = [row for row in after_outbox if row not in before_outbox]
+        attempt_delta = [row for row in after_attempts if row not in before_attempts]
+        history_row = next((row for row in notification_payload if isinstance(row, dict) and row.get("event_id") == event_id), {}) if isinstance(notification_payload, list) else {}
+        if len(outbox_delta) != 1 or len(attempt_delta) != 1:
+            raise RuntimeError("actual outbox/Telegram deltas are not singular")
+        before_listings = cast(list[tuple[str, ...]], difference_before.get("listing_identities", []))
+        after_listings = cast(list[tuple[str, ...]], difference_after.get("listing_identities", []))
+        listing_delta = [row[0] for row in after_listings if row not in before_listings]
+        web_payload = _safe_payload(cabinet.payload)
+        web_refs = cast(tuple[str, ...], web_payload.get("opaque_references", ())) if isinstance(web_payload, dict) else ()
+        admin_payload = _safe_payload(admin.payload)
+        admin_refs = cast(tuple[str, ...], admin_payload.get("opaque_references", ())) if isinstance(admin_payload, dict) else ()
+        scan_event_id = str(second_terminal["event_ids"][0]) if second_terminal.get("event_ids") else None
+        notification_source_event_id = next((row[1] for row in after_events if isinstance(row, tuple) and row[0] == event_id), None)
+        if notification_source_event_id != scan_event_id:
+            raise RuntimeError("Notification event source identity does not match ScanNewListing event")
+        web_observed = cabinet.status == 200 and account_id in web_refs and beacon_id in web_refs and bool(listing_delta)
+        admin_observed = admin.status == 200 and account_id in admin_refs
         observations.update({
             "login": login_safe, "admin_bootstrap": admin_bootstrap.evidence(), "entitlement": entitlement.evidence(),
             "beacon": beacon.evidence(), "snapshot": snapshot.evidence(), "activated": activated.evidence(),
@@ -240,15 +333,19 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             "processes": [{"kind": k, "pid": p.pid, "identity": f"mayak-{k}"} for k, p, _, _ in handles],
             "security": {"credentials_exposure": False, "cookie_in_memory_only": True, "serialized_cookie_value_present": False, "authorization_material_present": False},
             "identity": {"operator_account_id": operator_account_id, "target_account_id": account_id, "login_state": _json_payload(login.payload).get("state")},
+            "scheduler_observations": scheduler_records[:2],
+            "worker_observations": worker_records,
             "scheduler_cycles": [{"cycle": 1, **first}, {"cycle": 2, **second_provenance}],
-            "worker_cycles": [{"cycle": 1, "claimed_work_item_id": first["work_item_id"], "run_id": first["run_id"]}, {"cycle": 2, "claimed_work_item_id": second_provenance["work_item_id"], "run_id": second_provenance["run_id"]}],
-            "scan_cycles": [{"cycle": 1, "state": "SUCCEEDED_BASELINE", "notification_delta": 0}, {"cycle": 2, "state": "SUCCEEDED_DIFFERENCE", "new_listing_count": 1, "scan_new_listing_event_count": 1}],
-            "notification": {"event_id": event_id, "effect_count": 1, "telegram_attempt_count": 1, "telegram_fake_delivery_committed": True, "telegram_live_provider_calls": 0},
-            "telegram": {"fake_delivery_committed": True, "live_provider_calls": 0},
-            "web_status_read_model": {"web_delivery_mode": "WEB_STATUS_READ_MODEL", "web_event_id": event_id, "web_account_id": account_id, "web_beacon_id": beacon_id, "web_visible": True},
-            "web_cabinet": {"status": cabinet.status, "target_state_visible": cabinet.status == 200, "account_id": account_id, "beacon_id": beacon_id, "notification_event_id": event_id},
-            "admin_diagnostics": {"status": admin.status, "authenticated": admin_bootstrap.status == 200, "authorized": admin.status == 200, "operator_account_id": operator_account_id, "target_account_id": account_id, "beacon_id": beacon_id, "baseline_run_id": first["run_id"], "difference_run_id": second_provenance["run_id"], "notification_event_id": event_id, "target_diagnostics_visible": admin.status == 200},
-            "runtime_boundaries": {"foreign_resource_impact": 0, "production_personal_data": 0, "direct_sql_read_assertions": ["scheduler_work_run_provenance"], "direct_sql_writes": []},
+            "worker_cycles": [{"cycle": 1, **claim_by_work[first["work_item_id"]], "terminal": first_terminal}, {"cycle": 2, **claim_by_work[second_provenance["work_item_id"]], "terminal": second_terminal}],
+            "durable_provenance": durable,
+            "scan_cycles": [{"cycle": 1, "run_id": first_terminal["run_id"], "state": first_terminal["terminal_state"], "new_listing_count": first_terminal["new_listing_count"], "event_ids": first_terminal["event_ids"]}, {"cycle": 2, "run_id": second_terminal["run_id"], "state": second_terminal["terminal_state"], "new_listing_count": second_terminal["new_listing_count"], "event_ids": second_terminal["event_ids"]}],
+            "before_after": {"baseline": {"before": baseline_before, "after": baseline_after}, "difference": {"before": difference_before, "after": difference_after}},
+            "notification": {"event_id": event_id, "source_event_id": notification_source_event_id, "source_listing_reference_ids": history_row.get("listing_reference_ids"), "effect_count": len(outbox_delta), "outbox_id": outbox_delta[0][0]},
+            "telegram": {"channel_class": attempt_delta[0][3], "attempt_id": attempt_delta[0][0], "outbox_id": attempt_delta[0][1], "delivery_status": history_row.get("delivery_status"), "provider_safe_delivery_reference": history_row.get("provider_safe_delivery_reference"), "live_provider_calls": 0, "blind_retries": 0},
+            "web_status_read_model": {"web_delivery_mode": "WEB_STATUS_READ_MODEL", "web_event_id": event_id, "web_source_event_id": scan_event_id, "web_account_id": account_id, "web_beacon_id": beacon_id, "web_listing_reference": listing_delta[0] if listing_delta else None, "web_visible": web_observed},
+            "web_cabinet": {"status": cabinet.status, "response": web_payload, "target_state_visible": web_observed, "account_id": account_id, "beacon_id": beacon_id, "notification_event_id": event_id},
+            "admin_diagnostics": {"status": admin.status, "response": admin_payload, "authenticated": admin_bootstrap.status == 200 and admin_observed, "authorized": admin_observed, "operator_account_id": operator_account_id, "target_account_id": account_id, "beacon_id": beacon_id, "baseline_run_id": first_terminal["run_id"], "difference_run_id": second_terminal["run_id"], "scan_event_id": scan_event_id, "notification_event_id": event_id, "target_observation": {"account_id": account_id, "beacon_id": beacon_id, "baseline_run_id": first_terminal["run_id"], "difference_run_id": second_terminal["run_id"], "notification_event_id": event_id, "scan_event_id": scan_event_id}, "target_diagnostics_visible": admin_observed},
+            "runtime_boundaries": {"foreign_resource_impact": 0, "production_personal_data": 0, "direct_sql_read_assertions": ["scheduler_work_run_durable_cross_check", "listing_identity_before_after", "scan_new_listing_event_before_after", "notification_event_before_after", "outbox_before_after", "delivery_attempt_before_after"], "direct_sql_writes": []},
             "observations": observations, "provider_live_calls": 0, "foreign_resource_impact": 0, "production_personal_data": 0,
             "credentials_exposure": False,
         }

@@ -116,3 +116,18 @@ def test_verifier_rejects_generic_unauthenticated_admin_page(tmp_path: Path) -> 
     path.write_text(json.dumps(evidence), encoding="utf-8")
     with pytest.raises(ValueError):
         verify(path, "a" * 40)
+
+
+def test_verifier_rejects_db_reconstructed_process_provenance(tmp_path: Path) -> None:
+    """Regression: DB rows plus expected constants do not prove process origin."""
+    evidence = _known_good()
+    evidence["durable_provenance"] = [
+        {"schedule_id": "s", "work_item_id": "w1", "run_id": "r1"},
+        {"schedule_id": "s", "work_item_id": "w2", "run_id": "r2"},
+    ]
+    evidence.pop("scheduler_observations", None)
+    evidence.pop("worker_observations", None)
+    path = tmp_path / "db-reconstructed.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    with pytest.raises(ValueError, match="scheduler observations"):
+        verify(path, "a" * 40)

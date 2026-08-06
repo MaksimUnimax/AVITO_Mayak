@@ -29,6 +29,7 @@ from mayak.modules.scan_orchestration.services import (
 )
 from mayak.persistence.metadata import metadata
 from mayak.runtime.rf24_composition import RF24RuntimeComposition, build_rf24_composition
+from mayak.runtime.rf24_provenance import emit_process_observation
 from mayak.runtime.settings import load_runtime_settings
 
 LOGGER = logging.getLogger("mayak.worker")
@@ -86,6 +87,15 @@ def process_once(
             ",".join(str(item.work_item_id) for item in claims) or "none",
         )
         for claim in claims:
+            emit_process_observation(
+                {
+                    "record_type": "worker_claim",
+                    "claim_id": f"pid-{os.getpid()}-work-{claim.work_item_id}",
+                    "work_item_id": str(claim.work_item_id),
+                    "schedule_id": str(claim.schedule_id),
+                    "beacon_id": str(claim.beacon_id),
+                }
+            )
             try:
                 beacon = composition.scan_beacon(session)
                 run = start_run(repo, claim, beacon, now=moment)
@@ -143,6 +153,20 @@ def process_once(
                                 event_id=event_id,
                                 now=moment,
                             )
+                    emit_process_observation(
+                        {
+                            "record_type": "worker_terminal",
+                            "work_item_id": str(claim.work_item_id),
+                            "run_id": str(run.run_id),
+                            "terminal_state": (
+                                "SUCCEEDED_DIFFERENCE"
+                                if comparison.new_listing_keys
+                                else "SUCCEEDED_BASELINE"
+                            ),
+                            "new_listing_count": len(comparison.new_listing_keys),
+                            "event_ids": [str(event_id) for event_id in comparison.event_ids],
+                        }
+                    )
                 else:
                     record_parser_outcome(repo, run, persisted.outcome_id, parser, now=moment)
                 processed += 1
