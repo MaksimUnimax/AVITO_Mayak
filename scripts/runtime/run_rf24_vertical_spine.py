@@ -191,8 +191,9 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
     port = os.environ.get("MAYAK_API_INTERNAL_PORT", "18080")
     base = f"http://127.0.0.1:{port}"
     log.parent.mkdir(parents=True, exist_ok=True)
-    scheduler_observations = log.parent / f"rf24-{run_id}-scheduler-observations.jsonl"
-    worker_observations = log.parent / f"rf24-{run_id}-worker-observations.jsonl"
+    observation_dir = log.parent.resolve()
+    scheduler_observations = observation_dir / f"rf24-{run_id}-scheduler-observations.jsonl"
+    worker_observations = observation_dir / f"rf24-{run_id}-worker-observations.jsonl"
     env = {k: v for k, v in os.environ.items() if not k.startswith("MAYAK_")}
     env.update({
         "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance", "MAYAK_SOURCE_SHA": actual_sha,
