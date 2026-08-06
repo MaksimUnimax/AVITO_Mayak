@@ -78,7 +78,7 @@ jobs:
         run: |
           uv run pytest -q tests/runtime/test_rf17_notification_delivery_runtime.py tests/runtime/test_rf21_web_cabinet_runtime.py tests/runtime/test_rf20_admin_support_runtime.py tests/runtime/test_rf23_api_contract.py
           uv run ruff check src/mayak/runtime scripts/runtime
-          uv run mypy --explicit-package-bases src/mayak/runtime scripts/runtime
+          uv run mypy --explicit-package-bases src/mayak/runtime scripts/runtime/run_rf24_vertical_spine.py scripts/runtime/verify_rf24_vertical_spine.py scripts/runtime/check_rf24_spine_artifact_safety.py
           uv run lint-imports
       - name: Full repository pytest
         env:
