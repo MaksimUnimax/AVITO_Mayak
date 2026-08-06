@@ -86,7 +86,7 @@ def test_rf23_focused_layout_proof_cannot_replace_normal_acceptance() -> None:
 def test_rf23_active_provenance_is_c07_and_c05_is_absent_from_acceptance_scope() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     source = ORCHESTRATOR.read_text(encoding="utf-8")
-    active = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-08"
+    active = "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-09"
     assert f"RF23_TECHNICAL_ID: {active}" in workflow
     assert 'TECHNICAL_ID="$RF23_TECHNICAL_ID"' in source
     assert "RF23_TECHNICAL_ID:-" not in source
@@ -160,7 +160,7 @@ def test_rf23_identity_overrides_are_test_only_and_checkout_is_workspace() -> No
 
 def _evidence() -> dict[str, object]:
     return {
-        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-08",
+        "technical_id": "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-09",
         "candidate_sha": "a" * 40,
         "candidate_tree_identity": "b" * 40,
         "observation_source": "live_http_and_process_local_git",
@@ -269,7 +269,7 @@ def _verify(evidence: Path, log: Path, manifest: Path) -> subprocess.CompletedPr
             "--expected-tree",
             "b" * 40,
             "--expected-technical-id",
-            "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-08",
+            "RF23-CROSS-MODULE-API-COMMAND-WIRING-01-CORRECTIVE-09",
             "--manifest",
             str(manifest),
             "--pytest-log",

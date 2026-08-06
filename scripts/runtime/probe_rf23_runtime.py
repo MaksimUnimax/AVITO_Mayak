@@ -10,8 +10,10 @@ import argparse
 import ast
 import json
 import subprocess
+import time
 from http.cookiejar import CookieJar
 from pathlib import Path
+from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPCookieProcessor, OpenerDirector, Request, build_opener
 
@@ -20,6 +22,10 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
 PROBE_VERSION = "rf23-runtime-probes/v1"
+DB_HEALTH_TIMEOUT_SECONDS = 120.0
+DB_HEALTH_INTERVAL_SECONDS = 2.0
+API_RECOVERY_TIMEOUT_SECONDS = 60.0
+API_RECOVERY_INTERVAL_SECONDS = 1.0
 
 
 def _git(root: Path, *args: str) -> str:
@@ -90,14 +96,63 @@ def _db_identity() -> dict[str, object]:
             "application_current_user": application_user, "migration_revision": revision}
 
 
+def _wait_until_healthy(
+    observe: Callable[[], str],
+    *,
+    timeout: float,
+    interval: float,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> dict[str, object]:
+    """Observe an asynchronous infrastructure transition with a real bounded interval."""
+    if timeout <= 0 or interval <= 0:
+        raise ValueError("timeout and interval must be positive")
+    started = monotonic()
+    deadline = started + timeout
+    attempts = 0
+    last_observation: object = None
+    while True:
+        attempts += 1
+        last_observation = observe()
+        if last_observation == "healthy":
+            return {
+                "status": "healthy",
+                "attempts": attempts,
+                "elapsed_seconds": monotonic() - started,
+                "last_observation": last_observation,
+            }
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return {
+                "status": "unhealthy",
+                "attempts": attempts,
+                "elapsed_seconds": monotonic() - started,
+                "last_observation": last_observation,
+            }
+        sleep(min(interval, remaining))
+
+
+def _docker_health_status(db: str) -> str:
+    value = subprocess.check_output(
+        ["docker", "inspect", "-f", "{{.State.Health.Status}}", db], text=True
+    ).strip()
+    return value or "missing"
+
+
+def _task_owned_db_identity(db: str, network: str, owner: str) -> str:
+    inspect = json.loads(subprocess.check_output(["docker", "inspect", db], text=True))[0]
+    labels = inspect["Config"]["Labels"]
+    assert labels.get("com.mayak.owner") == owner
+    assert network in inspect["NetworkSettings"]["Networks"]
+    return str(inspect["Id"])
+
+
 def _schema_and_loss_probe(base: str, root: Path, opener: OpenerDirector) -> dict[str, object]:
     import os
     db = os.environ["RF23_DB"]
     network = os.environ["RF23_NETWORK"]
-    inspect = json.loads(subprocess.check_output(["docker", "inspect", db], text=True))[0]
-    assert inspect["Config"]["Labels"].get("com.mayak.owner") == os.environ[
-        "RF20_POSTGRES_OWNER_LABEL"
-    ]
+    owner = os.environ["RF20_POSTGRES_OWNER_LABEL"]
+    db_identity = _task_owned_db_identity(db, network, owner)
     cfg = Config(str(root / "alembic.ini"))
     script = ScriptDirectory.from_config(cfg)
     current = _db_identity()["migration_revision"]
@@ -119,16 +174,34 @@ def _schema_and_loss_probe(base: str, root: Path, opener: OpenerDirector) -> dic
     subprocess.run(["docker", "stop", db], check=True, stdout=subprocess.DEVNULL)
     loss_status, _ = _request(opener, base, "/health/ready")
     subprocess.run(["docker", "start", db], check=True, stdout=subprocess.DEVNULL)
-    recovered_status = 0
-    for _ in range(30):
-        recovered_status, _ = _request(opener, base, "/health/ready")
-        if recovered_status == 200:
-            break
-    assert network in inspect["NetworkSettings"]["Networks"]
+    assert _task_owned_db_identity(db, network, owner) == db_identity
+    db_health = _wait_until_healthy(
+        lambda: _docker_health_status(db),
+        timeout=DB_HEALTH_TIMEOUT_SECONDS,
+        interval=DB_HEALTH_INTERVAL_SECONDS,
+    )
+    api_recovery = {
+        "status": "unhealthy",
+        "attempts": 0,
+        "elapsed_seconds": 0.0,
+        "last_observation": None,
+    }
+    if db_health["status"] == "healthy":
+        api_recovery = _wait_until_healthy(
+            lambda: "healthy" if _request(opener, base, "/health/ready")[0] == 200 else "unhealthy",
+            timeout=API_RECOVERY_TIMEOUT_SECONDS,
+            interval=API_RECOVERY_INTERVAL_SECONDS,
+        )
     return {"stale_schema_readiness": "rejected" if stale_status == 503 else "allowed",
             "schema_restore_readiness": "healthy" if restored_status == 200 else "unhealthy",
             "db_loss_readiness": "unhealthy" if loss_status == 503 else "healthy",
-            "db_recovery_readiness": "healthy" if recovered_status == 200 else "unhealthy"}
+            "db_recovery_readiness": api_recovery["status"],
+            "db_health_recovery_attempts": db_health["attempts"],
+            "db_health_recovery_elapsed_seconds": db_health["elapsed_seconds"],
+            "db_health_recovery_last_observation": db_health["last_observation"],
+            "api_recovery_attempts": api_recovery["attempts"],
+            "api_recovery_elapsed_seconds": api_recovery["elapsed_seconds"],
+            "api_recovery_last_observation": api_recovery["last_observation"]}
 
 
 def probe(
