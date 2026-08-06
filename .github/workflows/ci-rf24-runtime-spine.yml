@@ -36,6 +36,9 @@ jobs:
       MAYAK_MAX_ENABLED: "false"
       MAYAK_MAX_UPDATE_MODE: disabled
       MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: ${{ github.workspace }}
 
     steps:
       - uses: actions/checkout@v4
@@ -43,8 +46,15 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Exact published SHA
-        run: test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+      - name: Exact published SHA and workspace trust
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse --show-toplevel)" = "${GITHUB_WORKSPACE}"
+          test "${GIT_CONFIG_COUNT}" = "1"
+          test "${GIT_CONFIG_KEY_0}" = "safe.directory"
+          test "${GIT_CONFIG_VALUE_0}" = "${GITHUB_WORKSPACE}"
+          test "${GIT_CONFIG_VALUE_0}" != "*"
+          test "$(git config --get-all safe.directory)" = "${GITHUB_WORKSPACE}"
       - name: Toolchain and frozen sync
         run: uv sync --frozen
       - name: Bootstrap task roles
