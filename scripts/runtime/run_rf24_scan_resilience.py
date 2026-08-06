@@ -90,12 +90,17 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
     workdir = output.parent.resolve()
     scheduler_obs, worker_obs = workdir / f"{run_id}-scheduler.jsonl", workdir / f"{run_id}-worker.jsonl"
     base_env = {k: v for k, v in os.environ.items() if not k.startswith("MAYAK_")}
+    configured_database_host = os.environ.get("MAYAK_DATABASE_HOST", "postgres")
+    try:
+        database_host = socket.gethostbyname(configured_database_host)
+    except socket.gaierror:
+        database_host = configured_database_host
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         internal_port = int(probe.getsockname()[1])
     base_env.update({"MAYAK_RUNTIME_PROFILE": "synthetic_acceptance", "MAYAK_ENVIRONMENT_ID": run_id, "MAYAK_SOURCE_SHA": actual,
         "MAYAK_LOCK_IDENTITY": "0" * 64, "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
-        "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id, "MAYAK_DATABASE_HOST": os.environ.get("MAYAK_DATABASE_HOST", "postgres"),
+        "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id, "MAYAK_DATABASE_HOST": database_host,
         "MAYAK_DATABASE_PORT": os.environ.get("MAYAK_DATABASE_PORT", "5432"), "MAYAK_DATABASE_NAME": "mayak",
         "MAYAK_DATABASE_APPLICATION_USER": "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
         "MAYAK_SECRETS_DIR": os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"), "MAYAK_API_BIND_HOST": "127.0.0.1",
