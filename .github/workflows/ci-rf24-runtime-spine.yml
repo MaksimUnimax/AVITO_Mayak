@@ -72,6 +72,7 @@ jobs:
         env:
           RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
           RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+          RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
         run: uv run alembic upgrade head
       - name: Focused tests and static checks
         run: |
