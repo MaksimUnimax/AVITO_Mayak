@@ -92,12 +92,9 @@ jobs:
             if test -f "$path"; then
               echo "=== $path ==="
               tail -200 "$path"
-              while IFS= read -r line; do
-                line=${line//'%'/'%25'}
-                line=${line//$'\r'/'%0D'}
-                line=${line//$'\n'/'%0A'}
+              tail -20 "$path" | while IFS= read -r line; do
                 echo "::warning title=$path::$line"
-              done < <(tail -20 "$path")
+              done
             fi
           done
       - uses: actions/upload-artifact@v4
