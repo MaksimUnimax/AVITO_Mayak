@@ -42,6 +42,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v6
         with:
           version: ${{ env.UV_VERSION }}
@@ -74,6 +76,11 @@ jobs:
           RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
           RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
         run: uv run alembic upgrade head
+      - name: Grant application runtime privileges
+        env:
+          PGPASSWORD: migration-only
+        run: |
+          psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;"
       - name: Focused tests and static checks
         run: |
           uv run pytest -q tests/runtime/test_rf17_notification_delivery_runtime.py tests/runtime/test_rf21_web_cabinet_runtime.py tests/runtime/test_rf20_admin_support_runtime.py tests/runtime/test_rf23_api_contract.py
@@ -84,7 +91,10 @@ jobs:
         env:
           RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
           RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
-        run: uv run pytest -q | tee rf24-spine-full-pytest.log
+          MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+          MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+          MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+        run: bash -o pipefail -c 'uv run pytest -q | tee rf24-spine-full-pytest.log'
       - name: Fresh real spine process run
         env:
           MAYAK_SOURCE_SHA: ${{ github.sha }}
