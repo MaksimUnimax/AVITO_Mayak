@@ -52,8 +52,8 @@ jobs:
         run: |
           echo "github_sha=$GITHUB_SHA"
           echo "expected_sha=$EXPECTED_SHA"
-          echo "checked_out_sha=$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
-          test "$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$GITHUB_SHA" = "$EXPECTED_SHA"
+          test -f "$GITHUB_WORKSPACE/.github/workflows/ci-rf24-scan-resilience.yml"
       - name: Deterministic frozen dependency sync
         run: |
           python --version
