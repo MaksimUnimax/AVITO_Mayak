@@ -91,8 +91,9 @@ jobs:
           for path in rf24-api.log rf24-worker.log rf24-scheduler.log rf24-scan-resilience.log; do
             if test -f "$path"; then
               echo "=== $path ==="
-              tail -200 "$path"
-              tail -20 "$path" | while IFS= read -r line; do
+              head -50 "$path"
+              tail -50 "$path"
+              tail -50 "$path" | while IFS= read -r line; do
                 echo "::warning title=$path::$line"
               done
             fi
