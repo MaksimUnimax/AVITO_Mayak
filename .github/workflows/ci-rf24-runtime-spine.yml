@@ -63,6 +63,11 @@ jobs:
         run: |
           apt-get update && apt-get install -y --no-install-recommends postgresql-client
           psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;"
+          install -d -m 700 /run/secrets
+          printf '%s' 'rf24_bootstrap_synthetic' > /run/secrets/mayak_postgres_bootstrap_password
+          printf '%s' 'migration-only' > /run/secrets/mayak_database_migration_password
+          printf '%s' 'application-only' > /run/secrets/mayak_database_application_password
+          chmod 600 /run/secrets/mayak_postgres_bootstrap_password /run/secrets/mayak_database_migration_password /run/secrets/mayak_database_application_password
       - name: Migrate
         env:
           RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
