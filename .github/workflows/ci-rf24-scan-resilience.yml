@@ -41,10 +41,16 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Exact SHA and frozen dependencies
+      - name: Exact SHA gate
         run: |
+          echo "github_sha=$GITHUB_SHA"
+          echo "checked_out_sha=$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          uv sync --frozen --all-groups --python 3.14.6
+      - name: Deterministic frozen dependency sync
+        run: |
+          python --version
+          uv --version
+          uv sync --frozen --all-groups
       - name: Bootstrap PostgreSQL 18 and migrate
         env:
           PGPASSWORD: bootstrap-only
