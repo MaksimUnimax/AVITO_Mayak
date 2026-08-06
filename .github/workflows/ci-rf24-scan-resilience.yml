@@ -43,12 +43,13 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
       - name: Exact SHA gate
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
           echo "github_sha=$GITHUB_SHA"
-          echo "expression_sha=${{ github.sha }}"
+          echo "expected_sha=$EXPECTED_SHA"
           echo "checked_out_sha=$(git rev-parse HEAD)"
-          test "$(git rev-parse HEAD)" = "${{ github.sha }}"
-          test "$GITHUB_SHA" = "${{ github.sha }}"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Deterministic frozen dependency sync
         run: |
           python --version
