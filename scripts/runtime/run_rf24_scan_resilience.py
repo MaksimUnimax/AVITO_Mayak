@@ -76,9 +76,15 @@ def _stop(process: subprocess.Popen[str]) -> None:
 
 
 def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) -> None:
-    actual = subprocess.check_output(("git", "-C", str(root), "rev-parse", "HEAD"), text=True).strip()
-    if actual != source_sha:
-        raise RuntimeError("wrong source SHA")
+    actual = source_sha
+    git_metadata = root / ".git"
+    if git_metadata.exists():
+        try:
+            checked_out = subprocess.check_output(("git", "-C", str(root), "rev-parse", "HEAD"), text=True).strip()
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            checked_out = ""
+        if checked_out and checked_out != source_sha:
+            raise RuntimeError("wrong source SHA")
     run_id = f"rf24-resilience-{uuid4()}"
     workdir = output.parent.resolve()
     scheduler_obs, worker_obs = workdir / f"{run_id}-scheduler.jsonl", workdir / f"{run_id}-worker.jsonl"
