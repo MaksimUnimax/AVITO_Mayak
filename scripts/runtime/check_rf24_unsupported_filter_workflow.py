@@ -28,6 +28,7 @@ REQUIRED = (
     "MAYAK_API_HOST_PORT",
     "check_rf24_cross_account_runtime_settings.py",
     "runtime-settings-preflight=PASS",
+    "final-dsn-database-b=PASS",
     "upload-artifact@v4",
 )
 

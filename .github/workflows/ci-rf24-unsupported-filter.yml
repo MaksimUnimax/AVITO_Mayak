@@ -207,6 +207,7 @@ jobs:
           export RF22_DSN="$RF10_POSTGRES_DSN"
           export RF22_DATABASE_URL="$RF10_POSTGRES_DSN"
           export RF22_MIGRATION_DSN="$RF11_POSTGRES_DSN"
+          uv run python -c 'import os; from urllib.parse import urlsplit; db=os.environ["MAYAK_DATABASE_NAME"]; keys=("RF10_POSTGRES_DSN", "RF11_POSTGRES_DSN", "RF22_DSN", "RF22_DATABASE_URL", "RF22_MIGRATION_DSN"); assert all(urlsplit(os.environ[k]).path.lstrip("/") == db for k in keys); print("final-dsn-database-b=PASS")'
           mkdir -p artifacts
           uv run python scripts/runtime/run_rf24_unsupported_filter.py --real-postgres --artifacts artifacts
       - name: H11 verifier
