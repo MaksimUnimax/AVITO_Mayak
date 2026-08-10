@@ -86,7 +86,14 @@ jobs:
           uv run mypy --explicit-package-bases scripts/runtime/run_rf24_command_idempotency.py scripts/runtime/verify_rf24_command_idempotency.py
           uv run lint-imports
       - name: Complete repository pytest
-        run: uv run pytest -q
+        run: |
+          set +e
+          uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            tail -240 rf24-complete-repository-pytest.log
+          fi
+          exit "$status"
       - name: Real public command scenarios and independent acceptance
         run: |
           set -euo pipefail
