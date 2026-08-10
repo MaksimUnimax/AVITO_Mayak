@@ -97,7 +97,6 @@ jobs:
             printf 'RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak\n'
             printf 'MAYAK_RF11_POSTGRES_PASSWORD_FILE=/run/secrets/mayak_database_migration_password\n'
             printf 'MAYAK_RF11_POSTGRES_USER=mayak_migration\nMAYAK_RF11_POSTGRES_HOST=postgres\nMAYAK_RF11_POSTGRES_PORT=5432\nMAYAK_RF11_POSTGRES_DB=mayak\n'
-            printf 'MAYAK_SESSION_SIGNING_KEY_FILE=/run/secrets/mayak_session_signing_key\n'
           } >> "$GITHUB_ENV"
       - name: Install exact uv and frozen dependencies
         shell: bash
