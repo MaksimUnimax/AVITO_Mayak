@@ -13,6 +13,18 @@ TECHNICAL_ID = "RF24-UNSUPPORTED-FILTER-SCENARIO-01"
 
 
 def verify(data: dict[str, Any], source_sha: str, run_id: str | None) -> None:
+    print(
+        "RF24 evidence diagnostic: "
+        f"classification={data.get('baseline_classification')!r} "
+        f"unsupported={data.get('unsupported', {}).get('validation_state')!r}/"
+        f"{data.get('unsupported', {}).get('candidate_state')!r} "
+        f"positive={data.get('positive_control', {}).get('validation_state')!r}/"
+        f"{data.get('positive_control', {}).get('candidate_state')!r} "
+        f"tamper={data.get('client_tamper_denied')!r} "
+        f"unknown={data.get('unknown_field_blocked')!r} "
+        f"scope={data.get('wrong_scope_fallback_denied')!r} "
+        f"zero={data.get('zero_effect', {})!r}"
+    )
     if data.get("technical_id") != TECHNICAL_ID or data.get("source_sha") != source_sha:
         raise AssertionError("technical/source binding failed")
     if run_id is not None and data.get("hosted_run_id") != run_id:
