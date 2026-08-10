@@ -102,6 +102,13 @@ jobs:
           set -euo pipefail
           # Scenario contract: SYNTHETIC_UNSUPPORTED_FIELD -> FIELD_UNSUPPORTED -> DRAFT_UNSUPPORTED;
           # SCALAR_FIELD is the same-catalog VALID/PREPARED positive control.
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
+          export MAYAK_SOURCE_SHA="$(git rev-parse --verify HEAD)"
+          export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
+          export MAYAK_IMAGE_DIGEST="sha256:$(sha256sum Dockerfile | cut -d' ' -f1)"
+          export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-unsupported-filter-${GITHUB_RUN_ID}"
+          export MAYAK_DATABASE_HOST="$(getent ahostsv4 postgres | awk 'NR==1 {print $1}')"
+          test -n "$MAYAK_DATABASE_HOST"
           uv run python scripts/runtime/check_rf24_cross_account_runtime_settings.py
           # runtime-settings-preflight=PASS
           uv run python scripts/runtime/check_rf24_unsupported_filter_workflow.py .github/workflows/ci-rf24-unsupported-filter.yml
