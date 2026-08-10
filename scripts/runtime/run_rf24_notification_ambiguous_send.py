@@ -76,6 +76,8 @@ def _public_setup(
             "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance",
             "MAYAK_ENVIRONMENT_ID": run_id,
             "MAYAK_SOURCE_SHA": os.environ.get("MAYAK_SOURCE_SHA", "0" * 40),
+            "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id,
+            "MAYAK_SYNTHETIC_SCENARIO": "usable_listing_page",
             "MAYAK_LOCK_IDENTITY": "0" * 64,
             "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
             "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true",
