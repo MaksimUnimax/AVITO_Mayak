@@ -40,7 +40,9 @@ jobs:
       - name: Install git and postgres client
         run: apt-get update && apt-get install -y --no-install-recommends git postgresql-client
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0, ref: ${{ github.sha }}}
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
       - name: Source identity and workspace trust
         run: |
           set -euo pipefail
