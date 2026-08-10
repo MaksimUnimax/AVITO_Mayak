@@ -97,6 +97,8 @@ jobs:
       - name: Materialize and preflight runtime settings
         run: |
           set -euo pipefail
+          export MAYAK_DATABASE_HOST="$(getent ahostsv4 postgres | awk 'NR==1 {print $1}')"
+          test -n "$MAYAK_DATABASE_HOST"
           export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-expired-${GITHUB_RUN_ID}"
           export MAYAK_SOURCE_SHA="$GITHUB_SHA"
           export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
@@ -112,6 +114,7 @@ jobs:
             printf 'MAYAK_PROCESS_KIND=%s\n' "$MAYAK_PROCESS_KIND"
             printf 'MAYAK_SYNTHETIC_IDENTITY_ENABLED=%s\n' "$MAYAK_SYNTHETIC_IDENTITY_ENABLED"
             printf 'MAYAK_API_HOST_PORT=%s\n' "$MAYAK_API_HOST_PORT"
+            printf 'MAYAK_DATABASE_HOST=%s\n' "$MAYAK_DATABASE_HOST"
           } >> "$GITHUB_ENV"
           uv run python - <<'PY'
           import hashlib
@@ -126,6 +129,8 @@ jobs:
           assert settings.build.image_digest == "sha256:" + hashlib.sha256(open("Dockerfile", "rb").read()).hexdigest()
           assert settings.runtime.process_kind.value == "mayak-worker"
           assert settings.session.synthetic_identity_enabled is True
+          assert settings.database.application_user == "mayak_application"
+          assert settings.database.migration_user == "mayak_migration"
           assert settings.database.application_user == "mayak_application"
           assert settings.database.migration_user == "mayak_migration"
           assert settings.providers.avito_live_enabled is False
