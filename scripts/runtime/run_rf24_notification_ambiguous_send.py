@@ -346,7 +346,18 @@ def main() -> None:
     engine = create_engine(a.dsn)
     factory = sessionmaker(bind=engine)
     processes: list[subprocess.Popen[str]] = []
-    account, beacon, run, processes = _public_setup(engine, run_id)
+    try:
+        account, beacon, run, processes = _public_setup(engine, run_id)
+    except Exception as exc:
+        diagnostics = []
+        for kind in ("api", "scheduler", "worker"):
+            path = Path(os.environ.get("RF24_PUBLIC_LOG_DIR", "/tmp")) / f"rf24-public-{kind}.log"
+            if path.is_file():
+                diagnostics.append(
+                    f"[{kind}]\n{path.read_text(encoding='utf-8', errors='replace')[-4000:]}"
+                )
+        print(f"RF24_PUBLIC_SETUP_FAILURE={type(exc).__name__}: {exc}\n" + "\n".join(diagnostics))
+        raise
     try:
         s = source(account, beacon, run, run_id)
         target = f"rf24-telegram-{run_id}"
