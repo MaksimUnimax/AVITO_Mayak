@@ -56,6 +56,7 @@ RULES: dict[str, tuple[str, ...]] = {
         "export MAYAK_IMAGE_DIGEST=\"sha256:$(sha256sum Dockerfile",
         "MAYAK_PROCESS_KIND=mayak-worker",
         "MAYAK_SYNTHETIC_IDENTITY_ENABLED=true",
+        "getent ahostsv4 postgres",
     ),
     "full repository pytest": ("uv run pytest -q --disable-warnings",),
     "fresh post-suite database": (

@@ -89,6 +89,8 @@ jobs:
           export MAYAK_PROCESS_KIND=mayak-worker
           export MAYAK_SYNTHETIC_IDENTITY_ENABLED=true
           export MAYAK_API_HOST_PORT=disabled
+          export MAYAK_DATABASE_HOST="$(getent ahostsv4 postgres | awk 'NR==1 {print $1}')"
+          test -n "$MAYAK_DATABASE_HOST"
           {
             echo "MAYAK_ENVIRONMENT_ID=$MAYAK_ENVIRONMENT_ID"
             echo "MAYAK_SOURCE_SHA=$MAYAK_SOURCE_SHA"
@@ -97,7 +99,7 @@ jobs:
             echo "MAYAK_PROCESS_KIND=$MAYAK_PROCESS_KIND"
             echo "MAYAK_SYNTHETIC_IDENTITY_ENABLED=$MAYAK_SYNTHETIC_IDENTITY_ENABLED"
             echo "MAYAK_API_HOST_PORT=$MAYAK_API_HOST_PORT"
-            echo "MAYAK_DATABASE_HOST=postgres"
+            echo "MAYAK_DATABASE_HOST=$MAYAK_DATABASE_HOST"
             echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
             echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak"
             echo "RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
