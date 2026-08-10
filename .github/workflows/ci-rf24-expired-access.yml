@@ -9,6 +9,9 @@ jobs:
   acceptance:
     runs-on: ubuntu-24.04
     container: python:3.14.6-bookworm
+    defaults:
+      run:
+        shell: bash
     services:
       postgres:
         image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
@@ -42,18 +45,14 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Verify exact source identity
+      - name: Verify exact source identity and Bash contract
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE"
-          git config --global --unset-all --fixed-value safe.directory '*' || true
+          command -v bash
+          bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
+          git config --global --unset-all safe.directory || true
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config --global --add safe.directory "$(pwd)"
-          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
-          git checkout --detach "$GITHUB_SHA"
-          printf 'WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
-          printf 'PWD=%s\n' "$(pwd)"
-          printf 'TOPLEVEL=%s\n' "$(git rev-parse --show-toplevel)"
           printf 'CHECKOUT_HEAD=%s\n' "$(git rev-parse HEAD)"
           printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -64,44 +63,82 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: 0.11.31
-      - name: Prepare file-backed acceptance secrets and PostgreSQL 18
+      - name: Sync dependencies
+        run: uv sync --frozen --all-groups
+      - name: Prepare non-empty acceptance secrets and PostgreSQL roles
         run: |
           set -euo pipefail
           install -d -m 700 /run/secrets
-          touch /run/secrets/mayak_database_migration_password /run/secrets/mayak_database_application_password /run/secrets/mayak_session_signing_key
-          chmod 600 /run/secrets/mayak_database_*_password /run/secrets/mayak_session_signing_key
-          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE,CREATE ON SCHEMA mayak TO mayak_application;"
+          printf '%s\n' migration-only > /run/secrets/mayak_database_migration_password
+          printf '%s\n' application-only > /run/secrets/mayak_database_application_password
+          printf '%s\n' session-signing-key-acceptance-only > /run/secrets/mayak_session_signing_key
+          printf '%s\n' bootstrap-only > /run/secrets/mayak_postgres_bootstrap_password
+          chmod 600 /run/secrets/mayak_database_migration_password /run/secrets/mayak_database_application_password /run/secrets/mayak_session_signing_key /run/secrets/mayak_postgres_bootstrap_password
+          test -s /run/secrets/mayak_database_migration_password
+          test -s /run/secrets/mayak_database_application_password
+          test -s /run/secrets/mayak_session_signing_key
+          test -s /run/secrets/mayak_postgres_bootstrap_password
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only';
+          CREATE ROLE mayak_application LOGIN PASSWORD 'application-only';
+          ALTER ROLE mayak_migration CREATEDB;
+          CREATE SCHEMA mayak AUTHORIZATION mayak_migration;
+          GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;
+          SQL
+          echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak" >> "$GITHUB_ENV"
+      - name: Initial migration zero to head
+        run: |
+          set -euo pipefail
+          uv run alembic downgrade base
           uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
       - name: Focused, one-to-one, ownership and workflow gates
         run: |
           set -euo pipefail
-          uv sync --frozen --all-groups
           uv run python -m compileall -q src/mayak/modules/entitlements_and_billing src/mayak/modules/beacon_management src/mayak/modules/scan_orchestration src/mayak/runtime/rf23_composition.py src/mayak/runtime/rf24_composition.py src/mayak/runtime/scheduler.py src/mayak/runtime/worker.py
           uv run pytest --collect-only -q tests/runtime/test_rf24_expired_access_integrity.py
-          uv run pytest -q tests/runtime/test_rf24_expired_access_core.py tests/runtime/test_rf24_expired_access_integrity.py tests/runtime/test_rf24_expired_access_ownership.py
+          uv run pytest -q tests/runtime/test_rf24_expired_access_core.py tests/runtime/test_rf24_expired_access_integrity.py tests/runtime/test_rf24_expired_access_ownership.py tests/runtime/test_rf24_expired_access_boundaries.py
           uv run python scripts/runtime/check_rf24_expired_access_ownership.py .
           uv run python scripts/runtime/check_rf24_expired_access_workflow.py .github/workflows/ci-rf24-expired-access.yml
           uv run lint-imports
-          uv run ruff check scripts/runtime/run_rf24_expired_access.py scripts/runtime/verify_rf24_expired_access.py scripts/runtime/check_rf24_expired_access_ownership.py scripts/runtime/check_rf24_expired_access_workflow.py scripts/runtime/check_rf24_expired_access_static_delta.py scripts/runtime/run_rf24_expired_access_static_delta.py tests/runtime/test_rf24_expired_access_integrity.py
-          uv run mypy --explicit-package-bases scripts/runtime/run_rf24_expired_access.py scripts/runtime/verify_rf24_expired_access.py scripts/runtime/check_rf24_expired_access_static_delta.py scripts/runtime/run_rf24_expired_access_static_delta.py
-      - name: Real focused P0-P8 scenario
+          uv run ruff check scripts/runtime/run_rf24_expired_access.py scripts/runtime/verify_rf24_expired_access.py scripts/runtime/check_rf24_expired_access_ownership.py scripts/runtime/check_rf24_expired_access_workflow.py scripts/runtime/check_rf24_expired_access_static_delta.py scripts/runtime/run_rf24_expired_access_static_delta.py tests/runtime/test_rf24_expired_access_integrity.py tests/runtime/test_rf24_expired_access_boundaries.py
+          uv run mypy --explicit-package-bases scripts/runtime/run_rf24_expired_access.py scripts/runtime/verify_rf24_expired_access.py scripts/runtime/check_rf24_expired_access_static_delta.py scripts/runtime/run_rf24_expired_access_static_delta.py scripts/runtime/check_rf24_expired_access_workflow.py
+      - name: Static base-vs-candidate delta
+        run: uv run python scripts/runtime/run_rf24_expired_access_static_delta.py --base 6b1d7289a38e6195b7244199ae4ee1caf46eae45 --output rf24-expired-access-static-delta.json
+      - name: Complete repository pytest
+        run: |
+          set -euo pipefail
+          uv run pytest -q --disable-warnings 2>&1 | tee rf24-expired-access-full-pytest.log
+      - name: Create NEW post-suite database and migrate from zero
+        run: |
+          set -euo pipefail
+          db="mayak_rf24_expired_${GITHUB_RUN_ID}"
+          case "$db" in (*[!a-zA-Z0-9_]*|'') exit 1;; esac
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER mayak_migration"
+          printf 'MAYAK_DATABASE_NAME=%s\n' "$db" >> "$GITHUB_ENV"
+          printf 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/%s\n' "$db" >> "$GITHUB_ENV"
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;'
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+      - name: FINAL post-suite P0-P8 on NEW database
         env:
           MAYAK_SOURCE_SHA: ${{ github.sha }}
-        run: uv run python scripts/runtime/run_rf24_expired_access.py --real-postgres --artifacts .
-      - name: Static base-vs-candidate delta
         run: |
-          uv run python scripts/runtime/run_rf24_expired_access_static_delta.py --base 6b1d7289a38e6195b7244199ae4ee1caf46eae45 --output rf24-expired-access-static-delta.json
-      - name: Complete repository pytest
-        run: uv run pytest -q --disable-warnings 2>&1 | tee rf24-expired-access-full-pytest.log
-      - name: fresh-post-suite P0-P8 verifier and artifact chain
+          set -euo pipefail
+          rm -f rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-phase-boundaries.json rf24-expired-access-verifier-result.json rf24-expired-access-scanner-result.json rf24-expired-access.log
+          uv run python scripts/runtime/run_rf24_expired_access.py --real-postgres --artifacts .
+      - name: Verifier scanner manifest hash chain
         env:
           MAYAK_SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test -s rf24-expired-access-evidence.json
           uv run python scripts/runtime/verify_rf24_expired_access.py rf24-expired-access-evidence.json "$GITHUB_SHA" --result rf24-expired-access-verifier-result.json
-          uv run python scripts/runtime/check_rf24_expired_access_artifact_safety.py --result rf24-expired-access-scanner-result.json rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-phase-boundaries.json rf24-expired-access-adversarial-execution.json rf24-expired-access-static-delta.json rf24-expired-access-verifier-result.json rf24-expired-access-full-pytest.log
+          uv run python scripts/runtime/check_rf24_expired_access_artifact_safety.py --result rf24-expired-access-scanner-result.json rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-phase-boundaries.json rf24-expired-access-adversarial-execution.json rf24-expired-access-static-delta.json rf24-expired-access-verifier-result.json rf24-expired-access-full-pytest.log rf24-expired-access.log
+          test "$(python -c 'import json; print(json.load(open("rf24-expired-access-scanner-result.json"))["finding_count"])')" = 0
           uv run python scripts/runtime/build_rf24_expired_access_manifest.py . "$GITHUB_SHA" "$GITHUB_RUN_ID"
+          test "$(python -c 'import json; print(json.load(open("rf24-expired-access-safety-manifest.json"))["scanner_finding_count"])')" = 0
       - uses: actions/upload-artifact@v4
         with:
           name: rf24-expired-access
