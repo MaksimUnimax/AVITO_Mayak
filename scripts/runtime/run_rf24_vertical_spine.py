@@ -173,6 +173,37 @@ def _db_snapshot(account_id: str, beacon_id: str) -> dict[str, object]:
             return result
 
 
+def _observed_seed_state(account_id: str, beacon_id: str) -> dict[str, object]:
+    """Project only bounded counts/digests of state created by public runtime calls."""
+    import psycopg
+
+    host = os.environ.get("MAYAK_DATABASE_HOST", "mayak-postgres")
+    port = os.environ.get("MAYAK_DATABASE_PORT", "5432")
+    user = os.environ.get("MAYAK_DATABASE_APPLICATION_USER", "mayak_application")
+    database = os.environ.get("MAYAK_DATABASE_NAME", "mayak")
+    secret_dir = Path(os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"))
+    password_path = secret_dir / "mayak_database_application_password"
+    password = password_path.read_text(encoding="utf-8").strip() if password_path.exists() else None
+    queries = {
+        "account": ("SELECT id::text, state FROM mayak.identity_accounts WHERE id=%s", (account_id,)),
+        "entitlement": ("SELECT id::text, state, source_code FROM mayak.entitlement_access_grants WHERE account_id=%s", (account_id,)),
+        "beacon": ("SELECT id::text, state, current_revision_no, row_version FROM mayak.beacon_beacons WHERE id=%s AND account_id=%s", (beacon_id, account_id)),
+        "beacon_history": ("SELECT beacon_id::text, revision_no, to_state FROM mayak.beacon_lifecycle_events WHERE beacon_id=%s ORDER BY id", (beacon_id,)),
+        "scan_listing": ("SELECT external_listing_key, last_seen_at::text FROM mayak.scan_beacon_listing_state WHERE beacon_id=%s ORDER BY external_listing_key", (beacon_id,)),
+        "notification_outbox": ("SELECT e.id::text, o.id::text, a.id::text, a.state FROM mayak.notification_events e JOIN mayak.notification_outbox o ON o.event_id=e.id JOIN mayak.notification_delivery_attempts a ON a.outbox_id=o.id WHERE e.account_id=%s AND e.beacon_id=%s ORDER BY e.id", (account_id, beacon_id)),
+        "idempotency": ("SELECT scope, idempotency_key, request_fingerprint FROM mayak.platform_idempotency_records ORDER BY id LIMIT 32", ()),
+        "audit": ("SELECT action_code, target_type, target_id, correlation_id FROM mayak.platform_audit_entries ORDER BY id LIMIT 32", ()),
+    }
+    state: dict[str, object] = {}
+    with psycopg.connect(host=host, port=int(port), user=user, dbname=database, password=password) as conn:
+        with conn.cursor() as cursor:
+            for name, (query, params) in queries.items():
+                cursor.execute(query, params)
+                rows = [[str(value) for value in row] for row in cursor.fetchall()]
+                state[name] = {"count": len(rows), "projection_digest": __import__("hashlib").sha256(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()).hexdigest()}
+    return state
+
+
 def _run_records(scan_payload: object) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     if not isinstance(scan_payload, list):
@@ -200,7 +231,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         "MAYAK_ENVIRONMENT_ID": run_id, "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id,
         "MAYAK_LOCK_IDENTITY": "0" * 64, "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
         "MAYAK_DATABASE_HOST": os.environ.get("MAYAK_DATABASE_HOST", "mayak-postgres"),
-        "MAYAK_DATABASE_PORT": "5432", "MAYAK_DATABASE_NAME": "mayak",
+        "MAYAK_DATABASE_PORT": "5432", "MAYAK_DATABASE_NAME": os.environ.get("MAYAK_DATABASE_NAME", "mayak"),
         "MAYAK_DATABASE_APPLICATION_USER": "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
         "MAYAK_SECRETS_DIR": os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"),
         "MAYAK_API_BIND_HOST": "127.0.0.1", "MAYAK_API_INTERNAL_PORT": port, "MAYAK_API_HOST_PORT": "disabled",
@@ -289,6 +320,9 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
                 raise RuntimeError("process and durable provenance do not correlate")
         first_terminal, second_terminal = terminal_by_work[first["work_item_id"]], terminal_by_work[second_provenance["work_item_id"]]
         difference_after = _db_snapshot(account_id, beacon_id)
+        seed_state = _observed_seed_state(account_id, beacon_id)
+        if any(not isinstance(item, dict) or int(item.get("count", 0)) <= 0 for item in seed_state.values()):
+            raise RuntimeError("runtime-owned synthetic state projection is incomplete")
         notification_payload = _safe_payload(notifications.payload)
         event_id = None
         if isinstance(notification_payload, list) and notification_payload and isinstance(notification_payload[0], dict):
@@ -348,6 +382,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             "admin_diagnostics": {"status": admin.status, "response": admin_payload, "authenticated": admin_bootstrap.status == 200 and admin_observed, "authorized": admin_observed, "operator_account_id": operator_account_id, "target_account_id": account_id, "beacon_id": beacon_id, "baseline_run_id": first_terminal["run_id"], "difference_run_id": second_terminal["run_id"], "scan_event_id": scan_event_id, "notification_event_id": event_id, "target_observation": {"account_id": account_id, "beacon_id": beacon_id, "baseline_run_id": first_terminal["run_id"], "difference_run_id": second_terminal["run_id"], "notification_event_id": event_id, "scan_event_id": scan_event_id}, "target_diagnostics_visible": admin_observed},
             "runtime_boundaries": {"foreign_resource_impact": 0, "production_personal_data": 0, "direct_sql_read_assertions": ["scheduler_work_run_durable_cross_check", "listing_identity_before_after", "scan_new_listing_event_before_after", "notification_event_before_after", "outbox_before_after", "delivery_attempt_before_after"], "direct_sql_writes": []},
             "observations": observations, "provider_live_calls": 0, "foreign_resource_impact": 0, "production_personal_data": 0,
+            "seed": {"runtime_boundary": "accepted-public-runtime", "database": "task-owned-source", "state_classes": seed_state},
             "credentials_exposure": False,
         }
         output.parent.mkdir(parents=True, exist_ok=True)

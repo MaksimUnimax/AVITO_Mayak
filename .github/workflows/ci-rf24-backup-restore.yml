@@ -102,6 +102,20 @@ jobs:
           set -euo pipefail
           RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:migration-only@postgres:5432/${SOURCE_DB}" uv run alembic upgrade head
           # Target B remains empty/known until the verified archive is restored.
+      - name: Seed SOURCE through accepted runtime boundaries
+        env:
+          MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+          MAYAK_DATABASE_HOST: postgres
+          MAYAK_DATABASE_NAME: ${{ env.SOURCE_DB }}
+          MAYAK_DATABASE_APPLICATION_USER: mayak_application
+          MAYAK_SECRETS_DIR: /tmp/rf24-secrets
+          MAYAK_API_INTERNAL_PORT: "18080"
+        run: |
+          set -euo pipefail
+          install -d -m 700 /tmp/rf24-secrets
+          printf '%s' application-only > /tmp/rf24-secrets/mayak_database_application_password
+          chmod 600 /tmp/rf24-secrets/mayak_database_application_password
+          uv run python scripts/runtime/run_rf24_vertical_spine.py --repo-root "$GITHUB_WORKSPACE" --output rf24-source-runtime-seed.json --probes rf24-source-runtime-probes.json --log rf24-source-runtime.log --source-sha "$GITHUB_SHA"
       - name: Bind exact PostgreSQL 18 service tooling boundary
         run: |
           set -euo pipefail
@@ -112,7 +126,7 @@ jobs:
           test "$image" = postgres:18-bookworm
           docker exec "$container" pg_dump --version
           docker exec "$container" pg_restore --version
-          printf 'RF24_PG_TOOL_PREFIX=docker exec %s\n' "$container" >> "$GITHUB_ENV"
+          printf 'RF24_PG_TOOL_PREFIX=docker exec %s env PGPASSWORD=migration-only\n' "$container" >> "$GITHUB_ENV"
           printf 'RF24_PG_TOOL_SOURCE_DSN=postgresql://mayak_migration@127.0.0.1:5432/%s\n' "$SOURCE_DB" >> "$GITHUB_ENV"
           printf 'RF24_PG_TOOL_TARGET_DSN=postgresql://mayak_migration@127.0.0.1:5432/%s\n' "$TARGET_DB" >> "$GITHUB_ENV"
 
@@ -121,7 +135,7 @@ jobs:
           RF24_PG_PASSWORD: migration-only
         run: |
           set -euo pipefail
-          uv run python scripts/runtime/run_rf24_backup_restore.py --source-dsn "postgresql+psycopg://mayak_migration:migration-only@postgres:5432/${SOURCE_DB}" --target-dsn "postgresql+psycopg://mayak_migration:migration-only@postgres:5432/${TARGET_DB}" --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump
+          uv run python scripts/runtime/run_rf24_backup_restore.py --source-dsn "postgresql+psycopg://mayak_migration:migration-only@postgres:5432/${SOURCE_DB}" --target-dsn "postgresql+psycopg://mayak_migration:migration-only@postgres:5432/${TARGET_DB}" --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump --seed-evidence rf24-source-runtime-seed.json
       - name: Independent verifier, scanner and manifest
         run: |
           set -euo pipefail

@@ -19,6 +19,7 @@ def good() -> dict[str, object]:
         "hosted_run_id": "123",
         "backup": {"sha256": "b" * 64, "size": 12, "verified": True, "format": "custom", "inventory_verified": True, "readability_verified": True, "pg_dump_version": "pg_dump (PostgreSQL) 18.0", "pg_restore_version": "pg_restore (PostgreSQL) 18.0", "postgres_server_version": "PostgreSQL 18.0"},
         "restore": {"result": "PASS"},
+        "runtime_read_proof": True,
         "source_fingerprint_before": "x",
         "source_fingerprint_after": "x",
         "target_semantic_equivalence": True,

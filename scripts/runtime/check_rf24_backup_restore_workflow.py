@@ -18,6 +18,7 @@ def validate(path: Path) -> None:
         "pg_dump", "pg_restore", "verify_rf24_backup_restore.py",
         "check_rf24_backup_restore_artifact_safety.py",
         "build_rf24_backup_restore_manifest.py", "upload-artifact", "RF25",
+        "run_rf24_vertical_spine.py", "--seed-evidence",
     )
     missing = [marker for marker in required if marker not in text]
     if missing:
@@ -37,6 +38,10 @@ def validate(path: Path) -> None:
         raise ValueError("complete pytest output must preserve exit status")
     if "ref: ${{ github.sha }}" not in text:
         raise ValueError("checkout is not bound to exact candidate SHA")
+    if not re.search(r"mapfile -t candidates < <\(docker ps --filter ancestor=postgres:18-bookworm", text):
+        raise ValueError("PostgreSQL service discovery is not explicit")
+    if 'test "${#candidates[@]}" -eq 1' not in text or "Config.Image" not in text:
+        raise ValueError("PostgreSQL service selection is ambiguous")
     for variable in (
         "MAYAK_AVITO_LIVE_ENABLED: \"false\"",
         "MAYAK_TELEGRAM_ENABLED: \"false\"",
@@ -60,6 +65,16 @@ def validate(path: Path) -> None:
         raise ValueError("unapproved PostgreSQL client stack")
     if "psql " in text or " psql\n" in text:
         raise ValueError("bootstrap must use frozen Psycopg, not psql")
+    runner = Path(__file__).with_name("run_rf24_backup_restore.py").read_text(encoding="utf-8")
+    if ('"preflight_result": "BLOCKED"' not in runner or '"executed": True' not in runner
+            or "target is not clean before restore" not in runner
+            or "reestablish_application_authority" not in runner
+            or '"runtime_read_proof"' not in runner):
+        raise ValueError("negative controls lack execution-derived proof")
+    if '"seeded_state_classes"' in runner or 'RF24_SEED_PROOF' in runner:
+        raise ValueError("seed proof must come from the runtime producer")
+    if "SELECT version()" not in runner or '"postgres_server_version"' not in runner:
+        raise ValueError("server version proof is missing or conflated")
     if re.search(r"CREATE DATABASE[^\n;]*;[^\n]*CREATE DATABASE", text):
         raise ValueError("databases must be created independently")
     if "--backup" not in text or "--source-dsn" not in text or "--target-dsn" not in text:

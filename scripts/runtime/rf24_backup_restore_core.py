@@ -65,6 +65,7 @@ def verify_evidence(
     require(backup.get("postgres_server_version"), "server version proof missing")
     require("server_version" not in backup, "mislabeled server version proof")
     require(evidence.get("restore", {}).get("result") == "PASS", "restore failed")
+    require(evidence.get("runtime_read_proof") is True, "restored runtime read proof missing")
     require(
         evidence.get("source_fingerprint_before") == evidence.get("source_fingerprint_after"),
         "source mutated",

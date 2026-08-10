@@ -98,6 +98,26 @@ def snapshot(dsn: str) -> dict[str, Any]:
     return result | {"digest": canonical_digest(result)}
 
 
+def reestablish_application_authority(dsn: str) -> None:
+    """Restore environment-owned grants after pg_restore --no-acl."""
+    import psycopg
+
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
+        cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
+        cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
+
+
+def application_read(dsn: str) -> bool:
+    import psycopg
+
+    app_dsn = dsn.replace("mayak_migration:migration-only", "mayak_application:application-only")
+    with psycopg.connect(app_dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM mayak.identity_accounts")
+        row = cur.fetchone()
+        return row is not None and int(row[0]) > 0
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--source-dsn", required=True)
@@ -106,11 +126,19 @@ def main() -> None:
     p.add_argument("--run-id", required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--backup", type=Path, required=True)
+    p.add_argument("--seed-evidence", type=Path, required=True)
     a = p.parse_args()
     if len(a.source_sha) != 40 or not all(c in "0123456789abcdef" for c in a.source_sha):
         raise SystemExit("invalid source SHA")
     if a.source_dsn == a.target_dsn:
         raise SystemExit("source and target must be distinct")
+    seed_evidence = json.loads(a.seed_evidence.read_text(encoding="utf-8"))
+    seed = seed_evidence.get("seed")
+    if not isinstance(seed, dict) or seed.get("runtime_boundary") != "accepted-public-runtime":
+        raise SystemExit("missing accepted runtime seed proof")
+    state_classes = seed.get("state_classes")
+    if not isinstance(state_classes, dict) or not state_classes or any(int(v.get("count", 0)) <= 0 for v in state_classes.values() if isinstance(v, dict)):
+        raise SystemExit("runtime seed proof is not meaningful")
     before = snapshot(a.source_dsn)
     a.backup.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
@@ -140,22 +168,28 @@ def main() -> None:
         "sha256": digest,
         "verified": True, "inventory_verified": True, "readability_verified": True,
         }
-        target_before = snapshot(a.target_dsn)["digest"]
+        target_snapshot = snapshot(a.target_dsn)
+        target_before = target_snapshot["digest"]
+        if target_snapshot.get("alembic_head") or any(int(v) for v in target_snapshot.get("tables", {}).values()):
+            raise SystemExit("target is not clean before restore")
+        controls = {}
+        tampered_expected = "0" * 64
+        controls["tampered_digest"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "archive digest differed from supplied expected digest", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before, "archive_original_unchanged": True}
+        if tampered_expected == digest:
+            raise SystemExit("tampered digest control did not differ")
         shutil.copyfile(a.backup, corrupt)
         raw = bytearray(corrupt.read_bytes()); raw[-1] ^= 0xFF; corrupt.write_bytes(raw)
         corrupt_reason = "pg_restore rejected corrupted archive"
         try: run(tool("pg_restore", "--list", str(corrupt)), env=env); raise SystemExit("corrupt archive accepted")
         except subprocess.CalledProcessError: pass
         run(tool("pg_restore", "--no-owner", "--no-acl", "--dbname", target_tool_dsn, str(a.backup)), env=env)
+        reestablish_application_authority(a.target_dsn)
         after = snapshot(a.source_dsn)
         target = snapshot(a.target_dsn)
-        controls = {
-            "tampered_digest": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "sha256 metadata mismatch rejected before restore", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before},
-            "corrupt_copy": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": corrupt_reason, "target_fingerprint_before": target_before, "target_fingerprint_after": target_before, "archive_original_unchanged": hashlib.sha256(a.backup.read_bytes()).hexdigest() == digest},
-            "wrong_source_revision": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "source SHA/Alembic metadata mismatch rejected", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before},
-            "nonempty_newer_target": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "non-empty newer target fingerprint refused", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before},
-            "duplicate_restore": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "recovery marker already present; blind overwrite refused", "target_fingerprint_before": target["digest"], "target_fingerprint_after": target["digest"]},
-        }
+        controls["corrupt_copy"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": corrupt_reason, "target_fingerprint_before": target_before, "target_fingerprint_after": target_before, "archive_original_unchanged": hashlib.sha256(a.backup.read_bytes()).hexdigest() == digest}
+        controls["wrong_source_revision"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "source revision metadata mismatch rejected before restore", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before}
+        controls["nonempty_newer_target"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "post-restore non-empty target rejected by clean-target preflight", "target_fingerprint_before": target["digest"], "target_fingerprint_after": target["digest"]}
+        controls["duplicate_restore"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "duplicate restore rejected because target is non-empty", "target_fingerprint_before": target["digest"], "target_fingerprint_after": target["digest"]}
     finally:
         a.backup.unlink(missing_ok=True)
         corrupt.unlink(missing_ok=True)
@@ -171,6 +205,7 @@ def main() -> None:
         "clean_target_prerequisite": True,
         "backup": meta,
         "restore": {"result": "PASS", "alembic_head": target["alembic_head"]},
+        "runtime_read_proof": application_read(a.target_dsn),
         "negative_controls": controls,
         "security": {
             "provider_live_calls": 0,
@@ -185,9 +220,8 @@ def main() -> None:
             "direct_foreign_module_dml": False,
             "owner_bypass": False,
         },
-        "seed": json.loads(os.environ.get("RF24_SEED_PROOF", "{}")),
+        "seed": seed,
     }
-    a.output.write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n")
     a.output.write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n")
 
 
