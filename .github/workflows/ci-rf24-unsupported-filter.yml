@@ -209,7 +209,15 @@ jobs:
           export RF22_MIGRATION_DSN="$RF11_POSTGRES_DSN"
           uv run python -c 'import os; from urllib.parse import urlsplit; db=os.environ["MAYAK_DATABASE_NAME"]; keys=("RF10_POSTGRES_DSN", "RF11_POSTGRES_DSN", "RF22_DSN", "RF22_DATABASE_URL", "RF22_MIGRATION_DSN"); assert all(urlsplit(os.environ[k]).path.lstrip("/") == db for k in keys); print("final-dsn-database-b=PASS")'
           mkdir -p artifacts
+          set +e
           uv run python scripts/runtime/run_rf24_unsupported_filter.py --real-postgres --artifacts artifacts 2>&1 | tee artifacts/rf24-unsupported-filter-h10.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            diagnostic="$(sed -E 's#(postgresql\+psycopg://)[^@[:space:]]+@#\\1<redacted>@#g; s#(password|secret|token)[^[:space:]]*#<redacted>#gi' artifacts/rf24-unsupported-filter-h10.log | tail -20 | tr '\n' ' ')"
+            echo "::error title=H10 redacted diagnostic::$diagnostic"
+            exit "$status"
+          fi
       - name: H11 verifier
         run: uv run python scripts/runtime/verify_rf24_unsupported_filter.py artifacts/rf24-unsupported-filter-evidence.json --source-sha "$MAYAK_SOURCE_SHA" --run-id "$GITHUB_RUN_ID"
       - name: H12 artifact safety scanner
