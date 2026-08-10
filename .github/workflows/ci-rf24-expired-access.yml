@@ -33,14 +33,13 @@ jobs:
       RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
       RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
       RF24_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
-      # Legacy RF10/RF11 MAYAK_* bindings remain validator markers only; settings rejects them as unknown.
-      # MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
-      # MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
-      # MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
-      # MAYAK_RF11_POSTGRES_USER: mayak_migration
-      # MAYAK_RF11_POSTGRES_HOST: postgres
-      # MAYAK_RF11_POSTGRES_PORT: "5432"
-      # MAYAK_RF11_POSTGRES_DB: mayak
+      MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+      MAYAK_RF11_POSTGRES_USER: mayak_migration
+      MAYAK_RF11_POSTGRES_HOST: postgres
+      MAYAK_RF11_POSTGRES_PORT: "5432"
+      MAYAK_RF11_POSTGRES_DB: mayak
       MAYAK_SECRETS_DIR: /run/secrets
       DOCKER_HOST: unix:///var/run/docker.sock
       MAYAK_RUNTIME_PROFILE: synthetic_acceptance
@@ -117,6 +116,7 @@ jobs:
             printf 'MAYAK_API_HOST_PORT=%s\n' "$MAYAK_API_HOST_PORT"
             printf 'MAYAK_DATABASE_HOST=%s\n' "$MAYAK_DATABASE_HOST"
           } >> "$GITHUB_ENV"
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           uv run python - <<'PY'
           import hashlib
           import os
@@ -270,6 +270,7 @@ jobs:
           MAYAK_SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           python - <<'PY'
           import os
           from urllib.parse import urlsplit

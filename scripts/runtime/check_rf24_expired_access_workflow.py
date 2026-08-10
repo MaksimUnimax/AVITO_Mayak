@@ -97,6 +97,13 @@ def _runtime_configuration_failures(text: str, positions: dict[str, int]) -> lis
         failures.append("runtime-settings-preflight-after-full-pytest")
     if "uv run python - <<'PY'" not in materialize:
         failures.append("runtime-settings-preflight-not-uv-project-python")
+    legacy_clear = (
+        "unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN "
+        "MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER "
+        "MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB"
+    )
+    if legacy_clear not in materialize or legacy_clear not in final:
+        failures.append("runtime-settings-legacy-env-not-cleared")
     if (
         "load_runtime_settings()" not in materialize
         and "compose_runtime_settings(" not in materialize
