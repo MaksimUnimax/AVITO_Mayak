@@ -44,6 +44,7 @@ jobs:
       MAYAK_MAX_ENABLED: "false"
       MAYAK_YOOKASSA_ENABLED: "false"
       MAYAK_EGRESS_AGENT_ENABLED: "false"
+      DOCKER_HOST: unix:///var/run/docker.sock
     steps:
       - name: Install git and postgres client
         run: apt-get update && apt-get install -y --no-install-recommends git postgresql-client
@@ -79,6 +80,35 @@ jobs:
           chmod 600 /run/secrets/mayak_session_signing_key
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -c "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;"
+      - name: Install hosted Docker CLI and buildx
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, tarfile, tempfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          with tempfile.TemporaryDirectory() as d:
+              archive=Path(d)/"docker.tgz"
+              with urlopen("https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz") as response:
+                  archive.write_bytes(response.read())
+              assert hashlib.sha256(archive.read_bytes()).hexdigest()=="995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
+              with tarfile.open(archive) as package:
+                  member=package.extractfile(package.getmember("docker/docker")); assert member
+                  target=Path("/usr/local/bin/docker"); target.write_bytes(member.read()); target.chmod(0o755)
+          PY
+          install -d -m 755 /usr/libexec/docker/cli-plugins
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          from urllib.request import urlopen
+          target=Path("/usr/libexec/docker/cli-plugins/docker-buildx")
+          with urlopen("https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64") as response:
+              target.write_bytes(response.read())
+          assert hashlib.sha256(target.read_bytes()).hexdigest()=="dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
+          target.chmod(0o755)
+          PY
+          docker version
+          docker buildx version | grep -F 'v0.31.1'
       - name: Focused and relevant tests
         run: |
           uv run pytest -q tests/runtime/test_rf24_command_idempotency.py tests/runtime/test_rf24_command_idempotency_integrity.py tests/runtime/test_platform_idempotency_repository_postgres.py tests/runtime/test_rf23_api_contract.py
