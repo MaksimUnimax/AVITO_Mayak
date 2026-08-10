@@ -94,6 +94,48 @@ jobs:
           test "$(python --version 2>&1)" = "Python 3.14.6"
       - name: Sync dependencies
         run: uv sync --frozen --all-groups
+      - name: Materialize and preflight runtime settings
+        run: |
+          set -euo pipefail
+          export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-expired-${GITHUB_RUN_ID}"
+          export MAYAK_SOURCE_SHA="$GITHUB_SHA"
+          export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
+          export MAYAK_IMAGE_DIGEST="sha256:$(sha256sum Dockerfile | cut -d' ' -f1)"
+          export MAYAK_PROCESS_KIND=mayak-worker
+          export MAYAK_SYNTHETIC_IDENTITY_ENABLED=true
+          export MAYAK_API_HOST_PORT=disabled
+          {
+            printf 'MAYAK_ENVIRONMENT_ID=%s\n' "$MAYAK_ENVIRONMENT_ID"
+            printf 'MAYAK_SOURCE_SHA=%s\n' "$MAYAK_SOURCE_SHA"
+            printf 'MAYAK_LOCK_IDENTITY=%s\n' "$MAYAK_LOCK_IDENTITY"
+            printf 'MAYAK_IMAGE_DIGEST=%s\n' "$MAYAK_IMAGE_DIGEST"
+            printf 'MAYAK_PROCESS_KIND=%s\n' "$MAYAK_PROCESS_KIND"
+            printf 'MAYAK_SYNTHETIC_IDENTITY_ENABLED=%s\n' "$MAYAK_SYNTHETIC_IDENTITY_ENABLED"
+            printf 'MAYAK_API_HOST_PORT=%s\n' "$MAYAK_API_HOST_PORT"
+          } >> "$GITHUB_ENV"
+          uv run python - <<'PY'
+          import hashlib
+          import os
+          from mayak.runtime.settings import load_runtime_settings
+
+          settings = load_runtime_settings()
+          assert settings.runtime.profile.value == "synthetic_acceptance"
+          assert settings.build.source_sha == os.environ["GITHUB_SHA"]
+          assert settings.build.environment_id == f"avito-mayak-rf24-expired-{os.environ['GITHUB_RUN_ID']}"
+          assert settings.build.lock_identity == hashlib.sha256(open("uv.lock", "rb").read()).hexdigest()
+          assert settings.build.image_digest == "sha256:" + hashlib.sha256(open("Dockerfile", "rb").read()).hexdigest()
+          assert settings.runtime.process_kind.value == "mayak-worker"
+          assert settings.session.synthetic_identity_enabled is True
+          assert settings.database.application_user == "mayak_application"
+          assert settings.database.migration_user == "mayak_migration"
+          assert settings.providers.avito_live_enabled is False
+          assert settings.providers.telegram_enabled is False
+          assert settings.providers.max_enabled is False
+          assert settings.providers.yookassa_enabled is False
+          assert settings.providers.egress_agent_enabled is False
+          assert settings.api.host_port is None
+          print("runtime-settings-preflight=PASS")
+          PY
       - name: Prepare non-empty acceptance secrets and PostgreSQL roles
         run: |
           set -euo pipefail
@@ -230,6 +272,24 @@ jobs:
           assert db.startswith("mayak_rf24_expired_") and db != "mayak"
           assert urlsplit(os.environ["RF24_DSN"]).path.lstrip("/") == db
           assert urlsplit(os.environ["RF15_MIGRATION_DSN"]).path.lstrip("/") == db
+          import hashlib
+          from mayak.runtime.settings import load_runtime_settings
+
+          settings = load_runtime_settings()
+          assert settings.runtime.profile.value == "synthetic_acceptance"
+          assert settings.build.source_sha == os.environ["GITHUB_SHA"]
+          assert settings.build.environment_id == f"avito-mayak-rf24-expired-{os.environ['GITHUB_RUN_ID']}"
+          assert settings.build.lock_identity == hashlib.sha256(open("uv.lock", "rb").read()).hexdigest()
+          assert settings.build.image_digest == "sha256:" + hashlib.sha256(open("Dockerfile", "rb").read()).hexdigest()
+          assert settings.runtime.process_kind.value == "mayak-worker"
+          assert settings.session.synthetic_identity_enabled is True
+          assert settings.providers.avito_live_enabled is False
+          assert settings.providers.telegram_enabled is False
+          assert settings.providers.max_enabled is False
+          assert settings.providers.yookassa_enabled is False
+          assert settings.providers.egress_agent_enabled is False
+          assert settings.api.host_port is None
+          print("final-runtime-config-proof=PASS")
           PY
           rm -f rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-phase-boundaries.json rf24-expired-access-verifier-result.json rf24-expired-access-scanner-result.json rf24-expired-access.log
           uv run python scripts/runtime/run_rf24_expired_access.py --real-postgres --artifacts .

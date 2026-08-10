@@ -155,23 +155,19 @@ def test_workflow_environment_and_docker_negative_cases_execute_actual_validator
         ),
         (
             "container-python-path-not-enforced",
-            lambda w: w.replace(
-                'test "$python_path" = /usr/local/bin/python', "printf path-only"
-            ),
+            lambda w: w.replace('test "$python_path" = /usr/local/bin/python', "printf path-only"),
         ),
         (
             "host-toolcache-python-accepted",
             lambda w: w.replace(
                 'test "$python_path" = /usr/local/bin/python',
-                "test \"$python_path\" = /__t/Python/3.14.6/x64",
+                'test "$python_path" = /__t/Python/3.14.6/x64',
             ),
         ),
-        ("wrong-python-version", lambda w: w.replace('Python 3.14.6', 'Python 3.14.5')),
+        ("wrong-python-version", lambda w: w.replace("Python 3.14.6", "Python 3.14.5")),
         (
             "docker-before-python-authority-proof",
-            lambda w: w.replace(
-                'test "$(command -v python)" = /usr/local/bin/python', "true"
-            ),
+            lambda w: w.replace('test "$(command -v python)" = /usr/local/bin/python', "true"),
         ),
         (
             "docker-cli-heredoc-unclosed",
@@ -191,9 +187,7 @@ def test_workflow_environment_and_docker_negative_cases_execute_actual_validator
         ),
         (
             "docker-cli-path-not-enforced",
-            lambda w: w.replace(
-                'test "$(command -v docker)" = /usr/local/bin/docker', "true"
-            ),
+            lambda w: w.replace('test "$(command -v docker)" = /usr/local/bin/docker', "true"),
         ),
         (
             "docker-install-after-full-pytest",
@@ -239,7 +233,7 @@ def test_workflow_new_root_cause_negative_cases(case_id: str, mutate) -> None:
             "export-after-upgrade",
             lambda w: w.replace(
                 '          export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/${db}"\n',
-                '          uv run alembic upgrade head\n'
+                "          uv run alembic upgrade head\n"
                 '          export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/${db}"\n',
                 1,
             ),
@@ -271,10 +265,10 @@ def test_workflow_new_root_cause_negative_cases(case_id: str, mutate) -> None:
                 '          printf \'RF24_DSN=%s\\n\' "$RF24_DSN" >> "$GITHUB_ENV"\n',
                 1,
             ).replace(
-                "          assert observed == expected, \"fresh database is not exactly at "
-                "migration head\"\n",
-                "          assert observed == expected, \"fresh database is not exactly at "
-                "migration head\"\n"
+                '          assert observed == expected, "fresh database is not exactly at '
+                'migration head"\n',
+                '          assert observed == expected, "fresh database is not exactly at '
+                'migration head"\n'
                 "          uv run alembic upgrade head\n",
                 1,
             ),
@@ -300,7 +294,7 @@ def test_workflow_new_root_cause_negative_cases(case_id: str, mutate) -> None:
         (
             "missing-env-persistence",
             lambda w: w.replace(
-                "          printf 'RF24_DSN=%s\\n' \"$RF24_DSN\" >> \"$GITHUB_ENV\"\n",
+                '          printf \'RF24_DSN=%s\\n\' "$RF24_DSN" >> "$GITHUB_ENV"\n',
                 "",
             ),
             "fresh-github-env-persistence-missing",
@@ -327,6 +321,119 @@ def test_exact_head_proof_plain_python_fails_closed() -> None:
         1,
     )
     assert validate(mutated) == ["fresh-exact-head-proof-not-uv-project-python"]
+
+
+@pytest.mark.parametrize(
+    ("case_id", "mutate", "finding"),
+    [
+        (
+            "missing-environment-id",
+            lambda w: w.replace(
+                'export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-expired-${GITHUB_RUN_ID}"\n', ""
+            ),
+            "environment-id-materialization-missing",
+        ),
+        (
+            "constant-environment-id",
+            lambda w: w.replace(
+                'export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-expired-${GITHUB_RUN_ID}"',
+                'export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-expired-fixed"',
+            ),
+            "environment-id-not-run-scoped",
+        ),
+        (
+            "missing-lock-identity",
+            lambda w: w.replace(
+                "export MAYAK_LOCK_IDENTITY=\"$(sha256sum uv.lock | cut -d' ' -f1)\"\n", ""
+            ),
+            "lock-identity-not-uv-lock-derived",
+        ),
+        (
+            "constant-lock-identity",
+            lambda w: w.replace(
+                "export MAYAK_LOCK_IDENTITY=\"$(sha256sum uv.lock | cut -d' ' -f1)\"",
+                'export MAYAK_LOCK_IDENTITY="0"',
+            ),
+            "lock-identity-not-uv-lock-derived",
+        ),
+        (
+            "missing-image-identity",
+            lambda w: w.replace(
+                "export MAYAK_IMAGE_DIGEST=\"sha256:$(sha256sum Dockerfile | cut -d' ' -f1)\"\n", ""
+            ),
+            "image-identity-not-dockerfile-derived",
+        ),
+        (
+            "constant-image-identity",
+            lambda w: w.replace(
+                "export MAYAK_IMAGE_DIGEST=\"sha256:$(sha256sum Dockerfile | cut -d' ' -f1)\"",
+                'export MAYAK_IMAGE_DIGEST="sha256:0"',
+            ),
+            "image-identity-not-dockerfile-derived",
+        ),
+        (
+            "missing-process-kind",
+            lambda w: w.replace("          export MAYAK_PROCESS_KIND=mayak-worker\n", ""),
+            "process-kind-materialization-missing",
+        ),
+        (
+            "wrong-process-kind",
+            lambda w: w.replace("MAYAK_PROCESS_KIND=mayak-worker", "MAYAK_PROCESS_KIND=mayak-api"),
+            "process-kind-materialization-missing",
+        ),
+        (
+            "missing-synthetic-identity",
+            lambda w: w.replace("          export MAYAK_SYNTHETIC_IDENTITY_ENABLED=true\n", ""),
+            "synthetic-identity-not-enabled",
+        ),
+        (
+            "synthetic-identity-disabled",
+            lambda w: w.replace(
+                "MAYAK_SYNTHETIC_IDENTITY_ENABLED=true", "MAYAK_SYNTHETIC_IDENTITY_ENABLED=false"
+            ),
+            "final-p0-synthetic-identity-disabled",
+        ),
+        (
+            "missing-preflight",
+            lambda w: w.replace(
+                "      - name: Materialize and preflight runtime settings",
+                "      - name: Materialize runtime settings",
+            ),
+            "runtime-settings-preflight-missing",
+        ),
+        (
+            "preflight-after-pytest",
+            lambda w: w.replace(
+                "      - name: Materialize and preflight runtime settings",
+                (
+                    "      - name: Complete repository pytest\n"
+                    "        run: true\n"
+                    "      - name: Materialize and preflight runtime settings"
+                ),
+                1,
+            ),
+            "runtime-settings-preflight-after-full-pytest",
+        ),
+        (
+            "echo-only-preflight",
+            lambda w: w.replace(
+                "          settings = load_runtime_settings()", "          print('settings check')"
+            ),
+            "runtime-settings-preflight-not-actual-composition",
+        ),
+        (
+            "missing-final-config-proof",
+            lambda w: w.replace('          print("final-runtime-config-proof=PASS")\n', ""),
+            "final-p0-config-identity-proof-missing",
+        ),
+    ],
+)
+def test_runtime_configuration_mutations_have_specific_findings(
+    case_id: str, mutate, finding: str
+) -> None:
+    workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
+    findings = validate(mutate(workflow))
+    assert finding in findings, (case_id, findings)
 
 
 @pytest.mark.parametrize(

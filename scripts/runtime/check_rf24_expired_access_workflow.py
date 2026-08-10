@@ -56,6 +56,103 @@ DOCKER_CLI_SHA256 = "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1c
 DOCKER_BUILDX_SHA256 = "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
 
 
+def _runtime_configuration_failures(text: str, positions: dict[str, int]) -> list[str]:
+    failures: list[str] = []
+    materialize_name = "Materialize and preflight runtime settings"
+    materialize = _run_body(text, materialize_name)
+    preflight_position = positions.get(materialize_name, -1)
+    full_pytest_position = positions.get("Complete repository pytest", -1)
+    final = _run_body(text, "FINAL post-suite P0-P8 on NEW database")
+    if not materialize:
+        return ["runtime-config-materialization-missing", "runtime-settings-preflight-missing"]
+    required_materialization = (
+        (
+            'export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-expired-${GITHUB_RUN_ID}"',
+            "environment-id-materialization-missing",
+        ),
+        ('MAYAK_SOURCE_SHA="$GITHUB_SHA"', "source-sha-materialization-missing"),
+        (
+            "MAYAK_LOCK_IDENTITY=\"$(sha256sum uv.lock | cut -d' ' -f1)\"",
+            "lock-identity-not-uv-lock-derived",
+        ),
+        (
+            "MAYAK_IMAGE_DIGEST=\"sha256:$(sha256sum Dockerfile | cut -d' ' -f1)\"",
+            "image-identity-not-dockerfile-derived",
+        ),
+        ("MAYAK_PROCESS_KIND=mayak-worker", "process-kind-materialization-missing"),
+        ("MAYAK_SYNTHETIC_IDENTITY_ENABLED=true", "synthetic-identity-not-enabled"),
+    )
+    for marker, finding in required_materialization:
+        if marker not in materialize:
+            failures.append(finding)
+    if 'export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-expired-${GITHUB_RUN_ID}"' not in text:
+        failures.append("environment-id-not-run-scoped")
+    if preflight_position < 0:
+        failures.append("runtime-settings-preflight-missing")
+    elif full_pytest_position >= 0 and (
+        preflight_position > full_pytest_position
+        or text.find("      - name: " + materialize_name)
+        > text.find("      - name: Complete repository pytest")
+    ):
+        failures.append("runtime-settings-preflight-after-full-pytest")
+    if "uv run python - <<'PY'" not in materialize:
+        failures.append("runtime-settings-preflight-not-uv-project-python")
+    if (
+        "load_runtime_settings()" not in materialize
+        and "compose_runtime_settings(" not in materialize
+    ):
+        failures.append("runtime-settings-preflight-not-actual-composition")
+    for marker, finding in (
+        (
+            'settings.runtime.profile.value == "synthetic_acceptance"',
+            "preflight-profile-proof-missing",
+        ),
+        (
+            'settings.build.source_sha == os.environ["GITHUB_SHA"]',
+            "preflight-source-sha-proof-missing",
+        ),
+        (
+            'settings.build.environment_id == f"avito-mayak-rf24-expired-',
+            "preflight-environment-proof-missing",
+        ),
+        ("settings.build.lock_identity == hashlib.sha256", "preflight-lock-proof-missing"),
+        (
+            'settings.build.image_digest == "sha256:" + hashlib.sha256',
+            "preflight-image-proof-missing",
+        ),
+        (
+            'settings.runtime.process_kind.value == "mayak-worker"',
+            "preflight-process-kind-proof-missing",
+        ),
+        (
+            "settings.session.synthetic_identity_enabled is True",
+            "preflight-synthetic-proof-missing",
+        ),
+        ("settings.providers.egress_agent_enabled is False", "preflight-provider-proof-missing"),
+    ):
+        if marker not in materialize:
+            failures.append(finding)
+    if not final or "final-runtime-config-proof=PASS" not in final:
+        failures.append("final-p0-config-identity-proof-missing")
+    if final and "load_runtime_settings()" not in final:
+        failures.append("final-p0-config-settings-proof-missing")
+    if (
+        'MAYAK_SYNTHETIC_IDENTITY_ENABLED: "false"' in text
+        or "MAYAK_SYNTHETIC_IDENTITY_ENABLED=false" in materialize
+    ):
+        failures.append("final-p0-synthetic-identity-disabled")
+    for marker, finding in (
+        ('MAYAK_AVITO_LIVE_ENABLED: "false"', "live-avito-enabled"),
+        ('MAYAK_TELEGRAM_ENABLED: "false"', "live-telegram-enabled"),
+        ('MAYAK_MAX_ENABLED: "false"', "live-max-enabled"),
+        ('MAYAK_YOOKASSA_ENABLED: "false"', "live-yookassa-enabled"),
+        ('MAYAK_EGRESS_AGENT_ENABLED: "false"', "live-egress-agent-enabled"),
+    ):
+        if marker not in text:
+            failures.append(finding)
+    return failures
+
+
 def _run_body(text: str, name: str) -> str:
     match = re.search(
         rf"^      - name: {re.escape(name)}\n"
@@ -89,7 +186,7 @@ def _fresh_step_failures(text: str) -> list[str]:
     binding = body.find('export MAYAK_DATABASE_NAME="$db"')
     migration_binding = body.find('export RF15_MIGRATION_DSN="')
     scenario_binding = body.find('export RF24_DSN="')
-    proof = body.find("urlsplit(os.environ[key]).path.lstrip(\"/\")")
+    proof = body.find('urlsplit(os.environ[key]).path.lstrip("/")')
     upgrade = body.find("uv run alembic upgrade head")
     head_proof = body.find("ScriptDirectory.from_config")
     head_import = body.find("from alembic.config import Config")
@@ -156,7 +253,7 @@ def _fresh_step_failures(text: str) -> list[str]:
     if grants < 0 or (head_proof >= 0 and grants < head_proof):
         failures.append("fresh-application-grants-before-head-proof")
     final = _run_body(text, "FINAL post-suite P0-P8 on NEW database")
-    if not final or "urlsplit(os.environ[\"RF24_DSN\"]).path.lstrip(\"/\") == db" not in final:
+    if not final or 'urlsplit(os.environ["RF24_DSN"]).path.lstrip("/") == db' not in final:
         failures.append("final-p0-p8-fresh-db-proof-missing")
     return failures
 
@@ -188,6 +285,7 @@ def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list
     if "CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'" not in text:
         failures.append("role-secret-mismatch-application")
     positions = _step_positions(text)
+    failures.extend(_runtime_configuration_failures(text, positions))
     ordered = (
         "Sync dependencies",
         "Prepare non-empty acceptance secrets and PostgreSQL roles",
