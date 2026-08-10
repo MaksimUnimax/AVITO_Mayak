@@ -24,7 +24,6 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       UV_VERSION: 0.11.31
-      MAYAK_PROVIDER_MODE: disabled
       DOCKER_HOST: unix:///var/run/docker.sock
       MAYAK_DATABASE_HOST: postgres
       MAYAK_DATABASE_PORT: "5432"
