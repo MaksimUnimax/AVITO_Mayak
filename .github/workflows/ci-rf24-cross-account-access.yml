@@ -1,0 +1,121 @@
+name: RF24 cross-account access
+on:
+  push:
+    branches: [rf24-cross-account-access-scenario-01]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  hosted-acceptance:
+    runs-on: ubuntu-latest
+    container: python:3.14.6-bookworm
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: bootstrap-only
+          POSTGRES_DB: mayak
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      UV_VERSION: 0.11.31
+      MAYAK_ENVIRONMENT_ID: avito-mayak-rf24-cross-account-${{ github.run_id }}
+      MAYAK_SOURCE_SHA: ${{ github.sha }}
+      MAYAK_LOCK_IDENTITY: ${{ hashFiles('uv.lock') }}
+      MAYAK_IMAGE_DIGEST: sha256:${{ hashFiles('Dockerfile') }}
+      MAYAK_PROCESS_KIND: mayak-worker
+      MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_LIVE_ENABLED: "false"
+      MAYAK_MAX_LIVE_ENABLED: "false"
+      MAYAK_YOOKASSA_LIVE_ENABLED: "false"
+      MAYAK_WINDOWS_EGRESS_LIVE_ENABLED: "false"
+      MAYAK_DATABASE_HOST: postgres
+      MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak:bootstrap-only@postgres:5432/mayak
+      MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak:bootstrap-only@postgres:5432/mayak
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: ${{ github.sha }}}
+      - name: Exact source and Bash proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash --version
+      - name: Install exact uv and frozen dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --no-cache-dir "uv==${UV_VERSION}"
+          uv --version | grep -F "$UV_VERSION"
+          uv sync --frozen --all-groups
+      - name: Install pinned Docker CLI and buildx before gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -S /var/run/docker.sock
+          curl -fsSLo docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz
+          echo '995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  docker.tgz' | sha256sum -c -
+          tar -xzf docker.tgz --strip-components=1 -C /usr/local/bin docker/docker
+          curl -fsSLo buildx https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64
+          echo 'dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e  buildx' | sha256sum -c -
+          install -Dm755 buildx /usr/libexec/docker/cli-plugins/docker-buildx
+          docker version
+      - name: Hosted substrate preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python - <<'PY'
+          from mayak.runtime.settings import load_runtime_settings
+          load_runtime_settings()
+          print("runtime-settings-preflight=PASS")
+          PY
+      - name: Workflow validator and ownership gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python scripts/runtime/check_rf24_cross_account_access_workflow.py .github/workflows/ci-rf24-cross-account-access.yml
+          uv run python scripts/runtime/check_rf24_cross_account_access_ownership.py .
+      - name: Initial database migration and complete repository pytest
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run alembic upgrade head
+          uv run pytest -q --disable-warnings
+      - name: Create NEW post-suite database and migrate from zero
+        shell: bash
+        run: |
+          set -euo pipefail
+          db="mayak_rf24_cross_account_${GITHUB_RUN_ID}"
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db"
+          export MAYAK_DATABASE_NAME="$db"
+          export MAYAK_RF11_POSTGRES_DSN="postgresql+psycopg://mayak:bootstrap-only@postgres:5432/$db"
+          export MAYAK_RF10_POSTGRES_DSN="$MAYAK_RF11_POSTGRES_DSN"
+          export RF15_MIGRATION_DSN="$MAYAK_RF11_POSTGRES_DSN" RF24_DSN="$MAYAK_RF10_POSTGRES_DSN"
+          printf 'MAYAK_DATABASE_NAME=%s\nMAYAK_RF11_POSTGRES_DSN=%s\nMAYAK_RF10_POSTGRES_DSN=%s\nRF15_MIGRATION_DSN=%s\nRF24_DSN=%s\n' "$MAYAK_DATABASE_NAME" "$MAYAK_RF11_POSTGRES_DSN" "$MAYAK_RF10_POSTGRES_DSN" "$RF15_MIGRATION_DSN" "$RF24_DSN" >> "$GITHUB_ENV"
+          echo fresh-db-current-shell-binding=PASS
+          uv run alembic upgrade head
+          uv run python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          with create_engine(os.environ['RF15_MIGRATION_DSN']).connect() as c:
+              assert c.execute(text('select version_num from mayak.alembic_version')).scalar_one()
+          print('exact-head-proof=PASS')
+          PY
+      - name: FINAL post-suite C0-C10 on NEW database
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python scripts/runtime/run_rf24_cross_account_access.py --real-postgres --artifacts artifacts
+          uv run python scripts/runtime/verify_rf24_cross_account_access.py artifacts/rf24-cross-account-access-evidence.json "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result artifacts/rf24-cross-account-access-verifier-result.json
+          uv run python scripts/runtime/check_rf24_cross_account_access_artifact_safety.py artifacts --result artifacts/rf24-cross-account-access-scanner-result.json
+          uv run python scripts/runtime/build_rf24_cross_account_access_manifest.py artifacts --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output artifacts/rf24-cross-account-access-safety-manifest.json
+      - name: Upload rf24-cross-account-access artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rf24-cross-account-access
+          path: artifacts/rf24-cross-account-access*
