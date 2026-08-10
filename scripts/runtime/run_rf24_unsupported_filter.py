@@ -242,7 +242,7 @@ def main() -> int:
         from scripts.runtime.run_rf22_postgres_acceptance import _seed
 
         seeded = _seed(fixture)
-        _seed_unsupported(fixture, UUID(seeded["version"]))
+        _seed_unsupported(fixture, seeded["version"])
         sql_observation = {"dml": 0, "foreign_dml": 0}
 
         def observe_sql(_conn: Any, _cursor: Any, statement: str, _parameters: Any, _context: Any, _executemany: bool) -> None:
