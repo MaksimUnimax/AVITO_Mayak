@@ -16,6 +16,10 @@ from mayak.modules.filter_catalog import (
     FilterDependencyKind,
     WarningEnvelope,
 )
+from mayak.modules.filter_catalog.builder_validation import (
+    BuilderDraftValidationOutcome,
+    BuilderDraftValidationReason,
+)
 from mayak.modules.filter_catalog.contracts import (
     FilterCapabilityProfile,
     FilterCapabilityState,
@@ -319,3 +323,51 @@ def test_rf22_direct_cycle_is_loaded_from_postgres_and_blocks(
     scalar = next(item for item in result.semantic_outcomes if item.filter_definition_id == str(data["scalar"]))
     assert scalar.decision.value == "BLOCKED"
     assert [reason.value for reason in scalar.reason_codes] == ["DEPENDENCY_GRAPH_CYCLE"]
+
+
+def test_rf22_semantic_downgrade_is_model_valid_and_candidate_blocked(
+    direct_runtime: tuple[FilterCatalogRuntime, object, object, dict[str, object]],
+) -> None:
+    runtime, catalog, _migration, _data = direct_runtime
+    result = runtime.validate_and_prepare_candidate(
+        catalog,
+        beacon_id="SYNTHETIC_BEACON",
+        beacon_acceptance_boundary_reference_id="BEACON_OWNER_ACCEPTANCE",
+        builder_draft_id="DIRECT_SEMANTIC_DOWNGRADE",
+        beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+        provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+        category_scope_reference_id="SYNTHETIC_CATEGORY",
+        geography_scope_reference_id="SYNTHETIC_GEO",
+        fields=(DraftValueInput(field_code="SCALAR_FIELD", value_reference_ids=("OPTION_A",)),),
+    )
+    assert result.outcome.validation_result.validation_state.value == "BLOCKED"
+    assert BuilderDraftValidationReason.DRAFT_VALID not in result.outcome.reason_codes
+    assert BuilderDraftValidationReason.SERVER_VALUE_NOT_EVALUATED in result.outcome.reason_codes
+    assert result.candidate.candidate_outcome.candidate_state.value == "BLOCKED"
+    assert result.candidate.beacon_mutation_performed is False
+    assert BuilderDraftValidationOutcome.model_validate(result.outcome.model_dump()) == result.outcome
+
+
+def test_rf22_dependency_satisfied_draft_is_valid_and_prepared(
+    direct_runtime: tuple[FilterCatalogRuntime, object, object, dict[str, object]],
+) -> None:
+    runtime, catalog, _migration, _data = direct_runtime
+    result = runtime.validate_and_prepare_candidate(
+        catalog,
+        beacon_id="SYNTHETIC_BEACON",
+        beacon_acceptance_boundary_reference_id="BEACON_OWNER_ACCEPTANCE",
+        builder_draft_id="DIRECT_DEPENDENCY_SATISFIED",
+        beacon_revision_id="SYNTHETIC_BEACON_REVISION",
+        provider_surface_reference_id="SYNTHETIC_PROVIDER_SURFACE",
+        category_scope_reference_id="SYNTHETIC_CATEGORY",
+        geography_scope_reference_id="SYNTHETIC_GEO",
+        fields=(
+            DraftValueInput(field_code="SCALAR_FIELD", value_reference_ids=("OPTION_A",)),
+            DraftValueInput(field_code="MULTI_FIELD", value_reference_ids=("OPTION_A",)),
+        ),
+    )
+    assert result.outcome.validation_result.validation_state.value == "VALID"
+    assert BuilderDraftValidationReason.DRAFT_VALID in result.outcome.reason_codes
+    assert result.candidate.candidate_outcome.candidate_state.value == "PREPARED"
+    assert result.candidate.candidate_outcome.beacon_authoritative is False
+    assert result.candidate.beacon_mutation_performed is False

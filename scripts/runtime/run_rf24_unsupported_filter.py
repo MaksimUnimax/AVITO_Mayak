@@ -342,6 +342,7 @@ def main() -> int:
                 geography_scope_reference_id="SYNTHETIC_GEO",
                 fields=(
                     DraftValueInput(field_code="SCALAR_FIELD", value_reference_ids=("OPTION_A",)),
+                    DraftValueInput(field_code="MULTI_FIELD", value_reference_ids=("OPTION_A",)),
                 ),
             )
             with composition.sessions() as check:
@@ -365,7 +366,7 @@ def main() -> int:
                 "source_sha": source_sha,
                 "hosted_run_id": run_id,
                 "database_identity": {"major": 18, "role": "mayak_application", "host": "redacted"},
-                "baseline_classification": "EXISTING_PRODUCTION_SEMANTICS_SUFFICIENT",
+                "baseline_classification": "PRODUCTION_CORRECTIVE_REQUIRED_AND_IMPLEMENTED",
                 "catalog_version": loaded.version_code,
                 "catalog_version_id": str(catalog.filter_catalog_version_id),
                 "scope": {
@@ -374,6 +375,10 @@ def main() -> int:
                     "geography": "SYNTHETIC_GEO",
                 },
                 "editable_control_field_id": "SCALAR_FIELD",
+                "positive_control_fields": {
+                    "SCALAR_FIELD": ["OPTION_A"],
+                    "MULTI_FIELD": ["OPTION_A"],
+                },
                 "unsupported_field_id": "SYNTHETIC_UNSUPPORTED_FIELD",
                 "builder_context": {
                     "exact_scope": True,
@@ -423,7 +428,7 @@ def main() -> int:
                 },
                 "web_generic_patch_bypass_classification": "GENERIC_BEACON_CONFIGURATION_INDEPENDENT_OF_CATALOG_BUILDER",
                 "catalog_governed_bypass_present": False,
-                "production_fix_required": False,
+                "production_fix_required": True,
                 "live_provider_calls": 0,
                 "avito_live_disabled": True,
                 "telegram_live_disabled": True,

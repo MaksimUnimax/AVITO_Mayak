@@ -33,6 +33,7 @@ from .beacon_override_candidate import (
 from .builder_validation import (
     BuilderClientValidationState,
     BuilderDraftFieldInput,
+    BuilderDraftValidationOutcome,
     BuilderDraftValidationReason,
     BuilderDraftValidationRequest,
     BuilderDraftValidationState,
@@ -1205,14 +1206,29 @@ class FilterCatalogRuntime:
                     ),
                 }
             )
+            reason_codes = tuple(
+                dict.fromkeys(
+                    (
+                        *(
+                            reason
+                            for reason in outcome.reason_codes
+                            if reason is not BuilderDraftValidationReason.DRAFT_VALID
+                        ),
+                        *(
+                            reason
+                            for reason in BuilderDraftValidationReason
+                            if reason in semantic_reasons
+                        ),
+                    )
+                )
+            )
             outcome = outcome.model_copy(
                 update={
                     "validation_result": result,
-                    "reason_codes": tuple(
-                        dict.fromkeys((*outcome.reason_codes, *semantic_reasons))
-                    ),
+                    "reason_codes": reason_codes,
                 }
             )
+            outcome = BuilderDraftValidationOutcome.model_validate(outcome.model_dump())
         return RuntimeDraftResult(
             outcome=outcome,
             semantic_outcomes=tuple(semantic_outcomes),
