@@ -38,13 +38,16 @@ from mayak.runtime.rf24_provenance import emit_process_observation
 from mayak.runtime.settings import load_runtime_settings
 
 LOGGER = logging.getLogger("mayak.worker")
+_RF24_SHUTDOWN_REQUESTED = False
 
 
 class Shutdown:
     requested = False
 
     def __call__(self, _signum: int, _frame: FrameType | None) -> None:
+        global _RF24_SHUTDOWN_REQUESTED
         self.requested = True
+        _RF24_SHUTDOWN_REQUESTED = True
 
 
 def _scenario(session: Any, beacon_id: UUID) -> str:
@@ -95,6 +98,8 @@ def _rf24_wait_for_release() -> None:
         raise RuntimeError("RF24 acceptance control file is missing or unsafe")
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
+        if _RF24_SHUTDOWN_REQUESTED:
+            raise InterruptedError("worker shutdown requested during RF24 hold")
         try:
             with open(configured, encoding="utf-8") as control:
                 if control.read(32).strip() == "release":
@@ -156,6 +161,8 @@ def process_once(
                     }
                 )
                 while not os.environ.get("RF24_RELEASE_HOLD") == "true":
+                    if _RF24_SHUTDOWN_REQUESTED:
+                        raise InterruptedError("worker shutdown requested during RF24 claim hold")
                     time.sleep(0.1)
             run: Any = None
             try:
@@ -287,6 +294,10 @@ def process_once(
                             ),
                             "new_listing_count": len(comparison.new_listing_keys),
                             "event_ids": [str(event_id) for event_id in comparison.event_ids],
+                            "parser_attempt_id": (
+                                None if egress_observation is None
+                                else egress_observation["parser_correlation"]
+                            ),
                         }
                     )
                 else:
@@ -314,6 +325,10 @@ def process_once(
                             "parser_outcome": persisted.outcome_code,
                             "new_listing_count": 0,
                             "event_ids": [],
+                            "parser_attempt_id": (
+                                None if egress_observation is None
+                                else egress_observation["parser_correlation"]
+                            ),
                         }
                     )
                 processed += 1
@@ -358,6 +373,7 @@ def main() -> None:
     shutdown = Shutdown()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
+    emit_process_observation({"record_type": "worker_process_started"})
     composition = build_rf24_composition(settings)
     try:
         while not shutdown.requested:
@@ -366,6 +382,7 @@ def main() -> None:
             while not shutdown.requested and time.monotonic() < deadline:
                 time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
     finally:
+        emit_process_observation({"record_type": "worker_process_stopped"})
         composition.close()
         LOGGER.info("worker process stopped")
 

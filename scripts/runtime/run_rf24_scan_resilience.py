@@ -42,6 +42,7 @@ def _owning_snapshot(composition: Any, *, account_id: str, beacon_id: str, work_
     safe_runs = [{"run_id": str(row["id"]), "state": row["state"], "parser_outcome_present": row["parser_outcome_id"] is not None, "row_version": int(row["row_version"])} for row in run_rows]
     return {
         "observation_source": "owning-read-model", "work": safe_work, "runs": safe_runs,
+        "authoritative_terminal_run_count": sum(row["state"] in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE", "FAILED", "PENDING_RECONCILIATION"} for row in safe_runs),
         "scan_event_count": int(scan_events), "authoritative_effect_count": int(notification.outbox_effect),
         "listing_identity": listings[0]["external_listing_key"] if listings else None,
         "listing_identities": list(listings),
@@ -104,6 +105,27 @@ def _stop(process: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait(5)
+    if process.poll() is None:
+        raise RuntimeError(f"process did not exit: {process.pid}")
+
+
+def _scenario_raw(
+    rows: list[dict[str, object]], *, work_id: object | None = None,
+    run_id: object | None = None, generations: set[str] | None = None,
+    kinds: set[str] | None = None,
+) -> list[dict[str, object]]:
+    selected = []
+    for row in rows:
+        if kinds is not None and row.get("process_kind") not in kinds:
+            continue
+        if work_id is not None and row.get("work_item_id") not in {None, work_id}:
+            continue
+        if run_id is not None and row.get("run_id") not in {None, run_id}:
+            continue
+        if generations is not None and row.get("process_generation") not in generations:
+            continue
+        selected.append(row)
+    return selected
 
 
 def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) -> None:
@@ -198,6 +220,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
         scheduler_2 = _proc("mayak.runtime.scheduler", {**base_env, "MAYAK_PROCESS_KIND": "mayak-scheduler", "RF24_PROCESS_GENERATION": "S2"}, workdir / "rf24-scheduler.log")
         processes.append(scheduler_2)
         sched_first = _wait(scheduler_obs, run_id, "mayak-scheduler", "scheduler_materialization", 20)
+        _stop(scheduler_2)
         sched_rows = _records(scheduler_obs, run_id)
         scheduler_after = _owning_snapshot(composition, account_id=account, beacon_id=beacon_id, work_id=str(sched_first["work_item_id"]))
         scheduler_item = {"scenario_name": "scheduler-restart", "acceptance_run_id": run_id, "source_sha": actual, "account_id": account, "beacon_id": beacon_id, "schedule_id": schedule_id, "work_id": sched_first["work_item_id"], "before": {"persistent_schedule": True, "materialized_work_count": 0}, "action": {"public_boundary": ACTION_BOUNDARIES["scheduler-restart"], "actual_action_invoked": "S1 terminated before due; S2 OS process called normal materialize_due_work", "observation_source": "scheduler JSONL process observation", "process_observed": True, "pid_1": scheduler_1.pid, "pid_2": sched_first["process_pid"], "generation_1": "S1", "generation_2": "S2"}, "after": {"persistent_schedule": True, "materialized_work_count": 1}, "durable_before": {**scheduler_before, "schedule_exists": True, "work_count": 0}, "durable_after": {**scheduler_after, "schedule_exists": True, "work_count": 1}, "notification_deltas": {"source_intake": 0, "outbox_effect": 0, "delivery_attempt": 0, "observation_source": "notification-delivery-owned-read"}}
@@ -213,9 +236,9 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
         terminal = _wait(worker_obs, run_id, "mayak-worker", "worker_terminal", 30)
         worker_after = _owning_snapshot(composition, account_id=account, beacon_id=beacon_id, work_id=str(claim["work_item_id"]))
         worker_item = {"scenario_name": "worker-restart", "acceptance_run_id": run_id, "source_sha": actual, "account_id": account, "beacon_id": beacon_id, "schedule_id": schedule_id, "work_id": claim["work_item_id"], "scan_run_id": terminal["run_id"], "before": {"state": "CLAIMED", "durable_work": True}, "action": {"public_boundary": ACTION_BOUNDARIES["worker-restart"], "actual_action_invoked": "W1 SIGTERM during controlled claim hold; W2 OS process", "observation_source": "worker JSONL process observation", "process_observed": True, "pid_1": claim["process_pid"], "pid_2": terminal["process_pid"], "generation_1": "W1", "generation_2": "W2"}, "after": {"terminal_state": terminal["terminal_state"], "new_listing_delta": terminal["new_listing_count"]}, "durable_before": worker_before, "durable_after": worker_after, "notification_deltas": {k: worker_after["notification"][k] - worker_before["notification"][k] for k in ("source_intake", "outbox_effect", "delivery_attempt")} | {"observation_source": "notification-delivery-owned-read"}}
+        _stop(w2)
         records: dict[str, dict[str, object]] = {"worker-restart": worker_item, "scheduler-restart": scheduler_item}
         for name, scenario in (("partial-parser", "partial"), ("captcha-restriction", "captcha"), ("route-failure", "route_failure")):
-            _stop(w2)
             _, scenario_beacon, _ = _request(
                 f"http://127.0.0.1:{port}/api/v1/beacons", "POST",
                 {"source_url": "https://synthetic.invalid/feed", "name": f"{run_id}-{name}"}, cookie,
@@ -237,6 +260,17 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
             )
             scenario_schedule_id = str(scenario_schedule["schedule_id"])
             scenario_before = _owning_snapshot(composition, account_id=account, beacon_id=scenario_beacon_id, work_id="00000000-0000-0000-0000-000000000000")
+            scenario_scheduler = _proc(
+                "mayak.runtime.scheduler",
+                {**base_env, "MAYAK_PROCESS_KIND": "mayak-scheduler", "RF24_PROCESS_GENERATION": f"{name}-S"},
+                workdir / "rf24-scheduler.log",
+            )
+            processes.append(scenario_scheduler)
+            materialization_count = len([r for r in _records(scheduler_obs, run_id) if r.get("record_type") == "scheduler_materialization"])
+            scenario_materialization = _wait_after(scheduler_obs, run_id, "mayak-scheduler", "scheduler_materialization", materialization_count, 30)
+            if scenario_materialization.get("schedule_id") != scenario_schedule_id or scenario_materialization.get("beacon_id") != scenario_beacon_id:
+                raise RuntimeError("scenario scheduler materialized the wrong schedule")
+            _stop(scenario_scheduler)
             prior_claims = len([r for r in _records(worker_obs, run_id) if r.get("record_type") == "worker_claim"])
             prior_terminals = len([r for r in _records(worker_obs, run_id) if r.get("record_type") == "worker_terminal"])
             w2 = _proc("mayak.runtime.worker", {**base_env, "MAYAK_PROCESS_KIND": "mayak-worker", "MAYAK_SYNTHETIC_SCENARIO": scenario, "RF24_PROCESS_GENERATION": f"{name}-W"}, workdir / "rf24-worker.log")
@@ -244,11 +278,25 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
             row = _wait_after(worker_obs, run_id, "mayak-worker", "worker_claim", prior_claims, 30)
             terminal = _wait_after(worker_obs, run_id, "mayak-worker", "worker_terminal", prior_terminals, 30)
             scenario_after = _owning_snapshot(composition, account_id=account, beacon_id=scenario_beacon_id, work_id=str(row["work_item_id"]))
+            _stop(w2)
             notification_delta = {k: scenario_after["notification"][k] - scenario_before["notification"][k] for k in ("source_intake", "outbox_effect", "delivery_attempt")}
             notification_delta["observation_source"] = "notification-delivery-owned-read"
             records[name] = {"scenario_name": name, "acceptance_run_id": run_id, "source_sha": actual, "account_id": account, "beacon_id": scenario_beacon_id, "schedule_id": scenario_schedule_id, "work_id": row["work_item_id"], "scan_run_id": terminal["run_id"], "before": {"known_listing_count": 0}, "action": {"public_boundary": ACTION_BOUNDARIES[name], "actual_action_invoked": f"worker synthetic {scenario}", "observation_source": "worker process claim plus persisted parser outcome", "process_observed": True, "parser_outcome": terminal["parser_outcome"], "route_selected": name == "route-failure", "route_failure_observed": name == "route-failure", "parser_success": False}, "after": {"scan_state": terminal["terminal_state"], "new_listing_delta": terminal["new_listing_count"], "notification_effect_delta": notification_delta["outbox_effect"]}, "durable_before": scenario_before, "durable_after": scenario_after, "notification_deltas": notification_delta}
         _stop(w2)
-        _request(f"http://127.0.0.1:{port}/api/v1/beacons/{beacon_id}/scan-schedule", "POST", {"interval_seconds": 10800, "next_due_at": (datetime.now(UTC)-timedelta(seconds=2)).isoformat()}, cookie)
+        _, resilience_beacon, _ = _request(f"http://127.0.0.1:{port}/api/v1/beacons", "POST", {"source_url": "https://synthetic.invalid/feed", "name": f"{run_id}-lost-lease"}, cookie)
+        resilience_beacon_id = str(resilience_beacon["beacon_id"])
+        resilience_version = int(cast(Any, resilience_beacon.get("row_version", 1)))
+        _, resilience_snapshot, _ = _request(f"http://127.0.0.1:{port}/api/v1/beacons/{resilience_beacon_id}/accept-synthetic-snapshot?expected_row_version={resilience_version}", "POST", cookie=cookie)
+        resilience_version = int(cast(Any, resilience_snapshot.get("row_version", resilience_version + 1)))
+        _request(f"http://127.0.0.1:{port}/api/v1/beacons/{resilience_beacon_id}/activate?expected_row_version={resilience_version}", "POST", cookie=cookie)
+        _, lost_schedule, _ = _request(f"http://127.0.0.1:{port}/api/v1/beacons/{resilience_beacon_id}/scan-schedule", "POST", {"interval_seconds": 10800, "next_due_at": (datetime.now(UTC)-timedelta(seconds=2)).isoformat()}, cookie)
+        lost_scheduler = _proc("mayak.runtime.scheduler", {**base_env, "MAYAK_PROCESS_KIND": "mayak-scheduler", "RF24_PROCESS_GENERATION": "lost-S"}, workdir / "rf24-scheduler.log")
+        processes.append(lost_scheduler)
+        lost_materialization_count = len([r for r in _records(scheduler_obs, run_id) if r.get("record_type") == "scheduler_materialization"])
+        lost_materialization = _wait_after(scheduler_obs, run_id, "mayak-scheduler", "scheduler_materialization", lost_materialization_count, 30)
+        if lost_materialization.get("schedule_id") != str(lost_schedule.get("schedule_id")) or lost_materialization.get("beacon_id") != resilience_beacon_id:
+            raise RuntimeError("lost-lease scheduler materialized the wrong schedule")
+        _stop(lost_scheduler)
         prior_claims = len([r for r in _records(worker_obs, run_id) if r.get("record_type") == "worker_claim"])
         prior_terminals = len([r for r in _records(worker_obs, run_id) if r.get("record_type") == "worker_terminal"])
         control_a = workdir / f"{run_id}-lost-a.control"
@@ -258,7 +306,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
         processes.append(w_a)
         lost_claim = _wait_after(worker_obs, run_id, "mayak-worker", "worker_claim", prior_claims, 30)
         _wait_after(worker_obs, run_id, "mayak-worker", "worker_controlled_hold", 1, 30)
-        lost_before = _owning_snapshot(composition, account_id=account, beacon_id=beacon_id, work_id=str(lost_claim["work_item_id"]))
+        lost_before = _owning_snapshot(composition, account_id=account, beacon_id=resilience_beacon_id, work_id=str(lost_claim["work_item_id"]))
         time.sleep(4)
         prior_reclaims = len([r for r in _records(worker_obs, run_id) if r.get("record_type") == "worker_reclaim"])
         w_b = _proc("mayak.runtime.worker", {**lost_env, "RF24_PROCESS_GENERATION": "lost-B", "RF24_RECLAIM_PENDING": "true", "RF24_TARGET_WORK_ITEM_ID": str(lost_claim["work_item_id"]), "RF24_HOLD_AFTER_START_RUN": "true", "RF24_ACCEPTANCE_CONTROL_FILE": str(control_b)}, workdir / "rf24-worker.log")
@@ -267,28 +315,40 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
         _wait_after(worker_obs, run_id, "mayak-worker", "worker_controlled_hold", 2, 30)
         _ = control_a.write_text("release\n", encoding="utf-8")
         _wait(worker_obs, run_id, "mayak-worker", "stale_terminal_rejected", 30)
+        _stop(w_a)
         _ = control_b.write_text("release\n", encoding="utf-8")
-        _wait_after(worker_obs, run_id, "mayak-worker", "worker_terminal", prior_terminals, 30)
-        lost_after = _owning_snapshot(composition, account_id=account, beacon_id=beacon_id, work_id=str(lost_claim["work_item_id"]))
+        lost_terminal = _wait_after(worker_obs, run_id, "mayak-worker", "worker_terminal", prior_terminals, 30)
+        lost_after = _owning_snapshot(composition, account_id=account, beacon_id=resilience_beacon_id, work_id=str(lost_claim["work_item_id"]))
         lost_notification_delta = {k: lost_after["notification"][k] - lost_before["notification"][k] for k in ("source_intake", "outbox_effect", "delivery_attempt")}
         lost_notification_delta["observation_source"] = "notification-delivery-owned-read"
-        lost_raw = _records(worker_obs, run_id)
-        lost_raw = [r for r in lost_raw if r.get("work_item_id") == lost_claim["work_item_id"]]
-        records["lost-lease"] = {"scenario_name": "lost-lease", "acceptance_run_id": run_id, "source_sha": actual, "account_id": account, "beacon_id": beacon_id, "schedule_id": schedule_id, "work_id": lost_claim["work_item_id"], "before": {"lease_state": "CLAIMED"}, "action": {"public_boundary": ACTION_BOUNDARIES["lost-lease"], "actual_action_invoked": "A post-start_run hold; normal lease expiry/reclaim; B terminal; A stale commit_comparison", "observation_source": "worker process observations plus owning read models", "owner_a": "lost-A", "owner_b": "lost-B", "stale_owner_rejected": True}, "after": {"authoritative_owner": "lost-B"}, "durable_before": lost_before, "durable_after": {**lost_after, "authoritative_terminal_count": 1}, "notification_deltas": lost_notification_delta, "raw_observations": lost_raw}
+        records["lost-lease"] = {"scenario_name": "lost-lease", "acceptance_run_id": run_id, "source_sha": actual, "account_id": account, "beacon_id": resilience_beacon_id, "schedule_id": lost_schedule["schedule_id"], "work_id": lost_claim["work_item_id"], "scan_run_id": lost_terminal["run_id"], "before": {"lease_state": "CLAIMED"}, "action": {"public_boundary": ACTION_BOUNDARIES["lost-lease"], "actual_action_invoked": "A post-start_run hold; normal lease expiry/reclaim; B terminal; A stale commit_comparison", "observation_source": "worker process observations plus owning read models"}, "after": {"authoritative_owner": "lost-B"}, "durable_before": lost_before, "durable_after": lost_after, "notification_deltas": lost_notification_delta, "raw_observations": []}
         _stop(w_b)
-        _request(f"http://127.0.0.1:{port}/api/v1/beacons/{beacon_id}/scan-schedule", "POST", {"interval_seconds": 10800, "next_due_at": (datetime.now(UTC)-timedelta(seconds=2)).isoformat()}, cookie)
+        lost_raw = _scenario_raw(_records(worker_obs, run_id), work_id=lost_claim["work_item_id"], run_id=lost_terminal["run_id"], generations={"lost-A", "lost-B"}, kinds={"mayak-worker"})
+        records["lost-lease"]["raw_observations"] = lost_raw
+        _, duplicate_schedule, _ = _request(f"http://127.0.0.1:{port}/api/v1/beacons/{resilience_beacon_id}/scan-schedule", "POST", {"interval_seconds": 10800, "next_due_at": (datetime.now(UTC)-timedelta(seconds=2)).isoformat()}, cookie)
         prior_claims = len([r for r in _records(worker_obs, run_id) if r.get("record_type") == "worker_claim"])
         prior_terminals = len([r for r in _records(worker_obs, run_id) if r.get("record_type") == "worker_terminal"])
-        duplicate_before = _owning_snapshot(composition, account_id=account, beacon_id=beacon_id, work_id=str(lost_claim["work_item_id"]))
-        w2 = _proc("mayak.runtime.worker", {**base_env, "MAYAK_PROCESS_KIND": "mayak-worker", "MAYAK_SYNTHETIC_SCENARIO": "usable_listing_page", "RF24_FORCE_COMPLETE_SAME_LISTING": "true", "RF24_PROCESS_GENERATION": "duplicate-W"}, workdir / "rf24-worker.log")
-        processes.append(w2)
+        duplicate_before = _owning_snapshot(composition, account_id=account, beacon_id=resilience_beacon_id, work_id=str(lost_claim["work_item_id"]))
+        duplicate_scheduler = _proc("mayak.runtime.scheduler", {**base_env, "MAYAK_PROCESS_KIND": "mayak-scheduler", "RF24_PROCESS_GENERATION": "DUP-S"}, workdir / "rf24-scheduler.log")
+        processes.append(duplicate_scheduler)
+        materializations = [r for r in _records(scheduler_obs, run_id) if r.get("record_type") == "scheduler_materialization"]
+        duplicate_materialization = _wait_after(scheduler_obs, run_id, "mayak-scheduler", "scheduler_materialization", len(materializations), 30)
+        _stop(duplicate_scheduler)
+        if duplicate_materialization.get("schedule_id") != str(duplicate_schedule.get("schedule_id")) or duplicate_materialization.get("beacon_id") != resilience_beacon_id:
+            raise RuntimeError("duplicate scheduler materialized the wrong schedule")
+        duplicate_work_id = duplicate_materialization["work_item_id"]
+        w_duplicate = _proc("mayak.runtime.worker", {**base_env, "MAYAK_PROCESS_KIND": "mayak-worker", "MAYAK_SYNTHETIC_SCENARIO": "usable_listing_page", "RF24_FORCE_COMPLETE_SAME_LISTING": "true", "RF24_TARGET_WORK_ITEM_ID": str(duplicate_work_id), "RF24_PROCESS_GENERATION": "duplicate-W"}, workdir / "rf24-worker.log")
+        processes.append(w_duplicate)
         duplicate_claim = _wait_after(worker_obs, run_id, "mayak-worker", "worker_claim", prior_claims, 30)
         duplicate_terminal = _wait_after(worker_obs, run_id, "mayak-worker", "worker_terminal", prior_terminals, 30)
-        duplicate_after = _owning_snapshot(composition, account_id=account, beacon_id=beacon_id, work_id=str(duplicate_claim["work_item_id"]))
+        if duplicate_claim.get("work_item_id") != duplicate_work_id or duplicate_claim.get("process_generation") != "duplicate-W" or duplicate_terminal.get("work_item_id") != duplicate_work_id or duplicate_terminal.get("process_generation") != "duplicate-W":
+            raise RuntimeError("duplicate work was claimed by an unexpected process")
+        duplicate_after = _owning_snapshot(composition, account_id=account, beacon_id=resilience_beacon_id, work_id=str(duplicate_claim["work_item_id"]))
         duplicate_notification_delta = {k: duplicate_after["notification"][k] - duplicate_before["notification"][k] for k in ("source_intake", "outbox_effect", "delivery_attempt")}
         duplicate_notification_delta["observation_source"] = "notification-delivery-owned-read"
         duplicate_raw = [r for r in _records(worker_obs, run_id) if r.get("work_item_id") == duplicate_claim["work_item_id"]]
-        records["duplicate-listing"] = {"scenario_name": "duplicate-listing", "acceptance_run_id": run_id, "source_sha": actual, "account_id": account, "beacon_id": beacon_id, "schedule_id": schedule_id, "work_id": duplicate_claim["work_item_id"], "scan_run_id": duplicate_terminal["run_id"], "before": {"listing_known": True}, "action": {"public_boundary": ACTION_BOUNDARIES["duplicate-listing"], "actual_action_invoked": "second accepted scan of same Beacon and listing", "observation_source": "worker terminal plus Scan and Notification owning snapshots", "process_observed": True}, "after": {"listing_known": True, "new_listing_delta": duplicate_terminal["new_listing_count"], "event_delta": duplicate_after["scan_event_count"] - duplicate_before["scan_event_count"], "notification_effect_delta": duplicate_after["notification"]["outbox_effect"] - duplicate_before["notification"]["outbox_effect"]}, "durable_before": duplicate_before, "durable_after": duplicate_after, "notification_deltas": duplicate_notification_delta, "raw_observations": duplicate_raw}
+        _stop(w_duplicate)
+        records["duplicate-listing"] = {"scenario_name": "duplicate-listing", "acceptance_run_id": run_id, "source_sha": actual, "account_id": account, "beacon_id": resilience_beacon_id, "schedule_id": duplicate_schedule["schedule_id"], "work_id": duplicate_claim["work_item_id"], "scan_run_id": duplicate_terminal["run_id"], "before": {"listing_known": True}, "action": {"public_boundary": ACTION_BOUNDARIES["duplicate-listing"], "actual_action_invoked": "second accepted scan of same Beacon and listing", "observation_source": "worker terminal plus Scan and Notification owning snapshots", "process_observed": True}, "after": {"listing_known": True, "new_listing_delta": duplicate_terminal["new_listing_count"], "event_delta": duplicate_after["scan_event_count"] - duplicate_before["scan_event_count"], "notification_effect_delta": duplicate_after["notification"]["outbox_effect"] - duplicate_before["notification"]["outbox_effect"]}, "durable_before": duplicate_before, "durable_after": duplicate_after, "notification_deltas": duplicate_notification_delta, "raw_observations": duplicate_raw}
         raw_scheduler = _records(scheduler_obs, run_id)
         raw_worker = _records(worker_obs, run_id)
         route_observation = next(
@@ -299,7 +359,15 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
             route_action = cast(dict[str, object], records["route-failure"]["action"])
             route_action["parser_attempt_id"] = route_observation.get("parser_correlation")
         for item in records.values():
-            item["raw_observations"] = raw_scheduler + raw_worker
+            name = str(item.get("scenario_name"))
+            if name == "scheduler-restart":
+                item["raw_observations"] = _scenario_raw(raw_scheduler, generations={"S1", "S2"}, kinds={"mayak-scheduler"})
+            elif name == "worker-restart":
+                item["raw_observations"] = _scenario_raw(raw_worker, work_id=item.get("work_id"), run_id=item.get("scan_run_id"), generations={"W1", "W2"}, kinds={"mayak-worker"})
+            elif name in {"partial-parser", "captcha-restriction", "route-failure"}:
+                item["raw_observations"] = _scenario_raw(raw_worker, work_id=item.get("work_id"), run_id=item.get("scan_run_id"), generations={f"{name}-W"}, kinds={"mayak-worker"})
+            elif name == "duplicate-listing":
+                item["raw_observations"] = _scenario_raw(raw_worker, work_id=item.get("work_id"), run_id=item.get("scan_run_id"), generations={"duplicate-W"}, kinds={"mayak-worker"})
             notification = item.get("notification_deltas")
             if isinstance(notification, dict):
                 notification["observation_source"] = "notification-delivery-owned-read"

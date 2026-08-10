@@ -68,6 +68,7 @@ def main() -> None:
     shutdown = Shutdown()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
+    emit_process_observation({"record_type": "scheduler_process_started"})
     composition = build_rf24_composition(settings)
     try:
         while not shutdown.requested:
@@ -77,6 +78,7 @@ def main() -> None:
             while not shutdown.requested and time.monotonic() < deadline:
                 time.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
     finally:
+        emit_process_observation({"record_type": "scheduler_process_stopped"})
         composition.close()
         LOGGER.info("scheduler process stopped")
 
