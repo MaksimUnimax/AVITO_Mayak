@@ -81,6 +81,9 @@ jobs:
           echo "MAYAK_RF11_POSTGRES_PORT=5432" >> "$GITHUB_ENV"
           echo "MAYAK_RF11_POSTGRES_DB=mayak" >> "$GITHUB_ENV"
           echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak" >> "$GITHUB_ENV"
+          echo "RF22_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak" >> "$GITHUB_ENV"
+          echo "RF22_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak" >> "$GITHUB_ENV"
+          echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak" >> "$GITHUB_ENV"
           echo "MAYAK_SYNTHETIC_IDENTITY_ENABLED=true" >> "$GITHUB_ENV"
       - name: H3 workflow and ownership guards
         run: |
@@ -96,6 +99,13 @@ jobs:
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
       - name: H5 complete repository pytest
         run: uv run pytest -q 2>&1 | tee rf24-unsupported-filter-full-pytest.log
+      - name: Preserve full pytest diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rf24-unsupported-filter-full-pytest-diagnostic
+          if-no-files-found: warn
+          path: rf24-unsupported-filter-full-pytest.log
       - name: H6 create NEW post-suite database
         run: |
           set -euo pipefail
@@ -110,6 +120,9 @@ jobs:
           echo "RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
           echo "RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
           echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF22_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF22_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
       - name: H7 migrate NEW database to exact head
         run: |
           set -euo pipefail
