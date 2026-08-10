@@ -56,6 +56,35 @@ jobs:
           printf 'CHECKOUT_HEAD=%s\n' "$actual_sha"
           export GITHUB_SHA="$actual_sha"
           printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
+      - name: Configure synthetic acceptance environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 /run/secrets
+          printf '%s\n' migration-only > /run/secrets/mayak_database_migration_password
+          printf '%s\n' application-only > /run/secrets/mayak_database_application_password
+          printf '%s\n' session-signing-key-acceptance-only > /run/secrets/mayak_session_signing_key
+          chmod 600 /run/secrets/*
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE mayak_migration LOGIN CREATEDB PASSWORD 'migration-only';
+          CREATE ROLE mayak_application LOGIN PASSWORD 'application-only';
+          CREATE SCHEMA mayak AUTHORIZATION mayak_migration;
+          GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;
+          SQL
+          database_host="$(getent ahostsv4 postgres | awk 'NR==1 {print $1}')"
+          test -n "$database_host"
+          {
+            printf 'MAYAK_DATABASE_HOST=%s\n' "$database_host"
+            printf 'MAYAK_API_HOST_PORT=disabled\n'
+            printf 'MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak\n'
+            printf 'MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak\n'
+            printf 'RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak\n'
+            printf 'RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak\n'
+            printf 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak\n'
+            printf 'RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak\n'
+            printf 'MAYAK_RF11_POSTGRES_PASSWORD_FILE=/run/secrets/mayak_database_migration_password\n'
+            printf 'MAYAK_SESSION_SIGNING_KEY_FILE=/run/secrets/mayak_session_signing_key\n'
+          } >> "$GITHUB_ENV"
       - name: Install exact uv and frozen dependencies
         shell: bash
         run: |
