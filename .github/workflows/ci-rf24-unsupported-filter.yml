@@ -114,6 +114,7 @@ jobs:
           set -euo pipefail
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'REVOKE INSERT, UPDATE, DELETE ON mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles FROM mayak_application;'
       - name: H5 complete repository pytest
         run: uv run pytest -q 2>&1 | tee rf24-unsupported-filter-full-pytest.log
       - name: Preserve full pytest diagnostic
@@ -164,6 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME" -v ON_ERROR_STOP=1 -c 'REVOKE INSERT, UPDATE, DELETE ON mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles FROM mayak_application;'
           uv run python -c 'from mayak.runtime.settings import load_runtime_settings; print(load_runtime_settings().database.name)'
       - name: H9 final runtime settings proof
         run: |
