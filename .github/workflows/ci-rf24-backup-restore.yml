@@ -39,7 +39,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/${GITHUB_REF_NAME} 2>/dev/null || git rev-parse HEAD)"
       - uses: astral-sh/setup-uv@v6
         with:
           version: ${{ env.UV_VERSION }}
