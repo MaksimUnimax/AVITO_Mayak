@@ -57,9 +57,13 @@ jobs:
       - name: Configure scoped Git ownership trust
         run: |
           set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config --global --get-all safe.directory | grep -Fxq "$GITHUB_WORKSPACE"
-          ! git config --global --get-all safe.directory | grep -Fxq '*'
+          workspace="$(pwd -P)"
+          test "$workspace" = "$GITHUB_WORKSPACE"
+          {
+            echo 'GIT_CONFIG_COUNT=1'
+            echo 'GIT_CONFIG_KEY_0=safe.directory'
+            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
+          } >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v6
         with:
           version: ${{ env.UV_VERSION }}
@@ -99,8 +103,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git config --global --get-all safe.directory | grep -Fxq "$GITHUB_WORKSPACE"
-          ! git config --global --get-all safe.directory | grep -Fxq '*'
+          test "$(git config --get-all safe.directory)" = "$GITHUB_WORKSPACE"
+          ! git config --get-all safe.directory | grep -Fxq '*'
           test -S /var/run/docker.sock
           docker version
           docker buildx version
