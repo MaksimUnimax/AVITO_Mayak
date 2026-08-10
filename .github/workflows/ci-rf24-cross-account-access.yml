@@ -147,21 +147,30 @@ jobs:
         run: |
           set -euo pipefail
           db="mayak_rf24_cross_account_${GITHUB_RUN_ID}"
-          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db"
+          case "$db" in (*[!a-zA-Z0-9_]*|'') exit 1;; esac
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER mayak_migration"
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration;'
           export MAYAK_DATABASE_NAME="$db"
-          export MAYAK_RF11_POSTGRES_DSN="postgresql+psycopg://mayak:bootstrap-only@postgres:5432/$db"
-          export MAYAK_RF10_POSTGRES_DSN="$MAYAK_RF11_POSTGRES_DSN"
+          export MAYAK_RF11_POSTGRES_DSN="postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db"
+          export MAYAK_RF10_POSTGRES_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/$db"
+          export RF11_POSTGRES_DSN="$MAYAK_RF11_POSTGRES_DSN" RF10_POSTGRES_DSN="$MAYAK_RF10_POSTGRES_DSN"
           export RF15_MIGRATION_DSN="$MAYAK_RF11_POSTGRES_DSN" RF24_DSN="$MAYAK_RF10_POSTGRES_DSN"
-          printf 'MAYAK_DATABASE_NAME=%s\nMAYAK_RF11_POSTGRES_DSN=%s\nMAYAK_RF10_POSTGRES_DSN=%s\nRF15_MIGRATION_DSN=%s\nRF24_DSN=%s\n' "$MAYAK_DATABASE_NAME" "$MAYAK_RF11_POSTGRES_DSN" "$MAYAK_RF10_POSTGRES_DSN" "$RF15_MIGRATION_DSN" "$RF24_DSN" >> "$GITHUB_ENV"
+          export MAYAK_RF11_POSTGRES_DB="$db" MAYAK_RF11_POSTGRES_HOST="$MAYAK_DATABASE_HOST" MAYAK_RF11_POSTGRES_PORT=5432 MAYAK_RF11_POSTGRES_USER=mayak_migration
+          printf '%s\n' "MAYAK_DATABASE_NAME=$MAYAK_DATABASE_NAME" "MAYAK_RF11_POSTGRES_DSN=$MAYAK_RF11_POSTGRES_DSN" "MAYAK_RF10_POSTGRES_DSN=$MAYAK_RF10_POSTGRES_DSN" "RF11_POSTGRES_DSN=$RF11_POSTGRES_DSN" "RF10_POSTGRES_DSN=$RF10_POSTGRES_DSN" "RF15_MIGRATION_DSN=$RF15_MIGRATION_DSN" "RF24_DSN=$RF24_DSN" "MAYAK_RF11_POSTGRES_DB=$MAYAK_RF11_POSTGRES_DB" >> "$GITHUB_ENV"
           echo fresh-db-current-shell-binding=PASS
           uv run alembic upgrade head
-          uv run python - <<'PY'
-          import os
-          from sqlalchemy import create_engine, text
-          with create_engine(os.environ['RF15_MIGRATION_DSN']).connect() as c:
-              assert c.execute(text('select version_num from mayak.alembic_version')).scalar_one()
-          print('exact-head-proof=PASS')
-          PY
+          uv run python -c 'import os; from sqlalchemy import create_engine, text; db=os.environ["MAYAK_DATABASE_NAME"]; assert create_engine(os.environ["RF15_MIGRATION_DSN"]).connect().execute(text("select version_num from mayak.alembic_version")).scalar_one(); print("exact-head-proof=PASS")'
+      - name: Grant fresh application access after exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
+      - name: FINAL runtime configuration proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          export MAYAK_DATABASE_HOST="$(getent ahostsv4 postgres | awk 'NR==1 {print $1}')"
+          uv run python scripts/runtime/check_rf24_cross_account_runtime_settings.py
       - name: FINAL post-suite C0-C10 on NEW database
         shell: bash
         run: |
