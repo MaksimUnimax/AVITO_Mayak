@@ -47,9 +47,14 @@ jobs:
       - name: Prove exact checkout and Bash
         run: |
           set -euo pipefail
+          git config --global --unset-all safe.directory || true
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           command -v bash
           bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
+          printf 'CHECKOUT_HEAD=%s\n' "$(git rev-parse HEAD)"
+          printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          ! git config --get-all safe.directory | grep -Fxq '*'
       - uses: astral-sh/setup-uv@v6
         with:
           version: 0.11.31
