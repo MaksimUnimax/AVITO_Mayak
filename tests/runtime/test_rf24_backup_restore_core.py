@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from scripts.runtime.rf24_backup_restore_core import build_manifest, scan_paths, verify_evidence
+from scripts.runtime.run_rf24_backup_restore import compose_create_role
 
 SHA = "a" * 40
 
@@ -25,7 +26,7 @@ def good() -> dict[str, object]:
         "target_semantic_equivalence": True,
         "clean_target_prerequisite": True,
         "negative_controls": {
-            x: {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "synthetic observed rejection", "target_fingerprint_before": "target", "target_fingerprint_after": "target"}
+            x: {"executed": True, "shared_preflight_used": True, "preflight_result": "BLOCKED", "observed_reason": "synthetic observed rejection", "target_fingerprint_before": "target", "target_fingerprint_after": "target"}
             for x in (
                 "tampered_digest",
                 "corrupt_copy",
@@ -34,6 +35,9 @@ def good() -> dict[str, object]:
                 "duplicate_restore",
             )
         },
+        "source_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
+        "target_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
+        "idempotency_replay": {"executed": True, "duplicate_business_effect": False},
         "seed": {"runtime_boundary": "accepted-public-runtime", "state_classes": {"identity": {"count": 1, "projection_digest": "a"}}},
         "security": {
             "provider_live_calls": 0,
@@ -79,3 +83,15 @@ def test_manifest_is_hash_bound_and_excludes_raw_backup(tmp_path: Path) -> None:
     manifest = build_manifest([safe], source_sha=SHA, run_id="123", scanner=scanner)
     assert manifest["raw_backup_excluded"] is True
     assert manifest["files"][0]["sha256"]
+
+
+def test_role_ddl_uses_literal_password_and_identifier() -> None:
+    statement = compose_create_role('safe"role', "pw' OR true --", createdb=True).as_string(None)
+    assert '"safe""role"' in statement
+    assert "'pw'' OR true --'" in statement
+    assert "%s" not in statement
+    assert "CREATEDB" in statement
+    assert "password" not in statement.lower().split("--", 1)[-1]
+    plain = compose_create_role("plain_role", "safe-password").as_string(None)
+    assert "CREATEDB" not in plain
+    assert "%s" not in plain

@@ -12,7 +12,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 TECHNICAL_ID = "RF24-BACKUP-RESTORE-SCENARIO-01"
 REQUIRED_CONTROLS = (
@@ -21,6 +21,11 @@ REQUIRED_CONTROLS = (
     "wrong_source_revision",
     "nonempty_newer_target",
     "duplicate_restore",
+)
+REQUIRED_STATE_CLASSES = (
+    "identity", "entitlements", "beacon", "beacon_history", "scan_listing",
+    "scan_runs", "notification", "notification_outbox", "notification_delivery",
+    "idempotency", "audit",
 )
 SECRET = re.compile(
     r"(postgres(?:ql)?://[^\s:@/]+:[^\s@/]+@|password\s*[=:]\s*[^<\s,}]+|"
@@ -73,20 +78,37 @@ def verify_evidence(
     require(
         evidence.get("target_semantic_equivalence") is True, "target is not semantically equivalent"
     )
+    source_projection = evidence.get("source_projection")
+    target_projection = evidence.get("target_projection")
+    require(isinstance(source_projection, dict), "source semantic projection missing")
+    require(isinstance(target_projection, dict), "target semantic projection missing")
+    source_projection = cast(dict[str, Any], source_projection)
+    target_projection = cast(dict[str, Any], target_projection)
+    require(set(source_projection) >= set(REQUIRED_STATE_CLASSES), "source projection omits required state class")
+    require(set(target_projection) >= set(REQUIRED_STATE_CLASSES), "target projection omits required state class")
+    require(source_projection == target_projection, "source/target semantic projection mismatch")
     controls = evidence.get("negative_controls", {})
     for name in REQUIRED_CONTROLS:
         control = controls.get(name)
         require(isinstance(control, dict), f"negative control proof missing: {name}")
         require(control.get("executed") is True, f"negative control not executed: {name}")
+        require(control.get("shared_preflight_used") is True, f"negative control bypassed shared preflight: {name}")
         require(control.get("preflight_result") == "BLOCKED", f"negative control not blocked: {name}")
         require(control.get("observed_reason"), f"negative control reason missing: {name}")
         require(control.get("target_fingerprint_before"), f"negative control target proof missing: {name}")
         require(control.get("target_fingerprint_after") == control.get("target_fingerprint_before"), f"negative control mutated target: {name}")
-    seed = evidence.get("seed", {})
+    seed = cast(dict[str, Any], evidence.get("seed", {}))
     require(seed.get("runtime_boundary") == "accepted-public-runtime", "runtime seed proof missing")
     seeded = seed.get("state_classes", {})
     require(isinstance(seeded, dict) and seeded, "seed state proof missing")
     require(all(isinstance(v, dict) and int(v.get("count", 0)) > 0 and v.get("projection_digest") for v in seeded.values()), "seed state is not meaningful")
+    aliases = {"account": "identity", "entitlement": "entitlements", "notification_outbox": "notification_outbox"}
+    for name, item in seeded.items():
+        observed = source_projection.get(aliases.get(name, name), {})
+        require(int(observed.get("count", 0)) > 0, f"seed state absent from source projection: {name}")
+    replay = evidence.get("idempotency_replay", {})
+    require(replay.get("executed") is True, "idempotency replay missing")
+    require(replay.get("duplicate_business_effect") is False, "duplicate business effect observed")
     security = evidence.get("security", {})
     for name, expected in {
         "provider_live_calls": 0,

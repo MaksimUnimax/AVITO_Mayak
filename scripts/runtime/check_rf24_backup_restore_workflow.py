@@ -59,6 +59,17 @@ def validate(path: Path) -> None:
         raise ValueError("artifact scanner execution missing")
     if not re.search(r"uv run python scripts/runtime/build_rf24_backup_restore_manifest\.py\b", text):
         raise ValueError("manifest execution missing")
+    scenario = text.index("Scenario-specific PG18 gate passed before broad suite")
+    broad = text.index("Complete repository pytest once")
+    if scenario > broad:
+        raise ValueError("broad pytest precedes scenario-specific PG18 gate")
+    role_block = text[text.index("def role"):text.index("with psycopg.connect", text.index("def role"))]
+    if re.search(r"CREATE ROLE[^\n]*%s", role_block):
+        raise ValueError("utility DDL uses bind placeholder")
+    if "GRANT USAGE ON SCHEMA mayak TO mayak_application" not in text:
+        raise ValueError("SOURCE application grant contract missing")
+    if re.search(r"TARGET_DB.*alembic upgrade|target_db.*alembic upgrade", text, re.I):
+        raise ValueError("TARGET is pre-migrated before clean proof")
     if re.search(r"docker\s+exec\s+postgres\b", text):
         raise ValueError("ambiguous docker exec postgres binding")
     if re.search(r"postgresql-client|apt-get[^\n]*postgresql", text):
@@ -67,7 +78,7 @@ def validate(path: Path) -> None:
         raise ValueError("bootstrap must use frozen Psycopg, not psql")
     runner = Path(__file__).with_name("run_rf24_backup_restore.py").read_text(encoding="utf-8")
     if ('"preflight_result": "BLOCKED"' not in runner or '"executed": True' not in runner
-            or "target is not clean before restore" not in runner
+            or "restore_preflight" not in runner or "require_clean_target" not in runner
             or "reestablish_application_authority" not in runner
             or '"runtime_read_proof"' not in runner):
         raise ValueError("negative controls lack execution-derived proof")
