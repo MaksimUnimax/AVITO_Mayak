@@ -1,0 +1,145 @@
+name: RF24 unsupported filter
+
+on:
+  push:
+    branches: [rf24-unsupported-filter-scenario-01]
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    container: python:3.14.6-bookworm
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: bootstrap-only
+          POSTGRES_DB: mayak
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      UV_VERSION: 0.11.31
+      MAYAK_DATABASE_HOST: postgres
+      MAYAK_DATABASE_PORT: "5432"
+      MAYAK_DATABASE_NAME: mayak
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      MAYAK_API_HOST_PORT: disabled
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_MAX_ENABLED: "false"
+      MAYAK_YOOKASSA_ENABLED: "false"
+      MAYAK_EGRESS_AGENT_ENABLED: "false"
+      PYTHONPATH: .
+    steps:
+      - name: Install tools
+        run: apt-get update && apt-get install -y --no-install-recommends git postgresql-client
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: H0 exact checkout and shell proof
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash -c 'set -euo pipefail; true'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.31
+      - name: H1 frozen dependency sync
+        run: uv sync --frozen --all-groups
+      - name: H2 bootstrap PostgreSQL roles and synthetic secrets
+        run: |
+          set -euo pipefail
+          install -d -m 700 /run/secrets
+          printf '%s\n' migration-only > /run/secrets/mayak_database_migration_password
+          printf '%s\n' application-only > /run/secrets/mayak_database_application_password
+          printf '%s\n' session-signing-key-acceptance-only > /run/secrets/mayak_session_signing_key
+          chmod 600 /run/secrets/*
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE mayak_migration LOGIN CREATEDB PASSWORD 'migration-only';
+          CREATE ROLE mayak_application LOGIN PASSWORD 'application-only';
+          CREATE SCHEMA mayak AUTHORIZATION mayak_migration;
+          GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;
+          SQL
+          echo "MAYAK_SOURCE_SHA=$GITHUB_SHA" >> "$GITHUB_ENV"
+          echo "MAYAK_LOCK_IDENTITY=$(sha256sum uv.lock | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "MAYAK_IMAGE_DIGEST=sha256:$(sha256sum Dockerfile | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "MAYAK_ENVIRONMENT_ID=avito-mayak-rf24-unsupported-filter-${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
+          echo "MAYAK_PROCESS_KIND=mayak-worker" >> "$GITHUB_ENV"
+          echo "MAYAK_RF11_POSTGRES_PASSWORD_FILE=/run/secrets/mayak_database_migration_password" >> "$GITHUB_ENV"
+          echo "MAYAK_RF11_POSTGRES_USER=mayak_migration" >> "$GITHUB_ENV"
+          echo "MAYAK_RF11_POSTGRES_HOST=postgres" >> "$GITHUB_ENV"
+          echo "MAYAK_RF11_POSTGRES_PORT=5432" >> "$GITHUB_ENV"
+          echo "MAYAK_RF11_POSTGRES_DB=mayak" >> "$GITHUB_ENV"
+          echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak" >> "$GITHUB_ENV"
+          echo "MAYAK_SYNTHETIC_IDENTITY_ENABLED=true" >> "$GITHUB_ENV"
+      - name: H3 workflow and ownership guards
+        run: |
+          set -euo pipefail
+          # Scenario contract: SYNTHETIC_UNSUPPORTED_FIELD -> FIELD_UNSUPPORTED -> DRAFT_UNSUPPORTED;
+          # SCALAR_FIELD is the same-catalog VALID/PREPARED positive control.
+          uv run python scripts/runtime/check_rf24_unsupported_filter_workflow.py .github/workflows/ci-rf24-unsupported-filter.yml
+          uv run python scripts/runtime/check_rf24_unsupported_filter_ownership.py .
+      - name: H4 migrate initial database
+        run: |
+          set -euo pipefail
+          uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+      - name: H5 complete repository pytest
+        run: uv run pytest -q 2>&1 | tee rf24-unsupported-filter-full-pytest.log
+      - name: H6 create NEW post-suite database
+        run: |
+          set -euo pipefail
+          # Fresh database identity prefix: CREATE DATABASE mayak_rf24_unsupported_filter_
+          db="mayak_rf24_unsupported_filter_${GITHUB_RUN_ID}"
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER mayak_migration"
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration;'
+          echo "MAYAK_DATABASE_NAME=$db" >> "$GITHUB_ENV"
+          echo "RF24_UNSUPPORTED_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+      - name: H7 migrate NEW database to exact head
+        run: |
+          set -euo pipefail
+          uv run alembic upgrade head
+      - name: H8 grant accepted application privileges and prove head
+        run: |
+          set -euo pipefail
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+          uv run python -c 'from mayak.runtime.settings import load_runtime_settings; print(load_runtime_settings().database.name)'
+      - name: H9 final runtime settings proof
+        run: |
+          set -euo pipefail
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB
+          export MAYAK_DATABASE_HOST="$(getent ahostsv4 postgres | awk 'NR==1 {print $1}')"
+          echo "MAYAK_DATABASE_HOST=$MAYAK_DATABASE_HOST" >> "$GITHUB_ENV"
+          test "$MAYAK_DATABASE_NAME" != mayak
+          test "$MAYAK_AVITO_LIVE_ENABLED" = false
+          uv run python -c 'from mayak.runtime.settings import load_runtime_settings; s=load_runtime_settings(); assert s.providers.avito_live_enabled is False; print("runtime-settings=PASS")'
+      - name: H10 U0-U10 real PostgreSQL scenario
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          uv run python scripts/runtime/run_rf24_unsupported_filter.py --real-postgres --artifacts artifacts
+      - name: H11 verifier
+        run: uv run python scripts/runtime/verify_rf24_unsupported_filter.py artifacts/rf24-unsupported-filter-evidence.json --source-sha "$MAYAK_SOURCE_SHA" --run-id "$GITHUB_RUN_ID"
+      - name: H12 artifact safety scanner
+        run: uv run python scripts/runtime/check_rf24_unsupported_filter_artifact_safety.py artifacts --result artifacts/rf24-unsupported-filter-scanner-result.json
+      - name: H13 deterministic manifest
+        run: uv run python scripts/runtime/build_rf24_unsupported_filter_manifest.py artifacts --source-sha "$MAYAK_SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --output artifacts/rf24-unsupported-filter-safety-manifest.json
+      - name: H14 upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rf24-unsupported-filter
+          path: artifacts/rf24-unsupported-filter*
