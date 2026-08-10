@@ -48,6 +48,8 @@ jobs:
           git config --global --unset-all --fixed-value safe.directory '*' || true
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global --add safe.directory "$(pwd)"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach "$GITHUB_SHA"
           printf 'WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
           printf 'PWD=%s\n' "$(pwd)"
           printf 'TOPLEVEL=%s\n' "$(git rev-parse --show-toplevel)"
