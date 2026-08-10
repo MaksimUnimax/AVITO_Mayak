@@ -68,11 +68,10 @@ def _counts(session: Any, beacon_id: UUID) -> dict[str, int]:
     return result
 
 
-def _seed_unsupported(fixture: sqlalchemy.Engine) -> dict[str, str]:
+def _seed_unsupported(fixture: sqlalchemy.Engine, catalog_version_id: UUID) -> dict[str, str]:
     """Extend the accepted RF22 synthetic catalog using fixture/migration authority."""
     tables = register_filter_catalog_tables(MetaData(schema="mayak"))
     versions, definitions, options, dependencies, applicability, evidence, profiles = tables
-    version = _id("published")
     evidence_id = _id("unsupported-evidence")
     definition_id = _id("unsupported-definition")
     profile_id = _id("unsupported-profile-exact")
@@ -113,7 +112,7 @@ def _seed_unsupported(fixture: sqlalchemy.Engine) -> dict[str, str]:
             evidence.insert(),
             {
                 "id": evidence_id,
-                "catalog_version_id": version,
+                "catalog_version_id": catalog_version_id,
                 "reference_code": "SYNTHETIC_UNSUPPORTED_EVIDENCE",
                 "evidence_fingerprint": hashlib.sha256(b"rf24-unsupported").hexdigest(),
                 "safe_metadata": evidence_metadata,
@@ -124,7 +123,7 @@ def _seed_unsupported(fixture: sqlalchemy.Engine) -> dict[str, str]:
             definitions.insert(),
             {
                 "id": definition_id,
-                "catalog_version_id": version,
+                "catalog_version_id": catalog_version_id,
                 "field_code": "SYNTHETIC_UNSUPPORTED_FIELD",
                 "label": "Synthetic unsupported field",
                 "support_state": "APPROVED",
@@ -136,7 +135,7 @@ def _seed_unsupported(fixture: sqlalchemy.Engine) -> dict[str, str]:
             applicability.insert(),
             {
                 "id": _id("unsupported-applicability"),
-                "catalog_version_id": version,
+                "catalog_version_id": catalog_version_id,
                 "category_code": "SYNTHETIC_CATEGORY",
                 "definition_id": definition_id,
                 "applicability_state": "APPLICABLE",
@@ -148,14 +147,14 @@ def _seed_unsupported(fixture: sqlalchemy.Engine) -> dict[str, str]:
             profiles.insert(),
             {
                 "id": profile_id,
-                "catalog_version_id": version,
+                "catalog_version_id": catalog_version_id,
                 "profile_code": "SYNTHETIC_PROFILE_UNSUPPORTED_EXACT",
                 "capabilities": capabilities,
                 "created_at": now,
             },
         )
     return {
-        "version": str(version),
+        "version": str(catalog_version_id),
         "evidence": str(evidence_id),
         "definition": str(definition_id),
         "profile": str(profile_id),
@@ -242,8 +241,8 @@ def main() -> int:
         account_id, reference, beacon_id, row_version, baseline = _setup_beacon(composition, run_id)
         from scripts.runtime.run_rf22_postgres_acceptance import _seed
 
-        _seed(fixture)
-        _seed_unsupported(fixture)
+        seeded = _seed(fixture)
+        _seed_unsupported(fixture, UUID(seeded["version"]))
         sql_observation = {"dml": 0, "foreign_dml": 0}
 
         def observe_sql(_conn: Any, _cursor: Any, statement: str, _parameters: Any, _context: Any, _executemany: bool) -> None:
