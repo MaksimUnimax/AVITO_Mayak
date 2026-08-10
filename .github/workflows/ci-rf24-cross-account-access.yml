@@ -124,7 +124,7 @@ jobs:
           set -euo pipefail
           unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           set +e
-          settings_output="$(uv run python -c 'from mayak.runtime.settings import load_runtime_settings; load_runtime_settings(); print("runtime-settings-preflight=PASS")' 2>&1)"
+          settings_output="$(uv run python -c 'exec("from mayak.runtime.settings import RuntimeConfigurationError, load_runtime_settings\ntry:\n load_runtime_settings()\n print(\\"runtime-settings-preflight=PASS\\")\nexcept RuntimeConfigurationError as exc:\n print(\\"reason_code=\\" + exc.reason_code)\n raise")' 2>&1)"
           settings_status=$?
           set -e
           if [ "$settings_status" -ne 0 ]; then
