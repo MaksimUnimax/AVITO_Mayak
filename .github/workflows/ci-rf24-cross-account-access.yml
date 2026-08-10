@@ -23,8 +23,8 @@ jobs:
     env:
       UV_VERSION: 0.11.31
       MAYAK_ENVIRONMENT_ID: avito-mayak-rf24-cross-account-${{ github.run_id }}
-      MAYAK_LOCK_IDENTITY: pending-shell-proof
-      MAYAK_IMAGE_DIGEST: pending-shell-proof
+      MAYAK_LOCK_IDENTITY: e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
+      MAYAK_IMAGE_DIGEST: sha256:cdbec06878c8a31b10763e62a8b2dbdb74a8c2263770827d8859e0c1516671af
       MAYAK_PROCESS_KIND: mayak-worker
       MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
       MAYAK_AVITO_LIVE_ENABLED: "false"
@@ -55,15 +55,6 @@ jobs:
           export GITHUB_SHA="$actual_sha"
           printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
           printf 'MAYAK_SOURCE_SHA=%s\n' "$GITHUB_SHA" >> "$GITHUB_ENV"
-      - name: Compute lock and image identity
-        shell: bash
-        run: |
-          set -euo pipefail
-          lock="$(python -c 'import hashlib; print(hashlib.sha256(open("uv.lock", "rb").read()).hexdigest())')"
-          image="$(python -c 'import hashlib; print(hashlib.sha256(open("Dockerfile", "rb").read()).hexdigest())')"
-          printf 'MAYAK_SOURCE_SHA=%s\n' "$GITHUB_SHA" >> "$GITHUB_ENV"
-          printf 'MAYAK_LOCK_IDENTITY=%s\n' "$lock" >> "$GITHUB_ENV"
-          printf 'MAYAK_IMAGE_DIGEST=sha256:%s\n' "$image" >> "$GITHUB_ENV"
       - name: Install exact uv and frozen dependencies
         shell: bash
         run: |
