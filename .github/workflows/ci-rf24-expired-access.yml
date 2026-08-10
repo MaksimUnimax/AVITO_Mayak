@@ -47,6 +47,12 @@ jobs:
           set -euo pipefail
           git config --global --unset-all --fixed-value safe.directory '*' || true
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$(pwd)"
+          printf 'WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          printf 'PWD=%s\n' "$(pwd)"
+          printf 'TOPLEVEL=%s\n' "$(git rev-parse --show-toplevel)"
+          printf 'CHECKOUT_HEAD=%s\n' "$(git rev-parse HEAD)"
+          printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           ! git config --get-all safe.directory | grep -Fxq '*'
       - uses: actions/setup-python@v5
