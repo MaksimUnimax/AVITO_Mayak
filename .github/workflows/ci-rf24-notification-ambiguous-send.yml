@@ -1,0 +1,83 @@
+name: RF24 notification ambiguous send
+
+on:
+  push:
+    branches: [main, rf24-notification-ambiguous-send-scenario-01]
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    container: python:3.14.6-bookworm
+    defaults: {run: {shell: bash}}
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+        env: {POSTGRES_DB: mayak, POSTGRES_USER: mayak, POSTGRES_PASSWORD: bootstrap-only}
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 2s --health-timeout 3s --health-retries 60
+    env:
+      UV_VERSION: 0.11.31
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      RF24_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_MAX_ENABLED: "false"
+      MAYAK_YOOKASSA_ENABLED: "false"
+      MAYAK_EGRESS_AGENT_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0, ref: ${{ github.sha }} }
+      - name: Source identity
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          ! git config --get-all safe.directory | grep -Fxq '*'
+      - uses: astral-sh/setup-uv@v6
+        with: {version: ${{ env.UV_VERSION }}, enable-cache: true}
+      - run: uv sync --frozen --all-groups --python 3.14.6
+      - name: PostgreSQL 18 bootstrap and migrations
+        run: |
+          set -euo pipefail
+          apt-get update && apt-get install -y --no-install-recommends postgresql-client
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE,CREATE ON SCHEMA mayak TO mayak_application;"
+          uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -c 'GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+      - name: Focused Notification tests, quality and imports
+        run: |
+          set -euo pipefail
+          uv run pytest -q tests/runtime/test_rf24_notification_ambiguous_send.py tests/runtime/test_rf24_notification_ambiguous_send_integrity.py tests/runtime/test_rf17_notification_delivery_runtime.py
+          uv run ruff check scripts/runtime/run_rf24_notification_ambiguous_send.py scripts/runtime/verify_rf24_notification_ambiguous_send.py scripts/runtime/check_rf24_notification_ambiguous_send_artifact_safety.py scripts/runtime/build_rf24_notification_ambiguous_send_manifest.py tests/runtime/test_rf24_notification_ambiguous_send.py tests/runtime/test_rf24_notification_ambiguous_send_integrity.py
+          uv run mypy --explicit-package-bases scripts/runtime/run_rf24_notification_ambiguous_send.py scripts/runtime/verify_rf24_notification_ambiguous_send.py
+          uv run lint-imports
+      - name: Complete repository pytest
+        run: bash -o pipefail -c 'uv run pytest -q 2>&1 | tee rf24-notification-ambiguous-send-full-pytest.log'
+      - name: Fresh real P0-P5 scenario and artifact chain
+        env: {GITHUB_SOURCE_SHA: ${{ github.sha }}}
+        run: |
+          set -euo pipefail
+          uv run python scripts/runtime/run_rf24_notification_ambiguous_send.py --dsn "$RF24_DSN" --source-sha "$GITHUB_SOURCE_SHA" --output rf24-notification-ambiguous-send-evidence.json --probes rf24-notification-ambiguous-send-provider-probes.json --log rf24-notification-ambiguous-send.log
+          uv run python scripts/runtime/verify_rf24_notification_ambiguous_send.py --evidence rf24-notification-ambiguous-send-evidence.json --probes rf24-notification-ambiguous-send-provider-probes.json --source-sha "$GITHUB_SOURCE_SHA" --result rf24-notification-ambiguous-send-verifier-result.json
+          uv run python scripts/runtime/check_rf24_notification_ambiguous_send_artifact_safety.py --result rf24-notification-ambiguous-send-scanner-result.json rf24-notification-ambiguous-send-evidence.json rf24-notification-ambiguous-send-provider-probes.json rf24-notification-ambiguous-send.log rf24-notification-ambiguous-send-verifier-result.json
+          run_id=$(python -c 'import json; print(json.load(open("rf24-notification-ambiguous-send-evidence.json"))["acceptance_run_id"])')
+          uv run python scripts/runtime/build_rf24_notification_ambiguous_send_manifest.py --output rf24-notification-ambiguous-send-safety-manifest.json --scanner-result rf24-notification-ambiguous-send-scanner-result.json --source-sha "$GITHUB_SOURCE_SHA" --run-id "$run_id" rf24-notification-ambiguous-send-evidence.json rf24-notification-ambiguous-send-provider-probes.json rf24-notification-ambiguous-send.log rf24-notification-ambiguous-send-verifier-result.json rf24-notification-ambiguous-send-scanner-result.json
+          python - <<'PY'
+          import hashlib,json
+          from pathlib import Path
+          m=json.loads(Path('rf24-notification-ambiguous-send-safety-manifest.json').read_text()); assert m['finding_count']==0
+          for item in m['payloads']:
+              p=Path(item['filename']); assert p.stat().st_size==item['size'] and hashlib.sha256(p.read_bytes()).hexdigest()==item['sha256']
+          print('RF24_MANIFEST_HASH_INTEGRITY=PASS')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rf24-notification-ambiguous-send
+          if-no-files-found: error
+          path: |
+            rf24-notification-ambiguous-send-*.json
+            rf24-notification-ambiguous-send.log
+            rf24-notification-ambiguous-send-full-pytest.log
