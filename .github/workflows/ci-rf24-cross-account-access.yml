@@ -38,7 +38,8 @@ jobs:
       MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak:bootstrap-only@postgres:5432/mayak
     steps:
       - uses: actions/checkout@v4
-        with: {ref: ${{ github.sha }}}
+        with:
+          ref: ${{ github.sha }}
       - name: Exact source and Bash proof
         shell: bash
         run: |
