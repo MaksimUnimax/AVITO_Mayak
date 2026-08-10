@@ -20,6 +20,7 @@ def verify(data: dict[str, Any], source_sha: str, run_id: str | None) -> None:
     if data.get("baseline_classification") not in {
         "EXISTING_PRODUCTION_SEMANTICS_SUFFICIENT",
         "PRODUCTION_GAP_WITHIN_UNSUPPORTED_FILTER_BOUNDARY",
+        "PRODUCTION_CORRECTIVE_REQUIRED_AND_IMPLEMENTED",
     }:
         raise AssertionError("missing baseline classification")
     unsupported = data.get("unsupported", {})
