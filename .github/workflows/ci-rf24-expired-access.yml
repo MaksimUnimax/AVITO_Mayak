@@ -45,6 +45,7 @@ jobs:
       - name: Verify exact source identity
         run: |
           set -euo pipefail
+          git config --global --unset-all --fixed-value safe.directory '*' || true
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           ! git config --get-all safe.directory | grep -Fxq '*'
