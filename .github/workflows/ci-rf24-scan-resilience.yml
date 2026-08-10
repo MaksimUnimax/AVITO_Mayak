@@ -8,6 +8,9 @@ on:
 jobs:
   resilience:
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
     container:
       image: python:3.14.6-bookworm
       options: --volume /var/run/docker.sock:/var/run/docker.sock
@@ -45,9 +48,6 @@ jobs:
       MAYAK_TELEGRAM_ENABLED: "false"
       MAYAK_MAX_ENABLED: "false"
       DOCKER_HOST: unix:///var/run/docker.sock
-      GIT_CONFIG_COUNT: "1"
-      GIT_CONFIG_KEY_0: safe.directory
-      GIT_CONFIG_VALUE_0: ${{ github.workspace }}
     steps:
       - name: Install git for exact source identity gate
         run: |
@@ -57,6 +57,15 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
+      - name: Trust actual container workspace
+        run: |
+          set -euo pipefail
+          workspace="$(pwd -P)"
+          test -n "$GITHUB_WORKSPACE"
+          test "$GITHUB_WORKSPACE" = "$workspace"
+          git config --global --add safe.directory "$workspace"
+          test "$(git rev-parse --show-toplevel)" = "$workspace"
+          git config --get-all safe.directory | grep -Fxq "$workspace"
       - uses: astral-sh/setup-uv@v6
         with:
           version: ${{ env.UV_VERSION }}
@@ -91,18 +100,27 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
+          import hashlib
           from pathlib import Path
           from urllib.request import urlopen
-          import shutil
           import tarfile
           import tempfile
 
+          expected_sha256 = "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
           with tempfile.TemporaryDirectory() as directory:
               archive = Path(directory) / "docker.tgz"
               with urlopen("https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz") as response:
                   archive.write_bytes(response.read())
+              if hashlib.sha256(archive.read_bytes()).hexdigest() != expected_sha256:
+                  raise RuntimeError("Docker CLI archive digest mismatch")
               with tarfile.open(archive) as package:
-                  member = package.extractfile("docker/docker")
+                  members = package.getmembers()
+                  if any(member.name.startswith("/") or ".." in Path(member.name).parts for member in members):
+                      raise RuntimeError("Docker CLI archive contains an unsafe member")
+                  member = package.getmember("docker/docker")
+                  if not member.isfile():
+                      raise RuntimeError("Docker CLI archive member is not a regular file")
+                  member = package.extractfile(member)
                   if member is None:
                       raise RuntimeError("Docker CLI binary missing from pinned archive")
                   target = Path("/usr/local/bin/docker")
@@ -113,21 +131,32 @@ jobs:
           set -euo pipefail
           install -d -m 755 /usr/libexec/docker/cli-plugins
           python - <<'PY'
+          import hashlib
           from pathlib import Path
           from urllib.request import urlopen
 
+          expected_sha256 = "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
           target = Path("/usr/libexec/docker/cli-plugins/docker-buildx")
           with urlopen("https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64") as response:
               target.write_bytes(response.read())
+          if hashlib.sha256(target.read_bytes()).hexdigest() != expected_sha256:
+              raise RuntimeError("buildx plugin digest mismatch")
           target.chmod(0o755)
       - name: Prove hosted execution environment
         run: |
           set -euo pipefail
           workspace="$(pwd -P)"
+          python --version
+          uv --version
+          git --version
+          test "$GITHUB_WORKSPACE" = "$workspace"
+          test "$(git rev-parse --show-toplevel)" = "$workspace"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git config --get-all safe.directory)" = "$workspace"
+          git config --get-all safe.directory | grep -Fxq "$workspace"
           ! git config --get-all safe.directory | grep -Fxq '*'
           test -S /var/run/docker.sock
+          test -x /usr/local/bin/docker
+          test -x /usr/libexec/docker/cli-plugins/docker-buildx
           docker version
           docker buildx version | grep -F 'v0.31.1'
       - name: Focused tests and affected gates
@@ -144,6 +173,37 @@ jobs:
           uv run python scripts/runtime/verify_rf24_scan_resilience.py --evidence rf24-scan-resilience-evidence.json --source-sha "$GITHUB_SHA"
           uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py --result rf24-scan-resilience-scanner-result.json rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
           uv run python scripts/runtime/build_rf24_scan_resilience_manifest.py --output rf24-scan-resilience-safety-manifest.json --scanner-result rf24-scan-resilience-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$(python -c 'import json; print(json.load(open("rf24-scan-resilience-evidence.json"))["acceptance_run_id"])')" rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log rf24-scan-resilience-scanner-result.json
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path("rf24-scan-resilience-safety-manifest.json").read_text())
+          scanner_path = Path("rf24-scan-resilience-scanner-result.json")
+          scanner = json.loads(scanner_path.read_text())
+          expected_payloads = {
+              "rf24-scan-resilience-evidence.json",
+              "rf24-scan-resilience-process-probes.json",
+              "rf24-scan-resilience.log",
+              "rf24-scan-resilience-scanner-result.json",
+          }
+          entries = manifest.get("payloads")
+          if manifest.get("source_sha") != os.environ["GITHUB_SHA"] or manifest.get("finding_count") != 0:
+              raise SystemExit("manifest identity or finding count mismatch")
+          if scanner.get("scanner") != "rf24-scan-resilience-artifact-safety" or scanner.get("finding_count") != 0:
+              raise SystemExit("scanner result is not a zero-finding PASS")
+          if {entry.get("basename") for entry in entries} != expected_payloads:
+              raise SystemExit("manifest payload inventory mismatch")
+          scanner_binding = manifest.get("scanner_result")
+          if scanner_binding != {"basename": scanner_path.name, "sha256": hashlib.sha256(scanner_path.read_bytes()).hexdigest()}:
+              raise SystemExit("scanner result is not hash-bound")
+          for entry in entries:
+              path = Path(entry["basename"])
+              if not path.is_file() or path.stat().st_size != entry.get("size") or hashlib.sha256(path.read_bytes()).hexdigest() != entry.get("sha256"):
+                  raise SystemExit(f"manifest hash mismatch: {path}")
+          print("RF24_MANIFEST_HASH_INTEGRITY=PASS")
+          PY
           uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log rf24-scan-resilience-scanner-result.json rf24-scan-resilience-safety-manifest.json
       - uses: actions/upload-artifact@v4
         with:
