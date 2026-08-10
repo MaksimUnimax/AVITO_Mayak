@@ -28,6 +28,8 @@ jobs:
       MAYAK_DATABASE_MIGRATION_USER: mayak_migration
       MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
       MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      RF10_POSTGRES_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
+      RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
       MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
       MAYAK_RF11_POSTGRES_USER: mayak_migration
       MAYAK_RF11_POSTGRES_HOST: postgres
