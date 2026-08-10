@@ -248,9 +248,9 @@ def test_workflow_new_root_cause_negative_cases(case_id: str, mutate) -> None:
         (
             "fresh-downgrade",
             lambda w: w.replace(
-                "          uv run alembic upgrade head\n          python - <<'PY'",
+                "          uv run alembic upgrade head\n          uv run python - <<'PY'",
                 "          uv run alembic downgrade base\n"
-                "          uv run alembic upgrade head\n          python - <<'PY",
+                "          uv run alembic upgrade head\n          uv run python - <<'PY",
                 1,
             ),
             "fresh-step-downgrade-forbidden",
@@ -313,6 +313,20 @@ def test_fresh_database_mutations_have_specific_findings(
     workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
     findings = validate(mutate(workflow))
     assert finding in findings, (case_id, findings)
+
+
+def test_exact_head_proof_plain_python_fails_closed() -> None:
+    workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
+    mutated = workflow.replace(
+        "          uv run python - <<'PY'\n"
+        "          import os\n"
+        "          from alembic.config import Config",
+        "          python - <<'PY'\n"
+        "          import os\n"
+        "          from alembic.config import Config",
+        1,
+    )
+    assert validate(mutated) == ["fresh-exact-head-proof-not-uv-project-python"]
 
 
 @pytest.mark.parametrize(

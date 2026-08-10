@@ -92,6 +92,7 @@ def _fresh_step_failures(text: str) -> list[str]:
     proof = body.find("urlsplit(os.environ[key]).path.lstrip(\"/\")")
     upgrade = body.find("uv run alembic upgrade head")
     head_proof = body.find("ScriptDirectory.from_config")
+    head_import = body.find("from alembic.config import Config")
     grants = body.find("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES")
     if not re.search(r'db="[^"]*\$\{GITHUB_RUN_ID\}', body):
         failures.append("fresh-db-name-not-run-id-derived")
@@ -132,6 +133,26 @@ def _fresh_step_failures(text: str) -> list[str]:
         or (upgrade >= 0 and head_proof < upgrade)
     ):
         failures.append("fresh-exact-head-proof-order-invalid")
+    if head_import >= 0:
+        lines = body.splitlines()
+        import_line = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if "from alembic.config import Config" in line
+            ),
+            -1,
+        )
+        invocation = next(
+            (
+                line.strip()
+                for line in reversed(lines[:import_line])
+                if line.strip().endswith("python - <<'PY'")
+            ),
+            "",
+        )
+        if not invocation.startswith("uv run python - <<'PY'"):
+            failures.append("fresh-exact-head-proof-not-uv-project-python")
     if grants < 0 or (head_proof >= 0 and grants < head_proof):
         failures.append("fresh-application-grants-before-head-proof")
     final = _run_body(text, "FINAL post-suite P0-P8 on NEW database")

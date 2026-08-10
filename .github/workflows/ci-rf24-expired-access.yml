@@ -200,7 +200,7 @@ jobs:
           printf 'RF15_MIGRATION_DSN=%s\n' "$RF15_MIGRATION_DSN" >> "$GITHUB_ENV"
           printf 'RF24_DSN=%s\n' "$RF24_DSN" >> "$GITHUB_ENV"
           uv run alembic upgrade head
-          python - <<'PY'
+          uv run python - <<'PY'
           import os
           from alembic.config import Config
           from alembic.script import ScriptDirectory
