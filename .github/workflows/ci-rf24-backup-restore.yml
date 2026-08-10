@@ -132,7 +132,6 @@ jobs:
         env:
           MAYAK_RUNTIME_PROFILE: synthetic_acceptance
           MAYAK_DATABASE_HOST: postgres
-          MAYAK_DATABASE_NAME: ${{ env.SOURCE_DB }}
           MAYAK_DATABASE_APPLICATION_USER: mayak_application
           MAYAK_SECRETS_DIR: /tmp/rf24-secrets
           MAYAK_API_INTERNAL_PORT: "18080"
@@ -141,6 +140,7 @@ jobs:
           install -d -m 700 /tmp/rf24-secrets
           printf '%s' application-only > /tmp/rf24-secrets/mayak_database_application_password
           chmod 600 /tmp/rf24-secrets/mayak_database_application_password
+          export MAYAK_DATABASE_NAME="$SOURCE_DB"
           uv run python scripts/runtime/run_rf24_vertical_spine.py --repo-root "$GITHUB_WORKSPACE" --output rf24-source-runtime-seed.json --probes rf24-source-runtime-probes.json --log rf24-source-runtime.log --source-sha "$GITHUB_SHA"
       - name: Bind exact PostgreSQL 18 service tooling boundary
         run: |
