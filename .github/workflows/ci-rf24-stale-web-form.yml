@@ -29,6 +29,11 @@ jobs:
       MAYAK_DATABASE_APPLICATION_USER: mayak_application
       MAYAK_DATABASE_MIGRATION_USER: mayak_migration
       MAYAK_SECRETS_DIR: /run/secrets
+      MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+      MAYAK_RF11_POSTGRES_USER: mayak_migration
+      MAYAK_RF11_POSTGRES_HOST: postgres
+      MAYAK_RF11_POSTGRES_PORT: "5432"
+      MAYAK_RF11_POSTGRES_DB: mayak
       MAYAK_RUNTIME_PROFILE: synthetic_acceptance
       MAYAK_API_HOST_PORT: disabled
       MAYAK_AVITO_LIVE_ENABLED: "false"
@@ -86,7 +91,9 @@ jobs:
             echo "MAYAK_DATABASE_HOST=postgres"
             echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
             echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak"
-            echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration: migration-only@postgres:5432/mayak" | tr -d ' '
+            echo "RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
+            echo "RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak"
+            echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak"
             echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
           } >> "$GITHUB_ENV"
       - name: Workflow validator gate
@@ -128,6 +135,17 @@ jobs:
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
           uv run pytest -q --disable-warnings 2>&1 | tee rf24-stale-web-form-full-pytest.log
+      - name: Preserve full pytest diagnostic
+        if: always()
+        run: |
+          set +e
+          test -f rf24-stale-web-form-full-pytest.log && tail -200 rf24-stale-web-form-full-pytest.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rf24-stale-web-form-full-pytest-diagnostic
+          if-no-files-found: warn
+          path: rf24-stale-web-form-full-pytest.log
       - name: Create NEW post-suite database and migrate from zero
         run: |
           set -euo pipefail
@@ -138,6 +156,8 @@ jobs:
           echo "MAYAK_DATABASE_NAME=$db" >> "$GITHUB_ENV"
           echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
           echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
           echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
           echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
           uv run alembic upgrade head
