@@ -90,16 +90,36 @@ jobs:
       - name: Install hosted Docker CLI
         run: |
           set -euo pipefail
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io curl
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+          import shutil
+          import tarfile
+          import tempfile
+
+          with tempfile.TemporaryDirectory() as directory:
+              archive = Path(directory) / "docker.tgz"
+              with urlopen("https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz") as response:
+                  archive.write_bytes(response.read())
+              with tarfile.open(archive) as package:
+                  member = package.extractfile("docker/docker")
+                  if member is None:
+                      raise RuntimeError("Docker CLI binary missing from pinned archive")
+                  target = Path("/usr/local/bin/docker")
+                  target.write_bytes(member.read())
+          target.chmod(0o755)
       - name: Install pinned hosted buildx plugin
         run: |
           set -euo pipefail
           install -d -m 755 /usr/libexec/docker/cli-plugins
-          curl --fail --silent --show-error --location \
-            --output /usr/libexec/docker/cli-plugins/docker-buildx \
-            https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64
-          chmod 755 /usr/libexec/docker/cli-plugins/docker-buildx
+          python - <<'PY'
+          from pathlib import Path
+          from urllib.request import urlopen
+
+          target = Path("/usr/libexec/docker/cli-plugins/docker-buildx")
+          with urlopen("https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64") as response:
+              target.write_bytes(response.read())
+          target.chmod(0o755)
       - name: Prove hosted execution environment
         run: |
           set -euo pipefail
