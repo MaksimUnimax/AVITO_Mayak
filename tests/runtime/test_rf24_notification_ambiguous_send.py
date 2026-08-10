@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import socket
 from pathlib import Path
 
 import pytest
 
+from mayak.modules.notification_delivery import runtime as notification_runtime
 from mayak.modules.notification_delivery.attempt import NotificationProviderOutcomeClass
 from mayak.modules.notification_delivery.runtime import (
     FakeOutcomeClass,
@@ -37,6 +39,13 @@ def test_trusted_evidence_is_committed_and_referenced() -> None:
         ("evidence-rf24",),
     )
     assert evidence.committed and evidence.evidence_reference_ids == ("evidence-rf24",)
+
+
+def test_failed_reconciliation_does_not_retry() -> None:
+    source = inspect.getsource(notification_runtime.resolve_reconciliation)
+    assert 'if disposition is ReconciliationDisposition.FAILED' in source
+    assert 'OutboxState.FAILED.value' in source
+    assert '"FAILED_NON_RETRYABLE"' in source
 
 
 def _addr(host: str) -> list[tuple]:

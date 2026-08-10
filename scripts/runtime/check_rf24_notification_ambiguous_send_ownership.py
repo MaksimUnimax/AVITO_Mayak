@@ -9,6 +9,7 @@ from pathlib import Path
 FOREIGN_PREFIXES = (
     "identity_",
     "beacon_",
+    "beacon_",
     "scan_",
     "entitlement_",
     "filter_",

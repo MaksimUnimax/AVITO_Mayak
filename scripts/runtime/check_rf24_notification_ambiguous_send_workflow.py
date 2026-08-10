@@ -9,7 +9,7 @@ from pathlib import Path
 
 def validate(path: Path, branch: str) -> None:
     source = path.read_text(encoding="utf-8")
-    required = ("on:", "jobs:", "acceptance:", "steps:", "upload-artifact")
+    required = ("on:", "jobs:", "acceptance:", "steps:", "actions/upload-artifact")
     missing = [item for item in required if item not in source]
     if missing:
         raise AssertionError(f"workflow missing {missing}")
@@ -19,6 +19,14 @@ def validate(path: Path, branch: str) -> None:
         raise AssertionError("corrective branch trigger is absent")
     if not re.search(r"^\s{2,}acceptance:\s*$", source, re.MULTILINE):
         raise AssertionError("acceptance job is not a real mapping")
+    if "Create fresh post-suite scenario database" not in source:
+        raise AssertionError("fresh post-suite database step is absent")
+    if not re.search(r"Complete repository pytest[\s\S]{0,250}uv run pytest -q", source):
+        raise AssertionError("complete repository pytest step is absent")
+    scenario = source.find("Fresh real P0-P5")
+    complete = source.find("Complete repository pytest")
+    if scenario != -1 and complete != -1 and scenario < complete:
+        raise AssertionError("scenario precedes complete repository pytest")
 
 
 def main() -> None:

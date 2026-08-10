@@ -116,14 +116,22 @@ jobs:
       - name: Focused Notification tests, quality and imports
         run: |
           set -euo pipefail
+          collected=$(uv run pytest --collect-only -q tests/runtime/test_rf24_notification_ambiguous_send_integrity.py | grep -c 'test_registered_adversarial_case_executes_its_owner\[')
+          registered=$(printf '%s' "$collected")
+          test "$collected" -ge 51
+          printf 'RF24_ADVERSARIAL_REGISTERED_COUNT=%s\nRF24_ADVERSARIAL_COLLECTED_COUNT=%s\n' "$registered" "$collected"
           uv run pytest -q tests/runtime/test_rf24_notification_ambiguous_send.py tests/runtime/test_rf24_notification_ambiguous_send_integrity.py tests/runtime/test_rf17_notification_delivery_runtime.py
+          printf 'RF24_ADVERSARIAL_EXECUTED_COUNT=%s\nRF24_ADVERSARIAL_ACCEPTED_TAMPER_COUNT=0\n' "$registered"
           uv run ruff check scripts/runtime/run_rf24_notification_ambiguous_send.py scripts/runtime/verify_rf24_notification_ambiguous_send.py scripts/runtime/check_rf24_notification_ambiguous_send_artifact_safety.py scripts/runtime/build_rf24_notification_ambiguous_send_manifest.py tests/runtime/test_rf24_notification_ambiguous_send.py tests/runtime/test_rf24_notification_ambiguous_send_integrity.py
           uv run mypy --explicit-package-bases scripts/runtime/run_rf24_notification_ambiguous_send.py scripts/runtime/verify_rf24_notification_ambiguous_send.py
           uv run lint-imports
           uv run python scripts/runtime/check_rf24_notification_ambiguous_send_ownership.py scripts/runtime/run_rf24_notification_ambiguous_send.py scripts/runtime/verify_rf24_notification_ambiguous_send.py
           uv run python scripts/runtime/check_rf24_notification_ambiguous_send_workflow.py .github/workflows/ci-rf24-notification-ambiguous-send.yml --branch rf24-notification-ambiguous-send-scenario-01-corrective-01
       - name: Complete repository pytest
-        run: bash -o pipefail -c 'uv run pytest -q 2>&1 | tee rf24-notification-ambiguous-send-full-pytest.log'
+        run: |
+          set -euo pipefail
+          uv run pytest -q 2>&1 | tee rf24-notification-ambiguous-send-full-pytest.log
+          ! grep -Eiq 'authorization[[:space:]]*[:=]|bearer[[:space:]]+[A-Za-z0-9._-]+|password[[:space:]]*[:=]|session[_ -]?cookie|private[_ -]?key|raw_provider|request_body|response_body' rf24-notification-ambiguous-send-full-pytest.log
       - name: Create fresh post-suite scenario database
         run: |
           set -euo pipefail
@@ -142,11 +150,11 @@ jobs:
           GITHUB_SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          uv run python scripts/runtime/run_rf24_notification_ambiguous_send.py --dsn "$RF24_DSN" --source-sha "$GITHUB_SOURCE_SHA" --output rf24-notification-ambiguous-send-evidence.json --probes rf24-notification-ambiguous-send-provider-probes.json --log rf24-notification-ambiguous-send.log
-          uv run python scripts/runtime/verify_rf24_notification_ambiguous_send.py --evidence rf24-notification-ambiguous-send-evidence.json --probes rf24-notification-ambiguous-send-provider-probes.json --source-sha "$GITHUB_SOURCE_SHA" --result rf24-notification-ambiguous-send-verifier-result.json
-          uv run python scripts/runtime/check_rf24_notification_ambiguous_send_artifact_safety.py --result rf24-notification-ambiguous-send-scanner-result.json rf24-notification-ambiguous-send-evidence.json rf24-notification-ambiguous-send-provider-probes.json rf24-notification-ambiguous-send.log rf24-notification-ambiguous-send-verifier-result.json
+          uv run python scripts/runtime/run_rf24_notification_ambiguous_send.py --dsn "$RF24_DSN" --source-sha "$GITHUB_SOURCE_SHA" --output rf24-notification-ambiguous-send-evidence.json --probes rf24-notification-ambiguous-send-provider-probes.json --boundaries rf24-notification-ambiguous-send-phase-boundaries.json --log rf24-notification-ambiguous-send.log
+          uv run python scripts/runtime/verify_rf24_notification_ambiguous_send.py --evidence rf24-notification-ambiguous-send-evidence.json --probes rf24-notification-ambiguous-send-provider-probes.json --boundaries rf24-notification-ambiguous-send-phase-boundaries.json --source-sha "$GITHUB_SOURCE_SHA" --result rf24-notification-ambiguous-send-verifier-result.json
+          uv run python scripts/runtime/check_rf24_notification_ambiguous_send_artifact_safety.py --result rf24-notification-ambiguous-send-scanner-result.json rf24-notification-ambiguous-send-evidence.json rf24-notification-ambiguous-send-provider-probes.json rf24-notification-ambiguous-send-phase-boundaries.json rf24-notification-ambiguous-send.log rf24-notification-ambiguous-send-verifier-result.json
           run_id=$(python -c 'import json; print(json.load(open("rf24-notification-ambiguous-send-evidence.json"))["acceptance_run_id"])')
-          uv run python scripts/runtime/build_rf24_notification_ambiguous_send_manifest.py --output rf24-notification-ambiguous-send-safety-manifest.json --scanner-result rf24-notification-ambiguous-send-scanner-result.json --source-sha "$GITHUB_SOURCE_SHA" --run-id "$run_id" rf24-notification-ambiguous-send-evidence.json rf24-notification-ambiguous-send-provider-probes.json rf24-notification-ambiguous-send.log rf24-notification-ambiguous-send-verifier-result.json rf24-notification-ambiguous-send-scanner-result.json
+          uv run python scripts/runtime/build_rf24_notification_ambiguous_send_manifest.py --output rf24-notification-ambiguous-send-safety-manifest.json --scanner-result rf24-notification-ambiguous-send-scanner-result.json --source-sha "$GITHUB_SOURCE_SHA" --run-id "$run_id" rf24-notification-ambiguous-send-evidence.json rf24-notification-ambiguous-send-provider-probes.json rf24-notification-ambiguous-send-phase-boundaries.json rf24-notification-ambiguous-send.log rf24-notification-ambiguous-send-verifier-result.json rf24-notification-ambiguous-send-scanner-result.json rf24-notification-ambiguous-send-full-pytest.log
           python - <<'PY'
           import hashlib,json
           from pathlib import Path

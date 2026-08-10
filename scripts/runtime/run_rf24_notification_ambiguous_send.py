@@ -1,4 +1,5 @@
 """Run the RF24 Notification ambiguous-send acceptance on real PostgreSQL."""
+# ruff: noqa: E501
 
 from __future__ import annotations
 
@@ -41,6 +42,7 @@ from mayak.modules.notification_delivery.runtime import (
     AttemptLease,
     EndpointEligibility,
     FakeProviderOutcome,
+    ReconciliationConflict,
     ReconciliationDisposition,
     TrustedReconciliationEvidence,
     fanout_event,
@@ -383,6 +385,7 @@ def main() -> None:
     p.add_argument("--dsn", required=True)
     p.add_argument("--output", default="rf24-notification-ambiguous-send-evidence.json")
     p.add_argument("--probes", default="rf24-notification-ambiguous-send-provider-probes.json")
+    p.add_argument("--boundaries", default="rf24-notification-ambiguous-send-phase-boundaries.json")
     p.add_argument("--log", default="rf24-notification-ambiguous-send.log")
     p.add_argument("--source-sha", required=True)
     p.add_argument("--repo-root", default=".")
@@ -467,11 +470,9 @@ def main() -> None:
                     "reconciliation_ids": [str(item["id"]) for item in reconciliations],
                     "durable_attempt_count": len(attempts),
                     "durable_reconciliation_count": len(reconciliations),
+                    "attempt_states": [str(item.get("state")) for item in attempts],
+                    "reconciliation_states": [str(item.get("state")) for item in reconciliations],
                     "outbox_state": outboxes[0].get("state") if outboxes else None,
-                    "attempt_states": [item.get("state") for item in attempts],
-                    "reconciliation_state": reconciliations[0].get("state")
-                    if reconciliations
-                    else None,
                 }
             )
 
@@ -634,6 +635,77 @@ def main() -> None:
             )
         phases["P4"] = snapshot(engine, account, event.id, outbox_id)
         record_boundary("P4", cast(dict[str, object], phases["P4"]))
+        replay_results: list[dict[str, object]] = []
+
+        def replay(name: str, candidate: TrustedReconciliationEvidence, resolution_id: str) -> None:
+            error: str | None = None
+            try:
+                with Session(engine) as db:
+                    result = resolve_reconciliation(
+                        db,
+                        attempt_id,
+                        resolution_id=resolution_id,
+                        evidence=candidate,
+                        now=now + timedelta(hours=1, seconds=1),
+                    )
+            except ReconciliationConflict as exc:
+                result = None
+                error = type(exc).__name__
+            replay_results.append({"case": name, "result": result, "error": error})
+            record_boundary(
+                f"P4_REPLAY_{name}",
+                cast(dict[str, object], snapshot(engine, account, event.id, outbox_id)),
+            )
+
+        replay("EXACT", trusted, trusted.resolution_id)
+        replay(
+            "CONCLUSION_CONFLICT",
+            TrustedReconciliationEvidence(
+                attempt_id,
+                effect,
+                trusted.resolution_id,
+                ReconciliationDisposition.DELIVERED,
+                True,
+                trusted.evidence_reference_ids,
+            ),
+            trusted.resolution_id,
+        )
+        replay(
+            "REFS_CONFLICT",
+            TrustedReconciliationEvidence(
+                attempt_id,
+                effect,
+                trusted.resolution_id,
+                ReconciliationDisposition.NO_EFFECT_RETRY,
+                True,
+                ("different-evidence",),
+            ),
+            trusted.resolution_id,
+        )
+        replay(
+            "RESOLUTION_CONFLICT",
+            TrustedReconciliationEvidence(
+                attempt_id,
+                effect,
+                "different-resolution",
+                ReconciliationDisposition.NO_EFFECT_RETRY,
+                True,
+                trusted.evidence_reference_ids,
+            ),
+            "different-resolution",
+        )
+        replay(
+            "EFFECT_CONFLICT",
+            TrustedReconciliationEvidence(
+                attempt_id,
+                "0" * 64,
+                trusted.resolution_id,
+                ReconciliationDisposition.NO_EFFECT_RETRY,
+                True,
+                trusted.evidence_reference_ids,
+            ),
+            trusted.resolution_id,
+        )
         run_worker_cycle(factory, adapter, now=now + timedelta(hours=2), limit=1, lease_seconds=60)
         phases["P5"] = snapshot(engine, account, event.id, outbox_id)
         record_boundary("P5", cast(dict[str, object], phases["P5"]))
@@ -649,6 +721,7 @@ def main() -> None:
             "effect_fingerprint": effect,
             "phases": phases,
             "phase_boundaries": phase_boundaries,
+            "post_p4_reconciliation_replays": replay_results,
             "reconciliation_evidence": {
                 "attempt_id": str(attempt_id),
                 "effect_fingerprint": effect,
@@ -659,8 +732,37 @@ def main() -> None:
             },
             "provider_live_calls": 0,
             "foreign_business_dml": [],
-            "provider_replay_test": "covered by verifier/unit tests",
-            "provider_different_fingerprint_test": "covered by verifier/unit tests",
+            "reused_rf17_evidence": {
+                "provider_outcome_idempotency": {
+                    "requirement_ids": ["result.replay_same", "result.mismatch_blocked"],
+                    "verifier_path": "scripts/runtime/verify_rf17_acceptance.py",
+                    "verifier_content_sha256": hashlib.sha256(
+                        Path("scripts/runtime/verify_rf17_acceptance.py").read_bytes()
+                    ).hexdigest(),
+                    "registry_test_node": "tests/runtime/test_rf17_verifier.py::test_registry_is_explicit_and_one_to_one",
+                },
+                "reconciliation_retry_policy": {
+                    "requirement_ids": [
+                        "reconciliation.unresolved_blocks_attempt",
+                        "reconciliation.resolved_delivered",
+                        "reconciliation.confirmed_no_effect_only_retry",
+                        "reconciliation.manual_ambiguous_blocks",
+                        "reconciliation.replay_same",
+                    ],
+                    "verifier_path": "scripts/runtime/verify_rf17_acceptance.py",
+                    "verifier_content_sha256": hashlib.sha256(
+                        Path("scripts/runtime/verify_rf17_acceptance.py").read_bytes()
+                    ).hexdigest(),
+                    "registry_test_node": "tests/runtime/test_rf17_verifier.py::test_registry_is_explicit_and_one_to_one",
+                },
+            },
+            "forbidden_retry_matrix": {
+                "UNRESOLVED": "reconciliation.unresolved_blocks_attempt",
+                "MANUAL_REVIEW": "reconciliation.manual_ambiguous_blocks",
+                "DELIVERED": "reconciliation.resolved_delivered",
+                "FAILED": "focused:tests/runtime/test_rf24_notification_ambiguous_send.py::test_failed_reconciliation_does_not_retry",
+                "NO_EFFECT_RETRY": "reconciliation.confirmed_no_effect_only_retry",
+            },
         }
         Path(a.output).write_text(
             json.dumps(evidence, default=str, sort_keys=True, indent=2) + "\n"
@@ -668,6 +770,19 @@ def main() -> None:
         Path(a.probes).write_text(
             json.dumps(
                 {"acceptance_run_id": run_id, "source_sha": a.source_sha, "observations": probes},
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n"
+        )
+        Path(a.boundaries).write_text(
+            json.dumps(
+                {
+                    "technical_id": TECHNICAL_ID,
+                    "acceptance_run_id": run_id,
+                    "source_sha": a.source_sha,
+                    "boundaries": phase_boundaries,
+                },
                 sort_keys=True,
                 indent=2,
             )

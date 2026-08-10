@@ -1,8 +1,10 @@
 """Independent, fail-closed verifier for RF24 ambiguous notification evidence."""
+# ruff: noqa: E501
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import NoReturn, cast
@@ -38,9 +40,13 @@ def _identity(snapshot: dict) -> tuple[str, str, str]:
     )
 
 
-def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
+def verify(
+    doc: dict, probes: dict, source_sha: str, boundaries_doc: dict | None = None
+) -> dict[str, object]:
     if doc.get("source_sha") != source_sha or probes.get("source_sha") != source_sha:
         _fail("source SHA mismatch")
+    if probes.get("acceptance_run_id") != doc.get("acceptance_run_id"):
+        _fail("probe acceptance run mismatch")
     if doc.get("technical_id") != "RF24-NOTIFICATION-AMBIGUOUS-SEND-SCENARIO-01":
         _fail("technical identity mismatch")
     required = (
@@ -86,7 +92,23 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         _fail("P1 effect binding")
     if str(a1["outbox_id"]) != str(doc["outbox_id"]):
         _fail("attempt outbox binding")
-    boundaries_value = doc.get("phase_boundaries")
+    embedded_boundaries = doc.get("phase_boundaries")
+    if boundaries_doc is None:
+        boundaries_doc = {
+            "technical_id": doc.get("technical_id"),
+            "acceptance_run_id": doc.get("acceptance_run_id"),
+            "source_sha": source_sha,
+            "boundaries": embedded_boundaries,
+        }
+    if (
+        boundaries_doc.get("technical_id") != doc["technical_id"]
+        or boundaries_doc.get("acceptance_run_id") != doc["acceptance_run_id"]
+        or boundaries_doc.get("source_sha") != source_sha
+    ):
+        _fail("standalone boundary identity binding")
+    boundaries_value = boundaries_doc.get("boundaries")
+    if boundaries_doc is not None and embedded_boundaries != boundaries_value:
+        _fail("embedded and standalone boundaries differ")
     if not isinstance(boundaries_value, list) or len(boundaries_value) < 10:
         _fail("missing phase-boundary observations")
     if any(not isinstance(item, dict) for item in boundaries_value):
@@ -110,6 +132,20 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
                 _fail(f"{phase_name} boundary provider count")
         if phase_name.startswith("P3:") and boundary.get("provider_observation_count") != 1:
             _fail("P3 boundary provider count")
+        if phase_name.startswith("P4_REPLAY_"):
+            if boundary.get("provider_observation_count") != 1:
+                _fail("P4 replay provider count")
+            if (
+                boundary.get("durable_attempt_count") != 1
+                or boundary.get("durable_reconciliation_count") != 1
+            ):
+                _fail("P4 replay cardinality")
+            if boundary.get("outbox_state") != "RETRY":
+                _fail("P4 replay outbox state")
+            if boundary.get("attempt_states") != ["FAILED_RETRYABLE_AFTER_POLICY"]:
+                _fail("P4 replay attempt state")
+            if boundary.get("reconciliation_states") != ["RESOLVED_NO_EFFECT_RETRY"]:
+                _fail("P4 replay reconciliation state")
     if not any(str(item.get("phase_name", "")).startswith("P3:") for item in boundaries):
         _fail("missing rejected-case phase boundaries")
     if (
@@ -239,6 +275,51 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         for item in observations
     ):
         _fail("probe provenance")
+    replay_names = {
+        str(item.get("phase_name", ""))
+        for item in boundaries
+        if str(item.get("phase_name", "")).startswith("P4_REPLAY_")
+    }
+    if replay_names != {
+        "P4_REPLAY_EXACT",
+        "P4_REPLAY_CONCLUSION_CONFLICT",
+        "P4_REPLAY_REFS_CONFLICT",
+        "P4_REPLAY_RESOLUTION_CONFLICT",
+        "P4_REPLAY_EFFECT_CONFLICT",
+    }:
+        _fail("post-P4 replay boundaries")
+    replays = {item.get("case"): item for item in doc.get("post_p4_reconciliation_replays", [])}
+    if (
+        replays.get("EXACT", {}).get("error") is not None
+        or replays.get("EXACT", {}).get("result") != "RESOLVED_NO_EFFECT_RETRY"
+    ):
+        _fail("exact reconciliation replay")
+    for name in ("CONCLUSION_CONFLICT", "REFS_CONFLICT", "RESOLUTION_CONFLICT", "EFFECT_CONFLICT"):
+        if replays.get(name, {}).get("error") != "ReconciliationConflict":
+            _fail(f"reconciliation replay conflict {name}")
+    reuse = doc.get("reused_rf17_evidence")
+    if not isinstance(reuse, dict):
+        _fail("missing structured RF17 reuse metadata")
+    rf17_source = Path("scripts/runtime/verify_rf17_acceptance.py")
+    if hashlib.sha256(rf17_source.read_bytes()).hexdigest() != reuse.get(
+        "provider_outcome_idempotency", {}
+    ).get("verifier_content_sha256"):
+        _fail("RF17 verifier SHA binding")
+    module_text = rf17_source.read_text()
+    required_rf17 = {
+        "result.replay_same",
+        "result.mismatch_blocked",
+        "reconciliation.unresolved_blocks_attempt",
+        "reconciliation.replay_same",
+        "reconciliation.resolved_delivered",
+        "reconciliation.confirmed_no_effect_only_retry",
+        "reconciliation.manual_ambiguous_blocks",
+    }
+    declared = set(reuse.get("provider_outcome_idempotency", {}).get("requirement_ids", [])) | set(
+        reuse.get("reconciliation_retry_policy", {}).get("requirement_ids", [])
+    )
+    if not required_rf17 <= declared or not all(item in module_text for item in required_rf17):
+        _fail("RF17 requirement identity binding")
     expected_phases = {"P0", "P1", "P2", "P4", "P5"}
     phase_names = [str(item.get("phase_name", "")) for item in boundaries]
     if any(phase_names.count(name) != 1 for name in expected_phases):
@@ -261,6 +342,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--evidence", required=True)
     p.add_argument("--probes", required=True)
+    p.add_argument("--boundaries", required=True)
     p.add_argument("--source-sha", required=True)
     p.add_argument("--result", required=True)
     a = p.parse_args()
@@ -268,6 +350,7 @@ def main() -> None:
         json.loads(Path(a.evidence).read_text()),
         json.loads(Path(a.probes).read_text()),
         a.source_sha,
+        json.loads(Path(a.boundaries).read_text()),
     )
     Path(a.result).write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
     print("RF24_AMBIGUOUS_VERIFIER=PASS")

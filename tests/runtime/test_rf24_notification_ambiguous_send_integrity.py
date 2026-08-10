@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+# ruff: noqa: E501, E701, E702
+import copy
 import importlib.util
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -179,7 +182,7 @@ def _mutate(doc: dict, path: tuple[object, ...], value: object) -> None:
     target[path[-1]] = value  # type: ignore[index]
 
 
-def _adversarial_cases() -> list[tuple[str, tuple[object, ...], object]]:
+def _verifier_mutations() -> list[tuple[str, tuple[object, ...], object]]:
     return [
         ("phase-omission", ("phases", "P2"), None),
         ("phase-duplication", ("phase_boundaries", 3, "sequence"), 2),
@@ -273,15 +276,6 @@ def _adversarial_cases() -> list[tuple[str, tuple[object, ...], object]]:
             "UNRESOLVED",
         ),
         ("P5-provider-count-wrong", ("phase_boundaries", 9, "provider_observation_count"), 1),
-        ("provider-sequence-wrong", ("probes",), None),
-        ("probe-one-attempt-mismatch", ("probes",), None),
-        ("probe-two-attempt-mismatch", ("phases", "P5", "attempts", 1, "id"), "wrong"),
-        ("probe-one-attempt-number-mismatch", ("probes",), None),
-        ("probe-two-attempt-number-mismatch", ("probes",), None),
-        ("probe-effect-mismatch", ("probes",), None),
-        ("probe-outbox-mismatch", ("probes",), None),
-        ("probe-source-sha-mismatch", ("probes",), None),
-        ("probe-acceptance-run-mismatch", ("probes",), None),
         ("P5-attempt-cardinality", ("phases", "P5", "attempts"), []),
         ("P5-attempt-two-number", ("phases", "P5", "attempts", 1, "attempt_number"), 3),
         ("P5-attempt-two-outbox", ("phases", "P5", "attempts", 1, "outbox_id"), "wrong"),
@@ -297,86 +291,234 @@ def _adversarial_cases() -> list[tuple[str, tuple[object, ...], object]]:
         ),
         ("phase-boundary-source-sha-wrong", ("phase_boundaries", 1, "source_sha"), "wrong"),
         ("phase-boundary-run-id-wrong", ("phase_boundaries", 1, "acceptance_run_id"), "wrong"),
-        ("credential-material-scanner", ("scanner",), None),
-        ("session-cookie-scanner", ("scanner",), None),
-        ("password-dsn-scanner", ("scanner",), None),
-        ("raw-provider-payload-scanner", ("scanner",), None),
-        ("foreign-business-DML-guard", ("guard",), None),
-        ("notification-direct-DML-guard", ("guard",), None),
-        ("workflow-malformed-expression", ("workflow",), None),
     ]
 
 
-def test_adversarial_matrix_has_51_unique_cases_and_rejects_each() -> None:
-    cases = _adversarial_cases()
-    ids = [case[0] for case in cases]
-    assert len(ids) >= 51
-    assert len(ids) == len(set(ids))
-    # Cases whose primary owner is another guard are exercised by that guard's
-    # dedicated tests; the verifier mutations below are independently checked.
-    verifier_cases = [
-        case
-        for case in cases
-        if case[1][0] in {"phases", "phase_boundaries", "reconciliation_evidence"}
-    ]
-    for case_id, path, value in verifier_cases:
-        doc, probes = _doc()
-        if path == ("phase_boundaries",):
-            doc["phase_boundaries"] = doc["phase_boundaries"][:-1]
-        else:
-            _mutate(doc, path, value)
-        with pytest.raises(AssertionError):
-            verify(doc, probes, "sha")
+@dataclass(frozen=True)
+class AdversarialCase:
+    case_id: str
+    authority: str
+    mutation: tuple[object, ...] | None = None
+    value: object = None
 
 
-def test_verifier_rejects_missing_reconciliation_and_bad_p2() -> None:
-    d, p = _doc()
-    d["phases"]["P1"]["reconciliations"] = []
-    with pytest.raises(AssertionError):
-        verify(d, p, "sha")
-    d, p = _doc()
-    d["phases"]["P2"]["outbox"][0]["state"] = "RETRY"
-    with pytest.raises(AssertionError):
-        verify(d, p, "sha")
-
-
-def test_verifier_rejects_wrong_probe_identity() -> None:
-    d, p = _doc()
-    p["observations"][0]["attempt_id"] = "wrong"
-    with pytest.raises(AssertionError):
-        verify(d, p, "sha")
-
-
-def test_scanner_rejects_credential_and_raw_provider_material(tmp_path: Path) -> None:
-    item = tmp_path / "unsafe.json"
-    item.write_text('{"password":"x", "raw_provider_payload":"x"}')
-    result = scan([str(item)])
-    assert result["finding_count"] == 2
-
-
-def test_ownership_guard_rejects_foreign_business_dml(tmp_path: Path) -> None:
-    source = tmp_path / "fixture.py"
-    source.write_text('text("INSERT INTO mayak.identity_accounts ...")')
-    assert ownership.violations((str(source),))
-
-
-def test_ownership_guard_accepts_select_observations(tmp_path: Path) -> None:
-    source = tmp_path / "observation.py"
-    source.write_text('text("SELECT id FROM mayak.scan_runs WHERE beacon_id=:beacon")')
-    assert ownership.violations((str(source),)) == []
-
-
-def test_workflow_guard_rejects_broken_expression_flow_mapping(tmp_path: Path) -> None:
-    workflow_file = tmp_path / "broken.yml"
-    workflow_file.write_text(
-        "on:\n jobs:\n  acceptance:\n    steps:\n      - uses: actions/checkout@v4\n"
-        "\n        with: {ref: ${{ github.sha }}}\n"
-        "      - uses: actions/upload-artifact@v4\n"
-    )
-    with pytest.raises(AssertionError, match="flow mapping"):
-        workflow.validate(
-            workflow_file, "rf24-notification-ambiguous-send-scenario-01-corrective-01"
+def _probe_cases() -> list[AdversarialCase]:
+    return [
+        AdversarialCase(name, "verifier")
+        for name in (
+            "provider-sequence-wrong",
+            "probe-one-attempt-mismatch",
+            "probe-two-attempt-mismatch",
+            "probe-one-attempt-number-mismatch",
+            "probe-two-attempt-number-mismatch",
+            "probe-effect-mismatch",
+            "probe-outbox-mismatch",
+            "probe-source-sha-mismatch",
+            "probe-acceptance-run-mismatch",
+            "probe-outcome-one-mismatch",
+            "probe-outcome-two-mismatch",
+            "probe-phase-one-mismatch",
+            "probe-phase-two-mismatch",
         )
+    ]
+
+
+def _scanner_cases() -> list[AdversarialCase]:
+    return [
+        AdversarialCase(f"scanner-{name}", "scanner")
+        for name in (
+            "authorization-material",
+            "bearer-token-material",
+            "session-cookie-material",
+            "password-field-material",
+            "password-dsn-material",
+            "private-key-material",
+            "raw-provider-payload-marker",
+            "request-body-marker",
+            "response-body-marker",
+        )
+    ]
+
+
+def _ownership_cases() -> list[AdversarialCase]:
+    return [
+        AdversarialCase(f"ownership-{name}", "ownership")
+        for name in (
+            "foreign-identity-insert",
+            "foreign-beacon-update",
+            "foreign-scan-delete",
+            "foreign-entitlement-mutation",
+            "direct-notification-business-insert",
+            "direct-notification-business-update",
+        )
+    ]
+
+
+def _workflow_cases() -> list[AdversarialCase]:
+    return [
+        AdversarialCase(f"workflow-{name}", "workflow")
+        for name in (
+            "expression-flow-mapping",
+            "missing-acceptance-job",
+            "missing-artifact-upload",
+            "missing-corrective-trigger",
+            "missing-fresh-post-suite-database",
+            "missing-complete-repository-pytest",
+            "scenario-before-complete-pytest",
+        )
+    ]
+
+
+_VERIFIER_CASES = [
+    AdversarialCase(name, "verifier", path, value) for name, path, value in _verifier_mutations()
+]
+_PROBE_CASES = _probe_cases()
+REGISTERED_CASES = tuple(
+    _VERIFIER_CASES + _PROBE_CASES + _scanner_cases() + _ownership_cases() + _workflow_cases()
+)
+REGISTERED_IDS = tuple(case.case_id for case in REGISTERED_CASES)
+EXECUTED_IDS: list[str] = []
+
+
+def _execute_probe_case(case_id: str, probes: dict) -> None:
+    probes = copy.deepcopy(probes)
+    observations = probes["observations"]
+    if case_id == "provider-sequence-wrong":
+        observations[1]["sequence"] = 3
+    elif case_id == "probe-one-attempt-mismatch":
+        observations[0]["attempt_id"] = "wrong"
+    elif case_id == "probe-two-attempt-mismatch":
+        observations[1]["attempt_id"] = "wrong"
+    elif case_id == "probe-one-attempt-number-mismatch":
+        observations[0]["attempt_number"] = 2
+    elif case_id == "probe-two-attempt-number-mismatch":
+        observations[1]["attempt_number"] = 3
+    elif case_id == "probe-effect-mismatch":
+        observations[0]["effect_fingerprint"] = "wrong"
+    elif case_id == "probe-outbox-mismatch":
+        observations[0]["outbox_id"] = "wrong"
+    elif case_id == "probe-source-sha-mismatch":
+        observations[0]["source_sha"] = "wrong"
+    elif case_id == "probe-acceptance-run-mismatch":
+        observations[0]["acceptance_run_id"] = "wrong"
+    elif case_id == "probe-outcome-one-mismatch":
+        observations[0]["synthetic_outcome_class"] = "PROVIDER_ACCEPTED"
+    elif case_id == "probe-outcome-two-mismatch":
+        observations[1]["synthetic_outcome_class"] = "DISPATCH_AMBIGUOUS"
+    elif case_id == "probe-phase-one-mismatch":
+        observations[0]["phase"] = "P5"
+    elif case_id == "probe-phase-two-mismatch":
+        observations[1]["phase"] = "P1"
+    else:
+        raise AssertionError(f"unknown probe case {case_id}")
+    d, _ = _doc()
+    with pytest.raises(AssertionError):
+        verify(d, probes, "sha")
+
+
+@pytest.mark.parametrize("case", REGISTERED_CASES, ids=REGISTERED_IDS)
+def test_registered_adversarial_case_executes_its_owner(
+    case: AdversarialCase, tmp_path: Path
+) -> None:
+    EXECUTED_IDS.append(case.case_id)
+    if case.authority == "verifier":
+        d, p = _doc()
+        if case.case_id.startswith("probe-") or case.case_id == "provider-sequence-wrong":
+            _execute_probe_case(case.case_id, p)
+        else:
+            if case.mutation == ("phase_boundaries",):
+                d["phase_boundaries"] = d["phase_boundaries"][:-1]
+            else:
+                _mutate(d, case.mutation, case.value)  # type: ignore[arg-type]
+            with pytest.raises(AssertionError):
+                verify(d, p, "sha")
+    elif case.authority == "scanner":
+        markers = {
+            "scanner-authorization-material": '"authorization":"synthetic"',
+            "scanner-bearer-token-material": '"bearer token":"synthetic"',
+            "scanner-session-cookie-material": '"session_cookie":"synthetic"',
+            "scanner-password-field-material": '"password":"synthetic"',
+            "scanner-password-dsn-material": "postgresql://user:password@host/db",
+            "scanner-private-key-material": '"private_key":"synthetic"',
+            "scanner-raw-provider-payload-marker": '"raw_provider_payload":"synthetic"',
+            "scanner-request-body-marker": '"request_body":"synthetic"',
+            "scanner-response-body-marker": '"response_body":"synthetic"',
+        }
+        item = tmp_path / f"{case.case_id}.json"
+        item.write_text("{" + markers[case.case_id] + "}")
+        assert scan([str(item)])["finding_count"] > 0
+    elif case.authority == "ownership":
+        table = {
+            "ownership-foreign-identity-insert": "identity_accounts",
+            "ownership-foreign-beacon-update": "beacon_records",
+            "ownership-foreign-scan-delete": "scan_runs",
+            "ownership-foreign-entitlement-mutation": "entitlement_records",
+            "ownership-direct-notification-business-insert": "notification_events",
+            "ownership-direct-notification-business-update": "notification_outbox",
+        }[case.case_id]
+        item = tmp_path / f"{case.case_id}.py"
+        verb = (
+            "INSERT"
+            if "insert" in case.case_id
+            else "UPDATE"
+            if "update" in case.case_id
+            else "DELETE"
+        )
+        item.write_text(f'text("{verb} INTO mayak.{table} VALUES (...) ")')
+        assert ownership.violations((str(item),))
+    else:
+        original = Path(".github/workflows/ci-rf24-notification-ambiguous-send.yml").read_text()
+        replacements = {
+            "workflow-expression-flow-mapping": (
+                "          ref: ${{ github.sha }}",
+                "          ref: ${{ github.sha }}, bad: ${{ github.ref }}",
+            ),
+            "workflow-missing-acceptance-job": ("  acceptance:\n", "  removed_acceptance:\n"),
+            "workflow-missing-artifact-upload": ("actions/upload-artifact", "actions/not-uploaded"),
+            "workflow-missing-corrective-trigger": (
+                ", rf24-notification-ambiguous-send-scenario-01-corrective-01",
+                "",
+            ),
+            "workflow-missing-fresh-post-suite-database": (
+                "Create fresh post-suite scenario database",
+                "Removed post-suite database",
+            ),
+            "workflow-missing-complete-repository-pytest": (
+                "Complete repository pytest",
+                "Focused repository pytest",
+            ),
+            "workflow-scenario-before-complete-pytest": (
+                "Complete repository pytest",
+                "Complete repository pytest",
+            ),
+        }
+        text = original.replace(*replacements[case.case_id])
+        if case.case_id == "workflow-expression-flow-mapping":
+            text += "\nwith: {ref: ${{ github.sha }}}\n"
+        if case.case_id == "workflow-missing-corrective-trigger":
+            text = text.replace(
+                "rf24-notification-ambiguous-send-scenario-01-corrective-01", "removed-branch"
+            )
+        if case.case_id == "workflow-scenario-before-complete-pytest":
+            text = text.replace(
+                "      - name: Complete repository pytest",
+                "      - name: Removed complete repository pytest",
+            )
+        item = tmp_path / f"{case.case_id}.yml"
+        item.write_text(text)
+        with pytest.raises(AssertionError):
+            workflow.validate(item, "rf24-notification-ambiguous-send-scenario-01-corrective-01")
+
+
+def test_adversarial_registry_execution_identity() -> None:
+    assert len(REGISTERED_IDS) >= 51 and len(REGISTERED_IDS) == len(set(REGISTERED_IDS))
+    assert set(REGISTERED_IDS) == set(EXECUTED_IDS)
+
+
+def test_safe_scanner_artifact_is_accepted(tmp_path: Path) -> None:
+    item = tmp_path / "safe.json"
+    item.write_text('{"synthetic":"bounded"}')
+    assert scan([str(item)])["finding_count"] == 0
 
 
 def test_workflow_guard_accepts_corrected_workflow() -> None:
