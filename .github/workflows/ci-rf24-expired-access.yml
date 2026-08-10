@@ -280,9 +280,13 @@ jobs:
           assert urlsplit(os.environ["RF24_DSN"]).path.lstrip("/") == db
           assert urlsplit(os.environ["RF15_MIGRATION_DSN"]).path.lstrip("/") == db
           import hashlib
-          from mayak.runtime.settings import load_runtime_settings
+          from mayak.runtime.settings import RuntimeConfigurationError, load_runtime_settings
 
-          settings = load_runtime_settings()
+          try:
+              settings = load_runtime_settings()
+          except RuntimeConfigurationError as exc:
+              print(f"final-runtime-config-error={exc.reason_code}:{','.join(exc.fields)}")
+              raise
           assert settings.runtime.profile.value == "synthetic_acceptance"
           assert settings.build.source_sha == os.environ["GITHUB_SHA"]
           assert settings.build.environment_id == f"avito-mayak-rf24-expired-{os.environ['GITHUB_RUN_ID']}"
