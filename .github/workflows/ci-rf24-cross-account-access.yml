@@ -59,9 +59,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          printf 'MAYAK_SOURCE_SHA=%s\n' "$GITHUB_SHA" >> "$GITHUB_ENV"
-          printf 'MAYAK_LOCK_IDENTITY=%s\n' "$(sha256sum uv.lock | cut -d' ' -f1)" >> "$GITHUB_ENV"
-          printf 'MAYAK_IMAGE_DIGEST=sha256:%s\n' "$(sha256sum Dockerfile | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          env = Path(os.environ["GITHUB_ENV"])
+          lock = hashlib.sha256(Path("uv.lock").read_bytes()).hexdigest()
+          image = hashlib.sha256(Path("Dockerfile").read_bytes()).hexdigest()
+          with env.open("a", encoding="utf-8") as handle:
+              handle.write(f"MAYAK_SOURCE_SHA={os.environ['GITHUB_SHA']}\n")
+              handle.write(f"MAYAK_LOCK_IDENTITY={lock}\n")
+              handle.write(f"MAYAK_IMAGE_DIGEST=sha256:{image}\n")
+          PY
       - name: Install exact uv and frozen dependencies
         shell: bash
         run: |
