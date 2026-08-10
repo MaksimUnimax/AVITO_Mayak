@@ -61,33 +61,33 @@ def request(
 
 
 def snapshot(engine: Any, account: str, key: str, beacon_ids: list[str]) -> dict[str, Any]:
-    ids = tuple(beacon_ids) or ("00000000-0000-0000-0000-000000000000",)
+    beacon_id = beacon_ids[0] if beacon_ids else "00000000-0000-0000-0000-000000000000"
     with engine.connect() as c:
         beacons = [
             dict(r)
             for r in c.execute(
                 text(
-                    "SELECT id, account_id, name, source_url, state, row_version FROM mayak.beacon_beacons WHERE account_id=:account AND id = ANY(CAST(:ids AS uuid[])) ORDER BY id"
+                    "SELECT id, account_id, name, source_url, state, row_version FROM mayak.beacon_beacons WHERE account_id=:account AND id=:beacon_id"
                 ),
-                {"account": account, "ids": list(ids)},
+                {"account": account, "beacon_id": beacon_id},
             ).mappings()
         ]
         events = [
             dict(r)
             for r in c.execute(
                 text(
-                    "SELECT id, beacon_id, from_state, to_state, reason FROM mayak.beacon_lifecycle_events WHERE beacon_id = ANY(CAST(:ids AS uuid[])) ORDER BY id"
+                    "SELECT id, beacon_id, from_state, to_state, reason FROM mayak.beacon_lifecycle_events WHERE beacon_id=:beacon_id ORDER BY id"
                 ),
-                {"ids": list(ids)},
+                {"beacon_id": beacon_id},
             ).mappings()
         ]
         audit = [
             dict(r)
             for r in c.execute(
                 text(
-                    "SELECT id, action_code, target_type, target_id, reason FROM mayak.platform_audit_entries WHERE actor_account_id=:account AND action_code='BEACON_PREPARATION_CREATED' AND target_id = ANY(CAST(:ids AS text[])) ORDER BY id"
+                    "SELECT id, action_code, target_type, target_id, reason FROM mayak.platform_audit_entries WHERE actor_account_id=:account AND action_code='BEACON_PREPARATION_CREATED' AND target_id=:beacon_id"
                 ),
-                {"account": account, "ids": list(ids)},
+                {"account": account, "beacon_id": beacon_id},
             ).mappings()
         ]
         idem = [
