@@ -43,7 +43,11 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
       - name: Verify exact source identity
-        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          ! git config --get-all safe.directory | grep -Fxq '*'
       - uses: actions/setup-python@v5
         with:
           python-version: 3.14.6
