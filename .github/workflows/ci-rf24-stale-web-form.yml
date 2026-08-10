@@ -30,6 +30,7 @@ jobs:
       MAYAK_DATABASE_APPLICATION_USER: mayak_application
       MAYAK_DATABASE_MIGRATION_USER: mayak_migration
       MAYAK_SECRETS_DIR: /run/secrets
+      DOCKER_HOST: unix:///var/run/docker.sock
       MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
       MAYAK_RF11_POSTGRES_USER: mayak_migration
       MAYAK_RF11_POSTGRES_HOST: postgres
@@ -81,14 +82,21 @@ jobs:
           CREATE SCHEMA mayak AUTHORIZATION mayak_migration;
           GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;
           SQL
+          export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-stale-web-${GITHUB_RUN_ID}"
+          export MAYAK_SOURCE_SHA="$GITHUB_SHA"
+          export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
+          export MAYAK_IMAGE_DIGEST="sha256:$(sha256sum Dockerfile | cut -d' ' -f1)"
+          export MAYAK_PROCESS_KIND=mayak-worker
+          export MAYAK_SYNTHETIC_IDENTITY_ENABLED=true
+          export MAYAK_API_HOST_PORT=disabled
           {
-            echo "MAYAK_ENVIRONMENT_ID=avito-mayak-rf24-stale-web-${GITHUB_RUN_ID}"
-            echo "MAYAK_SOURCE_SHA=${GITHUB_SHA}"
-            echo "MAYAK_LOCK_IDENTITY=$(sha256sum uv.lock | cut -d' ' -f1)"
-            echo "MAYAK_IMAGE_DIGEST=sha256:$(sha256sum Dockerfile | cut -d' ' -f1)"
-            echo "MAYAK_PROCESS_KIND=mayak-worker"
-            echo "MAYAK_SYNTHETIC_IDENTITY_ENABLED=true"
-            echo "MAYAK_API_HOST_PORT=disabled"
+            echo "MAYAK_ENVIRONMENT_ID=$MAYAK_ENVIRONMENT_ID"
+            echo "MAYAK_SOURCE_SHA=$MAYAK_SOURCE_SHA"
+            echo "MAYAK_LOCK_IDENTITY=$MAYAK_LOCK_IDENTITY"
+            echo "MAYAK_IMAGE_DIGEST=$MAYAK_IMAGE_DIGEST"
+            echo "MAYAK_PROCESS_KIND=$MAYAK_PROCESS_KIND"
+            echo "MAYAK_SYNTHETIC_IDENTITY_ENABLED=$MAYAK_SYNTHETIC_IDENTITY_ENABLED"
+            echo "MAYAK_API_HOST_PORT=$MAYAK_API_HOST_PORT"
             echo "MAYAK_DATABASE_HOST=postgres"
             echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
             echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak"
@@ -97,6 +105,78 @@ jobs:
             echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak"
             echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
           } >> "$GITHUB_ENV"
+      - name: Install pinned Docker CLI and buildx before gates
+        run: |
+          set -euo pipefail
+          export DOCKER_HOST=unix:///var/run/docker.sock
+          test -S /var/run/docker.sock
+          python - <<'PY'
+          import hashlib, tarfile, tempfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          with tempfile.TemporaryDirectory() as d:
+              archive = Path(d) / "docker-29.2.1.tgz"
+              with urlopen("https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz") as response:
+                  archive.write_bytes(response.read())
+              assert hashlib.sha256(archive.read_bytes()).hexdigest() == "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
+              with tarfile.open(archive) as package:
+                  member = package.extractfile(package.getmember("docker/docker"))
+                  assert member
+                  target = Path("/usr/local/bin/docker")
+                  target.write_bytes(member.read())
+                  target.chmod(0o755)
+          PY
+          install -d -m 755 /usr/libexec/docker/cli-plugins
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          from urllib.request import urlopen
+          target = Path("/usr/libexec/docker/cli-plugins/docker-buildx")
+          with urlopen("https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64") as response:
+              target.write_bytes(response.read())
+          assert hashlib.sha256(target.read_bytes()).hexdigest() == "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
+          target.chmod(0o755)
+          PY
+          test "$(command -v docker)" = /usr/local/bin/docker
+          docker version
+          docker buildx version | grep -F 'v0.31.1'
+      - name: Hosted substrate preflight
+        run: |
+          set -euo pipefail
+          export DOCKER_HOST=unix:///var/run/docker.sock
+          test -S /var/run/docker.sock
+          test "$(command -v docker)" = /usr/local/bin/docker
+          docker version >/dev/null
+          docker buildx version | grep -F 'v0.31.1'
+          command -v python
+          test "$(python --version 2>&1)" = "Python 3.14.6"
+          test "$(uv --version)" = "uv 0.11.31"
+          test -s /run/secrets/mayak_database_migration_password
+          test -s /run/secrets/mayak_database_application_password
+          test -s /run/secrets/mayak_session_signing_key
+          test -s /run/secrets/mayak_postgres_bootstrap_password
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -tAc "select 1 from pg_roles where rolname in ('mayak_migration','mayak_application')" | grep -q 1
+          uv run python - <<'PY'
+          import hashlib, os
+          from mayak.runtime.settings import load_runtime_settings
+          settings = load_runtime_settings()
+          assert settings.runtime.profile.value == "synthetic_acceptance"
+          assert settings.build.source_sha == os.environ["GITHUB_SHA"]
+          assert settings.build.environment_id == f"avito-mayak-rf24-stale-web-{os.environ['GITHUB_RUN_ID']}"
+          assert settings.build.lock_identity == hashlib.sha256(open("uv.lock", "rb").read()).hexdigest()
+          assert settings.build.image_digest == "sha256:" + hashlib.sha256(open("Dockerfile", "rb").read()).hexdigest()
+          assert settings.runtime.process_kind.value == "mayak-worker"
+          assert settings.session.synthetic_identity_enabled is True
+          assert settings.database.application_user == "mayak_application"
+          assert settings.database.migration_user == "mayak_migration"
+          assert settings.providers.avito_live_enabled is False
+          assert settings.providers.telegram_enabled is False
+          assert settings.providers.max_enabled is False
+          assert settings.providers.yookassa_enabled is False
+          assert settings.providers.egress_agent_enabled is False
+          assert settings.api.host_port is None
+          print("runtime-settings-preflight=PASS")
+          PY
       - name: Workflow validator gate
         run: |
           set -euo pipefail
@@ -154,13 +234,23 @@ jobs:
           case "$db" in (*[!a-zA-Z0-9_]*|'') exit 1;; esac
           PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER mayak_migration"
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration;'
-          echo "MAYAK_DATABASE_NAME=$db" >> "$GITHUB_ENV"
-          echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
-          echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
-          echo "RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
-          echo "RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
-          echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
-          echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          export MAYAK_DATABASE_NAME="$db"
+          export MAYAK_RF11_POSTGRES_DSN="postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db"
+          export MAYAK_RF10_POSTGRES_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/$db"
+          export RF11_POSTGRES_DSN="$MAYAK_RF11_POSTGRES_DSN"
+          export RF10_POSTGRES_DSN="$MAYAK_RF10_POSTGRES_DSN"
+          export RF15_MIGRATION_DSN="$MAYAK_RF11_POSTGRES_DSN"
+          export RF24_DSN="$MAYAK_RF10_POSTGRES_DSN"
+          export MAYAK_RF11_POSTGRES_DB="$db"
+          printf '%s\n' "MAYAK_DATABASE_NAME=$MAYAK_DATABASE_NAME" "MAYAK_RF11_POSTGRES_DSN=$MAYAK_RF11_POSTGRES_DSN" "MAYAK_RF10_POSTGRES_DSN=$MAYAK_RF10_POSTGRES_DSN" "RF11_POSTGRES_DSN=$RF11_POSTGRES_DSN" "RF10_POSTGRES_DSN=$RF10_POSTGRES_DSN" "RF15_MIGRATION_DSN=$RF15_MIGRATION_DSN" "RF24_DSN=$RF24_DSN" "MAYAK_RF11_POSTGRES_DB=$MAYAK_RF11_POSTGRES_DB" >> "$GITHUB_ENV"
+          uv run python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          db = os.environ["MAYAK_DATABASE_NAME"]
+          assert db.startswith("mayak_rf24_stale_web_") and db != "mayak"
+          for key in ("MAYAK_RF10_POSTGRES_DSN", "MAYAK_RF11_POSTGRES_DSN", "RF10_POSTGRES_DSN", "RF11_POSTGRES_DSN", "RF15_MIGRATION_DSN", "RF24_DSN"):
+              assert urlsplit(os.environ[key]).path.lstrip("/") == db
+          print("fresh-db-current-shell-binding=PASS")
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
           uv run python - <<'PY'
@@ -177,6 +267,20 @@ jobs:
       - name: FINAL post-suite S0-S8 on NEW database
         run: |
           set -euo pipefail
+          uv run python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+          from mayak.runtime.settings import load_runtime_settings
+          settings = load_runtime_settings()
+          db = os.environ["MAYAK_DATABASE_NAME"]
+          assert db.startswith("mayak_rf24_stale_web_") and db != "mayak"
+          assert settings.database.name == db
+          assert urlsplit(os.environ["RF24_DSN"]).path.lstrip("/") == db
+          assert settings.build.source_sha == os.environ["GITHUB_SHA"]
+          assert settings.session.synthetic_identity_enabled is True
+          assert all(not getattr(settings.providers, name) for name in ("avito_live_enabled", "telegram_enabled", "max_enabled", "yookassa_enabled", "egress_agent_enabled"))
+          print("final-runtime-config-proof=PASS")
+          PY
           rm -f rf24-stale-web-form-evidence.json rf24-stale-web-form-phase-boundaries.json rf24-stale-web-form-provider-observations.json rf24-stale-web-form-verifier-result.json rf24-stale-web-form-scanner-result.json rf24-stale-web-form-manifest.json
           uv run python scripts/runtime/run_rf24_stale_web_form.py --real-postgres --artifacts .
       - name: Verify scanner manifest hash chain
