@@ -156,6 +156,7 @@ jobs:
           test -s /run/secrets/mayak_session_signing_key
           test -s /run/secrets/mayak_postgres_bootstrap_password
           PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -tAc "select 1 from pg_roles where rolname in ('mayak_migration','mayak_application')" | grep -q 1
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           uv run python - <<'PY'
           import hashlib, os
           from mayak.runtime.settings import load_runtime_settings
@@ -267,6 +268,9 @@ jobs:
       - name: FINAL post-suite S0-S8 on NEW database
         run: |
           set -euo pipefail
+          rf24_dsn="$RF24_DSN"
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB RF10_POSTGRES_DSN RF11_POSTGRES_DSN RF15_MIGRATION_DSN
+          export RF24_DSN="$rf24_dsn"
           uv run python - <<'PY'
           import os
           from urllib.parse import urlsplit

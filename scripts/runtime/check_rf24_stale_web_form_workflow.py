@@ -48,6 +48,7 @@ RULES: dict[str, tuple[str, ...]] = {
         "uv run python - <<'PY'",
         "from mayak.runtime.settings import load_runtime_settings",
         "runtime-settings-preflight=PASS",
+        "unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN",
     ),
     "runtime identity contract": (
         "export MAYAK_ENVIRONMENT_ID=\"avito-mayak-rf24-stale-web-${GITHUB_RUN_ID}\"",
@@ -78,6 +79,7 @@ RULES: dict[str, tuple[str, ...]] = {
         "load_runtime_settings()",
         "final-runtime-config-proof=PASS",
         'os.environ["RF24_DSN"]',
+        "unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN",
     ),
     "scenario before acceptance artifacts": (
         "run_rf24_stale_web_form.py --real-postgres",
