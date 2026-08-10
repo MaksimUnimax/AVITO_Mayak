@@ -23,6 +23,7 @@ jobs:
     env:
       UV_VERSION: 0.11.31
       MAYAK_ENVIRONMENT_ID: avito-mayak-rf24-cross-account-${{ github.run_id }}
+      MAYAK_SOURCE_SHA: ${{ github.sha }}
       MAYAK_LOCK_IDENTITY: e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
       MAYAK_IMAGE_DIGEST: sha256:cdbec06878c8a31b10763e62a8b2dbdb74a8c2263770827d8859e0c1516671af
       MAYAK_PROCESS_KIND: mayak-worker
@@ -54,7 +55,6 @@ jobs:
           printf 'CHECKOUT_HEAD=%s\n' "$actual_sha"
           export GITHUB_SHA="$actual_sha"
           printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
-          printf 'MAYAK_SOURCE_SHA=%s\n' "$GITHUB_SHA" >> "$GITHUB_ENV"
       - name: Install exact uv and frozen dependencies
         shell: bash
         run: |
@@ -120,9 +120,9 @@ jobs:
         run: |
           set -euo pipefail
           uv run python scripts/runtime/run_rf24_cross_account_access.py --real-postgres --artifacts artifacts
-          uv run python scripts/runtime/verify_rf24_cross_account_access.py artifacts/rf24-cross-account-access-evidence.json "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result artifacts/rf24-cross-account-access-verifier-result.json
+          uv run python scripts/runtime/verify_rf24_cross_account_access.py artifacts/rf24-cross-account-access-evidence.json "$MAYAK_SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --result artifacts/rf24-cross-account-access-verifier-result.json
           uv run python scripts/runtime/check_rf24_cross_account_access_artifact_safety.py artifacts --result artifacts/rf24-cross-account-access-scanner-result.json
-          uv run python scripts/runtime/build_rf24_cross_account_access_manifest.py artifacts --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output artifacts/rf24-cross-account-access-safety-manifest.json
+          uv run python scripts/runtime/build_rf24_cross_account_access_manifest.py artifacts --source-sha "$MAYAK_SOURCE_SHA" --run-id "$GITHUB_RUN_ID" --output artifacts/rf24-cross-account-access-safety-manifest.json
       - name: Upload rf24-cross-account-access artifact
         if: always()
         uses: actions/upload-artifact@v4
