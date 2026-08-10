@@ -144,6 +144,74 @@ def test_workflow_environment_and_docker_negative_cases_execute_actual_validator
 
 
 @pytest.mark.parametrize(
+    ("case_id", "mutate"),
+    [
+        (
+            "setup-python-inside-python-container",
+            lambda w: w.replace(
+                "actions/checkout@v4",
+                "actions/setup-python@v5\n      - uses: actions/checkout@v4",
+            ),
+        ),
+        (
+            "container-python-path-not-enforced",
+            lambda w: w.replace(
+                'test "$python_path" = /usr/local/bin/python', "printf path-only"
+            ),
+        ),
+        (
+            "host-toolcache-python-accepted",
+            lambda w: w.replace(
+                'test "$python_path" = /usr/local/bin/python',
+                "test \"$python_path\" = /__t/Python/3.14.6/x64",
+            ),
+        ),
+        ("wrong-python-version", lambda w: w.replace('Python 3.14.6', 'Python 3.14.5')),
+        (
+            "docker-before-python-authority-proof",
+            lambda w: w.replace(
+                'test "$(command -v python)" = /usr/local/bin/python', "true"
+            ),
+        ),
+        (
+            "docker-cli-heredoc-unclosed",
+            lambda w: w.replace("          PY\n          install -d", "          install -d", 1),
+        ),
+        (
+            "buildx-heredoc-unclosed",
+            lambda w: w.replace(
+                '          PY\n          test "$(command -v docker)"',
+                '          test "$(command -v docker)"',
+                1,
+            ),
+        ),
+        (
+            "docker-proof-inside-unclosed-heredoc",
+            lambda w: w.replace("          docker version\n", "          # docker version\n"),
+        ),
+        (
+            "docker-cli-path-not-enforced",
+            lambda w: w.replace(
+                'test "$(command -v docker)" = /usr/local/bin/docker', "true"
+            ),
+        ),
+        (
+            "docker-install-after-full-pytest",
+            lambda w: w.replace(
+                "      - name: Install hosted Docker CLI and buildx",
+                "      - name: Complete repository pytest\n"
+                "        run: true\n"
+                "      - name: Install hosted Docker CLI and buildx",
+            ),
+        ),
+    ],
+)
+def test_workflow_new_root_cause_negative_cases(case_id: str, mutate) -> None:
+    workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
+    assert validate(mutate(workflow)), case_id
+
+
+@pytest.mark.parametrize(
     ("base", "candidate", "changed", "accepted"),
     [
         (

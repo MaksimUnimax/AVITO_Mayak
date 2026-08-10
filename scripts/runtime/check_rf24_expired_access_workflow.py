@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import textwrap
 from pathlib import Path
 
 REQUIRED = (
@@ -53,6 +54,22 @@ ENVIRONMENT = {
 
 DOCKER_CLI_SHA256 = "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
 DOCKER_BUILDX_SHA256 = "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
+
+
+def _run_body(text: str, name: str) -> str:
+    match = re.search(
+        rf"^      - name: {re.escape(name)}\n        run: \|\n(?P<body>(?:          .*\n|\n)*)",
+        text,
+        re.M,
+    )
+    return textwrap.dedent(match.group("body")) if match else ""
+
+
+def _heredocs(body: str) -> tuple[list[int], list[int]]:
+    lines = body.splitlines()
+    openings = [i for i, line in enumerate(lines) if line == "python - <<'PY'"]
+    terminators = [i for i, line in enumerate(lines) if line == "PY"]
+    return openings, terminators
 
 
 def _step_positions(text: str) -> dict[str, int]:
@@ -116,8 +133,45 @@ def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list
         failures.append("fresh-post-suite-db-binding")
     if 'MAYAK_AVITO_LIVE_ENABLED: "false"' not in text:
         failures.append("live-provider-enable")
-    full_pytest = text.find("Complete repository pytest")
+    if "actions/setup-python@v5" in text:
+        failures.append("setup-python-inside-python-container")
+    python_proof = _run_body(text, "Prove container-native Python authority")
+    uv_recheck = _run_body(text, "Re-check container-native Python after uv setup")
+    docker_body = _run_body(text, "Install hosted Docker CLI and buildx")
     docker_step = text.find("Install hosted Docker CLI and buildx")
+    for body, label in ((python_proof, "initial"), (uv_recheck, "after-uv")):
+        if (
+            "command -v python" not in body
+            or 'test "$python_path" = /usr/local/bin/python' not in body
+        ):
+            failures.append(f"container-python-path-not-enforced:{label}")
+        if "/__t/" not in body or "hostedtoolcache" not in body:
+            failures.append(f"host-toolcache-python-not-rejected:{label}")
+        if 'test "$(python --version 2>&1)" = "Python 3.14.6"' not in body:
+            failures.append(f"wrong-or-missing-python-version:{label}")
+    if not docker_body:
+        failures.append("missing-docker-installation-body")
+    else:
+        openings, terminators = _heredocs(docker_body)
+        if len(openings) != 2:
+            failures.append("docker-heredoc-count")
+        if len(terminators) != 2 or any(
+            not any(end > start for end in terminators) for start in openings
+        ):
+            failures.append("docker-heredoc-terminator")
+        if "docker version" not in docker_body or "docker buildx version" not in docker_body:
+            failures.append("docker-proof-inside-unclosed-heredoc")
+        if 'test "$(command -v python)" = /usr/local/bin/python' not in docker_body:
+            failures.append("docker-before-python-authority-proof")
+        if text.find("Re-check container-native Python after uv setup") > docker_step:
+            failures.append("docker-before-python-authority-proof")
+        if 'test "$(command -v docker)" = /usr/local/bin/docker' not in docker_body:
+            failures.append("docker-cli-path-not-enforced")
+        if "29.2.1" not in docker_body or DOCKER_CLI_SHA256 not in docker_body:
+            failures.append("docker-cli-version-or-digest")
+        if "v0.31.1" not in docker_body or DOCKER_BUILDX_SHA256 not in docker_body:
+            failures.append("buildx-version-or-digest")
+    full_pytest = text.find("Complete repository pytest")
     if docker_step < 0:
         failures.append("missing-docker-installation")
     elif full_pytest >= 0 and docker_step > full_pytest:

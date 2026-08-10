@@ -70,12 +70,28 @@ jobs:
           printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           ! git config --get-all safe.directory | grep -Fxq '*'
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.14.6
+      - name: Prove container-native Python authority
+        run: |
+          set -euo pipefail
+          python_path="$(command -v python)"
+          printf 'CONTAINER_PYTHON=%s\n' "$python_path"
+          test "$python_path" = /usr/local/bin/python
+          case "$python_path" in
+            /__t/*|*hostedtoolcache*) exit 1 ;;
+          esac
+          test "$(python --version 2>&1)" = "Python 3.14.6"
       - uses: astral-sh/setup-uv@v6
         with:
           version: 0.11.31
+      - name: Re-check container-native Python after uv setup
+        run: |
+          set -euo pipefail
+          python_path="$(command -v python)"
+          test "$python_path" = /usr/local/bin/python
+          case "$python_path" in
+            /__t/*|*hostedtoolcache*) exit 1 ;;
+          esac
+          test "$(python --version 2>&1)" = "Python 3.14.6"
       - name: Sync dependencies
         run: uv sync --frozen --all-groups
       - name: Prepare non-empty acceptance secrets and PostgreSQL roles
@@ -108,40 +124,37 @@ jobs:
       - name: Install hosted Docker CLI and buildx
         run: |
           set -euo pipefail
+          command -v python
+          test "$(command -v python)" = /usr/local/bin/python
+          test "$(python --version 2>&1)" = "Python 3.14.6"
+          python - <<'PY'
+          import hashlib, tarfile, tempfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          with tempfile.TemporaryDirectory() as d:
+              archive = Path(d) / "docker.tgz"
+              with urlopen("https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz") as response:
+                  archive.write_bytes(response.read())
+              assert hashlib.sha256(archive.read_bytes()).hexdigest() == "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
+              with tarfile.open(archive) as package:
+                  member = package.extractfile(package.getmember("docker/docker"))
+                  assert member
+                  target = Path("/usr/local/bin/docker")
+                  target.write_bytes(member.read())
+                  target.chmod(0o755)
+          PY
           install -d -m 755 /usr/libexec/docker/cli-plugins
           python - <<'PY'
           import hashlib
-          import tarfile
-          import tempfile
           from pathlib import Path
           from urllib.request import urlopen
-
-          docker_url = "https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz"
-          docker_sha256 = "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
-          buildx_url = "https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64"
-          buildx_sha256 = "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
-          with tempfile.TemporaryDirectory() as directory:
-              root = Path(directory)
-              docker_archive = root / "docker-29.2.1.tgz"
-              buildx_binary = root / "docker-buildx-v0.31.1"
-              with urlopen(docker_url) as response:
-                  docker_archive.write_bytes(response.read())
-              with urlopen(buildx_url) as response:
-                  buildx_binary.write_bytes(response.read())
-              if hashlib.sha256(docker_archive.read_bytes()).hexdigest() != docker_sha256:
-                  raise SystemExit("Docker CLI archive SHA-256 mismatch")
-              if hashlib.sha256(buildx_binary.read_bytes()).hexdigest() != buildx_sha256:
-                  raise SystemExit("Docker buildx binary SHA-256 mismatch")
-              with tarfile.open(docker_archive) as package:
-                  member = package.extractfile(package.getmember("docker/docker"))
-                  if member is None:
-                      raise SystemExit("Docker CLI executable missing from archive")
-                  docker_target = Path("/usr/local/bin/docker")
-                  docker_target.write_bytes(member.read())
-                  docker_target.chmod(0o755)
-              buildx_target = Path("/usr/libexec/docker/cli-plugins/docker-buildx")
-              buildx_target.write_bytes(buildx_binary.read_bytes())
-              buildx_target.chmod(0o755)
+          target = Path("/usr/libexec/docker/cli-plugins/docker-buildx")
+          with urlopen("https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64") as response:
+              target.write_bytes(response.read())
+          assert hashlib.sha256(target.read_bytes()).hexdigest() == "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
+          target.chmod(0o755)
+          PY
+          test "$(command -v docker)" = /usr/local/bin/docker
           docker version
           docker buildx version | grep -F 'v0.31.1'
       - name: Focused, one-to-one, ownership and workflow gates
