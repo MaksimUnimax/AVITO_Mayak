@@ -124,11 +124,11 @@ jobs:
           set -euo pipefail
           unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           set +e
-          settings_output="$(uv run python -c 'exec("from mayak.runtime.settings import RuntimeConfigurationError, load_runtime_settings\ntry:\n load_runtime_settings()\n print(\\"runtime-settings-preflight=PASS\\")\nexcept RuntimeConfigurationError as exc:\n print(\\"reason_code=\\" + exc.reason_code)\n raise")' 2>&1)"
+          settings_output="$(uv run python -c 'exec("from mayak.runtime.settings import load_runtime_settings\ntry:\n load_runtime_settings()\n print(\\"runtime-settings-preflight=PASS\\")\nexcept Exception as exc:\n print(\\"exception_type=\\" + type(exc).__name__)\n print(\\"exception_message=\\" + str(exc)[:120])\n raise")' 2>&1)"
           settings_status=$?
           set -e
           if [ "$settings_status" -ne 0 ]; then
-            safe_reason="$(printf '%s\n' "$settings_output" | sed -n 's/.*reason_code[=: ]*\([^ ,}]*\).*/\1/p' | tail -1)"
+            safe_reason="$(printf '%s\n' "$settings_output" | sed -n 's/.*exception_\(type\|message\)=[[:space:]]*//p' | tr '\n' ' ' | cut -c1-180)"
             printf '::error title=runtime-settings-preflight::status=%s reason=%s\n' "$settings_status" "${safe_reason:-configuration-error}"
             exit "$settings_status"
           fi
