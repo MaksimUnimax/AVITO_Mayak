@@ -204,9 +204,9 @@ jobs:
         run: |
           set -euo pipefail
           unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
-          export RF22_DSN="$MAYAK_RF10_POSTGRES_DSN"
-          export RF22_DATABASE_URL="$MAYAK_RF10_POSTGRES_DSN"
-          export RF22_MIGRATION_DSN="$MAYAK_RF11_POSTGRES_DSN"
+          export RF22_DSN="$RF10_POSTGRES_DSN"
+          export RF22_DATABASE_URL="$RF10_POSTGRES_DSN"
+          export RF22_MIGRATION_DSN="$RF11_POSTGRES_DSN"
           mkdir -p artifacts
           uv run python scripts/runtime/run_rf24_unsupported_filter.py --real-postgres --artifacts artifacts
       - name: H11 verifier

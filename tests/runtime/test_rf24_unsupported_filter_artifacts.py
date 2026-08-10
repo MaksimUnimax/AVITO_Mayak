@@ -50,9 +50,9 @@ def test_workflow_validator_rejects_broad_suite_environment_drift(tmp_path: Path
             )
         elif mutation in {"RF22_DSN", "RF22_DATABASE_URL", "RF22_MIGRATION_DSN"}:
             mutated = original.replace(
-                f'export {mutation}="$MAYAK_RF10_POSTGRES_DSN"'
+                f'export {mutation}="$RF10_POSTGRES_DSN"'
                 if mutation != "RF22_MIGRATION_DSN"
-                else 'export RF22_MIGRATION_DSN="$MAYAK_RF11_POSTGRES_DSN"',
+                else 'export RF22_MIGRATION_DSN="$RF11_POSTGRES_DSN"',
                 f'export {mutation}="postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"',
             )
         else:

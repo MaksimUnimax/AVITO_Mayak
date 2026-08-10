@@ -95,11 +95,11 @@ def validate(text: str) -> list[str]:
             errors.append("H6 does not migrate in the current shell")
         if '"$db"' not in h6:
             errors.append("DATABASE B bindings do not target the fresh database")
-    if not h10 or 'export RF22_DSN="$MAYAK_RF10_POSTGRES_DSN"' not in h10:
+    if not h10 or 'export RF22_DSN="$RF10_POSTGRES_DSN"' not in h10:
         errors.append("unsupported-specific final scenario binding missing")
-    if h10 and 'export RF22_DATABASE_URL="$MAYAK_RF10_POSTGRES_DSN"' not in h10:
+    if h10 and 'export RF22_DATABASE_URL="$RF10_POSTGRES_DSN"' not in h10:
         errors.append("RF22_DATABASE_URL is not bound to the DATABASE B application role")
-    if h10 and 'export RF22_MIGRATION_DSN="$MAYAK_RF11_POSTGRES_DSN"' not in h10:
+    if h10 and 'export RF22_MIGRATION_DSN="$RF11_POSTGRES_DSN"' not in h10:
         errors.append("RF22_MIGRATION_DSN is not bound to the DATABASE B migration role")
     if "uv run pytest -q --disable-warnings" not in text:
         errors.append("complete repository pytest missing")
