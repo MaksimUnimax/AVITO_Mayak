@@ -270,7 +270,10 @@ jobs:
           assert observed == expected, (observed, expected)
           print("exact-head-proof=PASS")
           PY
-          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
+      - name: Grant fresh database application access after exact head
+        run: |
+          set -euo pipefail
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
       - name: FINAL post-suite S0-S8 on NEW database
         run: |
           set -euo pipefail

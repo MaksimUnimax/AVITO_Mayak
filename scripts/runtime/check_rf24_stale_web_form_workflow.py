@@ -76,6 +76,11 @@ RULES: dict[str, tuple[str, ...]] = {
         'os.environ["RF15_MIGRATION_DSN"]',
         "select version_num from mayak.alembic_version",
     ),
+    "fresh application grants after exact head": (
+        "Grant fresh database application access after exact head",
+        'psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME"',
+        "GRANT USAGE ON SCHEMA mayak TO mayak_application",
+    ),
     "final config and DB identity proof": (
         "FINAL post-suite S0-S8 on NEW database",
         "load_runtime_settings()",
@@ -122,6 +127,7 @@ def validate(text: str) -> list[str]:
     fresh = steps.get("Create NEW post-suite database and migrate from zero", -1)
     final = steps.get("FINAL post-suite S0-S8 on NEW database", -1)
     artifacts = steps.get("Verify scanner manifest hash chain", -1)
+    grants = steps.get("Grant fresh database application access after exact head", -1)
     if docker < 0 or (full >= 0 and docker > full):
         missing.append("Docker install must precede complete repository pytest")
     if substrate < 0 or (full >= 0 and substrate > full):
@@ -142,6 +148,8 @@ def validate(text: str) -> list[str]:
         missing.append("fresh migration must follow current-shell DB binding proof")
     if proof < 0 or (migration >= 0 and proof < migration):
         missing.append("exact-head proof must follow fresh migration")
+    if grants < 0 or (final >= 0 and grants > final) or (artifacts >= 0 and grants > artifacts):
+        missing.append("fresh application grants must be present before final acceptance")
     if re.search(r"RF15_MIGRATION_DSN=.*(?:/mayak(?:\"|[' ]|$))", fresh_body):
         missing.append("fresh migration DSN must not target initial mayak database")
     if "create_engine(\"postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak\")" in fresh_body:
