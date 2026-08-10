@@ -44,7 +44,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          actual_sha="$(git rev-parse --verify HEAD)"
+          echo "checkout-sha=$actual_sha"
+          echo "event-sha=$GITHUB_SHA"
+          echo "source-sha=$MAYAK_SOURCE_SHA"
+          test "$actual_sha" = "$GITHUB_SHA"
+          test "$actual_sha" = "$MAYAK_SOURCE_SHA"
           echo "MAYAK_LOCK_IDENTITY=$(sha256sum uv.lock | awk '{print $1}')" >> "$GITHUB_ENV"
           echo "MAYAK_IMAGE_DIGEST=sha256:$(sha256sum Dockerfile | awk '{print $1}')" >> "$GITHUB_ENV"
           bash --version
