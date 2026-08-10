@@ -111,7 +111,7 @@ jobs:
       - name: Establish SOURCE application grants and prove empty TARGET
         run: |
           set -euo pipefail
-          uv run python - "$TARGET_DB" "$CONFLICT_DB" <<'PY'
+          uv run python - "$SOURCE_DB" "$TARGET_DB" "$CONFLICT_DB" <<'PY'
           import sys
           import psycopg
           from psycopg import sql
