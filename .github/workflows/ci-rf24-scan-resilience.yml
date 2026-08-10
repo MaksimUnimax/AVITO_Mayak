@@ -91,7 +91,13 @@ jobs:
         run: |
           set -euo pipefail
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io docker-buildx
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io curl
+          install -d -m 755 /usr/libexec/docker/cli-plugins
+          curl --fail --silent --show-error --location \
+            --output /usr/libexec/docker/cli-plugins/docker-buildx \
+            https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64
+          chmod 755 /usr/libexec/docker/cli-plugins/docker-buildx
+          docker buildx version | grep -F 'v0.31.1'
       - name: Prove hosted execution environment
         run: |
           set -euo pipefail
