@@ -40,6 +40,8 @@ jobs:
       MAYAK_RF11_POSTGRES_HOST: postgres
       MAYAK_RF11_POSTGRES_PORT: "5432"
       MAYAK_RF11_POSTGRES_DB: mayak
+      MAYAK_SECRETS_DIR: /run/secrets
+      DOCKER_HOST: unix:///var/run/docker.sock
       MAYAK_RUNTIME_PROFILE: synthetic_acceptance
       MAYAK_API_INTERNAL_PORT: "18080"
       MAYAK_API_BIND_HOST: 127.0.0.1
@@ -79,6 +81,38 @@ jobs:
           PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE,CREATE ON SCHEMA mayak TO mayak_application;"
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -c 'GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+      - name: Install hosted Docker CLI and buildx
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, tarfile, tempfile
+          from pathlib import Path
+          from urllib.request import urlopen
+          with tempfile.TemporaryDirectory() as d:
+              archive = Path(d) / "docker.tgz"
+              with urlopen("https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz") as response:
+                  archive.write_bytes(response.read())
+              assert hashlib.sha256(archive.read_bytes()).hexdigest() == "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
+              with tarfile.open(archive) as package:
+                  member = package.extractfile(package.getmember("docker/docker"))
+                  assert member
+                  target = Path("/usr/local/bin/docker")
+                  target.write_bytes(member.read())
+                  target.chmod(0o755)
+          PY
+          install -d -m 755 /usr/libexec/docker/cli-plugins
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+          from urllib.request import urlopen
+          target = Path("/usr/libexec/docker/cli-plugins/docker-buildx")
+          with urlopen("https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64") as response:
+              target.write_bytes(response.read())
+          assert hashlib.sha256(target.read_bytes()).hexdigest() == "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
+          target.chmod(0o755)
+          PY
+          docker version
+          docker buildx version | grep -F 'v0.31.1'
       - name: Focused Notification tests, quality and imports
         run: |
           set -euo pipefail
