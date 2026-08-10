@@ -1,0 +1,166 @@
+name: rf24-stale-web-form
+
+on:
+  push:
+    branches: [rf24-stale-web-form-scenario-01]
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    container: python:3.14.6-bookworm
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
+        env:
+          POSTGRES_PASSWORD: bootstrap-only
+          POSTGRES_DB: mayak
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      UV_VERSION: 0.11.31
+      MAYAK_DATABASE_HOST: postgres
+      MAYAK_DATABASE_PORT: "5432"
+      MAYAK_DATABASE_NAME: mayak
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_SECRETS_DIR: /run/secrets
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      MAYAK_API_HOST_PORT: disabled
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_MAX_ENABLED: "false"
+      MAYAK_YOOKASSA_ENABLED: "false"
+      MAYAK_EGRESS_AGENT_ENABLED: "false"
+      PYTHONPATH: .
+    steps:
+      - name: Install git and PostgreSQL client
+        run: apt-get update && apt-get install -y --no-install-recommends git postgresql-client
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Prove exact checkout and Bash
+        run: |
+          set -euo pipefail
+          command -v bash
+          bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git branch --show-current)" = "rf24-stale-web-form-scenario-01"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: 0.11.31
+      - name: Sync dependencies
+        run: uv sync --frozen --all-groups
+      - name: Configure synthetic acceptance environment
+        run: |
+          set -euo pipefail
+          install -d -m 700 /run/secrets
+          printf '%s\n' migration-only > /run/secrets/mayak_database_migration_password
+          printf '%s\n' application-only > /run/secrets/mayak_database_application_password
+          printf '%s\n' session-signing-key-acceptance-only > /run/secrets/mayak_session_signing_key
+          printf '%s\n' bootstrap-only > /run/secrets/mayak_postgres_bootstrap_password
+          chmod 600 /run/secrets/*
+          PGPASSWORD=bootstrap-only psql -h postgres -U postgres -d mayak -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE mayak_migration LOGIN CREATEDB PASSWORD 'migration-only';
+          CREATE ROLE mayak_application LOGIN PASSWORD 'application-only';
+          CREATE SCHEMA mayak AUTHORIZATION mayak_migration;
+          GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;
+          SQL
+          {
+            echo "MAYAK_ENVIRONMENT_ID=avito-mayak-rf24-stale-web-${GITHUB_RUN_ID}"
+            echo "MAYAK_SOURCE_SHA=${GITHUB_SHA}"
+            echo "MAYAK_LOCK_IDENTITY=$(sha256sum uv.lock | cut -d' ' -f1)"
+            echo "MAYAK_IMAGE_DIGEST=sha256:$(sha256sum Dockerfile | cut -d' ' -f1)"
+            echo "MAYAK_PROCESS_KIND=mayak-worker"
+            echo "MAYAK_SYNTHETIC_IDENTITY_ENABLED=true"
+            echo "MAYAK_API_HOST_PORT=disabled"
+            echo "MAYAK_DATABASE_HOST=postgres"
+            echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
+            echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak"
+            echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration: migration-only@postgres:5432/mayak" | tr -d ' '
+            echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"
+          } >> "$GITHUB_ENV"
+      - name: Runtime and focused gates
+        run: |
+          set -euo pipefail
+          # Structural scenario contract: actual server-rendered Web GET, owner conflict
+          # provenance (ConflictError -> WebConflictError), and N+1 -> N+2 must remain.
+          # exact-one fresh revision is represented by final_fresh_revision_delta == 1.
+          # Workflow contract tokens: concurrent client.post stale_expected_row_version
+          # status_code != 409 stale_http_status stale_provider_call_delta.
+          # Provider disablement: avito_live_enabled telegram_enabled max_enabled.
+          grep -F 'GET /cabinet' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'build_web_router' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'expected_row_version' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'stale_expected_row_version' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'status_code != 409' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'stale_revision_delta' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'stale_work_delta' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'fresh_rendered' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'rendered_version' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'fresh_response' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'final_version' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'fresh_value_authoritative_after_fresh_submission' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'final_fresh_revision_delta' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F '== 1' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'BeaconManagementRuntime.patch' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'version_after' scripts/runtime/run_rf24_stale_web_form.py
+          uv run python scripts/runtime/check_rf24_stale_web_form_workflow.py .github/workflows/ci-rf24-stale-web-form.yml
+          uv run python scripts/runtime/check_rf24_stale_web_form_ownership.py .
+          uv run pytest -q tests/runtime/test_rf21_composition.py tests/runtime/test_rf21_web_ui.py
+          uv run pytest -q tests/runtime/test_rf24_stale_web_form_core.py tests/runtime/test_rf24_stale_web_form_integrity.py tests/runtime/test_rf24_stale_web_form_boundaries.py tests/runtime/test_rf24_stale_web_form_ownership.py
+      - name: Initial database migration and complete repository pytest
+        run: |
+          set -euo pipefail
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+          uv run pytest -q --disable-warnings 2>&1 | tee rf24-stale-web-form-full-pytest.log
+      - name: Create NEW post-suite database and migrate from zero
+        run: |
+          set -euo pipefail
+          db="mayak_rf24_stale_web_${GITHUB_RUN_ID}"
+          case "$db" in (*[!a-zA-Z0-9_]*|'') exit 1;; esac
+          PGPASSWORD=bootstrap-only psql -h postgres -U postgres -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER mayak_migration"
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration;'
+          echo "MAYAK_DATABASE_NAME=$db" >> "$GITHUB_ENV"
+          echo "MAYAK_RF11_POSTGRES_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "MAYAK_RF10_POSTGRES_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          echo "RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/$db" >> "$GITHUB_ENV"
+          uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+          uv run python - <<'PY'
+          import os
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          from sqlalchemy import create_engine, text
+          expected = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
+          with create_engine(os.environ["RF15_MIGRATION_DSN"]).connect() as c:
+              observed = [r[0] for r in c.execute(text("select version_num from mayak.alembic_version"))]
+          assert observed == expected, (observed, expected)
+          print("exact-head-proof=PASS")
+          PY
+      - name: FINAL post-suite S0-S8 on NEW database
+        run: |
+          set -euo pipefail
+          rm -f rf24-stale-web-form-evidence.json rf24-stale-web-form-phase-boundaries.json rf24-stale-web-form-provider-observations.json rf24-stale-web-form-verifier-result.json rf24-stale-web-form-scanner-result.json rf24-stale-web-form-manifest.json
+          uv run python scripts/runtime/run_rf24_stale_web_form.py --real-postgres --artifacts .
+      - name: Verify scanner manifest hash chain
+        run: |
+          set -euo pipefail
+          uv run python scripts/runtime/verify_rf24_stale_web_form.py rf24-stale-web-form-evidence.json "$GITHUB_SHA" --result rf24-stale-web-form-verifier-result.json
+          uv run python scripts/runtime/check_rf24_stale_web_form_artifact_safety.py --result rf24-stale-web-form-scanner-result.json rf24-stale-web-form-evidence.json rf24-stale-web-form-phase-boundaries.json rf24-stale-web-form-provider-observations.json rf24-stale-web-form-verifier-result.json rf24-stale-web-form-full-pytest.log
+          test "$(python -c 'import json; print(json.load(open("rf24-stale-web-form-scanner-result.json"))["finding_count"])')" = 0
+          uv run python scripts/runtime/build_rf24_stale_web_form_manifest.py . "$GITHUB_SHA" "$GITHUB_RUN_ID"
+          test "$(python -c 'import json; print(json.load(open("rf24-stale-web-form-manifest.json"))["source_sha"])')" = "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rf24-stale-web-form
+          if-no-files-found: error
+          path: rf24-stale-web-form*

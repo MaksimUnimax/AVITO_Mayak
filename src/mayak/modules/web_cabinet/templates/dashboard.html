@@ -37,7 +37,8 @@
               <input type="hidden" name="action" value="PATCH_CURRENT_CONFIGURATION">
               <input type="hidden" name="expected_row_version" value="{{ beacon.row_version }}">
               <input type="hidden" name="idempotency_key" value="web-{{ beacon.beacon_id }}-{{ beacon.row_version }}">
-              <label>Filter value <input name="normalized_filter_values" required></label>
+              <p data-current-filter="{{ beacon.current_filter_values|join(',')|e }}">Current filter: {{ beacon.current_filter_values|join(',')|e }}</p>
+              <label>Filter value <input name="normalized_filter_values" value="{{ beacon.current_filter_values|join(',')|e }}" required></label>
               <button type="submit">Обновить фильтр</button>
             </form>
             {% if beacon.state in ('READY', 'PAUSED', 'FROZEN') %}

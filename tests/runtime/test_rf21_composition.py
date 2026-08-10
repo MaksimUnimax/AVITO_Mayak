@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from uuid import UUID
 
 from mayak.modules.web_cabinet.runtime import VerifiedWebCustomer
@@ -49,6 +50,20 @@ def test_beacon_adapter_delegates_reads_to_owner() -> None:
     adapter = BeaconWebAdapter(_Beacon())
     customer = VerifiedWebCustomer(ACCOUNT, SESSION, "identity-session:verified")
     assert adapter.read(object(), customer) == ("owned-beacon",)
+
+
+def test_beacon_adapter_projects_owner_current_filter_for_server_form() -> None:
+    class BeaconWithRevision:
+        def list(self, session: object, *, actor_reference: str) -> tuple[object, ...]:
+            return (SimpleNamespace(beacon_id=UUID(int=3), current_revision_no=7),)
+
+        def get_revision(self, session: object, **kwargs: object) -> object:
+            assert kwargs["revision_no"] == 7
+            return SimpleNamespace(accepted_filter={"normalized_filter_values": ["concurrent"]})
+
+    customer = VerifiedWebCustomer(ACCOUNT, SESSION, "identity-session:verified")
+    result = BeaconWebAdapter(BeaconWithRevision()).read(object(), customer)
+    assert result[0].current_filter_values == ("concurrent",)
 
 
 class _Entitlements:

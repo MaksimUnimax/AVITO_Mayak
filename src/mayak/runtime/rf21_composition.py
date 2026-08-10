@@ -91,6 +91,17 @@ class CustomerIdentityAuthorityAdapter:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class WebBeaconProjection:
+    """Owner-read Beacon view plus the safe current filter projection."""
+
+    view: Any
+    current_filter_values: tuple[str, ...]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.view, name)
+
+
 class BeaconWebAdapter:
     owner = "beacon_management"
     key = "beacons"
@@ -106,7 +117,28 @@ class BeaconWebAdapter:
             if customer.authority_context is not None
             else customer.authority_reference
         )
-        return self.runtime.list(session, actor_reference=authority)
+        views = self.runtime.list(session, actor_reference=authority)
+        projected: list[Any] = []
+        for view in views:
+            get_revision = getattr(self.runtime, "get_revision", None)
+            revision_no = getattr(view, "current_revision_no", None)
+            if not callable(get_revision) or revision_no is None:
+                projected.append(view)
+                continue
+            revision = get_revision(
+                session,
+                actor_reference=authority,
+                beacon_id=view.beacon_id,
+                revision_no=revision_no,
+            )
+            values = revision.accepted_filter.get("normalized_filter_values", ())
+            projected.append(
+                WebBeaconProjection(
+                    view=view,
+                    current_filter_values=tuple(str(value) for value in values),
+                )
+            )
+        return tuple(projected)
 
     def detail(
         self, session: Any, customer: VerifiedWebCustomer, beacon_id: UUID
@@ -335,6 +367,7 @@ __all__ = [
     "BeaconWebAdapter",
     "EntitlementWebAdapter",
     "CustomerIdentityAuthorityAdapter",
+    "WebBeaconProjection",
     "NotificationWebAdapter",
     "ScanWebAdapter",
     "TelegramWebAdapter",
