@@ -9,12 +9,17 @@ import time
 from datetime import UTC, datetime
 from types import FrameType
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 
-from mayak.modules.avito_parser_adapter.contracts import ParserOutcomeStatus
+from mayak.modules.avito_parser_adapter.contracts import (
+    ParserOutcomeStatus,
+    TransportOutcomeReference,
+    TransportOutcomeStatus,
+)
 from mayak.modules.avito_parser_adapter.runtime import NormalizedListingSnapshot
+from mayak.modules.egress_routing.simulator import EgressAgentSimulator, SimulatorScenario
 from mayak.modules.notification_delivery.attempt import NotificationProviderOutcomeClass
 from mayak.modules.notification_delivery.runtime import (
     AttemptLease,
@@ -59,7 +64,7 @@ def _scenario(session: Any, beacon_id: UUID) -> str:
         return "usable_listing_page"
     if os.environ.get("MAYAK_SYNTHETIC_SCENARIO_RUN_ID") != os.environ.get("MAYAK_ENVIRONMENT_ID"):
         return "usable_listing_page"
-    if os.environ.get("RF24_FORCE_COMPLETE_SAME_LISTING") == "true":
+    if _rf24_hook_enabled() and os.environ.get("RF24_FORCE_COMPLETE_SAME_LISTING") == "true":
         return "usable_listing_page"
     if value in {"usable_listing_page", "usable_listing_page_with_new_listing"}:
         runs = metadata.tables["mayak.scan_runs"]
@@ -70,18 +75,53 @@ def _scenario(session: Any, beacon_id: UUID) -> str:
     return value if value in allowed else "usable_listing_page"
 
 
+def _rf24_hook_enabled() -> bool:
+    return (
+        os.environ.get("MAYAK_RUNTIME_PROFILE") == "synthetic_acceptance"
+        and os.environ.get("MAYAK_SYNTHETIC_SCENARIO_RUN_ID")
+        == os.environ.get("MAYAK_ENVIRONMENT_ID")
+        and os.environ.get("RF24_ACCEPTANCE_HOOKS_ENABLED") == "true"
+        and os.environ.get("RF24_ACCEPTANCE_TECHNICAL_ID")
+        == "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02"
+    )
+
+
+def _rf24_wait_for_release() -> None:
+    """Bounded acceptance control; no production/default runtime path reads it."""
+    if not _rf24_hook_enabled():
+        return
+    configured = os.environ.get("RF24_ACCEPTANCE_CONTROL_FILE")
+    if not configured or len(configured) > 240 or not os.path.isabs(configured):
+        raise RuntimeError("RF24 acceptance control file is missing or unsafe")
+    deadline = time.monotonic() + 90
+    while time.monotonic() < deadline:
+        try:
+            with open(configured, encoding="utf-8") as control:
+                if control.read(32).strip() == "release":
+                    return
+        except FileNotFoundError:
+            pass
+        time.sleep(0.1)
+    raise TimeoutError("RF24 acceptance control release timed out")
+
+
 def process_once(
     composition: RF24RuntimeComposition, *, now: datetime | None = None
 ) -> int:
     moment = now or datetime.now(UTC)
     with composition.sessions() as session:
         repo = composition.scan_repository(session)
+        target_work_item_id = None
+        if _rf24_hook_enabled() and os.environ.get("RF24_TARGET_WORK_ITEM_ID"):
+            target_work_item_id = UUID(os.environ["RF24_TARGET_WORK_ITEM_ID"])
         claims = claim_work(
             repo,
             moment,
             composition.settings.worker.batch_size,
             composition.settings.worker.lease_seconds,
-            reclaim_pending=os.environ.get("RF24_RECLAIM_PENDING") == "true",
+            reclaim_pending=_rf24_hook_enabled()
+            and os.environ.get("RF24_RECLAIM_PENDING") == "true",
+            target_work_item_id=target_work_item_id,
         )
         processed = 0
         LOGGER.info(
@@ -100,7 +140,15 @@ def process_once(
                     "beacon_id": str(claim.beacon_id),
                 }
             )
-            if os.environ.get("RF24_HOLD_AFTER_CLAIM") == "true":
+            if _rf24_hook_enabled() and os.environ.get("RF24_RECLAIM_PENDING") == "true":
+                emit_process_observation(
+                    {
+                        "record_type": "worker_reclaim",
+                        "work_item_id": str(claim.work_item_id),
+                        "reclaim_owner": os.environ.get("RF24_PROCESS_GENERATION", "unknown"),
+                    }
+                )
+            if _rf24_hook_enabled() and os.environ.get("RF24_HOLD_AFTER_CLAIM") == "true":
                 emit_process_observation(
                     {
                         "record_type": "worker_controlled_hold",
@@ -109,6 +157,7 @@ def process_once(
                 )
                 while not os.environ.get("RF24_RELEASE_HOLD") == "true":
                     time.sleep(0.1)
+            run: Any = None
             try:
                 beacon = composition.scan_beacon(session)
                 run = start_run(repo, claim, beacon, now=moment)
@@ -117,12 +166,60 @@ def process_once(
                     claim.work_item_id, claim.schedule_id, run.run_id,
                 )
                 scenario = _scenario(session, run.beacon_id)
-                if scenario == "route_failure":
-                    scenario = "transport_unavailable"
                 session.commit()
-                synthetic = composition.parser.run_synthetic(
-                    scenario, request_id=f"rf24::{run.run_id}"
-                )
+                if _rf24_hook_enabled() and os.environ.get("RF24_HOLD_AFTER_START_RUN") == "true":
+                    emit_process_observation(
+                        {
+                            "record_type": "worker_controlled_hold",
+                            "hold_stage": "post_start_run",
+                            "work_item_id": str(claim.work_item_id),
+                            "run_id": str(run.run_id),
+                        }
+                    )
+                    _rf24_wait_for_release()
+                egress_observation: dict[str, object] | None = None
+                if scenario == "route_failure":
+                    # Exercise the accepted Egress simulator boundary and feed
+                    # its classified transport result through Parser's public
+                    # integration port.  No route credential or payload crosses
+                    # this observation seam.
+                    request = composition.parser.run_synthetic(
+                        "usable_listing_page", request_id=f"rf24::{run.run_id}"
+                    ).attempt.request_envelope
+                    if request is None:
+                        raise RuntimeError("synthetic Egress request envelope is missing")
+                    simulator = EgressAgentSimulator(uuid4())
+                    receipt = simulator.run(SimulatorScenario.ACCEPTED_ASSIGNMENT)
+                    failed = simulator.run(SimulatorScenario.FAILURE)
+                    transport = TransportOutcomeReference(
+                        transport_reference_id=f"egress::{failed.correlation_id}",
+                        transport_status=TransportOutcomeStatus.TRANSPORT_UNAVAILABLE,
+                        request_reference=f"request::{run.run_id}",
+                        route_reference=f"route::{receipt.assignment_id}",
+                        notes=("synthetic acceptance route failure",),
+                    )
+                    synthetic_attempt = composition.parser.consume_egress_transport(
+                        request, transport
+                    )
+                    synthetic = type("SyntheticEgressResult", (), {
+                        "attempt": synthetic_attempt,
+                        "page": None,
+                    })()
+                    egress_observation = {
+                        "record_type": "egress_route_failure",
+                        "work_item_id": str(claim.work_item_id),
+                        "run_id": str(run.run_id),
+                        "route_selection": "accepted_assignment",
+                        "assignment_id": str(receipt.assignment_id),
+                        "transport_reference_id": transport.transport_reference_id,
+                        "outcome": transport.transport_status.value,
+                        "parser_correlation": synthetic_attempt.attempt_id,
+                    }
+                    emit_process_observation(egress_observation)
+                else:
+                    synthetic = composition.parser.run_synthetic(
+                        scenario, request_id=f"rf24::{run.run_id}"
+                    )
                 page = synthetic.page
                 with session.begin():
                     persisted = composition.parser.persist_outcome(
@@ -141,6 +238,18 @@ def process_once(
                     synthetic.attempt.parser_status is ParserOutcomeStatus.USABLE_RESPONSE
                     and page is not None
                 ):
+                    if (
+                        _rf24_hook_enabled()
+                        and os.environ.get("RF24_STALE_ATTEMPT_EXPECTED") == "true"
+                    ):
+                        emit_process_observation(
+                            {
+                                "record_type": "stale_terminal_attempt",
+                                "work_item_id": str(claim.work_item_id),
+                                "run_id": str(run.run_id),
+                                "terminal_operation": "commit_comparison",
+                            }
+                        )
                     comparison = commit_comparison(
                         repo,
                         run,
@@ -181,6 +290,18 @@ def process_once(
                         }
                     )
                 else:
+                    if (
+                        _rf24_hook_enabled()
+                        and os.environ.get("RF24_STALE_ATTEMPT_EXPECTED") == "true"
+                    ):
+                        emit_process_observation(
+                            {
+                                "record_type": "stale_terminal_attempt",
+                                "work_item_id": str(claim.work_item_id),
+                                "run_id": str(run.run_id),
+                                "terminal_operation": "record_parser_outcome",
+                            }
+                        )
                     terminal_state = record_parser_outcome(
                         repo, run, persisted.outcome_id, parser, now=moment
                     )
@@ -196,7 +317,19 @@ def process_once(
                         }
                     )
                 processed += 1
-            except Exception:
+            except Exception as exc:
+                if (
+                    _rf24_hook_enabled()
+                    and os.environ.get("RF24_STALE_ATTEMPT_EXPECTED") == "true"
+                ):
+                    emit_process_observation(
+                        {
+                            "record_type": "stale_terminal_rejected",
+                            "work_item_id": str(claim.work_item_id),
+                            "run_id": str(run.run_id) if run is not None else None,
+                            "rejection_class": type(exc).__name__,
+                        }
+                    )
                 LOGGER.exception("worker failed work_item=%s", claim.work_item_id)
     if processed:
         def fake_provider(_attempt: AttemptLease) -> FakeProviderOutcome:

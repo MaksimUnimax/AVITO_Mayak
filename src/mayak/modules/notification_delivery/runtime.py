@@ -19,7 +19,7 @@ from enum import StrEnum
 from typing import Iterable, Protocol, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, Table, select, text, update
+from sqlalchemy import Select, Table, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -194,6 +194,51 @@ class NotificationHistoryEntry:
     channel_class: str | None
     delivery_status: str
     failure_or_reconciliation: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class NotificationAcceptanceSnapshot:
+    """Owner-derived counts; never includes notification payload or recipient data."""
+
+    source_intake: int
+    outbox_effect: int
+    delivery_attempt: int
+
+
+def acceptance_snapshot(
+    session: Session, *, account_id: UUID, beacon_id: UUID | None = None
+) -> NotificationAcceptanceSnapshot:
+    """Read the bounded RF24 acceptance projection from Notification ownership."""
+    events, outbox, attempts = (
+        _table("notification_events"),
+        _table("notification_outbox"),
+        _table("notification_delivery_attempts"),
+    )
+    scope = events.c.account_id == account_id
+    if beacon_id is not None:
+        scope = scope & (events.c.beacon_id == beacon_id)
+    source_count = session.execute(
+        select(func.count()).select_from(events).where(scope)
+    ).scalar_one()
+    outbox_count = session.execute(
+        select(func.count())
+        .select_from(outbox.join(events, outbox.c.event_id == events.c.id))
+        .where(scope)
+    ).scalar_one()
+    attempt_count = session.execute(
+        select(func.count())
+        .select_from(
+            attempts.join(outbox, attempts.c.outbox_id == outbox.c.id).join(
+                events, outbox.c.event_id == events.c.id
+            )
+        )
+        .where(scope)
+    ).scalar_one()
+    return NotificationAcceptanceSnapshot(
+        source_intake=int(source_count),
+        outbox_effect=int(outbox_count),
+        delivery_attempt=int(attempt_count),
+    )
 
 
 def _table(name: str) -> Table:
@@ -1051,6 +1096,8 @@ __all__ = (
     "TrustedReconciliationEvidence",
     "ProviderNeutralAdapter",
     "NotificationHistoryEntry",
+    "NotificationAcceptanceSnapshot",
+    "acceptance_snapshot",
     "ingest_source",
     "register_endpoint",
     "fanout_event",

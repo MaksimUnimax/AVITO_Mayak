@@ -37,16 +37,59 @@ def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
     before = cast(dict[str, Any], before)
     action = cast(dict[str, Any], action)
     after = cast(dict[str, Any], after)
+    raw_value = item.get("raw_observations")
+    before_value = item.get("durable_before")
+    after_value = item.get("durable_after")
+    notification_value = item.get("notification_deltas")
+    _require(isinstance(raw_value, list) and bool(raw_value), f"{name}: raw primary observations missing")
+    _require(isinstance(before_value, dict) and isinstance(after_value, dict), f"{name}: durable snapshots missing")
+    _require(isinstance(notification_value, dict), f"{name}: notification authority missing")
+    raw = cast(list[object], raw_value)
+    durable_before = cast(dict[str, Any], before_value)
+    durable_after = cast(dict[str, Any], after_value)
+    notification = cast(dict[str, Any], notification_value)
+    _require(all(isinstance(notification.get(key), int) and notification[key] >= 0 for key in ("source_intake", "outbox_effect", "delivery_attempt")), f"{name}: notification authority missing")
+    _require(
+        durable_before.get("observation_source") == "owning-read-model"
+        and durable_after.get("observation_source") == "owning-read-model",
+        f"{name}: durable snapshot source is not authoritative",
+    )
+    _require(
+        notification.get("observation_source") == "notification-delivery-owned-read",
+        f"{name}: notification snapshot source is not Notification Delivery",
+    )
+    before_notification = cast(dict[str, Any], durable_before.get("notification", {}))
+    after_notification = cast(dict[str, Any], durable_after.get("notification", {}))
+    for key in ("source_intake", "outbox_effect", "delivery_attempt"):
+        _require(
+            notification.get(key) == after_notification.get(key, -1) - before_notification.get(key, -1),
+            f"{name}: notification delta was not recomputed from owner snapshots",
+        )
+    if name in {"worker-restart", "partial-parser", "captcha-restriction", "route-failure", "duplicate-listing"}:
+        _require(
+            after.get("new_listing_delta", 0) == durable_after.get("scan_event_count", 0) - durable_before.get("scan_event_count", 0)
+            if name != "duplicate-listing"
+            else after.get("event_delta") == durable_after.get("scan_event_count", 0) - durable_before.get("scan_event_count", 0),
+            f"{name}: Scan event delta was not recomputed from owner snapshot",
+        )
+    for observation in raw:
+        _require(isinstance(observation, dict), f"{name}: malformed raw observation")
+        row = cast(dict[str, Any], observation)
+        _require(row.get("technical_id") == TECHNICAL_ID and row.get("acceptance_run_id") == run_id, f"{name}: raw identity mismatch")
+        if row.get("process_kind") in {"mayak-scheduler", "mayak-worker"}:
+            _require(isinstance(row.get("process_pid"), int) and row["process_pid"] > 0, f"{name}: raw PID missing")
     _require(action.get("public_boundary") == ACTION_BOUNDARIES[name], f"{name}: wrong boundary")
     _require(action.get("actual_action_invoked") not in (None, "", "stub", "TODO"), f"{name}: unwired action")
     _require(action.get("observation_source") not in (None, "hard-coded", "constant"), f"{name}: hard-coded observation")
     _require(action.get("process_observed") is True if name in {"worker-restart", "scheduler-restart"} else True, f"{name}: process observation missing")
     if name == "worker-restart":
         _require(action.get("pid_1") != action.get("pid_2") and action.get("generation_1") != action.get("generation_2"), "worker restart identity reused")
-        _require(after.get("terminal_state") in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"} and after.get("duplicate_effect") is False, "worker restart terminal proof missing")
+        _require(after.get("terminal_state") in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"}, "worker restart terminal proof missing")
+        _require(durable_after.get("authoritative_effect_count") == durable_before.get("authoritative_effect_count"), "worker restart effect delta is not durable")
     elif name == "scheduler-restart":
         _require(action.get("pid_1") != action.get("pid_2") and action.get("generation_1") != action.get("generation_2"), "scheduler restart identity reused")
         _require(after.get("materialized_work_count") == 1 and after.get("persistent_schedule") is True, "scheduler duplicate materialization")
+        _require(any(cast(dict[str, Any], row).get("record_type") == "scheduler_materialization" and cast(dict[str, Any], row).get("materialized_count", 0) >= 1 and cast(dict[str, Any], row).get("work_item_id") for row in raw), "scheduler positive process observation missing")
     elif name == "partial-parser":
         _require(action.get("parser_outcome") == "PARTIAL" and after.get("scan_state") not in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"}, "partial became success")
         _require(after.get("new_listing_delta") == 0 and after.get("notification_effect_delta") == 0, "partial false effect")
@@ -55,18 +98,39 @@ def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
         _require(after.get("new_listing_delta") == 0 and after.get("notification_effect_delta") == 0, "restriction false effect")
     elif name == "route-failure":
         _require(action.get("route_selected") is True and action.get("route_failure_observed") is True and action.get("parser_success") is False, "route failure was not propagated")
+        _require(
+            any(
+                isinstance(row, dict)
+                and row.get("record_type") == "egress_route_failure"
+                and row.get("outcome") in {"FAILURE", "UNAVAILABLE", "TRANSPORT_UNAVAILABLE"}
+                and row.get("parser_correlation") == action.get("parser_attempt_id")
+                and row.get("work_item_id") == item.get("work_id")
+                and row.get("run_id") == item.get("scan_run_id")
+                for row in raw
+            ),
+            "route failure has no correlated Egress observation",
+        )
         _require(after.get("new_listing_delta") == 0 and after.get("notification_effect_delta") == 0, "route false effect")
     elif name == "lost-lease":
-        _require(action.get("owner_a") != action.get("owner_b") and action.get("stale_owner_rejected") is True, "stale owner was not rejected")
-        _require(after.get("authoritative_owner") == action.get("owner_b"), "wrong lease owner")
+        kinds = {cast(dict[str, Any], row).get("record_type") for row in raw}
+        _require({"worker_claim", "worker_reclaim", "stale_terminal_rejected", "worker_terminal"} <= kinds, "lease lifecycle observations incomplete")
+        _require(durable_after.get("authoritative_terminal_count") == 1, "wrong authoritative terminal count")
     elif name == "duplicate-listing":
-        _require(after.get("listing_known") is True and after.get("new_listing_delta") == 0 and after.get("event_delta") == 0 and after.get("notification_effect_delta") == 0, "duplicate listing emitted an effect")
+        _require(bool(isinstance(durable_before.get("listing_identity"), str) and durable_before.get("listing_identity")), "duplicate listing before identity missing")
+        _require(durable_after.get("listing_identity") == durable_before.get("listing_identity"), "duplicate listing identity changed")
+        _require(after.get("new_listing_delta") == 0 and after.get("event_delta") == 0 and after.get("notification_effect_delta") == 0, "duplicate listing emitted an effect")
 
 
 def verify(path: Path, source_sha: str) -> None:
     data = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
     _require(bool(isinstance(data, dict) and data.get("technical_id") == TECHNICAL_ID), "technical ID mismatch")
     _require(data.get("source_sha") == source_sha, "source SHA mismatch")
+    source_observation = data.get("source_sha_observation")
+    _require(isinstance(source_observation, dict), "source SHA observation missing")
+    source_observation = cast(dict[str, Any], source_observation)
+    _require(source_observation.get("observed_sha") == source_sha and source_observation.get("expected_sha") == source_sha, "source SHA was not independently observed")
+    if source_observation.get("github_sha") is not None:
+        _require(source_observation.get("github_sha") == source_sha, "hosted source SHA mismatch")
     run_id = data.get("acceptance_run_id")
     _require(bool(isinstance(run_id, str) and run_id), "run ID missing")
     run_id = cast(str, run_id)

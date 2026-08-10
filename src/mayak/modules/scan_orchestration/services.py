@@ -116,9 +116,13 @@ def claim_work(
     lease_seconds: int,
     *,
     reclaim_pending: bool = False,
+    target_work_item_id: UUID | None = None,
 ) -> list[WorkClaim]:
     with repo.session.begin():
-        return repo.claim(now, limit, lease_seconds, reclaim_pending=reclaim_pending)
+        return repo.claim(
+            now, limit, lease_seconds, reclaim_pending=reclaim_pending,
+            target_work_item_id=target_work_item_id,
+        )
 
 
 def reclaim_work(

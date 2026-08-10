@@ -112,7 +112,8 @@ class ScanRepository:
         return made
 
     def claim(
-        self, now: datetime, limit: int, lease_seconds: int, *, reclaim_pending: bool = False
+        self, now: datetime, limit: int, lease_seconds: int, *, reclaim_pending: bool = False,
+        target_work_item_id: UUID | None = None,
     ) -> list[WorkClaim]:
         if lease_seconds <= 0:
             raise ValueError("lease_seconds must be explicit and positive")
@@ -125,9 +126,12 @@ class ScanRepository:
             .values(state="PENDING_RECONCILIATION", row_version=work.c.row_version + 1)
         )
         claimable = ["DUE", "RETRY"] + (["PENDING_RECONCILIATION"] if reclaim_pending else [])
+        claim_scope = (work.c.state.in_(claimable)) & (work.c.due_at <= now)
+        if target_work_item_id is not None:
+            claim_scope = claim_scope & (work.c.id == target_work_item_id)
         rows = self.session.execute(
             select(work)
-            .where((work.c.state.in_(claimable)) & (work.c.due_at <= now))
+            .where(claim_scope)
             .order_by(work.c.due_at, work.c.id)
             .limit(limit)
             .with_for_update(skip_locked=True)

@@ -14,10 +14,17 @@ _PATH_ENV = {
     "mayak-scheduler": "RF24_SCHEDULER_OBSERVATIONS",
     "mayak-worker": "RF24_WORKER_OBSERVATIONS",
 }
+_TECHNICAL_ID = "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02"
 
 
 def _enabled() -> bool:
-    return os.environ.get("MAYAK_RUNTIME_PROFILE") == "synthetic_acceptance"
+    return (
+        os.environ.get("MAYAK_RUNTIME_PROFILE") == "synthetic_acceptance"
+        and os.environ.get("MAYAK_SYNTHETIC_SCENARIO_RUN_ID")
+        == os.environ.get("MAYAK_ENVIRONMENT_ID")
+        and os.environ.get("RF24_ACCEPTANCE_HOOKS_ENABLED") == "true"
+        and os.environ.get("RF24_ACCEPTANCE_TECHNICAL_ID") == _TECHNICAL_ID
+    )
 
 
 def emit_process_observation(record: dict[str, Any]) -> None:
@@ -36,7 +43,7 @@ def emit_process_observation(record: dict[str, Any]) -> None:
     if not path.is_absolute() or path.is_symlink() or path.name in {"", ".", ".."}:
         raise RuntimeError("RF24 provenance path must be an absolute non-symlink file")
     safe = {
-        "technical_id": "RF24-RUNTIME-VERTICAL-SPINE-01-CORRECTIVE-02",
+        "technical_id": _TECHNICAL_ID,
         "acceptance_run_id": run_id,
         "process_kind": process_kind,
         "process_pid": os.getpid(),

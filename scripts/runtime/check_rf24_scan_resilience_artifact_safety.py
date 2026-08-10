@@ -35,11 +35,24 @@ def findings(paths: list[Path]) -> list[tuple[str, str]]:
     return result
 
 
+def write_result(paths: list[Path], output: Path) -> list[tuple[str, str]]:
+    result = findings(paths)
+    output.write_text(json.dumps({
+        "scanner": "rf24-scan-resilience-artifact-safety",
+        "schema_version": 1,
+        "payload_count": len(paths),
+        "finding_count": len(result),
+        "findings": [{"payload": name, "category": category} for name, category in result],
+    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return result
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("paths", type=Path, nargs="+")
+    p.add_argument("--result", type=Path)
     a = p.parse_args()
-    found = findings(a.paths)
+    found = write_result(a.paths, a.result) if a.result is not None else findings(a.paths)
     if found:
         raise SystemExit(json.dumps({"finding_count": len(found), "findings": found}))
     print(json.dumps({"finding_count": 0}))

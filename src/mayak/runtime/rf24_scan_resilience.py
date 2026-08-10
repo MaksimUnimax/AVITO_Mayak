@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-TECHNICAL_ID: Final = "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01"
+TECHNICAL_ID: Final = "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02"
 SCENARIO_NAMES: Final = (
     "worker-restart",
     "scheduler-restart",

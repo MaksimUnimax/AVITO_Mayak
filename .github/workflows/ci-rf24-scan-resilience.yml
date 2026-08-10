@@ -78,13 +78,15 @@ jobs:
           uv run ruff check src/mayak/runtime/rf24_scan_resilience.py src/mayak/runtime/rf24_provenance.py src/mayak/runtime/worker.py src/mayak/modules/scan_orchestration/repository.py src/mayak/modules/scan_orchestration/services.py scripts/runtime/run_rf24_scan_resilience.py scripts/runtime/verify_rf24_scan_resilience.py scripts/runtime/check_rf24_scan_resilience_artifact_safety.py scripts/runtime/build_rf24_scan_resilience_manifest.py tests/runtime/test_rf24_scan_resilience.py tests/runtime/test_rf24_scan_resilience_integrity.py
           uv run mypy --explicit-package-bases scripts/runtime/run_rf24_scan_resilience.py scripts/runtime/verify_rf24_scan_resilience.py src/mayak/runtime/rf24_scan_resilience.py
           uv run lint-imports
+      - name: Complete repository pytest regression
+        run: uv run pytest -q
       - name: Execute seven real scenarios
         run: |
           uv run python scripts/runtime/run_rf24_scan_resilience.py --repo-root "$GITHUB_WORKSPACE" --output rf24-scan-resilience-evidence.json --probes rf24-scan-resilience-process-probes.json --log rf24-scan-resilience.log --source-sha "$GITHUB_SHA"
           uv run python scripts/runtime/verify_rf24_scan_resilience.py --evidence rf24-scan-resilience-evidence.json --source-sha "$GITHUB_SHA"
-          uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
-          uv run python scripts/runtime/build_rf24_scan_resilience_manifest.py --output rf24-scan-resilience-safety-manifest.json --source-sha "$GITHUB_SHA" --run-id "$(python -c 'import json; print(json.load(open("rf24-scan-resilience-evidence.json"))["acceptance_run_id"])')" rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
-          uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-safety-manifest.json
+          uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py --result rf24-scan-resilience-scanner-result.json rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log
+          uv run python scripts/runtime/build_rf24_scan_resilience_manifest.py --output rf24-scan-resilience-safety-manifest.json --scanner-result rf24-scan-resilience-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$(python -c 'import json; print(json.load(open("rf24-scan-resilience-evidence.json"))["acceptance_run_id"])')" rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log rf24-scan-resilience-scanner-result.json
+          uv run python scripts/runtime/check_rf24_scan_resilience_artifact_safety.py rf24-scan-resilience-evidence.json rf24-scan-resilience-process-probes.json rf24-scan-resilience.log rf24-scan-resilience-scanner-result.json rf24-scan-resilience-safety-manifest.json
       - uses: actions/upload-artifact@v4
         with:
           name: rf24-scan-runtime-resilience
@@ -93,4 +95,5 @@ jobs:
             rf24-scan-resilience-evidence.json
             rf24-scan-resilience-process-probes.json
             rf24-scan-resilience.log
+            rf24-scan-resilience-scanner-result.json
             rf24-scan-resilience-safety-manifest.json
