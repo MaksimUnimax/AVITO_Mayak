@@ -96,8 +96,6 @@ jobs:
             printf 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak\n'
             printf 'RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak\n'
             printf 'MAYAK_RF11_POSTGRES_PASSWORD_FILE=/run/secrets/mayak_database_migration_password\n'
-            printf 'MAYAK_RF10_POSTGRES_PASSWORD_FILE=/run/secrets/mayak_database_application_password\n'
-            printf 'MAYAK_RF10_POSTGRES_USER=mayak_application\nMAYAK_RF10_POSTGRES_HOST=postgres\nMAYAK_RF10_POSTGRES_PORT=5432\nMAYAK_RF10_POSTGRES_DB=mayak\n'
             printf 'MAYAK_RF11_POSTGRES_USER=mayak_migration\nMAYAK_RF11_POSTGRES_HOST=postgres\nMAYAK_RF11_POSTGRES_PORT=5432\nMAYAK_RF11_POSTGRES_DB=mayak\n'
             printf 'MAYAK_SESSION_SIGNING_KEY_FILE=/run/secrets/mayak_session_signing_key\n'
           } >> "$GITHUB_ENV"
@@ -124,7 +122,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           uv run python - <<'PY'
           from mayak.runtime.settings import load_runtime_settings
           load_runtime_settings()
