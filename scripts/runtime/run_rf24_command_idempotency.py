@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import socket
@@ -23,6 +24,20 @@ TECHNICAL_ID = "RF24-COMMAND-IDEMPOTENCY-SCENARIOS-01"
 SCOPE = "beacon_management"
 
 
+def resolve_acceptance_database_host(host: str) -> str:
+    """Resolve a service name for the API child without weakening settings policy."""
+    try:
+        addresses = {
+            ipaddress.ip_address(item[4][0])
+            for item in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        }
+    except OSError as exc:
+        raise RuntimeError("database host resolution failed") from exc
+    if not addresses or any(not address.is_private for address in addresses):
+        raise RuntimeError("database host did not resolve only to private addresses")
+    return sorted(addresses, key=str)[0].compressed
+
+
 def fingerprint(account: str, source_url: str, name: str) -> str:
     value = {
         "command": "create_preparation",
@@ -39,6 +54,7 @@ def request(
     payload: object | None = None,
     key: str | None = None,
     cookie: str | None = None,
+    method: str = "POST",
 ) -> tuple[int, dict[str, Any], str | None]:
     headers = {"Content-Type": "application/json", "Origin": base}
     if key is not None:
@@ -47,7 +63,7 @@ def request(
         headers["Cookie"] = f"mayak_session={cookie}"
     req = urllib.request.Request(
         f"{base}{path}",
-        method="POST",
+        method=method,
         headers=headers,
         data=None if payload is None else json.dumps(payload).encode(),
     )
@@ -57,7 +73,58 @@ def request(
             return response.status, json.loads(raw), response.headers.get("set-cookie")
     except urllib.error.HTTPError as exc:
         raw = exc.read(65536)
-        return exc.code, json.loads(raw) if raw else {}, None
+        try:
+            body = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            body = {"error": "non-json response"}
+        return exc.code, body, None
+
+
+def safe_process_diagnostic(process: subprocess.Popen[str], log_path: Path) -> dict[str, Any]:
+    """Return bounded process state and log metadata, never log contents."""
+    return {
+        "pid": process.pid,
+        "poll": process.poll(),
+        "log": {
+            "path": log_path.name,
+            "exists": log_path.exists(),
+            "size": log_path.stat().st_size if log_path.exists() else 0,
+        },
+    }
+
+
+def safe_http_diagnostic(status: int, body: dict[str, Any]) -> dict[str, Any]:
+    """Keep only bounded, non-secret HTTP failure context."""
+    allowed = {"detail", "error", "reason", "status", "state"}
+    return {
+        "status": status,
+        "body": {key: str(value)[:160] for key, value in body.items() if key in allowed},
+    }
+
+
+def wait_for_api(
+    process: subprocess.Popen[str], base: str, source_sha: str, log_path: Path
+) -> dict[str, Any]:
+    """Probe the safe readiness boundary before attempting synthetic login."""
+    last_version: dict[str, Any] = {}
+    for _ in range(80):
+        state = process.poll()
+        if state is not None:
+            raise RuntimeError(f"api startup failed before readiness: {safe_process_diagnostic(process, log_path)}")
+        try:
+            status, body, _ = request(base, "/version", method="GET")
+            last_version = body
+            if status == 200:
+                if body.get("source_sha") != source_sha:
+                    raise RuntimeError("api /version source SHA mismatch")
+                return body
+        except (OSError, urllib.error.URLError):
+            pass
+        time.sleep(0.25)
+    raise RuntimeError(
+        f"api readiness timeout: {safe_process_diagnostic(process, log_path)} "
+        f"version_status={last_version.get('status', 'unavailable')}"
+    )
 
 
 def snapshot(engine: Any, account: str, key: str, beacon_ids: list[str]) -> dict[str, Any]:
@@ -120,7 +187,7 @@ def one_scenario(
 ) -> dict[str, Any]:
     url = "https://synthetic.invalid/rf24/command"
     payload = {"source_url": url, "name": name}
-    candidate = {"source_url": url, "name": name + "-changed"}
+    candidate = {"source_url": url, "name": name + "-changed"} if changed else payload
     fp = fingerprint(account, url, name)
     candidate_fp = fingerprint(account, url, candidate["name"])
     b0 = snapshot(engine, account, key, [])
@@ -174,6 +241,11 @@ def main() -> None:
         raise SystemExit("MAYAK_RF10_POSTGRES_DSN is required")
     engine = create_engine(dsn)
     env = os.environ.copy()
+    # The parent keeps RF10/RF11 DSNs for tests, but strict API settings reject
+    # those test-only MAYAK_* names as unknown runtime configuration.
+    for key in tuple(env):
+        if key.startswith(("MAYAK_RF10_", "MAYAK_RF11_")):
+            env.pop(key)
     env.update(
         {
             "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance",
@@ -188,6 +260,9 @@ def main() -> None:
             "MAYAK_YOOKASSA_ENABLED": "false",
             "MAYAK_EGRESS_AGENT_ENABLED": "false",
         }
+    )
+    env["MAYAK_DATABASE_HOST"] = resolve_acceptance_database_host(
+        env.get("MAYAK_DATABASE_HOST", "mayak-postgres")
     )
     port = None
     for candidate in range(18080, 18100):
@@ -212,27 +287,43 @@ def main() -> None:
     )
     try:
         base = f"http://127.0.0.1:{port}"
+        wait_for_api(process, base, observed, a.log)
         login_cookie = None
         login: dict[str, Any] = {}
+        login_status = 0
         for _ in range(80):
+            if process.poll() is not None:
+                raise RuntimeError(
+                    f"api exited during synthetic login: {safe_process_diagnostic(process, a.log)}"
+                )
             try:
-                ready, login, set_cookie = request(
+                login_status, login, set_cookie = request(
                     base,
                     "/acceptance/login",
                     payload={"synthetic_subject": run_id},
                     key=f"login-{run_id}",
                 )
-                if ready == 200 and set_cookie:
+                if login_status == 200 and set_cookie:
                     login_cookie = set_cookie
                     break
             except OSError:
                 pass
             time.sleep(0.25)
         if not login_cookie:
-            raise RuntimeError("synthetic login failed")
+            raise RuntimeError(
+                f"synthetic login failed: {safe_http_diagnostic(login_status, login)} "
+                f"process={safe_process_diagnostic(process, a.log)}"
+            )
         cookie = login_cookie.split("=", 1)[1].split(";", 1)[0]
         account = str(login["account_id"])
-        request(base, "/acceptance/entitlement", key=f"entitlement-{run_id}", cookie=cookie)
+        entitlement_status, entitlement_body, _ = request(
+            base, "/acceptance/entitlement", key=f"entitlement-{run_id}", cookie=cookie
+        )
+        if entitlement_status != 200:
+            raise RuntimeError(
+                f"entitlement setup failed: {safe_http_diagnostic(entitlement_status, entitlement_body)} "
+                f"process={safe_process_diagnostic(process, a.log)}"
+            )
         a_item = one_scenario(
             engine, base, account, cookie, name=f"{run_id}-A", key=f"{run_id}-K-A"
         )

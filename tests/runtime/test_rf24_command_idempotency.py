@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import socket
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +11,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[2]))
 
+from scripts.runtime.run_rf24_command_idempotency import (
+    resolve_acceptance_database_host,
+    wait_for_api,
+)
 from scripts.runtime.verify_rf24_command_idempotency import fp, verify
 
 
@@ -131,3 +137,40 @@ def test_adversarial_rejected(mutation):
         bad["scenarios"][1]["second_http"]["status"] = 200
     with pytest.raises(ValueError):
         verify(bad, "a" * 40)
+
+
+def test_invalid_database_runtime_host_fails_closed() -> None:
+    with pytest.raises(RuntimeError, match="resolution failed"):
+        resolve_acceptance_database_host("rf24-host-that-does-not-exist.invalid")
+
+
+def test_valid_private_database_runtime_host_is_accepted() -> None:
+    assert resolve_acceptance_database_host("127.0.0.1") == "127.0.0.1"
+
+
+def test_canonical_database_runtime_host_reaches_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "scripts.runtime.run_rf24_command_idempotency.socket.getaddrinfo",
+        lambda *args, **kwargs: [(None, None, socket.SOCK_STREAM, None, ("10.0.0.2", 0))],
+    )
+    assert resolve_acceptance_database_host("mayak-postgres") == "10.0.0.2"
+
+
+def test_dead_child_is_detected_before_login_retry(tmp_path: Path) -> None:
+    process = subprocess.Popen([sys.executable, "-c", "raise SystemExit(7)"])
+    process.wait()
+    with pytest.raises(RuntimeError, match="before readiness"):
+        wait_for_api(process, "http://127.0.0.1:1", "a" * 40, tmp_path / "api.log")
+
+
+def test_version_source_sha_mismatch_fails_closed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    class LiveProcess:
+        def poll(self) -> int | None:
+            return None
+
+    monkeypatch.setattr(
+        "scripts.runtime.run_rf24_command_idempotency.request",
+        lambda *args, **kwargs: (200, {"source_sha": "b" * 40}, None),
+    )
+    with pytest.raises(RuntimeError, match="source SHA mismatch"):
+        wait_for_api(LiveProcess(), "http://127.0.0.1:1", "a" * 40, tmp_path / "api.log")  # type: ignore[arg-type]
