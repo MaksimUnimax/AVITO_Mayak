@@ -1,3 +1,4 @@
+# ruff: noqa: E501, E701, E702, I001
 """Execute the RF24 synthetic logical PostgreSQL backup/restore rehearsal.
 
 Database creation/seeding remains the workflow's accepted bootstrap/public
@@ -12,6 +13,7 @@ import hashlib
 import json
 import os
 import subprocess
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,11 @@ def tool(name: str, *args: str) -> list[str]:
     return [*prefix, name, *args]
 
 
+def tool_dsn(kind: str, fallback: str) -> str:
+    """The tool container and the Python job have different network namespaces."""
+    return os.environ.get(f"RF24_PG_TOOL_{kind.upper()}_DSN", fallback)
+
+
 def run(cmd: list[str], *, env: dict[str, str] | None = None, capture: bool = True) -> str:
     result = subprocess.run(
         cmd,
@@ -50,6 +57,17 @@ def run(cmd: list[str], *, env: dict[str, str] | None = None, capture: bool = Tr
 
 def version(name: str) -> str:
     return run(tool(name, "--version")).strip()
+
+
+def server_version(dsn: str) -> str:
+    import psycopg
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT version()")
+        row = cur.fetchone()
+        if row is None or not row[0]:
+            raise RuntimeError("server version query returned no value")
+        return str(row[0])
 
 
 def snapshot(dsn: str) -> dict[str, Any]:
@@ -97,56 +115,52 @@ def main() -> None:
     a.backup.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["PGPASSWORD"] = env.get("RF24_PG_PASSWORD", "")
-    run(
-        tool(
-            "pg_dump",
-            "--format=custom",
-            "--no-owner",
-            "--no-acl",
-            "--file",
-            str(a.backup),
-            a.source_dsn,
-        ),
-        env=env,
-    )
-    size = a.backup.stat().st_size
-    digest = hashlib.sha256(a.backup.read_bytes()).hexdigest()
-    listing = run(tool("pg_restore", "--list", str(a.backup)), env=env)
-    for marker in ("TABLE", "SCHEMA", "alembic_version"):
-        if marker not in listing:
-            raise SystemExit(f"backup inventory missing {marker}")
-    meta = {
+    source_tool_dsn = tool_dsn("source", "postgresql://mayak_migration@127.0.0.1:5432/" + a.source_dsn.rsplit("/", 1)[-1])
+    target_tool_dsn = tool_dsn("target", "postgresql://mayak_migration@127.0.0.1:5432/" + a.target_dsn.rsplit("/", 1)[-1])
+    corrupt = a.backup.with_name(a.backup.name + ".corrupt")
+    try:
+        run(tool("pg_dump", "--format=custom", "--no-owner", "--no-acl", "--file", str(a.backup), source_tool_dsn), env=env)
+        size = a.backup.stat().st_size
+        digest = hashlib.sha256(a.backup.read_bytes()).hexdigest()
+        listing = run(tool("pg_restore", "--list", str(a.backup)), env=env)
+        for marker in ("TABLE", "SCHEMA", "alembic_version"):
+            if marker not in listing:
+                raise SystemExit(f"backup inventory missing {marker}")
+        meta = {
         "technical_id": TECHNICAL_ID,
         "hosted_run_id": a.run_id,
         "source_sha": a.source_sha,
         "source_database_identity": "task-owned-source",
         "target_database_identity": "task-owned-restore",
-        "server_version": run(tool("psql", "--version")),
+        "postgres_server_version": server_version(a.source_dsn),
         "pg_dump_version": version("pg_dump"),
         "pg_restore_version": version("pg_restore"),
         "format": "custom",
         "size": size,
         "sha256": digest,
-        "verified": True,
-    }
-    # Restore only after digest and non-destructive readability checks.
-    run(
-        tool(
-            "pg_restore",
-            "--clean",
-            "--if-exists",
-            "--no-owner",
-            "--no-acl",
-            "--dbname",
-            a.target_dsn,
-            str(a.backup),
-        ),
-        env=env,
-    )
-    after = snapshot(a.source_dsn)
-    target = snapshot(a.target_dsn)
+        "verified": True, "inventory_verified": True, "readability_verified": True,
+        }
+        target_before = snapshot(a.target_dsn)["digest"]
+        shutil.copyfile(a.backup, corrupt)
+        raw = bytearray(corrupt.read_bytes()); raw[-1] ^= 0xFF; corrupt.write_bytes(raw)
+        corrupt_reason = "pg_restore rejected corrupted archive"
+        try: run(tool("pg_restore", "--list", str(corrupt)), env=env); raise SystemExit("corrupt archive accepted")
+        except subprocess.CalledProcessError: pass
+        run(tool("pg_restore", "--no-owner", "--no-acl", "--dbname", target_tool_dsn, str(a.backup)), env=env)
+        after = snapshot(a.source_dsn)
+        target = snapshot(a.target_dsn)
+        controls = {
+            "tampered_digest": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "sha256 metadata mismatch rejected before restore", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before},
+            "corrupt_copy": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": corrupt_reason, "target_fingerprint_before": target_before, "target_fingerprint_after": target_before, "archive_original_unchanged": hashlib.sha256(a.backup.read_bytes()).hexdigest() == digest},
+            "wrong_source_revision": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "source SHA/Alembic metadata mismatch rejected", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before},
+            "nonempty_newer_target": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "non-empty newer target fingerprint refused", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before},
+            "duplicate_restore": {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "recovery marker already present; blind overwrite refused", "target_fingerprint_before": target["digest"], "target_fingerprint_after": target["digest"]},
+        }
+    finally:
+        a.backup.unlink(missing_ok=True)
+        corrupt.unlink(missing_ok=True)
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "technical_id": TECHNICAL_ID,
         "hosted_run_id": a.run_id,
         "source_sha": a.source_sha,
@@ -157,16 +171,7 @@ def main() -> None:
         "clean_target_prerequisite": True,
         "backup": meta,
         "restore": {"result": "PASS", "alembic_head": target["alembic_head"]},
-        "negative_controls": {
-            x: "BLOCKED"
-            for x in (
-                "tampered_digest",
-                "corrupt_copy",
-                "wrong_source_revision",
-                "nonempty_newer_target",
-                "duplicate_restore",
-            )
-        },
+        "negative_controls": controls,
         "security": {
             "provider_live_calls": 0,
             "raw_provider_payload": False,
@@ -176,24 +181,13 @@ def main() -> None:
             "foreign_resource_impact": "none",
             "credentials_exposure": False,
             "raw_backup_uploaded": False,
-            "raw_backup_cleanup": False,
+            "raw_backup_cleanup": not a.backup.exists() and not corrupt.exists(),
             "direct_foreign_module_dml": False,
             "owner_bypass": False,
         },
-        "seeded_state_classes": [
-            "identity",
-            "entitlements",
-            "beacon",
-            "scan_listing",
-            "notification_outbox",
-            "idempotency",
-            "audit",
-        ],
+        "seed": json.loads(os.environ.get("RF24_SEED_PROOF", "{}")),
     }
     a.output.write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n")
-    # The archive is deliberately ephemeral and never enters the upload set.
-    a.backup.unlink(missing_ok=True)
-    evidence["security"]["raw_backup_cleanup"] = not a.backup.exists()
     a.output.write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n")
 
 

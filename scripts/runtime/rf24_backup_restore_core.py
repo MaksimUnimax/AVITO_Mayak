@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Pure, fail-closed checks for the RF24 PostgreSQL recovery rehearsal.
 
 The module deliberately contains no database authority.  It validates the
@@ -44,7 +45,7 @@ def verify_evidence(
     evidence: dict[str, Any], *, source_sha: str, run_id: str | None = None
 ) -> dict[str, Any]:
     require(evidence.get("technical_id") == TECHNICAL_ID, "technical identity mismatch")
-    require(evidence.get("schema_version") == 1, "unsupported evidence schema")
+    require(evidence.get("schema_version") == 2, "unsupported evidence schema")
     require(
         re.fullmatch(r"[0-9a-f]{40}", str(evidence.get("source_sha", "")))
         and evidence["source_sha"] == source_sha,
@@ -54,7 +55,15 @@ def verify_evidence(
         require(evidence.get("hosted_run_id") == run_id, "hosted run identity mismatch")
     require(evidence.get("backup", {}).get("sha256"), "backup digest missing")
     require(int(evidence.get("backup", {}).get("size", 0)) > 0, "backup size missing")
-    require(evidence.get("backup", {}).get("verified") is True, "backup not verified")
+    backup = evidence.get("backup", {})
+    require(backup.get("verified") is True, "backup not verified")
+    require(backup.get("format") == "custom", "logical custom backup required")
+    require(backup.get("inventory_verified") is True, "backup inventory not verified")
+    require(backup.get("readability_verified") is True, "backup readability not verified")
+    require(backup.get("pg_dump_version"), "pg_dump version proof missing")
+    require(backup.get("pg_restore_version"), "pg_restore version proof missing")
+    require(backup.get("postgres_server_version"), "server version proof missing")
+    require("server_version" not in backup, "mislabeled server version proof")
     require(evidence.get("restore", {}).get("result") == "PASS", "restore failed")
     require(
         evidence.get("source_fingerprint_before") == evidence.get("source_fingerprint_after"),
@@ -65,7 +74,18 @@ def verify_evidence(
     )
     controls = evidence.get("negative_controls", {})
     for name in REQUIRED_CONTROLS:
-        require(controls.get(name) == "BLOCKED", f"negative control not blocked: {name}")
+        control = controls.get(name)
+        require(isinstance(control, dict), f"negative control proof missing: {name}")
+        require(control.get("executed") is True, f"negative control not executed: {name}")
+        require(control.get("preflight_result") == "BLOCKED", f"negative control not blocked: {name}")
+        require(control.get("observed_reason"), f"negative control reason missing: {name}")
+        require(control.get("target_fingerprint_before"), f"negative control target proof missing: {name}")
+        require(control.get("target_fingerprint_after") == control.get("target_fingerprint_before"), f"negative control mutated target: {name}")
+    seed = evidence.get("seed", {})
+    require(seed.get("runtime_boundary") == "accepted-public-runtime", "runtime seed proof missing")
+    seeded = seed.get("state_classes", {})
+    require(isinstance(seeded, dict) and seeded, "seed state proof missing")
+    require(all(isinstance(v, dict) and int(v.get("count", 0)) > 0 and v.get("projection_digest") for v in seeded.values()), "seed state is not meaningful")
     security = evidence.get("security", {})
     for name, expected in {
         "provider_live_calls": 0,
@@ -83,7 +103,7 @@ def verify_evidence(
         require(security.get(name) == expected, f"security invariant failed: {name}")
     require(evidence.get("clean_target_prerequisite") is True, "clean target prerequisite missing")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "technical_id": TECHNICAL_ID,
         "source_sha": source_sha,
         "verdict": "PASS",
@@ -91,6 +111,7 @@ def verify_evidence(
 
 
 def scan_paths(paths: list[Path]) -> dict[str, Any]:
+    require(paths == list(dict.fromkeys(paths)), "artifact upload set contains duplicates")
     findings: list[dict[str, str]] = []
     for path in paths:
         if not path.is_file() or path.stat().st_size == 0:
@@ -124,13 +145,17 @@ def build_manifest(
     paths: list[Path], *, source_sha: str, run_id: str, scanner: dict[str, Any]
 ) -> dict[str, Any]:
     require(scanner.get("finding_count") == 0, "artifact scanner is not clean")
+    expected_names = {p.name for p in paths}
+    require(set(scanner.get("sha256", {})) == expected_names, "scanner set is not the upload set")
+    require(all(p.suffix.lower() not in RAW_SUFFIXES for p in paths), "raw backup in upload set")
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "artifact_name": "rf24-backup-restore",
         "technical_id": TECHNICAL_ID,
         "source_sha": source_sha,
         "hosted_run_id": run_id,
         "raw_backup_excluded": True,
+        "upload_set_exact": True,
         "finding_count": 0,
         "files": [
             {

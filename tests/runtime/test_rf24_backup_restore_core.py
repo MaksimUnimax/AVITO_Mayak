@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import json
@@ -12,18 +13,18 @@ SHA = "a" * 40
 
 def good() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "technical_id": "RF24-BACKUP-RESTORE-SCENARIO-01",
         "source_sha": SHA,
         "hosted_run_id": "123",
-        "backup": {"sha256": "b" * 64, "size": 12, "verified": True},
+        "backup": {"sha256": "b" * 64, "size": 12, "verified": True, "format": "custom", "inventory_verified": True, "readability_verified": True, "pg_dump_version": "pg_dump (PostgreSQL) 18.0", "pg_restore_version": "pg_restore (PostgreSQL) 18.0", "postgres_server_version": "PostgreSQL 18.0"},
         "restore": {"result": "PASS"},
         "source_fingerprint_before": "x",
         "source_fingerprint_after": "x",
         "target_semantic_equivalence": True,
         "clean_target_prerequisite": True,
         "negative_controls": {
-            x: "BLOCKED"
+            x: {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "synthetic observed rejection", "target_fingerprint_before": "target", "target_fingerprint_after": "target"}
             for x in (
                 "tampered_digest",
                 "corrupt_copy",
@@ -32,6 +33,7 @@ def good() -> dict[str, object]:
                 "duplicate_restore",
             )
         },
+        "seed": {"runtime_boundary": "accepted-public-runtime", "state_classes": {"identity": {"count": 1, "projection_digest": "a"}}},
         "security": {
             "provider_live_calls": 0,
             "raw_provider_payload": False,
