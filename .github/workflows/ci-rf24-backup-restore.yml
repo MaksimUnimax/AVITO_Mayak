@@ -119,10 +119,16 @@ jobs:
           for database in (source, target, conflict):
               with psycopg.connect(f"host=postgres dbname={database} user=mayak_migration password=migration-only", autocommit=True) as conn:
                   with conn.cursor() as cur:
+                      cur.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO mayak_application").format(sql.Identifier(database)))
                       cur.execute("CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration")
                       cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
                       cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
                       cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
+          with psycopg.connect(f"host=postgres dbname={source} user=mayak_application password=application-only") as conn:
+              with conn.cursor() as cur:
+                  cur.execute("SELECT has_schema_privilege(current_user, 'mayak', 'USAGE'), count(*) FROM mayak.alembic_version")
+                  usage, count = cur.fetchone()
+                  assert usage is True and count > 0
           with psycopg.connect(f"host=postgres dbname={target} user=mayak_migration password=migration-only") as conn:
               with conn.cursor() as cur:
                   cur.execute("SELECT to_regclass('mayak.alembic_version')")
