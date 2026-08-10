@@ -50,12 +50,8 @@ jobs:
           command -v bash
           bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
           actual_sha="$(git rev-parse --verify HEAD)"
-          test "${#actual_sha}" -eq 40
           printf 'CHECKOUT_HEAD=%s\n' "$actual_sha"
-          export GITHUB_SHA="$actual_sha" MAYAK_SOURCE_SHA="$actual_sha"
-          printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
-          printf 'MAYAK_SOURCE_SHA=%s\n' "$MAYAK_SOURCE_SHA"
-          printf 'MAYAK_SOURCE_SHA=%s\n' "$MAYAK_SOURCE_SHA" >> "$GITHUB_ENV"
+          test "$actual_sha" = "$GITHUB_SHA"
           ! git config --get-all safe.directory | grep -Fxq '*'
       - name: Compute lock and image identity
         shell: bash
