@@ -30,7 +30,7 @@ from mayak.persistence.metadata import metadata
 from mayak.platform.correlation import CorrelationContext, CorrelationId
 from mayak.runtime.rf24_composition import build_rf24_composition
 from mayak.runtime.scheduler import run_once as scheduler_run_once
-from mayak.runtime.settings import load_runtime_settings
+from mayak.runtime.settings import RuntimeConfigurationError, load_runtime_settings
 from mayak.runtime.worker import process_once as worker_process_once
 
 TECHNICAL_ID = "RF24-EXPIRED-ACCESS-SCENARIO-01"
@@ -92,7 +92,11 @@ def main() -> int:
         os.environ.get("MAYAK_DATABASE_HOST", "postgres")
     )
     os.environ["MAYAK_SYNTHETIC_SCENARIO_RUN_ID"] = os.environ.get("MAYAK_ENVIRONMENT_ID", run_id)
-    settings = load_runtime_settings()
+    try:
+        settings = load_runtime_settings()
+    except RuntimeConfigurationError as exc:
+        print(f"runtime-config-error={exc.reason_code}:{','.join(exc.fields)}")
+        return 1
     clock_value = datetime.now(UTC)
     composition = build_rf24_composition(settings, clock=lambda: clock_value)
     t0 = clock_value - timedelta(seconds=1)
