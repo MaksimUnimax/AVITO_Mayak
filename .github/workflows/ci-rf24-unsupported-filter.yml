@@ -47,6 +47,8 @@ jobs:
       - name: H0 exact checkout and shell proof
         run: |
           set -euo pipefail
+          git config --global --unset-all safe.directory || true
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           bash -c 'set -euo pipefail; true'
       - uses: astral-sh/setup-uv@v6
