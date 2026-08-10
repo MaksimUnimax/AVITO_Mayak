@@ -58,7 +58,6 @@ jobs:
         run: |
           set -euo pipefail
           workspace="$(pwd -P)"
-          test "$workspace" = "$GITHUB_WORKSPACE"
           {
             echo 'GIT_CONFIG_COUNT=1'
             echo 'GIT_CONFIG_KEY_0=safe.directory'
@@ -102,8 +101,9 @@ jobs:
       - name: Prove hosted execution environment
         run: |
           set -euo pipefail
+          workspace="$(pwd -P)"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git config --get-all safe.directory)" = "$GITHUB_WORKSPACE"
+          test "$(git config --get-all safe.directory)" = "$workspace"
           ! git config --get-all safe.directory | grep -Fxq '*'
           test -S /var/run/docker.sock
           docker version
