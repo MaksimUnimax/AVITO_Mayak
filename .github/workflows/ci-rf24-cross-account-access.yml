@@ -24,15 +24,27 @@ jobs:
       UV_VERSION: 0.11.31
       MAYAK_ENVIRONMENT_ID: avito-mayak-rf24-cross-account-${{ github.run_id }}
       MAYAK_SOURCE_SHA: ${{ github.sha }}
+      MAYAK_RUNTIME_PROFILE: synthetic_acceptance
+      MAYAK_DATABASE_PORT: "5432"
+      MAYAK_DATABASE_NAME: mayak
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_SECRETS_DIR: /run/secrets
+      DOCKER_HOST: unix:///var/run/docker.sock
+      MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+      MAYAK_RF11_POSTGRES_USER: mayak_migration
+      MAYAK_RF11_POSTGRES_HOST: postgres
+      MAYAK_RF11_POSTGRES_PORT: "5432"
+      MAYAK_RF11_POSTGRES_DB: mayak
       MAYAK_LOCK_IDENTITY: e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
       MAYAK_IMAGE_DIGEST: sha256:cdbec06878c8a31b10763e62a8b2dbdb74a8c2263770827d8859e0c1516671af
       MAYAK_PROCESS_KIND: mayak-worker
       MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
       MAYAK_AVITO_LIVE_ENABLED: "false"
-      MAYAK_TELEGRAM_LIVE_ENABLED: "false"
-      MAYAK_MAX_LIVE_ENABLED: "false"
-      MAYAK_YOOKASSA_LIVE_ENABLED: "false"
-      MAYAK_WINDOWS_EGRESS_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_MAX_ENABLED: "false"
+      MAYAK_YOOKASSA_ENABLED: "false"
+      MAYAK_EGRESS_AGENT_ENABLED: "false"
       MAYAK_DATABASE_HOST: postgres
       MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak:bootstrap-only@postgres:5432/mayak
       MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak:bootstrap-only@postgres:5432/mayak
@@ -64,6 +76,7 @@ jobs:
           printf '%s\n' migration-only > /run/secrets/mayak_database_migration_password
           printf '%s\n' application-only > /run/secrets/mayak_database_application_password
           printf '%s\n' session-signing-key-acceptance-only > /run/secrets/mayak_session_signing_key
+          printf '%s\n' bootstrap-only > /run/secrets/mayak_postgres_bootstrap_password
           chmod 600 /run/secrets/*
           PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 <<'SQL'
           CREATE ROLE mayak_migration LOGIN CREATEDB PASSWORD 'migration-only';
