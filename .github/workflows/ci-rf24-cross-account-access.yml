@@ -24,8 +24,8 @@ jobs:
       UV_VERSION: 0.11.31
       MAYAK_ENVIRONMENT_ID: avito-mayak-rf24-cross-account-${{ github.run_id }}
       MAYAK_SOURCE_SHA: ${{ github.sha }}
-      MAYAK_LOCK_IDENTITY: ${{ hashFiles('uv.lock') }}
-      MAYAK_IMAGE_DIGEST: sha256:${{ hashFiles('Dockerfile') }}
+      MAYAK_LOCK_IDENTITY: pending-shell-proof
+      MAYAK_IMAGE_DIGEST: pending-shell-proof
       MAYAK_PROCESS_KIND: mayak-worker
       MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
       MAYAK_AVITO_LIVE_ENABLED: "false"
@@ -45,6 +45,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "MAYAK_LOCK_IDENTITY=$(sha256sum uv.lock | awk '{print $1}')" >> "$GITHUB_ENV"
+          echo "MAYAK_IMAGE_DIGEST=sha256:$(sha256sum Dockerfile | awk '{print $1}')" >> "$GITHUB_ENV"
           bash --version
       - name: Install exact uv and frozen dependencies
         shell: bash
