@@ -97,7 +97,6 @@ jobs:
             --output /usr/libexec/docker/cli-plugins/docker-buildx \
             https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64
           chmod 755 /usr/libexec/docker/cli-plugins/docker-buildx
-          docker buildx version | grep -F 'v0.31.1'
       - name: Prove hosted execution environment
         run: |
           set -euo pipefail
@@ -107,7 +106,7 @@ jobs:
           ! git config --get-all safe.directory | grep -Fxq '*'
           test -S /var/run/docker.sock
           docker version
-          docker buildx version
+          docker buildx version | grep -F 'v0.31.1'
       - name: Focused tests and affected gates
         run: |
           uv run pytest -q tests/runtime/test_rf24_scan_resilience.py tests/runtime/test_rf24_scan_resilience_integrity.py
