@@ -404,7 +404,7 @@ def main() -> int:
                 "unknown_field_blocked": unknown.candidate.candidate_outcome.candidate_state.value
                 in {"REJECTED", "BLOCKED"},
                 "wrong_scope_fallback_denied": wrong_scope.candidate.candidate_outcome.candidate_state.value
-                in {"UNSUPPORTED", "BLOCKED"},
+                in {"REJECTED", "UNSUPPORTED", "BLOCKED"},
                 "baseline": {
                     "account_id": str(account_id),
                     "beacon_id": str(beacon_id),
