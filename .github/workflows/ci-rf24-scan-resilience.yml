@@ -87,11 +87,14 @@ jobs:
           chmod 600 /run/secrets/mayak_database_*_password
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -c "GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;"
-      - name: Install hosted Docker CLI and buildx
+      - name: Install hosted Docker CLI
         run: |
           set -euo pipefail
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io curl
+      - name: Install pinned hosted buildx plugin
+        run: |
+          set -euo pipefail
           install -d -m 755 /usr/libexec/docker/cli-plugins
           curl --fail --silent --show-error --location \
             --output /usr/libexec/docker/cli-plugins/docker-buildx \
