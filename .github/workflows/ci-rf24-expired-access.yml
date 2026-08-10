@@ -1,0 +1,54 @@
+name: rf24-expired-access
+
+on:
+  push:
+    branches: [rf24-expired-access-scenario-01]
+  workflow_dispatch:
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-24.04
+    env:
+      UV_VERSION: 0.11.31
+      PYTHON_VERSION: 3.14.6
+      MAYAK_DATABASE_HOST: postgres
+      MAYAK_DATABASE_PORT: 5432
+      MAYAK_DATABASE_NAME: mayak_rf24
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_AVITO_LIVE: "false"
+      MAYAK_TELEGRAM_LIVE: "false"
+      MAYAK_MAX_LIVE: "false"
+      MAYAK_YOOKASSA_LIVE: "false"
+      PYTHONPATH: .
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: task-owned-bootstrap
+          POSTGRES_DB: mayak_rf24
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mayak_rf24"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: rf24-expired-access-scenario-01, fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14.6'}
+      - uses: astral-sh/setup-uv@v6
+        with: {version: '0.11.31', enable-cache: true}
+      - run: uv sync --frozen
+      - run: git diff --exit-code 6b1d7289a38e6195b7244199ae4ee1caf46eae45..HEAD -- pyproject.toml uv.lock
+      - run: uv run pytest -q tests/runtime/test_rf24_expired_access_core.py tests/runtime/test_rf24_expired_access_integrity.py tests/runtime/test_rf24_expired_access_ownership.py
+      - run: uv run python scripts/runtime/check_rf24_expired_access_ownership.py .
+      - run: uv run ruff check src tests scripts
+      - run: uv run mypy src
+      - run: uv run lint-imports
+      - run: uv run pytest -q --disable-warnings --maxfail=1 | tee rf24-expired-access-full-pytest.log
+      - run: uv run python scripts/runtime/run_rf24_expired_access.py --real-postgres --artifacts .
+      - run: uv run python scripts/runtime/verify_rf24_expired_access.py rf24-expired-access-evidence.json "$GITHUB_SHA"
+      - run: uv run python scripts/runtime/check_rf24_expired_access_artifact_safety.py rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-verifier-result.json rf24-expired-access-full-pytest.log
+      - run: uv run python scripts/runtime/build_rf24_expired_access_manifest.py . "$GITHUB_SHA" "$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@v4
+        with: {name: rf24-expired-access, path: 'rf24-expired-access*'}
