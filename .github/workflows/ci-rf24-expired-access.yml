@@ -29,6 +29,19 @@ jobs:
       MAYAK_DATABASE_NAME: mayak
       MAYAK_DATABASE_APPLICATION_USER: mayak_application
       MAYAK_DATABASE_MIGRATION_USER: mayak_migration
+      MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      RF10_POSTGRES_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
+      RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      RF24_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+      MAYAK_RF11_POSTGRES_USER: mayak_migration
+      MAYAK_RF11_POSTGRES_HOST: postgres
+      MAYAK_RF11_POSTGRES_PORT: "5432"
+      MAYAK_RF11_POSTGRES_DB: mayak
+      MAYAK_SECRETS_DIR: /run/secrets
+      DOCKER_HOST: unix:///var/run/docker.sock
       MAYAK_RUNTIME_PROFILE: synthetic_acceptance
       MAYAK_API_BIND_HOST: 127.0.0.1
       MAYAK_API_HOST_PORT: disabled
@@ -85,13 +98,52 @@ jobs:
           CREATE SCHEMA mayak AUTHORIZATION mayak_migration;
           GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;
           SQL
-          echo "RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak" >> "$GITHUB_ENV"
+          printf '%s\n' 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak' >> "$GITHUB_ENV"
       - name: Initial migration zero to head
         run: |
           set -euo pipefail
           uv run alembic downgrade base
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
+      - name: Install hosted Docker CLI and buildx
+        run: |
+          set -euo pipefail
+          install -d -m 755 /usr/libexec/docker/cli-plugins
+          python - <<'PY'
+          import hashlib
+          import tarfile
+          import tempfile
+          from pathlib import Path
+          from urllib.request import urlopen
+
+          docker_url = "https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz"
+          docker_sha256 = "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
+          buildx_url = "https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64"
+          buildx_sha256 = "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
+          with tempfile.TemporaryDirectory() as directory:
+              root = Path(directory)
+              docker_archive = root / "docker-29.2.1.tgz"
+              buildx_binary = root / "docker-buildx-v0.31.1"
+              with urlopen(docker_url) as response:
+                  docker_archive.write_bytes(response.read())
+              with urlopen(buildx_url) as response:
+                  buildx_binary.write_bytes(response.read())
+              if hashlib.sha256(docker_archive.read_bytes()).hexdigest() != docker_sha256:
+                  raise SystemExit("Docker CLI archive SHA-256 mismatch")
+              if hashlib.sha256(buildx_binary.read_bytes()).hexdigest() != buildx_sha256:
+                  raise SystemExit("Docker buildx binary SHA-256 mismatch")
+              with tarfile.open(docker_archive) as package:
+                  member = package.extractfile(package.getmember("docker/docker"))
+                  if member is None:
+                      raise SystemExit("Docker CLI executable missing from archive")
+                  docker_target = Path("/usr/local/bin/docker")
+                  docker_target.write_bytes(member.read())
+                  docker_target.chmod(0o755)
+              buildx_target = Path("/usr/libexec/docker/cli-plugins/docker-buildx")
+              buildx_target.write_bytes(buildx_binary.read_bytes())
+              buildx_target.chmod(0o755)
+          docker version
+          docker buildx version | grep -F 'v0.31.1'
       - name: Focused, one-to-one, ownership and workflow gates
         run: |
           set -euo pipefail
@@ -117,6 +169,7 @@ jobs:
           PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER mayak_migration"
           printf 'MAYAK_DATABASE_NAME=%s\n' "$db" >> "$GITHUB_ENV"
           printf 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/%s\n' "$db" >> "$GITHUB_ENV"
+          printf 'RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/%s\n' "$db" >> "$GITHUB_ENV"
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;'
           uv run alembic downgrade base
           uv run alembic upgrade head

@@ -35,6 +35,25 @@ REQUIRED = (
     "actions/upload-artifact@v4",
 )
 
+ENVIRONMENT = {
+    "MAYAK_RF10_POSTGRES_DSN": "postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak",
+    "MAYAK_RF11_POSTGRES_DSN": "postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak",
+    "RF10_POSTGRES_DSN": "postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak",
+    "RF11_POSTGRES_DSN": "postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak",
+    "RF15_MIGRATION_DSN": "postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak",
+    "RF24_DSN": "postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak",
+    "MAYAK_RF11_POSTGRES_PASSWORD_FILE": "/run/secrets/mayak_database_migration_password",
+    "MAYAK_RF11_POSTGRES_USER": "mayak_migration",
+    "MAYAK_RF11_POSTGRES_HOST": "postgres",
+    "MAYAK_RF11_POSTGRES_PORT": '"5432"',
+    "MAYAK_RF11_POSTGRES_DB": "mayak",
+    "MAYAK_SECRETS_DIR": "/run/secrets",
+    "DOCKER_HOST": "unix:///var/run/docker.sock",
+}
+
+DOCKER_CLI_SHA256 = "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3"
+DOCKER_BUILDX_SHA256 = "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e"
+
 
 def _step_positions(text: str) -> dict[str, int]:
     names = re.findall(r"^      - name: (.+)$", text, re.M)
@@ -97,6 +116,23 @@ def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list
         failures.append("fresh-post-suite-db-binding")
     if 'MAYAK_AVITO_LIVE_ENABLED: "false"' not in text:
         failures.append("live-provider-enable")
+    full_pytest = text.find("Complete repository pytest")
+    docker_step = text.find("Install hosted Docker CLI and buildx")
+    if docker_step < 0:
+        failures.append("missing-docker-installation")
+    elif full_pytest >= 0 and docker_step > full_pytest:
+        failures.append("docker-install-after-full-pytest")
+    for key, value in ENVIRONMENT.items():
+        if f"{key}: {value}" not in text:
+            failures.append(f"missing-environment:{key}")
+    if "docker-29.2.1.tgz" not in text or DOCKER_CLI_SHA256 not in text:
+        failures.append("docker-cli-unpinned-or-wrong-digest")
+    if "buildx-v0.31.1.linux-amd64" not in text or DOCKER_BUILDX_SHA256 not in text:
+        failures.append("buildx-unpinned-or-wrong-digest")
+    if not re.search(r"(?m)^\s+docker version\s*$", text):
+        failures.append("missing-docker-version-proof")
+    if not re.search(r"(?m)^\s+docker buildx version\s+\|\s+grep -F 'v0\.31\.1'\s*$", text):
+        failures.append("missing-buildx-version-proof")
     return sorted(set(failures))
 
 

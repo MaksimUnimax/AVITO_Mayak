@@ -99,6 +99,51 @@ def test_workflow_negative_cases_execute_actual_validator(case_id: str, needle: 
 
 
 @pytest.mark.parametrize(
+    ("case_id", "needle"),
+    [
+        ("missing-rf10-dsn", "MAYAK_RF10_POSTGRES_DSN:"),
+        ("missing-rf11-dsn", "MAYAK_RF11_POSTGRES_DSN:"),
+        ("missing-rf11-password-file", "MAYAK_RF11_POSTGRES_PASSWORD_FILE:"),
+        ("wrong-rf11-password-file", "/run/secrets/mayak_database_migration_password"),
+        ("missing-rf11-host", "MAYAK_RF11_POSTGRES_HOST:"),
+        ("missing-rf11-db", "MAYAK_RF11_POSTGRES_DB:"),
+        ("missing-rf15-dsn", "RF15_MIGRATION_DSN:"),
+        ("missing-secrets-dir", "MAYAK_SECRETS_DIR:"),
+        ("missing-docker-host", "DOCKER_HOST:"),
+        ("missing-docker-install", "Install hosted Docker CLI and buildx"),
+        ("unpinned-docker-cli", "docker-29.2.1.tgz"),
+        (
+            "wrong-docker-cli-sha",
+            "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3",
+        ),
+        ("missing-buildx-install", "buildx-v0.31.1.linux-amd64"),
+        ("unpinned-buildx", "v0.31.1"),
+        (
+            "wrong-buildx-sha",
+            "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e",
+        ),
+        ("missing-docker-version-proof", "docker version"),
+        ("missing-buildx-version-proof", "docker buildx version"),
+    ],
+)
+def test_workflow_environment_and_docker_negative_cases_execute_actual_validator(
+    case_id: str, needle: str
+) -> None:
+    workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
+    if case_id == "wrong-rf11-password-file":
+        mutated = workflow.replace(needle, "/run/secrets/wrong")
+    elif case_id in {"wrong-docker-cli-sha", "wrong-buildx-sha"}:
+        mutated = workflow.replace(needle, "0" * 64)
+    elif case_id == "missing-docker-version-proof":
+        mutated = workflow.replace("docker version", "docker version-disabled")
+    elif case_id == "missing-buildx-version-proof":
+        mutated = workflow.replace("docker buildx version", "docker buildx version-disabled")
+    else:
+        mutated = workflow.replace(needle, "")
+    assert validate(mutated), case_id
+
+
+@pytest.mark.parametrize(
     ("base", "candidate", "changed", "accepted"),
     [
         (
