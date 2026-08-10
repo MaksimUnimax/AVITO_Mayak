@@ -59,10 +59,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export MAYAK_SOURCE_SHA="${{ github.sha }}"
-          echo "MAYAK_SOURCE_SHA=$MAYAK_SOURCE_SHA" >> "$GITHUB_ENV"
-          echo "MAYAK_LOCK_IDENTITY=$(sha256sum uv.lock | awk '{print $1}')" >> "$GITHUB_ENV"
-          echo "MAYAK_IMAGE_DIGEST=sha256:$(sha256sum Dockerfile | awk '{print $1}')" >> "$GITHUB_ENV"
+          printf 'MAYAK_SOURCE_SHA=%s\n' "$GITHUB_SHA" >> "$GITHUB_ENV"
+          printf 'MAYAK_LOCK_IDENTITY=%s\n' "$(sha256sum uv.lock | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          printf 'MAYAK_IMAGE_DIGEST=sha256:%s\n' "$(sha256sum Dockerfile | cut -d' ' -f1)" >> "$GITHUB_ENV"
       - name: Install exact uv and frozen dependencies
         shell: bash
         run: |
