@@ -51,11 +51,15 @@ jobs:
           test "$(git rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE"
           ! git config --get-all safe.directory | grep -Fxq '*'
       - uses: astral-sh/setup-uv@v6
-        with: {version: ${{ env.UV_VERSION }}, enable-cache: true}
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
       - name: Frozen dependency sync
         run: uv sync --frozen --all-groups
       - name: PostgreSQL 18 bootstrap and migrations
-        env: {PGPASSWORD: bootstrap-only, RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak}
+        env:
+          PGPASSWORD: bootstrap-only
+          RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
         run: |
           set -euo pipefail
           psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only'; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only'; ALTER ROLE mayak_migration CREATEDB; CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;"
