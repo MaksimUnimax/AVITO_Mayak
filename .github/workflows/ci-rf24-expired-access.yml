@@ -271,7 +271,7 @@ jobs:
         run: |
           set -euo pipefail
           unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
-          python - <<'PY'
+          uv run python - <<'PY'
           import os
           from urllib.parse import urlsplit
 

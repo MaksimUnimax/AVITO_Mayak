@@ -309,18 +309,86 @@ def test_fresh_database_mutations_have_specific_findings(
     assert finding in findings, (case_id, findings)
 
 
-def test_exact_head_proof_plain_python_fails_closed() -> None:
+def test_project_dependency_python_provenance_mutations_fail_closed() -> None:
+    workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
+    final_marker = "      - name: FINAL post-suite P0-P8 on NEW database"
+    before_final, final_body = workflow.split(final_marker, 1)
+    mutations = (
+        (
+            "final",
+            before_final + final_marker + final_body.replace(
+                "          uv run python - <<'PY'\n"
+                "          import os\n"
+                "          from urllib.parse import urlsplit\n",
+                "          python - <<'PY'\n"
+                "          import os\n"
+                "          from urllib.parse import urlsplit\n",
+                1,
+            ),
+            "project-dependency-python-not-uv-managed:FINAL post-suite P0-P8 on NEW database",
+        ),
+        (
+            "alembic",
+            workflow.replace(
+                "          uv run python - <<'PY'\n"
+                "          import os\n"
+                "          from alembic.config import Config",
+                "          python - <<'PY'\n"
+                "          import os\n"
+                "          from alembic.config import Config",
+                1,
+            ),
+            "project-dependency-python-not-uv-managed:"
+            "Create NEW post-suite database and migrate from zero",
+        ),
+        (
+            "preflight",
+            workflow.replace(
+                "          uv run python - <<'PY'\n"
+                "          import hashlib\n"
+                "          import os\n"
+                "          from mayak.runtime.settings import load_runtime_settings",
+                "          python - <<'PY'\n"
+                "          import hashlib\n"
+                "          import os\n"
+                "          from mayak.runtime.settings import load_runtime_settings",
+                1,
+            ),
+            "project-dependency-python-not-uv-managed:Materialize and preflight runtime settings",
+        ),
+    )
+    for case_id, mutated, finding in mutations:
+        assert finding in validate(mutated), case_id
+
+
+def test_stdlib_plain_python_is_allowed_but_dependency_mutation_is_rejected() -> None:
+    workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
+    stdlib = (
+        "      - name: stdlib-only probe\n"
+        "        run: |\n"
+        "          python - <<'PY'\n"
+        "          import json\n"
+        "          print(json.dumps({'ok': True}))\n"
+        "          PY\n"
+    )
+    augmented = workflow + stdlib
+    assert validate(augmented) == []
+    assert "project-dependency-python-not-uv-managed:stdlib-only probe" in validate(
+        augmented.replace("          import json\n", "          import mayak\n", 1)
+    )
+
+
+def test_plain_project_script_runner_is_rejected() -> None:
     workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
     mutated = workflow.replace(
-        "          uv run python - <<'PY'\n"
-        "          import os\n"
-        "          from alembic.config import Config",
-        "          python - <<'PY'\n"
-        "          import os\n"
-        "          from alembic.config import Config",
+        "uv run python scripts/runtime/run_rf24_expired_access.py",
+        "python scripts/runtime/run_rf24_expired_access.py",
         1,
     )
-    assert validate(mutated) == ["fresh-exact-head-proof-not-uv-project-python"]
+    assert any(
+        finding.startswith("project-dependency-python-not-uv-managed:")
+        for finding in validate(mutated)
+    )
 
 
 @pytest.mark.parametrize(

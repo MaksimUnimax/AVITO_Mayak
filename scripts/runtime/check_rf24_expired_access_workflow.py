@@ -178,6 +178,42 @@ def _heredocs(body: str) -> tuple[list[int], list[int]]:
     return openings, terminators
 
 
+PROJECT_DEPENDENCY_IMPORT = re.compile(
+    r"^\s*(?:from\s+(?:mayak|alembic|sqlalchemy)(?:\.|\s)|import\s+"
+    r"(?:mayak|alembic|sqlalchemy)(?:\.|\s|$))"
+)
+
+
+def _python_provenance_failures(text: str) -> list[str]:
+    """Reject dependency-bearing Python unless it is run by the uv project."""
+    failures: list[str] = []
+    lines = text.splitlines()
+    step_name = "<workflow>"
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        step_match = re.match(r"^      - name: (.+)$", line)
+        if step_match:
+            step_name = step_match.group(1)
+        stripped = line.strip()
+        invocation = re.match(r"^(?P<command>(?:uv run )?python) - <<'PY'$", stripped)
+        if invocation:
+            command = invocation.group("command")
+            body: list[str] = []
+            end = index + 1
+            while end < len(lines) and lines[end].strip() != "PY":
+                body.append(lines[end])
+                end += 1
+            if any(PROJECT_DEPENDENCY_IMPORT.search(body_line) for body_line in body):
+                if command != "uv run python":
+                    failures.append(f"project-dependency-python-not-uv-managed:{step_name}")
+            index = end
+        elif re.search(r"(?<!uv run )\bpython\s+scripts/runtime/", stripped):
+            failures.append(f"project-dependency-python-not-uv-managed:{step_name}")
+        index += 1
+    return failures
+
+
 def _step_positions(text: str) -> dict[str, int]:
     names = re.findall(r"^      - name: (.+)$", text, re.M)
     return {name: i for i, name in enumerate(names)}
@@ -267,6 +303,7 @@ def _fresh_step_failures(text: str) -> list[str]:
 
 def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list[str]:
     failures = [item for item in REQUIRED if item not in text]
+    failures.extend(_python_provenance_failures(text))
     if f"branches: [{branch}]" not in text:
         failures.append("branch-trigger")
     if "branches: [main" in text or "ref: rf24-expired-access-scenario-01" in text:
