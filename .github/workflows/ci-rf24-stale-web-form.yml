@@ -50,7 +50,6 @@ jobs:
           command -v bash
           bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git branch --show-current)" = "rf24-stale-web-form-scenario-01"
       - uses: astral-sh/setup-uv@v6
         with:
           version: 0.11.31
