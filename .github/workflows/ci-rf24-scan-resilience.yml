@@ -45,6 +45,9 @@ jobs:
       MAYAK_TELEGRAM_ENABLED: "false"
       MAYAK_MAX_ENABLED: "false"
       DOCKER_HOST: unix:///var/run/docker.sock
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: ${{ github.workspace }}
     steps:
       - name: Install git for exact source identity gate
         run: |
@@ -54,15 +57,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-      - name: Configure scoped Git ownership trust
-        run: |
-          set -euo pipefail
-          workspace="$(pwd -P)"
-          {
-            echo 'GIT_CONFIG_COUNT=1'
-            echo 'GIT_CONFIG_KEY_0=safe.directory'
-            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
-          } >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@v6
         with:
           version: ${{ env.UV_VERSION }}
