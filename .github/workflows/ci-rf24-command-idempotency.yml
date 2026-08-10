@@ -2,7 +2,7 @@ name: RF24 command idempotency
 
 on:
   push:
-    branches: [main]
+    branches: [main, rf24-command-idempotency-scenarios-01]
   workflow_dispatch:
 
 jobs:
