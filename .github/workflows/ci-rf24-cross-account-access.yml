@@ -44,6 +44,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
       - name: Exact source and Bash proof
+        shell: bash
         run: |
           set -euo pipefail
           git config --global --unset-all safe.directory || true
