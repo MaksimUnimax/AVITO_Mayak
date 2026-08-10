@@ -1134,6 +1134,19 @@ class BeaconManagementRuntime:
             raise BeaconRuntimeError("beacon unavailable")
         return self._view(row)
 
+    def active_for_accounts(
+        self, session: Session, *, account_ids: tuple[UUID, ...]
+    ) -> tuple[BeaconView, ...]:
+        """Owner read boundary for system lifecycle reconciliation."""
+        if not account_ids:
+            return ()
+        rows = session.execute(
+            select(_BEACONS)
+            .where(_BEACONS.c.account_id.in_(account_ids), _BEACONS.c.state == "ACTIVE")
+            .order_by(_BEACONS.c.account_id, _BEACONS.c.id)
+        ).mappings()
+        return tuple(self._view(row) for row in rows)
+
     def list(self, session: Session, *, actor_reference: str) -> tuple[BeaconView, ...]:
         actor = self._authority(session, actor_reference, None)
         rows = (

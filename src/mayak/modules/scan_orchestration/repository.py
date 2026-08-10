@@ -107,7 +107,7 @@ class ScanRepository:
                     row_version=row["row_version"] + 1,
                 )
             )
-            if changed.rowcount != 1:
+            if getattr(changed, "rowcount", 0) != 1:
                 raise LeaseConflict("schedule cursor changed while materializing due work")
         return made
 
@@ -152,7 +152,7 @@ class ScanRepository:
                     row_version=row["row_version"] + 1,
                 )
             )
-            if changed.rowcount != 1:
+            if getattr(changed, "rowcount", 0) != 1:
                 raise LeaseConflict("work claim row changed")
             claims.append(
                 WorkClaim(
@@ -181,8 +181,31 @@ class ScanRepository:
             )
             .values(state="PENDING_RECONCILIATION", row_version=work.c.row_version + 1)
         )
-        if changed.rowcount != 1:
+        if getattr(changed, "rowcount", 0) != 1:
             raise LeaseConflict("claim reconciliation lost its lease guard")
+
+    def block_claim_before_external_work(
+        self, work_item_id: UUID, lease_token: UUID, now: datetime
+    ) -> None:
+        """Finish a claim when access vanished before any external work."""
+        work = _table("scan_work_items")
+        changed = self.session.execute(
+            update(work)
+            .where(
+                work.c.id == work_item_id,
+                work.c.lease_token == lease_token,
+                work.c.state == "CLAIMED",
+            )
+            .values(
+                state="BLOCKED_ACCESS_EXPIRED",
+                lease_started_at=None,
+                lease_expires_at=None,
+                lease_token=None,
+                row_version=work.c.row_version + 1,
+            )
+        )
+        if getattr(changed, "rowcount", 0) != 1:
+            raise LeaseConflict("claim changed before access block")
 
     def reclaim_reconciliation(
         self, work_item_id: UUID, now: datetime, lease_seconds: int
@@ -206,10 +229,16 @@ class ScanRepository:
                     lease_token=token, attempt_count=row["attempt_count"] + 1,
                     row_version=row["row_version"] + 1)
         )
-        if changed.rowcount != 1:
+        if getattr(changed, "rowcount", 0) != 1:
             raise LeaseConflict("reconciliation owner transition lost")
         return WorkClaim(
-            work_item_id, row["beacon_id"], row["schedule_id"], row["due_at"], token, now, expiry
+            work_item_id=work_item_id,
+            beacon_id=row["beacon_id"],
+            schedule_id=row["schedule_id"],
+            due_at=row["due_at"],
+            lease_token=token,
+            lease_started_at=now,
+            lease_expires_at=expiry,
         )
 
     def start_run(self, claim: WorkClaim, beacon_revision: int, now: datetime) -> RunResult:

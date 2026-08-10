@@ -31,6 +31,8 @@ def run_once(
 ) -> int:
     moment = now or datetime.now(UTC)
     with composition.sessions() as session:
+        composition.reconcile_paid_expiry(session, at=moment)
+        session.commit()
         made = materialize_due_work(
             composition.scan_repository(session), moment, composition.settings.worker.batch_size
         )

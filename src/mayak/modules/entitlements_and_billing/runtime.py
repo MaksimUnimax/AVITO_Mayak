@@ -119,6 +119,19 @@ class EffectiveEntitlement(BaseModel):
     frozen_at_beacon_boundary: bool = False
 
 
+class PaidExpiryDecision(BaseModel):
+    """Safe owner-owned facts used by runtime expiry reconciliation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    account_id: UUID
+    expired_basic_grant_id: UUID | None = None
+    paid_valid_until: datetime | None = None
+    actionable: bool = False
+    superseded_by_effective_paid_access: bool = False
+    effective: EffectiveEntitlement
+
+
 class NormalizedPaymentEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
 
@@ -852,6 +865,61 @@ class EntitlementsBillingRuntime:
             grant_id=row["id"],
             provenance=("PERSISTED_TARIFF", "EFFECTIVE_ACCESS_GRANT"),
         )
+
+    def paid_expiry_decision(
+        self, session: Session, account_id: UUID, *, at: datetime
+    ) -> PaidExpiryDecision:
+        """Return bounded expiry facts without exposing persistence rows."""
+        expired = (
+            session.execute(
+                select(_GRANTS.c.id, _GRANTS.c.valid_until)
+                .select_from(_GRANTS.join(_TARIFFS, _TARIFFS.c.id == _GRANTS.c.tariff_id))
+                .where(
+                    _GRANTS.c.account_id == account_id,
+                    _GRANTS.c.grant_kind == "TARIFF",
+                    _TARIFFS.c.code == TariffName.BASIC.value,
+                    _GRANTS.c.state == "ACTIVE",
+                    _GRANTS.c.valid_until <= at,
+                )
+                .order_by(_GRANTS.c.valid_until.desc(), _GRANTS.c.id.desc())
+                .limit(1)
+            )
+            .mappings()
+            .first()
+        )
+        effective = self.evaluate_effective(session, account_id, at=at)
+        superseded = (
+            effective.status is EntitlementDecisionStatus.ALLOWED
+            and effective.tariff is TariffName.BASIC
+            and effective.grant_id is not None
+            and expired is not None
+            and effective.grant_id != expired["id"]
+        )
+        actionable = expired is not None and not superseded
+        return PaidExpiryDecision(
+            account_id=account_id,
+            expired_basic_grant_id=expired["id"] if expired is not None else None,
+            paid_valid_until=expired["valid_until"] if expired is not None else None,
+            actionable=actionable,
+            superseded_by_effective_paid_access=superseded,
+            effective=effective,
+        )
+
+    def accounts_with_paid_expiry(
+        self, session: Session, *, at: datetime
+    ) -> tuple[UUID, ...]:
+        rows = session.execute(
+            select(_GRANTS.c.account_id)
+            .select_from(_GRANTS.join(_TARIFFS, _TARIFFS.c.id == _GRANTS.c.tariff_id))
+            .where(
+                _GRANTS.c.grant_kind == "TARIFF",
+                _TARIFFS.c.code == TariffName.BASIC.value,
+                _GRANTS.c.state == "ACTIVE",
+                _GRANTS.c.valid_until <= at,
+            )
+            .distinct()
+        )
+        return tuple(row[0] for row in rows)
 
     def record_payment_evidence(
         self,

@@ -17,7 +17,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from mayak.contracts.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
 from mayak.modules.avito_parser_adapter.runtime import AvitoParserRuntime
-from mayak.modules.beacon_management.runtime import BeaconManagementRuntime
+from mayak.modules.beacon_management.contracts import BeaconActionCausation, BeaconSystemActorClass
+from mayak.modules.beacon_management.runtime import (
+    BeaconManagementRuntime,
+    ResolvedSystemActor,
+)
 from mayak.modules.entitlements_and_billing.runtime import (
     AuthorityFacts,
     EntitlementsBillingRuntime,
@@ -111,9 +115,15 @@ class AcceptanceEntitlementAuthority:
 
 
 class ScanEntitlementAdapter:
-    def __init__(self, owner: EntitlementsBillingRuntime) -> None:
+    def __init__(
+        self,
+        owner: EntitlementsBillingRuntime,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
         self.owner = owner
+        self.clock = clock
         self.session: Session | None = None
+        self.at: datetime | None = None
 
     def current(self, beacon_id: UUID, account_id: UUID | None) -> EntitlementSnapshot:
         if account_id is None or self.session is None:
@@ -123,7 +133,9 @@ class ScanEntitlementAdapter:
                 minimum_seconds=10_800,
                 step_seconds=10_800,
             )
-        projection = self.owner.evaluate_effective(self.session, account_id, at=datetime.now(UTC))
+        projection = self.owner.evaluate_effective(
+            self.session, account_id, at=self.at or self.clock()
+        )
         allowed = getattr(getattr(projection, "status", None), "value", None) == "ALLOWED"
         code = str(getattr(getattr(projection, "tariff", None), "value", "FREE")).upper()
         tier = AccessTier.BASIC if "BASIC" in code else AccessTier.FREE
@@ -135,9 +147,26 @@ class ScanEntitlementAdapter:
             step_seconds=interval,
         )
 
-    def bind(self, session: Session) -> "ScanEntitlementAdapter":
+    def bind(self, session: Session, *, at: datetime | None = None) -> "ScanEntitlementAdapter":
         self.session = session
+        self.at = at
         return self
+
+
+class EntitlementsSystemAuthority:
+    """Closed internal resolver for the paid-expiry system actor."""
+
+    _REFERENCE = "rf24:system:entitlements-and-billing-expiry"
+
+    def resolve_system(self, session: Session, *, actor_reference: str) -> ResolvedSystemActor:
+        if actor_reference != self._REFERENCE:
+            raise PermissionError("system authority reference mismatch")
+        return ResolvedSystemActor(
+            actor_id=UUID("00000000-0000-0000-0000-000000000003"),
+            verified=True,
+            reference=self._REFERENCE,
+            system_actor_class=BeaconSystemActorClass.ENTITLEMENTS_AND_BILLING_SERVICE.value,
+        )
 
 
 class PersistedParserAdapter(ParserOutcomePort):
@@ -224,11 +253,87 @@ class RF24RuntimeComposition:
             target_account_id=account_id,
         )
 
+    def establish_acceptance_basic_access(
+        self,
+        session: Session,
+        reference: CustomerSessionReference,
+        account_id: UUID,
+        *,
+        starts_at: datetime,
+        ends_at: datetime,
+    ) -> object:
+        """Bounded synthetic-only Basic setup through the Entitlements owner."""
+        from mayak.modules.entitlements_and_billing.contracts import TariffName
+
+        if ends_at <= starts_at or (ends_at - starts_at).total_seconds() > 86_400:
+            raise ValueError("synthetic Basic interval must be positive and bounded")
+        owner = EntitlementsBillingRuntime(AcceptanceEntitlementAuthority(self.identity))
+        owner.bootstrap_tariffs(
+            session,
+            cast(str, reference),
+            f"rf24:tariffs:{account_id}",
+            effective_at=starts_at,
+            target_account_id=account_id,
+        )
+        return owner.assign_access(
+            session,
+            cast(str, reference),
+            tariff=TariffName.BASIC,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            reason="RF24 synthetic Basic expiry acceptance access",
+            idempotency_key=f"rf24:basic-access:{account_id}:{ends_at.isoformat()}",
+            target_account_id=account_id,
+        )
+
     def scan_beacon(self, session: Session) -> ScanBeaconAdapter:
         return ScanBeaconAdapter(self.beacon).bind(session)
 
-    def scan_entitlement(self, session: Session) -> ScanEntitlementAdapter:
-        return ScanEntitlementAdapter(self.entitlements).bind(session)
+    def scan_entitlement(
+        self, session: Session, *, at: datetime | None = None
+    ) -> ScanEntitlementAdapter:
+        return ScanEntitlementAdapter(self.entitlements, self.clock).bind(session, at=at)
+
+    def reconcile_paid_expiry(self, session: Session, *, at: datetime) -> tuple[UUID, ...]:
+        """Reconcile through Entitlements and Beacon owner boundaries only."""
+        accounts = self.entitlements.accounts_with_paid_expiry(session, at=at)
+        frozen: list[UUID] = []
+        for view in self.beacon.active_for_accounts(session, account_ids=accounts):
+            decision = self.entitlements.paid_expiry_decision(
+                session, view.account_id, at=at
+            )
+            if not decision.actionable or decision.expired_basic_grant_id is None:
+                continue
+            valid_until = (
+                decision.paid_valid_until.isoformat()
+                if decision.paid_valid_until is not None
+                else "unknown"
+            )
+            causation = BeaconActionCausation(
+                service_actor_class=BeaconSystemActorClass.ENTITLEMENTS_AND_BILLING_SERVICE,
+                causation_reference=(
+                    f"paid-expiry:{view.account_id}:{view.beacon_id}:"
+                    f"{decision.expired_basic_grant_id}:{valid_until}"
+                ),
+                policy_source_reference="entitlements-and-billing:paid-basic-expiry-freeze:v1",
+            )
+            try:
+                result = self.beacon.freeze_after_expiry(
+                    session,
+                    system_actor_reference=EntitlementsSystemAuthority._REFERENCE,
+                    beacon_id=view.beacon_id,
+                    idempotency_key=causation.causation_reference,
+                    expected_row_version=view.row_version,
+                    causation=causation,
+                )
+                if result.state == "FROZEN":
+                    frozen.append(view.beacon_id)
+            except Exception:
+                current = self.beacon.current_for_scan(session, beacon_id=view.beacon_id)
+                if current.state == "FROZEN":
+                    continue
+                raise
+        return tuple(frozen)
 
     def parser_port(self, session: Session) -> PersistedParserAdapter:
         return PersistedParserAdapter(self.parser, session)
@@ -342,7 +447,11 @@ def build_rf24_composition(
     app_engine = engine or create_application_engine(settings=application)
     identity = IdentityRuntime(settings)
     entitlements = EntitlementsBillingRuntime()
-    beacon = BeaconManagementRuntime(identity, CustomerEntitlementPort(entitlements))
+    beacon = BeaconManagementRuntime(
+        identity,
+        CustomerEntitlementPort(entitlements),
+        system_authority=EntitlementsSystemAuthority(),
+    )
     return RF24RuntimeComposition(
         settings=settings,
         engine=app_engine,

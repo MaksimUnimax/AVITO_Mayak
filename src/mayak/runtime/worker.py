@@ -26,11 +26,13 @@ from mayak.modules.notification_delivery.runtime import (
     FakeProviderOutcome,
     run_worker_cycle,
 )
+from mayak.modules.scan_orchestration.contracts import AccessTier, DecisionStatus
 from mayak.modules.scan_orchestration.services import (
     claim_work,
     commit_comparison,
     record_parser_outcome,
     start_run,
+    validate_cadence,
 )
 from mayak.persistence.metadata import metadata
 from mayak.runtime.rf24_composition import RF24RuntimeComposition, build_rf24_composition
@@ -167,6 +169,36 @@ def process_once(
             run: Any = None
             try:
                 beacon = composition.scan_beacon(session)
+                current = beacon.current(claim.beacon_id)
+                entitlement = composition.scan_entitlement(session, at=moment)
+                decision = entitlement.current(claim.beacon_id, current.account_id)
+                interval = 300 if decision.tier is AccessTier.BASIC else 10_800
+                eligible = (
+                    current.lifecycle_eligible
+                    and decision.status is DecisionStatus.ALLOWED
+                )
+                if eligible:
+                    try:
+                        validate_cadence(decision, interval)
+                    except Exception:
+                        eligible = False
+                if not eligible:
+                    composition.scan_repository(session).block_claim_before_external_work(
+                        claim.work_item_id, claim.lease_token, moment
+                    )
+                    session.commit()
+                    emit_process_observation(
+                        {
+                            "record_type": "worker_pre_provider_block",
+                            "work_item_id": str(claim.work_item_id),
+                            "reason": "OWNER_ACCESS_OR_LIFECYCLE_DENIED",
+                            "parser_calls": 0,
+                            "egress_calls": 0,
+                            "notification_provider_calls": 0,
+                        }
+                    )
+                    continue
+                session.commit()
                 run = start_run(repo, claim, beacon, now=moment)
                 LOGGER.info(
                     "worker claim work_item_id=%s schedule_id=%s run_id=%s",
@@ -262,7 +294,7 @@ def process_once(
                         run,
                         persisted.outcome_id,
                         beacon,
-                        composition.scan_entitlement(session),
+                        composition.scan_entitlement(session, at=moment),
                         parser,
                         f"scan:{claim.work_item_id}",
                         now=moment,

@@ -55,7 +55,8 @@ class CustomerEntitlementPort:
     ) -> EntitlementDecision:
         try:
             projection = self.owner.evaluate_effective(session, account_id, at=datetime.now(UTC))
-            allowed = bool(getattr(projection, "allowed", True))
+            status = getattr(getattr(projection, "status", None), "value", None)
+            allowed = status == "ALLOWED"
         except Exception:
             allowed = False
         return EntitlementDecision(allowed=allowed, reference="entitlements-runtime")
