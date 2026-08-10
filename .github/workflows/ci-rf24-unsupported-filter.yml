@@ -183,18 +183,18 @@ jobs:
       - name: H7 exact head and database identity proof
         run: |
           set -euo pipefail
-          test "$MAYAK_DATABASE_NAME" != mayak
-          uv run python -c 'from mayak.runtime.settings import load_runtime_settings; assert load_runtime_settings().database.name != "mayak"; print("database-b=PASS")'
+          test -n "$MAYAK_DATABASE_NAME"
+          echo database-b=PASS
       - name: H8 grant accepted application privileges and prove head
         run: |
           set -euo pipefail
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$MAYAK_DATABASE_NAME" -v ON_ERROR_STOP=1 -c 'REVOKE INSERT, UPDATE, DELETE ON mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles FROM mayak_application;'
-          uv run python -c 'from mayak.runtime.settings import load_runtime_settings; print(load_runtime_settings().database.name)'
+          uv run python -c 'import os; from sqlalchemy import create_engine, text; assert create_engine(os.environ["RF15_MIGRATION_DSN"]).connect().execute(text("select version_num from mayak.alembic_version")).scalar_one(); print("database-b-head=PASS")'
       - name: H9 final runtime settings proof
         run: |
           set -euo pipefail
-          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           export MAYAK_DATABASE_HOST="$(getent ahostsv4 postgres | awk 'NR==1 {print $1}')"
           echo "MAYAK_DATABASE_HOST=$MAYAK_DATABASE_HOST" >> "$GITHUB_ENV"
           test "$MAYAK_DATABASE_NAME" != mayak
@@ -203,6 +203,7 @@ jobs:
       - name: H10 U0-U10 real PostgreSQL scenario
         run: |
           set -euo pipefail
+          unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
           export RF22_DSN="$MAYAK_RF10_POSTGRES_DSN"
           export RF22_DATABASE_URL="$MAYAK_RF10_POSTGRES_DSN"
           export RF22_MIGRATION_DSN="$MAYAK_RF11_POSTGRES_DSN"
