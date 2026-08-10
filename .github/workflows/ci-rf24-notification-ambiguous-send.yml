@@ -124,6 +124,19 @@ jobs:
           uv run python scripts/runtime/check_rf24_notification_ambiguous_send_workflow.py .github/workflows/ci-rf24-notification-ambiguous-send.yml --branch rf24-notification-ambiguous-send-scenario-01-corrective-01
       - name: Complete repository pytest
         run: bash -o pipefail -c 'uv run pytest -q 2>&1 | tee rf24-notification-ambiguous-send-full-pytest.log'
+      - name: Create fresh post-suite scenario database
+        run: |
+          set -euo pipefail
+          scenario_db="mayak_rf24_ambiguous_${GITHUB_RUN_ID}"
+          PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${scenario_db} OWNER mayak_migration"
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "${scenario_db}" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE,CREATE ON SCHEMA mayak TO mayak_application;'
+          export RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:migration-only@postgres:5432/${scenario_db}"
+          export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/${scenario_db}"
+          printf 'MAYAK_DATABASE_NAME=%s\n' "$scenario_db" >> "$GITHUB_ENV"
+          printf 'RF15_MIGRATION_DSN=%s\n' "$RF15_MIGRATION_DSN" >> "$GITHUB_ENV"
+          printf 'RF24_DSN=%s\n' "$RF24_DSN" >> "$GITHUB_ENV"
+          uv run alembic upgrade head
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "${scenario_db}" -v ON_ERROR_STOP=1 -c 'GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
       - name: Fresh real P0-P5 scenario and artifact chain
         env:
           GITHUB_SOURCE_SHA: ${{ github.sha }}

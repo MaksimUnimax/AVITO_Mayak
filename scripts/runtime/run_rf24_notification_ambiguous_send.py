@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -54,6 +56,7 @@ from mayak.modules.notification_delivery.source_intake import (
     evaluate_notification_source_intake,
 )
 from mayak.platform.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
+from mayak.runtime.settings import compose_runtime_settings
 
 TECHNICAL_ID = "RF24-NOTIFICATION-AMBIGUOUS-SEND-SCENARIO-01"
 
@@ -62,48 +65,74 @@ def sha(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def resolve_acceptance_database_host(host: str) -> str:
+    """Convert a private service alias to one deterministic private literal."""
+    try:
+        addresses = {
+            ipaddress.ip_address(item[4][0])
+            for item in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        }
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("database host resolution failed") from exc
+    if not addresses or any(not address.is_private for address in addresses):
+        raise RuntimeError("database host did not resolve only to private addresses")
+    return sorted(addresses, key=lambda address: (address.version, str(address)))[0].compressed
+
+
+def _child_environment(
+    parent: Mapping[str, str], source_sha: str, run_id: str, kind: str
+) -> dict[str, str]:
+    """Build the small, explicit MAYAK environment accepted by child settings."""
+    database_host = resolve_acceptance_database_host(parent.get("MAYAK_DATABASE_HOST", "postgres"))
+    values = {
+        "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance",
+        "MAYAK_ENVIRONMENT_ID": run_id,
+        "MAYAK_SOURCE_SHA": source_sha,
+        "MAYAK_LOCK_IDENTITY": "0" * 64,
+        "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
+        "MAYAK_PROCESS_KIND": kind,
+        "MAYAK_DATABASE_HOST": database_host,
+        "MAYAK_DATABASE_PORT": parent.get("MAYAK_DATABASE_PORT", "5432"),
+        "MAYAK_DATABASE_NAME": parent.get("MAYAK_DATABASE_NAME", "mayak"),
+        "MAYAK_DATABASE_APPLICATION_USER": parent.get(
+            "MAYAK_DATABASE_APPLICATION_USER", "mayak_application"
+        ),
+        "MAYAK_DATABASE_MIGRATION_USER": parent.get(
+            "MAYAK_DATABASE_MIGRATION_USER", "mayak_migration"
+        ),
+        "MAYAK_SECRETS_DIR": parent.get("MAYAK_SECRETS_DIR", "/run/secrets"),
+        "MAYAK_API_BIND_HOST": "127.0.0.1",
+        "MAYAK_API_INTERNAL_PORT": parent.get("MAYAK_API_INTERNAL_PORT", "18080"),
+        "MAYAK_API_HOST_PORT": "disabled",
+        "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true",
+        "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
+        "MAYAK_AVITO_LIVE_ENABLED": "false",
+        "MAYAK_TELEGRAM_ENABLED": "false",
+        "MAYAK_TELEGRAM_UPDATE_MODE": "disabled",
+        "MAYAK_MAX_ENABLED": "false",
+        "MAYAK_MAX_UPDATE_MODE": "disabled",
+        "MAYAK_YOOKASSA_ENABLED": "false",
+        "MAYAK_EGRESS_AGENT_ENABLED": "false",
+        "MAYAK_WORKER_POLL_INTERVAL_SECONDS": "1",
+        "MAYAK_WORKER_LEASE_SECONDS": "30",
+        "MAYAK_SCHEDULER_POLL_INTERVAL_SECONDS": "1",
+        "MAYAK_SYNTHETIC_SCENARIO": "usable_listing_page",
+        "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id,
+    }
+    compose_runtime_settings(values)
+    return {key: value for key, value in parent.items() if not key.startswith("MAYAK_")} | values
+
+
 def _public_setup(
-    engine: Engine, run_id: str
+    engine: Engine, run_id: str, source_sha: str
 ) -> tuple[UUID, UUID, UUID, list[subprocess.Popen[str]]]:
     """Create foreign-module prerequisites through the accepted public API only."""
     from run_rf24_vertical_spine import _json_payload, request  # type: ignore[import-not-found]
 
     port = os.environ.get("MAYAK_API_INTERNAL_PORT", "18080")
     base = f"http://127.0.0.1:{port}"
-    inherited = {key: value for key, value in os.environ.items() if not key.startswith("MAYAK_")}
-    inherited.update(
-        {
-            "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance",
-            "MAYAK_ENVIRONMENT_ID": run_id,
-            "MAYAK_SOURCE_SHA": os.environ.get("MAYAK_SOURCE_SHA", "0" * 40),
-            "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id,
-            "MAYAK_SYNTHETIC_SCENARIO": "usable_listing_page",
-            "MAYAK_LOCK_IDENTITY": "0" * 64,
-            "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
-            "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true",
-            "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
-            "MAYAK_DATABASE_HOST": os.environ.get("MAYAK_DATABASE_HOST", "postgres"),
-            "MAYAK_DATABASE_PORT": os.environ.get("MAYAK_DATABASE_PORT", "5432"),
-            "MAYAK_DATABASE_NAME": os.environ.get("MAYAK_DATABASE_NAME", "mayak"),
-            "MAYAK_DATABASE_APPLICATION_USER": os.environ.get(
-                "MAYAK_DATABASE_APPLICATION_USER", "mayak_application"
-            ),
-            "MAYAK_DATABASE_MIGRATION_USER": os.environ.get(
-                "MAYAK_DATABASE_MIGRATION_USER", "mayak_migration"
-            ),
-            "MAYAK_SECRETS_DIR": os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"),
-            "MAYAK_API_BIND_HOST": "127.0.0.1",
-            "MAYAK_API_INTERNAL_PORT": port,
-            "MAYAK_API_HOST_PORT": "disabled",
-            "MAYAK_AVITO_LIVE_ENABLED": "false",
-            "MAYAK_TELEGRAM_ENABLED": "false",
-            "MAYAK_MAX_ENABLED": "false",
-            "MAYAK_YOOKASSA_ENABLED": "false",
-            "MAYAK_EGRESS_AGENT_ENABLED": "false",
-            "MAYAK_WORKER_POLL_INTERVAL_SECONDS": "1",
-            "MAYAK_SCHEDULER_POLL_INTERVAL_SECONDS": "1",
-        }
-    )
+    parent = dict(os.environ)
+    parent["MAYAK_API_INTERNAL_PORT"] = port
     processes: list[subprocess.Popen[str]] = []
     streams: list[object] = []
     log_dir = Path(os.environ.get("RF24_PUBLIC_LOG_DIR", "/tmp"))
@@ -111,10 +140,11 @@ def _public_setup(
     for kind in ("api", "scheduler", "worker"):
         stream = (log_dir / f"rf24-public-{kind}.log").open("w", encoding="utf-8")
         streams.append(stream)
+        child_env = _child_environment(parent, source_sha, run_id, f"mayak-{kind}")
         processes.append(
             subprocess.Popen(
                 (sys.executable, "-m", f"mayak.runtime.{kind}"),
-                env={**inherited, "MAYAK_PROCESS_KIND": f"mayak-{kind}"},
+                env=child_env,
                 stdout=stream,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -122,8 +152,18 @@ def _public_setup(
         )
     try:
         for _ in range(80):
-            if request(f"{base}/health/live").status == 200:
-                break
+            if processes[0].poll() is not None:
+                raise RuntimeError(f"api exited during startup: {processes[0].poll()}")
+            version = request(f"{base}/version")
+            if version.status == 200:
+                body = _json_payload(version.payload)
+                if body.get("source_sha") != source_sha:
+                    raise RuntimeError("public API reported an unexpected source SHA")
+                if request(f"{base}/health/live").status == 200:
+                    break
+            for kind, process in zip(("scheduler", "worker"), processes[1:], strict=True):
+                if process.poll() is not None:
+                    raise RuntimeError(f"{kind} exited during startup: {process.poll()}")
             time.sleep(0.25)
         else:
             raise RuntimeError("public acceptance API did not become live")
@@ -196,6 +236,11 @@ def _public_setup(
                     {"beacon": beacon},
                 ).scalar_one_or_none()
             if result is not None:
+                for kind, process in zip(("scheduler", "worker"), processes[1:], strict=True):
+                    if process.poll() is not None:
+                        raise RuntimeError(
+                            f"{kind} exited before public setup completed: {process.poll()}"
+                        )
                 return account, beacon, UUID(str(result)), processes
             time.sleep(0.25)
         raise RuntimeError("public scheduler did not materialize a scan run")
@@ -349,16 +394,26 @@ def main() -> None:
     factory = sessionmaker(bind=engine)
     processes: list[subprocess.Popen[str]] = []
     try:
-        account, beacon, run, processes = _public_setup(engine, run_id)
+        account, beacon, run, processes = _public_setup(engine, run_id, a.source_sha)
     except Exception as exc:
         diagnostics = []
         for kind in ("api", "scheduler", "worker"):
             path = Path(os.environ.get("RF24_PUBLIC_LOG_DIR", "/tmp")) / f"rf24-public-{kind}.log"
-            if path.is_file():
-                diagnostics.append(
-                    f"[{kind}]\n{path.read_text(encoding='utf-8', errors='replace')[-4000:]}"
-                )
-        print(f"RF24_PUBLIC_SETUP_FAILURE={type(exc).__name__}: {exc}\n" + "\n".join(diagnostics))
+            diagnostics.append(
+                {
+                    "process_kind": kind,
+                    "log_name": path.name,
+                    "log_exists": path.is_file(),
+                    "log_size": path.stat().st_size if path.is_file() else 0,
+                    "process_state": processes[("api", "scheduler", "worker").index(kind)].poll()
+                    if len(processes) == 3
+                    else None,
+                }
+            )
+        print(
+            f"RF24_PUBLIC_SETUP_FAILURE={type(exc).__name__}: {exc}\n"
+            + json.dumps(diagnostics, sort_keys=True)
+        )
         raise
     try:
         s = source(account, beacon, run, run_id)
@@ -384,6 +439,43 @@ def main() -> None:
         phases: dict[str, object] = {"P0": snapshot(engine, account, event.id, outbox_id)}
         probes: list[dict[str, object]] = []
         rejections: list[dict[str, object]] = []
+        phase_boundaries: list[dict[str, object]] = []
+
+        def record_boundary(phase_name: str, observed: dict[str, object]) -> None:
+            attempts = cast(list[dict[str, object]], observed["attempts"])
+            reconciliations = cast(list[dict[str, object]], observed["reconciliations"])
+            outboxes = cast(list[dict[str, object]], observed["outbox"])
+            events = cast(list[dict[str, object]], observed["events"])
+            phase_boundaries.append(
+                {
+                    "phase_name": phase_name,
+                    "sequence": len(phase_boundaries) + 1,
+                    "acceptance_run_id": run_id,
+                    "source_sha": a.source_sha,
+                    "provider_observation_count": len(probes),
+                    "event_id": str(events[0]["id"]),
+                    "outbox_id": str(outboxes[0]["id"]),
+                    "effect_fingerprint": str(
+                        attempts[0].get(
+                            "effect_fingerprint", outboxes[0].get("effect_fingerprint", "")
+                        )
+                        if attempts
+                        else outboxes[0].get("effect_fingerprint", "")
+                    ),
+                    "attempt_ids": [str(item["id"]) for item in attempts],
+                    "attempt_numbers": [item.get("attempt_number") for item in attempts],
+                    "reconciliation_ids": [str(item["id"]) for item in reconciliations],
+                    "durable_attempt_count": len(attempts),
+                    "durable_reconciliation_count": len(reconciliations),
+                    "outbox_state": outboxes[0].get("state") if outboxes else None,
+                    "attempt_states": [item.get("state") for item in attempts],
+                    "reconciliation_state": reconciliations[0].get("state")
+                    if reconciliations
+                    else None,
+                }
+            )
+
+        record_boundary("P0", cast(dict[str, object], phases["P0"]))
 
         def adapter(attempt: AttemptLease) -> FakeProviderOutcome:
             outcome_class = (
@@ -415,8 +507,10 @@ def main() -> None:
 
         run_worker_cycle(factory, adapter, now=now, limit=1, lease_seconds=60)
         phases["P1"] = snapshot(engine, account, event.id, outbox_id)
+        record_boundary("P1", cast(dict[str, object], phases["P1"]))
         run_worker_cycle(factory, adapter, now=now + timedelta(hours=1), limit=1, lease_seconds=60)
         phases["P2"] = snapshot(engine, account, event.id, outbox_id)
+        record_boundary("P2", cast(dict[str, object], phases["P2"]))
         p1 = cast(dict[str, object], phases["P1"])
         p1_attempt = cast(list[dict[str, object]], p1["attempts"])[0]
         attempt_id = UUID(str(p1_attempt["id"]))
@@ -474,6 +568,9 @@ def main() -> None:
             rejected_cases.append(
                 {"case": case_name, "snapshot": snapshot(engine, account, event.id, outbox_id)}
             )
+            record_boundary(
+                f"P3:{case_name}", cast(dict[str, object], rejected_cases[-1]["snapshot"])
+            )
         for case_name, constructor in (
             (
                 "uncommitted_evidence",
@@ -511,6 +608,9 @@ def main() -> None:
             rejected_cases.append(
                 {"case": case_name, "snapshot": snapshot(engine, account, event.id, outbox_id)}
             )
+            record_boundary(
+                f"P3:{case_name}", cast(dict[str, object], rejected_cases[-1]["snapshot"])
+            )
         phases["P3"] = {
             "snapshot": snapshot(engine, account, event.id, outbox_id),
             "rejections": rejections,
@@ -533,8 +633,10 @@ def main() -> None:
                 now=now + timedelta(hours=1),
             )
         phases["P4"] = snapshot(engine, account, event.id, outbox_id)
+        record_boundary("P4", cast(dict[str, object], phases["P4"]))
         run_worker_cycle(factory, adapter, now=now + timedelta(hours=2), limit=1, lease_seconds=60)
         phases["P5"] = snapshot(engine, account, event.id, outbox_id)
+        record_boundary("P5", cast(dict[str, object], phases["P5"]))
         evidence = {
             "technical_id": TECHNICAL_ID,
             "acceptance_run_id": run_id,
@@ -546,6 +648,7 @@ def main() -> None:
             "outbox_id": str(outbox_id),
             "effect_fingerprint": effect,
             "phases": phases,
+            "phase_boundaries": phase_boundaries,
             "reconciliation_evidence": {
                 "attempt_id": str(attempt_id),
                 "effect_fingerprint": effect,

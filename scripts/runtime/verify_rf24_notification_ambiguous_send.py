@@ -5,9 +5,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import NoReturn, cast
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     raise AssertionError(message)
 
 
@@ -76,6 +77,8 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         or r1["state"] != "UNRESOLVED"
     ):
         _fail("P1 state")
+    if a1.get("attempt_number") != 1:
+        _fail("P1 attempt number")
     if (
         str(r1["attempt_id"]) != str(a1["id"])
         or r1["safe_metadata"]["effect_fingerprint"] != a1["effect_fingerprint"]
@@ -83,6 +86,32 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         _fail("P1 effect binding")
     if str(a1["outbox_id"]) != str(doc["outbox_id"]):
         _fail("attempt outbox binding")
+    boundaries_value = doc.get("phase_boundaries")
+    if not isinstance(boundaries_value, list) or len(boundaries_value) < 10:
+        _fail("missing phase-boundary observations")
+    if any(not isinstance(item, dict) for item in boundaries_value):
+        _fail("invalid phase-boundary observation")
+    boundaries = cast(list[dict[str, object]], boundaries_value)
+    expected_counts = {"P0": 0, "P1": 1, "P2": 1, "P4": 1, "P5": 2}
+    for boundary in boundaries:
+        if boundary.get("acceptance_run_id") != doc["acceptance_run_id"]:
+            _fail("phase-boundary acceptance run binding")
+        if boundary.get("source_sha") != source_sha:
+            _fail("phase-boundary source SHA binding")
+        if boundary.get("event_id") != str(doc["event_id"]):
+            _fail("phase-boundary event binding")
+        if boundary.get("outbox_id") != str(doc["outbox_id"]):
+            _fail("phase-boundary outbox binding")
+        if boundary.get("effect_fingerprint") not in {"", doc["effect_fingerprint"]}:
+            _fail("phase-boundary effect binding")
+        phase_name = str(boundary.get("phase_name", ""))
+        if phase_name in expected_counts:
+            if boundary.get("provider_observation_count") != expected_counts[phase_name]:
+                _fail(f"{phase_name} boundary provider count")
+        if phase_name.startswith("P3:") and boundary.get("provider_observation_count") != 1:
+            _fail("P3 boundary provider count")
+    if not any(str(item.get("phase_name", "")).startswith("P3:") for item in boundaries):
+        _fail("missing rejected-case phase boundaries")
     if (
         len(p2["attempts"]) != 1
         or len(p2["reconciliations"]) != 1
@@ -112,9 +141,19 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
     rejections = p3.get("rejections", [])
     if len(rejections) < 4 or any(item.get("class") in {"none", None} for item in rejections):
         _fail("untrusted reconciliation not rejected")
+    p3_snapshot = p3.get("snapshot")
+    if not isinstance(p3_snapshot, dict):
+        _fail("P3 snapshot missing")
     if (
-        p3["snapshot"]["outbox"][0]["state"] != "RECONCILIATION_REQUIRED"
-        or p3["snapshot"]["reconciliations"][0]["state"] != "UNRESOLVED"
+        len(p3_snapshot.get("events", [])) != 1
+        or len(p3_snapshot.get("outbox", [])) != 1
+        or len(p3_snapshot.get("attempts", [])) != 1
+        or len(p3_snapshot.get("reconciliations", [])) != 1
+    ):
+        _fail("P3 cardinality")
+    if (
+        p3_snapshot["outbox"][0]["state"] != "RECONCILIATION_REQUIRED"
+        or p3_snapshot["reconciliations"][0]["state"] != "UNRESOLVED"
     ):
         _fail("rejected reconciliation changed state")
     for rejected in p3.get("rejected_cases", []):
@@ -148,8 +187,16 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         or stored["effect_fingerprint"] != evidence.get("effect_fingerprint")
         or tuple(stored["evidence_reference_ids"])
         != tuple(evidence.get("evidence_reference_ids", ()))
+        or stored["conclusion"] != "RESOLVED_NO_EFFECT_RETRY"
+        or stored["conclusion"] != evidence.get("conclusion", "RESOLVED_NO_EFFECT_RETRY")
     ):
         _fail("P4 persisted evidence mismatch")
+    if (
+        len(p4.get("attempts", [])) != 1
+        or len(p4.get("outbox", [])) != 1
+        or len(p4.get("reconciliations", [])) != 1
+    ):
+        _fail("P4 cardinality")
     if p4["reconciliations"][0].get("resolved_at") is None:
         _fail("P4 missing resolved_at")
     if (
@@ -158,6 +205,8 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         or p4["outbox"][0]["state"] != "RETRY"
     ):
         _fail("P4 transition")
+    if p4["attempts"][0].get("attempt_number") != 1:
+        _fail("P4 attempt number")
     if (
         len(p5["events"]) != 1
         or len(p5["outbox"]) != 1
@@ -172,6 +221,8 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         or p5["outbox"][0]["state"] != "DELIVERED"
     ):
         _fail("P5 final state")
+    if attempts5[0].get("attempt_number") != 1:
+        _fail("P5 attempt one number")
     if observations[1]["attempt_id"] != str(attempts5[1]["id"]):
         _fail("probe two attempt binding")
     if (
@@ -188,6 +239,16 @@ def verify(doc: dict, probes: dict, source_sha: str) -> dict[str, object]:
         for item in observations
     ):
         _fail("probe provenance")
+    expected_phases = {"P0", "P1", "P2", "P4", "P5"}
+    phase_names = [str(item.get("phase_name", "")) for item in boundaries]
+    if any(phase_names.count(name) != 1 for name in expected_phases):
+        _fail("phase-boundary duplication or omission")
+    if [item.get("sequence") for item in boundaries] != list(range(1, len(boundaries) + 1)):
+        _fail("phase-boundary sequence")
+    if len({name for name in phase_names if name.startswith("P3:")}) != len(
+        [name for name in phase_names if name.startswith("P3:")]
+    ):
+        _fail("phase-boundary duplicate rejected case")
     return {
         "verdict": "PASS",
         "technical_id": doc["technical_id"],
