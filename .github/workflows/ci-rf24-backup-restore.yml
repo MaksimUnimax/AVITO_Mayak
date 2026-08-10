@@ -38,6 +38,8 @@ jobs:
       - name: Exact candidate identity
         run: |
           set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          test "$(git config --get-all safe.directory)" != "*"
           candidate_sha="$(git rev-parse HEAD)"
           expected_sha="${{ github.sha }}"
           echo "candidate_sha=$candidate_sha expected_sha=$expected_sha"
