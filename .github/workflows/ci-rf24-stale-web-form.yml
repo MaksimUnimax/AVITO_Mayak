@@ -152,7 +152,7 @@ jobs:
           docker buildx version | grep -F 'v0.31.1'
           command -v python
           test "$(python --version 2>&1)" = "Python 3.14.6"
-          test "$(uv --version)" = "uv 0.11.31"
+          test "$(uv --version | awk '{print $2}')" = "0.11.31"
           test -s /run/secrets/mayak_database_migration_password
           test -s /run/secrets/mayak_database_application_password
           test -s /run/secrets/mayak_session_signing_key

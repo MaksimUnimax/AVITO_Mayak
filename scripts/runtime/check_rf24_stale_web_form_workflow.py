@@ -42,6 +42,7 @@ RULES: dict[str, tuple[str, ...]] = {
         "test -S /var/run/docker.sock",
         "docker version",
         "docker buildx version | grep -F 'v0.31.1'",
+        "uv --version | awk '{print $2}'",
     ),
     "actual runtime settings preflight": (
         "Hosted substrate preflight",
