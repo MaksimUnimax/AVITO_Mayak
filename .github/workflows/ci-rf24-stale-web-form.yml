@@ -258,6 +258,7 @@ jobs:
           for key in ("MAYAK_RF10_POSTGRES_DSN", "MAYAK_RF11_POSTGRES_DSN", "RF10_POSTGRES_DSN", "RF11_POSTGRES_DSN", "RF15_MIGRATION_DSN", "RF24_DSN"):
               assert urlsplit(os.environ[key]).path.lstrip("/") == db
           print("fresh-db-current-shell-binding=PASS")
+          PY
           uv run alembic upgrade head
           uv run python - <<'PY'
           import os

@@ -68,6 +68,7 @@ RULES: dict[str, tuple[str, ...]] = {
         'export RF15_MIGRATION_DSN=',
         'export RF24_DSN=',
         "fresh-db-current-shell-binding=PASS",
+        "print(\"fresh-db-current-shell-binding=PASS\")\n          PY\n          uv run alembic upgrade head",
         "uv run alembic upgrade head",
     ),
     "same-new-db exact head": (
