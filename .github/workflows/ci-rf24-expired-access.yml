@@ -36,6 +36,8 @@ jobs:
       MAYAK_EGRESS_AGENT_ENABLED: "false"
       PYTHONPATH: .
     steps:
+      - name: Install git and PostgreSQL client
+        run: apt-get update && apt-get install -y --no-install-recommends git postgresql-client
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
