@@ -162,8 +162,9 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
         from mayak.runtime.rf24_composition import build_rf24_composition
         from mayak.runtime.settings import load_runtime_settings
         parent_environment = os.environ.copy()
-        os.environ.update(base_env)
         try:
+            os.environ.clear()
+            os.environ.update(base_env)
             composition = build_rf24_composition(load_runtime_settings())
         finally:
             os.environ.clear()
