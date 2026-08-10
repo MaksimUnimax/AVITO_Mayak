@@ -11,11 +11,13 @@ jobs:
     container: python:3.14.6-bookworm
     services:
       postgres:
-        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca929a
+        image: postgres:18-bookworm
         env:
+          POSTGRES_DB: mayak
+          POSTGRES_USER: mayak
           POSTGRES_PASSWORD: bootstrap-only
         options: >-
-          --health-cmd "pg_isready -U mayak -d postgres"
+          --health-cmd "pg_isready -U mayak -d mayak"
           --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       UV_VERSION: 0.11.31
