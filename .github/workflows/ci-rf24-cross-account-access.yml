@@ -123,11 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
-          uv run python - <<'PY'
-          from mayak.runtime.settings import load_runtime_settings
-          load_runtime_settings()
-          print("runtime-settings-preflight=PASS")
-          PY
+          uv run python -c 'from mayak.runtime.settings import load_runtime_settings; load_runtime_settings(); print("runtime-settings-preflight=PASS")'
       - name: Workflow validator and ownership gate
         shell: bash
         run: |
