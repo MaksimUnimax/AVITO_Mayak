@@ -115,8 +115,8 @@ jobs:
           import sys
           import psycopg
           from psycopg import sql
-          target, conflict = sys.argv[1:]
-          for database in (target, conflict):
+          source, target, conflict = sys.argv[1:]
+          for database in (source, target, conflict):
               with psycopg.connect(f"host=postgres dbname={database} user=mayak_migration password=migration-only", autocommit=True) as conn:
                   with conn.cursor() as cur:
                       cur.execute("CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration")
