@@ -288,9 +288,9 @@ def process_once(
                             "work_item_id": str(claim.work_item_id),
                             "run_id": str(run.run_id),
                             "terminal_state": (
-                                "SUCCEEDED_DIFFERENCE"
-                                if comparison.new_listing_keys
-                                else "SUCCEEDED_BASELINE"
+                                "SUCCEEDED_BASELINE"
+                                if comparison.baseline_established
+                                else "SUCCEEDED_DIFFERENCE"
                             ),
                             "new_listing_count": len(comparison.new_listing_keys),
                             "event_ids": [str(event_id) for event_id in comparison.event_ids],

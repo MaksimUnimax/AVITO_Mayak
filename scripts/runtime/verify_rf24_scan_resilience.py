@@ -132,6 +132,31 @@ def _zero_effects(
     )
 
 
+def _require_terminal_consistency(
+    name: str,
+    scan_run_id: object,
+    terminals: list[dict[str, Any]],
+    durable_after: dict[str, Any],
+) -> str:
+    """Bind one scenario-local raw terminal to exactly one owning Scan run."""
+    _require(isinstance(scan_run_id, str) and scan_run_id, f"{name}: scan run ID missing")
+    _require(len(terminals) == 1, f"{name}: authoritative raw terminal is not unique")
+    raw_state = terminals[0].get("terminal_state")
+    _require(isinstance(raw_state, str) and raw_state, f"{name}: raw terminal state missing")
+    runs = durable_after.get("runs")
+    _require(isinstance(runs, list), f"{name}: owning runs missing")
+    runs = cast(list[object], runs)
+    owning = [row for row in runs if isinstance(row, dict) and row.get("run_id") == scan_run_id]
+    _require(len(owning) == 1, f"{name}: exact owning run is not unique")
+    owning_state = owning[0].get("state")
+    _require(
+        isinstance(owning_state, str) and owning_state,
+        f"{name}: owning terminal state missing",
+    )
+    _require(raw_state == owning_state, f"{name}: raw/owning terminal-state mismatch")
+    return cast(str, owning_state)
+
+
 def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
     raw, before, after, _ = _base(name, item, run_id)
     work, scan_run = item["work_id"], item.get("scan_run_id")
@@ -203,6 +228,11 @@ def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
             in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"},
             "W2 terminal missing",
         )
+        owning_state = _require_terminal_consistency(name, scan_run, terminals, after)
+        _require(
+            owning_state in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"},
+            "worker restart owning state is not successful",
+        )
         _require(
             after.get("authoritative_effect_count") == before.get("authoritative_effect_count"),
             "worker restart notification effect",
@@ -231,12 +261,8 @@ def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
             terminal[0].get("parser_outcome") == expected and terminal[0].get("run_id") == scan_run,
             f"{name}: raw parser outcome mismatch",
         )
-        _require(
-            after.get("runs")
-            and after["runs"][-1].get("state")
-            not in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"},
-            f"{name}: clean success",
-        )
+        owning_state = _require_terminal_consistency(name, scan_run, terminal, after)
+        _require(owning_state == ("PENDING_RECONCILIATION" if name == "partial-parser" else "FAILED"), f"{name}: owning state mismatch")
         _zero_effects(name, item, before, after)
     elif name == "route-failure":
         generation = "route-failure-W"
@@ -262,6 +288,11 @@ def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
         _require(
             egress[0].get("parser_correlation") == terminal[0].get("parser_attempt_id"),
             "route/parser correlation mismatch",
+        )
+        _require_terminal_consistency(name, scan_run, terminal, after)
+        _require(
+            terminal[0].get("terminal_state") == "FAILED",
+            "route failure terminal state mismatch",
         )
         _zero_effects(name, item, before, after)
     elif name == "lost-lease":
@@ -308,15 +339,21 @@ def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
             ),
             "stale rejection missing",
         )
-        _require(
-            _rows(
+        terminal = _rows(
                 raw,
                 "worker_terminal",
                 process_generation="lost-B",
                 work_item_id=work,
                 run_id=scan_run,
-            ),
+            )
+        _require(
+            terminal,
             "authoritative terminal missing",
+        )
+        owning_state = _require_terminal_consistency(name, scan_run, terminal, after)
+        _require(
+            owning_state in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"},
+            "lost lease owning state is not successful",
         )
         _require(
             _rows(raw, "worker_process_stopped", process_generation="lost-A")
@@ -342,17 +379,18 @@ def _scenario(name: str, item: dict[str, Any], run_id: str) -> None:
             and _rows(raw, "worker_process_stopped", process_generation="duplicate-W"),
             "duplicate-W lifecycle missing",
         )
+        terminal = _rows(raw, "worker_terminal", process_generation="duplicate-W", work_item_id=work, run_id=scan_run)
         _require(
             _rows(raw, "worker_claim", process_generation="duplicate-W", work_item_id=work)
-            and _rows(
-                raw,
-                "worker_terminal",
-                process_generation="duplicate-W",
-                work_item_id=work,
-                run_id=scan_run,
-            ),
+            and terminal,
             "duplicate-W did not own exact work/run",
         )
+        owning_state = _require_terminal_consistency(name, scan_run, terminal, after)
+        _require(
+            owning_state == terminal[0].get("terminal_state") == "SUCCEEDED_DIFFERENCE",
+            "duplicate comparison terminal state mismatch",
+        )
+        _require(terminal[0].get("new_listing_count") == 0, "duplicate listing delta is nonzero")
         _zero_effects(name, item, before, after)
 
 

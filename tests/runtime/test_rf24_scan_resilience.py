@@ -51,8 +51,9 @@ def package() -> dict[str, object]:
             raw.append(row(101, "worker-W", "egress_route_failure", outcome="TRANSPORT_UNAVAILABLE", parser_correlation="parser-1", work_item_id="work", run_id="run"))
         if name == "lost-lease":
             raw = [row(pid, generation, record_type, work_item_id="work", **({"run_id": "run"} if record_type in {"worker_controlled_hold", "stale_terminal_attempt", "stale_terminal_rejected", "worker_terminal"} else {})) for pid, generation, record_type in ((301, "lost-A", "worker_process_started"), (301, "lost-A", "worker_claim"), (301, "lost-A", "worker_controlled_hold"), (302, "lost-B", "worker_process_started"), (302, "lost-B", "worker_claim"), (302, "lost-B", "worker_reclaim"), (302, "lost-B", "worker_controlled_hold"), (301, "lost-A", "stale_terminal_attempt"), (301, "lost-A", "stale_terminal_rejected"), (301, "lost-A", "worker_process_stopped"), (302, "lost-B", "worker_terminal"), (302, "lost-B", "worker_process_stopped"))]
+            next(row for row in raw if row.get("record_type") == "worker_terminal")["terminal_state"] = "SUCCEEDED_BASELINE"
         if name == "duplicate-listing":
-            raw = [row(404, "duplicate-W", "worker_process_started"), row(404, "duplicate-W", "worker_claim", work_item_id="work"), row(404, "duplicate-W", "worker_terminal", work_item_id="work", run_id="run", terminal_state="SUCCEEDED_BASELINE"), row(404, "duplicate-W", "worker_process_stopped")]
+            raw = [row(404, "duplicate-W", "worker_process_started"), row(404, "duplicate-W", "worker_claim", work_item_id="work"), row(404, "duplicate-W", "worker_terminal", work_item_id="work", run_id="run", terminal_state="SUCCEEDED_DIFFERENCE", new_listing_count=0, event_ids=[]), row(404, "duplicate-W", "worker_process_stopped")]
         owner_notification = {"source_intake": 0, "outbox_effect": 0, "delivery_attempt": 0, "observation_source": "notification-delivery-owned-read"}
         durable_before = {"authoritative_effect_count": 1, "observation_source": "owning-read-model", "scan_event_count": 0, "notification": owner_notification.copy()}
         durable_after = {"authoritative_effect_count": 1, "observation_source": "owning-read-model", "scan_event_count": 0, "notification": owner_notification.copy()}
@@ -60,7 +61,8 @@ def package() -> dict[str, object]:
         if name == "scheduler-restart": durable_before |= {"schedule_exists": True, "work_count": 0}; durable_after |= {"schedule_exists": True, "work_count": 1}
         if name == "duplicate-listing": durable_before = {"listing_identity": "listing-1", "observation_source": "owning-read-model", "scan_event_count": 0, "notification": owner_notification.copy()}; durable_after = {"listing_identity": "listing-1", "observation_source": "owning-read-model", "scan_event_count": 0, "notification": owner_notification.copy()}
         if name == "route-failure": action["parser_attempt_id"] = "parser-1"
-        if name in {"partial-parser", "captcha-restriction"}: durable_after["runs"] = [{"run_id": "run", "state": "PENDING_RECONCILIATION" if name == "partial-parser" else "FAILED"}]
+        if name != "scheduler-restart":
+            durable_after["runs"] = [{"run_id": "run", "state": {"worker-restart": "SUCCEEDED_BASELINE", "partial-parser": "PENDING_RECONCILIATION", "captcha-restriction": "FAILED", "route-failure": "FAILED", "lost-lease": "SUCCEEDED_BASELINE", "duplicate-listing": "SUCCEEDED_DIFFERENCE"}[name]}]
         scenarios[name] = {"scenario_name": name, "acceptance_run_id": "run-1", "source_sha": "a" * 40, "account_id": "account", "beacon_id": "beacon", "schedule_id": "schedule", "work_id": "work", "scan_run_id": "run", "before": {"state": "before"}, "action": action, "after": after, "raw_observations": raw, "durable_before": durable_before, "durable_after": durable_after, "notification_deltas": {"source_intake": 0, "outbox_effect": 0, "delivery_attempt": 0, "observation_source": "notification-delivery-owned-read"}}
     return {"technical_id": TECHNICAL_ID, "source_sha": "a" * 40, "source_sha_observation": {"observed_sha": "a" * 40, "expected_sha": "a" * 40}, "acceptance_run_id": "run-1", "scenarios": scenarios, "provider_live_calls": 0, "foreign_resource_impact": 0, "production_personal_data": 0, "credentials_exposure": False, "remaining_scenario_stubs": 0, "remaining_unwired_drivers": 0, "remaining_hardcoded_observed_values": 0}
 
@@ -122,4 +124,54 @@ def test_producer_summary_flags_are_not_acceptance_authority(tmp_path: Path) -> 
     scenarios["partial-parser"]["action"]["parser_outcome"] = "USABLE_RESPONSE"
     scenarios["captcha-restriction"]["action"]["parser_outcome"] = "PARTIAL"
     scenarios["route-failure"]["action"].update({"route_failure_observed": False, "parser_success": True})
+    verify(write(tmp_path, data), "a" * 40)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "raw_state", "owning_state"),
+    [
+        ("worker-restart", "SUCCEEDED_DIFFERENCE", "SUCCEEDED_BASELINE"),
+        ("partial-parser", "FAILED", "PENDING_RECONCILIATION"),
+        ("captcha-restriction", "PENDING_RECONCILIATION", "FAILED"),
+        ("route-failure", "SUCCEEDED_BASELINE", "FAILED"),
+        ("lost-lease", "SUCCEEDED_DIFFERENCE", "SUCCEEDED_BASELINE"),
+        ("duplicate-listing", "SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"),
+    ],
+)
+def test_rejects_raw_owning_terminal_state_mismatch(
+    tmp_path: Path, scenario: str, raw_state: str, owning_state: str
+) -> None:
+    data = deepcopy(package())
+    item = data["scenarios"][scenario]
+    terminal = next(row for row in item["raw_observations"] if row.get("record_type") == "worker_terminal")
+    terminal["terminal_state"] = raw_state
+    owning = next(row for row in item["durable_after"]["runs"] if row.get("run_id") == item["scan_run_id"])
+    owning["state"] = owning_state
+    with pytest.raises(ValueError, match="terminal-state mismatch"):
+        verify(write(tmp_path, data), "a" * 40)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "substituted", "duplicate"])
+def test_rejects_non_unique_exact_owning_scan_run(
+    tmp_path: Path, mutation: str
+) -> None:
+    data = deepcopy(package())
+    runs = data["scenarios"]["duplicate-listing"]["durable_after"]["runs"]
+    if mutation == "missing":
+        runs.clear()
+    elif mutation == "substituted":
+        runs[0]["run_id"] = "another-run"
+    else:
+        runs.append(deepcopy(runs[0]))
+    with pytest.raises(ValueError, match="exact owning run is not unique"):
+        verify(write(tmp_path, data), "a" * 40)
+
+
+def test_accepts_post_baseline_duplicate_without_new_listing_or_effects(tmp_path: Path) -> None:
+    data = package()
+    item = data["scenarios"]["duplicate-listing"]
+    terminal = next(row for row in item["raw_observations"] if row.get("record_type") == "worker_terminal")
+    assert terminal["terminal_state"] == "SUCCEEDED_DIFFERENCE"
+    assert terminal["new_listing_count"] == 0
+    assert item["durable_after"]["runs"] == [{"run_id": "run", "state": "SUCCEEDED_DIFFERENCE"}]
     verify(write(tmp_path, data), "a" * 40)
