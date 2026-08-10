@@ -180,18 +180,57 @@ jobs:
           db="mayak_rf24_expired_${GITHUB_RUN_ID}"
           case "$db" in (*[!a-zA-Z0-9_]*|'') exit 1;; esac
           PGPASSWORD=bootstrap-only psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER mayak_migration"
-          printf 'MAYAK_DATABASE_NAME=%s\n' "$db" >> "$GITHUB_ENV"
-          printf 'RF15_MIGRATION_DSN=postgresql+psycopg://mayak_migration:migration-only@postgres:5432/%s\n' "$db" >> "$GITHUB_ENV"
-          printf 'RF24_DSN=postgresql+psycopg://mayak_application:application-only@postgres:5432/%s\n' "$db" >> "$GITHUB_ENV"
-          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration; GRANT USAGE, CREATE ON SCHEMA mayak TO mayak_application;'
-          uv run alembic downgrade base
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA mayak AUTHORIZATION mayak_migration;'
+          export MAYAK_DATABASE_NAME="$db"
+          export RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:migration-only@postgres:5432/${db}"
+          export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/${db}"
+          test "$MAYAK_DATABASE_NAME" = "$db"
+          python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+
+          db = os.environ["db"] if "db" in os.environ else os.environ["MAYAK_DATABASE_NAME"]
+          assert os.environ["MAYAK_DATABASE_NAME"] == db
+          for key in ("RF15_MIGRATION_DSN", "RF24_DSN"):
+              target = urlsplit(os.environ[key]).path.lstrip("/")
+              assert target == db, (key, "unexpected database target")
+              assert target != "mayak"
+          PY
+          printf 'MAYAK_DATABASE_NAME=%s\n' "$MAYAK_DATABASE_NAME" >> "$GITHUB_ENV"
+          printf 'RF15_MIGRATION_DSN=%s\n' "$RF15_MIGRATION_DSN" >> "$GITHUB_ENV"
+          printf 'RF24_DSN=%s\n' "$RF24_DSN" >> "$GITHUB_ENV"
           uv run alembic upgrade head
+          python - <<'PY'
+          import os
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          from sqlalchemy import create_engine, text
+
+          expected = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()
+          assert len(expected) == 1, "migration contract requires one head"
+          engine = create_engine(os.environ["RF15_MIGRATION_DSN"])
+          with engine.connect() as connection:
+              observed = [row[0] for row in connection.execute(text(
+                  "SELECT version_num FROM mayak.alembic_version ORDER BY version_num"
+              ))]
+          assert observed == expected, "fresh database is not exactly at migration head"
+          PY
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
+          PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d "$db" -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
       - name: FINAL post-suite P0-P8 on NEW database
         env:
           MAYAK_SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+
+          db = os.environ["MAYAK_DATABASE_NAME"]
+          assert db.startswith("mayak_rf24_expired_") and db != "mayak"
+          assert urlsplit(os.environ["RF24_DSN"]).path.lstrip("/") == db
+          assert urlsplit(os.environ["RF15_MIGRATION_DSN"]).path.lstrip("/") == db
+          PY
           rm -f rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-phase-boundaries.json rf24-expired-access-verifier-result.json rf24-expired-access-scanner-result.json rf24-expired-access.log
           uv run python scripts/runtime/run_rf24_expired_access.py --real-postgres --artifacts .
       - name: Verifier scanner manifest hash chain

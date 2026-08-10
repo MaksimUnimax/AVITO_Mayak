@@ -58,7 +58,9 @@ DOCKER_BUILDX_SHA256 = "dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e42
 
 def _run_body(text: str, name: str) -> str:
     match = re.search(
-        rf"^      - name: {re.escape(name)}\n        run: \|\n(?P<body>(?:          .*\n|\n)*)",
+        rf"^      - name: {re.escape(name)}\n"
+        rf"(?:        .*\n|\n)*?"
+        rf"        run: \|\n(?P<body>(?:          .*\n|\n)*)",
         text,
         re.M,
     )
@@ -75,6 +77,67 @@ def _heredocs(body: str) -> tuple[list[int], list[int]]:
 def _step_positions(text: str) -> dict[str, int]:
     names = re.findall(r"^      - name: (.+)$", text, re.M)
     return {name: i for i, name in enumerate(names)}
+
+
+def _fresh_step_failures(text: str) -> list[str]:
+    body = _run_body(text, "Create NEW post-suite database and migrate from zero")
+    if not body:
+        return ["fresh-step-missing"]
+    failures: list[str] = []
+    create = body.find("CREATE DATABASE")
+    schema = body.find("CREATE SCHEMA mayak")
+    binding = body.find('export MAYAK_DATABASE_NAME="$db"')
+    migration_binding = body.find('export RF15_MIGRATION_DSN="')
+    scenario_binding = body.find('export RF24_DSN="')
+    proof = body.find("urlsplit(os.environ[key]).path.lstrip(\"/\")")
+    upgrade = body.find("uv run alembic upgrade head")
+    head_proof = body.find("ScriptDirectory.from_config")
+    grants = body.find("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES")
+    if not re.search(r'db="[^"]*\$\{GITHUB_RUN_ID\}', body):
+        failures.append("fresh-db-name-not-run-id-derived")
+    if create < 0:
+        failures.append("fresh-db-create-missing")
+    if schema < 0 or (create >= 0 and schema < create):
+        failures.append("fresh-schema-not-created-after-database")
+    if binding < 0 or 'test "$MAYAK_DATABASE_NAME" = "$db"' not in body:
+        failures.append("fresh-current-shell-mayak-database-export-missing")
+    if migration_binding < 0 or (upgrade >= 0 and migration_binding > upgrade):
+        failures.append("fresh-current-shell-rf15-export-before-upgrade-missing")
+    if scenario_binding < 0 or (upgrade >= 0 and scenario_binding > upgrade):
+        failures.append("fresh-current-shell-rf24-export-before-upgrade-missing")
+    if not re.search(r'export RF15_MIGRATION_DSN="[^"\n]*\$\{db\}', body):
+        failures.append("fresh-rf15-target-not-db-variable")
+    if not re.search(r'export RF24_DSN="[^"\n]*\$\{db\}', body):
+        failures.append("fresh-rf24-target-not-db-variable")
+    if proof < 0 or (upgrade >= 0 and proof > upgrade):
+        failures.append("fresh-current-shell-target-proof-before-upgrade-missing")
+    if any(
+        marker not in body
+        for marker in (
+            "MAYAK_DATABASE_NAME=%s",
+            "RF15_MIGRATION_DSN=%s",
+            "RF24_DSN=%s",
+        )
+    ):
+        failures.append("fresh-github-env-persistence-missing")
+    if "alembic downgrade base" in body:
+        failures.append("fresh-step-downgrade-forbidden")
+    if upgrade < 0:
+        failures.append("fresh-direct-upgrade-head-missing")
+    if (
+        head_proof < 0
+        or "get_heads()" not in body
+        or "SELECT version_num FROM mayak.alembic_version" not in body
+        or "observed == expected" not in body
+        or (upgrade >= 0 and head_proof < upgrade)
+    ):
+        failures.append("fresh-exact-head-proof-order-invalid")
+    if grants < 0 or (head_proof >= 0 and grants < head_proof):
+        failures.append("fresh-application-grants-before-head-proof")
+    final = _run_body(text, "FINAL post-suite P0-P8 on NEW database")
+    if not final or "urlsplit(os.environ[\"RF24_DSN\"]).path.lstrip(\"/\") == db" not in final:
+        failures.append("final-p0-p8-fresh-db-proof-missing")
+    return failures
 
 
 def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list[str]:
@@ -131,6 +194,7 @@ def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list
         failures.append("pre-suite-evidence-reused")
     if "MAYAK_DATABASE_NAME=%s" not in text or "GITHUB_RUN_ID" not in text:
         failures.append("fresh-post-suite-db-binding")
+    failures.extend(_fresh_step_failures(text))
     if 'MAYAK_AVITO_LIVE_ENABLED: "false"' not in text:
         failures.append("live-provider-enable")
     if "actions/setup-python@v5" in text:

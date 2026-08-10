@@ -212,6 +212,110 @@ def test_workflow_new_root_cause_negative_cases(case_id: str, mutate) -> None:
 
 
 @pytest.mark.parametrize(
+    ("case_id", "mutate", "finding"),
+    [
+        (
+            "env-only-binding",
+            lambda w: w.replace('export MAYAK_DATABASE_NAME="$db"\n', ""),
+            "fresh-current-shell-mayak-database-export-missing",
+        ),
+        (
+            "rf15-old-database",
+            lambda w: w.replace(
+                '${db}"\n          export RF24_DSN', 'mayak"\n          export RF24_DSN'
+            ),
+            "fresh-rf15-target-not-db-variable",
+        ),
+        (
+            "rf24-old-database",
+            lambda w: w.replace(
+                'export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/${db}"',
+                'export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak"',
+                1,
+            ),
+            "fresh-rf24-target-not-db-variable",
+        ),
+        (
+            "export-after-upgrade",
+            lambda w: w.replace(
+                '          export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/${db}"\n',
+                '          uv run alembic upgrade head\n'
+                '          export RF24_DSN="postgresql+psycopg://mayak_application:application-only@postgres:5432/${db}"\n',
+                1,
+            ),
+            "fresh-current-shell-rf24-export-before-upgrade-missing",
+        ),
+        (
+            "fresh-downgrade",
+            lambda w: w.replace(
+                "          uv run alembic upgrade head\n          python - <<'PY'",
+                "          uv run alembic downgrade base\n"
+                "          uv run alembic upgrade head\n          python - <<'PY",
+                1,
+            ),
+            "fresh-step-downgrade-forbidden",
+        ),
+        (
+            "missing-head-proof",
+            lambda w: w.replace(
+                'expected = ScriptDirectory.from_config(Config("alembic.ini")).get_heads()',
+                "expected = []",
+            ),
+            "fresh-exact-head-proof-order-invalid",
+        ),
+        (
+            "head-proof-before-upgrade",
+            lambda w: w.replace(
+                '          printf \'RF24_DSN=%s\\n\' "$RF24_DSN" >> "$GITHUB_ENV"\n'
+                "          uv run alembic upgrade head\n",
+                '          printf \'RF24_DSN=%s\\n\' "$RF24_DSN" >> "$GITHUB_ENV"\n',
+                1,
+            ).replace(
+                "          assert observed == expected, \"fresh database is not exactly at "
+                "migration head\"\n",
+                "          assert observed == expected, \"fresh database is not exactly at "
+                "migration head\"\n"
+                "          uv run alembic upgrade head\n",
+                1,
+            ),
+            "fresh-exact-head-proof-order-invalid",
+        ),
+        (
+            "missing-current-shell-proof",
+            lambda w: w.replace(
+                '              target = urlsplit(os.environ[key]).path.lstrip("/")\n',
+                "",
+                1,
+            ),
+            "fresh-current-shell-target-proof-before-upgrade-missing",
+        ),
+        (
+            "final-not-bound",
+            lambda w: w.replace(
+                '          assert urlsplit(os.environ["RF24_DSN"]).path.lstrip("/") == db\n',
+                "",
+            ),
+            "final-p0-p8-fresh-db-proof-missing",
+        ),
+        (
+            "missing-env-persistence",
+            lambda w: w.replace(
+                "          printf 'RF24_DSN=%s\\n' \"$RF24_DSN\" >> \"$GITHUB_ENV\"\n",
+                "",
+            ),
+            "fresh-github-env-persistence-missing",
+        ),
+    ],
+)
+def test_fresh_database_mutations_have_specific_findings(
+    case_id: str, mutate, finding: str
+) -> None:
+    workflow = Path(".github/workflows/ci-rf24-expired-access.yml").read_text(encoding="utf-8")
+    findings = validate(mutate(workflow))
+    assert finding in findings, (case_id, findings)
+
+
+@pytest.mark.parametrize(
     ("base", "candidate", "changed", "accepted"),
     [
         (
