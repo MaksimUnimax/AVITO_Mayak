@@ -27,6 +27,12 @@ jobs:
       MAYAK_DATABASE_APPLICATION_USER: mayak_application
       MAYAK_DATABASE_MIGRATION_USER: mayak_migration
       MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_application:application-only@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
+      MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
+      MAYAK_RF11_POSTGRES_USER: mayak_migration
+      MAYAK_RF11_POSTGRES_HOST: postgres
+      MAYAK_RF11_POSTGRES_PORT: "5432"
+      MAYAK_RF11_POSTGRES_DB: mayak
       MAYAK_RUNTIME_PROFILE: synthetic_acceptance
       MAYAK_API_INTERNAL_PORT: "18080"
       MAYAK_API_BIND_HOST: 127.0.0.1
