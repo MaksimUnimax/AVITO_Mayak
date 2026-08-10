@@ -36,17 +36,23 @@ jobs:
       MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak:bootstrap-only@postgres:5432/mayak
       MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak:bootstrap-only@postgres:5432/mayak
     steps:
+      - name: Install git and PostgreSQL client
+        run: apt-get update && apt-get install -y --no-install-recommends git postgresql-client
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - name: Exact source and Bash proof
-        shell: bash
         run: |
           set -euo pipefail
-          actual_sha="$(git rev-parse --verify HEAD)"
-          expected_sha="${{ github.sha }}"
-          echo "checkout-sha=$actual_sha"
-          test "$actual_sha" = "$expected_sha"
+          git config --global --unset-all safe.directory || true
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          command -v bash
+          bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
+          printf 'CHECKOUT_HEAD=%s\n' "$(git rev-parse HEAD)"
+          printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          ! git config --get-all safe.directory | grep -Fxq '*'
       - name: Compute lock and image identity
         shell: bash
         run: |
