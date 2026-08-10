@@ -350,6 +350,9 @@ def main() -> int:
                     f"fresh form expected HTTP 200, got {fresh_response.status_code}"
                 )
             final = _safe_view(composition, reference, beacon_id)
+            fresh_revision_delta = final["revision_no"] - after_concurrent["revision_no"]
+            if fresh_revision_delta != 1:
+                raise AssertionError("fresh form did not create exactly one owner revision")
             if final["row_version"] != n + 2 or final["accepted_filter"].get(
                 "normalized_filter_values"
             ) != ["fresh"]:
@@ -362,7 +365,7 @@ def main() -> int:
                     fresh_value="fresh",
                     http_status=fresh_response.status_code,
                     final_version=final["row_version"],
-                    revision_delta=1,
+                    revision_delta=fresh_revision_delta,
                     fresh_authoritative=True,
                 )
             )
@@ -403,7 +406,7 @@ def main() -> int:
             "fresh_reload_version": n + 1,
             "fresh_http_mutation_succeeded": True,
             "final_version": n + 2,
-            "final_fresh_revision_delta": 1,
+            "final_fresh_revision_delta": fresh_revision_delta,
             "stale_value_absent": True,
             "concurrent_value_survived_stale_rejection": True,
             "fresh_value_authoritative_after_fresh_submission": True,

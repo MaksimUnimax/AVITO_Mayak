@@ -111,7 +111,7 @@ jobs:
           grep -F 'final_version' scripts/runtime/run_rf24_stale_web_form.py
           grep -F 'fresh_value_authoritative_after_fresh_submission' scripts/runtime/run_rf24_stale_web_form.py
           grep -F 'final_fresh_revision_delta' scripts/runtime/run_rf24_stale_web_form.py
-          grep -F '== 1' scripts/runtime/run_rf24_stale_web_form.py
+          grep -F 'fresh_revision_delta != 1' scripts/runtime/run_rf24_stale_web_form.py
           grep -F 'BeaconManagementRuntime.patch' scripts/runtime/run_rf24_stale_web_form.py
           grep -F 'version_after' scripts/runtime/run_rf24_stale_web_form.py
           uv run python scripts/runtime/check_rf24_stale_web_form_workflow.py .github/workflows/ci-rf24-stale-web-form.yml
