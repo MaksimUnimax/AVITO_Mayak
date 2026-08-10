@@ -38,6 +38,8 @@ jobs:
       - name: Exact candidate identity
         run: |
           set -euo pipefail
+          git fetch --no-tags origin "$GITHUB_SHA"
+          git checkout --detach "$GITHUB_SHA"
           candidate_sha="$(git rev-parse HEAD)"
           expected_sha="${{ github.sha }}"
           echo "candidate_sha=$candidate_sha expected_sha=$expected_sha"
