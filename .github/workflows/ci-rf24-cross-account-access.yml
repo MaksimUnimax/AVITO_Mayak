@@ -123,6 +123,10 @@ jobs:
         run: |
           set -euo pipefail
           unset MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_DSN MAYAK_RF10_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF10_POSTGRES_USER MAYAK_RF10_POSTGRES_HOST MAYAK_RF10_POSTGRES_PORT MAYAK_RF10_POSTGRES_DB MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB
+          export MAYAK_SOURCE_SHA="$(git rev-parse --verify HEAD)"
+          export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
+          export MAYAK_IMAGE_DIGEST="sha256:$(sha256sum Dockerfile | cut -d' ' -f1)"
+          export MAYAK_ENVIRONMENT_ID="avito-mayak-rf24-cross-account-${GITHUB_RUN_ID}"
           uv run python scripts/runtime/check_rf24_cross_account_runtime_settings.py
           # runtime-settings-preflight=PASS
       - name: Workflow validator and ownership gate
