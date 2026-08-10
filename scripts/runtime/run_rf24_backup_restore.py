@@ -118,6 +118,21 @@ def application_read(dsn: str) -> bool:
         return row is not None and int(row[0]) > 0
 
 
+def require_archive_digest(actual: str, expected: str) -> None:
+    if actual != expected:
+        raise ValueError("archive digest mismatch")
+
+
+def require_source_revision(actual: str, expected: str) -> None:
+    if actual != expected:
+        raise ValueError("source revision mismatch")
+
+
+def require_clean_target(state: dict[str, Any]) -> None:
+    if state.get("alembic_head") or any(int(value) for value in state.get("tables", {}).values()):
+        raise ValueError("target is non-empty")
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--source-dsn", required=True)
@@ -174,9 +189,12 @@ def main() -> None:
             raise SystemExit("target is not clean before restore")
         controls = {}
         tampered_expected = "0" * 64
-        controls["tampered_digest"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "archive digest differed from supplied expected digest", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before, "archive_original_unchanged": True}
-        if tampered_expected == digest:
-            raise SystemExit("tampered digest control did not differ")
+        try:
+            require_archive_digest(digest, tampered_expected)
+        except ValueError as exc:
+            controls["tampered_digest"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": str(exc), "target_fingerprint_before": target_before, "target_fingerprint_after": target_before, "archive_original_unchanged": True}
+        else:
+            raise SystemExit("tampered digest control did not block")
         shutil.copyfile(a.backup, corrupt)
         raw = bytearray(corrupt.read_bytes()); raw[-1] ^= 0xFF; corrupt.write_bytes(raw)
         corrupt_reason = "pg_restore rejected corrupted archive"
@@ -187,9 +205,19 @@ def main() -> None:
         after = snapshot(a.source_dsn)
         target = snapshot(a.target_dsn)
         controls["corrupt_copy"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": corrupt_reason, "target_fingerprint_before": target_before, "target_fingerprint_after": target_before, "archive_original_unchanged": hashlib.sha256(a.backup.read_bytes()).hexdigest() == digest}
-        controls["wrong_source_revision"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "source revision metadata mismatch rejected before restore", "target_fingerprint_before": target_before, "target_fingerprint_after": target_before}
-        controls["nonempty_newer_target"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "post-restore non-empty target rejected by clean-target preflight", "target_fingerprint_before": target["digest"], "target_fingerprint_after": target["digest"]}
-        controls["duplicate_restore"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": "duplicate restore rejected because target is non-empty", "target_fingerprint_before": target["digest"], "target_fingerprint_after": target["digest"]}
+        try:
+            require_source_revision(a.source_sha, a.source_sha[:-1] + ("0" if a.source_sha[-1] != "0" else "1"))
+        except ValueError as exc:
+            controls["wrong_source_revision"] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": str(exc), "target_fingerprint_before": target_before, "target_fingerprint_after": target_before}
+        else:
+            raise SystemExit("wrong source revision control did not block")
+        for name in ("nonempty_newer_target", "duplicate_restore"):
+            try:
+                require_clean_target(target)
+            except ValueError as exc:
+                controls[name] = {"executed": True, "preflight_result": "BLOCKED", "observed_reason": str(exc), "target_fingerprint_before": target["digest"], "target_fingerprint_after": target["digest"]}
+            else:
+                raise SystemExit(f"{name} control did not block")
     finally:
         a.backup.unlink(missing_ok=True)
         corrupt.unlink(missing_ok=True)
