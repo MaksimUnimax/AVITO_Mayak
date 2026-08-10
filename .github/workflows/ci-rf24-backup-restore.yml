@@ -48,6 +48,7 @@ jobs:
           set -euo pipefail
           psql -h postgres -U mayak -d postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE mayak_migration LOGIN PASSWORD 'migration-only' CREATEDB; CREATE ROLE mayak_application LOGIN PASSWORD 'application-only';" || true
           psql -h postgres -U mayak -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE mayak OWNER mayak_migration;" || true
+          psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "CREATE SCHEMA mayak AUTHORIZATION mayak_migration;" || true
           uv run alembic upgrade head
           psql -h postgres -U mayak -d mayak -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;"
       - name: Complete repository pytest once
