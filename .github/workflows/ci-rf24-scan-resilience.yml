@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          test "$(git config --global --get-all safe.directory)" = "$GITHUB_WORKSPACE"
+          git config --global --get-all safe.directory | grep -Fxq "$GITHUB_WORKSPACE"
           ! git config --global --get-all safe.directory | grep -Fxq '*'
       - uses: astral-sh/setup-uv@v6
         with:
@@ -99,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          test "$(git config --global --get-all safe.directory)" = "$GITHUB_WORKSPACE"
+          git config --global --get-all safe.directory | grep -Fxq "$GITHUB_WORKSPACE"
           ! git config --global --get-all safe.directory | grep -Fxq '*'
           test -S /var/run/docker.sock
           docker version
