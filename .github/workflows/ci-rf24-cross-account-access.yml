@@ -23,7 +23,6 @@ jobs:
     env:
       UV_VERSION: 0.11.31
       MAYAK_ENVIRONMENT_ID: avito-mayak-rf24-cross-account-${{ github.run_id }}
-      MAYAK_SOURCE_SHA: ${{ github.sha }}
       MAYAK_LOCK_IDENTITY: pending-shell-proof
       MAYAK_IMAGE_DIGEST: pending-shell-proof
       MAYAK_PROCESS_KIND: mayak-worker
@@ -45,11 +44,13 @@ jobs:
         run: |
           set -euo pipefail
           actual_sha="$(git rev-parse --verify HEAD)"
+          export MAYAK_SOURCE_SHA="$GITHUB_SHA"
           echo "checkout-sha=$actual_sha"
           echo "event-sha=$GITHUB_SHA"
           echo "source-sha=$MAYAK_SOURCE_SHA"
           test "$actual_sha" = "$GITHUB_SHA"
           test "$actual_sha" = "$MAYAK_SOURCE_SHA"
+          echo "MAYAK_SOURCE_SHA=$MAYAK_SOURCE_SHA" >> "$GITHUB_ENV"
           bash --version
       - name: Compute lock and image identity
         shell: bash
