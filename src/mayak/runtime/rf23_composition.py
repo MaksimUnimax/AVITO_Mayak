@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeAlias, cast
+from typing import Any, Callable, TypeAlias, cast
 from uuid import uuid4
 
 from alembic.config import Config
@@ -47,14 +47,19 @@ from mayak.runtime.settings import MayakRuntimeSettings
 class CustomerEntitlementPort:
     """Small Beacon-owned port backed by the Entitlements owner runtime."""
 
-    def __init__(self, owner: EntitlementsBillingRuntime) -> None:
+    def __init__(
+        self,
+        owner: EntitlementsBillingRuntime,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
         self.owner = owner
+        self.clock = clock
 
     def decide(
         self, session: Session, *, account_id: Any, action: str, active_count: int
     ) -> EntitlementDecision:
         try:
-            projection = self.owner.evaluate_effective(session, account_id, at=datetime.now(UTC))
+            projection = self.owner.evaluate_effective(session, account_id, at=self.clock())
             status = getattr(getattr(projection, "status", None), "value", None)
             allowed = status == "ALLOWED"
         except Exception:
@@ -113,7 +118,9 @@ class RF23Composition:
         self, session: Session, reference: CustomerSessionReference, *, idempotency_key: str
     ) -> Any:
         return self.identity.bootstrap_admin_reference(
-            session, reference, idempotency_key=IdempotencyKey(value=idempotency_key),
+            session,
+            reference,
+            idempotency_key=IdempotencyKey(value=idempotency_key),
             correlation=CorrelationContext(correlation_id=CorrelationId(value=str(uuid4()))),
         )
 

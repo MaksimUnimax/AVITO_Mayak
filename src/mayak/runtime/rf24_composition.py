@@ -62,6 +62,7 @@ from mayak.modules.scan_orchestration.repository import ScanRepository
 from mayak.persistence.config import ApplicationDatabaseSettings, DatabaseEndpoint
 from mayak.persistence.engine import create_application_engine
 from mayak.persistence.session import create_session_factory
+from mayak.runtime.rf21_composition import CustomerIdentityAuthorityAdapter
 from mayak.runtime.rf23_composition import CustomerEntitlementPort, CustomerSessionReference
 from mayak.runtime.settings import MayakRuntimeSettings
 
@@ -299,9 +300,7 @@ class RF24RuntimeComposition:
         accounts = self.entitlements.accounts_with_paid_expiry(session, at=at)
         frozen: list[UUID] = []
         for view in self.beacon.active_for_accounts(session, account_ids=accounts):
-            decision = self.entitlements.paid_expiry_decision(
-                session, view.account_id, at=at
-            )
+            decision = self.entitlements.paid_expiry_decision(session, view.account_id, at=at)
             if not decision.actionable or decision.expired_basic_grant_id is None:
                 continue
             valid_until = (
@@ -339,8 +338,15 @@ class RF24RuntimeComposition:
         return PersistedParserAdapter(self.parser, session)
 
     def ingest_scan_notification(
-        self, session: Session, *, account_id: UUID, beacon_id: UUID, run_id: UUID,
-        listing_keys: tuple[str, ...], event_id: UUID, now: datetime,
+        self,
+        session: Session,
+        *,
+        account_id: UUID,
+        beacon_id: UUID,
+        run_id: UUID,
+        listing_keys: tuple[str, ...],
+        event_id: UUID,
+        now: datetime,
     ) -> tuple[UUID, ...]:
         """Use Notification Delivery's source/intake/fan-out boundaries for Scan effects."""
         if not listing_keys:
@@ -355,17 +361,24 @@ class RF24RuntimeComposition:
             source_fact_id=str(event_id),
             source_committed=True,
             source_commit_reference=str(event_id),
-            account_id=str(account_id), beacon_id=str(beacon_id), scan_run_id=str(run_id),
-            listing_count=len(listing_keys), safe_listing_reference_ids=listing_keys,
-            correlation_id=f"rf24-correlation-{run_id}", causation_id=f"rf24-causation-{event_id}",
+            account_id=str(account_id),
+            beacon_id=str(beacon_id),
+            scan_run_id=str(run_id),
+            listing_count=len(listing_keys),
+            safe_listing_reference_ids=listing_keys,
+            correlation_id=f"rf24-correlation-{run_id}",
+            causation_id=f"rf24-causation-{event_id}",
             idempotency_key=IdempotencyKey(value=f"rf24:scan:{event_id}"),
             idempotency_fingerprint=IdempotencyFingerprint(value=fingerprint),
             idempotency_scope=IdempotencyScope(value="notification.scan-new-listing"),
-            source_identity_ambiguous=False, contains_raw_provider_payload=False,
-            service_access_gate_approved=False, evidence_reference_ids=("rf24-scan-commit",),
+            source_identity_ambiguous=False,
+            contains_raw_provider_payload=False,
+            service_access_gate_approved=False,
+            evidence_reference_ids=("rf24-scan-commit",),
         )
         intake = evaluate_notification_source_intake(
-            decision_id=f"rf24:intake:{event_id}", source_event=source,
+            decision_id=f"rf24:intake:{event_id}",
+            source_event=source,
             evidence_reference_ids=("rf24-intake",),
         )
         event = ingest_source(session, source, now=now)
@@ -378,12 +391,14 @@ class RF24RuntimeComposition:
             now=now,
         )
         context = NotificationEligibilityContext(
-            account_id=str(account_id), beacon_id=str(beacon_id),
+            account_id=str(account_id),
+            beacon_id=str(beacon_id),
             beacon_lifecycle_status=NotificationBeaconLifecycleStatus.ACTIVE,
             beacon_lifecycle_reference_id=str(beacon_id),
             entitlement_status=NotificationEntitlementStatus.ALLOWED,
             entitlement_decision_reference_id=f"rf24-entitlement-{account_id}",
-            no_new_status_preference_enabled=False, no_new_status_frequency_minutes=None,
+            no_new_status_preference_enabled=False,
+            no_new_status_frequency_minutes=None,
             channel_evidence=(
                 NotificationChannelEligibilityEvidence(
                     NotificationChannelClass.TELEGRAM,
@@ -408,24 +423,36 @@ class RF24RuntimeComposition:
             evidence_reference_ids=("rf24-notification-context",),
         )
         eligibility = evaluate_notification_eligibility(
-            decision_id=f"rf24:eligibility:{event_id}", source_intake_decision=intake,
-            context=context, evidence_reference_ids=("rf24-eligibility",),
+            decision_id=f"rf24:eligibility:{event_id}",
+            source_intake_decision=intake,
+            context=context,
+            evidence_reference_ids=("rf24-eligibility",),
         )
         outbox = create_notification_outbox_item(
-            decision_id=f"rf24:outbox:{event_id}", outbox_item_id=f"rf24-outbox-{event_id}",
-            outbox_contract="notification.outbox.v1", outbox_contract_version="1.0",
-            eligibility_decision=eligibility, idempotency_key=source.idempotency_key,
+            decision_id=f"rf24:outbox:{event_id}",
+            outbox_item_id=f"rf24-outbox-{event_id}",
+            outbox_contract="notification.outbox.v1",
+            outbox_contract_version="1.0",
+            eligibility_decision=eligibility,
+            idempotency_key=source.idempotency_key,
             idempotency_fingerprint=source.idempotency_fingerprint,
             idempotency_scope=source.idempotency_scope,
-            existing_outbox_item=None, evidence_reference_ids=("rf24-outbox",),
+            existing_outbox_item=None,
+            evidence_reference_ids=("rf24-outbox",),
         )
         plan = plan_notification_delivery(
-            decision_id=f"rf24:plan:{event_id}", delivery_plan_id=f"rf24-plan-{event_id}",
-            outbox_creation_decision=outbox, evidence_reference_ids=("rf24-plan",),
+            decision_id=f"rf24:plan:{event_id}",
+            delivery_plan_id=f"rf24-plan-{event_id}",
+            outbox_creation_decision=outbox,
+            evidence_reference_ids=("rf24-plan",),
         )
         return fanout_event(
-            session, event.id, (endpoint_id,), now=now,
-            eligibility_decision=eligibility, delivery_plan=plan,
+            session,
+            event.id,
+            (endpoint_id,),
+            now=now,
+            eligibility_decision=eligibility,
+            delivery_plan=plan,
         )
 
     def close(self) -> None:
@@ -433,7 +460,10 @@ class RF24RuntimeComposition:
 
 
 def build_rf24_composition(
-    settings: MayakRuntimeSettings, *, engine: Engine | None = None
+    settings: MayakRuntimeSettings,
+    *,
+    engine: Engine | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> RF24RuntimeComposition:
     application = ApplicationDatabaseSettings(
         endpoint=DatabaseEndpoint(
@@ -446,10 +476,11 @@ def build_rf24_composition(
     )
     app_engine = engine or create_application_engine(settings=application)
     identity = IdentityRuntime(settings)
+    acceptance_clock = clock or (lambda: datetime.now(UTC))
     entitlements = EntitlementsBillingRuntime()
     beacon = BeaconManagementRuntime(
-        identity,
-        CustomerEntitlementPort(entitlements),
+        CustomerIdentityAuthorityAdapter(identity),
+        CustomerEntitlementPort(entitlements, acceptance_clock),
         system_authority=EntitlementsSystemAuthority(),
     )
     return RF24RuntimeComposition(
@@ -460,6 +491,7 @@ def build_rf24_composition(
         entitlements=entitlements,
         parser=AvitoParserRuntime(),
         identity=identity,
+        clock=acceptance_clock,
     )
 
 

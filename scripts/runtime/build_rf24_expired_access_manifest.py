@@ -10,6 +10,9 @@ from pathlib import Path
 FILES = (
     "rf24-expired-access-evidence.json",
     "rf24-expired-access-provider-observations.json",
+    "rf24-expired-access-phase-boundaries.json",
+    "rf24-expired-access-adversarial-execution.json",
+    "rf24-expired-access-static-delta.json",
     "rf24-expired-access-verifier-result.json",
     "rf24-expired-access-scanner-result.json",
     "rf24-expired-access.log",

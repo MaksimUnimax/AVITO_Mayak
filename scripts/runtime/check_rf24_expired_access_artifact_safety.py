@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
 PATTERNS = (
@@ -15,7 +15,8 @@ PATTERNS = (
     ),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", re.I),
     re.compile(
-        r"(?:raw_provider|provider_request|provider_response|request_body|response_body)", re.I
+        r"(?:raw_provider_(?:request|response|payload)(?!_persisted)|provider_request|provider_response|request_body|response_body)",
+        re.I,
     ),
 )
 
@@ -35,9 +36,22 @@ def scan(paths: list[Path]) -> int:
 
 
 def main(argv=None):
-    paths = [Path(x) for x in (argv or sys.argv[1:])]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("paths", nargs="*")
+    parser.add_argument("--result", type=Path)
+    args = parser.parse_args(argv)
+    paths = [Path(x) for x in args.paths]
     count = scan(paths)
-    print(json.dumps({"scanner": "rf24-expired-access/v1", "finding_count": count}, sort_keys=True))
+    result = {
+        "technical_id": "RF24-EXPIRED-ACCESS-SCENARIO-01",
+        "scanner": "rf24-expired-access/v1",
+        "finding_count": count,
+    }
+    if args.result:
+        args.result.write_text(
+            json.dumps(result, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+    print(json.dumps(result, sort_keys=True))
     return 1 if count else 0
 
 
