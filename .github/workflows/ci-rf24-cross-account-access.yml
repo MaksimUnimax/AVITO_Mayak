@@ -44,12 +44,12 @@ jobs:
         run: |
           set -euo pipefail
           actual_sha="$(git rev-parse --verify HEAD)"
-          export MAYAK_SOURCE_SHA="$GITHUB_SHA"
+          expected_sha="${{ github.sha }}"
+          export GITHUB_SHA="$expected_sha" MAYAK_SOURCE_SHA="$expected_sha"
           echo "checkout-sha=$actual_sha"
-          echo "event-sha=$GITHUB_SHA"
-          echo "source-sha=$MAYAK_SOURCE_SHA"
-          test "$actual_sha" = "$GITHUB_SHA"
-          test "$actual_sha" = "$MAYAK_SOURCE_SHA"
+          echo "event-sha=$expected_sha"
+          echo "source-sha=$expected_sha"
+          test "$actual_sha" = "$expected_sha"
           echo "MAYAK_SOURCE_SHA=$MAYAK_SOURCE_SHA" >> "$GITHUB_ENV"
           bash --version
       - name: Compute lock and image identity
