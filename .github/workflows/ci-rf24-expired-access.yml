@@ -45,6 +45,7 @@ jobs:
       - name: Verify exact source identity
         run: |
           set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
           git config --global --unset-all --fixed-value safe.directory '*' || true
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global --add safe.directory "$(pwd)"
