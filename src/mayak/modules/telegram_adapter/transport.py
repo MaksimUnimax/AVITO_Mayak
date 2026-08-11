@@ -101,30 +101,39 @@ class HttpxTelegramTransport:
     def _request(self, method: str, params: Mapping[str, Any]) -> TelegramTransportResult:
         self.calls.append(method)
         url = f"https://api.telegram.org/bot{self._token}/{method}"
+        owned = self._client is None
+        client = self._client or httpx.Client(timeout=self._timeout)
         try:
-            response = (self._client or httpx.Client(timeout=self._timeout)).post(url, data=dict(params))
-            body = response.content
+            with client.stream("POST", url, data=dict(params)) as response:
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    remaining = self._max_response_bytes - len(body)
+                    body.extend(chunk[: remaining + 1])
+                    if len(body) > self._max_response_bytes:
+                        return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="response_too_large", http_status=response.status_code, request_sent=True, reconciliation_required=True)
+                status_code = response.status_code
         except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError):
             return TelegramTransportResult(TelegramTransportClass.UNAVAILABLE, reason_code="transport_failure", request_sent=True, reconciliation_required=True)
         except httpx.HTTPError:
             return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="protocol_failure", request_sent=True, reconciliation_required=True)
-        if len(body) > self._max_response_bytes:
-            return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="response_too_large", http_status=response.status_code, request_sent=True, reconciliation_required=True)
-        if response.status_code == 429:
+        finally:
+            if owned:
+                client.close()
+        if status_code == 429:
             return TelegramTransportResult(TelegramTransportClass.RATE_LIMITED, reason_code="http_429", http_status=429, request_sent=True)
         try:
-            payload = json.loads(body)
+            payload = json.loads(bytes(body))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="malformed_json", http_status=response.status_code, request_sent=True, reconciliation_required=True)
+            return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="malformed_json", http_status=status_code, request_sent=True, reconciliation_required=True)
         if not isinstance(payload, Mapping) or type(payload.get("ok")) is not bool:
-            return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="unusable_response", http_status=response.status_code, request_sent=True, reconciliation_required=True)
+            return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="unusable_response", http_status=status_code, request_sent=True, reconciliation_required=True)
         self._last_payload = payload
         if payload["ok"] is True:
             ref = _message_ref(payload) if method == "sendMessage" else None
             if method == "sendMessage" and ref is None:
-                return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="message_result_invalid", http_status=response.status_code, request_sent=True, reconciliation_required=True)
-            return TelegramTransportResult(TelegramTransportClass.ACCEPTED, message_ref=ref, reason_code="ok_true", http_status=response.status_code, request_sent=True)
-        return TelegramTransportResult(TelegramTransportClass.REJECTED, reason_code="provider_rejected", http_status=response.status_code, request_sent=True)
+                return TelegramTransportResult(TelegramTransportClass.AMBIGUOUS, reason_code="message_result_invalid", http_status=status_code, request_sent=True, reconciliation_required=True)
+            return TelegramTransportResult(TelegramTransportClass.ACCEPTED, message_ref=ref, reason_code="ok_true", http_status=status_code, request_sent=True)
+        return TelegramTransportResult(TelegramTransportClass.REJECTED, reason_code="provider_rejected", http_status=status_code, request_sent=True)
 
     def get_me(self) -> TelegramTransportResult:
         return self._request("getMe", {})

@@ -44,6 +44,7 @@ jobs:
           enable-cache: false
       - name: Verify Python and uv identity
         run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(python --version)" = "Python 3.14.6"
           test "$(python -c 'import sys; print(getattr(sys, "_is_gil_enabled")())')" = True
           test "$(python -c 'import sysconfig; print(sysconfig.get_config_var("Py_GIL_DISABLED"))')" = 0
@@ -70,7 +71,7 @@ jobs:
       - name: Verify evidence files exist
         if: always()
         run: |
-          for f in self-test-evidence.json security-supply-chain-evidence.json secret-scan.json vulnerability-audit.json dependency-inventory.json installed-distribution-inventory.json license-inventory.json license-inventory.tsv summary.txt; do test -s "ci-evidence/security-supply-chain/$f"; done
+          for f in self-test-evidence.json security-supply-chain-evidence.json secret-scan.json base-secret-scan.json base-candidate-comparison.json rf25-requirement-matrix.json unsafe-command-audit.json security-privacy-runtime.json container-compose-hardening.json vulnerability-audit.json dependency-inventory.json installed-distribution-inventory.json license-inventory.json license-inventory.tsv artifact-safety-manifest.json summary.txt; do test -s "ci-evidence/security-supply-chain/$f"; done
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

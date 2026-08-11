@@ -110,15 +110,17 @@ class HttpxMaxTransport:
         json_body: Mapping[str, Any] | None = None,
         params: Mapping[str, Any] | None = None,
     ) -> MaxTransportResult:
+        owned = self._client is None
+        client = self._client or httpx.Client(timeout=self._timeout)
         try:
-            response = (self._client or httpx.Client(timeout=self._timeout)).request(
-                method,
-                f"{self._base_url}{path}",
-                headers={"Authorization": self._token},
-                json=json_body,
-                params=params,
-            )
-            body = response.content
+            with client.stream(method, f"{self._base_url}{path}", headers={"Authorization": self._token}, json=json_body, params=params) as response:
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    remaining = self._limit - len(body)
+                    body.extend(chunk[: remaining + 1])
+                    if len(body) > self._limit:
+                        return MaxTransportResult(MaxTransportClass.MALFORMED, reason_code="response_too_large", http_status=response.status_code, request_sent=True)
+                status = response.status_code
         except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError):
             return MaxTransportResult(
                 MaxTransportClass.AMBIGUOUS,
@@ -133,14 +135,9 @@ class HttpxMaxTransport:
                 request_sent=True,
                 reconciliation_required=True,
             )
-        status = response.status_code
-        if len(body) > self._limit:
-            return MaxTransportResult(
-                MaxTransportClass.MALFORMED,
-                reason_code="response_too_large",
-                http_status=status,
-                request_sent=True,
-            )
+        finally:
+            if owned:
+                client.close()
         if status == 401:
             return MaxTransportResult(
                 MaxTransportClass.AUTH_FAILED,
@@ -163,7 +160,7 @@ class HttpxMaxTransport:
                 request_sent=True,
             )
         try:
-            payload = json.loads(body)
+            payload = json.loads(bytes(body))
         except (UnicodeDecodeError, json.JSONDecodeError):
             return MaxTransportResult(
                 MaxTransportClass.MALFORMED,
@@ -207,27 +204,32 @@ class HttpxMaxTransport:
         )
 
     def get_updates(self, *, marker: int | None, limit: int, timeout: int) -> MaxUpdateBatch:
+        owned = self._client is None
+        client = self._client or httpx.Client(timeout=self._timeout)
         try:
-            response = (self._client or httpx.Client(timeout=self._timeout)).get(
-                f"{self._base_url}/updates",
-                headers={"Authorization": self._token},
-                params={"marker": marker, "limit": limit, "timeout": timeout},
-            )
-            body = response.content
+            with client.stream("GET", f"{self._base_url}/updates", headers={"Authorization": self._token}, params={"marker": marker, "limit": limit, "timeout": timeout}) as response:
+                body = bytearray()
+                for chunk in response.iter_bytes():
+                    remaining = self._limit - len(body)
+                    body.extend(chunk[: remaining + 1])
+                    if len(body) > self._limit:
+                        return MaxUpdateBatch(MaxTransportClass.MALFORMED, reason_code="response_too_large")
+                status = response.status_code
         except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError, httpx.HTTPError):
             return MaxUpdateBatch(MaxTransportClass.AMBIGUOUS, reason_code="transport_failure")
-        if len(body) > self._limit:
-            return MaxUpdateBatch(MaxTransportClass.MALFORMED, reason_code="response_too_large")
-        if response.status_code == 401:
+        finally:
+            if owned:
+                client.close()
+        if status == 401:
             return MaxUpdateBatch(MaxTransportClass.AUTH_FAILED, reason_code="http_401")
-        if response.status_code == 429:
+        if status == 429:
             return MaxUpdateBatch(MaxTransportClass.RATE_LIMITED, reason_code="http_429")
-        if response.status_code >= 500:
+        if status >= 500:
             return MaxUpdateBatch(
-                MaxTransportClass.UNAVAILABLE, reason_code=f"http_{response.status_code}"
+                MaxTransportClass.UNAVAILABLE, reason_code=f"http_{status}"
             )
         try:
-            payload = json.loads(body)
+            payload = json.loads(bytes(body))
         except (UnicodeDecodeError, json.JSONDecodeError):
             return MaxUpdateBatch(MaxTransportClass.MALFORMED, reason_code="malformed_json")
         updates = payload.get("updates") if isinstance(payload, Mapping) else None
