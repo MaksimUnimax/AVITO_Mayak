@@ -147,7 +147,7 @@ jobs:
           printf '%s' application-only > /tmp/rf24-secrets/mayak_database_application_password
           chmod 600 /tmp/rf24-secrets/mayak_database_application_password
           export MAYAK_DATABASE_NAME="$SOURCE_DB"
-          uv run python scripts/runtime/run_rf24_vertical_spine.py --repo-root "$GITHUB_WORKSPACE" --output rf24-source-runtime-seed.json --probes rf24-source-runtime-probes.json --log rf24-source-runtime.log --source-sha "$GITHUB_SHA"
+          uv run python -m scripts.runtime.run_rf24_vertical_spine --repo-root "$GITHUB_WORKSPACE" --output rf24-source-runtime-seed.json --probes rf24-source-runtime-probes.json --log rf24-source-runtime.log --source-sha "$GITHUB_SHA"
       - name: Bind exact PostgreSQL 18 service tooling boundary
         run: |
           set -euo pipefail
@@ -167,7 +167,7 @@ jobs:
           RF24_PG_PASSWORD: migration-only
         run: |
           set -euo pipefail
-          uv run python scripts/runtime/run_rf24_backup_restore.py --source-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${SOURCE_DB}" --target-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${TARGET_DB}" --conflict-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${CONFLICT_DB}" --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump --seed-evidence rf24-source-runtime-seed.json
+          uv run python -m scripts.runtime.run_rf24_backup_restore --source-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${SOURCE_DB}" --target-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${TARGET_DB}" --conflict-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${CONFLICT_DB}" --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump --seed-evidence rf24-source-runtime-seed.json
       - name: Scenario-specific PG18 gate passed before broad suite
         run: test -s rf24-backup-restore-evidence.json
       - name: Complete repository pytest once
@@ -177,11 +177,11 @@ jobs:
       - name: Independent verifier, scanner and manifest
         run: |
           set -euo pipefail
-          uv run python scripts/runtime/verify_rf24_backup_restore.py --evidence rf24-backup-restore-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf24-backup-restore-verifier-result.json
-          uv run python scripts/runtime/check_rf24_backup_restore_artifact_safety.py --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-complete-repository-pytest.log
-          uv run python scripts/runtime/build_rf24_backup_restore_manifest.py --output rf24-backup-restore-safety-manifest.json --scanner rf24-backup-restore-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json rf24-complete-repository-pytest.log
-          uv run python scripts/runtime/check_rf24_backup_restore_workflow.py .github/workflows/ci-rf24-backup-restore.yml
-          uv run python scripts/runtime/check_rf24_backup_restore_ownership.py scripts/runtime/run_rf24_backup_restore.py scripts/runtime/verify_rf24_backup_restore.py
+          uv run python -m scripts.runtime.verify_rf24_backup_restore --evidence rf24-backup-restore-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf24-backup-restore-verifier-result.json
+          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-complete-repository-pytest.log
+          uv run python -m scripts.runtime.build_rf24_backup_restore_manifest --output rf24-backup-restore-safety-manifest.json --scanner rf24-backup-restore-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json rf24-complete-repository-pytest.log
+          uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
+          uv run python -m scripts.runtime.check_rf24_backup_restore_ownership scripts/runtime/run_rf24_backup_restore.py scripts/runtime/verify_rf24_backup_restore.py
       - uses: actions/upload-artifact@v4
         with:
           name: rf24-backup-restore

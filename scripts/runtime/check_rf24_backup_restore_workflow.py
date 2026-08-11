@@ -10,15 +10,25 @@ from pathlib import Path
 
 BRANCH = "rf24-backup-restore-scenario-01"
 
+RF24_MODULES = (
+    "run_rf24_vertical_spine",
+    "run_rf24_backup_restore",
+    "verify_rf24_backup_restore",
+    "check_rf24_backup_restore_artifact_safety",
+    "build_rf24_backup_restore_manifest",
+    "check_rf24_backup_restore_workflow",
+    "check_rf24_backup_restore_ownership",
+)
+
 
 def validate(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     required = (
         "postgres:18-bookworm", "github.sha", "uv sync --frozen --all-groups",
-        "pg_dump", "pg_restore", "verify_rf24_backup_restore.py",
-        "check_rf24_backup_restore_artifact_safety.py",
-        "build_rf24_backup_restore_manifest.py", "upload-artifact", "RF25",
-        "run_rf24_vertical_spine.py", "--seed-evidence",
+        "pg_dump", "pg_restore", "verify_rf24_backup_restore",
+        "check_rf24_backup_restore_artifact_safety",
+        "build_rf24_backup_restore_manifest", "upload-artifact", "RF25",
+        "run_rf24_vertical_spine", "--seed-evidence",
     )
     missing = [marker for marker in required if marker not in text]
     if missing:
@@ -27,6 +37,12 @@ def validate(path: Path) -> None:
         raise ValueError("workflow must push only the RF24 task branch")
     if re.search(r"branches:\s*\[[^\]]*\bmain\b", text):
         raise ValueError("main trigger is forbidden")
+    for module in RF24_MODULES:
+        invocation = rf"uv run python -m scripts\.runtime\.{module}\b"
+        if not re.search(invocation, text):
+            raise ValueError(f"module execution missing for {module}")
+        if re.search(rf"uv run python scripts/runtime/{module}\.py\b", text):
+            raise ValueError(f"direct-file execution forbidden for {module}")
     if not re.search(r"defaults:\s*\n\s+run:\s*\n\s+shell:\s*bash\b", text):
         raise ValueError("job-level Bash authority is missing")
     if "set -euo pipefail" in text and "shell: bash" not in text:
@@ -53,11 +69,11 @@ def validate(path: Path) -> None:
             raise ValueError(f"provider-disabled environment weakened: {variable}")
     if re.search(r"ports:\s*\n|--publish|--publish-all", text):
         raise ValueError("host-published port is forbidden")
-    if not re.search(r"uv run python scripts/runtime/verify_rf24_backup_restore\.py\b", text):
+    if not re.search(r"uv run python -m scripts\.runtime\.verify_rf24_backup_restore\b", text):
         raise ValueError("independent verifier execution missing")
-    if not re.search(r"uv run python scripts/runtime/check_rf24_backup_restore_artifact_safety\.py\b", text):
+    if not re.search(r"uv run python -m scripts\.runtime\.check_rf24_backup_restore_artifact_safety\b", text):
         raise ValueError("artifact scanner execution missing")
-    if not re.search(r"uv run python scripts/runtime/build_rf24_backup_restore_manifest\.py\b", text):
+    if not re.search(r"uv run python -m scripts\.runtime\.build_rf24_backup_restore_manifest\b", text):
         raise ValueError("manifest execution missing")
     scenario = text.index("Scenario-specific PG18 gate passed before broad suite")
     broad = text.index("Complete repository pytest once")
