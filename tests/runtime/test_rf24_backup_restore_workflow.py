@@ -2,6 +2,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parents[2]
 WORKFLOW = ROOT / ".github/workflows/ci-rf24-backup-restore.yml"
 
@@ -57,6 +59,43 @@ def test_workflow_validator_rejects_detached_archive_transport(tmp_path: Path) -
     broken.write_text(text)
     import pytest
     with pytest.raises(ValueError, match="stdin-attached"):
+        validate(broken)
+
+
+@pytest.mark.parametrize(
+    ("needle", "replacement", "message"),
+    (
+        (
+            "docker info",
+            "test \"$(docker version --format '{{.Server.Version}}')\" = '29.2.1'",
+            "server/client equality",
+        ),
+        (
+            "echo h26-docker-api=PASS",
+            "test -d /opt/avito-mayak-runtime\necho h26-docker-api=PASS",
+            "server runtime path",
+        ),
+        (
+            "printf '%s' 'migration-only'",
+            "printf '%s' 'host:port:db:user:password'",
+            "raw password",
+        ),
+        (
+            "export GIT_CONFIG_COUNT=1",
+            "export GIT_CONFIG_GLOBAL=/dev/null\n          export GIT_CONFIG_COUNT=1",
+            "GIT_CONFIG_GLOBAL",
+        ),
+        ("--output \"type=local", "--output \"type=cache", "local-export"),
+    ),
+)
+def test_workflow_validator_rejects_known_h26_regressions(
+    tmp_path: Path, needle: str, replacement: str, message: str
+) -> None:
+    from scripts.runtime.check_rf24_backup_restore_workflow import validate
+
+    broken = tmp_path / "workflow.yml"
+    broken.write_text(WORKFLOW.read_text().replace(needle, replacement, 1))
+    with pytest.raises(ValueError, match=message):
         validate(broken)
 
 

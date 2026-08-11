@@ -84,12 +84,14 @@ def validate(path: Path) -> None:
         raise ValueError("broad pytest precedes scenario-specific PG18 gate")
     if text.count("uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log") != 1:
         raise ValueError("complete repository pytest must appear exactly once")
-    if "H26 executable preflight and focused prerequisite probes" not in text:
+    if "H26 executable substrate preflight" not in text or "H26 focused prerequisite gates" not in text:
         raise ValueError("H26 executable preflight is missing")
     if "GIT_CONFIG_COUNT=1" not in text or "GIT_CONFIG_KEY_0=safe.directory" not in text:
         raise ValueError("H26 process-local Git trust is missing")
-    if "GIT_CONFIG_GLOBAL=/dev/null" not in text or "GIT_CONFIG_NOSYSTEM=1" not in text:
-        raise ValueError("H26 Git config isolation is missing")
+    if "GIT_CONFIG_GLOBAL=/dev/null" in text or "GIT_CONFIG_GLOBAL" in text:
+        raise ValueError("H26 must not persist or require GIT_CONFIG_GLOBAL")
+    if "safe.directory=*" in text or "safe.directory=\\*" in text:
+        raise ValueError("wildcard Git trust is forbidden")
     if "git merge-base --is-ancestor" not in text or "git rev-parse HEAD:.github/workflows/ci-rf24-backup-restore.yml" not in text:
         raise ValueError("H26 child-process Git probes are missing")
     if "MAYAK_RF10_POSTGRES_DSN" not in text or "MAYAK_RF11_POSTGRES_PASSWORD_FILE" not in text:
@@ -98,8 +100,31 @@ def validate(path: Path) -> None:
         raise ValueError("H26 password-file cleanup boundary is missing")
     if "docker buildx version" not in text or "docker buildx ls" not in text:
         raise ValueError("H26 Buildx capability preflight is missing")
-    if "safe.directory=*" in text or "git config --global" in text:
+    if "git config --global" in text:
         raise ValueError("global or wildcard Git trust is forbidden")
+    if re.search(r"Server\.Version[^\n]{0,180}(?:=|==)\s*(?:['\"]|\$|Client\.Version)", text):
+        raise ValueError("Docker server/client equality is forbidden")
+    if "test \"$(docker version --format '{{.Server.Version}}')\" = '29.2.1'" in text:
+        raise ValueError("Docker server/client equality is forbidden")
+    if "/opt/avito-mayak-runtime" in text:
+        raise ValueError("hosted H26 must not depend on server runtime path")
+    if "--output \"type=local" not in text or "h26-buildx-local-export=PASS" not in text:
+        raise ValueError("real Buildx local-export probe is missing")
+    if "RF24_H26_PROBE_DB" not in text or "RF24_H26_SUITE_DB" not in text:
+        raise ValueError("fresh H26 probe and suite databases are missing")
+    if "RF24_H26_PROBE_DB" in text and "RF24_H26_SUITE_DB" in text:
+        if "${RF24_H26_PROBE_DB}" not in text or "${RF24_H26_SUITE_DB}" not in text:
+            raise ValueError("H26 database DSNs are not bound to both distinct databases")
+    if "migration.pgpass" in text or "PGPASSFILE=\"$password_file\"" in text:
+        raise ValueError("RF11 raw password file must not be a pgpass file")
+    if "printf '%s' 'migration-only'" not in text:
+        raise ValueError("RF11 raw password file must contain only the raw password")
+    if re.search(r"printf\s+'%s'\s+'[^']*:[^']*:[^']*:[^']*:[^']*'", text):
+        raise ValueError("RF11 raw password file must not contain pgpass syntax")
+    if "test \"$(wc -l < \"$password_file\")\" = 0" not in text:
+        raise ValueError("RF11 raw password file shape is not checked")
+    if text.count("uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log") != 1:
+        raise ValueError("complete repository pytest must appear exactly once")
     role_block = text[text.index("def role"):text.index("with psycopg.connect", text.index("def role"))]
     if re.search(r"CREATE ROLE[^\n]*%s", role_block):
         raise ValueError("utility DDL uses bind placeholder")

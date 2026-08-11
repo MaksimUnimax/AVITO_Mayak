@@ -196,14 +196,13 @@ jobs:
           docker version
           docker buildx version | grep -F 'v0.31.1'
           docker buildx ls
-      - name: H26 executable preflight and focused prerequisite probes
+          docker info
+      - name: H26 executable substrate preflight
         run: |
           set -euo pipefail
           test -S /var/run/docker.sock
           test -n "${GITHUB_WORKSPACE:-}"
           workspace="$(realpath "$GITHUB_WORKSPACE")"
-          export GIT_CONFIG_GLOBAL=/dev/null
-          export GIT_CONFIG_NOSYSTEM=1
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=safe.directory
           export GIT_CONFIG_VALUE_0="$workspace"
@@ -211,51 +210,108 @@ jobs:
           git rev-parse HEAD >/dev/null
           git merge-base --is-ancestor 90a00b12561cecbeac04e3b41c403bcee78f3d71 "$GITHUB_SHA"
           git rev-parse HEAD:.github/workflows/ci-rf24-backup-restore.yml >/dev/null
-          printf 'GIT_CONFIG_GLOBAL=%s\n' "$GIT_CONFIG_GLOBAL" >> "$GITHUB_ENV"
-          printf 'GIT_CONFIG_NOSYSTEM=%s\n' "$GIT_CONFIG_NOSYSTEM" >> "$GITHUB_ENV"
-          printf 'GIT_CONFIG_COUNT=%s\nGIT_CONFIG_KEY_0=%s\nGIT_CONFIG_VALUE_0=%s\n' 1 safe.directory "$workspace" >> "$GITHUB_ENV"
           test "$(docker version --format '{{.Client.Version}}')" = '29.2.1'
-          test "$(docker version --format '{{.Server.Version}}')" = '29.2.1'
+          server_version="$(docker version --format '{{.Server.Version}}')"
+          test -n "$server_version"
+          docker version --format '{{.Client.APIVersion}} -> {{.Server.APIVersion}}' | grep -Eq '^[0-9.]+ -> [0-9.]+$'
+          docker info >/dev/null
           docker buildx version | grep -F 'v0.31.1'
-          docker buildx ls | grep -E '(^|[[:space:]])(default|rf24-h26)' >/dev/null
-          test -d /opt/avito-mayak-runtime
-          test ! -e /tmp/rf24-h26/migration.pgpass
-          # The focused probes and the complete suite share this one task-owned
-          # migrated database; the restore TARGET is never used here.
-          uv run python - <<'PY'
+          docker buildx inspect --bootstrap >/dev/null
+          printf 'docker-server=%s\n' "$server_version"
+          echo h26-docker-api=PASS
+          echo h26-git-child-trust=PASS
+      - name: Create fresh H26 probe and suite databases
+        run: |
+          set -euo pipefail
+          probe_db="mayak_rf24_h26_probe_${GITHUB_RUN_ID}"
+          suite_db="mayak_rf24_h26_suite_${GITHUB_RUN_ID}"
+          case "$probe_db $suite_db" in *[!a-zA-Z0-9_\ ]*) exit 1;; esac
+          printf 'RF24_H26_PROBE_DB=%s\nRF24_H26_SUITE_DB=%s\n' "$probe_db" "$suite_db" >> "$GITHUB_ENV"
+          uv run python - "$probe_db" "$suite_db" <<'PY'
+          import sys
           import psycopg
           from psycopg import sql
-          with psycopg.connect("host=mayak-postgres dbname=mayak user=mayak_migration password=migration-only", autocommit=True) as conn:
+          with psycopg.connect("host=mayak-postgres dbname=postgres user=mayak password=bootstrap-only", autocommit=True) as conn:
               with conn.cursor() as cur:
+                  for name in sys.argv[1:]:
+                      cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (name,))
+                      if cur.fetchone() is not None: raise SystemExit("task database already exists")
+                      cur.execute(sql.SQL("CREATE DATABASE {} OWNER mayak_migration").format(sql.Identifier(name)))
+          PY
+          for db in "$probe_db" "$suite_db"; do
+            uv run python - "$db" <<'PY'
+          import sys, psycopg
+          with psycopg.connect(f"host=mayak-postgres dbname={sys.argv[1]} user=mayak_migration password=migration-only", autocommit=True) as conn:
+              with conn.cursor() as cur: cur.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+          PY
+            RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/$db" uv run alembic upgrade head
+            uv run python - "$db" <<'PY'
+          import sys, psycopg
+          from psycopg import sql
+          db = sys.argv[1]
+          with psycopg.connect(f"host=mayak-postgres dbname={db} user=mayak_migration password=migration-only", autocommit=True) as conn:
+              with conn.cursor() as cur:
+                  cur.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO mayak_application").format(sql.Identifier(db)))
                   cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
                   cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
                   cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
-                  cur.execute("SELECT version_num FROM mayak.alembic_version")
-                  assert cur.fetchone()
+                  cur.execute("SELECT version_num FROM mayak.alembic_version"); assert cur.fetchone()
           PY
-          echo h26-substrate-preflight=PASS
+          done
+          echo h26-fresh-databases=PASS
+          echo h26-source-target-not-reused=PASS
+      - name: H26 Buildx local-export functional probe
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP:-/tmp}/rf24-h26-${GITHUB_RUN_ID}"
+          test "$root" != / && install -d -m 700 "$root/export-input" "$root/export-output"
+          cleanup() { rm -rf -- "$root"; }; trap cleanup EXIT
+          printf '%s\n' "rf24-buildx-local-export-${GITHUB_RUN_ID}" > "$root/export-input/known.txt"
+          expected="$(sha256sum "$root/export-input/known.txt" | awk '{print $1}')"
+          docker buildx build --file - --output "type=local,dest=$root/export-output" "$root/export-input" <<'DOCKERFILE'
+          FROM scratch
+          COPY known.txt /export/known.txt
+          DOCKERFILE
+          test -f "$root/export-output/export/known.txt"
+          test "$(sha256sum "$root/export-output/export/known.txt" | awk '{print $1}')" = "$expected"
+          cmp "$root/export-input/known.txt" "$root/export-output/export/known.txt"
+          echo h26-buildx-local-export=PASS
+          echo h26-local-export-visibility=job-container-filesystem
+      - name: H26 focused prerequisite gates
+        run: |
+          set -euo pipefail
+          root="${RUNNER_TEMP:-/tmp}/rf24-h26-${GITHUB_RUN_ID}"
+          install -d -m 700 "$root/passwords"
+          cleanup() { find "$root/passwords" -maxdepth 1 -type f -exec rm -f -- {} +; rmdir "$root/passwords" 2>/dev/null || true; }; trap cleanup EXIT
+          workspace="$(realpath "$GITHUB_WORKSPACE")"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$workspace"
+          git rev-parse HEAD >/dev/null
+          git rev-parse HEAD:.github/workflows/ci-rf24-backup-restore.yml >/dev/null
+          git merge-base --is-ancestor 90a00b12561cecbeac04e3b41c403bcee78f3d71 "$GITHUB_SHA"
+          password_file="$root/passwords/rf11-probe.raw"
+          printf '%s' 'migration-only' > "$password_file"; chmod 600 "$password_file"
+          test ! -L "$password_file" && test "$(stat -c '%a' "$password_file")" = 600 && test "$(wc -l < "$password_file")" = 0
+          export MAYAK_RF10_POSTGRES_DSN="postgresql+psycopg://mayak_application:application-only@mayak-postgres:5432/${RF24_H26_PROBE_DB}"
+          export MAYAK_RF11_POSTGRES_PASSWORD_FILE="$password_file" MAYAK_RF11_POSTGRES_USER=mayak_migration MAYAK_RF11_POSTGRES_HOST=mayak-postgres MAYAK_RF11_POSTGRES_PORT=5432 MAYAK_RF11_POSTGRES_DB="$RF24_H26_PROBE_DB"
+          uv run pytest -q tests/runtime/test_rf08_safe_compose_bootstrap.py::test_build_input_digest_follows_copy_inputs_and_includes_readme
+          uv run pytest -q tests/runtime/test_persistence_transaction.py
+          uv run pytest -q tests/runtime/test_platform_audit_repository.py tests/runtime/test_platform_idempotency_repository_postgres.py
+          uv run pytest -q tests/runtime/test_identity_runtime_postgres.py
+          uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
+          echo h26-focused-prerequisites=PASS
       - name: Complete repository pytest once
         run: |
           set -euo pipefail
-          h26_root="/tmp/rf24-h26"
-          install -d -m 700 "$h26_root"
-          password_file="$h26_root/migration.pgpass"
-          cleanup() { rm -f -- "$password_file"; rmdir "$h26_root" 2>/dev/null || true; }
+          root="${RUNNER_TEMP:-/tmp}/rf24-h26-${GITHUB_RUN_ID}"
+          install -d -m 700 "$root/passwords"
+          password_file="$root/passwords/rf11-suite.raw"
+          cleanup() { rm -f -- "$password_file"; rmdir "$root/passwords" 2>/dev/null || true; }
           trap cleanup EXIT
-          umask 077
-          printf '%s\n' 'mayak-postgres:5432:mayak:mayak_migration:migration-only' > "$password_file"
+          printf '%s' 'migration-only' > "$password_file"
           chmod 600 "$password_file"
-          test "$(stat -c '%a' "$password_file")" = 600
-          export PGPASSFILE="$password_file"
-          export MAYAK_RF10_POSTGRES_DSN='postgresql+psycopg://mayak_application:application-only@mayak-postgres:5432/mayak'
-          export MAYAK_RF11_POSTGRES_PASSWORD_FILE="$password_file"
-          export MAYAK_RF11_POSTGRES_USER=mayak_migration
-          export MAYAK_RF11_POSTGRES_HOST=mayak-postgres
-          export MAYAK_RF11_POSTGRES_PORT=5432
-          export MAYAK_RF11_POSTGRES_DB=mayak
-          uv run pytest -q tests/runtime/test_persistence_transaction.py tests/runtime/test_platform_audit_repository.py tests/runtime/test_platform_idempotency_repository_postgres.py
-          uv run pytest -q tests/runtime/test_identity_runtime_postgres.py
-          uv run pytest -q tests/runtime/test_rf08_safe_compose_bootstrap.py::test_build_input_digest_follows_copy_inputs_and_includes_readme
+          test ! -L "$password_file" && test "$(stat -c '%a' "$password_file")" = 600 && test "$(wc -l < "$password_file")" = 0
+          export MAYAK_RF10_POSTGRES_DSN="postgresql+psycopg://mayak_application:application-only@mayak-postgres:5432/${RF24_H26_SUITE_DB}"
+          export MAYAK_RF11_POSTGRES_PASSWORD_FILE="$password_file" MAYAK_RF11_POSTGRES_USER=mayak_migration MAYAK_RF11_POSTGRES_HOST=mayak-postgres MAYAK_RF11_POSTGRES_PORT=5432 MAYAK_RF11_POSTGRES_DB="$RF24_H26_SUITE_DB"
           uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log
       - name: Independent verifier, scanner and manifest
         run: |
