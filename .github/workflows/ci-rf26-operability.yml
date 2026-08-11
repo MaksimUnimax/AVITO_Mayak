@@ -68,6 +68,7 @@ jobs:
           export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
           export MAYAK_BUILD_INPUT_DIGEST="$(sha256sum Dockerfile compose.yaml | sha256sum | cut -d' ' -f1)"
           export MAYAK_IMAGE_DIGEST="sha256:86f975aca15cf04a40b399eebede9aea7c82eae084d1f1a0a6ef6bcaae871a30"
+          export MAYAK_RESTORE_ARCHIVE="synthetic-placeholder/backup.dump"
           export MAYAK_SECRETS_ROOT="$RUNNER_TEMP/rf26-secrets"
           install -d -m 700 "$MAYAK_SECRETS_ROOT"
           for name in mayak_postgres_bootstrap_password_postgres mayak_postgres_bootstrap_password_runtime mayak_database_application_password mayak_session_signing_key mayak_database_migration_password; do
