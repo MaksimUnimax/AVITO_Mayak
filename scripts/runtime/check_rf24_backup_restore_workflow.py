@@ -72,6 +72,12 @@ def validate(path: Path) -> None:
         raise ValueError("TARGET is pre-migrated before clean proof")
     if re.search(r"docker\s+exec\s+postgres\b", text):
         raise ValueError("ambiguous docker exec postgres binding")
+    if not re.search(r"services:\s*\n\s+mayak-postgres:\s*\n", text):
+        raise ValueError("canonical PostgreSQL service identity is missing")
+    if re.search(r"MAYAK_DATABASE_HOST:\s*postgres\b|@postgres:", text):
+        raise ValueError("workflow configures noncanonical PostgreSQL host")
+    if re.search(r"host=postgres\b", text):
+        raise ValueError("workflow contains split-brain PostgreSQL host authority")
     if re.search(r"postgresql-client|apt-get[^\n]*postgresql", text):
         raise ValueError("unapproved PostgreSQL client stack")
     if "psql " in text or " psql\n" in text:

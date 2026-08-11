@@ -18,6 +18,8 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from mayak.runtime.settings import compose_runtime_settings
+
 
 @dataclass(frozen=True, slots=True)
 class SafeResponse:
@@ -232,6 +234,84 @@ def _checkout_head(root: Path) -> str:
     ).strip()
 
 
+_SECRET_LOG_PATTERNS = (
+    re.compile(r"(?i)(postgres(?:ql)?(?:\+[^:/\s]+)?://[^\s:@/]+:)[^\s@]+(@)"),
+    re.compile(r"(?i)(\b(?:authorization|proxy-authorization)\s*[:=]\s*(?:bearer\s+)?)[^\s,]+"),
+    re.compile(r"(?i)(\b(?:cookie|set-cookie)\s*[:=]\s*)[^\s]+"),
+    re.compile(r"(?i)(\b(?:password|passwd|token|secret|session[_-]?token|access[_-]?token)\s*[:=]\s*)[^\s,]+"),
+    re.compile(r"-----BEGIN [A-Z ]+PRIVATE KEY-----.*", re.I),
+)
+
+
+def _sanitized_log_tail(path: Path, *, limit: int = 4096) -> str:
+    """Return a bounded diagnostic tail with credential-shaped values redacted."""
+    raw = path.read_text(encoding="utf-8", errors="replace")[-limit:]
+    sanitized = raw
+    for pattern in _SECRET_LOG_PATTERNS:
+        sanitized = pattern.sub(lambda match: match.group(1) + "<redacted>" if match.lastindex else "<redacted>", sanitized)
+    return sanitized[-limit:]
+
+
+def _child_environment(
+    base: dict[str, str], *, source_sha: str, run_id: str, kind: str,
+    database_host: str, database_name: str, port: str,
+    scheduler_observations: Path, worker_observations: Path,
+) -> dict[str, str]:
+    """Build and prove the exact acceptance environment before subprocess spawn."""
+    values = {
+        "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance",
+        "MAYAK_SOURCE_SHA": source_sha,
+        "MAYAK_ENVIRONMENT_ID": run_id,
+        "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id,
+        "MAYAK_LOCK_IDENTITY": "0" * 64,
+        "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
+        "MAYAK_PROCESS_KIND": f"mayak-{kind}",
+        "MAYAK_DATABASE_HOST": database_host,
+        "MAYAK_DATABASE_PORT": "5432",
+        "MAYAK_DATABASE_NAME": database_name,
+        "MAYAK_DATABASE_APPLICATION_USER": "mayak_application",
+        "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
+        "MAYAK_SECRETS_DIR": base.get("MAYAK_SECRETS_DIR", "/run/secrets"),
+        "MAYAK_API_BIND_HOST": "127.0.0.1",
+        "MAYAK_API_INTERNAL_PORT": port,
+        "MAYAK_API_HOST_PORT": "disabled",
+        "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true",
+        "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
+        "MAYAK_AVITO_LIVE_ENABLED": "false",
+        "MAYAK_TELEGRAM_ENABLED": "false",
+        "MAYAK_TELEGRAM_UPDATE_MODE": "disabled",
+        "MAYAK_MAX_ENABLED": "false",
+        "MAYAK_MAX_UPDATE_MODE": "disabled",
+        "MAYAK_YOOKASSA_ENABLED": "false",
+        "MAYAK_EGRESS_AGENT_ENABLED": "false",
+        "MAYAK_WORKER_POLL_INTERVAL_SECONDS": "1",
+        "MAYAK_WORKER_LEASE_SECONDS": "30",
+        "MAYAK_SCHEDULER_POLL_INTERVAL_SECONDS": "1",
+        "MAYAK_SYNTHETIC_SCENARIO": "usable_listing_page",
+        "RF24_SCHEDULER_OBSERVATIONS": str(scheduler_observations),
+        "RF24_WORKER_OBSERVATIONS": str(worker_observations),
+    }
+    settings = compose_runtime_settings(values)
+    if (
+        settings.build.source_sha != source_sha
+        or settings.build.environment_id != run_id
+        or settings.database.host != database_host
+        or settings.database.name != database_name
+        or settings.runtime.process_kind.value != f"mayak-{kind}"
+        or settings.api.bind_host != "127.0.0.1"
+        or any((settings.providers.avito_live_enabled, settings.providers.telegram_enabled, settings.providers.max_enabled, settings.providers.yookassa_enabled, settings.providers.egress_agent_enabled))
+    ):
+        raise RuntimeError(f"runtime settings preflight failed for mayak-{kind}")
+    return {key: value for key, value in base.items() if not key.startswith("MAYAK_")} | values
+
+
+def _startup_failure(kind: str, process: subprocess.Popen[str], log: Path, phase: str) -> RuntimeError:
+    return RuntimeError(
+        f"{kind} exited during {phase}: exit_code={process.poll()} "
+        f"reason=child_process_exit log_tail={_sanitized_log_tail(log)!r}"
+    )
+
+
 def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str) -> None:
     actual_sha = _checkout_head(root)
     if actual_sha != expected_sha:
@@ -243,39 +323,31 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
     observation_dir = log.parent.resolve()
     scheduler_observations = observation_dir / f"rf24-{run_id}-scheduler-observations.jsonl"
     worker_observations = observation_dir / f"rf24-{run_id}-worker-observations.jsonl"
-    env = {k: v for k, v in os.environ.items() if not k.startswith("MAYAK_")}
-    env.update({
-        "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance", "MAYAK_SOURCE_SHA": actual_sha,
-        "MAYAK_ENVIRONMENT_ID": run_id, "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id,
-        "MAYAK_LOCK_IDENTITY": "0" * 64, "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
-        "MAYAK_DATABASE_HOST": os.environ.get("MAYAK_DATABASE_HOST", "mayak-postgres"),
-        "MAYAK_DATABASE_PORT": "5432", "MAYAK_DATABASE_NAME": os.environ.get("MAYAK_DATABASE_NAME", "mayak"),
-        "MAYAK_DATABASE_APPLICATION_USER": "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
-        "MAYAK_SECRETS_DIR": os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"),
-        "MAYAK_API_BIND_HOST": "127.0.0.1", "MAYAK_API_INTERNAL_PORT": port, "MAYAK_API_HOST_PORT": "disabled",
-        "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true", "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
-        "MAYAK_AVITO_LIVE_ENABLED": "false", "MAYAK_TELEGRAM_ENABLED": "false", "MAYAK_TELEGRAM_UPDATE_MODE": "disabled",
-        "MAYAK_MAX_ENABLED": "false", "MAYAK_MAX_UPDATE_MODE": "disabled", "MAYAK_PROCESS_KIND": "mayak-api",
-        "MAYAK_WORKER_POLL_INTERVAL_SECONDS": "1", "MAYAK_SCHEDULER_POLL_INTERVAL_SECONDS": "1",
-        "RF24_SCHEDULER_OBSERVATIONS": str(scheduler_observations),
-        "RF24_WORKER_OBSERVATIONS": str(worker_observations),
-    })
+    base_env = dict(os.environ)
+    database_host = base_env.get("MAYAK_DATABASE_HOST", "mayak-postgres")
+    database_name = base_env.get("MAYAK_DATABASE_NAME", "mayak")
     handles: list[tuple[str, subprocess.Popen[str], Path, Any]] = []
     for kind, module in (("api", "mayak.runtime.api"), ("worker", "mayak.runtime.worker"), ("scheduler", "mayak.runtime.scheduler")):
         target = log.parent / f"rf24-{kind}.log"
+        child_env = _child_environment(base_env, source_sha=actual_sha, run_id=run_id, kind=kind,
+                                       database_host=database_host, database_name=database_name, port=port,
+                                       scheduler_observations=scheduler_observations, worker_observations=worker_observations)
         stream = target.open("w", encoding="utf-8")
-        process = subprocess.Popen((sys.executable, "-m", module), env={**env, "MAYAK_PROCESS_KIND": f"mayak-{kind}"}, stdout=stream, stderr=subprocess.STDOUT, text=True)
+        process = subprocess.Popen((sys.executable, "-m", module), env=child_env, stdout=stream, stderr=subprocess.STDOUT, text=True, shell=False)
         handles.append((kind, process, target, stream))
     observations: dict[str, object] = {}
     try:
         health = SafeResponse(0, {})
         for _ in range(80):
+            for kind, process, target, _ in handles:
+                if process.poll() is not None:
+                    raise _startup_failure(kind, process, target, "readiness")
             health = request(f"{base}/health/live")
             if health.status == 200:
                 break
             time.sleep(0.25)
         if health.status != 200:
-            raise RuntimeError("API did not become live")
+            raise RuntimeError("API did not become live: reason=readiness_timeout")
         login = request(f"{base}/acceptance/login", method="POST", body={"synthetic_subject": f"{run_id}:account"}, idempotency_key=f"{run_id}:login")
         if login._session_cookie is None:
             raise RuntimeError("synthetic login did not issue a session")
@@ -419,7 +491,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             stream.flush()
             stream.close()
         log.parent.mkdir(parents=True, exist_ok=True)
-        log.write_text("\n".join(f"[{kind}] pid={process.pid}\n{path.read_text(errors='replace')}" for kind, process, path, _ in handles), encoding="utf-8")
+        log.write_text("\n".join(f"[{kind}] pid={process.pid}\n{_sanitized_log_tail(path)}" for kind, process, path, _ in handles), encoding="utf-8")
     output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 

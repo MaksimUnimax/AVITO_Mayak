@@ -73,6 +73,69 @@ def test_source_identity_implementation_is_fail_closed_and_not_global_or_wildcar
     assert '"source_sha": actual_sha' in source
 
 
+def test_synthetic_child_settings_preflight_uses_canonical_host_for_all_processes(tmp_path: Path) -> None:
+    base = {
+        "MAYAK_SECRETS_DIR": str(tmp_path),
+        "MAYAK_DATABASE_NAME": "mayak_rf24_source",
+    }
+    for kind in ("api", "worker", "scheduler"):
+        child = _producer._child_environment(
+            base,
+            source_sha="a" * 40,
+            run_id="rf24-preflight",
+            kind=kind,
+            database_host="mayak-postgres",
+            database_name="mayak_rf24_source",
+            port="18080",
+            scheduler_observations=tmp_path / "scheduler.jsonl",
+            worker_observations=tmp_path / "worker.jsonl",
+        )
+        assert child["MAYAK_DATABASE_HOST"] == "mayak-postgres"
+        assert child["MAYAK_SOURCE_SHA"] == "a" * 40
+        assert child["MAYAK_ENVIRONMENT_ID"] == "rf24-preflight"
+        assert child["MAYAK_PROCESS_KIND"] == f"mayak-{kind}"
+        assert child["MAYAK_API_BIND_HOST"] == "127.0.0.1"
+        assert child["MAYAK_TELEGRAM_ENABLED"] == "false"
+
+
+def test_production_settings_still_reject_arbitrary_database_hostname() -> None:
+    values = {
+        "MAYAK_RUNTIME_PROFILE": "production",
+        "MAYAK_ENVIRONMENT_ID": "prod",
+        "MAYAK_SOURCE_SHA": "a" * 40,
+        "MAYAK_LOCK_IDENTITY": "b" * 64,
+        "MAYAK_IMAGE_DIGEST": "sha256:" + "c" * 64,
+        "MAYAK_PROCESS_KIND": "mayak-api",
+        "MAYAK_DATABASE_APPLICATION_USER": "mayak_application",
+        "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
+        "MAYAK_DATABASE_HOST": "arbitrary-host",
+    }
+    with pytest.raises(ValueError, match="runtime configuration is invalid|acceptance boundary"):
+        _producer.compose_runtime_settings(values)
+
+
+def test_early_child_exit_is_immediate_and_redacted(tmp_path: Path) -> None:
+    log = tmp_path / "api.log"
+    log.write_text(
+        "password=super-secret Authorization: Bearer super-token "
+        "postgresql://user:db-secret@mayak-postgres:5432/mayak\n",
+        encoding="utf-8",
+    )
+
+    class Exited:
+        def poll(self) -> int:
+            return 17
+
+    error = _producer._startup_failure("api", Exited(), log, "readiness")
+    message = str(error)
+    assert "api exited during readiness" in message
+    assert "exit_code=17" in message
+    assert "super-secret" not in message
+    assert "super-token" not in message
+    assert "db-secret" not in message
+    assert "<redacted>" in message
+
+
 def test_safe_response_never_projects_transport_cookie() -> None:
     response = SafeResponse(200, {"account_id": "synthetic-account", "set_cookie": "fake"}, "fake-cookie")
     evidence = response.evidence()
