@@ -305,7 +305,11 @@ def _scan_identity(scan_payload: object, state: str) -> dict[str, str]:
             details={"state": state, "observed_matches": len(matches)},
         )
     item = matches[0]
-    fields = {key: item.get(key) for key in ("run_id", "work_item_id", "beacon_id")}
+    fields = {
+        "run_id": item.get("run_id", item.get("id")),
+        "work_item_id": item.get("work_item_id"),
+        "beacon_id": item.get("beacon_id"),
+    }
     if any(not isinstance(value, str) or not value for value in fields.values()):
         raise ProvenanceConvergenceError(
             "PROVENANCE_MALFORMED", f"{state} runtime result identity is malformed",
@@ -763,6 +767,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             session_cookie=login._session_cookie,
         )
         reporter.passed(admin.evidence())
+        reporter.begin("SEED_T_PROCESS_PROVENANCE", input={"beacon_id": beacon_id, "expected_states": ["SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"]}, derived={"required": 2}, function="run_rf24_vertical_spine:_converge_process_provenance", environment={"process_kinds": ["mayak-worker", "mayak-scheduler"]}, evidence={"observation_identity": "technical_id+acceptance_run_id+process_kind+schedule_id+work_item_id+run_id"})
         baseline_identity = _scan_identity(scan.payload, "SUCCEEDED_BASELINE")
         difference_identity = _scan_identity(second.payload, "SUCCEEDED_DIFFERENCE")
         schedule_id = _json_payload(schedule.payload).get("schedule_id")
@@ -773,7 +778,6 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             "SUCCEEDED_BASELINE": {**baseline_identity, "schedule_id": schedule_id},
             "SUCCEEDED_DIFFERENCE": {**difference_identity, "schedule_id": schedule_id},
         }
-        reporter.begin("SEED_T_PROCESS_PROVENANCE", input={"expected": expected_provenance}, derived={"required": 2}, function="run_rf24_vertical_spine:_converge_process_provenance", environment={"process_kinds": ["mayak-worker", "mayak-scheduler"]}, evidence={"observation_identity": "technical_id+acceptance_run_id+process_kind+schedule_id+work_item_id+run_id"})
         scheduler_records, worker_records, provenance_elapsed = _converge_process_provenance(
             scheduler_path=scheduler_observations, worker_path=worker_observations,
             run_id=run_id, expected=expected_provenance, handles=handles,

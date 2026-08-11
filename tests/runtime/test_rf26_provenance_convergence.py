@@ -75,6 +75,11 @@ def test_complete_observations_map_by_identity_not_record_order(tmp_path: Path) 
     assert elapsed >= 0
 
 
+def test_scan_read_model_id_is_bound_as_run_identity() -> None:
+    payload = [{"recent_runs": [{"state": "SUCCEEDED_BASELINE", "id": "run-baseline", "work_item_id": "work-baseline", "beacon_id": "beacon-1"}]}]
+    assert producer._scan_identity(payload, "SUCCEEDED_BASELINE")["run_id"] == "run-baseline"
+
+
 def test_delayed_second_terminal_eventually_passes_without_fixed_sleep(tmp_path: Path) -> None:
     scheduler, worker = _records(tmp_path, terminals=("SUCCEEDED_BASELINE",))
     extra = {"technical_id": "RF24-BACKUP-RESTORE-SCENARIO-01", "acceptance_run_id": "spine", "process_kind": "mayak-worker", "record_type": "worker_terminal", "work_item_id": "work-difference", "run_id": "run-difference", "terminal_state": "SUCCEEDED_DIFFERENCE"}
