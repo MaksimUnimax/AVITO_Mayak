@@ -38,14 +38,10 @@ LISTENER = textwrap.dedent(
 
 
 def available_port() -> int:
-    for port in range(18080, 18100):
-        with socket.socket() as probe:
-            try:
-                probe.bind(("127.0.0.1", port))
-            except OSError:
-                continue
-            return port
-    raise RuntimeError("no local RF24 readiness test port available")
+    """Allocate a fixture-only listener port outside the RF24 acceptance range."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
 
 
 def stop(process: subprocess.Popen[str]) -> None:

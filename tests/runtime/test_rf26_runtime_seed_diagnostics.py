@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.runtime.run_rf24_vertical_spine import SeedLifecycleReporter
+import pytest
+
+from scripts.runtime.run_rf24_vertical_spine import (
+    SeedLifecycleReporter,
+    _child_environment,
+    select_runtime_api_port,
+)
 
 
 def test_runtime_seed_failure_publishes_safe_boundary_and_five_transition_trace(
@@ -42,3 +48,62 @@ def test_runtime_seed_boundary_catalog_is_explicit() -> None:
         "SEED_S_ADMIN_DIAGNOSTICS", "SEED_T_PROCESS_PROVENANCE", "SEED_U_DURABLE_STATE_PROOF",
     ):
         assert boundary in source
+
+
+def test_runtime_port_explicit_valid_free_port_is_accepted() -> None:
+    assert select_runtime_api_port("18099") == 18099
+
+
+def test_runtime_port_rejects_malformed_and_out_of_range() -> None:
+    with pytest.raises(ValueError):
+        select_runtime_api_port("not-a-port")
+    with pytest.raises(ValueError):
+        select_runtime_api_port("18100")
+
+
+def test_runtime_port_rejects_occupied_explicit_port() -> None:
+    import socket
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 18099))
+        with pytest.raises(OSError, match="18099"):
+            select_runtime_api_port("18099")
+
+
+def test_runtime_port_automatic_selection_is_bounded_and_skips_occupied_low_port(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "scripts.runtime.run_rf24_vertical_spine._port_is_bindable",
+        lambda port: port != 18080,
+    )
+    selected = select_runtime_api_port(None)
+    assert 18080 <= selected <= 18099
+    assert selected == 18081
+
+
+def test_runtime_port_no_available_port_fails_closed(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "scripts.runtime.run_rf24_vertical_spine._port_is_bindable",
+        lambda port: False,
+    )
+    with pytest.raises(OSError, match="18080-18099"):
+        select_runtime_api_port(None)
+
+
+def test_selected_port_reaches_all_child_settings(tmp_path: Path) -> None:
+    settings = _child_environment(
+        {}, source_sha="a" * 40, run_id="rf24-test", kind="api",
+        database_host="mayak-postgres", database_name="rf26_source_1", port="18081",
+        scheduler_observations=tmp_path / "scheduler.jsonl",
+        worker_observations=tmp_path / "worker.jsonl",
+    )
+    assert settings["MAYAK_API_INTERNAL_PORT"] == "18081"
+    assert settings["MAYAK_API_BIND_HOST"] == "127.0.0.1"
+
+
+def test_runtime_seed_uses_selected_port_and_real_modules() -> None:
+    source = Path("scripts/runtime/run_rf24_vertical_spine.py").read_text(encoding="utf-8")
+    assert 'base = f"http://127.0.0.1:{port}"' in source
+    for module in ("mayak.runtime.api", "mayak.runtime.worker", "mayak.runtime.scheduler"):
+        assert module in source

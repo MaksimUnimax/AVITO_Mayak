@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -46,6 +47,8 @@ _RF26_BOUNDARIES = (
     "SEED_P_DIFFERENCE_COMPLETION", "SEED_Q_NOTIFICATION_READ_MODEL", "SEED_R_WEB_CABINET",
     "SEED_S_ADMIN_DIAGNOSTICS", "SEED_T_PROCESS_PROVENANCE", "SEED_U_DURABLE_STATE_PROOF",
 )
+_RF26_RUNTIME_PORT_MIN = 18080
+_RF26_RUNTIME_PORT_MAX = 18099
 
 
 class SeedLifecycleReporter:
@@ -122,6 +125,34 @@ def _safe_payload(value: object, *, depth: int = 0) -> object:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value if not isinstance(value, str) or len(value) <= 512 else value[:512]
     return str(value)[:256]
+
+
+def _port_is_bindable(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def select_runtime_api_port(raw: str | None = None) -> int:
+    """Select one task-local API port from the finite RF26 acceptance range."""
+    supplied = raw if raw is not None else os.environ.get("MAYAK_API_INTERNAL_PORT")
+    if supplied is not None:
+        try:
+            port = int(supplied, 10)
+        except (TypeError, ValueError) as error:
+            raise ValueError("MAYAK_API_INTERNAL_PORT must be an integer") from error
+        if not _RF26_RUNTIME_PORT_MIN <= port <= _RF26_RUNTIME_PORT_MAX:
+            raise ValueError("MAYAK_API_INTERNAL_PORT is outside 18080-18099")
+        if not _port_is_bindable(port):
+            raise OSError(f"MAYAK_API_INTERNAL_PORT {port} is unavailable")
+        return port
+    for port in range(_RF26_RUNTIME_PORT_MIN, _RF26_RUNTIME_PORT_MAX + 1):
+        if _port_is_bindable(port):
+            return port
+    raise OSError("no bindable RF26 runtime API port in 18080-18099")
 
 
 def _decode_body(raw: bytes) -> object:
@@ -433,8 +464,13 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         environment={"profile": os.environ.get("MAYAK_RUNTIME_PROFILE"), "database_host": os.environ.get("MAYAK_DATABASE_HOST"), "database_name": os.environ.get("MAYAK_DATABASE_NAME")},
         evidence={"checkout_sha_proof": actual_sha == expected_sha},
     )
-    reporter.passed({"checkout_sha_proof": True})
-    port = os.environ.get("MAYAK_API_INTERNAL_PORT", "18080")
+    try:
+        port = select_runtime_api_port()
+    except Exception as error:
+        reporter.publish_failure(error)
+        raise
+    reporter.passed({"checkout_sha_proof": True, "selected_api_port": port})
+    print(f"RF26 runtime API port selected: {port}", flush=True)
     base = f"http://127.0.0.1:{port}"
     log.parent.mkdir(parents=True, exist_ok=True)
     observation_dir = log.parent.resolve()
@@ -447,9 +483,9 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
     for kind, module in (("api", "mayak.runtime.api"), ("worker", "mayak.runtime.worker"), ("scheduler", "mayak.runtime.scheduler")):
         reporter.begin(
             {"api": "SEED_B_API_PROCESS_START", "worker": "SEED_C_WORKER_PROCESS_START", "scheduler": "SEED_D_SCHEDULER_PROCESS_START"}[kind],
-            input={"kind": kind, "module": module}, derived={"process_kind": f"mayak-{kind}"},
+            input={"kind": kind, "module": module, "selected_api_port": port}, derived={"process_kind": f"mayak-{kind}", "selected_api_port": port},
             function=f"subprocess.Popen:{module}", environment={"database_host": database_host, "database_name": database_name, "secrets_dir": base_env.get("MAYAK_SECRETS_DIR")},
-            evidence={"environment_contract": "canonical_child_environment"},
+            evidence={"environment_contract": "canonical_child_environment", "selected_api_port": port},
         )
         target = log.parent / f"rf24-{kind}.log"
         try:
@@ -639,7 +675,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         })
         evidence: dict[str, object] = {
             "technical_id": "RF24-RUNTIME-VERTICAL-SPINE-01-CORRECTIVE-02", "source_sha": actual_sha, "run_id": run_id,
-            "api_bind": "127.0.0.1", "postgres_host_published": False,
+            "api_bind": "127.0.0.1", "selected_api_port": port, "postgres_host_published": False,
             "processes": [{"kind": k, "pid": p.pid, "identity": f"mayak-{k}"} for k, p, _, _ in handles],
             "security": {"credentials_exposure": False, "cookie_in_memory_only": True, "serialized_cookie_value_present": False, "authorization_material_present": False},
             "identity": {"operator_account_id": operator_account_id, "target_account_id": account_id, "login_state": _json_payload(login.payload).get("state")},
