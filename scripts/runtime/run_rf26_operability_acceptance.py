@@ -22,7 +22,6 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from scripts.runtime.rf24_backup_restore_core import verify_evidence
-from scripts.runtime.run_rf24_vertical_spine import validate_acceptance_secrets_directory
 
 TECHNICAL_ID = "RF26-OBSERVABILITY-BACKUP-RECOVERY-01"
 STAGES = (
@@ -124,6 +123,8 @@ def _safe_argv(pid: int) -> list[str]:
 
 
 def _api_runtime_probe(args: argparse.Namespace, current: dict[str, Any], *, restart: bool) -> dict[str, Any]:
+    from scripts.runtime.run_rf24_vertical_spine import validate_acceptance_secrets_directory
+
     secret_dir = validate_acceptance_secrets_directory(os.environ.get("MAYAK_SECRETS_DIR", ""))
     port = socket.socket(); port.bind(("127.0.0.1", 0)); number = port.getsockname()[1]; port.close()
     from scripts.runtime.run_rf24_vertical_spine import _child_environment
@@ -189,6 +190,8 @@ def _run_resilience(args: argparse.Namespace, current: dict[str, Any]) -> dict[s
     if "rf26_resilience" in current: return current["rf26_resilience"]
     root = Path.cwd(); out = args.output.parent / "rf26-resilience.json"; probes = args.output.parent / "rf26-resilience-probes.json"
     cmd = [sys.executable, "-m", "scripts.runtime.run_rf24_scan_resilience", "--repo-root", str(root), "--output", str(out), "--probes", str(probes), "--log", str(args.output.parent / "rf26-resilience.log"), "--source-sha", args.source_sha]
+    from scripts.runtime.run_rf24_vertical_spine import validate_acceptance_secrets_directory
+
     secret_dir = validate_acceptance_secrets_directory(os.environ.get("MAYAK_SECRETS_DIR", ""))
     child_env = dict(os.environ); parsed = urlsplit(os.environ[args.source_dsn_env])
     child_env["MAYAK_SECRETS_DIR"] = str(secret_dir)
