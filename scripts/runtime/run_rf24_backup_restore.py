@@ -297,7 +297,7 @@ def perform_restored_replay(identity: ConnectionIdentity, seed: dict[str, Any], 
     command = seed.get("idempotent_command")
     if not isinstance(command, dict) or not command.get("key") or not isinstance(command.get("payload"), dict):
         raise ValueError("runtime seed has no replayable idempotent command")
-    from scripts.runtime.run_rf24_command_idempotency import fingerprint, request
+    from scripts.runtime.run_rf24_command_idempotency import fingerprint, request, wait_for_api
 
     before = snapshot(identity, phase=FULL_TARGET_POST_RESTORE)
     # Reuse the vertical-spine settings preflight, but give the API a clean
@@ -328,16 +328,7 @@ def perform_restored_replay(identity: ConnectionIdentity, seed: dict[str, Any], 
                                    stderr=subprocess.STDOUT, text=True, shell=False)
         try:
             base = f"http://127.0.0.1:{port}"
-            for _ in range(80):
-                if process.poll() is not None:
-                    raise RuntimeError("restored replay API exited before readiness")
-                status, _, _ = request(base, "/version", method="GET")
-                if status == 200:
-                    break
-                import time
-                time.sleep(0.25)
-            else:
-                raise RuntimeError("restored replay API readiness timeout")
+            wait_for_api(process, base, source_sha, log)
             run_id = str(seed.get("run_id", ""))
             status, login, cookie_header = request(base, "/acceptance/login", payload={"synthetic_subject": f"{run_id}:target"}, key=f"{run_id}:replay-login")
             if status != 200 or not cookie_header:
