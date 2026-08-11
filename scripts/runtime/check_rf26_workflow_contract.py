@@ -26,8 +26,8 @@ def validate(path: Path) -> None:
         "docker-29.2.1.tgz", "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3",
         "docker-compose-linux-x86_64", "v5.0.2",
         "2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67",
-        "DOCKER_CONFIG", "docker compose version",
-        "test \"$(docker compose version)\" = 'Docker Compose version v5.0.2'",
+        "DOCKER_CONFIG", '"$docker_cli_dir/docker" compose version',
+        "test \"$(\"$docker_cli_dir/docker\" compose version)\" = 'Docker Compose version v5.0.2'",
         "H0c", "H0d", "H0e", "H1a", "H1b", "H1c", "H1d", "H1e", "H1f",
     )
     for marker in required:
@@ -44,6 +44,22 @@ def validate(path: Path) -> None:
         raise ValueError("generic process surrogate is present in mandatory RF26 runner")
     if "mayak.runtime.api" not in runner_text or "mayak.runtime.scheduler" not in runner_text:
         raise ValueError("owning runtime entrypoint provenance is missing")
+    h1e = text.index("H1e deterministic Docker and Compose client identity")
+    h19 = text.index("H19 full repository pytest exactly once")
+    docker_contract = text[h1e:h19]
+    if 'DOCKER_CONFIG=%s\\nRF26_DOCKER_BIN=%s' not in docker_contract:
+        raise ValueError("RF26 Docker client identity is not persisted")
+    if re.search(r"(?m)^\s*docker(?:\s|$)", docker_contract) or "=docker exec" in docker_contract:
+        raise ValueError("RF26 hosted Docker consumers use an ambient bare client")
+    for marker in (
+        'test -x "$RF26_DOCKER_BIN"',
+        '"$RF26_DOCKER_BIN" compose config',
+        '"$RF26_DOCKER_BIN" exec',
+        '"$docker_cli_dir/docker" version',
+        '"$docker_cli_dir/docker" compose version',
+    ):
+        if marker not in docker_contract:
+            raise ValueError(f"RF26 deterministic Docker contract missing: {marker}")
     if (
         "compose_plugin_dir=\"$docker_config/cli-plugins\"" not in text
         or "$compose_plugin_dir/docker-compose" not in text

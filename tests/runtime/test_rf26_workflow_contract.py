@@ -91,6 +91,33 @@ def test_compose_plugin_is_separately_pinned_and_interface_validated() -> None:
     assert "Docker Compose version v5.0.2" in text
 
 
+def test_rf26_docker_client_contract_covers_all_downstream_consumers() -> None:
+    text = WORKFLOW.read_text()
+    assert 'DOCKER_CONFIG=%s\\nRF26_DOCKER_BIN=%s' in text
+    assert '"$RF26_DOCKER_BIN" compose config' in text
+    assert '"$RF26_DOCKER_BIN" exec' in text
+    assert 'RF24_PG_TOOL_PREFIX=%s exec' in text
+
+
+@pytest.mark.parametrize(
+    ("needle", "replacement"),
+    [
+        ('"$RF26_DOCKER_BIN" compose config', "docker compose config"),
+        ('"$RF26_DOCKER_BIN" exec', "docker exec"),
+    ],
+)
+def test_rf26_contract_rejects_downstream_ambient_docker_regression(
+    tmp_path: Path, needle: str, replacement: str
+) -> None:
+    broken = WORKFLOW.with_name(f".rf26-ambient-{len(list(tmp_path.iterdir()))}.yml")
+    broken.write_text(WORKFLOW.read_text().replace(needle, replacement, 1), encoding="utf-8")
+    try:
+        with pytest.raises(ValueError, match="ambient bare client"):
+            validate(broken)
+    finally:
+        broken.unlink(missing_ok=True)
+
+
 def test_known_c358_workflow_is_rejected() -> None:
     old = subprocess.check_output(
         ["git", "show", "c358ff9ab9e3d515e4381018121bee45d0d33659:.github/workflows/ci-rf26-operability.yml"],

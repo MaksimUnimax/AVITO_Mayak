@@ -107,8 +107,9 @@ jobs:
           chmod 0755 "$compose_plugin_dir/docker-compose"
           export PATH="$docker_cli_dir:$PATH" DOCKER_CONFIG="$docker_config"
           printf 'PATH=%s\nDOCKER_CONFIG=%s\nRF26_DOCKER_BIN=%s\n' "$PATH" "$DOCKER_CONFIG" "$docker_cli_dir/docker" >> "$GITHUB_ENV"
-          test "$(docker version --format '{{.Client.Version}}')" = 29.2.1
-          test "$(docker compose version)" = 'Docker Compose version v5.0.2'
+          test -x "$docker_cli_dir/docker"
+          test "$("$docker_cli_dir/docker" version --format '{{.Client.Version}}')" = 29.2.1
+          test "$("$docker_cli_dir/docker" compose version)" = 'Docker Compose version v5.0.2'
       - name: H1f deterministic service discovery and identity
         run: |
           set -euo pipefail
@@ -173,7 +174,9 @@ jobs:
             printf 'rf26-synthetic-only-%s' "$name" > "$MAYAK_SECRETS_ROOT/$name"
             chmod 600 "$MAYAK_SECRETS_ROOT/$name"
           done
-          docker compose config >/dev/null
+          test -x "$RF26_DOCKER_BIN"
+          test -x "$DOCKER_CONFIG/cli-plugins/docker-compose"
+          "$RF26_DOCKER_BIN" compose config >/dev/null
       - name: H7c RF24 workflow boundary
         run: |
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
@@ -225,10 +228,11 @@ jobs:
           test -n "${RF26_POSTGRES_CONTAINER:-}"
           container="$RF26_POSTGRES_CONTAINER"
           test -n "$container"
-          docker exec -i -u postgres "$container" sh -c 'umask 077; printf "%s\n" "*:*:*:mayak_migration:rf26-migration-only" > /tmp/rf26.pgpass'
-          docker exec "$container" pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
-          docker exec "$container" pg_restore --version | grep -E '^pg_restore \(PostgreSQL\) 18\.'
-          printf 'RF24_PG_TOOL_PREFIX=docker exec -i -u postgres -e PGPASSFILE=/tmp/rf26.pgpass %s\n' "$container" >> "$GITHUB_ENV"
+          test -x "$RF26_DOCKER_BIN"
+          "$RF26_DOCKER_BIN" exec -i -u postgres "$container" sh -c 'umask 077; printf "%s\n" "*:*:*:mayak_migration:rf26-migration-only" > /tmp/rf26.pgpass'
+          "$RF26_DOCKER_BIN" exec "$container" pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
+          "$RF26_DOCKER_BIN" exec "$container" pg_restore --version | grep -E '^pg_restore \(PostgreSQL\) 18\.'
+          printf 'RF24_PG_TOOL_PREFIX=%s exec -i -u postgres -e PGPASSFILE=/tmp/rf26.pgpass %s\n' "$RF26_DOCKER_BIN" "$container" >> "$GITHUB_ENV"
       - name: H8 actual rebuild-from-zero stage
         run: |
           set -euo pipefail
