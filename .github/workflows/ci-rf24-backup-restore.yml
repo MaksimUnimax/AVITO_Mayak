@@ -90,8 +90,6 @@ jobs:
                       if cur.fetchone() is not None: raise SystemExit("task database already exists")
                       cur.execute(sql.SQL("CREATE DATABASE {} OWNER mayak_migration").format(sql.Identifier(name)))
           PY
-          printf 'postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/%s\n' "$source_db" > /tmp/rf24-source-dsn
-          printf 'postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/%s\n' "$target_db" > /tmp/rf24-target-dsn
       - name: Migrate both databases from zero
         env:
           RF15_MIGRATION_DSN: postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/mayak
@@ -158,16 +156,19 @@ jobs:
           test "$image" = postgres:18-bookworm
           docker exec "$container" pg_dump --version
           docker exec "$container" pg_restore --version
-          printf 'RF24_PG_TOOL_PREFIX=docker exec %s env PGPASSWORD=migration-only\n' "$container" >> "$GITHUB_ENV"
-          printf 'RF24_PG_TOOL_SOURCE_DSN=postgresql://mayak_migration@127.0.0.1:5432/%s\n' "$SOURCE_DB" >> "$GITHUB_ENV"
-          printf 'RF24_PG_TOOL_TARGET_DSN=postgresql://mayak_migration@127.0.0.1:5432/%s\n' "$TARGET_DB" >> "$GITHUB_ENV"
+          printf 'RF24_PG_TOOL_PREFIX=docker exec -u postgres %s\n' "$container" >> "$GITHUB_ENV"
+          printf 'RF24_PG_TOOL_SOURCE_DSN=%s\n' "$SOURCE_DB" >> "$GITHUB_ENV"
+          printf 'RF24_PG_TOOL_TARGET_DSN=%s\n' "$TARGET_DB" >> "$GITHUB_ENV"
 
       - name: RF24 logical backup, verification, restore and cleanup
         env:
-          RF24_PG_PASSWORD: migration-only
+          RF24_APPLICATION_PASSWORD: application-only
         run: |
           set -euo pipefail
-          uv run python -m scripts.runtime.run_rf24_backup_restore --source-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${SOURCE_DB}" --target-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${TARGET_DB}" --conflict-dsn "postgresql+psycopg://mayak_migration:migration-only@mayak-postgres:5432/${CONFLICT_DB}" --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump --seed-evidence rf24-source-runtime-seed.json
+          export RF24_SOURCE_DSN="postgresql://mayak_migration:migration-only@mayak-postgres:5432/${SOURCE_DB}"
+          export RF24_TARGET_DSN="postgresql://mayak_migration:migration-only@mayak-postgres:5432/${TARGET_DB}"
+          export RF24_CONFLICT_DSN="postgresql://mayak_migration:migration-only@mayak-postgres:5432/${CONFLICT_DB}"
+          uv run python -m scripts.runtime.run_rf24_backup_restore --source-dsn-env RF24_SOURCE_DSN --target-dsn-env RF24_TARGET_DSN --conflict-dsn-env RF24_CONFLICT_DSN --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump --seed-evidence rf24-source-runtime-seed.json
       - name: Scenario-specific PG18 gate passed before broad suite
         run: test -s rf24-backup-restore-evidence.json
       - name: Complete repository pytest once

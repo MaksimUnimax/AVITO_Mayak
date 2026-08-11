@@ -14,7 +14,11 @@ from scripts.runtime.rf24_backup_restore_core import (
     validate_projection_schema,
     verify_evidence,
 )
-from scripts.runtime.run_rf24_backup_restore import compose_create_role
+from scripts.runtime.run_rf24_backup_restore import (
+    ConnectionIdentity,
+    compose_create_role,
+    direct_identity,
+)
 
 SHA = "a" * 40
 
@@ -37,14 +41,15 @@ def good() -> dict[str, object]:
             for x in (
                 "tampered_digest",
                 "corrupt_copy",
+                "wrong_source_sha",
                 "wrong_source_revision",
                 "nonempty_newer_target",
                 "duplicate_restore",
             )
         },
-        "source_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_configuration_history", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
-        "target_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_configuration_history", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
-        "idempotency_replay": {"executed": True, "duplicate_business_effect": False},
+        "source_projection": {name: {"table": table, "count": 1, "digest": "a"} for name, (table, _) in RF24_PROJECTION_SCHEMA.items()},
+        "target_projection": {name: {"table": table, "count": 1, "digest": "a"} for name, (table, _) in RF24_PROJECTION_SCHEMA.items()},
+        "idempotency_replay": {"executed": True, "boundary": "POST /api/v1/beacons", "scope": "beacon_management", "key": "k", "fingerprint": "f", "result": {"class": "duplicate", "status": 200}, "before": {"fingerprint": "x", "counts": {}}, "after": {"fingerprint": "x", "counts": {}}, "beacon_revision_delta": 0, "lifecycle_delta": 0, "notification_delta": 0, "outbox_delta": 0, "provider_effect_delta": 0, "live_provider_calls": 0},
         "seed": {"runtime_boundary": "accepted-public-runtime", "state_classes": {"identity": {"count": 1, "projection_digest": "a"}}},
         "security": {
             "provider_live_calls": 0,
@@ -74,6 +79,15 @@ def test_verifier_rejects_missing_invariants(field: str) -> None:
         verify_evidence(value, source_sha=SHA, run_id="123")
 
 
+@pytest.mark.parametrize("field", ["before", "after", "boundary", "key", "fingerprint"])
+def test_verifier_rejects_fabricated_minimal_replay(field: str) -> None:
+    value = good()
+    value["idempotency_replay"] = good()["idempotency_replay"]
+    del value["idempotency_replay"][field]
+    with pytest.raises(ValueError):
+        verify_evidence(value, source_sha=SHA, run_id="123")
+
+
 def test_scanner_rejects_raw_backup_and_secret(tmp_path: Path) -> None:
     dump = tmp_path / "copy.dump"
     dump.write_bytes(b"opaque")
@@ -81,6 +95,28 @@ def test_scanner_rejects_raw_backup_and_secret(tmp_path: Path) -> None:
     secret.write_text('{"dsn":"postgresql://u:p@db/x"}')
     result = scan_paths([dump, secret])
     assert result["finding_count"] == 2
+
+
+@pytest.mark.parametrize("value", [
+    "postgresql+psycopg://user:secret@host/db",
+    "postgres://user:secret@host/db",
+])
+def test_scanner_rejects_all_credential_bearing_postgres_dialects(tmp_path: Path, value: str) -> None:
+    path = tmp_path / "evidence.json"
+    path.write_text(json.dumps({"dsn": value}))
+    assert scan_paths([path])["finding_count"] == 1
+
+
+def test_psycopg_boundary_rejects_sqlalchemy_dialect_without_exposing_value() -> None:
+    with pytest.raises(ValueError, match="libpq") as error:
+        direct_identity("postgresql+psycopg://user:secret@host/db")
+    assert "secret" not in str(error.value)
+
+
+def test_structured_connection_identity_is_not_a_string_rewrite() -> None:
+    identity = direct_identity("postgresql://migration:secret@host:5432/source")
+    assert isinstance(identity, ConnectionIdentity)
+    assert identity.connect_kwargs()["user"] == "migration"
 
 
 def test_manifest_is_hash_bound_and_excludes_raw_backup(tmp_path: Path) -> None:

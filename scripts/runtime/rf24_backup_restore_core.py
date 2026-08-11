@@ -60,17 +60,14 @@ def validate_projection_schema(connection: Any, *, schema: str = "mayak") -> Non
 REQUIRED_CONTROLS = (
     "tampered_digest",
     "corrupt_copy",
+    "wrong_source_sha",
     "wrong_source_revision",
     "nonempty_newer_target",
     "duplicate_restore",
 )
-REQUIRED_STATE_CLASSES = (
-    "identity", "entitlements", "beacon", "beacon_configuration_history", "beacon_history", "scan_listing",
-    "scan_runs", "notification", "notification_outbox", "notification_delivery",
-    "idempotency", "audit",
-)
+REQUIRED_STATE_CLASSES = tuple(RF24_PROJECTION_SCHEMA)
 SECRET = re.compile(
-    r"(postgres(?:ql)?://[^\s:@/]+:[^\s@/]+@|password\s*[=:]\s*[^<\s,}]+|"
+    r"((?:postgres|postgresql)(?:\+[^\s:/]+)?://[^\s:@/]+:[^\s@/]+@|password\s*[=:]\s*[^<\s,}]+|"
     r"bearer\s+[A-Za-z0-9._-]+|BEGIN [A-Z ]+PRIVATE KEY|set-cookie|authorization)",
     re.I,
 )
@@ -148,9 +145,23 @@ def verify_evidence(
     for name, item in seeded.items():
         observed = source_projection.get(aliases.get(name, name), {})
         require(int(observed.get("count", 0)) > 0, f"seed state absent from source projection: {name}")
-    replay = evidence.get("idempotency_replay", {})
-    require(replay.get("executed") is True, "idempotency replay missing")
-    require(replay.get("duplicate_business_effect") is False, "duplicate business effect observed")
+    replay = evidence.get("idempotency_replay")
+    require(isinstance(replay, dict), "idempotency replay proof missing")
+    require(replay.get("executed") is True, "idempotency replay was not executed")
+    for field in ("boundary", "scope", "key", "fingerprint", "result", "before", "after"):
+        require(replay.get(field), f"idempotency replay proof missing: {field}")
+    require(replay.get("boundary") in {"POST /api/v1/beacons", "accepted-public-runtime"}, "unknown replay boundary")
+    result = replay.get("result")
+    require(isinstance(result, dict) and result.get("class") in {"duplicate", "idempotent"} and result.get("status") in {200, 201, 204}, "replay result is not duplicate/idempotent")
+    before_replay, after_replay = replay["before"], replay["after"]
+    require(isinstance(before_replay, dict) and isinstance(after_replay, dict), "replay snapshots missing")
+    require(before_replay.get("fingerprint") and after_replay.get("fingerprint"), "replay fingerprints missing")
+    require(isinstance(before_replay.get("counts"), dict) and isinstance(after_replay.get("counts"), dict), "replay count proof missing")
+    require(replay.get("scope") and replay.get("key") and replay.get("fingerprint"), "replay identity proof missing")
+    require(before_replay.get("fingerprint") == after_replay.get("fingerprint"), "replay fingerprint changed")
+    for field in ("beacon_revision_delta", "lifecycle_delta", "notification_delta", "outbox_delta", "provider_effect_delta"):
+        require(replay.get(field) == 0, f"replay duplicate effect observed: {field}")
+    require(replay.get("live_provider_calls") == 0, "replay made a live provider call")
     security = evidence.get("security", {})
     for name, expected in {
         "provider_live_calls": 0,

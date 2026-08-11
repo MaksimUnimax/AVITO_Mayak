@@ -505,7 +505,10 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             "admin_diagnostics": {"status": admin.status, "response": admin_payload, "authenticated": admin_bootstrap.status == 200 and admin_observed, "authorized": admin_observed, "operator_account_id": operator_account_id, "target_account_id": account_id, "beacon_id": beacon_id, "baseline_run_id": first_terminal["run_id"], "difference_run_id": second_terminal["run_id"], "scan_event_id": scan_event_id, "notification_event_id": event_id, "target_observation": {"account_id": account_id, "beacon_id": beacon_id, "baseline_run_id": first_terminal["run_id"], "difference_run_id": second_terminal["run_id"], "notification_event_id": event_id, "scan_event_id": scan_event_id}, "target_diagnostics_visible": admin_observed},
             "runtime_boundaries": {"foreign_resource_impact": 0, "production_personal_data": 0, "direct_sql_read_assertions": ["scheduler_work_run_durable_cross_check", "listing_identity_before_after", "scan_new_listing_event_before_after", "notification_event_before_after", "outbox_before_after", "delivery_attempt_before_after"], "direct_sql_writes": []},
             "observations": observations, "provider_live_calls": 0, "foreign_resource_impact": 0, "production_personal_data": 0,
-            "seed": {"runtime_boundary": "accepted-public-runtime", "database": "task-owned-source", "state_classes": seed_state},
+            "seed": {"runtime_boundary": "accepted-public-runtime", "database": "task-owned-source", "run_id": run_id, "state_classes": seed_state,
+                     "idempotent_command": {"boundary": "POST /api/v1/beacons", "scope": "beacon_management",
+                                             "key": f"{run_id}:beacon", "payload": {"source_url": "https://synthetic.invalid/feed", "name": f"{run_id} beacon"},
+                                             "account_id": account_id, "beacon_id": beacon_id}},
             "credentials_exposure": False,
         }
         output.parent.mkdir(parents=True, exist_ok=True)
