@@ -19,11 +19,12 @@ htmlcov/
 **/id_ed25519
 **/*.pem
 **/*.key
-**/*credentials*
-**/*credential*
-**/*secret*
-**/*token*
-**/*password*
+# Security-sensitive material is excluded by path/classification, not by
+# English words used in the names of legitimate production modules.
+**/secrets/**
+**/.secrets/**
+**/.env
+**/.env.*
 .DS_Store
 Thumbs.db
 .idea

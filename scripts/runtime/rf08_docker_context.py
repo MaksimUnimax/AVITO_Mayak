@@ -16,6 +16,7 @@ import tarfile
 from pathlib import Path, PurePosixPath
 from typing import Final
 
+from scripts.ci.verify_security_supply_chain import detect_findings
 from scripts.runtime.rf08_docker_authority import (
     GatewayAuthority,
     ImageAction,
@@ -29,10 +30,85 @@ COPY_PLAN: Final[tuple[tuple[str, str], ...]] = (
     ("uv.lock", "uv.lock"),
     ("README.md", "README.md"),
     ("src", "src"),
+    ("scripts/runtime/run_rf12_postgres_acceptance.py", "scripts/runtime/run_rf12_postgres_acceptance.py"),
+    ("scripts/runtime/verify_rf12_acceptance.py", "scripts/runtime/verify_rf12_acceptance.py"),
+    ("scripts/runtime/rf26_operability.py", "scripts/runtime/rf26_operability.py"),
     ("alembic.ini", "alembic.ini"),
     ("alembic", "alembic"),
 )
 SCHEMA_VERSION: Final = "rf08-docker-native-context-v2"
+
+
+def _reject_classified_input(path: Path, data: bytes) -> None:
+    if path.name in {".env", "id_rsa", "id_ed25519"} or path.suffix.lower() in {".pem", ".key"}:
+        raise ValueError("classified secret build input")
+    if detect_findings(path.as_posix(), data):
+        raise ValueError("classified secret build input")
+
+
+def dockerfile_copy_contract(dockerfile: Path) -> tuple[tuple[str, str], ...]:
+    """Read the bounded, single-source COPY syntax used by this Dockerfile."""
+    rows: list[tuple[str, str]] = []
+    for raw in dockerfile.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("COPY "):
+            parts = line.split()[1:]
+            if len(parts) < 2:
+                raise ValueError("unsupported Docker COPY syntax")
+            sources, destination = parts[:-1], parts[-1]
+            if any(source.startswith("--") for source in sources) or any(
+                ch in "".join(parts) for ch in "{}$"
+            ):
+                raise ValueError("unsupported Docker COPY syntax")
+            if destination.startswith("/"):
+                raise ValueError("absolute Docker COPY path")
+            for source in sources:
+                if source.startswith("/"):
+                    raise ValueError("absolute Docker COPY path")
+                target = (
+                    source
+                    if destination in {".", "./"}
+                    else destination.removeprefix("./").rstrip("/")
+                )
+                rows.append((source, target))
+    return tuple(rows)
+
+
+def validate_copy_contract(dockerfile: Path) -> tuple[tuple[str, str], ...]:
+    actual = dockerfile_copy_contract(dockerfile)
+    if actual != COPY_PLAN:
+        raise ValueError("Dockerfile COPY contract diverges from authoritative COPY_PLAN")
+    if len({source for source, _ in actual}) != len(actual):
+        raise ValueError("duplicate Docker COPY source")
+    return actual
+
+
+def validate_copy_root(
+    root: Path,
+    expected_files: set[str],
+    *,
+    tracked_files: set[str] | None = None,
+) -> tuple[str, ...]:
+    """Fail closed on missing, extra, unsafe, or classified build inputs."""
+    root = root.resolve()
+    observed: set[str] = set()
+    for path in root.rglob("*"):
+        rel = path.relative_to(root).as_posix()
+        if path.is_symlink() or not path.is_file():
+            if path.is_symlink() or not path.is_dir():
+                raise ValueError("unsafe build input")
+            continue
+        if path.is_file():
+            observed.add(rel)
+            data = path.read_bytes()
+            _reject_classified_input(path, data)
+    if tracked_files is not None and observed - tracked_files:
+        raise ValueError("unexpected untracked build input")
+    if observed != expected_files:
+        raise ValueError("build input completeness mismatch")
+    return tuple(sorted(observed))
 
 
 def _safe_relative(path: str) -> str:
@@ -66,6 +142,7 @@ def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dic
         raise ValueError("context already exists")
     source.parent.mkdir(mode=0o700, parents=True)
     source.parent.chmod(0o700)
+    validate_copy_contract(repo / "Dockerfile")
     archive = source.parent / "source.tar"
     env = {
         "PATH": os.environ.get("PATH", ""),
@@ -127,6 +204,25 @@ def materialize_clean_context(repo: Path, destination: Path, run_id: str) -> dic
             shutil.copyfile(source_path, target_path)
         else:
             raise ValueError("missing build input")
+    # The archive is the source authority; this second check proves that the
+    # materialized context contains exactly the tracked regular files consumed
+    # by directory COPY roots and no untracked additions.
+    for root_name in ("src", "alembic"):
+        tracked = {
+            name.removeprefix(f"{root_name}/")
+            for name in subprocess.check_output(
+                _git_command(repo, "ls-files", "--", root_name), text=True, env=env
+            ).splitlines()
+            if name.startswith(f"{root_name}/")
+        }
+        validate_copy_root(source / root_name, tracked, tracked_files=tracked)
+    for relative, _destination in COPY_PLAN:
+        if relative in {"src", "alembic"}:
+            continue
+        path = source / relative
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("individual Docker COPY input is not a regular file")
+        _reject_classified_input(path, path.read_bytes())
     return {
         "candidate_source_sha": source_sha,
         "candidate_tree_identity": tree,

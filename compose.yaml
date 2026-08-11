@@ -36,10 +36,13 @@ services:
       # Bind the process on the container interface; host publication remains loopback-only.
       MAYAK_API_BIND_HOST: 0.0.0.0
       MAYAK_API_INTERNAL_PORT: "8000"
-      MAYAK_API_HOST_PORT: "18085"
+      MAYAK_API_HOST_PORT: "${MAYAK_API_HOST_PORT:-18085}"
       MAYAK_SYNTHETIC_IDENTITY_ENABLED: "true"
       MAYAK_DATABASE_HOST: mayak-postgres
       MAYAK_DATABASE_PORT: "5432"
+      MAYAK_DATABASE_NAME: mayak
+      MAYAK_DATABASE_APPLICATION_USER: mayak_application
+      MAYAK_DATABASE_MIGRATION_USER: mayak_migration
       MAYAK_AVITO_LIVE_ENABLED: "false"
       MAYAK_TELEGRAM_ENABLED: "false"
       MAYAK_MAX_ENABLED: "false"

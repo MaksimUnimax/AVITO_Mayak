@@ -352,7 +352,11 @@ def test_build_input_digest_follows_copy_inputs_and_includes_readme(tmp_path: Pa
         "uv.lock",
         "README.md",
         "alembic.ini",
+        "scripts/runtime/run_rf12_postgres_acceptance.py",
+        "scripts/runtime/verify_rf12_acceptance.py",
+        "scripts/runtime/rf26_operability.py",
     ):
+        (tree / relative).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_tree / relative, tree / relative)
     for relative in ("src", "alembic"):
         shutil.copytree(

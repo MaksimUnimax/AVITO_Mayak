@@ -49,6 +49,9 @@ COPY_PLAN = (
     ("uv.lock", "uv.lock"),
     ("README.md", "README.md"),
     ("src", "src"),
+    ("scripts/runtime/run_rf12_postgres_acceptance.py", "scripts/runtime/run_rf12_postgres_acceptance.py"),
+    ("scripts/runtime/verify_rf12_acceptance.py", "scripts/runtime/verify_rf12_acceptance.py"),
+    ("scripts/runtime/rf26_operability.py", "scripts/runtime/rf26_operability.py"),
     ("alembic.ini", "alembic.ini"),
     ("alembic", "alembic"),
 )
