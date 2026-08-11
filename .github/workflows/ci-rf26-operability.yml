@@ -114,9 +114,10 @@ jobs:
         run: |
           set -euo pipefail
           test -x "$RF26_DOCKER_BIN"
-          mapfile -t candidates < <("$RF26_DOCKER_BIN" ps --filter label=com.docker.compose.service=mayak-postgres --filter health=healthy --format '{{.ID}}')
+          mapfile -t candidates < <("$RF26_DOCKER_BIN" ps --filter label=com.docker.compose.service=mayak-postgres --format '{{.ID}}')
           test "${#candidates[@]}" -eq 1
           container="${candidates[0]}"
+          test "$("$RF26_DOCKER_BIN" inspect --format '{{.State.Health.Status}}' "$container")" = healthy
           image_id="$(docker inspect --format '{{.Image}}' "$container")"
           image_identity="$("$RF26_DOCKER_BIN" image inspect --format '{{json .RepoDigests}}' "$image_id")"
           test "$image_identity" = '["postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"]'
