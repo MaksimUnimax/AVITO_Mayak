@@ -51,7 +51,7 @@ jobs:
       - name: H1 PostgreSQL service image identity
         run: |
           set -euo pipefail
-          container="$(docker ps --filter name=mayak-postgres --format '{{.ID}}' | head -n1)"
+          container="$(docker ps --filter ancestor=postgres:18-bookworm --format '{{.ID}}' | head -n1)"
           test -n "$container"
           image_identity="$(docker inspect --format '{{json .RepoDigests}}' "$container")"
           printf 'postgres-service-repo-digests=%s\n' "$image_identity"
@@ -142,7 +142,7 @@ jobs:
       - name: H9 bind PostgreSQL 18 client identity
         run: |
           set -euo pipefail
-          container="$(docker ps --filter name=mayak-postgres --format '{{.ID}}' | head -n1)"
+          container="$(docker ps --filter ancestor=postgres:18-bookworm --format '{{.ID}}' | head -n1)"
           test -n "$container"
           docker exec -i -u postgres "$container" sh -c 'umask 077; printf "%s\n" "*:*:*:mayak_migration:rf26-migration-only" > /tmp/rf26.pgpass'
           docker exec "$container" pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
