@@ -38,6 +38,7 @@ def validate(path: Path) -> None:
         "docker-compose-linux-x86_64", "v5.0.2",
         "2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67",
         "DOCKER_CONFIG", '"$docker_cli_dir/docker" compose version',
+        'printf \'%s\\n\' "$docker_cli_dir" >> "$GITHUB_PATH"',
         "test \"$(\"$docker_cli_dir/docker\" compose version)\" = 'Docker Compose version v5.0.2'",
         "H0c", "H0d", "H0e", "H1a", "H1b", "H1c", "H1d", "H1e", "H1f",
         "scripts.runtime.rf26_postgres_preflight",
@@ -61,6 +62,8 @@ def validate(path: Path) -> None:
     docker_contract = text[h1e:h19]
     if 'DOCKER_CONFIG=%s\\nRF26_DOCKER_BIN=%s' not in docker_contract:
         raise ValueError("RF26 Docker client identity is not persisted")
+    if 'printf \'%s\\n\' "$docker_cli_dir" >> "$GITHUB_PATH"' not in docker_contract:
+        raise ValueError("RF26 Docker client path is not persisted through GITHUB_PATH")
     if re.search(r"(?m)^\s*docker(?:\s|$)", docker_contract) or "=docker exec" in docker_contract:
         raise ValueError("RF26 hosted Docker consumers use an ambient bare client")
     for marker in (
@@ -163,6 +166,8 @@ def validate(path: Path) -> None:
         raise ValueError("H19 stage-local environment normalization is not explicit")
     if "rf26_h19_postgres cleanup" not in text:
         raise ValueError("H19 cleanup boundary missing")
+    if "RF26_H19_STATE_ROOT" not in preflight_block:
+        raise ValueError("H19 cleanup root authority is not explicit")
     if re.search(r"(?m)^\s*(env|printenv|set)\s*(?:[|>]|$)", h19_block):
         raise ValueError("H19 must not dump the environment")
     diagnostic = text[h19_start:h20_start]

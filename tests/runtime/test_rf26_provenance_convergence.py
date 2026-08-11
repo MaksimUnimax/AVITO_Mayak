@@ -151,7 +151,11 @@ def test_h19_cleanup_never_provisioned_is_safe_noop(tmp_path: Path, monkeypatch:
     assert h19.cleanup(run_id="123", state_dir=tmp_path / "absent") == "NOT_PROVISIONED"
 
 
-def test_h19_malformed_or_foreign_state_fails_closed(tmp_path: Path) -> None:
+def test_h19_malformed_or_foreign_state_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RF26_H19_STATE_ROOT", str(tmp_path))
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path / "unrelated-hosted-temp"))
     state = tmp_path / "partial"
     state.mkdir()
     with pytest.raises(RuntimeError, match="partial or malformed"):
@@ -160,6 +164,19 @@ def test_h19_malformed_or_foreign_state_fails_closed(tmp_path: Path) -> None:
     linked.symlink_to(state, target_is_directory=True)
     with pytest.raises(RuntimeError, match="safe lifecycle"):
         h19.cleanup(run_id="123", state_dir=linked)
+
+
+def test_h19_foreign_root_fails_closed_with_explicit_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    authorized = tmp_path / "authorized"
+    foreign = tmp_path / "foreign"
+    authorized.mkdir()
+    foreign.mkdir()
+    monkeypatch.setenv("RF26_H19_STATE_ROOT", str(authorized))
+    (foreign / "partial").mkdir()
+    with pytest.raises(RuntimeError, match="outside the allowed root"):
+        h19.cleanup(run_id="123", state_dir=foreign / "partial")
 
 
 def test_h19_valid_state_is_verified_before_cleanup_mutation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,3 +197,27 @@ def test_h19_valid_state_is_verified_before_cleanup_mutation(tmp_path: Path, mon
     assert h19.cleanup(run_id="123", state_dir=state) == "CLEANED"
     assert any("DROP DATABASE" in query for query in calls)
     assert not state.exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (("unexpected", "unexpected files"), ("wrong-run", "does not match this run"),
+     ("malformed-marker", "marker is malformed")),
+)
+def test_h19_state_lifecycle_rejects_noncanonical_receipts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str, message: str
+) -> None:
+    state = _valid_h19_state(tmp_path)
+    monkeypatch.setenv("RF26_H19_STATE_ROOT", str(tmp_path))
+    if mutation == "unexpected":
+        (state / "unexpected").write_text("x", encoding="utf-8")
+    elif mutation == "wrong-run":
+        marker = state / "h19.env"
+        marker.write_text(
+            marker.read_text(encoding="utf-8").replace("rf26_h19_rf10_123", "rf26_h19_rf10_999"),
+            encoding="utf-8",
+        )
+    else:
+        (state / "h19.env").write_text("malformed-marker\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match=message):
+        h19.cleanup(run_id="123", state_dir=state)

@@ -149,7 +149,10 @@ def _validated_state(*, run_id: str, state_dir: Path) -> tuple[str, str] | None:
         raise RuntimeError("RF26 H19 state directory is outside the safe lifecycle boundary")
     if not state_dir.exists():
         return None
-    allowed_root_value = os.environ.get("RF26_H19_STATE_ROOT") or os.environ.get("RUNNER_TEMP")
+    # RUNNER_TEMP is only a CI transport location.  Cleanup authority must be
+    # explicit so unrelated hosted environment state cannot reorder lifecycle
+    # validation in generic callers or tests.
+    allowed_root_value = os.environ.get("RF26_H19_STATE_ROOT")
     if allowed_root_value and state_dir.parent.resolve() != Path(allowed_root_value).resolve():
         raise RuntimeError("RF26 H19 state directory is outside the allowed root")
     if not state_dir.is_dir():
