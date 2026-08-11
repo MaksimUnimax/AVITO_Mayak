@@ -198,7 +198,11 @@ jobs:
           install -d -m 700 "$RUNNER_TEMP/rf26-secrets"
           printf '%s' rf26-application-only > "$RUNNER_TEMP/rf26-secrets/mayak_database_application_password"
           chmod 600 "$RUNNER_TEMP/rf26-secrets/mayak_database_application_password"
+          set +e
           MAYAK_RUNTIME_PROFILE=synthetic_acceptance MAYAK_DATABASE_HOST=mayak-postgres MAYAK_DATABASE_NAME="$RF26_SOURCE_DB" MAYAK_DATABASE_APPLICATION_USER=mayak_application MAYAK_DATABASE_MIGRATION_USER=mayak_migration MAYAK_SECRETS_DIR="$RUNNER_TEMP/rf26-secrets" uv run python -m scripts.runtime.run_rf24_vertical_spine --repo-root "$GITHUB_WORKSPACE" --output rf26-source-runtime-seed.json --probes rf26-source-runtime-probes.json --log rf26-source-runtime.log --source-sha "$GITHUB_SHA"
+          rc=$?
+          set -e
+          test "$rc" -eq 0 || exit "$rc"
       - name: H9 bind PostgreSQL 18 client identity
         run: |
           set -euo pipefail

@@ -11,6 +11,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -32,6 +33,73 @@ class SafeResponse:
 
     def evidence(self) -> dict[str, object]:
         return {"status": self.status, "payload": _safe_payload(self.payload)}
+
+
+_RF26_TECHNICAL_ID = "RF26-OBSERVABILITY-BACKUP-RECOVERY-01"
+_RF26_SCHEMA_VERSION = 1
+_RF26_BOUNDARIES = (
+    "SEED_A_ENVIRONMENT", "SEED_B_API_PROCESS_START", "SEED_C_WORKER_PROCESS_START",
+    "SEED_D_SCHEDULER_PROCESS_START", "SEED_E_API_LIVENESS", "SEED_F_OPERATOR_LOGIN",
+    "SEED_G_ADMIN_BOOTSTRAP", "SEED_H_TARGET_LOGIN", "SEED_I_ENTITLEMENT",
+    "SEED_J_BEACON_CREATE", "SEED_K_BEACON_CONFIGURATION", "SEED_L_BEACON_ACTIVATION",
+    "SEED_M_BASELINE_SCHEDULE", "SEED_N_BASELINE_COMPLETION", "SEED_O_DIFFERENCE_SCHEDULE",
+    "SEED_P_DIFFERENCE_COMPLETION", "SEED_Q_NOTIFICATION_READ_MODEL", "SEED_R_WEB_CABINET",
+    "SEED_S_ADMIN_DIAGNOSTICS", "SEED_T_PROCESS_PROVENANCE", "SEED_U_DURABLE_STATE_PROOF",
+)
+
+
+class SeedLifecycleReporter:
+    """Single diagnostic boundary for the real RF24 producer."""
+
+    def __init__(self, *, source_sha: str, run_id: str) -> None:
+        self.source_sha = source_sha
+        self.run_id = run_id
+        self.completed: list[str] = []
+        self.current: dict[str, object] | None = None
+        self.trace: deque[dict[str, object]] = deque(maxlen=5)
+
+    def begin(self, boundary: str, *, input: object, derived: object,
+              function: str, environment: object, evidence: object) -> None:
+        process_kind = environment.get("process_kind") if isinstance(environment, dict) else None
+        self.current = {"boundary": boundary, "process_kind": _safe_payload(process_kind), "exit_code": None}
+        self.trace.append({
+            "input": _safe_payload(input), "derived": _safe_payload(derived),
+            "function": function, "environment": _safe_payload(environment),
+            "source_runtime_evidence": _safe_payload(evidence),
+        })
+
+    def passed(self, evidence: object) -> None:
+        if self.current is None:
+            return
+        boundary = str(self.current["boundary"])
+        self.completed.append(boundary)
+        self.current = None
+
+    def publish_failure(self, error: BaseException) -> None:
+        current = self.current or {"boundary": "SEED_A_ENVIRONMENT", "process_kind": None, "exit_code": None}
+        reason = _redact_text(str(error))
+        diagnostic = {
+            "schema_version": _RF26_SCHEMA_VERSION,
+            "technical_id": _RF26_TECHNICAL_ID,
+            "source_sha": self.source_sha,
+            "run_id": self.run_id,
+            "failed_boundary": current["boundary"],
+            "completed_boundaries": self.completed[-64:],
+            "exception_class": type(error).__name__,
+            "redacted_reason": reason[:400],
+            "affected_process_kind": current.get("process_kind"),
+            "process_exit_code": current.get("exit_code"),
+            "five_transition_trace": list(self.trace),
+        }
+        encoded = json.dumps(diagnostic, sort_keys=True, separators=(",", ":"))
+        print(f"::error title=RF26 runtime seed {diagnostic['failed_boundary']}::{encoded}", flush=True)
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary:
+            with Path(summary).open("a", encoding="utf-8") as stream:
+                stream.write("## RF26 runtime seed diagnostic\n\n```json\n")
+                stream.write(json.dumps(diagnostic, sort_keys=True, indent=2)[:12000])
+                stream.write("\n```\n")
+        print(f"RF26 runtime seed diagnostic: {encoded}", flush=True)
 
 
 def _safe_payload(value: object, *, depth: int = 0) -> object:
@@ -269,6 +337,13 @@ def _sanitized_log_tail(path: Path, *, limit: int = 4096) -> str:
     return sanitized[-limit:]
 
 
+def _redact_text(value: object) -> str:
+    text = str(value).replace("\n", " ")[:800]
+    for pattern in _SECRET_LOG_PATTERNS:
+        text = pattern.sub(lambda match: match.group(1) + "<redacted>" if match.lastindex else "<redacted>", text)
+    return text
+
+
 def _child_environment(
     base: dict[str, str], *, source_sha: str, run_id: str, kind: str,
     database_host: str, database_name: str, port: str,
@@ -350,6 +425,15 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
     if actual_sha != expected_sha:
         raise RuntimeError("wrong source SHA")
     run_id = f"rf24-spine-{uuid4()}"
+    reporter = SeedLifecycleReporter(source_sha=actual_sha, run_id=run_id)
+    reporter.begin(
+        "SEED_A_ENVIRONMENT", input={"repo_root": str(root), "expected_sha": expected_sha},
+        derived={"actual_sha": actual_sha, "run_id": run_id},
+        function="scripts.runtime.run_rf24_vertical_spine:produce",
+        environment={"profile": os.environ.get("MAYAK_RUNTIME_PROFILE"), "database_host": os.environ.get("MAYAK_DATABASE_HOST"), "database_name": os.environ.get("MAYAK_DATABASE_NAME")},
+        evidence={"checkout_sha_proof": actual_sha == expected_sha},
+    )
+    reporter.passed({"checkout_sha_proof": True})
     port = os.environ.get("MAYAK_API_INTERNAL_PORT", "18080")
     base = f"http://127.0.0.1:{port}"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -361,19 +445,36 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
     database_name = base_env.get("MAYAK_DATABASE_NAME", "mayak")
     handles: list[tuple[str, subprocess.Popen[str], Path, Any]] = []
     for kind, module in (("api", "mayak.runtime.api"), ("worker", "mayak.runtime.worker"), ("scheduler", "mayak.runtime.scheduler")):
+        reporter.begin(
+            {"api": "SEED_B_API_PROCESS_START", "worker": "SEED_C_WORKER_PROCESS_START", "scheduler": "SEED_D_SCHEDULER_PROCESS_START"}[kind],
+            input={"kind": kind, "module": module}, derived={"process_kind": f"mayak-{kind}"},
+            function=f"subprocess.Popen:{module}", environment={"database_host": database_host, "database_name": database_name, "secrets_dir": base_env.get("MAYAK_SECRETS_DIR")},
+            evidence={"environment_contract": "canonical_child_environment"},
+        )
         target = log.parent / f"rf24-{kind}.log"
-        child_env = _child_environment(base_env, source_sha=actual_sha, run_id=run_id, kind=kind,
-                                       database_host=database_host, database_name=database_name, port=port,
-                                       scheduler_observations=scheduler_observations, worker_observations=worker_observations)
-        stream = target.open("w", encoding="utf-8")
-        process = subprocess.Popen((sys.executable, "-m", module), env=child_env, stdout=stream, stderr=subprocess.STDOUT, text=True, shell=False)
+        try:
+            child_env = _child_environment(base_env, source_sha=actual_sha, run_id=run_id, kind=kind,
+                                           database_host=database_host, database_name=database_name, port=port,
+                                           scheduler_observations=scheduler_observations, worker_observations=worker_observations)
+            stream = target.open("w", encoding="utf-8")
+            process = subprocess.Popen((sys.executable, "-m", module), env=child_env, stdout=stream, stderr=subprocess.STDOUT, text=True, shell=False)
+        except Exception as error:
+            reporter.publish_failure(error)
+            raise
         handles.append((kind, process, target, stream))
+        reporter.passed({"pid": process.pid, "module": module})
     observations: dict[str, object] = {}
     try:
+        reporter.begin(
+            "SEED_E_API_LIVENESS", input={"endpoint": f"{base}/health/live"}, derived={"polls": 80},
+            function="scripts.runtime.run_rf24_vertical_spine:request", environment={"api_base": base},
+            evidence={"child_modules": ["mayak.runtime.api", "mayak.runtime.worker", "mayak.runtime.scheduler"]},
+        )
         health = SafeResponse(0, {})
         for _ in range(80):
             for kind, process, target, _ in handles:
                 if process.poll() is not None:
+                    reporter.current = {"boundary": {"api": "SEED_B_API_PROCESS_START", "worker": "SEED_C_WORKER_PROCESS_START", "scheduler": "SEED_D_SCHEDULER_PROCESS_START"}[kind], "process_kind": f"mayak-{kind}", "exit_code": process.poll()}
                     raise _startup_failure(kind, process, target, "readiness")
             health = request(f"{base}/health/live")
             if health.status == 200:
@@ -381,28 +482,57 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             time.sleep(0.25)
         if health.status != 200:
             raise RuntimeError("API did not become live: reason=readiness_timeout")
+        reporter.passed({"status": health.status})
+        reporter.begin("SEED_F_OPERATOR_LOGIN", input={"subject": "operator"}, derived={"endpoint": "/acceptance/login"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         login = request(f"{base}/acceptance/login", method="POST", body={"synthetic_subject": f"{run_id}:account"}, idempotency_key=f"{run_id}:login")
         if login._session_cookie is None:
             raise RuntimeError("synthetic login did not issue a session")
+        reporter.passed(login.evidence())
         cookie = login._session_cookie
         login_safe = login.evidence()
         login_safe["payload"] = {"account_id": _json_payload(login.payload).get("account_id"), "state": _json_payload(login.payload).get("state")}
         operator_account_id = str(_json_payload(login.payload).get("account_id"))
+        reporter.begin("SEED_G_ADMIN_BOOTSTRAP", input={"operator_account_id": operator_account_id}, derived={"endpoint": "/acceptance/admin/bootstrap"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"session": "in-memory-only"})
         admin_bootstrap = request(f"{base}/acceptance/admin/bootstrap", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:admin-bootstrap")
+        if admin_bootstrap.status != 200:
+            raise RuntimeError(f"admin bootstrap failed: status={admin_bootstrap.status}")
+        reporter.passed(admin_bootstrap.evidence())
+        reporter.begin("SEED_H_TARGET_LOGIN", input={"subject": "target"}, derived={"endpoint": "/acceptance/login"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         target_login = request(f"{base}/acceptance/login", method="POST", body={"synthetic_subject": f"{run_id}:target"}, idempotency_key=f"{run_id}:target-login")
         if target_login._session_cookie is None:
             raise RuntimeError("synthetic target login did not issue a session")
+        reporter.passed(target_login.evidence())
         cookie = target_login._session_cookie
         account_id = str(_json_payload(target_login.payload).get("account_id"))
+        reporter.begin("SEED_I_ENTITLEMENT", input={"account_id": account_id}, derived={"endpoint": "/acceptance/entitlement"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         entitlement = request(f"{base}/acceptance/entitlement", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:entitlement")
+        if entitlement.status != 200:
+            raise RuntimeError(f"entitlement setup failed: status={entitlement.status}")
+        reporter.passed(entitlement.evidence())
+        reporter.begin("SEED_J_BEACON_CREATE", input={"account_id": account_id}, derived={"endpoint": "/api/v1/beacons"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         beacon = request(f"{base}/api/v1/beacons", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:beacon", body={"source_url": "https://synthetic.invalid/feed", "name": f"{run_id} beacon"})
+        if beacon.status != 200:
+            raise RuntimeError(f"Beacon create failed: status={beacon.status}")
+        reporter.passed(beacon.evidence())
         beacon_body = _json_payload(beacon.payload)
         beacon_id = str(beacon_body["beacon_id"])
         version = int(beacon_body.get("row_version", 1))
+        reporter.begin("SEED_K_BEACON_CONFIGURATION", input={"beacon_id": beacon_id, "row_version": version}, derived={"endpoint": "accept-synthetic-snapshot"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         snapshot = request(f"{base}/api/v1/beacons/{beacon_id}/accept-synthetic-snapshot?expected_row_version={version}", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:snapshot")
+        if snapshot.status != 200:
+            raise RuntimeError(f"Beacon configuration failed: status={snapshot.status}")
+        reporter.passed(snapshot.evidence())
         version = int(_json_payload(snapshot.payload).get("row_version", version + 1))
+        reporter.begin("SEED_L_BEACON_ACTIVATION", input={"beacon_id": beacon_id, "row_version": version}, derived={"endpoint": "activate"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         activated = request(f"{base}/api/v1/beacons/{beacon_id}/activate?expected_row_version={version}", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:activate")
+        if activated.status != 200:
+            raise RuntimeError(f"Beacon activation failed: status={activated.status}")
+        reporter.passed(activated.evidence())
+        reporter.begin("SEED_M_BASELINE_SCHEDULE", input={"beacon_id": beacon_id}, derived={"next_due": "past"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         schedule = request(f"{base}/api/v1/beacons/{beacon_id}/scan-schedule", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:schedule", body={"interval_seconds": 10800, "next_due_at": (datetime.now(UTC) - timedelta(seconds=5)).isoformat()})
+        if schedule.status != 200:
+            raise RuntimeError(f"baseline schedule failed: status={schedule.status}")
+        reporter.passed(schedule.evidence())
         baseline_before = _db_snapshot(account_id, beacon_id)
         scan = SafeResponse(0, [])
         for _ in range(40):
@@ -411,7 +541,15 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
                 break
             time.sleep(0.5)
         baseline_after = _db_snapshot(account_id, beacon_id)
+        if not any(r.get("state") == "SUCCEEDED_BASELINE" for r in _run_records(scan.payload)):
+            raise RuntimeError("baseline completion not observed")
+        reporter.begin("SEED_N_BASELINE_COMPLETION", input={"beacon_id": beacon_id}, derived={"state": "SUCCEEDED_BASELINE"}, function="run_rf24_vertical_spine:_run_records", environment={"process_kind": "mayak-worker"}, evidence={"scan_status": scan.status})
+        reporter.passed({"state": "SUCCEEDED_BASELINE"})
+        reporter.begin("SEED_O_DIFFERENCE_SCHEDULE", input={"beacon_id": beacon_id}, derived={"next_due": "past"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         second_schedule = request(f"{base}/api/v1/beacons/{beacon_id}/scan-schedule", method="POST", session_cookie=cookie, idempotency_key=f"{run_id}:schedule-2", body={"interval_seconds": 10800, "next_due_at": (datetime.now(UTC) - timedelta(seconds=5)).isoformat()})
+        if second_schedule.status != 200:
+            raise RuntimeError(f"difference schedule failed: status={second_schedule.status}")
+        reporter.passed(second_schedule.evidence())
         difference_before = _db_snapshot(account_id, beacon_id)
         second = SafeResponse(0, [])
         for _ in range(40):
@@ -419,18 +557,30 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             if any(r.get("state") == "SUCCEEDED_DIFFERENCE" for r in _run_records(second.payload)):
                 break
             time.sleep(0.5)
+        if not any(r.get("state") == "SUCCEEDED_DIFFERENCE" for r in _run_records(second.payload)):
+            raise RuntimeError("difference completion not observed")
+        reporter.begin("SEED_P_DIFFERENCE_COMPLETION", input={"beacon_id": beacon_id}, derived={"state": "SUCCEEDED_DIFFERENCE"}, function="run_rf24_vertical_spine:_run_records", environment={"process_kind": "mayak-worker"}, evidence={"scan_status": second.status})
+        reporter.passed({"state": "SUCCEEDED_DIFFERENCE"})
+        reporter.begin("SEED_Q_NOTIFICATION_READ_MODEL", input={"beacon_id": beacon_id}, derived={"endpoint": "/api/v1/notifications"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         notifications = request(f"{base}/api/v1/notifications", session_cookie=cookie)
+        reporter.passed(notifications.evidence())
+        reporter.begin("SEED_R_WEB_CABINET", input={"account_id": account_id}, derived={"endpoint": "/web/"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         cabinet = request(f"{base}/web/", session_cookie=cookie)
+        reporter.passed(cabinet.evidence())
+        reporter.begin("SEED_S_ADMIN_DIAGNOSTICS", input={"account_id": account_id}, derived={"endpoint": f"/admin/account/{account_id}"}, function="run_rf24_vertical_spine:request", environment={"api_base": base}, evidence={"status": "pending"})
         admin = request(
             f"{base}/admin/account/{account_id}",
             session_cookie=login._session_cookie,
         )
+        reporter.passed(admin.evidence())
         scheduler_records = [r for r in _read_jsonl(scheduler_observations, process_kind="mayak-scheduler", run_id=run_id) if r.get("record_type") == "scheduler_materialization" and r.get("materialized_count", 0) >= 1]
         worker_records = _read_jsonl(worker_observations, process_kind="mayak-worker", run_id=run_id)
         claims = [r for r in worker_records if r.get("record_type") == "worker_claim"]
         terminals = [r for r in worker_records if r.get("record_type") == "worker_terminal"]
         if len(scheduler_records) < 2 or len(claims) < 2 or len(terminals) < 2:
             raise RuntimeError("process-originated RF24 provenance is incomplete")
+        reporter.begin("SEED_T_PROCESS_PROVENANCE", input={"scheduler_records": len(scheduler_records), "worker_claims": len(claims), "worker_terminals": len(terminals)}, derived={"required": 2}, function="run_rf24_vertical_spine:_read_jsonl", environment={"process_kinds": ["mayak-worker", "mayak-scheduler"]}, evidence={"observation_identity": "technical_id+run_id+process_kind"})
+        reporter.passed({"scheduler_records": len(scheduler_records), "worker_claims": len(claims), "worker_terminals": len(terminals)})
         first, second_provenance = scheduler_records[0], scheduler_records[1]
         claim_by_work = {r["work_item_id"]: r for r in claims}
         terminal_by_work = {r["work_item_id"]: r for r in terminals}
@@ -441,6 +591,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         for item in (first, second_provenance):
             if item["work_item_id"] not in claim_by_work or item["work_item_id"] not in terminal_by_work or item["work_item_id"] not in durable_by_work:
                 raise RuntimeError("process and durable provenance do not correlate")
+        reporter.begin("SEED_U_DURABLE_STATE_PROOF", input={"beacon_id": beacon_id}, derived={"correlated_work_items": 2}, function="run_rf24_vertical_spine:_db_provenance+_db_snapshot", environment={"database": database_name}, evidence={"foreign_resource_impact": 0})
         first_terminal, second_terminal = terminal_by_work[first["work_item_id"]], terminal_by_work[second_provenance["work_item_id"]]
         difference_after = _db_snapshot(account_id, beacon_id)
         seed_state = _observed_seed_state(account_id, beacon_id)
@@ -476,6 +627,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         notification_source_event_id = next((row[1] for row in after_events if isinstance(row, tuple) and row[0] == event_id), None)
         if notification_source_event_id != scan_event_id:
             raise RuntimeError("Notification event source identity does not match ScanNewListing event")
+        reporter.passed({"state_projection": "complete", "notification_delta": 1, "outbox_delta": len(outbox_delta), "delivery_delta": len(attempt_delta)})
         web_observed = cabinet.status == 200 and account_id in web_refs and beacon_id in web_refs and bool(listing_delta)
         admin_observed = admin.status == 200 and account_id in admin_refs
         observations.update({
@@ -514,6 +666,9 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         output.parent.mkdir(parents=True, exist_ok=True)
         probes.parent.mkdir(parents=True, exist_ok=True)
         probes.write_text(json.dumps({"source_sha": actual_sha, "run_id": run_id, "safe": True}, indent=2) + "\n", encoding="utf-8")
+    except Exception as error:
+        reporter.publish_failure(error)
+        raise
     finally:
         for _, process, _, _ in handles:
             process.terminate()
