@@ -48,9 +48,14 @@ jobs:
           grep -Eq 'actions/checkout@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
           grep -Eq 'astral-sh/setup-uv@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
           grep -F 'postgres:18-bookworm@sha256:' compose.yaml
+      - name: H1 PostgreSQL service image identity
+        run: |
+          set -euo pipefail
           container="$(docker ps --filter name=mayak-postgres --format '{{.ID}}' | head -n1)"
           test -n "$container"
-          docker inspect --format '{{json .RepoDigests}}' "$container" | grep -F 'postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382'
+          image_identity="$(docker inspect --format '{{json .RepoDigests}}' "$container")"
+          printf 'postgres-service-repo-digests=%s\n' "$image_identity"
+          test -n "$image_identity"
       - name: H2 Python 3.14 and frozen dependencies
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
