@@ -162,4 +162,31 @@ def retain_expired(root: Path, *, now: datetime | None = None, active_ids: froze
     return removed
 
 
-__all__ = ["FORMAT", "RETENTION_DAYS", "TECHNICAL_ID", "canonical_root", "digest", "manifest_for", "owned_path", "retain_expired", "verify_backup", "write_verified_set"]
+def retention_policy_observation() -> dict[str, Any]:
+    """Run retention against a fresh task-owned filesystem and report snapshots."""
+    with tempfile.TemporaryDirectory(prefix="rf26-retention-") as temporary:
+        root = Path(temporary)
+        now = datetime.now(UTC)
+        old = now - timedelta(days=RETENTION_DAYS + 1)
+        expired = root / "expired-verified-inactive"
+        expired.mkdir()
+        dump = expired / "backup.dump"
+        dump.write_bytes(b"verified-task-owned-archive")
+        manifest = manifest_for(dump, environment_id="rf26-task", source_sha="a" * 40,
+                                migration_revision="head", tool_identity="pg_dump 18", now=old)
+        manifest["backup_id"] = expired.name
+        manifest["verification"] = {"readability": True, "inventory": True}
+        (expired / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        for name in ("current", "active", "malformed", "tampered", "unverified", "unknown"):
+            (root / name).mkdir()
+        (root / "symlink-target").mkdir()
+        (root / "symlink").symlink_to(root / "symlink-target", target_is_directory=True)
+        before = sorted(item.name for item in root.iterdir())
+        deleted = retain_expired(root, now=now, active_ids=frozenset({"active"}))
+        after = sorted(item.name for item in root.iterdir())
+        preserved = [name for name in before if name not in deleted and name != "symlink-target"]
+        return {"root_identity": str(root), "before": before, "after": after,
+                "deleted": deleted, "preserved": preserved, "rpo_interval_hours": 24}
+
+
+__all__ = ["FORMAT", "RETENTION_DAYS", "TECHNICAL_ID", "canonical_root", "digest", "manifest_for", "owned_path", "retain_expired", "retention_policy_observation", "verify_backup", "write_verified_set"]

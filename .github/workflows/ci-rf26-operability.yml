@@ -12,10 +12,10 @@ permissions:
 jobs:
   rf26:
     runs-on: ubuntu-24.04
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     services:
       mayak-postgres:
-        image: postgres:18-bookworm
+        image: postgres:18-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
         env:
           POSTGRES_DB: mayak
           POSTGRES_USER: mayak
@@ -36,36 +36,81 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Install task-local git and Docker client
-        run: apt-get update && apt-get install -y --no-install-recommends git docker.io
+      - name: Install task-local Git transport prerequisites
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl
       - name: H0 checkout exact candidate and prove ancestor
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: H0 candidate SHA identity
+      - name: H0b establish persistent cross-step Git trust
+        run: |
+          set -euo pipefail
+          test -n "${GITHUB_WORKSPACE:-}"
+          workspace="$(realpath "$GITHUB_WORKSPACE")"
+          {
+            printf '%s\n' 'GIT_CONFIG_COUNT=1'
+            printf '%s\n' 'GIT_CONFIG_KEY_0=safe.directory'
+            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
+          } >> "$GITHUB_ENV"
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$workspace"
+          test "$workspace" = "$(realpath "$GITHUB_WORKSPACE")"
+      - name: H0c prove cross-step Git trust
+        run: |
+          set -euo pipefail
+          workspace="$(realpath "$GITHUB_WORKSPACE")"
+          test "${GIT_CONFIG_COUNT:-}" = 1
+          test "${GIT_CONFIG_KEY_0:-}" = safe.directory
+          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
+          test "$(git rev-parse --show-toplevel)" = "$workspace"
+          test -n "$(git rev-parse HEAD)"
+      - name: H0d candidate SHA identity
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-      - name: H0 authoritative base identity
+      - name: H0e authoritative base identity
         run: |
           set -euo pipefail
           test "$(git merge-base HEAD 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d)" = 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d
-      - name: H1 immutable workflow and image pins
+      - name: H1a immutable workflow substrate contract
         run: |
           set -euo pipefail
           grep -Eq 'actions/checkout@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
           grep -Eq 'astral-sh/setup-uv@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
-          grep -F 'postgres:18-bookworm@sha256:' compose.yaml
-      - name: H1 PostgreSQL service image identity
+          grep -Eq 'actions/upload-artifact@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
+          python -m scripts.runtime.check_rf26_workflow_contract .github/workflows/ci-rf26-operability.yml
+      - name: H1b immutable job-container identity
         run: |
           set -euo pipefail
-          container="$(docker ps --filter ancestor=postgres:18-bookworm --format '{{.ID}}' | head -n1)"
-          test -n "$container"
-          image_identity="$(docker inspect --format '{{json .RepoDigests}}' "$container")"
-          printf 'postgres-service-repo-digests=%s\n' "$image_identity"
-          test -n "$image_identity"
+          grep -F 'python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9' .github/workflows/ci-rf26-operability.yml
+      - name: H1c immutable PostgreSQL service identity
+        run: |
+          set -euo pipefail
+          grep -F 'postgres:18-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382' .github/workflows/ci-rf26-operability.yml
+      - name: H1d deterministic service discovery contract
+        run: |
+          set -euo pipefail
+          grep -F 'label=com.docker.compose.service=mayak-postgres' .github/workflows/ci-rf26-operability.yml
+          grep -F 'docker image inspect' .github/workflows/ci-rf26-operability.yml
+      - name: H1e deterministic Docker and Compose client identity
+        run: |
+          set -euo pipefail
+          curl -fsSLo docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz
+          echo '995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  docker.tgz' | sha256sum -c -
+          tar -xzf docker.tgz --strip-components=1 -C /usr/local/bin docker/docker
+          test "$(docker version --format '{{.Client.Version}}')" = 29.2.1
+          test "$(docker compose version --short)" = 5.0.2
+      - name: H1f deterministic service discovery and identity
+        run: |
+          set -euo pipefail
+          mapfile -t candidates < <(docker ps --filter label=com.docker.compose.service=mayak-postgres --filter health=healthy --format '{{.ID}}')
+          test "${#candidates[@]}" -eq 1
+          container="${candidates[0]}"
+          image_id="$(docker inspect --format '{{.Image}}' "$container")"
+          image_identity="$(docker image inspect --format '{{json .RepoDigests}}' "$image_id")"
+          test "$image_identity" = '["postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"]'
+          printf 'RF26_POSTGRES_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
       - name: H2 Python 3.14 and frozen dependencies
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
@@ -152,20 +197,40 @@ jobs:
       - name: H9 bind PostgreSQL 18 client identity
         run: |
           set -euo pipefail
-          container="$(docker ps --filter ancestor=postgres:18-bookworm --format '{{.ID}}' | head -n1)"
+          test -n "${RF26_POSTGRES_CONTAINER:-}"
+          container="$RF26_POSTGRES_CONTAINER"
           test -n "$container"
           docker exec -i -u postgres "$container" sh -c 'umask 077; printf "%s\n" "*:*:*:mayak_migration:rf26-migration-only" > /tmp/rf26.pgpass'
           docker exec "$container" pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
           docker exec "$container" pg_restore --version | grep -E '^pg_restore \(PostgreSQL\) 18\.'
           printf 'RF24_PG_TOOL_PREFIX=docker exec -i -u postgres -e PGPASSFILE=/tmp/rf26.pgpass %s\n' "$container" >> "$GITHUB_ENV"
-      - name: H8-H16 real RF26 scenario runner
+      - name: H8 actual rebuild-from-zero stage
         run: |
           set -euo pipefail
           test -n "$GITHUB_SHA"
           export RF26_SOURCE_DSN="postgresql://mayak_migration:rf26-migration-only@mayak-postgres:5432/$RF26_SOURCE_DB"
           export RF26_TARGET_DSN="postgresql://mayak_migration:rf26-migration-only@mayak-postgres:5432/$RF26_TARGET_DB"
           export RF26_CONFLICT_DSN="postgresql://mayak_migration:rf26-migration-only@mayak-postgres:5432/$RF26_CONFLICT_DB"
-          uv run python -m scripts.runtime.run_rf26_operability_acceptance --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-evidence.json --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+          printf 'RF26_SOURCE_DSN=%s\nRF26_TARGET_DSN=%s\nRF26_CONFLICT_DSN=%s\n' "$RF26_SOURCE_DSN" "$RF26_TARGET_DSN" "$RF26_CONFLICT_DSN" >> "$GITHUB_ENV"
+          uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H8_REBUILD_FROM_ZERO --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H8.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H9 actual PostgreSQL backup stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H9_BACKUP --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H9.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H10 actual isolated restore and semantic equivalence stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H10_RESTORE_SEMANTIC_EQUIVALENCE --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H10.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H11 actual API restart stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H11_API_RESTART --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H11.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H12 actual worker interruption and restart stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H12_WORKER_INTERRUPTION_RESTART --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H12.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H13 actual scheduler restart stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H13_SCHEDULER_RESTART --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H13.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H14 actual interrupted migration stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H14_INTERRUPTED_MIGRATION --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H14.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H15 actual outbox reconciliation stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H15_OUTBOX_RECONCILIATION --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H15.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H16 actual retention RPO/RTO stage
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H16_RETENTION_RPO_RTO --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H16.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
+      - name: H18 aggregate actual stage receipts
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --aggregate --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-evidence.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
       - name: H17 security and redaction scan
         run: |
           set -euo pipefail

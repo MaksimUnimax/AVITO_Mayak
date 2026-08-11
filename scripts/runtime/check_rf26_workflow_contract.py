@@ -1,0 +1,71 @@
+"""Fail-closed static contract for the complete RF26 H0/H1 substrate."""
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+PYTHON_DIGEST = "sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9"
+POSTGRES_DIGEST = "sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
+STAGES = ("H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16")
+
+
+def validate(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    required = (
+        f"python:3.14.6-bookworm@{PYTHON_DIGEST}",
+        f"postgres:18-bookworm@{POSTGRES_DIGEST}",
+        "actions/checkout@", "astral-sh/setup-uv@", "actions/upload-artifact@",
+        "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=safe.directory",
+        "GIT_CONFIG_VALUE_0=%s\\n' \"$workspace\"", "$GITHUB_ENV",
+        "git rev-parse --show-toplevel", "git rev-parse HEAD", "git merge-base",
+        "label=com.docker.compose.service=mayak-postgres", "docker image inspect",
+        "docker-29.2.1.tgz", "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3",
+        "docker compose version --short", "test \"$(docker compose version --short)\" = 5.0.2",
+        "H0c", "H0d", "H0e", "H1a", "H1b", "H1c", "H1d", "H1e", "H1f",
+    )
+    for marker in required:
+        if marker not in text:
+            raise ValueError(f"RF26 substrate marker missing: {marker}")
+    for action in ("actions/checkout", "astral-sh/setup-uv", "actions/upload-artifact"):
+        if not re.search(rf"{re.escape(action)}@[0-9a-f]{{40}}", text):
+            raise ValueError(f"{action} is not pinned to a full SHA")
+    if re.search(r"(?:python|postgres):[\w.\-]+\s*(?:\n|$)", text):
+        raise ValueError("mutable job/service image authority")
+    if (
+        "apt-get install -y --no-install-recommends git docker.io" in text
+        or "apt-get install docker.io" in text
+    ):
+        raise ValueError("apt-installed docker.io is forbidden")
+    if re.search(r"safe\.directory\s*[:=]\s*['\"]?\*", text) or "git config --global" in text:
+        raise ValueError("global or wildcard Git trust")
+    checkout = text.index("actions/checkout")
+    trust = text.index("H0b establish persistent cross-step Git trust")
+    candidate = text.index("H0d candidate SHA identity")
+    ancestor = text.index("H0e authoritative base identity")
+    if not checkout < trust < candidate < ancestor:
+        raise ValueError("H0 trust/identity ordering is invalid")
+    h0 = text.index("H0e authoritative base identity")
+    h2 = text.index("H2 Python 3.14")
+    if h0 > h2:
+        raise ValueError("H0/H1 must precede H2")
+    for stage in STAGES:
+        if stage not in text:
+            raise ValueError(f"mandatory stage missing: {stage}")
+    h8 = text.index("H8")
+    h16 = text.index("H16")
+    h17 = text.index("H17")
+    if not h8 < h16 < h17:
+        raise ValueError("stage order is not monotonic")
+    if "continue-on-error" in text:
+        raise ValueError("mandatory RF26 steps may not continue on error")
+    if "ancestor=postgres:18-bookworm" in text:
+        raise ValueError("mutable ancestor filter is forbidden")
+    if "head -n1" in text:
+        raise ValueError("arbitrary first-container discovery is forbidden")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("workflow", type=Path)
+    validate(parser.parse_args().workflow)

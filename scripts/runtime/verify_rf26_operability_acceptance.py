@@ -64,6 +64,7 @@ def verify_evidence_file(data: dict[str, Any], *, source_sha: str, run_id: str) 
         _require(item.get("receipt_sha256") == expected_hash, f"receipt hash mismatch: {stage_id}")
     h8 = _stage(data, "H8_REBUILD_FROM_ZERO")["observed_outputs"]
     _require(h8.get("migration_revision") and h8.get("readiness_recovered") is True and h8.get("runtime_seed_observed") is True, "H8 proof incomplete")
+    _require(isinstance(_stage(data, "H8_REBUILD_FROM_ZERO")["observed_inputs"].get("seed_sha256"), str), "H8 raw seed observation missing")
     h9 = _stage(data, "H9_BACKUP")["observed_outputs"]
     for key in ("sha256", "size", "pg_dump_version", "pg_restore_version", "readability_verified", "inventory_verified", "migration_revision"):
         _require(h9.get(key), f"H9 observation missing: {key}")
@@ -74,24 +75,34 @@ def verify_evidence_file(data: dict[str, Any], *, source_sha: str, run_id: str) 
         _require(h10["observed_outputs"].get(key), f"H10 observation missing: {key}")
     _require(h10["observed_outputs"]["source_semantic_digest"] == h10["observed_outputs"]["target_semantic_digest"], "semantic equivalence mismatch")
     h11 = _stage(data, "H11_API_RESTART")["observed_outputs"]
-    _require(h11.get("process_identity_before") != h11.get("process_identity_after") and h11.get("readiness_recovered") is True, "restart identity proof missing")
+    before = h11.get("process_identity_before")
+    after = h11.get("process_identity_after")
+    _require(isinstance(before, dict) and isinstance(after, dict), "restart provenance missing")
+    _require(isinstance(before.get("pid"), int) and isinstance(after.get("pid"), int) and before["pid"] != after["pid"], "restart identity proof missing")
+    _require(h11.get("readiness_recovered") is True and h11.get("source_sha_unchanged") is True, "restart state proof missing")
     h12 = _stage(data, "H12_WORKER_INTERRUPTION_RESTART")["observed_outputs"]
     for key in ("one_logical_work_item", "lease_recovery_persisted", "recovery_completed", "duplicate_effect", "live_provider_calls"):
         _require(key in h12, f"H12 observation missing: {key}")
+    _require(all(isinstance(h12.get(key), dict) for key in ("before", "after")), "H12 persisted transition missing")
     _require(h12["live_provider_calls"] == 0 and h12["duplicate_effect"] is False, "H12 unsafe effect")
     h13 = _stage(data, "H13_SCHEDULER_RESTART")["observed_outputs"]
-    _require(h13.get("scheduler_before") and h13.get("scheduler_after") and h13.get("scheduler_before") != h13.get("scheduler_after") and h13.get("duplicate_scheduling") is False, "H13 proof incomplete")
+    _require(isinstance(h13.get("scheduler_before"), dict) and isinstance(h13.get("scheduler_after"), dict), "H13 process provenance missing")
+    _require(h13["scheduler_before"].get("pid") != h13["scheduler_after"].get("pid") and h13.get("duplicate_scheduling") is False, "H13 proof incomplete")
     h14 = _stage(data, "H14_INTERRUPTED_MIGRATION")["observed_outputs"]
     for key in ("interrupted_revision", "recovered_revision", "readiness_did_not_pass", "readiness_recovered"):
         _require(key in h14, f"H14 observation missing: {key}")
     _require(h14["readiness_did_not_pass"] is True, "interrupted migration falsely passed readiness")
+    _require(h14.get("database_revision_observed") == h14.get("interrupted_revision"), "H14 database observation missing")
     h15 = _stage(data, "H15_OUTBOX_RECONCILIATION")["observed_outputs"]
     for key in ("effect_unknown_until_reconciled", "reconciliation_required", "blind_retry_count", "live_provider_calls", "duplicate_external_effect"):
         _require(key in h15, f"H15 observation missing: {key}")
     _require(h15["blind_retry_count"] == 0 and h15["live_provider_calls"] == 0 and h15["duplicate_external_effect"] is False, "H15 unsafe reconciliation")
+    _require(isinstance(h15.get("before"), dict) and isinstance(h15.get("after"), dict), "H15 DB transition missing")
     h16 = _stage(data, "H16_RETENTION_RPO_RTO")["observed_outputs"]
     _require(set(h16.get("deleted", [])) == {"expired-verified-inactive"}, "retention deletion classification invalid")
     _require(set(h16.get("preserved", [])) == {"current", "active", "malformed", "tampered", "unverified", "unknown", "symlink"}, "retention preservation classification invalid")
+    _require(isinstance(h16.get("filesystem_before"), list) and isinstance(h16.get("filesystem_after"), list), "retention filesystem snapshots missing")
+    _require(set(h16["filesystem_before"]) - set(h16["filesystem_after"]) == set(h16.get("deleted", [])), "retention deletion is not filesystem-derived")
     _require(0 < float(h16.get("rto_measured_seconds", 0)) < 7200, "RTO is not a measured bounded value")
     _require(0 < float(h16.get("rpo_interval_hours", 0)) <= 24, "RPO policy proof missing")
     current = data.get("rf24_current_run")
