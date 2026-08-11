@@ -13,6 +13,16 @@ from scripts.runtime.run_rf24_vertical_spine import (
 )
 
 
+def _secrets(tmp_path: Path) -> Path:
+    directory = tmp_path / "rf26-secrets"
+    directory.mkdir(mode=0o700)
+    (directory / "mayak_database_application_password").write_text(
+        "synthetic-only", encoding="utf-8"
+    )
+    (directory / "mayak_database_application_password").chmod(0o600)
+    return directory
+
+
 def test_runtime_seed_failure_publishes_safe_boundary_and_five_transition_trace(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
@@ -124,7 +134,8 @@ def test_selected_port_reaches_all_child_settings(
     selected = select_runtime_api_port("18081")
     assert isinstance(selected, int)
     settings = _child_environment(
-        {}, source_sha="a" * 40, run_id="rf24-test", kind=kind,
+        {"MAYAK_SECRETS_DIR": str(_secrets(tmp_path))}, source_sha="a" * 40,
+        run_id="rf24-test", kind=kind,
         database_host="mayak-postgres", database_name="rf26_source_1", port=selected,
         scheduler_observations=tmp_path / "scheduler.jsonl",
         worker_observations=tmp_path / "worker.jsonl",
@@ -145,7 +156,8 @@ def test_selected_port_actual_allocator_shape_is_not_manually_normalized(
     selected = select_runtime_api_port(None)
     assert isinstance(selected, int)
     settings = _child_environment(
-        {}, source_sha="a" * 40, run_id="rf24-test", kind="api",
+        {"MAYAK_SECRETS_DIR": str(_secrets(tmp_path))}, source_sha="a" * 40,
+        run_id="rf24-test", kind="api",
         database_host="mayak-postgres", database_name="rf26_source_1", port=selected,
         scheduler_observations=tmp_path / "scheduler.jsonl",
         worker_observations=tmp_path / "worker.jsonl",
@@ -158,3 +170,28 @@ def test_runtime_seed_uses_selected_port_and_real_modules() -> None:
     assert 'base = f"http://127.0.0.1:{port}"' in source
     for module in ("mayak.runtime.api", "mayak.runtime.worker", "mayak.runtime.scheduler"):
         assert module in source
+
+
+@pytest.mark.parametrize("case", ["missing", "empty", "symlink", "permissions"])
+def test_acceptance_secret_boundary_fails_closed(tmp_path: Path, case: str) -> None:
+    from scripts.runtime.run_rf24_vertical_spine import _child_environment
+
+    directory = tmp_path / "rf26-secrets"
+    directory.mkdir(mode=0o700)
+    secret = directory / "mayak_database_application_password"
+    if case != "missing":
+        secret.write_text("synthetic-only" if case != "empty" else "", encoding="utf-8")
+        secret.chmod(0o600 if case != "permissions" else 0o644)
+    if case == "symlink":
+        secret.unlink()
+        target = tmp_path / "target"
+        target.write_text("synthetic-only", encoding="utf-8")
+        secret.symlink_to(target)
+    with pytest.raises(RuntimeError):
+        _child_environment(
+            {"MAYAK_SECRETS_DIR": str(directory)}, source_sha="a" * 40,
+            run_id="rf24-test", kind="api",
+            database_host="mayak-postgres", database_name="rf26_source_1", port=18081,
+            scheduler_observations=tmp_path / "scheduler.jsonl",
+            worker_observations=tmp_path / "worker.jsonl",
+        )

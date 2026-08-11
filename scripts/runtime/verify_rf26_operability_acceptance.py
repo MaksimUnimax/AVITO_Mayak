@@ -61,11 +61,15 @@ def _derive_h15(raw: dict[str, Any]) -> tuple[bool, bool, int, int, int]:
     rec4 = p4.get("reconciliations", [])
     attempts5 = p5.get("attempts", [])
     _require(isinstance(attempts2, list) and isinstance(rec4, list) and isinstance(attempts5, list), "H15 persistence identities malformed")
-    unknown = any(str(a.get("state", "")).upper() in {"UNKNOWN", "PENDING_RECONCILIATION", "AMBIGUOUS"} for a in attempts2)
-    required = len(rec4) > 0 and any(str(r.get("state", "")).upper() in {"RESOLVED", "COMMITTED", "DELIVERED", "NO_EFFECT_RETRY"} for r in rec4)
-    attempt_ids_unknown = {str(a.get("id")) for a in attempts2 if str(a.get("state", "")).upper() in {"UNKNOWN", "PENDING_RECONCILIATION", "AMBIGUOUS"}}
+    unknown = any(str(a.get("state", "")).upper() in {"UNKNOWN", "PENDING_RECONCILIATION", "RECONCILIATION_REQUIRED", "AMBIGUOUS"} for a in attempts2)
+    required = len(rec4) > 0 and any(str(r.get("state", "")).upper() in {"RESOLVED", "COMMITTED", "DELIVERED", "NO_EFFECT_RETRY", "RESOLVED_NO_EFFECT_RETRY"} for r in rec4)
+    attempt_ids_unknown = {str(a.get("id")) for a in attempts2 if str(a.get("state", "")).upper() in {"UNKNOWN", "PENDING_RECONCILIATION", "RECONCILIATION_REQUIRED", "AMBIGUOUS"}}
     blind = sum(1 for a in attempts5 if str(a.get("id")) not in attempt_ids_unknown and str(a.get("state", "")).upper() in {"PENDING", "SENDING"})
-    effect_ids = [str(a.get("effect_fingerprint")) for a in attempts5 if a.get("effect_fingerprint")]
+    effect_ids = [
+        str(a.get("effect_fingerprint"))
+        for a in attempts5
+        if a.get("effect_fingerprint") and str(a.get("state", "")).upper() in {"DELIVERED", "DELIVERED_ACCEPTED", "SUCCEEDED"}
+    ]
     duplicates = len(effect_ids) - len(set(effect_ids))
     return unknown, required, blind, duplicates, len(effect_ids)
 

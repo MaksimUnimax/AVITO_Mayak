@@ -22,6 +22,27 @@ from uuid import uuid4
 
 from mayak.runtime.settings import RuntimeConfigurationError, compose_runtime_settings
 
+APPLICATION_SECRET_FILENAME = "mayak_database_application_password"
+
+
+def validate_acceptance_secrets_directory(value: str | Path) -> Path:
+    """Validate the one explicit, file-backed synthetic secret boundary."""
+    directory = Path(value)
+    if not directory.is_absolute():
+        raise RuntimeError("acceptance secrets directory must be absolute")
+    if directory.is_symlink() or not directory.is_dir():
+        raise RuntimeError("acceptance secrets directory must be a real directory")
+    if directory.stat().st_mode & 0o077:
+        raise RuntimeError("acceptance secrets directory permissions are too broad")
+    secret = directory / APPLICATION_SECRET_FILENAME
+    if secret.is_symlink() or not secret.is_file():
+        raise RuntimeError(f"required acceptance secret missing: {APPLICATION_SECRET_FILENAME}")
+    if secret.stat().st_mode & 0o077:
+        raise RuntimeError("acceptance application secret permissions are too broad")
+    if secret.stat().st_size == 0:
+        raise RuntimeError(f"required acceptance secret empty: {APPLICATION_SECRET_FILENAME}")
+    return directory
+
 
 @dataclass(frozen=True, slots=True)
 class SafeResponse:
@@ -384,6 +405,9 @@ def _child_environment(
     scheduler_observations: Path, worker_observations: Path,
 ) -> dict[str, str]:
     """Build and prove the exact acceptance environment before subprocess spawn."""
+    if "MAYAK_SECRETS_DIR" not in base:
+        raise RuntimeError("MAYAK_SECRETS_DIR is required before acceptance process spawn")
+    secret_dir = validate_acceptance_secrets_directory(base["MAYAK_SECRETS_DIR"])
     values = {
         "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance",
         "MAYAK_SOURCE_SHA": source_sha,
@@ -397,7 +421,7 @@ def _child_environment(
         "MAYAK_DATABASE_NAME": database_name,
         "MAYAK_DATABASE_APPLICATION_USER": "mayak_application",
         "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
-        "MAYAK_SECRETS_DIR": base.get("MAYAK_SECRETS_DIR", "/run/secrets"),
+        "MAYAK_SECRETS_DIR": str(secret_dir),
         "MAYAK_API_BIND_HOST": "127.0.0.1",
         "MAYAK_API_INTERNAL_PORT": str(port),
         "MAYAK_API_HOST_PORT": "disabled",

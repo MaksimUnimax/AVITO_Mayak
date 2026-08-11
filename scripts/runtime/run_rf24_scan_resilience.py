@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from mayak.runtime.rf24_scan_resilience import ACTION_BOUNDARIES, TECHNICAL_ID
+from scripts.runtime.run_rf24_vertical_spine import validate_acceptance_secrets_directory
 
 
 def _owning_snapshot(composition: Any, *, account_id: str, beacon_id: str, work_id: str) -> dict[str, Any]:
@@ -139,6 +140,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
     if not observed or observed != source_sha or (hosted_sha is not None and hosted_sha != observed):
         raise RuntimeError("source SHA expectation does not match observed workspace/GITHUB_SHA")
     actual = observed
+    secret_dir = validate_acceptance_secrets_directory(os.environ.get("MAYAK_SECRETS_DIR", ""))
     run_id = f"rf24-resilience-{uuid4()}"
     workdir = output.parent.resolve()
     scheduler_obs, worker_obs = workdir / f"{run_id}-scheduler.jsonl", workdir / f"{run_id}-worker.jsonl"
@@ -159,9 +161,10 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
         "MAYAK_SOURCE_SHA": actual,
         "MAYAK_LOCK_IDENTITY": "0" * 64, "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
         "MAYAK_DATABASE_HOST": database_host,
-        "MAYAK_DATABASE_PORT": os.environ.get("MAYAK_DATABASE_PORT", "5432"), "MAYAK_DATABASE_NAME": "mayak",
+        "MAYAK_DATABASE_PORT": os.environ.get("MAYAK_DATABASE_PORT", "5432"),
+        "MAYAK_DATABASE_NAME": os.environ.get("MAYAK_DATABASE_NAME", "mayak"),
         "MAYAK_DATABASE_APPLICATION_USER": "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
-        "MAYAK_SECRETS_DIR": os.environ.get("MAYAK_SECRETS_DIR", "/run/secrets"), "MAYAK_API_BIND_HOST": "127.0.0.1",
+        "MAYAK_SECRETS_DIR": str(secret_dir), "MAYAK_API_BIND_HOST": "127.0.0.1",
         "MAYAK_API_INTERNAL_PORT": str(internal_port), "MAYAK_API_HOST_PORT": "disabled",
         "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true", "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
         "MAYAK_AVITO_LIVE_ENABLED": "false", "MAYAK_TELEGRAM_ENABLED": "false", "MAYAK_MAX_ENABLED": "false",
@@ -378,7 +381,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, source_sha: str) 
                 notification["observation_source"] = "notification-delivery-owned-read"
         evidence = {"technical_id": TECHNICAL_ID, "source_sha": actual, "source_sha_observation": {"observed_sha": actual, "expected_sha": source_sha, "github_sha": os.environ.get("GITHUB_SHA")}, "acceptance_run_id": run_id, "scenarios": records, "provider_live_calls": 0, "foreign_resource_impact": 0, "production_personal_data": 0, "credentials_exposure": False, "remaining_scenario_stubs": 0, "remaining_unwired_drivers": 0, "remaining_hardcoded_observed_values": 0, "direct_sql_read_inventory": ["durable work/run/lease state", "listing/event/effect deltas"], "direct_sql_business_write_inventory": []}
         output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        probes.write_text(json.dumps({"technical_id": TECHNICAL_ID, "source_sha": actual, "acceptance_run_id": run_id, "process_observations": {"scheduler": len(sched_rows), "worker": len(_records(worker_obs, run_id))}}) + "\n", encoding="utf-8")
+        probes.write_text(json.dumps({"technical_id": TECHNICAL_ID, "source_sha": actual, "acceptance_run_id": run_id, "process_observations": {"scheduler": len(raw_scheduler), "worker": len(raw_worker)}}) + "\n", encoding="utf-8")
     finally:
         if composition is not None:
             composition.close()

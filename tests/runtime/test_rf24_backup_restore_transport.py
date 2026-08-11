@@ -18,7 +18,9 @@ from pathlib import Path
 import pytest
 
 from scripts.runtime.run_rf24_backup_restore import (
+    ConnectionIdentity,
     database_tool_role_args,
+    perform_restored_replay,
     run_binary_to_file,
     run_with_archive,
     tool,
@@ -84,3 +86,80 @@ def test_real_pg18_archive_transport_and_restore(monkeypatch: pytest.MonkeyPatch
     finally:
         docker("rm", "--force", name, check=False)
         archive.unlink(missing_ok=True)
+
+
+def test_restored_replay_passes_semantic_port_to_shared_child_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from scripts.runtime import run_rf24_backup_restore as runner
+    from scripts.runtime import run_rf24_command_idempotency as idempotency
+    from scripts.runtime import run_rf24_vertical_spine as vertical_spine
+
+    secret_dir = tmp_path / "rf26-secrets"
+    secret_dir.mkdir(mode=0o700)
+    secret = secret_dir / "mayak_database_application_password"
+    secret.write_text("synthetic-only", encoding="utf-8")
+    secret.chmod(0o600)
+    monkeypatch.setenv("MAYAK_SECRETS_DIR", str(secret_dir))
+
+    snapshots = iter([
+        {"digest": "before-restore", "tables": {}},
+        {"digest": "before-command", "tables": {}},
+        {"digest": "after-command", "tables": {}},
+    ])
+    monkeypatch.setattr(runner, "snapshot", lambda *_args, **_kwargs: next(snapshots))
+    monkeypatch.setattr(runner, "_port_available", lambda port: port == 18080)
+    captured: dict[str, object] = {}
+
+    def child_environment(base, **kwargs):
+        captured.update(kwargs)
+        assert isinstance(kwargs["port"], int)
+        return {
+            **base,
+            "MAYAK_API_INTERNAL_PORT": str(kwargs["port"]),
+            "MAYAK_API_BIND_HOST": "127.0.0.1",
+            "MAYAK_PROCESS_KIND": "mayak-api",
+        }
+
+    class FakeProcess:
+        returncode = 0
+
+        def terminate(self) -> None:
+            captured["terminated"] = True
+
+        def wait(self, _timeout: int) -> None:
+            captured["waited"] = True
+
+        def kill(self) -> None:
+            raise AssertionError("replay process should terminate cleanly")
+
+    def fake_popen(*args, **kwargs):
+        captured["popen_args"] = args
+        captured["popen_env"] = kwargs["env"]
+        return FakeProcess()
+
+    monkeypatch.setattr(vertical_spine, "_child_environment", child_environment)
+    monkeypatch.setattr(runner.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(idempotency, "wait_for_api", lambda *_args, **_kwargs: None)
+    responses = iter([
+        (200, {"account_id": "account"}, "mayak_session=cookie; Path=/"),
+        (200, {"beacon_id": "beacon"}, ""),
+    ])
+    monkeypatch.setattr(idempotency, "request", lambda *_args, **_kwargs: next(responses))
+
+    result = perform_restored_replay(
+        ConnectionIdentity("mayak-postgres", 5432, "rf26_target", "mayak_application", "synthetic"),
+        {"run_id": "run-1", "idempotent_command": {
+            "key": "replay-key", "payload": {"source_url": "https://example.invalid", "name": "n"},
+            "boundary": "beacon", "scope": "account", "account_id": "account", "beacon_id": "beacon",
+        }},
+        "a" * 40,
+    )
+
+    assert captured["port"] == 18080
+    assert type(captured["port"]) is int
+    assert captured["popen_env"]["MAYAK_API_INTERNAL_PORT"] == "18080"
+    assert all(isinstance(value, str) for value in captured["popen_env"].values())
+    assert captured["popen_args"][0][-1] == "mayak.runtime.api"
+    assert result["selected_port"] == 18080
+    assert result["replay_beacon_id"] == "beacon"

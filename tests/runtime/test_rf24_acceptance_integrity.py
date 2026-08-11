@@ -81,6 +81,9 @@ def test_provenance_gate_is_fail_closed(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 
 def test_backup_restore_child_authority_is_limited_to_worker_and_scheduler(tmp_path: Path) -> None:
+    secret = tmp_path / "mayak_database_application_password"
+    secret.write_text("synthetic-only", encoding="utf-8")
+    secret.chmod(0o600)
     base = {
         "MAYAK_SECRETS_DIR": str(tmp_path),
         "RF24_ACCEPTANCE_HOOKS_ENABLED": "true",
@@ -161,6 +164,9 @@ def test_source_identity_implementation_is_fail_closed_and_not_global_or_wildcar
 
 
 def test_synthetic_child_settings_preflight_uses_canonical_host_for_all_processes(tmp_path: Path) -> None:
+    secret = tmp_path / "mayak_database_application_password"
+    secret.write_text("synthetic-only", encoding="utf-8")
+    secret.chmod(0o600)
     base = {
         "MAYAK_SECRETS_DIR": str(tmp_path),
         "MAYAK_DATABASE_NAME": "mayak_rf24_source",

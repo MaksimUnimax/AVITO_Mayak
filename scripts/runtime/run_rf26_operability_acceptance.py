@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from scripts.runtime.rf24_backup_restore_core import verify_evidence
+from scripts.runtime.run_rf24_vertical_spine import validate_acceptance_secrets_directory
 
 TECHNICAL_ID = "RF26-OBSERVABILITY-BACKUP-RECOVERY-01"
 STAGES = (
@@ -123,20 +124,22 @@ def _safe_argv(pid: int) -> list[str]:
 
 
 def _api_runtime_probe(args: argparse.Namespace, current: dict[str, Any], *, restart: bool) -> dict[str, Any]:
+    secret_dir = validate_acceptance_secrets_directory(os.environ.get("MAYAK_SECRETS_DIR", ""))
     port = socket.socket(); port.bind(("127.0.0.1", 0)); number = port.getsockname()[1]; port.close()
-    env = dict(os.environ)
+    from scripts.runtime.run_rf24_vertical_spine import _child_environment
     parsed = urlsplit(os.environ.get(args.source_dsn_env, ""))
-    env.update({"MAYAK_RUNTIME_PROFILE": "synthetic_acceptance", "MAYAK_ENVIRONMENT_ID": args.environment_id,
-                "MAYAK_SOURCE_SHA": args.source_sha, "MAYAK_PROCESS_KIND": "mayak-api",
-                "MAYAK_API_BIND_HOST": "127.0.0.1", "MAYAK_API_INTERNAL_PORT": str(number),
-                "MAYAK_API_HOST_PORT": "disabled", "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true",
-                "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true", "MAYAK_AVITO_LIVE_ENABLED": "false",
-                "MAYAK_TELEGRAM_ENABLED": "false", "MAYAK_MAX_ENABLED": "false", "MAYAK_YOOKASSA_ENABLED": "false",
-                "MAYAK_EGRESS_AGENT_ENABLED": "false", "MAYAK_DATABASE_HOST": parsed.hostname or "mayak-postgres",
-                "MAYAK_DATABASE_PORT": str(parsed.port or 5432), "MAYAK_DATABASE_NAME": parsed.path.lstrip("/"),
-                "MAYAK_DATABASE_APPLICATION_USER": parsed.username or "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration"})
+    database_host = parsed.hostname or "mayak-postgres"
+    database_name = parsed.path.lstrip("/")
+    env = _child_environment(
+        {key: value for key, value in os.environ.items() if not key.startswith("MAYAK_")} | {"MAYAK_SECRETS_DIR": str(secret_dir)},
+        source_sha=args.source_sha, run_id=args.environment_id, kind="api",
+        database_host=database_host, database_name=database_name, port=number,
+        scheduler_observations=secret_dir / "scheduler.jsonl", worker_observations=secret_dir / "worker.jsonl",
+    )
+    log_path = args.output.parent / ("rf26-api-restart.log" if restart else "rf26-api-runtime-probe.log")
+    stream = log_path.open("w", encoding="utf-8")
     process = subprocess.Popen((sys.executable, "-m", "mayak.runtime.api"), env=env,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+                               stdout=stream, stderr=subprocess.STDOUT, text=True)
     base = f"http://127.0.0.1:{number}"
     def get(path: str) -> dict[str, Any]:
         with urlopen(Request(base + path), timeout=5) as response:
@@ -162,6 +165,7 @@ def _api_runtime_probe(args: argparse.Namespace, current: dict[str, Any], *, res
         process.terminate()
         process.wait(timeout=10)
         result["exit_code"] = process.returncode
+        stream.close()
     if restart:
         return result
     return result
@@ -172,7 +176,8 @@ def _h11(args: argparse.Namespace, current: dict[str, Any]):
     after = _api_runtime_probe(args, current, restart=True)
     if before["pid"] == after["pid"]: raise RuntimeError("Mayak API restart reused PID")
     return ({"process_identity_before": {"pid": before["pid"], "argv": before["argv"]}, "http_before": before},
-            {"process_identity_after": {"pid": after["pid"], "argv": after["argv"]}, "http_after": after,
+            {"process_identity_before": {"pid": before["pid"], "argv": before["argv"]}, "http_before": before,
+             "process_identity_after": {"pid": after["pid"], "argv": after["argv"]}, "http_after": after,
              "identity_changed": True, "old_process_gone": before["exit_code"] is not None, "readiness_recovered": True,
              "source_sha_unchanged": after["version"].get("source_sha") == args.source_sha,
              "migration_revision_unchanged": before["migration_revision"] == after["migration_revision"],
@@ -184,7 +189,9 @@ def _run_resilience(args: argparse.Namespace, current: dict[str, Any]) -> dict[s
     if "rf26_resilience" in current: return current["rf26_resilience"]
     root = Path.cwd(); out = args.output.parent / "rf26-resilience.json"; probes = args.output.parent / "rf26-resilience-probes.json"
     cmd = [sys.executable, "-m", "scripts.runtime.run_rf24_scan_resilience", "--repo-root", str(root), "--output", str(out), "--probes", str(probes), "--log", str(args.output.parent / "rf26-resilience.log"), "--source-sha", args.source_sha]
+    secret_dir = validate_acceptance_secrets_directory(os.environ.get("MAYAK_SECRETS_DIR", ""))
     child_env = dict(os.environ); parsed = urlsplit(os.environ[args.source_dsn_env])
+    child_env["MAYAK_SECRETS_DIR"] = str(secret_dir)
     child_env.update({"MAYAK_DATABASE_HOST": parsed.hostname or "mayak-postgres", "MAYAK_DATABASE_PORT": str(parsed.port or 5432), "MAYAK_DATABASE_NAME": parsed.path.lstrip("/"), "MAYAK_DATABASE_APPLICATION_USER": parsed.username or "mayak_application", "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration"})
     if subprocess.run(cmd, env=child_env, check=False).returncode != 0: raise RuntimeError("actual RF24 runtime resilience failed")
     result = json.loads(out.read_text(encoding="utf-8")); current["rf26_resilience"] = result
@@ -195,7 +202,7 @@ def _h12(args: argparse.Namespace, current: dict[str, Any]):
     item = _run_resilience(args, current)["scenarios"]["worker-restart"]
     before, after = item["durable_before"], item["durable_after"]
     return ({"work_item_id": item["work_id"], "before": before, "interrupted": item["action"], "worker_pids": [item["action"]["pid_1"], item["action"]["pid_2"]]},
-            {"after": after, "one_logical_work_item": before["work"]["work_item_id"] == after["work"]["work_item_id"], "lease_recovery_persisted": after["work"]["state"] in {"SUCCEEDED", "SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"}, "recovery_completed": item["after"]["terminal_state"] in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"}, "duplicate_effect": item["notification_deltas"]["outbox_effect"] > 1 or item["notification_deltas"]["delivery_attempt"] > 1, "live_provider_calls": 0, "replacement_worker_pid": item["action"]["pid_2"]}, "mayak.runtime.worker::persisted-lease-recovery")
+            {"before": before, "after": after, "one_logical_work_item": before["work"]["work_item_id"] == after["work"]["work_item_id"], "lease_recovery_persisted": after["work"]["state"] in {"SUCCEEDED", "SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"}, "recovery_completed": item["after"]["terminal_state"] in {"SUCCEEDED_BASELINE", "SUCCEEDED_DIFFERENCE"}, "duplicate_effect": item["notification_deltas"]["outbox_effect"] > 1 or item["notification_deltas"]["delivery_attempt"] > 1, "live_provider_calls": 0, "replacement_worker_pid": item["action"]["pid_2"]}, "mayak.runtime.worker::persisted-lease-recovery")
 
 
 def _h13(args: argparse.Namespace, current: dict[str, Any]):
@@ -212,13 +219,18 @@ def _h13(args: argparse.Namespace, current: dict[str, Any]):
            "work_ids_after_second_scheduler_evaluation": after_ids,
            "counts": {"before": len(before_ids), "after_first": len(after_ids), "after_second": len(after_ids)}}
     return ({"scheduler_before": {"pid": item["action"]["pid_1"], "argv": ["mayak.runtime.scheduler"]}, "durable_before": item["durable_before"]},
-            {"scheduler_after": {"pid": item["action"]["pid_2"], "argv": ["mayak.runtime.scheduler"]}, "durable_after": item["durable_after"], "identity_changed": item["action"]["pid_1"] != item["action"]["pid_2"], "materialized_work_identity_same": item["work_id"] == item["durable_after"]["work"]["work_item_id"], "raw_durable_observations": raw, "duplicate_scheduling": 0}, "mayak.runtime.scheduler::durable-materialization-restart")
+            {"scheduler_before": {"pid": item["action"]["pid_1"], "argv": ["mayak.runtime.scheduler"]}, "scheduler_after": {"pid": item["action"]["pid_2"], "argv": ["mayak.runtime.scheduler"]}, "durable_before": item["durable_before"], "durable_after": item["durable_after"], "identity_changed": item["action"]["pid_1"] != item["action"]["pid_2"], "materialized_work_identity_same": item["work_id"] == item["durable_after"]["work"]["work_item_id"], "raw_durable_observations": raw, "duplicate_scheduling": 0}, "mayak.runtime.scheduler::durable-materialization-restart")
 
 
 def _h14(args: argparse.Namespace, current: dict[str, Any]):
     dsn = os.environ[args.target_dsn_env]; env = dict(os.environ); env["RF15_MIGRATION_DSN"] = dsn
-    subprocess.run([sys.executable, "-m", "alembic", "downgrade", "base"], env=env, check=True, stdout=subprocess.DEVNULL)
+    if dsn.startswith("postgresql://"):
+        env["RF15_MIGRATION_DSN"] = "postgresql+psycopg://" + dsn.removeprefix("postgresql://")
     import psycopg
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("DROP SCHEMA IF EXISTS mayak CASCADE")
+        cur.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+        cur.execute("CREATE TABLE mayak.alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)")
     def revision() -> list[str]:
         with psycopg.connect(dsn, autocommit=True) as conn:
             with conn.cursor() as cur:
@@ -239,13 +251,27 @@ def _h14(args: argparse.Namespace, current: dict[str, Any]):
     recovered_process = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env, text=True, capture_output=True, check=False)
     if recovered_process.returncode != 0: raise RuntimeError("migration recovery failed")
     recovered = revision()
-    return ({"database_identity": "task-owned-target", "initial_revision": initial, "migration_command": "python -m alembic upgrade head", "interrupted_exit_code": interrupted.returncode, "interruption_hook": "RF26 deterministic interruption after_first_revision"}, {"interrupted_revision": safe_projection, "database_revision_observed": rows, "interrupted_revision_is_head": rows == head, "readiness_did_not_pass": rows != head, "recovered_revision": recovered, "recovery_head": head, "readiness_recovered": recovered == head}, "alembic::actual-deterministic-interrupted-upgrade-and-recovery")
+    return ({"database_identity": "task-owned-target", "initial_revision": initial, "migration_command": "python -m alembic upgrade head", "interrupted_exit_code": interrupted.returncode, "interruption_hook": "RF26 deterministic interruption after_first_revision"}, {"interrupted_revision": safe_projection, "database_revision_observed": rows, "interrupted_revision_is_head": rows == head, "readiness_did_not_pass": rows != head, "recovered_revision": recovered, "recovery_head": head, "readiness_recovered": recovered == head, "interruption_hook": "RF26 deterministic interruption after_first_revision"}, "alembic::actual-deterministic-interrupted-upgrade-and-recovery")
 
 
 def _h15(args: argparse.Namespace, current: dict[str, Any]):
     out = args.output.parent / "rf26-notification.json"; probes = args.output.parent / "rf26-notification-probes.json"; boundaries = args.output.parent / "rf26-notification-boundaries.json"
     cmd = [sys.executable, "-m", "scripts.runtime.run_rf24_notification_ambiguous_send", "--dsn-env", args.source_dsn_env, "--output", str(out), "--probes", str(probes), "--boundaries", str(boundaries), "--log", str(args.output.parent / "rf26-notification.log"), "--source-sha", args.source_sha]
-    if subprocess.run(cmd, check=False).returncode != 0: raise RuntimeError("actual notification reconciliation failed")
+    child_env = {key: value for key, value in os.environ.items() if not key.startswith("MAYAK_")}
+    child_env["MAYAK_SECRETS_DIR"] = os.environ["MAYAK_SECRETS_DIR"]
+    dsn = child_env[args.source_dsn_env]
+    parsed = urlsplit(dsn)
+    child_env.update({
+        "MAYAK_DATABASE_HOST": parsed.hostname or "mayak-postgres",
+        "MAYAK_DATABASE_PORT": str(parsed.port or 5432),
+        "MAYAK_DATABASE_NAME": parsed.path.lstrip("/"),
+        "MAYAK_DATABASE_APPLICATION_USER": parsed.username or "mayak_application",
+        "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
+    })
+    probe_socket = socket.socket(); probe_socket.bind(("127.0.0.1", 0)); child_env["MAYAK_API_INTERNAL_PORT"] = str(probe_socket.getsockname()[1]); probe_socket.close()
+    if dsn.startswith("postgresql://"):
+        child_env[args.source_dsn_env] = "postgresql+psycopg://" + dsn.removeprefix("postgresql://")
+    if subprocess.run(cmd, env=child_env, check=False).returncode != 0: raise RuntimeError("actual notification reconciliation failed")
     evidence = json.loads(out.read_text(encoding="utf-8")); phases = evidence["phases"]
     before, after = phases["P2"], phases["P5"]
     probes_path = args.output.parent / "rf26-notification-probes.json"
@@ -258,8 +284,8 @@ def _h16(_args: argparse.Namespace, _current: dict[str, Any]):
     from scripts.runtime.rf26_operability import retention_policy_observation
     observed = retention_policy_observation()
     return ({"backup_root": observed["root_identity"], "filesystem_before": observed["before"]},
-            {"deleted": observed["deleted"], "preserved": observed["preserved"], "rpo_interval_hours": observed["rpo_interval_hours"],
-             "rto_measured_seconds": time.monotonic() - started, "filesystem_after": observed["after"]},
+            {"deleted": observed["deleted"], "preserved": observed["preserved"], "filesystem_before": observed["before"], "filesystem_after": observed["after"], "rpo_interval_hours": observed["rpo_interval_hours"],
+             "rto_measured_seconds": time.monotonic() - started},
             "task-owned-filesystem-retention-observation")
 
 
@@ -291,7 +317,10 @@ def main() -> None:
     if args.aggregate:
         if not args.receipts_dir:
             raise SystemExit("--aggregate requires --receipts-dir")
-        stages = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(args.receipts_dir.glob("H*.json"))]
+        stages = [
+            json.loads((args.receipts_dir / f"{stage_id}.json").read_text(encoding="utf-8"))
+            for stage_id in STAGES
+        ]
     else:
         selected = [(stage_id, operation) for stage_id, operation in operations if not args.stage or stage_id == args.stage]
         stages = [_execute(stage_id, args, operation, current) for stage_id, operation in selected]

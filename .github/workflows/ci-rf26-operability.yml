@@ -174,6 +174,7 @@ jobs:
             printf 'rf26-synthetic-only-%s' "$name" > "$MAYAK_SECRETS_ROOT/$name"
             chmod 600 "$MAYAK_SECRETS_ROOT/$name"
           done
+          printf 'MAYAK_SECRETS_DIR=%s\n' "$MAYAK_SECRETS_ROOT" >> "$GITHUB_ENV"
           test -x "$RF26_DOCKER_BIN"
           test -x "$DOCKER_CONFIG/cli-plugins/docker-compose"
           "$RF26_DOCKER_BIN" compose config >/dev/null
@@ -198,6 +199,7 @@ jobs:
           install -d -m 700 "$RUNNER_TEMP/rf26-secrets"
           printf '%s' rf26-application-only > "$RUNNER_TEMP/rf26-secrets/mayak_database_application_password"
           chmod 600 "$RUNNER_TEMP/rf26-secrets/mayak_database_application_password"
+          printf 'MAYAK_SECRETS_DIR=%s\n' "$RUNNER_TEMP/rf26-secrets" >> "$GITHUB_ENV"
           set +e
           MAYAK_RUNTIME_PROFILE=synthetic_acceptance MAYAK_DATABASE_HOST=mayak-postgres MAYAK_DATABASE_NAME="$RF26_SOURCE_DB" MAYAK_DATABASE_APPLICATION_USER=mayak_application MAYAK_DATABASE_MIGRATION_USER=mayak_migration MAYAK_SECRETS_DIR="$RUNNER_TEMP/rf26-secrets" uv run python -m scripts.runtime.run_rf24_vertical_spine --repo-root "$GITHUB_WORKSPACE" --output rf26-source-runtime-seed.json --probes rf26-source-runtime-probes.json --log rf26-source-runtime.log --source-sha "$GITHUB_SHA"
           rc=$?
@@ -247,7 +249,7 @@ jobs:
       - name: H18 aggregate actual stage receipts
         run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --aggregate --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-evidence.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
       - name: H18 exact artifact pre-scan
-        run: uv run python scripts/runtime/verify_rf26_operability_acceptance.py --evidence rf26-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-verifier.json
+        run: uv run python -m scripts.runtime.verify_rf26_operability_acceptance --evidence rf26-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-verifier.json
       - name: H19 full repository pytest exactly once
         run: uv run pytest -q
       - name: H20-H22 verifier and final safe manifest
@@ -257,7 +259,7 @@ jobs:
           cp rf26-receipts/rf26-H8-preflight.json rf26-evidence/h8-preflight.json
           cp rf26-evidence.json rf26-evidence/acceptance.json
           cp rf26-verifier.json rf26-evidence/verifier.json
-          uv run python scripts/runtime/verify_rf26_operability_acceptance.py --evidence rf26-evidence/acceptance.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-evidence/final-verifier.json
+          uv run python -m scripts.runtime.verify_rf26_operability_acceptance --evidence rf26-evidence/acceptance.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-evidence/final-verifier.json
           uv run python - <<'PY'
           import hashlib, json, os
           from pathlib import Path

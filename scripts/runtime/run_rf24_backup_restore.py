@@ -16,7 +16,6 @@ import subprocess
 import shutil
 import sys
 import socket
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -205,7 +204,17 @@ def reestablish_application_authority(identity: ConnectionIdentity) -> None:
 def application_read(identity: ConnectionIdentity) -> bool:
     import psycopg
 
-    app = ConnectionIdentity(identity.host, identity.port, identity.dbname, "mayak_application", os.environ.get("RF24_APPLICATION_PASSWORD", ""))
+    configured_secret_dir = os.environ.get("MAYAK_SECRETS_DIR")
+    if configured_secret_dir:
+        from scripts.runtime.run_rf24_vertical_spine import (
+            APPLICATION_SECRET_FILENAME,
+            validate_acceptance_secrets_directory,
+        )
+        secret_dir = validate_acceptance_secrets_directory(configured_secret_dir)
+        password = (secret_dir / APPLICATION_SECRET_FILENAME).read_text(encoding="utf-8").strip()
+    else:
+        password = os.environ.get("RF24_APPLICATION_PASSWORD", "")
+    app = ConnectionIdentity(identity.host, identity.port, identity.dbname, "mayak_application", password)
     if not app.password:
         raise ValueError("application credential source missing")
     with psycopg.connect(**app.connect_kwargs()) as conn, conn.cursor() as cur:
@@ -305,21 +314,18 @@ def perform_restored_replay(identity: ConnectionIdentity, seed: dict[str, Any], 
     from scripts.runtime.run_rf24_vertical_spine import _child_environment
     base = {k: v for k, v in os.environ.items() if not k.startswith("MAYAK_")}
     base.pop("RF24_APPLICATION_PASSWORD", None)
-    secret_dir = Path(os.environ.get("MAYAK_SECRETS_DIR", tempfile.mkdtemp(prefix="rf24-secrets-")))
-    secret_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    secret = secret_dir / "mayak_database_application_password"
-    if not secret.exists():
-        secret.write_text(os.environ.get("RF24_APPLICATION_PASSWORD", ""), encoding="utf-8")
-        secret.chmod(0o600)
-    if secret.stat().st_mode & 0o077:
-        raise RuntimeError("synthetic application secret permissions are too broad")
+    from scripts.runtime.run_rf24_vertical_spine import validate_acceptance_secrets_directory
+    configured_secret_dir = os.environ.get("MAYAK_SECRETS_DIR")
+    if not configured_secret_dir:
+        raise RuntimeError("MAYAK_SECRETS_DIR is required for restored replay")
+    secret_dir = validate_acceptance_secrets_directory(configured_secret_dir)
     port = next((candidate for candidate in range(18080, 18100) if _port_available(candidate)), None)
     if port is None:
         raise RuntimeError("no task-local API port available in 18080-18099")
     env = _child_environment(
         base | {"MAYAK_SECRETS_DIR": str(secret_dir)}, source_sha=source_sha,
         run_id=str(seed.get("run_id", "")) + "-replay", kind="api",
-        database_host=identity.host, database_name=identity.dbname, port=str(port),
+        database_host=identity.host, database_name=identity.dbname, port=port,
         scheduler_observations=secret_dir / "scheduler.jsonl", worker_observations=secret_dir / "worker.jsonl",
     )
     log = secret_dir / "rf24-restored-replay.log"
