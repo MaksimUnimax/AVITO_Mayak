@@ -101,7 +101,7 @@ jobs:
           compose_plugin_dir="$docker_config/cli-plugins"
           install -d -m 700 "$docker_cli_dir" "$compose_plugin_dir"
           curl -fsSLo "$RUNNER_TEMP/docker-29.2.1.tgz" https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz
-          echo '995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  docker.tgz' | (cd "$RUNNER_TEMP" && sha256sum -c -)
+          echo '995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  docker-29.2.1.tgz' | (cd "$RUNNER_TEMP" && sha256sum -c -)
           tar -xzf "$RUNNER_TEMP/docker-29.2.1.tgz" --strip-components=1 -C "$docker_cli_dir" docker/docker
           curl -fsSLo "$compose_plugin_dir/docker-compose" https://github.com/docker/compose/releases/download/v5.0.2/docker-compose-linux-x86_64
           echo '2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67 *docker-compose' | (cd "$compose_plugin_dir" && sha256sum -c -)
