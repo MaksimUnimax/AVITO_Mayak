@@ -338,15 +338,22 @@ jobs:
       - name: Independent verifier, scanner and manifest
         run: |
           set -euo pipefail
+          stage=inherited-git-trust
+          trap 'rc=$?; echo "::error title=RF24 downstream failure::stage=$stage"; exit "$rc"' ERR
           workspace="$(realpath "$GITHUB_WORKSPACE")"
           test "${GIT_CONFIG_COUNT:-}" = 1
           test "${GIT_CONFIG_KEY_0:-}" = safe.directory
           test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          stage=verifier
           uv run python -m scripts.runtime.verify_rf24_backup_restore --evidence rf24-backup-restore-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf24-backup-restore-verifier-result.json
+          stage=scanner
           uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-complete-repository-pytest.log
+          stage=manifest
           uv run python -m scripts.runtime.build_rf24_backup_restore_manifest --output rf24-backup-restore-safety-manifest.json --scanner rf24-backup-restore-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json rf24-complete-repository-pytest.log
+          stage=validator
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
+          stage=ownership
           uv run python -m scripts.runtime.check_rf24_backup_restore_ownership scripts/runtime/run_rf24_backup_restore.py scripts/runtime/verify_rf24_backup_restore.py
       - uses: actions/upload-artifact@v4
         with:
