@@ -16,6 +16,14 @@ def test_rf26_complete_substrate_contract_passes() -> None:
     validate(WORKFLOW)
 
 
+def test_rf26_target_is_not_prepopulated_before_restore() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    boundary = text.split("H8 task-owned PostgreSQL databases", 1)[1].split("H8 actual rebuild-from-zero stage", 1)[0]
+    assert 'for db in "$source_db" "$conflict_db"' in boundary
+    assert "target must remain schema-empty before restore" in boundary
+    assert "target emptiness proof" in boundary
+
+
 def _inspect(**overrides: object) -> str:
     value = {
         "Image": "sha256:container",

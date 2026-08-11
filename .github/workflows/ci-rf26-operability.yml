@@ -186,34 +186,78 @@ jobs:
           source_db="rf26_source_${GITHUB_RUN_ID}"
           target_db="rf26_target_${GITHUB_RUN_ID}"
           conflict_db="rf26_conflict_${GITHUB_RUN_ID}"
+          case "$source_db $target_db $conflict_db" in
+            *[!a-zA-Z0-9_\ ]*) exit 1 ;;
+          esac
           printf 'RF26_SOURCE_DB=%s\nRF26_TARGET_DB=%s\nRF26_CONFLICT_DB=%s\n' "$source_db" "$target_db" "$conflict_db" >> "$GITHUB_ENV"
           uv run python - "$source_db" "$target_db" "$conflict_db" <<'PY'
-          import sys, psycopg
+          import re, sys, psycopg
           from psycopg import sql
+          names = sys.argv[1:]
+          if len(names) != 3 or len(set(names)) != 3 or any(re.fullmatch(r"rf26_(source|target|conflict)_[0-9]+", n) is None for n in names):
+              raise SystemExit("unsafe RF26 database identity")
           with psycopg.connect("host=mayak-postgres dbname=postgres user=mayak password=rf26-bootstrap-only", autocommit=True) as c:
               with c.cursor() as cur:
+                  cur.execute("SELECT rolsuper, rolcreatedb, rolcreaterole FROM pg_roles WHERE rolname=current_user")
+                  if cur.fetchone() != (True, True, True): raise SystemExit("bootstrap authority proof failed")
+                  cur.execute("SELECT 1 FROM pg_roles WHERE rolname IN ('mayak_migration', 'mayak_application')")
+                  if cur.fetchone() is not None: raise SystemExit("unexpected pre-existing RF26 role")
                   cur.execute("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf26-migration-only' CREATEDB")
                   cur.execute("CREATE ROLE mayak_application LOGIN PASSWORD 'rf26-application-only'")
-                  for name in sys.argv[1:]:
+                  cur.execute("SELECT rolcreatedb, rolsuper FROM pg_roles WHERE rolname='mayak_migration'")
+                  if cur.fetchone() != (True, False): raise SystemExit("migration role capability proof failed")
+                  cur.execute("SELECT rolcreatedb, rolsuper, rolcreaterole FROM pg_roles WHERE rolname='mayak_application'")
+                  if cur.fetchone() != (False, False, False): raise SystemExit("application role capability proof failed")
+                  cur.execute("SELECT 1 FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.member JOIN pg_roles g ON g.oid=m.role WHERE r.rolname IN ('mayak_migration', 'mayak_application') OR g.rolname IN ('mayak_migration', 'mayak_application')")
+                  if cur.fetchone() is not None: raise SystemExit("RF26 role membership authority proof failed")
+                  for name in names:
+                      cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (name,))
+                      if cur.fetchone() is not None: raise SystemExit("unexpected pre-existing RF26 database")
                       cur.execute(sql.SQL("CREATE DATABASE {} OWNER mayak_migration").format(sql.Identifier(name)))
           PY
-          for db in "$source_db" "$target_db" "$conflict_db"; do
+          for db in "$source_db" "$conflict_db"; do
             uv run python - "$db" <<'PY'
           import sys, psycopg
           with psycopg.connect(f"host=mayak-postgres dbname={sys.argv[1]} user=mayak_migration password=rf26-migration-only", autocommit=True) as c:
-              with c.cursor() as cur: cur.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+              with c.cursor() as cur:
+                  cur.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+                  cur.execute("SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='mayak'")
+                  if cur.fetchone()[0] != 'mayak_migration': raise SystemExit("schema owner proof failed")
           PY
           done
           RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:rf26-migration-only@mayak-postgres:5432/$source_db" uv run alembic upgrade head
           RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:rf26-migration-only@mayak-postgres:5432/$conflict_db" uv run alembic upgrade head
-          uv run python - "$source_db" "$conflict_db" <<'PY'
+          uv run python - "$source_db" "$target_db" "$conflict_db" <<'PY'
           import sys, psycopg
-          for db in sys.argv[1:]:
-              with psycopg.connect(f"host=mayak-postgres dbname={db} user=mayak_migration password=rf26-migration-only", autocommit=True) as c:
+          from alembic.config import Config
+          from alembic.script import ScriptDirectory
+          source, target, conflict = sys.argv[1:]
+          expected = set(ScriptDirectory.from_config(Config("alembic.ini")).get_heads())
+          for database in (source, target, conflict):
+              with psycopg.connect(f"host=mayak-postgres dbname={database} user=mayak_migration password=rf26-migration-only", autocommit=True) as c:
                   with c.cursor() as cur:
+                      cur.execute("SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname=current_database()")
+                      if cur.fetchone()[0] != 'mayak_migration': raise SystemExit("database owner proof failed")
+                      cur.execute("SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name='mayak')")
+                      has_schema = cur.fetchone()[0]
+                      if database == target:
+                          if has_schema: raise SystemExit("target must remain schema-empty before restore")
+                          continue
+                      if not has_schema: raise SystemExit("migration schema proof failed")
+                      cur.execute("SELECT version_num::text FROM mayak.alembic_version")
+                      if {row[0] for row in cur.fetchall()} != expected: raise SystemExit("exact migration head proof failed")
+                      cur.execute("GRANT CONNECT ON DATABASE " + '"' + database + '"' + " TO mayak_application")
                       cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
                       cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
                       cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
+          with psycopg.connect(f"host=mayak-postgres dbname={source} user=mayak_application password=rf26-application-only") as c:
+              with c.cursor() as cur:
+                  cur.execute("SELECT has_schema_privilege(current_user, 'mayak', 'USAGE'), has_database_privilege(current_user, current_database(), 'CONNECT')")
+                  if cur.fetchone() != (True, True): raise SystemExit("application privilege proof failed")
+          with psycopg.connect(f"host=mayak-postgres dbname={target} user=mayak_migration password=rf26-migration-only") as c:
+              with c.cursor() as cur:
+                  cur.execute("SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name='mayak'), EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='mayak')")
+                  if cur.fetchone() != (False, False): raise SystemExit("target emptiness proof failed")
           PY
       - name: H8 current-run accepted runtime seed
         run: |

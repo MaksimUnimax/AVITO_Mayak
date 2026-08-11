@@ -109,6 +109,22 @@ def validate(path: Path) -> None:
         raise ValueError("stage order is not monotonic")
     if "continue-on-error" in text:
         raise ValueError("mandatory RF26 steps may not continue on error")
+    h8_block = text[
+        text.index("H8 task-owned PostgreSQL databases") : text.index(
+            "H8 actual rebuild-from-zero stage"
+        )
+    ]
+    for marker in (
+        "unexpected pre-existing RF26 role",
+        "database owner proof",
+        "exact migration head proof",
+        "target must remain schema-empty before restore",
+        "target emptiness proof",
+    ):
+        if marker not in h8_block:
+            raise ValueError(f"RF26 PostgreSQL boundary proof missing: {marker}")
+    if 'for db in "$source_db" "$target_db" "$conflict_db"' in h8_block:
+        raise ValueError("RF26 target schema creation is forbidden before restore")
     if "ancestor=postgres:18-bookworm" in text:
         raise ValueError("mutable ancestor filter is forbidden")
     if "head -n1" in text:

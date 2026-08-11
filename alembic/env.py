@@ -22,8 +22,11 @@ class RF26SyntheticMigrationInterrupted(RuntimeError):
     """Deterministic, task-local interruption used only by RF26 acceptance."""
 
 
-def _rf26_interrupt_hook(step: object, heads: object, run_args: dict[str, object]) -> None:
-    del step, heads, run_args
+def _rf26_interrupt_hook(
+    ctx: object, step: object, heads: object, run_args: dict[str, object]
+) -> None:
+    # Alembic invokes on_version_apply with all four keyword arguments.
+    del ctx, step, heads, run_args
     if (
         os.environ.get("MAYAK_RUNTIME_PROFILE") == "synthetic_acceptance"
         and os.environ.get("MAYAK_TECHNICAL_ID") == "RF26-OBSERVABILITY-BACKUP-RECOVERY-01"
