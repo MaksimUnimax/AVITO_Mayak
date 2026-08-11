@@ -203,6 +203,11 @@ jobs:
           test -S /var/run/docker.sock
           test -n "${GITHUB_WORKSPACE:-}"
           workspace="$(realpath "$GITHUB_WORKSPACE")"
+          {
+            printf '%s\n' 'GIT_CONFIG_COUNT=1'
+            printf '%s\n' 'GIT_CONFIG_KEY_0=safe.directory'
+            printf 'GIT_CONFIG_VALUE_0=%s\n' "$workspace"
+          } >> "$GITHUB_ENV"
           export GIT_CONFIG_COUNT=1
           export GIT_CONFIG_KEY_0=safe.directory
           export GIT_CONFIG_VALUE_0="$workspace"
@@ -220,6 +225,18 @@ jobs:
           printf 'docker-server=%s\n' "$server_version"
           echo h26-docker-api=PASS
           echo h26-git-child-trust=PASS
+      - name: H26 cross-step Git trust probe
+        run: |
+          set -euo pipefail
+          workspace="$(realpath "$GITHUB_WORKSPACE")"
+          test "${GIT_CONFIG_COUNT:-}" = 1
+          test "${GIT_CONFIG_KEY_0:-}" = safe.directory
+          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
+          test "$(git rev-parse --show-toplevel)" = "$workspace"
+          git rev-parse HEAD >/dev/null
+          git rev-parse HEAD:.github/workflows/ci-rf24-backup-restore.yml >/dev/null
+          git merge-base --is-ancestor 90a00b12561cecbeac04e3b41c403bcee78f3d71 "$GITHUB_SHA"
+          echo h26-cross-step-git-trust=PASS
       - name: Create fresh H26 probe and suite databases
         run: |
           set -euo pipefail
@@ -302,6 +319,11 @@ jobs:
       - name: Complete repository pytest once
         run: |
           set -euo pipefail
+          workspace="$(realpath "$GITHUB_WORKSPACE")"
+          test "${GIT_CONFIG_COUNT:-}" = 1
+          test "${GIT_CONFIG_KEY_0:-}" = safe.directory
+          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           root="${RUNNER_TEMP:-/tmp}/rf24-h26-${GITHUB_RUN_ID}"
           install -d -m 700 "$root/passwords"
           password_file="$root/passwords/rf11-suite.raw"
@@ -316,6 +338,11 @@ jobs:
       - name: Independent verifier, scanner and manifest
         run: |
           set -euo pipefail
+          workspace="$(realpath "$GITHUB_WORKSPACE")"
+          test "${GIT_CONFIG_COUNT:-}" = 1
+          test "${GIT_CONFIG_KEY_0:-}" = safe.directory
+          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           uv run python -m scripts.runtime.verify_rf24_backup_restore --evidence rf24-backup-restore-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf24-backup-restore-verifier-result.json
           uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-complete-repository-pytest.log
           uv run python -m scripts.runtime.build_rf24_backup_restore_manifest --output rf24-backup-restore-safety-manifest.json --scanner rf24-backup-restore-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json rf24-complete-repository-pytest.log

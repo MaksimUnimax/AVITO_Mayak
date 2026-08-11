@@ -1,3 +1,5 @@
+# ruff: noqa: E501
+
 import os
 import subprocess
 from pathlib import Path
@@ -95,6 +97,111 @@ def test_workflow_validator_rejects_known_h26_regressions(
 
     broken = tmp_path / "workflow.yml"
     broken.write_text(WORKFLOW.read_text().replace(needle, replacement, 1))
+    with pytest.raises(ValueError, match=message):
+        validate(broken)
+
+
+def _move_git_persistence_after_probe(text: str) -> str:
+    block = (
+        "          {\n"
+        "            printf '%s\\n' 'GIT_CONFIG_COUNT=1'\n"
+        "            printf '%s\\n' 'GIT_CONFIG_KEY_0=safe.directory'\n"
+        "            printf 'GIT_CONFIG_VALUE_0=%s\\n' \"$workspace\"\n"
+        "          } >> \"$GITHUB_ENV\"\n"
+    )
+    moved = text.replace(block, "", 1)
+    return moved.replace(
+        "          echo h26-cross-step-git-trust=PASS\n",
+        block + "          echo h26-cross-step-git-trust=PASS\n",
+        1,
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "mutate", "message"),
+    (
+        (
+            "missing GITHUB_ENV persistence",
+            lambda text: text.replace('} >> "$GITHUB_ENV"', "}", 1),
+            "GITHUB_ENV",
+        ),
+        (
+            "persistence after cross-step probe",
+            _move_git_persistence_after_probe,
+            "GITHUB_ENV",
+        ),
+        (
+            "missing count persistence",
+            lambda text: text.replace("printf '%s\\n' 'GIT_CONFIG_COUNT=1'", "", 1),
+            "all exact Git trust",
+        ),
+        (
+            "missing key persistence",
+            lambda text: text.replace("printf '%s\\n' 'GIT_CONFIG_KEY_0=safe.directory'", "", 1),
+            "all exact Git trust",
+        ),
+        (
+            "wrong workspace persistence",
+            lambda text: text.replace('printf \'GIT_CONFIG_VALUE_0=%s\\n\' "$workspace"', 'printf \'GIT_CONFIG_VALUE_0=%s\\n\' "/tmp/not-workspace"', 1),
+            "exact workspace",
+        ),
+        (
+            "wildcard safe directory",
+            lambda text: text.replace("echo h26-docker-api=PASS", "git config safe.directory '*'\\necho h26-docker-api=PASS", 1),
+            "wildcard",
+        ),
+        (
+            "global git config",
+            lambda text: text.replace("echo h26-docker-api=PASS", "git config --global safe.directory /tmp\necho h26-docker-api=PASS", 1),
+            "global",
+        ),
+        (
+            "global config override",
+            lambda text: text.replace("echo h26-docker-api=PASS", "export GIT_CONFIG_GLOBAL=/dev/null\necho h26-docker-api=PASS", 1),
+            "GIT_CONFIG_GLOBAL",
+        ),
+        (
+            "cross step repairs trust",
+            lambda text: text.replace(
+                "      - name: H26 cross-step Git trust probe\n        run: |\n          set -euo pipefail\n",
+                "      - name: H26 cross-step Git trust probe\n        run: |\n          set -euo pipefail\n          export GIT_CONFIG_COUNT=1\n",
+                1,
+            ),
+            "cross-step Git probe must not repair",
+        ),
+        (
+            "broad step lacks inherited validation",
+            lambda text: text.replace('          test "${GIT_CONFIG_COUNT:-}" = 1\n          test "${GIT_CONFIG_KEY_0:-}" = safe.directory\n          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"\n          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"\n', "", 1),
+            "broad pytest lacks",
+        ),
+        (
+            "second full pytest",
+            lambda text: text.replace("uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log", "uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log\\n          uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log", 1),
+            "exactly once",
+        ),
+        (
+            "downstream unsets trust",
+            lambda text: text.replace(
+                "      - name: Independent verifier, scanner and manifest\n        run: |\n          set -euo pipefail\n",
+                "      - name: Independent verifier, scanner and manifest\n        run: |\n          set -euo pipefail\n          unset GIT_CONFIG_COUNT\n",
+                1,
+            ),
+            "retain inherited",
+        ),
+        (
+            "raw archive upload",
+            lambda text: text.replace("          path: |\n", "          path: |\n            rf24.raw.dump\n", 1),
+            "raw backup",
+        ),
+    ),
+)
+def test_workflow_validator_rejects_cross_step_trust_contract_mutations(
+    tmp_path: Path, label: str, mutate, message: str
+) -> None:
+    from scripts.runtime.check_rf24_backup_restore_workflow import validate
+
+    broken = tmp_path / f"{label.replace(' ', '-')}.yml"
+    broken.write_text(mutate(WORKFLOW.read_text()))
     with pytest.raises(ValueError, match=message):
         validate(broken)
 

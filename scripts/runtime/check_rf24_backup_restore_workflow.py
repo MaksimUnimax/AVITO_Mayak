@@ -21,6 +21,14 @@ RF24_MODULES = (
 )
 
 
+def _step_body(text: str, name: str) -> str:
+    pattern = rf"(?ms)^      - name: {re.escape(name)}\n(?P<body>.*?)(?=^      - (?:name:|uses:)|\Z)"
+    match = re.search(pattern, text)
+    if not match:
+        raise ValueError(f"workflow step missing: {name}")
+    return match.group("body")
+
+
 def validate(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     required = (
@@ -86,11 +94,80 @@ def validate(path: Path) -> None:
         raise ValueError("complete repository pytest must appear exactly once")
     if "H26 executable substrate preflight" not in text or "H26 focused prerequisite gates" not in text:
         raise ValueError("H26 executable preflight is missing")
-    if "GIT_CONFIG_COUNT=1" not in text or "GIT_CONFIG_KEY_0=safe.directory" not in text:
-        raise ValueError("H26 process-local Git trust is missing")
+    preflight = _step_body(text, "H26 executable substrate preflight")
+    cross_step = _step_body(text, "H26 cross-step Git trust probe")
+    broad_body = _step_body(text, "Complete repository pytest once")
+    downstream = _step_body(text, "Independent verifier, scanner and manifest")
+    persisted_names = (
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_KEY_0",
+        "GIT_CONFIG_VALUE_0",
+    )
+    if "$GITHUB_ENV" not in preflight:
+        raise ValueError("Git trust must be persisted through GITHUB_ENV")
+    persistence_end = preflight.index('>> "$GITHUB_ENV"') + len('>> "$GITHUB_ENV"')
+    persisted_lines = preflight[:persistence_end]
+    required_persistence_lines = (
+        "printf '%s\\n' 'GIT_CONFIG_COUNT=1'",
+        "printf '%s\\n' 'GIT_CONFIG_KEY_0=safe.directory'",
+        "printf 'GIT_CONFIG_VALUE_0=%s\\n' \"$workspace\"",
+    )
+    if any(line not in persisted_lines for line in required_persistence_lines[:2]):
+        raise ValueError("all exact Git trust variables must be persisted")
+    if required_persistence_lines[2] not in persisted_lines:
+        raise ValueError("exact workspace Git trust value is not persisted")
+    if re.search(r"GIT_CONFIG_[A-Z0-9_]+[^\n]*GITHUB_ENV", text):
+        persisted_lines = [line for line in text.splitlines() if "GITHUB_ENV" in line and "GIT_CONFIG_" in line]
+        if any(not any(name in line for name in persisted_names) for line in persisted_lines):
+            raise ValueError("only the exact Git trust variables may be persisted")
+    if "workspace=\"$(realpath \"$GITHUB_WORKSPACE\")\"" not in preflight:
+        raise ValueError("Git trust workspace must be resolved with realpath")
+    cross_pos = text.index("H26 cross-step Git trust probe")
+    persistence_pos = text.index("$GITHUB_ENV", text.index("H26 executable substrate preflight"))
+    if persistence_pos > cross_pos:
+        raise ValueError("Git trust persistence must precede cross-step probe")
+    if re.search(r"(?:export\s+|^\s*)GIT_CONFIG_(?:COUNT|KEY_0|VALUE_0)\s*=", cross_step, re.M):
+        raise ValueError("cross-step Git probe must not repair trust locally")
+    for expected in (
+        'test "${GIT_CONFIG_COUNT:-}" = 1',
+        'test "${GIT_CONFIG_KEY_0:-}" = safe.directory',
+        'test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"',
+        'git rev-parse --show-toplevel',
+        'git rev-parse HEAD:.github/workflows/ci-rf24-backup-restore.yml',
+        'git merge-base --is-ancestor 90a00b12561cecbeac04e3b41c403bcee78f3d71 "$GITHUB_SHA"',
+        "h26-cross-step-git-trust=PASS",
+    ):
+        if expected not in cross_step:
+            raise ValueError(f"cross-step Git probe missing: {expected}")
+    if text.index("Complete repository pytest once") < cross_pos:
+        raise ValueError("broad pytest must follow cross-step Git probe")
+    for expected in (
+        'test "${GIT_CONFIG_COUNT:-}" = 1',
+        'test "${GIT_CONFIG_KEY_0:-}" = safe.directory',
+        'test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"',
+        'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
+    ):
+        if expected not in broad_body:
+            raise ValueError(f"broad pytest lacks inherited Git trust validation: {expected}")
+    if re.search(r"git config --global|GIT_CONFIG_GLOBAL|GIT_CONFIG_NOSYSTEM", broad_body):
+        raise ValueError("broad pytest must not mutate or replace Git configuration")
+    if text.index("Independent verifier, scanner and manifest") < text.index("Complete repository pytest once"):
+        raise ValueError("downstream verifier must follow broad pytest")
+    for expected in (
+        'test "${GIT_CONFIG_COUNT:-}" = 1',
+        'test "${GIT_CONFIG_KEY_0:-}" = safe.directory',
+        'test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"',
+        'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
+    ):
+        if expected not in downstream:
+            raise ValueError(f"downstream verifier lacks inherited Git trust validation: {expected}")
+    if re.search(r"unset\s+GIT_CONFIG_(?:COUNT|KEY_0|VALUE_0)", downstream):
+        raise ValueError("downstream verifier must retain inherited Git trust")
+    if "GIT_CONFIG_COUNT=1" not in preflight or "GIT_CONFIG_KEY_0=safe.directory" not in preflight:
+        raise ValueError("H26 persisted Git trust is missing")
     if "GIT_CONFIG_GLOBAL=/dev/null" in text or "GIT_CONFIG_GLOBAL" in text:
         raise ValueError("H26 must not persist or require GIT_CONFIG_GLOBAL")
-    if "safe.directory=*" in text or "safe.directory=\\*" in text:
+    if re.search(r"safe\.directory\s*[=:]\s*['\"]?\*|safe\.directory\s+['\"]\*['\"]", text):
         raise ValueError("wildcard Git trust is forbidden")
     if "git merge-base --is-ancestor" not in text or "git rev-parse HEAD:.github/workflows/ci-rf24-backup-restore.yml" not in text:
         raise ValueError("H26 child-process Git probes are missing")
@@ -171,7 +248,7 @@ def validate(path: Path) -> None:
     if "--backup" not in text or "--source-dsn" not in text or "--target-dsn" not in text:
         raise ValueError("source/target DSN separation missing")
     upload = text.split("actions/upload-artifact", 1)[-1]
-    if re.search(r"\*\.(dump|backup|tar|sql(?:\.gz)?)\b", upload, re.I):
+    if re.search(r"\.(?:dump|backup|tar|sql(?:\.gz)?)\b", upload, re.I):
         raise ValueError("raw backup upload glob")
     if "RF25" in text and re.search(r"(?:run:|uses:)[^\n]*RF25", text):
         raise ValueError("RF25 execution is forbidden")
