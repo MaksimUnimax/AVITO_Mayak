@@ -15,6 +15,48 @@ from pathlib import Path
 from typing import Any, cast
 
 TECHNICAL_ID = "RF24-BACKUP-RESTORE-SCENARIO-01"
+
+# The acceptance projections are intentionally declared once.  This is the
+# read-only contract checked against the migrated SOURCE database before any
+# semantic projection or backup/restore mutation is attempted.
+RF24_PROJECTION_SCHEMA: dict[str, tuple[str, tuple[str, ...]]] = {
+    "identity": ("identity_accounts", ("id", "state", "row_version")),
+    "entitlements": ("entitlement_access_grants", ("id", "account_id", "tariff_id", "source_code", "grant_kind", "granted_capability", "granted_scope", "valid_from", "valid_until", "state", "row_version")),
+    "beacon": ("beacon_beacons", ("id", "account_id", "source_url", "state", "current_revision_no", "current_revision_id", "row_version")),
+    "beacon_configuration_history": ("beacon_configuration_revisions", ("beacon_id", "revision_no", "source_url", "accepted_filter", "created_by_account_id", "created_at")),
+    "beacon_history": ("beacon_lifecycle_events", ("id", "beacon_id", "from_state", "to_state", "actor_account_id", "reason", "created_at", "system_actor_class", "causation_reference", "policy_source_reference")),
+    "scan_listing": ("scan_beacon_listing_state", ("id", "beacon_id", "external_listing_key", "last_seen_at", "last_snapshot", "first_seen_at", "row_version", "updated_at")),
+    "scan_runs": ("scan_runs", ("id", "work_item_id", "beacon_id", "revision_no", "state", "started_at", "completed_at", "row_version")),
+    "notification": ("notification_events", ("id", "account_id", "beacon_id", "run_id", "source_effect_fingerprint", "event_code", "payload")),
+    "notification_endpoint": ("notification_endpoints", ("id", "provider_code")),
+    "notification_outbox": ("notification_outbox", ("id", "event_id", "endpoint_id", "state", "row_version")),
+    "notification_delivery": ("notification_delivery_attempts", ("id", "outbox_id", "attempt_number", "state", "effect_fingerprint")),
+    "idempotency": ("platform_idempotency_records", ("id", "scope", "idempotency_key", "request_fingerprint")),
+    "audit": ("platform_audit_entries", ("id", "action_code", "target_type", "target_id", "correlation_id")),
+    "scan_schedules": ("scan_schedules", ("id", "beacon_id", "interval_seconds", "next_due_at", "state", "row_version")),
+    "scan_work_items": ("scan_work_items", ("id", "schedule_id", "beacon_id", "due_at", "state", "created_at", "row_version")),
+}
+
+
+class ProjectionSchemaError(ValueError):
+    """Safe, deterministic projection/schema mismatch."""
+
+
+def validate_projection_schema(connection: Any, *, schema: str = "mayak") -> None:
+    """Fail closed using only information_schema identifiers, never data/DSNs."""
+    required = {(table, column) for table, columns in RF24_PROJECTION_SCHEMA.values() for column in columns}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT table_name, column_name FROM information_schema.columns "
+            "WHERE table_schema=%s",
+            (schema,),
+        )
+        actual = {(str(table), str(column)) for table, column in cursor.fetchall()}
+    missing = sorted(f"{table}.{column}" for table, column in required - actual)
+    missing_tables = sorted({table for table, _ in required if not any(t == table for t, _ in actual)})
+    if missing:
+        detail = ", ".join([*(f"table:{table}" for table in missing_tables), *(f"column:{item}" for item in missing)])
+        raise ProjectionSchemaError(f"RF24 projection schema incompatible: {detail}")
 REQUIRED_CONTROLS = (
     "tampered_digest",
     "corrupt_copy",
@@ -23,7 +65,7 @@ REQUIRED_CONTROLS = (
     "duplicate_restore",
 )
 REQUIRED_STATE_CLASSES = (
-    "identity", "entitlements", "beacon", "beacon_history", "scan_listing",
+    "identity", "entitlements", "beacon", "beacon_configuration_history", "beacon_history", "scan_listing",
     "scan_runs", "notification", "notification_outbox", "notification_delivery",
     "idempotency", "audit",
 )

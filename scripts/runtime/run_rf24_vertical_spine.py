@@ -172,6 +172,8 @@ def _db_snapshot(account_id: str, beacon_id: str) -> dict[str, object]:
     password_path = secret_dir / "mayak_database_application_password"
     password = password_path.read_text(encoding="utf-8").strip() if password_path.exists() else None
     with psycopg.connect(host=host, port=int(port), user=user, dbname=database, password=password) as conn:
+        from scripts.runtime.rf24_backup_restore_core import validate_projection_schema
+        validate_projection_schema(conn)
         with conn.cursor() as cursor:
             result: dict[str, object] = {}
             queries = {
@@ -202,7 +204,8 @@ def _observed_seed_state(account_id: str, beacon_id: str) -> dict[str, object]:
         "account": ("SELECT id::text, state FROM mayak.identity_accounts WHERE id=%s", (account_id,)),
         "entitlement": ("SELECT id::text, state, source_code FROM mayak.entitlement_access_grants WHERE account_id=%s", (account_id,)),
         "beacon": ("SELECT id::text, state, current_revision_no, row_version FROM mayak.beacon_beacons WHERE id=%s AND account_id=%s", (beacon_id, account_id)),
-        "beacon_history": ("SELECT beacon_id::text, revision_no, to_state FROM mayak.beacon_lifecycle_events WHERE beacon_id=%s ORDER BY id", (beacon_id,)),
+        "beacon_configuration_history": ("SELECT beacon_id::text, revision_no, source_url, accepted_filter::text, created_by_account_id::text, created_at::text FROM mayak.beacon_configuration_revisions WHERE beacon_id=%s ORDER BY revision_no", (beacon_id,)),
+        "beacon_history": ("SELECT id::text, beacon_id::text, from_state, to_state, actor_account_id::text, reason, created_at::text, system_actor_class, causation_reference, policy_source_reference FROM mayak.beacon_lifecycle_events WHERE beacon_id=%s ORDER BY created_at, id", (beacon_id,)),
         "scan_listing": ("SELECT external_listing_key, last_seen_at::text FROM mayak.scan_beacon_listing_state WHERE beacon_id=%s ORDER BY external_listing_key", (beacon_id,)),
         "notification_outbox": ("SELECT e.id::text, o.id::text, a.id::text, a.state FROM mayak.notification_events e JOIN mayak.notification_outbox o ON o.event_id=e.id JOIN mayak.notification_delivery_attempts a ON a.outbox_id=o.id WHERE e.account_id=%s AND e.beacon_id=%s ORDER BY e.id", (account_id, beacon_id)),
         "idempotency": ("SELECT scope, idempotency_key, request_fingerprint FROM mayak.platform_idempotency_records ORDER BY id LIMIT 32", ()),
@@ -210,6 +213,8 @@ def _observed_seed_state(account_id: str, beacon_id: str) -> dict[str, object]:
     }
     state: dict[str, object] = {}
     with psycopg.connect(host=host, port=int(port), user=user, dbname=database, password=password) as conn:
+        from scripts.runtime.rf24_backup_restore_core import validate_projection_schema
+        validate_projection_schema(conn)
         with conn.cursor() as cursor:
             for name, (query, params) in queries.items():
                 cursor.execute(query, params)

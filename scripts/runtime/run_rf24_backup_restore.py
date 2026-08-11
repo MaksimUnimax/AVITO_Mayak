@@ -17,25 +17,12 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from scripts.runtime.rf24_backup_restore_core import TECHNICAL_ID, canonical_digest
+from scripts.runtime.rf24_backup_restore_core import (
+    RF24_PROJECTION_SCHEMA, TECHNICAL_ID, canonical_digest, validate_projection_schema,
+)
 
-STATE_SPECS: dict[str, tuple[str, tuple[str, ...]]] = {
-    "identity": ("identity_accounts", ("id", "state", "row_version")),
-    "entitlements": (
-        "entitlement_access_grants",
-        ("account_id", "tariff_id", "source_code", "grant_kind", "granted_capability", "granted_scope", "valid_from", "valid_until", "state", "row_version"),
-    ),
-    "beacon": ("beacon_beacons", ("id", "account_id", "source_url", "state", "current_revision_no", "row_version")),
-    "beacon_history": ("beacon_lifecycle_events", ("beacon_id", "from_state", "to_state", "actor_account_id", "causation_reference")),
-    "scan_listing": ("scan_beacon_listing_state", ("beacon_id", "external_listing_key", "last_seen_at", "first_seen_at", "row_version")),
-    "scan_runs": ("scan_runs", ("id", "work_item_id", "beacon_id", "revision_no", "state", "row_version")),
-    "notification": ("notification_events", ("id", "account_id", "beacon_id", "run_id", "event_code", "source_effect_fingerprint")),
-    "notification_outbox": ("notification_outbox", ("id", "event_id", "endpoint_id", "state", "row_version")),
-    "notification_delivery": ("notification_delivery_attempts", ("id", "outbox_id", "attempt_number", "state")),
-    "idempotency": ("platform_idempotency_records", ("scope", "idempotency_key", "request_fingerprint")),
-    "audit": ("platform_audit_entries", ("action_code", "target_type", "target_id", "correlation_id")),
-}
-TABLES = tuple(table for table, _ in STATE_SPECS.values()) + ("alembic_version", "scan_schedules", "scan_work_items")
+STATE_SPECS = RF24_PROJECTION_SCHEMA
+TABLES = tuple(table for table, _ in STATE_SPECS.values()) + ("alembic_version",)
 
 
 def tool(name: str, *args: str) -> list[str]:
@@ -83,6 +70,7 @@ def snapshot(dsn: str) -> dict[str, Any]:
     result: dict[str, Any] = {"tables": {}, "state_classes": state}
     with psycopg.connect(dsn) as conn:
         with conn.cursor() as cur:
+            validate_projection_schema(conn)
             for table in TABLES:
                 cur.execute("SELECT to_regclass(%s)", (f"mayak.{table}",))
                 row = cur.fetchone()
@@ -101,7 +89,8 @@ def snapshot(dsn: str) -> dict[str, Any]:
                     state[name] = {"table": table, "count": 0, "rows": [], "digest": canonical_digest([])}
                     continue
                 projection = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
-                query = sql.SQL("SELECT {} FROM {}.{} ORDER BY 1").format(projection, sql.Identifier("mayak"), sql.Identifier(table))
+                ordering = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
+                query = sql.SQL("SELECT {} FROM {}.{} ORDER BY {}").format(projection, sql.Identifier("mayak"), sql.Identifier(table), ordering)
                 cur.execute(query)
                 rows = [[None if value is None else str(value) for value in row] for row in cur.fetchall()]
                 state[name] = {"table": table, "count": int(result["tables"][table]), "rows": rows, "digest": canonical_digest(rows)}

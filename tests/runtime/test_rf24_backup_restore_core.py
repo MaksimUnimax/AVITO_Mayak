@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from scripts.runtime.rf24_backup_restore_core import build_manifest, scan_paths, verify_evidence
+from scripts.runtime.rf24_backup_restore_core import (
+    RF24_PROJECTION_SCHEMA,
+    ProjectionSchemaError,
+    build_manifest,
+    scan_paths,
+    validate_projection_schema,
+    verify_evidence,
+)
 from scripts.runtime.run_rf24_backup_restore import compose_create_role
 
 SHA = "a" * 40
@@ -35,8 +42,8 @@ def good() -> dict[str, object]:
                 "duplicate_restore",
             )
         },
-        "source_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
-        "target_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
+        "source_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_configuration_history", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
+        "target_projection": {name: {"table": name, "count": 1, "digest": "a"} for name in ("identity", "entitlements", "beacon", "beacon_configuration_history", "beacon_history", "scan_listing", "scan_runs", "notification", "notification_outbox", "notification_delivery", "idempotency", "audit")},
         "idempotency_replay": {"executed": True, "duplicate_business_effect": False},
         "seed": {"runtime_boundary": "accepted-public-runtime", "state_classes": {"identity": {"count": 1, "projection_digest": "a"}}},
         "security": {
@@ -95,3 +102,61 @@ def test_role_ddl_uses_literal_password_and_identifier() -> None:
     plain = compose_create_role("plain_role", "safe-password").as_string(None)
     assert "CREATEDB" not in plain
     assert "%s" not in plain
+
+
+class _Cursor:
+    def __init__(self, rows: list[tuple[str, str]]) -> None:
+        self.rows = rows
+
+    def __enter__(self) -> "_Cursor":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def execute(self, *_: object) -> None:
+        return None
+
+    def fetchall(self) -> list[tuple[str, str]]:
+        return self.rows
+
+
+class _Connection:
+    def __init__(self, rows: list[tuple[str, str]]) -> None:
+        self.cursor_value = _Cursor(rows)
+
+    def cursor(self) -> _Cursor:
+        return self.cursor_value
+
+
+def _schema_rows() -> list[tuple[str, str]]:
+    return [(table, column) for table, columns in RF24_PROJECTION_SCHEMA.values() for column in columns]
+
+
+def test_current_projection_schema_contract_passes_and_ignores_extra_columns() -> None:
+    validate_projection_schema(_Connection([*_schema_rows(), ("unrelated", "column")]))
+
+
+def test_projection_schema_contract_fails_closed_for_missing_table_without_secrets() -> None:
+    rows = [row for row in _schema_rows() if row[0] != "beacon_lifecycle_events"]
+    with pytest.raises(ProjectionSchemaError, match=r"table:beacon_lifecycle_events") as error:
+        validate_projection_schema(_Connection(rows))
+    assert "password" not in str(error.value).lower()
+    assert "postgresql://" not in str(error.value)
+
+
+def test_projection_schema_contract_fails_closed_for_missing_column() -> None:
+    rows = [row for row in _schema_rows() if row != ("beacon_lifecycle_events", "causation_reference")]
+    with pytest.raises(ProjectionSchemaError, match=r"beacon_lifecycle_events\.causation_reference"):
+        validate_projection_schema(_Connection(rows))
+
+
+def test_lifecycle_projection_uses_lifecycle_columns_and_revision_history_has_its_owner() -> None:
+    source = Path(__file__).parents[2] / "scripts/runtime/run_rf24_vertical_spine.py"
+    text = source.read_text(encoding="utf-8")
+    assert "revision_no, to_state FROM mayak.beacon_lifecycle_events" not in text
+    assert "beacon_configuration_revisions" in text
+    lifecycle = RF24_PROJECTION_SCHEMA["beacon_history"]
+    revisions = RF24_PROJECTION_SCHEMA["beacon_configuration_history"]
+    assert "revision_no" not in lifecycle[1]
+    assert "revision_no" in revisions[1]
