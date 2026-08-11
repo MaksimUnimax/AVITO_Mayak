@@ -262,6 +262,8 @@ jobs:
           h19_junit_path="$RUNNER_TEMP/rf26-h19-junit.xml"
           h19_diagnostic_path="$RUNNER_TEMP/rf26-h19-preflight-diagnostic.json"
           h19_failure_diagnostic_path="$RUNNER_TEMP/rf26-h19-failure-diagnostic.json"
+          # Keep the pinned client authoritative across the uv child boundary.
+          export PATH="$(dirname "$RF26_DOCKER_BIN"):$PATH"
           set +e
           RF26_H19_BOOTSTRAP_PASSWORD=rf26-bootstrap-only RF26_H19_MIGRATION_PASSWORD=rf26-migration-only \
             uv run python -m scripts.runtime.rf26_h19_preflight \
@@ -286,6 +288,10 @@ jobs:
         id: h19
         run: |
           set -euo pipefail
+          # H8-H18 business/recovery transport state is stage-local and must
+          # never enter the full H19 repository child.
+          unset MAYAK_SECRETS_DIR RF26_SOURCE_DB RF26_TARGET_DB RF26_CONFLICT_DB \
+            RF26_SOURCE_DSN RF26_TARGET_DSN RF26_CONFLICT_DSN RF24_PG_TOOL_PREFIX
           set +e
           uv run pytest -q --junitxml="$RF26_H19_JUNIT_PATH"
           pytest_rc=$?

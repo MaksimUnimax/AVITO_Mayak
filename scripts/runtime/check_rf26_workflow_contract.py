@@ -13,6 +13,10 @@ H19_REQUIRED_ENV = (
     "MAYAK_RF11_POSTGRES_USER", "MAYAK_RF11_POSTGRES_HOST",
     "MAYAK_RF11_POSTGRES_PORT", "MAYAK_RF11_POSTGRES_DB",
 )
+H19_REMOVED_ENV = (
+    "MAYAK_SECRETS_DIR", "RF26_SOURCE_DB", "RF26_TARGET_DB", "RF26_CONFLICT_DB",
+    "RF26_SOURCE_DSN", "RF26_TARGET_DSN", "RF26_CONFLICT_DSN", "RF24_PG_TOOL_PREFIX",
+)
 
 
 def validate(path: Path) -> None:
@@ -151,6 +155,12 @@ def validate(path: Path) -> None:
     for name in H19_REQUIRED_ENV:
         if not re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", preflight_block):
             raise ValueError(f"H19 environment normalization missing: {name}")
+    h19_step = text[h19_start:h20_start]
+    for name in H19_REMOVED_ENV:
+        if not re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", h19_step):
+            raise ValueError(f"H19 forbidden environment removal missing: {name}")
+    if "unset MAYAK_SECRETS_DIR RF26_SOURCE_DB RF26_TARGET_DB RF26_CONFLICT_DB" not in h19_step:
+        raise ValueError("H19 stage-local environment normalization is not explicit")
     if "rf26_h19_postgres cleanup" not in text:
         raise ValueError("H19 cleanup boundary missing")
     if re.search(r"(?m)^\s*(env|printenv|set)\s*(?:[|>]|$)", h19_block):

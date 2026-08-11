@@ -1,4 +1,5 @@
 """Fail-closed RF26 H19 prerequisite and child-environment boundary."""
+
 from __future__ import annotations
 
 import argparse
@@ -22,6 +23,17 @@ REQUIRED = (
     "MAYAK_RF11_POSTGRES_PORT",
     "MAYAK_RF11_POSTGRES_DB",
 )
+HANDOFF_PATHS = ("RF26_H19_STATE_DIR", "RF26_H19_JUNIT_PATH", "RF26_H19_DIAGNOSTIC_PATH")
+REMOVED_ENV = (
+    "MAYAK_SECRETS_DIR",
+    "RF26_SOURCE_DB",
+    "RF26_TARGET_DB",
+    "RF26_CONFLICT_DB",
+    "RF26_SOURCE_DSN",
+    "RF26_TARGET_DSN",
+    "RF26_CONFLICT_DSN",
+    "RF24_PG_TOOL_PREFIX",
+)
 PHASES = (
     "H19P_POSTGRES_PROVISION",
     "H19P_STATE_VALIDATION",
@@ -33,20 +45,28 @@ PHASES = (
 DB_RE = re.compile(r"rf26_h19_(?:rf10|rf11)_[0-9]+")
 
 
-def _safe_reason(exc: BaseException) -> str:
-    reason = type(exc).__name__
+class PreflightFailure(RuntimeError):
+    def __init__(self, classification: str, reason: str) -> None:
+        super().__init__(reason)
+        self.classification = classification
+        self.safe_reason = reason
+
+
+def _failure(exc: BaseException) -> tuple[str, str]:
+    if isinstance(exc, PreflightFailure):
+        return exc.classification, exc.safe_reason
     if isinstance(exc, FileNotFoundError):
-        return "required task-owned file or executable is absent"
+        return "H19_STATE_INVALID", "required task-owned state is absent"
     if isinstance(exc, PermissionError):
-        return "required task-owned path is not accessible"
-    return (
-        reason
-        if reason in {"ValueError", "RuntimeError", "OSError", "CalledProcessError"}
-        else "preflight failure"
-    )
+        return "H19_STATE_INVALID", "required task-owned state is inaccessible"
+    if isinstance(exc, ValueError):
+        return "H19_STATE_INVALID", "task-owned H19 state failed bounded validation"
+    return "H19_STATE_INVALID", "task-owned H19 prerequisite failed bounded validation"
 
 
-def _write_diagnostic(path: Path, *, failed_phase: str, reason: str, completed: list[str]) -> None:
+def _write_diagnostic(
+    path: Path, *, failed_phase: str, classification: str, reason: str, completed: list[str]
+) -> None:
     data = {
         "schema_version": 1,
         "technical_id": TECHNICAL_ID,
@@ -54,7 +74,8 @@ def _write_diagnostic(path: Path, *, failed_phase: str, reason: str, completed: 
         "github_run_id": os.getenv("GITHUB_RUN_ID", "unknown"),
         "attempt": os.getenv("GITHUB_RUN_ATTEMPT", "unknown"),
         "failed_phase": failed_phase,
-        "exception_class": reason,
+        "exception_class": "PreflightFailure",
+        "classification": classification,
         "safe_reason": reason,
         "completed_phases": completed,
         "h19_pytest_execution_count": 0,
@@ -123,28 +144,69 @@ def _append_env(
     if not path:
         raise ValueError("GITHUB_ENV is unavailable")
     with path.open("a", encoding="utf-8") as stream:
-        for key in REQUIRED:
-            stream.write(f"{key}={values[key]}\n")
-        stream.write(f"RF26_H19_STATE_DIR={state_dir}\nRF26_H19_JUNIT_PATH={junit}\nRF26_H19_DIAGNOSTIC_PATH={diagnostic}\n")
+        for key in (*REQUIRED, *HANDOFF_PATHS):
+            value = (
+                values[key]
+                if key in values
+                else {
+                    "RF26_H19_STATE_DIR": state_dir,
+                    "RF26_H19_JUNIT_PATH": junit,
+                    "RF26_H19_DIAGNOSTIC_PATH": diagnostic,
+                }[key]
+            )
+            stream.write(f"{key}={value}\n")
 
 
 def _docker_identity(docker_bin: Path, compose_plugin: Path) -> None:
-    if (
-        not docker_bin.is_file()
-        or not os.access(docker_bin, os.X_OK)
-        or shutil.which("docker") != str(docker_bin)
-    ):
-        raise RuntimeError("Docker binary identity mismatch")
+    if not docker_bin.exists():
+        raise PreflightFailure("DOCKER_BIN_MISSING", "pinned Docker client is absent")
+    if docker_bin.is_symlink() or not docker_bin.is_file():
+        raise PreflightFailure(
+            "DOCKER_BIN_NOT_REGULAR", "pinned Docker client is not a regular file"
+        )
+    if not os.access(docker_bin, os.X_OK):
+        raise PreflightFailure(
+            "DOCKER_BIN_NOT_EXECUTABLE", "pinned Docker client is not executable"
+        )
+    resolved = shutil.which("docker")
+    if resolved is None or Path(resolved).resolve() != docker_bin.resolve():
+        raise PreflightFailure(
+            "DOCKER_PATH_RESOLUTION_MISMATCH", "PATH does not resolve the pinned Docker client"
+        )
     result = subprocess.run(
         [str(docker_bin), "version", "--format", "{{.Client.Version}}"],
         capture_output=True,
         text=True,
         check=False,
     )
+    if result.returncode != 0:
+        raise PreflightFailure(
+            "DOCKER_CLIENT_COMMAND_FAILED", "pinned Docker client command failed"
+        )
     if result.stdout.strip() != "29.2.1":
-        raise RuntimeError("Docker client version mismatch")
-    if not compose_plugin.is_file() or not os.access(compose_plugin, os.X_OK):
-        raise RuntimeError("Compose plugin is absent")
+        raise PreflightFailure(
+            "DOCKER_CLIENT_VERSION_MISMATCH", "pinned Docker client version is not 29.2.1"
+        )
+    server = subprocess.run(
+        [str(docker_bin), "info", "--format", "{{.ServerVersion}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if server.returncode != 0:
+        raise PreflightFailure(
+            "DOCKER_SERVER_UNREACHABLE", "Docker server is not reachable through the task socket"
+        )
+    if not compose_plugin.exists():
+        raise PreflightFailure("COMPOSE_PLUGIN_MISSING", "pinned Compose plugin is absent")
+    if compose_plugin.is_symlink() or not compose_plugin.is_file():
+        raise PreflightFailure(
+            "COMPOSE_PLUGIN_NOT_REGULAR", "pinned Compose plugin is not a regular file"
+        )
+    if not os.access(compose_plugin, os.X_OK):
+        raise PreflightFailure(
+            "COMPOSE_PLUGIN_NOT_EXECUTABLE", "pinned Compose plugin is not executable"
+        )
 
 
 def _compose_identity(docker_bin: Path) -> None:
@@ -154,8 +216,48 @@ def _compose_identity(docker_bin: Path) -> None:
         text=True,
         check=False,
     )
-    if result.returncode != 0 or result.stdout.strip() != "Docker Compose version v5.0.2":
-        raise RuntimeError("Compose version mismatch")
+    if result.returncode != 0:
+        raise PreflightFailure("COMPOSE_COMMAND_FAILED", "pinned Compose command failed")
+    if result.stdout.strip() != "Docker Compose version v5.0.2":
+        raise PreflightFailure("COMPOSE_VERSION_MISMATCH", "pinned Compose version is not v5.0.2")
+
+
+def _build_child_env(
+    values: dict[str, str], *, state_dir: Path, junit: Path, diagnostic: Path
+) -> dict[str, str]:
+    child = dict(os.environ)
+    for key in REMOVED_ENV:
+        child.pop(key, None)
+    child.update(values)
+    child.update(
+        {
+            "RF26_H19_STATE_DIR": str(state_dir),
+            "RF26_H19_JUNIT_PATH": str(junit),
+            "RF26_H19_DIAGNOSTIC_PATH": str(diagnostic),
+        }
+    )
+    if any(
+        child.get(name) != "false"
+        for name in (
+            "MAYAK_AVITO_LIVE_ENABLED",
+            "MAYAK_TELEGRAM_ENABLED",
+            "MAYAK_MAX_ENABLED",
+            "MAYAK_YOOKASSA_ENABLED",
+            "MAYAK_EGRESS_AGENT_ENABLED",
+        )
+    ):
+        raise PreflightFailure(
+            "PROVIDER_DISABLED_POLICY_MISMATCH", "provider live policy is not disabled"
+        )
+    if any(name not in child for name in (*REQUIRED, *HANDOFF_PATHS)):
+        raise PreflightFailure(
+            "H19_ENV_HANDOFF_INVALID", "required H19 child environment is incomplete"
+        )
+    if any(name in child for name in REMOVED_ENV):
+        raise PreflightFailure(
+            "H19_ENV_HANDOFF_INVALID", "forbidden H8-H18 environment remains in H19 child"
+        )
+    return child
 
 
 def run(args: argparse.Namespace) -> int:
@@ -169,25 +271,27 @@ def run(args: argparse.Namespace) -> int:
         values = _read_state(args.state_dir, args.run_id)
         completed.append(phase)
         print(phase)
-        phase = PHASES[2]
-        _append_env(args.github_env, values, args.state_dir, args.junit, args.diagnostic)
-        completed.append(phase)
-        print(phase)
         phase = PHASES[3]
         _docker_identity(args.docker_bin, args.compose_plugin)
         completed.append(phase)
         print(phase)
         phase = PHASES[4]
         _compose_identity(args.docker_bin)
-        provider_flags = (
-            "MAYAK_AVITO_LIVE_ENABLED",
-            "MAYAK_TELEGRAM_ENABLED",
-            "MAYAK_MAX_ENABLED",
-            "MAYAK_YOOKASSA_ENABLED",
-            "MAYAK_EGRESS_AGENT_ENABLED",
+        phase = PHASES[2]
+        child_env = _build_child_env(
+            values, state_dir=args.state_dir, junit=args.junit, diagnostic=args.diagnostic
         )
-        if any(os.getenv(name) != "false" for name in provider_flags):
-            raise RuntimeError("provider-disabled policy mismatch")
+        if not child_env:
+            raise PreflightFailure("H19_ENV_HANDOFF_INVALID", "H19 child environment proof failed")
+        completed.append(phase)
+        print(phase)
+        _append_env(
+            args.github_env,
+            {**values, **{key: child_env[key] for key in HANDOFF_PATHS}},
+            args.state_dir,
+            args.junit,
+            args.diagnostic,
+        )
         completed.append(phase)
         print(phase)
         phase = PHASES[5]
@@ -195,13 +299,18 @@ def run(args: argparse.Namespace) -> int:
         print(phase)
         return 0
     except Exception as exc:
+        classification, reason = _failure(exc)
         _write_diagnostic(
             args.diagnostic,
             failed_phase=phase,
-            reason=_safe_reason(exc),
+            classification=classification,
+            reason=reason,
             completed=completed,
         )
-        print(f"RF26 H19 preflight failed phase={phase} reason={_safe_reason(exc)}")
+        print(
+            "RF26 H19 preflight failed "
+            f"phase={phase} classification={classification} reason={reason}"
+        )
         return 1
 
 

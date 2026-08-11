@@ -4,6 +4,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts.runtime import rf26_h19_preflight as preflight
 
 
@@ -56,7 +58,99 @@ def test_child_process_receives_required_h19_names_without_value_output(
             "-c",
             "import os; print(','.join(sorted(k for k in os.environ if k.startswith('MAYAK_RF'))))",
         ],
-        env=child_env, capture_output=True, text=True, check=True,
+        env=child_env,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     assert result.stdout.strip() == ",".join(sorted(preflight.REQUIRED))
     assert "synthetic-only" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("name", "docker", "compose", "expected"),
+    [
+        ("missing", Path("/tmp/rf26-no-such-docker"), Path("/tmp/compose"), "DOCKER_BIN_MISSING"),
+        ("not-regular", Path("/tmp"), Path("/tmp/compose"), "DOCKER_BIN_NOT_REGULAR"),
+    ],
+)
+def test_docker_identity_has_bounded_classification(name, docker, compose, expected) -> None:
+    del name
+    with pytest.raises(preflight.PreflightFailure) as error:
+        preflight._docker_identity(docker, compose)
+    assert error.value.classification == expected
+
+
+def test_atomic_handoff_does_not_append_on_failed_preflight(tmp_path: Path, monkeypatch) -> None:
+    env_file = tmp_path / "github-env"
+    env_file.write_text("RF26_SOURCE_DB=stage-local\n")
+    before = env_file.read_bytes()
+    monkeypatch.setenv("MAYAK_AVITO_LIVE_ENABLED", "false")
+    monkeypatch.setenv("MAYAK_TELEGRAM_ENABLED", "false")
+    monkeypatch.setenv("MAYAK_MAX_ENABLED", "false")
+    monkeypatch.setenv("MAYAK_YOOKASSA_ENABLED", "false")
+    monkeypatch.setenv("MAYAK_EGRESS_AGENT_ENABLED", "false")
+    with pytest.raises(preflight.PreflightFailure):
+        preflight._docker_identity(Path("/tmp/rf26-no-such-docker"), Path("/tmp/compose"))
+    assert env_file.read_bytes() == before
+    assert not any(key.encode() in env_file.read_bytes() for key in preflight.REQUIRED)
+
+
+def test_failed_run_keeps_github_env_byte_identical(tmp_path: Path, monkeypatch) -> None:
+    env_file = tmp_path / "github-env"
+    env_file.write_bytes(b"RF26_SOURCE_DB=stage-local\n")
+    before = env_file.read_bytes()
+    monkeypatch.setattr(preflight, "provision", lambda **_: None)
+    monkeypatch.setattr(
+        preflight,
+        "_read_state",
+        lambda *_args, **_kwargs: {key: "synthetic" for key in preflight.REQUIRED},
+    )
+    monkeypatch.setattr(
+        preflight,
+        "_docker_identity",
+        lambda *_args: (_ for _ in ()).throw(
+            preflight.PreflightFailure(
+                "DOCKER_SERVER_UNREACHABLE",
+                "Docker server is not reachable through the task socket",
+            )
+        ),
+    )
+    args = type(
+        "Args",
+        (),
+        {
+            "run_id": "123",
+            "repo_root": tmp_path,
+            "state_dir": tmp_path / "state",
+            "github_env": env_file,
+            "junit": tmp_path / "junit",
+            "diagnostic": tmp_path / "diag",
+            "docker_bin": tmp_path / "docker",
+            "compose_plugin": tmp_path / "compose",
+        },
+    )()
+    assert preflight.run(args) == 1
+    assert env_file.read_bytes() == before
+    diagnostic = (tmp_path / "diag").read_text()
+    assert '"classification":"DOCKER_SERVER_UNREACHABLE"' in diagnostic
+    assert '"h19_pytest_execution_count":0' in diagnostic
+
+
+def test_child_env_required_and_forbidden_names(monkeypatch, tmp_path: Path) -> None:
+    for name in preflight.REMOVED_ENV:
+        monkeypatch.setenv(name, "stage-local")
+    for name in (
+        "MAYAK_AVITO_LIVE_ENABLED",
+        "MAYAK_TELEGRAM_ENABLED",
+        "MAYAK_MAX_ENABLED",
+        "MAYAK_YOOKASSA_ENABLED",
+        "MAYAK_EGRESS_AGENT_ENABLED",
+    ):
+        monkeypatch.setenv(name, "false")
+    values = {name: f"synthetic-{name}" for name in preflight.REQUIRED}
+    child = preflight._build_child_env(
+        values, state_dir=tmp_path, junit=tmp_path / "junit", diagnostic=tmp_path / "diag"
+    )
+    assert all(name in child for name in (*preflight.REQUIRED, *preflight.HANDOFF_PATHS))
+    assert all(name not in child for name in preflight.REMOVED_ENV)
