@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Deployable one-shot PostgreSQL logical backup boundary.
 
 The command deliberately keeps credentials in the process environment supplied
@@ -11,9 +12,33 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import psycopg
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+
 from mayak.persistence.config import resolve_secret_file
 from mayak.runtime.settings import ProcessKind, load_runtime_settings
 from scripts.runtime.rf26_operability import canonical_root, write_verified_set
+
+
+def authoritative_migration_revision(settings: object, password: str) -> str:
+    """Read the sole database revision and require the repository head."""
+    database = settings.database  # type: ignore[attr-defined]
+    with psycopg.connect(
+        host=database.host,
+        port=database.port,
+        dbname=database.name,
+        user=database.migration_user,
+        password=password,
+        connect_timeout=database.connect_timeout_seconds,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT version_num::text FROM mayak.alembic_version ORDER BY version_num")
+            revisions = [str(row[0]) for row in cursor.fetchall()]
+    heads = tuple(ScriptDirectory.from_config(Config("alembic.ini")).get_heads())
+    if len(revisions) != 1 or len(heads) != 1 or revisions[0] != heads[0]:
+        raise RuntimeError("database migration revision is unavailable or does not equal current head")
+    return revisions[0]
 
 
 def verify_archive(archive: Path) -> tuple[bool, bool, str, str]:
@@ -42,6 +67,10 @@ def create_backup() -> Path:
     password = resolve_secret_file(
         settings.runtime.secrets_dir / "mayak_database_application_password"
     ).as_text()
+    migration_password = resolve_secret_file(
+        settings.runtime.secrets_dir / "mayak_database_migration_password"
+    ).as_text()
+    migration_revision = authoritative_migration_revision(settings, migration_password)
     env = {**os.environ, "PGPASSWORD": password}
     database = settings.database
     args = ["pg_dump", "--format=custom", "--no-owner", "--no-acl", "--file"]
@@ -81,7 +110,7 @@ def create_backup() -> Path:
             {
                 "environment_id": settings.build.environment_id,
                 "source_sha": settings.build.source_sha,
-                "migration_revision": "runtime-observed",
+                "migration_revision": migration_revision,
                 "tool_identity": f"{dump_version}; {tool_version}; {identity}",
             },
             readable=lambda _: readable,

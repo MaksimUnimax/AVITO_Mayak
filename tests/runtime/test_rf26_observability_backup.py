@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from mayak.platform.observability import JsonOperationalFormatter, correlation_id, safe_message
+from mayak.runtime import backup as backup_runtime
 from scripts.runtime.rf26_operability import manifest_for, retain_expired, verify_backup
 
 
@@ -114,3 +118,49 @@ def test_dump_and_manifest_symlinks_and_unknown_objects_survive_retention(tmp_pa
     extra.mkdir()
     (extra / "x").write_text("keep")
     assert extra.exists()
+
+
+def test_hosted_runner_uses_package_boundary() -> None:
+    old = subprocess.run(
+        [sys.executable, "-S", "run_rf26_operability_acceptance.py", "--help"],
+        cwd=Path("scripts/runtime"),
+        env={**os.environ, "PYTHONPATH": ""},
+        capture_output=True, text=True,
+    )
+    assert old.returncode != 0
+    assert "No module named 'scripts'" in old.stderr
+    current = subprocess.run(
+        [sys.executable, "-S", "-m", "scripts.runtime.run_rf26_operability_acceptance", "--help"],
+        cwd=Path("."),
+        env={**os.environ, "PYTHONPATH": ""},
+        capture_output=True, text=True,
+    )
+    assert current.returncode == 0
+
+
+def test_backup_requires_one_actual_current_migration_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def execute(self, *_args): return None
+        def fetchall(self): return [("head-01",)]
+
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *args): return None
+        def cursor(self): return Cursor()
+
+    class FakePsycopg:
+        @staticmethod
+        def connect(**_kwargs): return Connection()
+
+    monkeypatch.setattr(backup_runtime, "psycopg", FakePsycopg)
+    monkeypatch.setattr(backup_runtime.ScriptDirectory, "from_config", lambda _config: type("S", (), {"get_heads": lambda self: ("head-01",)})())
+    settings = type("Settings", (), {"database": type("Database", (), {"host": "db", "port": 5432, "name": "mayak", "migration_user": "migration", "connect_timeout_seconds": 5})()})()
+    assert backup_runtime.authoritative_migration_revision(settings, "synthetic") == "head-01"
+
+    class MissingCursor(Cursor):
+        def fetchall(self): return []
+    monkeypatch.setattr(FakePsycopg, "connect", staticmethod(lambda **_kwargs: type("C", (), {"__enter__": lambda s: s, "__exit__": lambda s, *a: None, "cursor": lambda s: MissingCursor()})()))
+    with pytest.raises(RuntimeError, match="revision"):
+        backup_runtime.authoritative_migration_revision(settings, "synthetic")

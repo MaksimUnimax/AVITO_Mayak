@@ -223,6 +223,8 @@ services:
     secrets:
       - source: mayak_database_application_password_runtime
         target: mayak_database_application_password
+      - source: mayak_database_migration_password_runtime
+        target: mayak_database_migration_password
     networks: [mayak-internal]
     labels:
       <<: *app-labels

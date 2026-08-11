@@ -12,6 +12,16 @@ permissions:
 jobs:
   rf26:
     runs-on: ubuntu-24.04
+    services:
+      mayak-postgres:
+        image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3acbb067058dec17b0f5596aca9296
+        env:
+          POSTGRES_DB: mayak
+          POSTGRES_USER: mayak
+          POSTGRES_PASSWORD: rf26-bootstrap-only
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 30
     env:
       UV_VERSION: 0.11.31
       MAYAK_AVITO_LIVE_ENABLED: "false"
@@ -79,11 +89,65 @@ jobs:
       - name: H7c RF24 workflow boundary
         run: |
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
+      - name: H8 task-owned PostgreSQL databases and current migration
+        run: |
+          set -euo pipefail
+          source_db="rf26_source_${GITHUB_RUN_ID}"
+          target_db="rf26_target_${GITHUB_RUN_ID}"
+          conflict_db="rf26_conflict_${GITHUB_RUN_ID}"
+          printf 'RF26_SOURCE_DB=%s\nRF26_TARGET_DB=%s\nRF26_CONFLICT_DB=%s\n' "$source_db" "$target_db" "$conflict_db" >> "$GITHUB_ENV"
+          uv run python - "$source_db" "$target_db" "$conflict_db" <<'PY'
+          import sys, psycopg
+          from psycopg import sql
+          with psycopg.connect("host=mayak-postgres dbname=postgres user=mayak password=rf26-bootstrap-only", autocommit=True) as c:
+              with c.cursor() as cur:
+                  cur.execute("CREATE ROLE mayak_migration LOGIN PASSWORD 'rf26-migration-only' CREATEDB")
+                  cur.execute("CREATE ROLE mayak_application LOGIN PASSWORD 'rf26-application-only'")
+                  for name in sys.argv[1:]:
+                      cur.execute(sql.SQL("CREATE DATABASE {} OWNER mayak_migration").format(sql.Identifier(name)))
+          PY
+          for db in "$source_db" "$target_db" "$conflict_db"; do
+            uv run python - "$db" <<'PY'
+          import sys, psycopg
+          with psycopg.connect(f"host=mayak-postgres dbname={sys.argv[1]} user=mayak_migration password=rf26-migration-only", autocommit=True) as c:
+              with c.cursor() as cur: cur.execute("CREATE SCHEMA mayak AUTHORIZATION mayak_migration")
+          PY
+          done
+          RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:rf26-migration-only@mayak-postgres:5432/$source_db" uv run alembic upgrade head
+          RF15_MIGRATION_DSN="postgresql+psycopg://mayak_migration:rf26-migration-only@mayak-postgres:5432/$conflict_db" uv run alembic upgrade head
+          uv run python - "$source_db" "$conflict_db" <<'PY'
+          import sys, psycopg
+          for db in sys.argv[1:]:
+              with psycopg.connect(f"host=mayak-postgres dbname={db} user=mayak_migration password=rf26-migration-only", autocommit=True) as c:
+                  with c.cursor() as cur:
+                      cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
+                      cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
+                      cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
+          PY
+      - name: H8 current-run accepted runtime seed
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/rf26-secrets"
+          printf '%s' rf26-application-only > "$RUNNER_TEMP/rf26-secrets/mayak_database_application_password"
+          chmod 600 "$RUNNER_TEMP/rf26-secrets/mayak_database_application_password"
+          MAYAK_RUNTIME_PROFILE=synthetic_acceptance MAYAK_DATABASE_HOST=mayak-postgres MAYAK_DATABASE_NAME="$RF26_SOURCE_DB" MAYAK_DATABASE_APPLICATION_USER=mayak_application MAYAK_DATABASE_MIGRATION_USER=mayak_migration MAYAK_SECRETS_DIR="$RUNNER_TEMP/rf26-secrets" uv run python -m scripts.runtime.run_rf24_vertical_spine --repo-root "$GITHUB_WORKSPACE" --output rf26-source-runtime-seed.json --probes rf26-source-runtime-probes.json --log rf26-source-runtime.log --source-sha "$GITHUB_SHA"
+      - name: H9 bind PostgreSQL 18 client identity
+        run: |
+          set -euo pipefail
+          container="$(docker ps --filter name=mayak-postgres --format '{{.ID}}' | head -n1)"
+          test -n "$container"
+          docker exec -i -u postgres "$container" sh -c 'umask 077; printf "%s\n" "*:*:*:mayak_migration:rf26-migration-only" > /tmp/rf26.pgpass'
+          docker exec "$container" pg_dump --version | grep -E '^pg_dump \(PostgreSQL\) 18\.'
+          docker exec "$container" pg_restore --version | grep -E '^pg_restore \(PostgreSQL\) 18\.'
+          printf 'RF24_PG_TOOL_PREFIX=docker exec -i -u postgres -e PGPASSFILE=/tmp/rf26.pgpass %s\n' "$container" >> "$GITHUB_ENV"
       - name: H8-H16 real RF26 scenario runner
         run: |
           set -euo pipefail
           test -n "$GITHUB_SHA"
-          uv run python scripts/runtime/run_rf26_operability_acceptance.py --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf26-evidence.json --rf24-evidence rf24-backup-restore-evidence.json
+          export RF26_SOURCE_DSN="postgresql://mayak_migration:rf26-migration-only@mayak-postgres:5432/$RF26_SOURCE_DB"
+          export RF26_TARGET_DSN="postgresql://mayak_migration:rf26-migration-only@mayak-postgres:5432/$RF26_TARGET_DB"
+          export RF26_CONFLICT_DSN="postgresql://mayak_migration:rf26-migration-only@mayak-postgres:5432/$RF26_CONFLICT_DB"
+          uv run python -m scripts.runtime.run_rf26_operability_acceptance --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-evidence.json --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
       - name: H17 security and redaction scan
         run: |
           set -euo pipefail
@@ -99,8 +163,30 @@ jobs:
           mkdir -p rf26-evidence
           cp rf26-evidence.json rf26-evidence/acceptance.json
           cp rf26-verifier.json rf26-evidence/verifier.json
-          sha256sum rf26-evidence/* > rf26-evidence/files.sha256
           uv run python scripts/runtime/verify_rf26_operability_acceptance.py --evidence rf26-evidence/acceptance.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-evidence/final-verifier.json
+          uv run python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path("rf26-evidence")
+          files = []
+          for path in sorted(root.iterdir()):
+              if path.name == "artifact-manifest.json":
+                  continue
+              files.append({"filename": path.name, "size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+          manifest = {"schema_version": 1, "technical_id": "RF26-OBSERVABILITY-BACKUP-RECOVERY-01", "source_sha": os.environ["GITHUB_SHA"], "hosted_run_id": os.environ["GITHUB_RUN_ID"], "raw_backup_excluded": True, "files": files, "self_entry": "artifact-manifest.json is excluded because a file cannot contain its own final digest"}
+          (root / "artifact-manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
+          PY
+          test ! -e "$RUNNER_TEMP/rf26-backup.dump"
+          uv run python - <<'PY'
+          from pathlib import Path
+          from scripts.runtime.rf24_backup_restore_core import scan_paths
+          root = Path("rf26-evidence")
+          paths = sorted(root.iterdir())
+          report = scan_paths(paths)
+          if report["finding_count"]:
+              raise SystemExit(report)
+          (root / "artifact-safety.json").write_text(__import__("json").dumps(report, sort_keys=True, indent=2) + "\n")
+          PY
       - name: H23 upload exact safe set
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
