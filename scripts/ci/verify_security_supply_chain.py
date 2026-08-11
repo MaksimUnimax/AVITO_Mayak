@@ -26,8 +26,8 @@ RF25_BASE_SHA = "c2f88430db02f8fd4c426bc327500ab5a8a66896"
 MAX_BYTES = 20 * 1024 * 1024
 ROOT = Path(__file__).resolve().parents[2]
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
-PLACEHOLDER = re.compile(r"^(?:|none|null|false|example|placeholder|changeme|secret-evidence|<[^>]+>|\$\{[^}]+\}|REPLACE_ME|NOT_SET|Literal\[(?:None|True|False)\])$", re.I)
-ASSIGNMENT = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*(?:secret|token|password|passwd|api_key|apikey|private_key|client_secret)[A-Za-z0-9_]*)\s*=(?!=)\s*([^#\s,;]+)", re.I)
+PLACEHOLDER = re.compile(r"^(?:|none|null|false|example|placeholder|changeme|secret-evidence|synthetic|synthetic-token|super-secret-not-a-setting|migration-only|application-only|bootstrap-only|session-signing-key-acceptance-only|rf24-command-idempotency-session-key|<[^>]+>|\$\{[^}]+\}|REPLACE_ME|NOT_SET|Literal\[(?:None|True|False)\])$", re.I)
+ASSIGNMENT = re.compile(r"\b([A-Za-z_]*(?:secret|token|password|passwd|api_key|apikey|private_key|client_secret)[A-Za-z0-9_]*)\s*=(?!=)\s*([^#\s,;]+)", re.I)
 RULES = (("PEM_PRIVATE_KEY", re.compile(r"BEGIN [A-Z0-9 _-]*PRIVATE KEY")), ("GITHUB_TOKEN", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+")), ("AWS_ACCESS_KEY", re.compile(r"\bAKIA[0-9A-Z]{16}\b")), ("SLACK_TOKEN", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]+\b")), ("TELEGRAM_BOT_TOKEN", re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b")), ("URL_USERINFO_PASSWORD", re.compile(r"https?://[^/\s:@]+:[^/\s@]+@")))
 CASE_IDS = ("ST01_PEM_PRIVATE_KEY_DETECTION", "ST02_KNOWN_TOKEN_FORMAT_DETECTION", "ST03_POPULATED_SECRET_ASSIGNMENT_DETECTION", "ST04_PLACEHOLDER_ASSIGNMENT_NOT_FLAGGED", "ST05_URL_USERINFO_REDACTION", "ST06_RAW_SECRET_VALUE_NOT_STORED", "ST07_FINDING_SCHEMA_MINIMAL_FIELDS", "ST08_BINARY_FILE_CLASSIFICATION", "ST09_UNSAFE_SYMLINK_REJECTION", "ST10_DETERMINISTIC_FINDING_SORT", "ST11_DUPLICATE_FINDING_ELIMINATION", "ST12_ZERO_VULNERABILITY_AUDIT_PARSE", "ST13_NONZERO_VULNERABILITY_AUDIT_PARSE", "ST14_LICENSE_METADATA_CLASSIFICATION", "ST15_LOCK_INVENTORY_PARSE", "ST16_INSTALLED_DISTRIBUTION_RECONCILIATION", "ST17_WORKFLOW_PIN_PERMISSION_AND_FORBIDDEN_CHECKS", "ST18_SECRET_NAMED_COMPARISON_NOT_FLAGGED")
 EXPECTED_ACTIONS = ("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b", "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a")
@@ -126,7 +126,13 @@ def classification_inventory(files: list[str], root: Path = ROOT) -> dict[str, o
 
 
 def detect_findings(rel: str, data: bytes) -> list[dict[str, object]]:
-    text = data.decode("utf-8", errors="strict").replace("\r\n", "\n").replace("\r", "\n")
+    binary = False
+    try:
+        text = data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        text = data.decode("latin-1")
+        binary = True
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     has_pem_block = bool(re.search(r"-----BEGIN [A-Z0-9 _-]*PRIVATE KEY-----\s*[A-Za-z0-9+/=\n]{24,}\s*-----END [A-Z0-9 _-]*PRIVATE KEY-----", text))
     findings: list[dict[str, object]] = []
     for line_no, line in enumerate(text.splitlines(), 1):
@@ -138,17 +144,17 @@ def detect_findings(rel: str, data: bytes) -> list[dict[str, object]]:
                     continue
                 if rule == "URL_USERINFO_PASSWORD" and any(x in line for x in ("example.test", "example.invalid")): continue
                 if rule == "URL_USERINFO_PASSWORD": value = redact_url(value)
-                findings.append({"path": rel, "line": line_no, "rule": rule, "value_sha256": sha256(value.encode()), "binary": False})
+                findings.append({"path": rel, "line": line_no, "rule": rule, "value_sha256": sha256(value.encode()), "binary": binary})
         if Path(rel).suffix.lower() not in {".md", ".txt", ".rst"}:
             for match in ASSIGNMENT.finditer(line):
-                value = match.group(2).strip("'\"")
-                if re.search(r"synthetic|acceptance|invalid\(|bootstrap-only|migration-only|application-only|session-key", line, re.I):
+                if match.start() and line[match.start() - 1] in "'\"":
                     continue
-                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\)?", value) or re.match(r"[A-Za-z_][A-Za-z0-9_]*(?:\.|\()", value) or value.startswith(("{", "[", "(")): continue
-                reference = re.search(r"(?:_ref|_reference|_policy|_evidence|_present|_presence|_material|_handling|_requested|_retained|_authorized|_consumed|hide_password)$", match.group(1), re.I)
-                safe_template = value.startswith(("$", "%")) or "${" in value or value.startswith(("/run/secrets", "/etc/")) or re.search(r"synthetic|fixture|migration-only|application-only|session-key", value, re.I) is not None
+                value = match.group(2).strip("'\"),]").removesuffix(r"\n").strip("'\"")
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\)?", value) or re.fullmatch(r"\d+", value) or re.match(r"[A-Za-z_][A-Za-z0-9_]*(?:\.|\()", value) or value.startswith(("{", "[", "(", "argv[", "document[", "os.environ[", "data[")): continue
+                reference = re.search(r"(?:_ref|_reference|_policy|_evidence|_present|_presence|_material|_handling|_requested|_retained|_authorized|_consumed|_dir|_path|_file|hide_password)$", match.group(1), re.I)
+                safe_template = value.startswith(("$", "%")) or "${" in value or value.startswith(("/run/secrets", "/etc/"))
                 if not reference and not PLACEHOLDER.fullmatch(value) and not safe_template:
-                    findings.append({"path": rel, "line": line_no, "rule": "POPULATED_SECRET_ASSIGNMENT", "value_sha256": sha256(value.encode()), "binary": False})
+                    findings.append({"path": rel, "line": line_no, "rule": "POPULATED_SECRET_ASSIGNMENT", "value_sha256": sha256(value.encode()), "binary": binary})
     return findings
 
 
@@ -164,43 +170,53 @@ def _git_bytes_at(ref: str, rel: str) -> bytes:
 
 def _scan_ref(ref: str) -> dict[str, object]:
     findings: list[dict[str, object]] = []
-    for rel in _git_files_at(ref):
+    listing = subprocess.run(["git", "ls-tree", "-r", "-l", "-z", ref], cwd=ROOT, check=True, capture_output=True, timeout=30, shell=False).stdout
+    for entry in listing.split(b"\0"):
+        if not entry: continue
+        header, raw_rel = entry.split(b"\t", 1)
+        mode, kind, _object_id, size = header.split()
+        rel = raw_rel.decode("utf-8", errors="strict")
+        if mode == b"160000" or kind == b"commit":
+            findings.append({"path": rel, "line": 1, "rule": "UNINSPECTABLE_TRACKED_CONTENT", "value_sha256": sha256(rel.encode()), "binary": True})
+            continue
+        if mode == b"120000":
+            target = _git_bytes_at(ref, rel)
+            target_path = Path(target.decode("utf-8", errors="replace").replace("\\", "/"))
+            if target.startswith(b"/") or ".." in target_path.parts:
+                findings.append({"path": rel, "line": 1, "rule": "UNSAFE_TRACKED_SYMLINK", "value_sha256": sha256(rel.encode()), "binary": False})
+            continue
         try:
             data = _git_bytes_at(ref, rel)
         except subprocess.CalledProcessError:
+            findings.append({"path": rel, "line": 1, "rule": "UNINSPECTABLE_TRACKED_CONTENT", "value_sha256": sha256(rel.encode()), "binary": True})
             continue
-        if len(data) > MAX_BYTES or b"\0" in data:
+        if int(size) > MAX_BYTES:
+            findings.append({"path": rel, "line": 1, "rule": "UNINSPECTABLE_TRACKED_CONTENT", "value_sha256": sha256(rel.encode()), "binary": True})
             continue
-        try:
-            data.decode("utf-8", errors="strict")
-        except UnicodeDecodeError:
-            continue
+        if Path(rel).name in {".env", ".env.local", ".env.production", ".env.acceptance", "id_rsa", "id_ed25519"} or "private-key" in Path(rel).name.lower():
+            findings.append({"path": rel, "line": 1, "rule": "SENSITIVE_FILENAME", "value_sha256": sha256(rel.encode()), "binary": b"\0" in data})
         findings.extend(detect_findings(rel, data))
     normalized = normalize_findings(findings)
     return {"source_sha": ref, "finding_count": len(normalized), "findings": normalized, "status": "PASS" if not normalized else "FAIL"}
-
-
-def _synthetic_finding(finding: dict[str, object]) -> bool:
-    rel = str(finding["path"]).lower()
-    return rel.startswith("tests/") or "/fixtures/" in rel or rel.endswith(".example") or ".env.example" in rel
 
 
 def compare_findings(base: dict[str, object], candidate: dict[str, object]) -> dict[str, object]:
     base_rows = base.get("findings", [])
     candidate_rows = candidate.get("findings", [])
     def key(row: dict[str, object]) -> tuple[object, ...]:
-        return (row["path"], row["line"], row["rule"], row["value_sha256"])
+        return (row["path"], row["rule"], row["value_sha256"])
     base_keys = {key(row) for row in base_rows}
     rows = []
     for row in candidate_rows:
         k = key(row)
         real_rule = row["rule"] in {"PEM_PRIVATE_KEY", "GITHUB_TOKEN", "AWS_ACCESS_KEY", "SLACK_TOKEN", "TELEGRAM_BOT_TOKEN", "URL_USERINFO_PASSWORD", "SENSITIVE_FILENAME"}
-        classification = "SYNTHETIC_EXAMPLE_OR_FIXTURE" if _synthetic_finding(row) else ("REAL_SECRET" if real_rule else ("UNCHANGED_BASELINE" if k in base_keys else "NEW_OR_WORSENED"))
+        classification = "REAL_SECRET" if real_rule else ("UNCHANGED_BASELINE" if k in base_keys else "NEW_OR_WORSENED")
         rows.append({"path": row["path"], "line": row["line"], "rule": row["rule"], "value_sha256": row["value_sha256"], "classification": classification})
     for row in base_rows:
-        if key(row) not in {key(x) for x in candidate_rows} and not _synthetic_finding(row):
-            rows.append({"path": row["path"], "line": row["line"], "rule": row["rule"], "value_sha256": row["value_sha256"], "classification": "FALSE_POSITIVE"})
-    counts = {name: sum(x["classification"] == name for x in rows) for name in ("REAL_SECRET", "NEW_OR_WORSENED", "UNCHANGED_BASELINE", "SYNTHETIC_EXAMPLE_OR_FIXTURE", "FALSE_POSITIVE")}
+        if key(row) not in {key(x) for x in candidate_rows}:
+            classification = "REAL_SECRET" if row["rule"] in {"PEM_PRIVATE_KEY", "GITHUB_TOKEN", "AWS_ACCESS_KEY", "SLACK_TOKEN", "TELEGRAM_BOT_TOKEN", "URL_USERINFO_PASSWORD", "SENSITIVE_FILENAME"} else "RESOLVED_BASELINE"
+            rows.append({"path": row["path"], "line": row["line"], "rule": row["rule"], "value_sha256": row["value_sha256"], "classification": classification})
+    counts = {name: sum(x["classification"] == name for x in rows) for name in ("REAL_SECRET", "NEW_OR_WORSENED", "UNCHANGED_BASELINE", "SYNTHETIC_EXAMPLE_OR_FIXTURE", "FALSE_POSITIVE", "RESOLVED_BASELINE")}
     blockers = counts["REAL_SECRET"] + counts["NEW_OR_WORSENED"]
     return {"schema_version": RF25_SCHEMA, "base_sha": base.get("source_sha"), "candidate_sha": candidate.get("source_sha"), "findings": sorted(rows, key=lambda x: (x["path"], x["line"], x["rule"], x["value_sha256"])), "classification_counts": counts, "status": "PASS" if blockers == 0 else "FAIL"}
 
@@ -253,13 +269,27 @@ def container_security_audit() -> dict[str, object]:
     return {"schema_version": RF25_SCHEMA, "checks": checks, "status": "PASS" if all(checks.values()) else "FAIL"}
 
 
-def rf25_matrix(secret: dict, comparison: dict, commands: dict, runtime: dict, container: dict, dependency: dict, vulnerability: dict, workflow: dict) -> list[dict[str, object]]:
+def behavior_gate(evidence: Path | None = None) -> dict[str, object]:
+    path = evidence or (ROOT / "ci-evidence/security-supply-chain/behavior-gate-evidence.json")
+    try:
+        result = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"status": "FAIL", "reason": "missing_or_invalid_behavior_gate_evidence"}
+    required = {"candidate_sha", "command", "exit_status", "passed_count", "failed_count", "max_effectful_unknown_effect", "secret_classifier_adversarial"}
+    valid = required <= set(result) and result.get("candidate_sha") == source_sha() and result.get("exit_status") == 0 and result.get("failed_count") == 0 and result.get("max_effectful_unknown_effect") is True and result.get("secret_classifier_adversarial") is True
+    return {"status": "PASS" if valid else "FAIL", "evidence_file": path.name, **{k: result.get(k) for k in required}}
+
+
+def rf25_matrix(secret: dict, comparison: dict, commands: dict, runtime: dict, container: dict, dependency: dict, vulnerability: dict, workflow: dict, behavior: dict | None = None) -> list[dict[str, object]]:
+    behavior = behavior or {"status": "FAIL", "reason": "behavior_gate_not_provided"}
     rows = [
         ("secret_scanning", secret["status"], "scripts/ci/verify_security_supply_chain.py:secret_scan"),
         ("base_candidate_classification", comparison["status"], "scripts/ci/verify_security_supply_chain.py:compare_findings"),
         ("unsafe_commands", commands["status"], "scripts/ci/verify_security_supply_chain.py:unsafe_command_audit"),
         ("provider_privacy_redaction_safe_errors", runtime["status"], "src/mayak/platform/redaction.py; API safe errors"),
-        ("bounded_http_timeout_cancellation", runtime["status"], "provider transports and HttpxTransport"),
+        ("bounded_http_timeout_cancellation", "PASS" if runtime["status"] == "PASS" and behavior["status"] == "PASS" else "FAIL", "hosted behavior gate + provider transports"),
+        ("reconciliation_no_blind_retry", behavior["status"], "hosted behavior gate; MAX effectful mapping"),
+        ("secret_baseline_classification", behavior["status"], "hosted behavior gate; adversarial classifier tests"),
         ("authorization_least_privilege", "REUSED_RF24", "RF24 cross-account and Compose evidence"),
         ("container_compose_hardening", container["status"], "Dockerfile; compose.yaml"),
         ("dependency_inventory", dependency["status"], "pyproject.toml; uv.lock"),
@@ -418,7 +448,7 @@ def self_test(evidence: Path) -> None:
             write_json(evidence / "self-test-evidence.json", {"schema_version": 1, "source_sha": source_sha(), "required_case_count": 18, "executed_case_count": len(results), "passed_case_count": sum(x["status"] == "PASS" for x in results), "failed_case_count": 1, "cases": results, "status": "FAIL"})
             raise SystemExit("STOP_VERIFIER_SELF_TEST_COVERAGE_FAILED")
     with tempfile.TemporaryDirectory() as directory:
-        root = Path(directory); pem = b"-----BEGIN PRIVATE KEY-----\n" + b"A" * 32 + b"\n-----END PRIVATE KEY-----"; field = b"api_" + b"token"; value = b"not-a-placeholder-value"
+        root = Path(directory); pem_marker = b"-----BEGIN " + b"PRIVATE KEY-----"; pem_end = b"-----END " + b"PRIVATE KEY-----"; pem = pem_marker + b"\n" + b"A" * 32 + b"\n" + pem_end; field = b"api_" + b"token"; value = b"not-a-placeholder-value"
         (root / "x.py").write_bytes(b"PRIVATE_KEY = '" + pem + b"'\n")
         case(CASE_IDS[0], lambda: assert_rule("PEM_PRIVATE_KEY", pem))
         case(CASE_IDS[1], lambda: assert_rule("GITHUB_TOKEN", (b"gh" + b"p_" + b"x" * 20)))
@@ -463,8 +493,24 @@ def self_test(evidence: Path) -> None:
             rejected(good_workflow.replace("        run: |", "        continue-on-error: true\n        run: |", 1), "no_continue_on_error")
             rejected(good_workflow.replace("retention-days: 30", "retention-days: 31", 1), "retention_30_exactly_once")
         case(CASE_IDS[16], workflow_matrix, "WORKFLOW_REJECTION_MATRIX_PASS_13_OF_13")
-        comparisons = b"secret_path == 'synthetic'\ntoken_value != 'synthetic'\npassword_value <= 9\npassword_value >= 1\napi_token := 'synthetic'\n"
-        case(CASE_IDS[17], lambda: assert_true(not detect_findings("x.py", comparisons) and compare_findings({"source_sha": "base", "findings": []}, {"source_sha": "candidate", "findings": [{"path": "src/x.py", "line": 1, "rule": "UNSAFE", "value_sha256": "2"}]})["classification_counts"]["NEW_OR_WORSENED"] == 1 and compare_findings({"source_sha": "base", "findings": [{"path": "src/x.py", "line": 1, "rule": "PEM_PRIVATE_KEY", "value_sha256": "3"}]}, {"source_sha": "candidate", "findings": [{"path": "src/x.py", "line": 1, "rule": "PEM_PRIVATE_KEY", "value_sha256": "3"}]})["classification_counts"]["REAL_SECRET"] == 1), "SECRET_NAMED_COMPARISONS_AND_BASELINE_CLASSIFICATION")
+        generated = hashlib.sha256(os.urandom(32)).hexdigest().encode() + b"-fixture"
+        comparisons = b"".join([
+            b"token_value = '" + generated + b"' # synthetic fixture acceptance\n",
+            b"password_value = '" + generated + b"' # fixture\n",
+            b"api_token = '" + generated + b"' # acceptance\n",
+        ])
+        def secret_adversaries() -> None:
+            for rel in ("src/config.py", "tests/fixture.py"):
+                assert_true(len(detect_findings(rel, b"PRIVATE_KEY = '" + pem + b"'")) > 0)
+            assert_true("POPULATED_SECRET_ASSIGNMENT" in {x["rule"] for x in detect_findings("tests/fixture.py", comparisons)})
+            assert_rule("GITHUB_TOKEN", b"\x00ghp_" + b"x" * 20 + b"\xff")
+            assert_true(not detect_findings("x.py", b"TOKEN = '${MAYAK_TOKEN}'"))
+            base_real = {"source_sha": "base", "findings": [{"path": "tests/old.py", "line": 1, "rule": "GITHUB_TOKEN", "value_sha256": "3"}]}
+            removed = compare_findings(base_real, {"source_sha": "candidate", "findings": []})
+            assert_true(removed["classification_counts"]["REAL_SECRET"] == 1 and removed["status"] == "FAIL")
+            ordinary = compare_findings({"source_sha": "base", "findings": [{"path": "src/x.py", "line": 1, "rule": "UNSAFE", "value_sha256": "1"}]}, {"source_sha": "candidate", "findings": []})
+            assert_true(ordinary["classification_counts"]["RESOLVED_BASELINE"] == 1 and ordinary["status"] == "PASS")
+        case(CASE_IDS[17], secret_adversaries, "SECRET_PATH_KEYWORD_BASELINE_ADVERSARIES_PASS")
     evidence_data = {"schema_version": 1, "source_sha": source_sha(), "required_case_count": 18, "executed_case_count": 18, "passed_case_count": 18, "failed_case_count": 0, "cases": results, "workflow_rejection_matrix": {"required_subcase_count": 13, "executed_subcase_count": len(matrix_checks), "passed_subcase_count": sum(check != "FAIL" for check in matrix_checks), "failed_subcase_count": sum(check == "FAIL" for check in matrix_checks), "unexpected_pass_count": 0, "unexpected_check_count": 0, "case_ids": list(WORKFLOW_SUBCASES), "expected_failed_checks": matrix_checks}, "status": "PASS"}
     write_json(evidence / "self-test-evidence.json", evidence_data)
     print("SELF_TEST_PASS cases=18/18")
@@ -506,12 +552,14 @@ def run_all(evidence: Path, venv: Path) -> None:
     base_secret = _scan_ref(RF25_BASE_SHA)
     comparison = compare_findings(base_secret, secret)
     commands = unsafe_command_audit(); runtime = runtime_security_audit(); container = container_security_audit()
-    matrix = rf25_matrix(secret, comparison, commands, runtime, container, dep, vuln, workflow)
+    behavior = behavior_gate()
+    matrix = rf25_matrix(secret, comparison, commands, runtime, container, dep, vuln, workflow, behavior)
     write_json(evidence / "secret-scan.json", secret); write_json(evidence / "base-secret-scan.json", base_secret); write_json(evidence / "base-candidate-comparison.json", comparison); write_json(evidence / "unsafe-command-audit.json", commands); write_json(evidence / "security-privacy-runtime.json", runtime); write_json(evidence / "container-compose-hardening.json", container); write_json(evidence / "rf25-requirement-matrix.json", {"schema_version": RF25_SCHEMA, "technical_id": RF25_TECHNICAL_ID, "base_sha": RF25_BASE_SHA, "candidate_sha": source_sha(), "rows": matrix})
     write_json(evidence / "vulnerability-audit.json", vuln); write_json(evidence / "dependency-inventory.json", dep); write_json(evidence / "installed-distribution-inventory.json", {"schema_version": SCHEMA, "distributions": rows, "reconciliation": installed_counts, "status": "PASS" if not installed_counts["version_mismatches"] and not installed_counts["unknown_external"] else "FAIL"}); write_json(evidence / "license-inventory.json", {"schema_version": SCHEMA, "records": license_rows, "status": "INVENTORY_COMPLETE_POLICY_NOT_EVALUATED"}); write_text(evidence / "license-inventory.tsv", tsv)
+    write_json(evidence / "behavior-gate-verification.json", behavior)
     safety = artifact_safety(evidence)
-    self_summary = json.loads((evidence / "self-test-evidence.json").read_text(encoding="utf-8")); final_status = "PASS" if secret["status"] == "PASS" and comparison["status"] == "PASS" and vuln["status"] == "PASS" and dep["status"] == "PASS" and not installed_counts["version_mismatches"] and not installed_counts["unknown_external"] and workflow["status"] == "PASS" and commands["status"] == "PASS" and runtime["status"] == "PASS" and container["status"] == "PASS" and safety["status"] == "PASS" else "FAIL"
-    write_json(evidence / "security-supply-chain-evidence.json", {"schema_version": RF25_SCHEMA, "technical_id": RF25_TECHNICAL_ID, "base_sha": RF25_BASE_SHA, "source_sha": source_sha(), "python_version": sys.version.split()[0], "standard_gil": bool(getattr(sys, "_is_gil_enabled", lambda: True)()), "pyproject_sha256": dep["pyproject_sha256"], "uv_lock_sha256": dep["uv_lock_sha256"], "lock_counts": counts, "installed_distribution_reconciliation": installed_counts, "self_test": {k: self_summary[k] for k in ("required_case_count", "executed_case_count", "passed_case_count", "failed_case_count", "status")}, "secret_scan": {k: secret[k] for k in ("finding_count", "status")}, "base_candidate_comparison": comparison, "unsafe_command_audit": commands, "provider_privacy_runtime": runtime, "container_compose": container, "requirement_matrix": matrix, "vulnerability": {k: vuln[k] for k in ("finding_count", "status")}, "dependency_inventory": dep["status"], "license_inventory": "INVENTORY_COMPLETE_POLICY_NOT_EVALUATED", "workflow_security": workflow["status"], "reused_evidence_identity": {"authorization": "RF24_ACCEPTED_CROSS_ACCOUNT_SCENARIOS", "postgresql": "RF24_ACCEPTED_DATABASE_BOUNDARY"}, "limitations": ["license policy is not defined by the repository", "live providers are not contacted"], "status": final_status, "production": "NOT_PRODUCTION_READY"})
+    self_summary = json.loads((evidence / "self-test-evidence.json").read_text(encoding="utf-8")); final_status = "PASS" if secret["status"] == "PASS" and comparison["status"] == "PASS" and vuln["status"] == "PASS" and dep["status"] == "PASS" and not installed_counts["version_mismatches"] and not installed_counts["unknown_external"] and workflow["status"] == "PASS" and commands["status"] == "PASS" and runtime["status"] == "PASS" and behavior["status"] == "PASS" and container["status"] == "PASS" and safety["status"] == "PASS" else "FAIL"
+    write_json(evidence / "security-supply-chain-evidence.json", {"schema_version": RF25_SCHEMA, "technical_id": RF25_TECHNICAL_ID, "base_sha": RF25_BASE_SHA, "source_sha": source_sha(), "python_version": sys.version.split()[0], "standard_gil": bool(getattr(sys, "_is_gil_enabled", lambda: True)()), "pyproject_sha256": dep["pyproject_sha256"], "uv_lock_sha256": dep["uv_lock_sha256"], "lock_counts": counts, "installed_distribution_reconciliation": installed_counts, "self_test": {k: self_summary[k] for k in ("required_case_count", "executed_case_count", "passed_case_count", "failed_case_count", "status")}, "secret_scan": {k: secret[k] for k in ("finding_count", "status")}, "base_candidate_comparison": comparison, "unsafe_command_audit": commands, "provider_privacy_runtime": runtime, "behavior_gate": behavior, "container_compose": container, "requirement_matrix": matrix, "vulnerability": {k: vuln[k] for k in ("finding_count", "status")}, "dependency_inventory": dep["status"], "license_inventory": "INVENTORY_COMPLETE_POLICY_NOT_EVALUATED", "workflow_security": workflow["status"], "reused_evidence_identity": {"authorization": "RF24_ACCEPTED_CROSS_ACCOUNT_SCENARIOS", "postgresql": "RF24_ACCEPTED_DATABASE_BOUNDARY"}, "limitations": ["license policy is not defined by the repository", "live providers are not contacted"], "status": final_status, "production": "NOT_PRODUCTION_READY"})
     write_text(evidence / "summary.txt", f"RF25 security, privacy and supply-chain verification\nstatus: {final_status}\ntechnical_id: {RF25_TECHNICAL_ID}\nbase: {RF25_BASE_SHA}\ncandidate: {source_sha()}\nself-test cases: 18/18\nsecret findings: {secret['finding_count']}\nbase/candidate classifications: {comparison['classification_counts']}\nunsafe command audit: {commands['status']}\nprovider/privacy/http audit: {runtime['status']}\ncontainer/compose audit: {container['status']}\nvulnerability findings: {vuln['finding_count']}\nlicense inventory: COMPLETE_POLICY_NOT_EVALUATED\nNOT_PRODUCTION_READY\n")
     if final_status != "PASS": raise SystemExit("STOP_LOCAL_SECURITY_GATE_FAILED")
 

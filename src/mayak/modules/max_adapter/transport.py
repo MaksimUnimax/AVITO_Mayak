@@ -107,6 +107,7 @@ class HttpxMaxTransport:
         method: str,
         path: str,
         *,
+        effectful: bool = False,
         json_body: Mapping[str, Any] | None = None,
         params: Mapping[str, Any] | None = None,
     ) -> MaxTransportResult:
@@ -119,22 +120,16 @@ class HttpxMaxTransport:
                     remaining = self._limit - len(body)
                     body.extend(chunk[: remaining + 1])
                     if len(body) > self._limit:
-                        return MaxTransportResult(MaxTransportClass.MALFORMED, reason_code="response_too_large", http_status=response.status_code, request_sent=True)
+                        return self._unknown_or_read_failure(
+                            effectful,
+                            reason_code="response_too_large",
+                            http_status=response.status_code,
+                        )
                 status = response.status_code
         except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError):
-            return MaxTransportResult(
-                MaxTransportClass.AMBIGUOUS,
-                reason_code="transport_failure",
-                request_sent=True,
-                reconciliation_required=True,
-            )
+            return self._unknown_or_read_failure(effectful, reason_code="transport_failure")
         except httpx.HTTPError:
-            return MaxTransportResult(
-                MaxTransportClass.AMBIGUOUS,
-                reason_code="protocol_failure",
-                request_sent=True,
-                reconciliation_required=True,
-            )
+            return self._unknown_or_read_failure(effectful, reason_code="protocol_failure")
         finally:
             if owned:
                 client.close()
@@ -152,7 +147,22 @@ class HttpxMaxTransport:
                 http_status=status,
                 request_sent=True,
             )
+        if 400 <= status < 500:
+            return MaxTransportResult(
+                MaxTransportClass.REJECTED,
+                reason_code=f"http_{status}",
+                http_status=status,
+                request_sent=True,
+            )
         if status >= 500:
+            if effectful:
+                return MaxTransportResult(
+                    MaxTransportClass.AMBIGUOUS,
+                    reason_code=f"http_{status}_effect_unknown",
+                    http_status=status,
+                    request_sent=True,
+                    reconciliation_required=True,
+                )
             return MaxTransportResult(
                 MaxTransportClass.UNAVAILABLE,
                 reason_code=f"http_{status}",
@@ -162,6 +172,14 @@ class HttpxMaxTransport:
         try:
             payload = json.loads(bytes(body))
         except (UnicodeDecodeError, json.JSONDecodeError):
+            if effectful:
+                return MaxTransportResult(
+                    MaxTransportClass.AMBIGUOUS,
+                    reason_code="malformed_json_effect_unknown",
+                    http_status=status,
+                    request_sent=True,
+                    reconciliation_required=True,
+                )
             return MaxTransportResult(
                 MaxTransportClass.MALFORMED,
                 reason_code="malformed_json",
@@ -169,20 +187,29 @@ class HttpxMaxTransport:
                 request_sent=True,
             )
         if not isinstance(payload, Mapping):
+            if effectful:
+                return MaxTransportResult(
+                    MaxTransportClass.AMBIGUOUS,
+                    reason_code="unusable_response_effect_unknown",
+                    http_status=status,
+                    request_sent=True,
+                    reconciliation_required=True,
+                )
             return MaxTransportResult(
                 MaxTransportClass.MALFORMED,
                 reason_code="unusable_response",
                 http_status=status,
                 request_sent=True,
             )
-        if status >= 400:
+        ref = _safe_ref(payload.get("message_id") or payload.get("user_id") or payload.get("id"))
+        if effectful and not _safe_ref(payload.get("message_id")):
             return MaxTransportResult(
-                MaxTransportClass.REJECTED,
-                reason_code=f"http_{status}",
+                MaxTransportClass.AMBIGUOUS,
+                reason_code="missing_message_reference_effect_unknown",
                 http_status=status,
                 request_sent=True,
+                reconciliation_required=True,
             )
-        ref = _safe_ref(payload.get("message_id") or payload.get("user_id") or payload.get("id"))
         return MaxTransportResult(
             MaxTransportClass.ACCEPTED,
             ref,
@@ -200,7 +227,29 @@ class HttpxMaxTransport:
         if not chat_id or not text or len(text.encode()) > 4096:
             return MaxTransportResult(MaxTransportClass.REJECTED, reason_code="invalid_request")
         return self._request(
-            "POST", "/messages", json_body={"text": text, "recipient": {"chat_id": chat_id}}
+            "POST",
+            "/messages",
+            effectful=True,
+            json_body={"text": text, "recipient": {"chat_id": chat_id}},
+        )
+
+    @staticmethod
+    def _unknown_or_read_failure(
+        effectful: bool, *, reason_code: str, http_status: int | None = None
+    ) -> MaxTransportResult:
+        if effectful:
+            return MaxTransportResult(
+                MaxTransportClass.AMBIGUOUS,
+                reason_code=f"{reason_code}_effect_unknown",
+                http_status=http_status,
+                request_sent=True,
+                reconciliation_required=True,
+            )
+        return MaxTransportResult(
+            MaxTransportClass.MALFORMED,
+            reason_code=reason_code,
+            http_status=http_status,
+            request_sent=True,
         )
 
     def get_updates(self, *, marker: int | None, limit: int, timeout: int) -> MaxUpdateBatch:

@@ -63,6 +63,35 @@ jobs:
         run: uv pip check
       - name: Verifier self-test
         run: python scripts/ci/verify_security_supply_chain.py --self-test --evidence-dir ci-evidence/security-supply-chain
+      - name: Hosted semantic behavior gate
+        run: |
+          set +e
+          python -m pytest -q tests/ci/test_rf25_security_supply_chain.py tests/runtime/test_rf19_max_adapter_runtime.py tests/runtime/test_rf18_telegram_adapter_runtime.py tests/runtime/test_rf24_notification_ambiguous_send.py --junitxml=ci-evidence/security-supply-chain/behavior-gate-junit.xml
+          pytest_status=$?
+          GATE_EXIT_STATUS="$pytest_status" python - <<'PY'
+          import json, os, xml.etree.ElementTree as ET
+          from pathlib import Path
+          root = ET.parse("ci-evidence/security-supply-chain/behavior-gate-junit.xml").getroot()
+          cases = []
+          for case in root.iter("testcase"):
+              failure = case.find("failure") is not None or case.find("error") is not None
+              cases.append((case.attrib.get("name", ""), not failure))
+          names = {name for name, passed in cases if passed}
+          required_max = {"test_max_effectful_unknown_results_reconcile_first", "test_max_effectful_definite_rejection_is_not_ambiguity", "test_max_effectful_definite_acceptance_is_accepted"}
+          evidence = {
+              "schema_version": 1,
+              "candidate_sha": os.environ["GITHUB_SHA"],
+              "command": "pytest RF25 verifier/MAX RF19/Telegram RF18/Notification RF24 semantic tests",
+              "exit_status": int(os.environ["GATE_EXIT_STATUS"]),
+              "passed_count": sum(passed for _, passed in cases),
+              "failed_count": sum(not passed for _, passed in cases),
+              "max_effectful_unknown_effect": all(any(name.startswith(required) for name in names) for required in required_max),
+              "secret_classifier_adversarial": "test_rf25_verifier_adversarial_self_test_is_complete" in names,
+              "test_file_set": ["tests/ci/test_rf25_security_supply_chain.py", "tests/runtime/test_rf19_max_adapter_runtime.py", "tests/runtime/test_rf18_telegram_adapter_runtime.py", "tests/runtime/test_rf24_notification_ambiguous_send.py"],
+          }
+          Path("ci-evidence/security-supply-chain/behavior-gate-evidence.json").write_text(json.dumps(evidence, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          exit "$pytest_status"
       - name: Run complete security verifier
         run: python scripts/ci/verify_security_supply_chain.py --mode all --evidence-dir ci-evidence/security-supply-chain --venv .venv
       - name: Publish safe summary
@@ -71,7 +100,7 @@ jobs:
       - name: Verify evidence files exist
         if: always()
         run: |
-          for f in self-test-evidence.json security-supply-chain-evidence.json secret-scan.json base-secret-scan.json base-candidate-comparison.json rf25-requirement-matrix.json unsafe-command-audit.json security-privacy-runtime.json container-compose-hardening.json vulnerability-audit.json dependency-inventory.json installed-distribution-inventory.json license-inventory.json license-inventory.tsv artifact-safety-manifest.json summary.txt; do test -s "ci-evidence/security-supply-chain/$f"; done
+          for f in self-test-evidence.json behavior-gate-evidence.json behavior-gate-junit.xml behavior-gate-verification.json security-supply-chain-evidence.json secret-scan.json base-secret-scan.json base-candidate-comparison.json rf25-requirement-matrix.json unsafe-command-audit.json security-privacy-runtime.json container-compose-hardening.json vulnerability-audit.json dependency-inventory.json installed-distribution-inventory.json license-inventory.json license-inventory.tsv artifact-safety-manifest.json summary.txt; do test -s "ci-evidence/security-supply-chain/$f"; done
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

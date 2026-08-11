@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from mayak.persistence.metadata import metadata
 from mayak.runtime.settings import MayakRuntimeSettings, ProviderUpdateMode, RuntimeProfile
 
+from .contracts import MaxRetryRecommendation
 from .transport import MaxTransportClass, MaxTransportResult
 
 MAX_UPDATE_BYTES = 2_097_152
@@ -72,6 +73,47 @@ class MaxDeliveryMappingResult:
     attempt_id: UUID
     message_ref: str
     replay: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MaxNotificationDeliveryMapping:
+    """Secret-free MAX result port consumed by Notification Delivery."""
+
+    outcome_class: str
+    reconciliation_required: bool
+    retry_recommendation: MaxRetryRecommendation
+    provider_safe_delivery_reference: str | None = None
+    reason_code: str = ""
+
+
+def map_transport_result(result: MaxTransportResult) -> MaxNotificationDeliveryMapping:
+    """Preserve transport ambiguity at the Notification Delivery boundary."""
+    if result.outcome is MaxTransportClass.ACCEPTED:
+        return MaxNotificationDeliveryMapping(
+            "PROVIDER_ACCEPTED", False, MaxRetryRecommendation.NOT_APPLICABLE,
+            result.provider_ref, result.reason_code,
+        )
+    if result.outcome is MaxTransportClass.AMBIGUOUS or result.reconciliation_required:
+        return MaxNotificationDeliveryMapping(
+            "DELIVERY_AMBIGUOUS", True, MaxRetryRecommendation.RECONCILE_FIRST,
+            None, result.reason_code,
+        )
+    if result.outcome in {MaxTransportClass.AUTH_FAILED, MaxTransportClass.RATE_LIMITED}:
+        return MaxNotificationDeliveryMapping(
+            "RATE_OR_ACCESS_RESTRICTED", False,
+            MaxRetryRecommendation.DO_NOT_RETRY if result.outcome is MaxTransportClass.AUTH_FAILED else MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY,
+            None, result.reason_code,
+        )
+    if result.outcome is MaxTransportClass.UNAVAILABLE:
+        return MaxNotificationDeliveryMapping(
+            "PROVIDER_UNAVAILABLE", False,
+            MaxRetryRecommendation.RETRY_ONLY_UNDER_NOTIFICATION_POLICY,
+            None, result.reason_code,
+        )
+    return MaxNotificationDeliveryMapping(
+        "PROVIDER_REJECTED" if result.outcome is MaxTransportClass.REJECTED else "MALFORMED_OR_UNUSABLE_PROVIDER_RESPONSE",
+        False, MaxRetryRecommendation.DO_NOT_RETRY, None, result.reason_code,
+    )
 
 
 @dataclass(frozen=True, slots=True)
