@@ -22,6 +22,7 @@ def validate(path: Path) -> None:
         "GIT_CONFIG_VALUE_0=%s\\n' \"$workspace\"", "$GITHUB_ENV",
         "git rev-parse --show-toplevel", "git rev-parse HEAD", "git merge-base",
         "docker image inspect", "NetworkSettings.Networks", "mayak-postgres",
+        "python -m scripts.runtime.rf26_docker_discovery", "Config.Image",
         "docker-29.2.1.tgz", "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3",
         "docker-compose-linux-x86_64", "v5.0.2",
         "2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67",
@@ -107,6 +108,10 @@ def validate(path: Path) -> None:
             raise ValueError(f"H1f topology proof missing: {marker}")
     if "RF26_DOCKER_BIN" not in discovery:
         raise ValueError("H1f must use task-local pinned Docker client")
+    if "jq" in discovery:
+        raise ValueError("H1f has undeclared jq dependency")
+    if "rf26_docker_discovery" not in discovery:
+        raise ValueError("H1f must use the Python stdlib discovery parser")
     h14 = runner_text[runner_text.index("def _h14"):runner_text.index("def _h15")]
     if any(marker in h14 for marker in ("time.sleep", ".05", "terminate()", "kill()")):
         raise ValueError("H14 timing-race interruption is forbidden")

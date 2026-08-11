@@ -1,10 +1,12 @@
 # ruff: noqa: E501, I001
+import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
 from scripts.runtime.check_rf26_workflow_contract import validate
+from scripts.runtime.rf26_docker_discovery import DiscoveryError, prove_match
 
 
 WORKFLOW = Path(__file__).parents[2] / ".github/workflows/ci-rf26-operability.yml"
@@ -12,6 +14,62 @@ WORKFLOW = Path(__file__).parents[2] / ".github/workflows/ci-rf26-operability.ym
 
 def test_rf26_complete_substrate_contract_passes() -> None:
     validate(WORKFLOW)
+
+
+def _inspect(**overrides: object) -> str:
+    value = {
+        "Image": "sha256:container",
+        "Config": {"Image": "postgres:18-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"},
+        "State": {"Health": {"Status": "healthy"}},
+        "NetworkSettings": {"Networks": {"bridge": {"Aliases": ["mayak-postgres"]}}},
+    }
+    value.update(overrides)
+    return json.dumps([value])
+
+
+REPO_DIGESTS = json.dumps(["postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"])
+
+
+def test_rf26_h1f_stdlib_parser_accepts_one_exact_match() -> None:
+    assert prove_match(_inspect(), REPO_DIGESTS) == "sha256:container"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "[]",
+        json.dumps([{}, {}]),
+        "not-json",
+    ],
+)
+def test_rf26_h1f_parser_rejects_zero_multiple_or_malformed_inspect(payload: str) -> None:
+    with pytest.raises(DiscoveryError):
+        prove_match(payload, REPO_DIGESTS)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"Config": {"Image": "postgres:wrong"}},
+        {"State": {"Health": {"Status": "unhealthy"}}},
+        {"NetworkSettings": {"Networks": {"bridge": {"Aliases": []}}}},
+    ],
+)
+def test_rf26_h1f_parser_rejects_identity_health_and_alias_failures(change: dict[str, object]) -> None:
+    with pytest.raises(DiscoveryError):
+        prove_match(_inspect(**change), REPO_DIGESTS)
+
+
+def test_rf26_h1f_parser_rejects_wrong_or_malformed_digest() -> None:
+    with pytest.raises(DiscoveryError):
+        prove_match(_inspect(), json.dumps(["postgres@sha256:wrong"]))
+    with pytest.raises(DiscoveryError):
+        prove_match(_inspect(), "{}")
+
+
+def test_rf26_h1f_has_no_jq_dependency() -> None:
+    h1f = WORKFLOW.read_text().split("H1f deterministic service discovery and identity", 1)[1].split("H2 Python", 1)[0]
+    assert "jq" not in h1f
 
 
 def test_rf26_h1f_rejects_compose_label_service_discovery() -> None:

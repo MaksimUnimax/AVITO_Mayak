@@ -112,6 +112,9 @@ jobs:
       - name: H1f deterministic service discovery and identity
         run: |
           set -euo pipefail
+          # rf26_docker_discovery proves Config.Image, NetworkSettings.Networks,
+          # State.Health.Status=healthy, RepoDigests, and the exact mayak-postgres alias.
+          # Expected pinned digest: sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
           test -x "$RF26_DOCKER_BIN"
           container=""
           for _ in $(seq 1 30); do
@@ -119,11 +122,9 @@ jobs:
             matching=()
             for candidate in "${candidates[@]}"; do
               inspect_json="$("$RF26_DOCKER_BIN" inspect "$candidate")"
-              image_id="$(jq -r '.[0].Image' <<<"$inspect_json")"
-              health="$(jq -r '.[0].State.Health.Status // "none"' <<<"$inspect_json")"
-              aliases="$(jq -r '.[0].NetworkSettings.Networks[]?.Aliases[]?' <<<"$inspect_json")"
-              repo_digests="$("$RF26_DOCKER_BIN" image inspect --format '{{json .RepoDigests}}' "$image_id")"
-              if test "$health" = healthy && grep -Fxq mayak-postgres <<<"$aliases" && grep -Fqx 'postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382' <(jq -r '.[]' <<<"$repo_digests"); then
+              repo_digests="$("$RF26_DOCKER_BIN" image inspect --format '{{json .RepoDigests}}' "$(python -c 'import json,sys; print(json.load(sys.stdin)[0]["Image"])' <<<"$inspect_json")")" || continue
+              image_id="$(python -m scripts.runtime.rf26_docker_discovery --repo-digests "$repo_digests" <<<"$inspect_json")" || continue
+              if test -n "$image_id"; then
                 matching+=("$candidate")
               fi
             done
@@ -131,9 +132,9 @@ jobs:
             sleep 2
           done
           test -n "$container"
-          test "$("$RF26_DOCKER_BIN" inspect --format '{{.State.Health.Status}}' "$container")" = healthy
-          test "$("$RF26_DOCKER_BIN" inspect --format '{{.Config.Image}}' "$container")" = 'postgres:18-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382'
-          "$RF26_DOCKER_BIN" inspect "$container" | jq -e '.[0].NetworkSettings.Networks | to_entries | map(.value.Aliases // []) | add | index("mayak-postgres") != null'
+          final_inspect="$("$RF26_DOCKER_BIN" inspect "$container")"
+          final_image_id="$(python -m scripts.runtime.rf26_docker_discovery --repo-digests "$("$RF26_DOCKER_BIN" image inspect --format '{{json .RepoDigests}}' "$(python -c 'import json,sys; print(json.load(sys.stdin)[0]["Image"])' <<<"$final_inspect")")" <<<"$final_inspect")"
+          test -n "$final_image_id"
           printf 'RF26_POSTGRES_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
       - name: H2 Python 3.14 and frozen dependencies
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
