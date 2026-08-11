@@ -182,9 +182,80 @@ jobs:
           uv run python -m scripts.runtime.run_rf24_backup_restore --source-dsn-env RF24_SOURCE_DSN --target-dsn-env RF24_TARGET_DSN --conflict-dsn-env RF24_CONFLICT_DSN --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump --seed-evidence rf24-source-runtime-seed.json
       - name: Scenario-specific PG18 gate passed before broad suite
         run: test -s rf24-backup-restore-evidence.json
+      - name: Install pinned Docker CLI and Buildx for H26
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl
+          curl -fsSLo docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz
+          echo '995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  docker.tgz' | sha256sum -c -
+          tar -xzf docker.tgz --strip-components=1 -C /usr/local/bin docker/docker
+          curl -fsSLo buildx https://github.com/docker/buildx/releases/download/v0.31.1/buildx-v0.31.1.linux-amd64
+          echo 'dc8eaffbf29138123b4874d852522b12303c61246a5073fa0f025e4220317b1e  buildx' | sha256sum -c -
+          install -Dm755 buildx /usr/libexec/docker/cli-plugins/docker-buildx
+          docker version
+          docker buildx version | grep -F 'v0.31.1'
+          docker buildx ls
+      - name: H26 executable preflight and focused prerequisite probes
+        run: |
+          set -euo pipefail
+          test -S /var/run/docker.sock
+          test -n "${GITHUB_WORKSPACE:-}"
+          workspace="$(realpath "$GITHUB_WORKSPACE")"
+          export GIT_CONFIG_GLOBAL=/dev/null
+          export GIT_CONFIG_NOSYSTEM=1
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=safe.directory
+          export GIT_CONFIG_VALUE_0="$workspace"
+          test "$(git rev-parse --show-toplevel)" = "$workspace"
+          git rev-parse HEAD >/dev/null
+          git merge-base --is-ancestor 90a00b12561cecbeac04e3b41c403bcee78f3d71 "$GITHUB_SHA"
+          git rev-parse HEAD:.github/workflows/ci-rf24-backup-restore.yml >/dev/null
+          printf 'GIT_CONFIG_GLOBAL=%s\n' "$GIT_CONFIG_GLOBAL" >> "$GITHUB_ENV"
+          printf 'GIT_CONFIG_NOSYSTEM=%s\n' "$GIT_CONFIG_NOSYSTEM" >> "$GITHUB_ENV"
+          printf 'GIT_CONFIG_COUNT=%s\nGIT_CONFIG_KEY_0=%s\nGIT_CONFIG_VALUE_0=%s\n' 1 safe.directory "$workspace" >> "$GITHUB_ENV"
+          test "$(docker version --format '{{.Client.Version}}')" = '29.2.1'
+          test "$(docker version --format '{{.Server.Version}}')" = '29.2.1'
+          docker buildx version | grep -F 'v0.31.1'
+          docker buildx ls | grep -E '(^|[[:space:]])(default|rf24-h26)' >/dev/null
+          test -d /opt/avito-mayak-runtime
+          test ! -e /tmp/rf24-h26/migration.pgpass
+          # The focused probes and the complete suite share this one task-owned
+          # migrated database; the restore TARGET is never used here.
+          uv run python - <<'PY'
+          import psycopg
+          from psycopg import sql
+          with psycopg.connect("host=mayak-postgres dbname=mayak user=mayak_migration password=migration-only", autocommit=True) as conn:
+              with conn.cursor() as cur:
+                  cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
+                  cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
+                  cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
+                  cur.execute("SELECT version_num FROM mayak.alembic_version")
+                  assert cur.fetchone()
+          PY
+          echo h26-substrate-preflight=PASS
       - name: Complete repository pytest once
         run: |
           set -euo pipefail
+          h26_root="/tmp/rf24-h26"
+          install -d -m 700 "$h26_root"
+          password_file="$h26_root/migration.pgpass"
+          cleanup() { rm -f -- "$password_file"; rmdir "$h26_root" 2>/dev/null || true; }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' 'mayak-postgres:5432:mayak:mayak_migration:migration-only' > "$password_file"
+          chmod 600 "$password_file"
+          test "$(stat -c '%a' "$password_file")" = 600
+          export PGPASSFILE="$password_file"
+          export MAYAK_RF10_POSTGRES_DSN='postgresql+psycopg://mayak_application:application-only@mayak-postgres:5432/mayak'
+          export MAYAK_RF11_POSTGRES_PASSWORD_FILE="$password_file"
+          export MAYAK_RF11_POSTGRES_USER=mayak_migration
+          export MAYAK_RF11_POSTGRES_HOST=mayak-postgres
+          export MAYAK_RF11_POSTGRES_PORT=5432
+          export MAYAK_RF11_POSTGRES_DB=mayak
+          uv run pytest -q tests/runtime/test_persistence_transaction.py tests/runtime/test_platform_audit_repository.py tests/runtime/test_platform_idempotency_repository_postgres.py
+          uv run pytest -q tests/runtime/test_identity_runtime_postgres.py
+          uv run pytest -q tests/runtime/test_rf08_safe_compose_bootstrap.py::test_build_input_digest_follows_copy_inputs_and_includes_readme
           uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log
       - name: Independent verifier, scanner and manifest
         run: |
