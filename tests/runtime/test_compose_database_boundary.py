@@ -154,7 +154,8 @@ def test_project_isolation_and_exposure_boundaries_remain_closed() -> None:
     assert "ports:" not in postgres
     assert "127.0.0.1:${MAYAK_API_HOST_PORT:-18085}:8000/tcp" in _section("mayak-api")
     assert "internal: true" in text
-    assert text.count("mayak-internal:") == 1
+    assert text.count("mayak-internal:") == 2
+    assert text.count("mayak-loopback:") == 2
     assert text.count("postgres-data:") == 2
     assert "external:" not in text
     assert "docker.sock" not in text
@@ -168,3 +169,50 @@ def test_project_isolation_and_exposure_boundaries_remain_closed() -> None:
         text,
         re.I,
     )
+
+
+def test_resolved_topology_has_private_backend_and_api_only_loopback_ingress() -> None:
+    text = _compose()
+    api = _section("mayak-api")
+    assert re.search(
+        r"networks:\n      mayak-internal:\n        gw_priority: 0\n"
+        r"      mayak-loopback:\n        gw_priority: 100",
+        api,
+    )
+    assert "networks: [mayak-loopback]" not in text
+    assert "internal: true" in text
+    assert re.search(
+        r"(?ms)^  mayak-loopback:\n    driver: bridge\n    driver_opts:\n"
+        r"      com\.docker\.network\.bridge\.host_binding_ipv4: \"127\.0\.0\.1\"\n"
+        r"    labels:\n      com\.avito-mayak\.project-owned: \"true\"\n"
+        r"      com\.avito-mayak\.environment-id: avito-mayak-acceptance-local-01",
+        text,
+    )
+    for service_name in (
+        "mayak-worker", "mayak-scheduler", "mayak-postgres", "mayak-db-bootstrap",
+        "mayak-migrate", "mayak-backup", "mayak-restore-check",
+    ):
+        assert "networks: [mayak-internal]" in _section(service_name)
+        assert "mayak-loopback" not in _section(service_name)
+        assert "ports:" not in _section(service_name)
+
+
+def test_api_publication_is_configured_as_loopback_only_and_port_is_consistent() -> None:
+    api = _section("mayak-api")
+    assert api.count("ports:") == 1
+    assert 'ports: ["127.0.0.1:${MAYAK_API_HOST_PORT:-18085}:8000/tcp"]' in api
+    assert 'MAYAK_API_HOST_PORT: "${MAYAK_API_HOST_PORT:-18085}"' in api
+    assert "0.0.0.0" not in api.split("ports:", 1)[1].split("environment:", 1)[0]
+    assert "::" not in api.split("ports:", 1)[1].split("environment:", 1)[0]
+
+
+def test_acceptance_provider_flags_remain_disabled() -> None:
+    environment = _section("mayak-api")
+    for key in (
+        "MAYAK_AVITO_LIVE_ENABLED",
+        "MAYAK_TELEGRAM_ENABLED",
+        "MAYAK_MAX_ENABLED",
+        "MAYAK_YOOKASSA_ENABLED",
+        "MAYAK_EGRESS_AGENT_ENABLED",
+    ):
+        assert f'{key}: "false"' in environment

@@ -53,7 +53,11 @@ services:
         target: mayak_database_application_password
       - source: mayak_session_signing_key_runtime
         target: mayak_session_signing_key
-    networks: [mayak-internal]
+    networks:
+      mayak-internal:
+        gw_priority: 0
+      mayak-loopback:
+        gw_priority: 100
     labels: &app-labels
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
@@ -258,6 +262,14 @@ services:
 networks:
   mayak-internal:
     internal: true
+    labels:
+      com.avito-mayak.project-owned: "true"
+      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
+      com.avito-mayak.compose-family: acceptance
+  mayak-loopback:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
     labels:
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
