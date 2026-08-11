@@ -64,6 +64,8 @@ def verify_evidence_file(data: dict[str, Any], *, source_sha: str, run_id: str) 
         _require(item.get("receipt_sha256") == expected_hash, f"receipt hash mismatch: {stage_id}")
     h8 = _stage(data, "H8_REBUILD_FROM_ZERO")["observed_outputs"]
     _require(h8.get("migration_revision") and h8.get("readiness_recovered") is True and h8.get("runtime_seed_observed") is True, "H8 proof incomplete")
+    _require(isinstance(h8.get("api_http_projection"), dict) and h8["api_http_projection"].get("readiness", {}).get("status") == "ready", "H8 runtime readiness projection missing")
+    _require(h8["api_http_projection"].get("version", {}).get("source_sha") == source_sha, "H8 API source identity missing")
     _require(isinstance(_stage(data, "H8_REBUILD_FROM_ZERO")["observed_inputs"].get("seed_sha256"), str), "H8 raw seed observation missing")
     h9 = _stage(data, "H9_BACKUP")["observed_outputs"]
     for key in ("sha256", "size", "pg_dump_version", "pg_restore_version", "readability_verified", "inventory_verified", "migration_revision"):
@@ -80,24 +82,33 @@ def verify_evidence_file(data: dict[str, Any], *, source_sha: str, run_id: str) 
     _require(isinstance(before, dict) and isinstance(after, dict), "restart provenance missing")
     _require(isinstance(before.get("pid"), int) and isinstance(after.get("pid"), int) and before["pid"] != after["pid"], "restart identity proof missing")
     _require(h11.get("readiness_recovered") is True and h11.get("source_sha_unchanged") is True, "restart state proof missing")
+    _require(h11.get("old_process_gone") is True and h11.get("providers_disabled") is True, "API process proof incomplete")
+    _require(isinstance(h11.get("http_after"), dict) and h11["http_after"].get("version", {}).get("source_sha") == source_sha, "API HTTP provenance missing")
+    for identity in (before, after):
+        _require("mayak.runtime.api" in identity.get("argv", []) and "python -c" not in " ".join(identity.get("argv", [])), "generic API process rejected")
     h12 = _stage(data, "H12_WORKER_INTERRUPTION_RESTART")["observed_outputs"]
     for key in ("one_logical_work_item", "lease_recovery_persisted", "recovery_completed", "duplicate_effect", "live_provider_calls"):
         _require(key in h12, f"H12 observation missing: {key}")
     _require(all(isinstance(h12.get(key), dict) for key in ("before", "after")), "H12 persisted transition missing")
     _require(h12["live_provider_calls"] == 0 and h12["duplicate_effect"] is False, "H12 unsafe effect")
+    h12_in = _stage(data, "H12_WORKER_INTERRUPTION_RESTART")["observed_inputs"]
+    _require(isinstance(h12_in.get("worker_pids"), list) and len(set(h12_in["worker_pids"])) == 2, "H12 worker process provenance missing")
+    _require(h12.get("recovery_completed") is True and h12["before"] != h12["after"], "H12 persisted transition missing")
     h13 = _stage(data, "H13_SCHEDULER_RESTART")["observed_outputs"]
     _require(isinstance(h13.get("scheduler_before"), dict) and isinstance(h13.get("scheduler_after"), dict), "H13 process provenance missing")
     _require(h13["scheduler_before"].get("pid") != h13["scheduler_after"].get("pid") and h13.get("duplicate_scheduling") is False, "H13 proof incomplete")
+    _require("mayak.runtime.scheduler" in h13["scheduler_before"].get("argv", []) and "mayak.runtime.scheduler" in h13["scheduler_after"].get("argv", []), "scheduler command provenance missing")
+    _require(h13.get("durable_before") != h13.get("durable_after"), "H13 durable transition missing")
     h14 = _stage(data, "H14_INTERRUPTED_MIGRATION")["observed_outputs"]
     for key in ("interrupted_revision", "recovered_revision", "readiness_did_not_pass", "readiness_recovered"):
         _require(key in h14, f"H14 observation missing: {key}")
     _require(h14["readiness_did_not_pass"] is True, "interrupted migration falsely passed readiness")
-    _require(h14.get("database_revision_observed") == h14.get("interrupted_revision"), "H14 database observation missing")
+    _require(h14.get("database_revision_observed") == h14.get("interrupted_revision") and h14.get("interrupted_revision") != h14.get("recovered_revision"), "H14 database observation missing")
     h15 = _stage(data, "H15_OUTBOX_RECONCILIATION")["observed_outputs"]
     for key in ("effect_unknown_until_reconciled", "reconciliation_required", "blind_retry_count", "live_provider_calls", "duplicate_external_effect"):
         _require(key in h15, f"H15 observation missing: {key}")
     _require(h15["blind_retry_count"] == 0 and h15["live_provider_calls"] == 0 and h15["duplicate_external_effect"] is False, "H15 unsafe reconciliation")
-    _require(isinstance(h15.get("before"), dict) and isinstance(h15.get("after"), dict), "H15 DB transition missing")
+    _require(isinstance(h15.get("before"), dict) and isinstance(h15.get("after"), dict) and h15.get("projection_changed") is True, "H15 DB transition missing")
     h16 = _stage(data, "H16_RETENTION_RPO_RTO")["observed_outputs"]
     _require(set(h16.get("deleted", [])) == {"expired-verified-inactive"}, "retention deletion classification invalid")
     _require(set(h16.get("preserved", [])) == {"current", "active", "malformed", "tampered", "unverified", "unknown", "symlink"}, "retention preservation classification invalid")

@@ -32,5 +32,22 @@ def test_current_c358_fake_pid_receipt_is_rejected(monkeypatch: pytest.MonkeyPat
             "hosted_run_id": "1", "environment_id": "env", "stages": stages, "rf24_current_run": {},
             "security": {"raw_backup_uploaded": False, "credentials_exposure": False,
                           "production_personal_data": False, "live_provider_calls": 0, "foreign_resource_impact": "none"}}
-    with pytest.raises(ValueError, match="restart provenance"):
+    with pytest.raises(ValueError, match="H8 runtime readiness projection missing|restart provenance"):
         verifier.verify_evidence_file(data, source_sha="a" * 40, run_id="1")
+
+
+def test_current_6f6335d_surrogate_executor_is_rejected_by_source_contract() -> None:
+    import subprocess
+
+    source = subprocess.check_output(
+        ["git", "show", "6f6335de8d0a38985342b8db43371c92830fda60:scripts/runtime/run_rf26_operability_acceptance.py"],
+        text=True,
+    )
+    assert "_real_process_pair" in source
+    assert '"-c"' in source
+    assert "candidate-api-real-child-process-pair" in source
+    current = open("scripts/runtime/run_rf26_operability_acceptance.py", encoding="utf-8").read()
+    assert "_real_process_pair" not in current
+    assert "python -c" not in current
+    assert "mayak.runtime.api" in current
+    assert "mayak.runtime.scheduler" in current

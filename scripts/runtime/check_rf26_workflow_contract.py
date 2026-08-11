@@ -12,6 +12,8 @@ STAGES = ("H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16")
 
 def validate(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
+    runner = path.parents[2] / "scripts/runtime/run_rf26_operability_acceptance.py"
+    runner_text = runner.read_text(encoding="utf-8") if runner.exists() else ""
     required = (
         f"python:3.14.6-bookworm@{PYTHON_DIGEST}",
         f"postgres:18-bookworm@{POSTGRES_DIGEST}",
@@ -21,7 +23,10 @@ def validate(path: Path) -> None:
         "git rev-parse --show-toplevel", "git rev-parse HEAD", "git merge-base",
         "label=com.docker.compose.service=mayak-postgres", "docker image inspect",
         "docker-29.2.1.tgz", "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3",
-        "docker compose version --short", "test \"$(docker compose version --short)\" = 5.0.2",
+        "docker-compose-linux-x86_64", "v5.0.2",
+        "2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67",
+        "DOCKER_CONFIG", "docker compose version",
+        "test \"$(docker compose version)\" = 'Docker Compose version v5.0.2'",
         "H0c", "H0d", "H0e", "H1a", "H1b", "H1c", "H1d", "H1e", "H1f",
     )
     for marker in required:
@@ -32,11 +37,27 @@ def validate(path: Path) -> None:
             raise ValueError(f"{action} is not pinned to a full SHA")
     if re.search(r"(?:python|postgres):[\w.\-]+\s*(?:\n|$)", text):
         raise ValueError("mutable job/service image authority")
+    if "docker compose version --short" in text:
+        raise ValueError("unsupported Compose version interface")
+    if "_real_process_pair" in runner_text or '"-c"' in runner_text:
+        raise ValueError("generic process surrogate is present in mandatory RF26 runner")
+    if "mayak.runtime.api" not in runner_text or "mayak.runtime.scheduler" not in runner_text:
+        raise ValueError("owning runtime entrypoint provenance is missing")
+    if (
+        "compose_plugin_dir=\"$docker_config/cli-plugins\"" not in text
+        or "$compose_plugin_dir/docker-compose" not in text
+    ):
+        raise ValueError("Compose plugin location is not explicit")
+    if "sha256sum -c" not in text or "chmod 0755" not in text:
+        raise ValueError("immutable Compose installation is incomplete")
     if (
         "apt-get install -y --no-install-recommends git docker.io" in text
         or "apt-get install docker.io" in text
+        or re.search(r"apt-get install[^\n]*docker-compose", text)
     ):
         raise ValueError("apt-installed docker.io is forbidden")
+    if re.search(r"upload-artifact[\s\S]{0,500}backup\.dump", text):
+        raise ValueError("raw backup upload is forbidden")
     if re.search(r"safe\.directory\s*[:=]\s*['\"]?\*", text) or "git config --global" in text:
         raise ValueError("global or wildcard Git trust")
     checkout = text.index("actions/checkout")
@@ -52,6 +73,18 @@ def validate(path: Path) -> None:
     for stage in STAGES:
         if stage not in text:
             raise ValueError(f"mandatory stage missing: {stage}")
+        if not re.search(rf"--stage\s+{re.escape(stage)}", text):
+            raise ValueError(f"stage does not have a separate workflow executor: {stage}")
+    if "H19 full repository pytest exactly once" not in text:
+        raise ValueError("H19 is missing")
+    if text.index("H19 full repository pytest exactly once") < text.index(
+        "H18 exact artifact pre-scan"
+    ):
+        raise ValueError("H19 precedes H18")
+    if "--aggregate" in text and text.index("--aggregate") < text.index(
+        "H18 aggregate actual stage receipts"
+    ):
+        raise ValueError("aggregate is not after mandatory stages")
     h8 = text.index("H8")
     h16 = text.index("H16")
     h17 = text.index("H17")

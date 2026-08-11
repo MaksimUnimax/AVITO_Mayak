@@ -14,6 +14,15 @@ def test_rf26_complete_substrate_contract_passes() -> None:
     validate(WORKFLOW)
 
 
+def test_compose_plugin_is_separately_pinned_and_interface_validated() -> None:
+    text = WORKFLOW.read_text()
+    assert "docker-compose-linux-x86_64" in text
+    assert "2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67" in text
+    assert "compose_plugin_dir=\"$docker_config/cli-plugins\"" in text
+    assert "docker compose version --short" not in text
+    assert "Docker Compose version v5.0.2" in text
+
+
 def test_known_c358_workflow_is_rejected() -> None:
     old = subprocess.check_output(
         ["git", "show", "c358ff9ab9e3d515e4381018121bee45d0d33659:.github/workflows/ci-rf26-operability.yml"],

@@ -96,11 +96,20 @@ jobs:
       - name: H1e deterministic Docker and Compose client identity
         run: |
           set -euo pipefail
-          curl -fsSLo docker.tgz https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz
-          echo '995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  docker.tgz' | sha256sum -c -
-          tar -xzf docker.tgz --strip-components=1 -C /usr/local/bin docker/docker
+          docker_cli_dir="$RUNNER_TEMP/rf26-docker-cli"
+          docker_config="$RUNNER_TEMP/rf26-docker-config"
+          compose_plugin_dir="$docker_config/cli-plugins"
+          install -d -m 700 "$docker_cli_dir" "$compose_plugin_dir"
+          curl -fsSLo "$RUNNER_TEMP/docker-29.2.1.tgz" https://download.docker.com/linux/static/stable/x86_64/docker-29.2.1.tgz
+          echo '995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3  docker.tgz' | (cd "$RUNNER_TEMP" && sha256sum -c -)
+          tar -xzf "$RUNNER_TEMP/docker-29.2.1.tgz" --strip-components=1 -C "$docker_cli_dir" docker/docker
+          curl -fsSLo "$compose_plugin_dir/docker-compose" https://github.com/docker/compose/releases/download/v5.0.2/docker-compose-linux-x86_64
+          echo '2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67 *docker-compose' | (cd "$compose_plugin_dir" && sha256sum -c -)
+          chmod 0755 "$compose_plugin_dir/docker-compose"
+          export PATH="$docker_cli_dir:$PATH" DOCKER_CONFIG="$docker_config"
+          printf 'PATH=%s\nDOCKER_CONFIG=%s\n' "$PATH" "$DOCKER_CONFIG" >> "$GITHUB_ENV"
           test "$(docker version --format '{{.Client.Version}}')" = 29.2.1
-          test "$(docker compose version --short)" = 5.0.2
+          test "$(docker compose version)" = 'Docker Compose version v5.0.2'
       - name: H1f deterministic service discovery and identity
         run: |
           set -euo pipefail
@@ -229,13 +238,13 @@ jobs:
         run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H15_OUTBOX_RECONCILIATION --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H15.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
       - name: H16 actual retention RPO/RTO stage
         run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --stage H16_RETENTION_RPO_RTO --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-H16.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
-      - name: H18 aggregate actual stage receipts
-        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --aggregate --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-evidence.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
       - name: H17 security and redaction scan
         run: |
           set -euo pipefail
           uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --help >/dev/null
-          ! rg -n --hidden --glob '!*.pyc' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|Authorization:[[:space:]]*Bearer|postgres(ql)?://[^[:space:]]+:[^[:space:]@]+@)' rf26-evidence.json
+          ! rg -n --hidden --glob '!*.pyc' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|Authorization:[[:space:]]*Bearer|postgres(ql)?://[^[:space:]]+:[^[:space:]@]+@)' rf26-receipts
+      - name: H18 aggregate actual stage receipts
+        run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --aggregate --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-evidence.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
       - name: H18 exact artifact pre-scan
         run: uv run python scripts/runtime/verify_rf26_operability_acceptance.py --evidence rf26-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-verifier.json
       - name: H19 full repository pytest exactly once

@@ -382,7 +382,8 @@ def semantics(
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--dsn", required=True)
+    p.add_argument("--dsn")
+    p.add_argument("--dsn-env")
     p.add_argument("--output", default="rf24-notification-ambiguous-send-evidence.json")
     p.add_argument("--probes", default="rf24-notification-ambiguous-send-provider-probes.json")
     p.add_argument("--boundaries", default="rf24-notification-ambiguous-send-phase-boundaries.json")
@@ -390,10 +391,13 @@ def main() -> None:
     p.add_argument("--source-sha", required=True)
     p.add_argument("--repo-root", default=".")
     a = p.parse_args()
+    if bool(a.dsn) == bool(a.dsn_env):
+        p.error("exactly one of --dsn or --dsn-env is required")
+    dsn = a.dsn if a.dsn is not None else os.environ[a.dsn_env]
     os.environ["MAYAK_SOURCE_SHA"] = a.source_sha
     run_id = f"run-{uuid4().hex[:16]}"
     now = datetime.now(UTC)
-    engine = create_engine(a.dsn)
+    engine = create_engine(dsn)
     factory = sessionmaker(bind=engine)
     processes: list[subprocess.Popen[str]] = []
     try:
