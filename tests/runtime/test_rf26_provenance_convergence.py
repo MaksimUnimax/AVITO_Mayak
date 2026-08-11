@@ -146,7 +146,8 @@ def _valid_h19_state(tmp_path: Path, run_id: str = "123") -> Path:
     return state
 
 
-def test_h19_cleanup_never_provisioned_is_safe_noop(tmp_path: Path) -> None:
+def test_h19_cleanup_never_provisioned_is_safe_noop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path / "different-authoritative-root"))
     assert h19.cleanup(run_id="123", state_dir=tmp_path / "absent") == "NOT_PROVISIONED"
 
 
