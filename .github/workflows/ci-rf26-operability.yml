@@ -12,6 +12,7 @@ permissions:
 jobs:
   rf26:
     runs-on: ubuntu-24.04
+    container: python:3.14.6-bookworm
     services:
       mayak-postgres:
         image: postgres:18-bookworm
@@ -30,10 +31,13 @@ jobs:
       MAYAK_YOOKASSA_ENABLED: "false"
       MAYAK_EGRESS_AGENT_ENABLED: "false"
       RF26_TECHNICAL_ID: RF26-OBSERVABILITY-BACKUP-RECOVERY-01
+      DOCKER_HOST: unix:///var/run/docker.sock
     defaults:
       run:
         shell: bash
     steps:
+      - name: Install task-local git and Docker client
+        run: apt-get update && apt-get install -y --no-install-recommends git docker.io
       - name: H0 checkout exact candidate and prove ancestor
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
