@@ -36,7 +36,7 @@ from mayak.modules.scan_orchestration.services import (
 )
 from mayak.persistence.metadata import metadata
 from mayak.runtime.rf24_composition import RF24RuntimeComposition, build_rf24_composition
-from mayak.runtime.rf24_provenance import emit_process_observation
+from mayak.runtime.rf24_provenance import _authorized_technical_id, emit_process_observation
 from mayak.runtime.settings import load_runtime_settings
 
 LOGGER = logging.getLogger("mayak.worker")
@@ -86,8 +86,7 @@ def _rf24_hook_enabled() -> bool:
         and os.environ.get("MAYAK_SYNTHETIC_SCENARIO_RUN_ID")
         == os.environ.get("MAYAK_ENVIRONMENT_ID")
         and os.environ.get("RF24_ACCEPTANCE_HOOKS_ENABLED") == "true"
-        and os.environ.get("RF24_ACCEPTANCE_TECHNICAL_ID")
-        == "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02"
+        and _authorized_technical_id() is not None
     )
 
 

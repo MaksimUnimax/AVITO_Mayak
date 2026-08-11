@@ -14,7 +14,17 @@ _PATH_ENV = {
     "mayak-scheduler": "RF24_SCHEDULER_OBSERVATIONS",
     "mayak-worker": "RF24_WORKER_OBSERVATIONS",
 }
-_TECHNICAL_ID = "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02"
+_AUTHORIZED_TECHNICAL_IDS = frozenset(
+    {
+        "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02",
+        "RF24-BACKUP-RESTORE-SCENARIO-01",
+    }
+)
+
+
+def _authorized_technical_id() -> str | None:
+    technical_id = os.environ.get("RF24_ACCEPTANCE_TECHNICAL_ID")
+    return technical_id if technical_id in _AUTHORIZED_TECHNICAL_IDS else None
 
 
 def _enabled() -> bool:
@@ -23,7 +33,7 @@ def _enabled() -> bool:
         and os.environ.get("MAYAK_SYNTHETIC_SCENARIO_RUN_ID")
         == os.environ.get("MAYAK_ENVIRONMENT_ID")
         and os.environ.get("RF24_ACCEPTANCE_HOOKS_ENABLED") == "true"
-        and os.environ.get("RF24_ACCEPTANCE_TECHNICAL_ID") == _TECHNICAL_ID
+        and _authorized_technical_id() is not None
     )
 
 
@@ -39,11 +49,14 @@ def emit_process_observation(record: dict[str, Any]) -> None:
     configured = os.environ.get(env_name)
     if not configured:
         raise RuntimeError(f"missing RF24 provenance path: {env_name}")
+    technical_id = _authorized_technical_id()
+    if technical_id is None:
+        return
     path = Path(configured)
     if not path.is_absolute() or path.is_symlink() or path.name in {"", ".", ".."}:
         raise RuntimeError("RF24 provenance path must be an absolute non-symlink file")
     safe = {
-        "technical_id": _TECHNICAL_ID,
+        "technical_id": technical_id,
         "acceptance_run_id": run_id,
         "process_kind": process_kind,
         "process_pid": os.getpid(),

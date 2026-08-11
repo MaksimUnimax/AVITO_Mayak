@@ -23,9 +23,92 @@ def _module(name: str, relative: str):
 _scanner = _module("rf24_scanner", "scripts/runtime/check_rf24_spine_artifact_safety.py")
 _producer = _module("rf24_producer", "scripts/runtime/run_rf24_vertical_spine.py")
 _verifier = _module("rf24_verifier", "scripts/runtime/verify_rf24_vertical_spine.py")
+_provenance = _module("rf24_provenance", "src/mayak/runtime/rf24_provenance.py")
 scan = _scanner.scan
 SafeResponse = _producer.SafeResponse
 verify = _verifier.verify
+
+
+def _provenance_env(monkeypatch: pytest.MonkeyPatch, technical_id: str, tmp_path: Path) -> None:
+    monkeypatch.setenv("MAYAK_RUNTIME_PROFILE", "synthetic_acceptance")
+    monkeypatch.setenv("MAYAK_ENVIRONMENT_ID", "run-1")
+    monkeypatch.setenv("MAYAK_SYNTHETIC_SCENARIO_RUN_ID", "run-1")
+    monkeypatch.setenv("RF24_ACCEPTANCE_HOOKS_ENABLED", "true")
+    monkeypatch.setenv("RF24_ACCEPTANCE_TECHNICAL_ID", technical_id)
+    monkeypatch.setenv("MAYAK_PROCESS_KIND", "mayak-worker")
+    monkeypatch.setenv("RF24_WORKER_OBSERVATIONS", str(tmp_path / "worker.jsonl"))
+
+
+@pytest.mark.parametrize(
+    "technical_id",
+    [
+        "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02",
+        "RF24-BACKUP-RESTORE-SCENARIO-01",
+    ],
+)
+def test_bounded_provenance_authorizes_known_ids_and_stamps_actual_id(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, technical_id: str
+) -> None:
+    _provenance_env(monkeypatch, technical_id, tmp_path)
+    assert _provenance._enabled()
+    _provenance.emit_process_observation({"record_type": "worker_test"})
+    row = json.loads((tmp_path / "worker.jsonl").read_text(encoding="utf-8"))
+    assert row["technical_id"] == technical_id
+    assert row["acceptance_run_id"] == "run-1"
+    assert row["process_kind"] == "mayak-worker"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"RF24_ACCEPTANCE_TECHNICAL_ID": "RF24-UNKNOWN"},
+        {"RF24_ACCEPTANCE_HOOKS_ENABLED": None},
+        {"RF24_ACCEPTANCE_HOOKS_ENABLED": "false"},
+        {"MAYAK_RUNTIME_PROFILE": "test"},
+        {"MAYAK_SYNTHETIC_SCENARIO_RUN_ID": "other-run"},
+    ],
+)
+def test_provenance_gate_is_fail_closed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, changes: dict[str, str | None]) -> None:
+    _provenance_env(monkeypatch, "RF24-BACKUP-RESTORE-SCENARIO-01", tmp_path)
+    for key, value in changes.items():
+        if value is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, value)
+    assert not _provenance._enabled()
+    _provenance.emit_process_observation({"record_type": "disabled"})
+    assert not (tmp_path / "worker.jsonl").exists()
+
+
+def test_backup_restore_child_authority_is_limited_to_worker_and_scheduler(tmp_path: Path) -> None:
+    base = {"MAYAK_SECRETS_DIR": str(tmp_path)}
+    for kind in ("worker", "scheduler"):
+        child = _producer._child_environment(
+            base, source_sha="a" * 40, run_id="run-1", kind=kind,
+            database_host="mayak-postgres", database_name="mayak", port="18080",
+            scheduler_observations=tmp_path / "scheduler.jsonl", worker_observations=tmp_path / "worker.jsonl",
+        )
+        assert child["RF24_ACCEPTANCE_HOOKS_ENABLED"] == "true"
+        assert child["RF24_ACCEPTANCE_TECHNICAL_ID"] == "RF24-BACKUP-RESTORE-SCENARIO-01"
+    api = _producer._child_environment(
+        base, source_sha="a" * 40, run_id="run-1", kind="api",
+        database_host="mayak-postgres", database_name="mayak", port="18080",
+        scheduler_observations=tmp_path / "scheduler.jsonl", worker_observations=tmp_path / "worker.jsonl",
+    )
+    assert "RF24_ACCEPTANCE_HOOKS_ENABLED" not in api
+    assert "RF24_ACCEPTANCE_TECHNICAL_ID" not in api
+
+
+def test_backup_restore_consumer_rejects_cross_scenario_and_accepts_exact_identity(tmp_path: Path) -> None:
+    path = tmp_path / "observations.jsonl"
+    exact = {"technical_id": "RF24-BACKUP-RESTORE-SCENARIO-01", "acceptance_run_id": "run-1", "process_kind": "mayak-scheduler"}
+    path.write_text(json.dumps(exact) + "\n", encoding="utf-8")
+    assert _producer._read_jsonl(path, process_kind="mayak-scheduler", run_id="run-1") == [exact]
+    for key, value in (("technical_id", "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02"), ("acceptance_run_id", "other"), ("process_kind", "mayak-worker")):
+        wrong = dict(exact, **{key: value})
+        path.write_text(json.dumps(wrong) + "\n", encoding="utf-8")
+        with pytest.raises(RuntimeError, match="invalid"):
+            _producer._read_jsonl(path, process_kind="mayak-scheduler", run_id="run-1")
 
 
 def test_checkout_head_uses_process_local_exact_safe_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

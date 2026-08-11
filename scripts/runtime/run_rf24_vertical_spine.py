@@ -137,13 +137,25 @@ def _db_provenance(beacon_id: str) -> list[dict[str, object]]:
         return []
 
 
+_RF24_BACKUP_RESTORE_TECHNICAL_ID = "RF24-BACKUP-RESTORE-SCENARIO-01"
+_RF24_MAX_OBSERVATION_RECORDS = 128
+
+
 def _read_jsonl(path: Path, *, process_kind: str, run_id: str) -> list[dict[str, Any]]:
     if not path.is_file() or path.is_symlink():
         raise RuntimeError(f"missing {process_kind} observation file")
     rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines()[:128]:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if len(lines) > _RF24_MAX_OBSERVATION_RECORDS:
+        raise RuntimeError(f"{process_kind} observation record limit exceeded")
+    for line in lines:
         item = json.loads(line)
-        if not isinstance(item, dict) or item.get("process_kind") != process_kind or item.get("acceptance_run_id") != run_id:
+        if (
+            not isinstance(item, dict)
+            or item.get("technical_id") != _RF24_BACKUP_RESTORE_TECHNICAL_ID
+            or item.get("process_kind") != process_kind
+            or item.get("acceptance_run_id") != run_id
+        ):
             raise RuntimeError(f"invalid {process_kind} observation identity")
         rows.append(item)
     return rows
@@ -291,6 +303,13 @@ def _child_environment(
         "RF24_SCHEDULER_OBSERVATIONS": str(scheduler_observations),
         "RF24_WORKER_OBSERVATIONS": str(worker_observations),
     }
+    if kind in {"worker", "scheduler"}:
+        values.update(
+            {
+                "RF24_ACCEPTANCE_HOOKS_ENABLED": "true",
+                "RF24_ACCEPTANCE_TECHNICAL_ID": "RF24-BACKUP-RESTORE-SCENARIO-01",
+            }
+        )
     settings = compose_runtime_settings(values)
     if (
         settings.build.source_sha != source_sha
