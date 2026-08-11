@@ -58,6 +58,9 @@ def validate(path: Path) -> None:
         raise ValueError("PostgreSQL service discovery is not explicit")
     if 'test "${#candidates[@]}" -eq 1' not in text or "Config.Image" not in text:
         raise ValueError("PostgreSQL service selection is ambiguous")
+    tool_binding = re.search(r"RF24_PG_TOOL_PREFIX=docker exec (?P<options>[^%]+)%s", text)
+    if not tool_binding or "-i" not in tool_binding.group("options").split():
+        raise ValueError("archive-consuming PostgreSQL tool transport is not stdin-attached")
     for variable in (
         "MAYAK_AVITO_LIVE_ENABLED: \"false\"",
         "MAYAK_TELEGRAM_ENABLED: \"false\"",
@@ -110,6 +113,8 @@ def validate(path: Path) -> None:
         raise ValueError("negative controls lack execution-derived proof")
     if "database_tool_role_args" not in runner or "--username" not in runner:
         raise ValueError("backup/restore database role is implicit")
+    if "validate_archive_transport(cmd)" not in runner or "archive.open(\"rb\")" not in runner:
+        raise ValueError("archive stdin transport is not fail-closed and binary")
     if "inspect_clean_target" not in runner or "CLEAN_TARGET_PRE_RESTORE" not in runner:
         raise ValueError("clean-target catalog phase is missing")
     if '"beacon_revision_delta": 0' in runner or '"lifecycle_delta": 0' in runner:

@@ -166,7 +166,7 @@ jobs:
           PGPASS
           docker exec "$container" pg_dump --version
           docker exec "$container" pg_restore --version
-          printf 'RF24_PG_TOOL_PREFIX=docker exec -u postgres -e PGPASSFILE=/tmp/rf24.pgpass %s\n' "$container" >> "$GITHUB_ENV"
+          printf 'RF24_PG_TOOL_PREFIX=docker exec -i -u postgres -e PGPASSFILE=/tmp/rf24.pgpass %s\n' "$container" >> "$GITHUB_ENV"
           printf 'RF24_PG_TOOL_SOURCE_DSN=%s\n' "$SOURCE_DB" >> "$GITHUB_ENV"
           printf 'RF24_PG_TOOL_TARGET_DSN=%s\n' "$TARGET_DB" >> "$GITHUB_ENV"
 

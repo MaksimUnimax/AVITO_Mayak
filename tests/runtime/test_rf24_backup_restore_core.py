@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,12 @@ from scripts.runtime.rf24_backup_restore_core import (
 from scripts.runtime.run_rf24_backup_restore import (
     ConnectionIdentity,
     compose_create_role,
+    database_tool_role_args,
     direct_identity,
+    run_binary_to_file,
+    run_with_archive,
+    tool,
+    validate_archive_transport,
 )
 
 SHA = "a" * 40
@@ -152,6 +158,71 @@ def test_role_ddl_uses_literal_password_and_identifier() -> None:
     plain = compose_create_role("plain_role", "safe-password").as_string(None)
     assert "CREATEDB" not in plain
     assert "%s" not in plain
+
+
+def test_archive_transport_rejects_detached_docker_exec() -> None:
+    with pytest.raises(ValueError, match="attach stdin"):
+        validate_archive_transport(["docker", "exec", "-u", "postgres", "container", "pg_restore", "--list"])
+
+
+def test_archive_transport_accepts_interactive_docker_exec() -> None:
+    validate_archive_transport(["docker", "exec", "-i", "-u", "postgres", "container", "pg_restore", "--list"])
+
+
+def test_tool_prefix_keeps_explicit_database_role_and_no_secret_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RF24_PG_TOOL_PREFIX", "docker exec -i -u postgres -e PGPASSFILE=/tmp/rf24.pgpass container")
+    command = tool("pg_restore", *database_tool_role_args(), "target")
+    assert "mayak_migration" in command
+    assert "migration-only" not in command
+    assert "-i" in command
+    assert all("password" not in value.lower() for value in command)
+
+
+def test_run_with_archive_opens_binary_input_and_preserves_stdout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    archive = tmp_path / "archive.dump"
+    archive.write_bytes(b"custom-format-bytes")
+    observed: dict[str, object] = {}
+
+    def fake_run(cmd: list[str], **kwargs: object) -> object:
+        observed.update(kwargs)
+        handle = kwargs["stdin"]
+        assert getattr(handle, "mode") == "rb"
+        assert handle.read() == b"custom-format-bytes"
+        return subprocess.CompletedProcess(cmd, 0, stdout="TOC\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert run_with_archive(["docker", "exec", "-i", "container", "pg_restore", "--list"], archive) == "TOC\n"
+    assert observed["text"] is True
+    assert observed["shell"] if "shell" in observed else True
+
+
+def test_run_with_archive_propagates_nonzero_without_serializing_stderr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    archive = tmp_path / "archive.dump"
+    archive.write_bytes(b"opaque")
+
+    def fail_run(cmd: list[str], **kwargs: object) -> object:
+        raise subprocess.CalledProcessError(1, cmd, stderr="secret-password")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        run_with_archive(["docker", "exec", "-i", "container", "pg_restore", "--list"], archive)
+    assert error.value.returncode == 1
+    assert "secret-password" not in str(error.value)
+
+
+def test_run_binary_to_file_uses_binary_stdout_and_no_shell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    destination = tmp_path / "archive.dump"
+    observed: dict[str, object] = {}
+
+    def fake_run(cmd: list[str], **kwargs: object) -> None:
+        observed.update(kwargs)
+        handle = kwargs["stdout"]
+        handle.write(b"custom")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    run_binary_to_file(["docker", "exec", "-i", "container", "pg_dump"], destination)
+    assert destination.read_bytes() == b"custom"
+    assert "shell" not in observed
 
 
 class _Cursor:

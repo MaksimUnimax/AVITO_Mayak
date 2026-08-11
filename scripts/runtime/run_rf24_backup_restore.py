@@ -88,6 +88,23 @@ def tool(name: str, *args: str) -> list[str]:
     return [*prefix, name, *args]
 
 
+def _docker_exec_has_stdin(cmd: list[str]) -> bool:
+    """Return whether a Docker exec command keeps its caller's stdin attached."""
+    if len(cmd) < 2 or cmd[0] != "docker" or cmd[1] != "exec":
+        return True
+    try:
+        command_index = next(index for index, value in enumerate(cmd[2:], 2) if not value.startswith("-"))
+    except StopIteration:
+        return False
+    return any(value in {"-i", "--interactive"} for value in cmd[2:command_index])
+
+
+def validate_archive_transport(cmd: list[str]) -> None:
+    """Reject a Docker archive consumer whose stdin boundary is detached."""
+    if not _docker_exec_has_stdin(cmd):
+        raise ValueError("archive-consuming Docker exec must attach stdin (-i/--interactive)")
+
+
 def tool_dsn(kind: str, fallback: str) -> str:
     """The tool container and the Python job have different network namespaces."""
     return os.environ.get(f"RF24_PG_TOOL_{kind.upper()}_DSN", fallback)
@@ -113,6 +130,7 @@ def run_binary_to_file(cmd: list[str], destination: Path, *, env: dict[str, str]
 
 def run_with_archive(cmd: list[str], archive: Path, *, env: dict[str, str] | None = None) -> str:
     """Feed a host-side archive to a containerized PostgreSQL tool via stdin."""
+    validate_archive_transport(cmd)
     with archive.open("rb") as handle:
         result = subprocess.run(cmd, check=True, stdin=handle, text=True, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, env=env)

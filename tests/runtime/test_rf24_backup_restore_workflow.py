@@ -43,6 +43,23 @@ def test_workflow_validator_accepts_canonical_service_identity() -> None:
     validate(WORKFLOW)
 
 
+def test_workflow_archive_transport_attaches_docker_stdin() -> None:
+    text = WORKFLOW.read_text()
+    binding = next(line for line in text.splitlines() if "RF24_PG_TOOL_PREFIX=docker exec" in line)
+    assert " -i " in binding
+
+
+def test_workflow_validator_rejects_detached_archive_transport(tmp_path: Path) -> None:
+    from scripts.runtime.check_rf24_backup_restore_workflow import validate
+
+    text = WORKFLOW.read_text().replace("docker exec -i -u postgres", "docker exec -u postgres")
+    broken = tmp_path / "workflow.yml"
+    broken.write_text(text)
+    import pytest
+    with pytest.raises(ValueError, match="stdin-attached"):
+        validate(broken)
+
+
 def test_workflow_uses_one_module_execution_contract() -> None:
     text = WORKFLOW.read_text()
     for module in RF24_MODULES:
