@@ -37,14 +37,17 @@ REMOVED_ENV = (
     "RF26_CONFLICT_DSN",
     "RF24_PG_TOOL_PREFIX",
 )
-PHASES = (
+H19_PREREQUISITE_PHASES = (
     "H19P_POSTGRES_PROVISION",
     "H19P_STATE_VALIDATION",
-    "H19P_ENVIRONMENT_EXPORT",
     "H19P_DOCKER_IDENTITY",
     "H19P_COMPOSE_IDENTITY",
+    "H19P_BUILDX_IDENTITY",
+    "H19P_ENVIRONMENT_EXPORT",
     "H19P_READY_FOR_PYTEST",
 )
+# Kept as a compatibility alias for callers that imported PHASES.
+PHASES = H19_PREREQUISITE_PHASES
 DB_RE = re.compile(r"rf26_h19_(?:rf10|rf11)_[0-9]+")
 
 
@@ -169,7 +172,7 @@ def _plugin_identity(path: Path, *, missing: str, regular: str, executable: str)
         raise PreflightFailure(executable, "task-owned Docker plugin is not executable")
 
 
-def _docker_identity(docker_bin: Path, compose_plugin: Path, buildx_plugin: Path) -> None:
+def _docker_client_identity(docker_bin: Path) -> None:
     if not docker_bin.exists():
         raise PreflightFailure("DOCKER_BIN_MISSING", "pinned Docker client is absent")
     if docker_bin.is_symlink() or not docker_bin.is_file():
@@ -209,12 +212,14 @@ def _docker_identity(docker_bin: Path, compose_plugin: Path, buildx_plugin: Path
         raise PreflightFailure(
             "DOCKER_SERVER_UNREACHABLE", "Docker server is not reachable through the task socket"
         )
+def _compose_plugin_identity(compose_plugin: Path) -> None:
     _plugin_identity(
         compose_plugin,
         missing="COMPOSE_PLUGIN_MISSING",
         regular="COMPOSE_PLUGIN_NOT_REGULAR",
         executable="COMPOSE_PLUGIN_NOT_EXECUTABLE",
     )
+def _buildx_identity(docker_bin: Path, buildx_plugin: Path) -> None:
     _plugin_identity(
         buildx_plugin,
         missing="BUILDX_PLUGIN_MISSING",
@@ -241,6 +246,16 @@ def _docker_identity(docker_bin: Path, compose_plugin: Path, buildx_plugin: Path
     version = re.search(r"\bv(\d+\.\d+\.\d+)(?:[-+][^\s]+)?\b", buildx.stdout)
     if version is None or f"v{version.group(1)}" != BUILDX_VERSION:
         raise PreflightFailure("BUILDX_VERSION_MISMATCH", "Buildx semantic version is not v0.34.1")
+
+
+def _docker_identity(
+    docker_bin: Path, compose_plugin: Path | None = None, buildx_plugin: Path | None = None
+) -> None:
+    """Docker phase, with the historical three-argument aggregate retained for tests."""
+    _docker_client_identity(docker_bin)
+    if compose_plugin is not None and buildx_plugin is not None:
+        _compose_plugin_identity(compose_plugin)
+        _buildx_identity(docker_bin, buildx_plugin)
 
 
 def _compose_identity(docker_bin: Path) -> None:
@@ -296,39 +311,49 @@ def _build_child_env(
 
 def run(args: argparse.Namespace) -> int:
     completed: list[str] = []
-    phase = PHASES[0]
+    phase = H19_PREREQUISITE_PHASES[0]
     try:
         provision(run_id=args.run_id, repo_root=args.repo_root, state_dir=args.state_dir)
         completed.append(phase)
         print(phase)
-        phase = PHASES[1]
+        phase = H19_PREREQUISITE_PHASES[1]
         values = _read_state(args.state_dir, args.run_id)
         completed.append(phase)
         print(phase)
-        phase = PHASES[3]
-        _docker_identity(args.docker_bin, args.compose_plugin, args.buildx_plugin)
+        phase = H19_PREREQUISITE_PHASES[2]
+        _docker_identity(args.docker_bin)
         completed.append(phase)
         print(phase)
-        phase = PHASES[4]
+        phase = H19_PREREQUISITE_PHASES[3]
+        _compose_plugin_identity(args.compose_plugin)
         _compose_identity(args.docker_bin)
-        phase = PHASES[2]
+        completed.append(H19_PREREQUISITE_PHASES[3])
+        print(H19_PREREQUISITE_PHASES[3])
+        phase = H19_PREREQUISITE_PHASES[4]
+        _buildx_identity(args.docker_bin, args.buildx_plugin)
+        completed.append(phase)
+        print(phase)
+        phase = H19_PREREQUISITE_PHASES[5]
         child_env = _build_child_env(
             values, state_dir=args.state_dir, junit=args.junit, diagnostic=args.diagnostic
         )
         if not child_env:
             raise PreflightFailure("H19_ENV_HANDOFF_INVALID", "H19 child environment proof failed")
+        try:
+            _append_env(
+                args.github_env,
+                {**values, **{key: child_env[key] for key in HANDOFF_PATHS}},
+                args.state_dir,
+                args.junit,
+                args.diagnostic,
+            )
+        except (OSError, ValueError) as exc:
+            raise PreflightFailure(
+                "H19_ENV_HANDOFF_INVALID", "child environment publication failed"
+            ) from exc
         completed.append(phase)
         print(phase)
-        _append_env(
-            args.github_env,
-            {**values, **{key: child_env[key] for key in HANDOFF_PATHS}},
-            args.state_dir,
-            args.junit,
-            args.diagnostic,
-        )
-        completed.append(phase)
-        print(phase)
-        phase = PHASES[5]
+        phase = H19_PREREQUISITE_PHASES[6]
         completed.append(phase)
         print(phase)
         return 0

@@ -197,6 +197,14 @@ def validate(path: Path) -> None:
         raise ValueError("H19 diagnostic artifact is treated as acceptance evidence")
     if "if: always()" in text[h20_start:]:
         raise ValueError("final RF26 acceptance flow may not bypass H19 failure gating")
+    h23 = text.index("H23 upload exact safe set")
+    artifact_block = text[h20_start:h23]
+    for marker in (
+        "observability.json", "artifact-safety.json", "artifact-manifest.json",
+        "build_observability_receipt", "write_exact_artifact", "verify_exact_artifact",
+    ):
+        if marker not in artifact_block:
+            raise ValueError(f"exact RF26 artifact contract missing: {marker}")
     if "--aggregate" in text and text.index("--aggregate") < text.index(
         "H18 aggregate actual stage receipts"
     ):

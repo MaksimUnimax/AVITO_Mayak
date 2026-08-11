@@ -1,6 +1,8 @@
+# ruff: noqa: E501, I001
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 from pathlib import Path
 
@@ -186,3 +188,56 @@ def test_child_env_required_and_forbidden_names(monkeypatch, tmp_path: Path) -> 
     )
     assert all(name in child for name in (*preflight.REQUIRED, *preflight.HANDOFF_PATHS))
     assert all(name not in child for name in preflight.REMOVED_ENV)
+
+
+def _run_args(tmp_path: Path):
+    env_file = tmp_path / "github-env"
+    env_file.write_bytes(b"seed=keep\n")
+    return type("Args", (), {"run_id": "123", "repo_root": tmp_path, "state_dir": tmp_path / "state", "github_env": env_file, "junit": tmp_path / "junit", "diagnostic": tmp_path / "diag", "docker_bin": tmp_path / "docker", "compose_plugin": tmp_path / "compose", "buildx_plugin": tmp_path / "buildx"})()
+
+
+def test_preflight_emits_exactly_seven_ordered_receipts(monkeypatch, tmp_path: Path, capsys) -> None:
+    args = _run_args(tmp_path)
+    monkeypatch.setattr(preflight, "provision", lambda **_: None)
+    monkeypatch.setattr(preflight, "_read_state", lambda *_a, **_k: {key: "synthetic" for key in preflight.REQUIRED})
+    monkeypatch.setattr(preflight, "_docker_identity", lambda *_a: None)
+    monkeypatch.setattr(preflight, "_compose_plugin_identity", lambda *_a: None)
+    monkeypatch.setattr(preflight, "_compose_identity", lambda *_a: None)
+    monkeypatch.setattr(preflight, "_buildx_identity", lambda *_a: None)
+    monkeypatch.setattr(preflight, "_build_child_env", lambda *a, **k: {name: "synthetic" for name in (*preflight.REQUIRED, *preflight.HANDOFF_PATHS)})
+    monkeypatch.setattr(preflight, "_append_env", lambda *a, **k: None)
+    assert preflight.run(args) == 0
+    receipts = [line for line in capsys.readouterr().out.splitlines() if line.startswith("H19P_")]
+    assert receipts == list(preflight.H19_PREREQUISITE_PHASES)
+    assert len(receipts) == len(set(receipts)) == 7
+
+
+@pytest.mark.parametrize(
+    ("hook", "classification", "phase", "completed"),
+    [
+        ("_docker_identity", "DOCKER_CLIENT_COMMAND_FAILED", "H19P_DOCKER_IDENTITY", 2),
+        ("_compose_identity", "COMPOSE_COMMAND_FAILED", "H19P_COMPOSE_IDENTITY", 3),
+        ("_buildx_identity", "BUILDX_PLUGIN_MISSING", "H19P_BUILDX_IDENTITY", 4),
+        ("_build_child_env", "H19_ENV_HANDOFF_INVALID", "H19P_ENVIRONMENT_EXPORT", 5),
+        ("_append_env", "H19_ENV_HANDOFF_INVALID", "H19P_ENVIRONMENT_EXPORT", 5),
+    ],
+)
+def test_preflight_failure_attribution_is_exact_and_atomic(monkeypatch, tmp_path: Path, capsys, hook, classification, phase, completed) -> None:
+    args = _run_args(tmp_path)
+    before = args.github_env.read_bytes()
+    monkeypatch.setattr(preflight, "provision", lambda **_: None)
+    monkeypatch.setattr(preflight, "_read_state", lambda *_a, **_k: {key: "synthetic" for key in preflight.REQUIRED})
+    for name in ("_docker_identity", "_compose_plugin_identity", "_compose_identity", "_buildx_identity"):
+        monkeypatch.setattr(preflight, name, lambda *_a: None)
+    monkeypatch.setattr(preflight, "_build_child_env", lambda *a, **k: {name: "synthetic" for name in (*preflight.REQUIRED, *preflight.HANDOFF_PATHS)})
+    monkeypatch.setattr(preflight, "_append_env", lambda *a, **k: None)
+    if hook == "_build_child_env":
+        monkeypatch.setattr(preflight, hook, lambda *_a, **_k: (_ for _ in ()).throw(preflight.PreflightFailure(classification, "synthetic failure")))
+    else:
+        monkeypatch.setattr(preflight, hook, lambda *_a, **_k: (_ for _ in ()).throw(preflight.PreflightFailure(classification, "synthetic failure")))
+    assert preflight.run(args) == 1
+    diagnostic = json.loads((tmp_path / "diag").read_text())
+    assert diagnostic["failed_phase"] == phase
+    assert diagnostic["classification"] == classification
+    assert len(diagnostic["completed_phases"]) == completed
+    assert args.github_env.read_bytes() == before

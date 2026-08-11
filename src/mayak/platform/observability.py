@@ -66,8 +66,11 @@ class JsonOperationalFormatter(logging.Formatter):
             "source_sha": os.getenv("MAYAK_SOURCE_SHA"),
             "process_kind": os.getenv("MAYAK_PROCESS_KIND"),
             "producer": record.name,
+            "module": record.name,
             "operation": getattr(record, "operation", record.funcName),
             "outcome": getattr(record, "outcome", "unknown"),
+            "result": getattr(record, "outcome", "unknown"),
+            "redaction_state": "safe",
             "reason_code": getattr(record, "reason_code", "UNSPECIFIED"),
             "message": safe_message(record.getMessage()),
         }
@@ -75,7 +78,7 @@ class JsonOperationalFormatter(logging.Formatter):
         current = current_correlation_context()
         if current is not None:
             fields = {"correlation_id": current.correlation_id.value, **fields}
-        for key in ("correlation_id", "causation_id", "run_id", "work_item_id", "attempt_id", "latency_ms", "readiness_state", "migration_revision"):
+        for key in ("correlation_id", "causation_id", "run_id", "work_item_id", "attempt", "attempt_id", "latency_ms", "readiness_state", "migration_revision"):
             value = getattr(record, key, fields.get(key))
             if value is not None:
                 data[key] = _safe_value(key, value)

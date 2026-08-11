@@ -335,25 +335,25 @@ jobs:
       - name: H20-H22 verifier and final safe manifest
         run: |
           set -euo pipefail
+          # Exact uploaded members: acceptance.json h8-preflight.json verifier.json
+          # final-verifier.json observability.json artifact-safety.json artifact-manifest.json.
           mkdir -p rf26-evidence
           cp rf26-receipts/rf26-H8-preflight.json rf26-evidence/h8-preflight.json
           cp rf26-evidence.json rf26-evidence/acceptance.json
           cp rf26-verifier.json rf26-evidence/verifier.json
           uv run python -m scripts.runtime.verify_rf26_operability_acceptance --evidence rf26-evidence/acceptance.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-evidence/final-verifier.json
           uv run python - <<'PY'
-          import hashlib, json, os
+          import json, os
           from pathlib import Path
+          from scripts.runtime.rf26_artifact_evidence import build_observability_receipt
           root = Path("rf26-evidence")
-          files = []
-          for path in sorted(root.iterdir()):
-              if path.name == "artifact-manifest.json":
-                  continue
-              files.append({"filename": path.name, "size": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
-          manifest = {"schema_version": 1, "technical_id": "RF26-OBSERVABILITY-BACKUP-RECOVERY-01", "source_sha": os.environ["GITHUB_SHA"], "hosted_run_id": os.environ["GITHUB_RUN_ID"], "raw_backup_excluded": True, "files": files, "self_entry": "artifact-manifest.json is excluded because a file cannot contain its own final digest"}
-          (root / "artifact-manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
+          evidence = json.loads((root / "acceptance.json").read_text())
+          receipt = build_observability_receipt(evidence=evidence, source_sha=os.environ["GITHUB_SHA"], run_id=os.environ["GITHUB_RUN_ID"], environment_id=evidence["environment_id"])
+          (root / "observability.json").write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
           PY
           test ! -e "$RUNNER_TEMP/rf26-backup.dump"
           uv run python - <<'PY'
+          import json
           from pathlib import Path
           from scripts.runtime.rf24_backup_restore_core import scan_paths
           root = Path("rf26-evidence")
@@ -362,6 +362,16 @@ jobs:
           if report["finding_count"]:
               raise SystemExit(report)
           (root / "artifact-safety.json").write_text(__import__("json").dumps(report, sort_keys=True, indent=2) + "\n")
+          PY
+          uv run python - <<'PY'
+          import os
+          from pathlib import Path
+          import json
+          from scripts.runtime.rf26_artifact_evidence import write_exact_artifact, verify_exact_artifact
+          root = Path("rf26-evidence")
+          environment_id = json.loads((root / "acceptance.json").read_text())["environment_id"]
+          write_exact_artifact(root, source_sha=os.environ["GITHUB_SHA"], run_id=os.environ["GITHUB_RUN_ID"], environment_id=environment_id)
+          verify_exact_artifact(root, source_sha=os.environ["GITHUB_SHA"], run_id=os.environ["GITHUB_RUN_ID"], environment_id=environment_id)
           PY
       - name: H23 upload exact safe set
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
