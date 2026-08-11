@@ -39,6 +39,37 @@ def _stage(data: dict[str, Any], stage_id: str) -> dict[str, Any]:
     return matches[0]
 
 
+def _derive_duplicate_count(raw: dict[str, Any]) -> int:
+    ids = raw.get("work_ids_after_second_scheduler_evaluation")
+    key = raw.get("schedule_key", {})
+    _require(isinstance(ids, list) and isinstance(key, dict) and key.get("work_item_id"), "H13 raw durable identities missing")
+    counts = raw.get("counts")
+    _require(isinstance(counts, dict), "H13 durable boundary counts missing")
+    _require(counts.get("before") == len(raw.get("work_ids_before_scheduler", []))
+             and counts.get("after_first") == len(raw.get("work_ids_after_first_materialization", []))
+             and counts.get("after_second") == len(ids), "H13 durable counts disagree")
+    target = str(key["work_item_id"])
+    return max(0, sum(str(item) == target for item in ids) - 1)
+
+
+def _derive_h15(raw: dict[str, Any]) -> tuple[bool, bool, int, int, int]:
+    _require(isinstance(raw, dict), "H15 raw persistence boundaries missing")
+    for name in ("P1", "P2", "P3", "P4", "P5"):
+        _require(isinstance(raw.get(name), dict), f"H15 boundary missing: {name}")
+    p2, p4, p5 = raw["P2"], raw["P4"], raw["P5"]
+    attempts2 = p2.get("attempts", [])
+    rec4 = p4.get("reconciliations", [])
+    attempts5 = p5.get("attempts", [])
+    _require(isinstance(attempts2, list) and isinstance(rec4, list) and isinstance(attempts5, list), "H15 persistence identities malformed")
+    unknown = any(str(a.get("state", "")).upper() in {"UNKNOWN", "PENDING_RECONCILIATION", "AMBIGUOUS"} for a in attempts2)
+    required = len(rec4) > 0 and any(str(r.get("state", "")).upper() in {"RESOLVED", "COMMITTED", "DELIVERED", "NO_EFFECT_RETRY"} for r in rec4)
+    attempt_ids_unknown = {str(a.get("id")) for a in attempts2 if str(a.get("state", "")).upper() in {"UNKNOWN", "PENDING_RECONCILIATION", "AMBIGUOUS"}}
+    blind = sum(1 for a in attempts5 if str(a.get("id")) not in attempt_ids_unknown and str(a.get("state", "")).upper() in {"PENDING", "SENDING"})
+    effect_ids = [str(a.get("effect_fingerprint")) for a in attempts5 if a.get("effect_fingerprint")]
+    duplicates = len(effect_ids) - len(set(effect_ids))
+    return unknown, required, blind, duplicates, len(effect_ids)
+
+
 def verify_evidence_file(data: dict[str, Any], *, source_sha: str, run_id: str) -> dict[str, Any]:
     _require(data.get("schema_version") == 3, "unsupported RF26 evidence schema")
     _require(data.get("technical_id") == TECHNICAL_ID, "technical identity mismatch")
@@ -96,19 +127,33 @@ def verify_evidence_file(data: dict[str, Any], *, source_sha: str, run_id: str) 
     _require(h12.get("recovery_completed") is True and h12["before"] != h12["after"], "H12 persisted transition missing")
     h13 = _stage(data, "H13_SCHEDULER_RESTART")["observed_outputs"]
     _require(isinstance(h13.get("scheduler_before"), dict) and isinstance(h13.get("scheduler_after"), dict), "H13 process provenance missing")
-    _require(h13["scheduler_before"].get("pid") != h13["scheduler_after"].get("pid") and h13.get("duplicate_scheduling") is False, "H13 proof incomplete")
+    _require(h13["scheduler_before"].get("pid") != h13["scheduler_after"].get("pid"), "H13 process restart proof incomplete")
     _require("mayak.runtime.scheduler" in h13["scheduler_before"].get("argv", []) and "mayak.runtime.scheduler" in h13["scheduler_after"].get("argv", []), "scheduler command provenance missing")
     _require(h13.get("durable_before") != h13.get("durable_after"), "H13 durable transition missing")
+    derived_h13 = _derive_duplicate_count(h13.get("raw_durable_observations", {}))
+    _require(derived_h13 == 0, "H13 duplicate scheduling derived from durable IDs")
+    if "duplicate_scheduling" in h13:
+        _require(h13["duplicate_scheduling"] == derived_h13, "H13 convenience result disagrees with raw derivation")
     h14 = _stage(data, "H14_INTERRUPTED_MIGRATION")["observed_outputs"]
-    for key in ("interrupted_revision", "recovered_revision", "readiness_did_not_pass", "readiness_recovered"):
+    for key in ("interrupted_revision", "recovered_revision", "readiness_did_not_pass", "readiness_recovered", "interruption_hook", "database_revision_observed", "recovery_head"):
         _require(key in h14, f"H14 observation missing: {key}")
-    _require(h14["readiness_did_not_pass"] is True, "interrupted migration falsely passed readiness")
-    _require(h14.get("database_revision_observed") == h14.get("interrupted_revision") and h14.get("interrupted_revision") != h14.get("recovered_revision"), "H14 database observation missing")
+    _require("RF26 deterministic interruption" in str(h14["interruption_hook"]), "H14 deterministic hook identity missing")
+    _require(h14["readiness_did_not_pass"] is True and h14["readiness_recovered"] is True, "H14 readiness proof incomplete")
+    _require(h14.get("database_revision_observed") == h14.get("interrupted_revision", {}).get("revision") and h14.get("interrupted_revision") != h14.get("recovered_revision"), "H14 database observation missing")
+    _require(h14.get("interrupted_revision_is_head") is False and h14.get("recovered_revision") == h14.get("recovery_head"), "H14 exact head recovery missing")
     h15 = _stage(data, "H15_OUTBOX_RECONCILIATION")["observed_outputs"]
-    for key in ("effect_unknown_until_reconciled", "reconciliation_required", "blind_retry_count", "live_provider_calls", "duplicate_external_effect"):
-        _require(key in h15, f"H15 observation missing: {key}")
-    _require(h15["blind_retry_count"] == 0 and h15["live_provider_calls"] == 0 and h15["duplicate_external_effect"] is False, "H15 unsafe reconciliation")
-    _require(isinstance(h15.get("before"), dict) and isinstance(h15.get("after"), dict) and h15.get("projection_changed") is True, "H15 DB transition missing")
+    for key in ("raw_persistence_boundaries", "reconciliation_evidence", "provider_live_calls", "provider_observations"):
+        _require(key in h15, f"H15 raw observation missing: {key}")
+    unknown, required, blind, duplicates, _ = _derive_h15(h15["raw_persistence_boundaries"])
+    _require(unknown and required and blind == 0 and duplicates == 0 and h15["provider_live_calls"] == 0, "H15 unsafe derived reconciliation")
+    providers = h15["provider_observations"]
+    _require(isinstance(providers, list), "H15 provider observations malformed")
+    provider_ids = [str(item.get("attempt_id")) for item in providers if isinstance(item, dict) and item.get("attempt_id")]
+    _require(len(provider_ids) == len(set(provider_ids)), "H15 duplicate provider effect identity")
+    _require(h15.get("before") != h15.get("after"), "H15 persisted transition missing")
+    for key, derived in (("effect_unknown_until_reconciled", unknown), ("reconciliation_required", required), ("blind_retry_count", blind), ("duplicate_external_effect", duplicates)):
+        if key in h15:
+            _require(h15[key] == derived, f"H15 convenience result disagrees: {key}")
     h16 = _stage(data, "H16_RETENTION_RPO_RTO")["observed_outputs"]
     _require(set(h16.get("deleted", [])) == {"expired-verified-inactive"}, "retention deletion classification invalid")
     _require(set(h16.get("preserved", [])) == {"current", "active", "malformed", "tampered", "unverified", "unknown", "symlink"}, "retention preservation classification invalid")

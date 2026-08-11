@@ -91,7 +91,6 @@ jobs:
       - name: H1d deterministic service discovery contract
         run: |
           set -euo pipefail
-          grep -F 'label=com.docker.compose.service=mayak-postgres' .github/workflows/ci-rf26-operability.yml
           grep -F 'docker image inspect' .github/workflows/ci-rf26-operability.yml
       - name: H1e deterministic Docker and Compose client identity
         run: |
@@ -116,20 +115,25 @@ jobs:
           test -x "$RF26_DOCKER_BIN"
           container=""
           for _ in $(seq 1 30); do
-            mapfile -t candidates < <("$RF26_DOCKER_BIN" ps --filter label=com.docker.compose.service=mayak-postgres --format '{{.ID}}')
-            if test "${#candidates[@]}" -eq 1; then
-              candidate="${candidates[0]}"
-              if test "$("$RF26_DOCKER_BIN" inspect --format '{{.State.Health.Status}}' "$candidate")" = healthy; then
-                container="$candidate"
-                break
+            mapfile -t candidates < <("$RF26_DOCKER_BIN" ps --format '{{.ID}}')
+            matching=()
+            for candidate in "${candidates[@]}"; do
+              inspect_json="$("$RF26_DOCKER_BIN" inspect "$candidate")"
+              image_id="$(jq -r '.[0].Image' <<<"$inspect_json")"
+              health="$(jq -r '.[0].State.Health.Status // "none"' <<<"$inspect_json")"
+              aliases="$(jq -r '.[0].NetworkSettings.Networks[]?.Aliases[]?' <<<"$inspect_json")"
+              repo_digests="$("$RF26_DOCKER_BIN" image inspect --format '{{json .RepoDigests}}' "$image_id")"
+              if test "$health" = healthy && grep -Fxq mayak-postgres <<<"$aliases" && grep -Fqx 'postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382' <(jq -r '.[]' <<<"$repo_digests"); then
+                matching+=("$candidate")
               fi
-            fi
+            done
+            if test "${#matching[@]}" -eq 1; then container="${matching[0]}"; break; fi
             sleep 2
           done
           test -n "$container"
-          image_id="$(docker inspect --format '{{.Image}}' "$container")"
-          image_identity="$("$RF26_DOCKER_BIN" image inspect --format '{{json .RepoDigests}}' "$image_id")"
-          test "$image_identity" = '["postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"]'
+          test "$("$RF26_DOCKER_BIN" inspect --format '{{.State.Health.Status}}' "$container")" = healthy
+          test "$("$RF26_DOCKER_BIN" inspect --format '{{.Config.Image}}' "$container")" = 'postgres:18-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382'
+          "$RF26_DOCKER_BIN" inspect "$container" | jq -e '.[0].NetworkSettings.Networks | to_entries | map(.value.Aliases // []) | add | index("mayak-postgres") != null'
           printf 'RF26_POSTGRES_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
       - name: H2 Python 3.14 and frozen dependencies
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b

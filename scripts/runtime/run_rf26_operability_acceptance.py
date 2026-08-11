@@ -200,25 +200,46 @@ def _h12(args: argparse.Namespace, current: dict[str, Any]):
 
 def _h13(args: argparse.Namespace, current: dict[str, Any]):
     item = _run_resilience(args, current)["scenarios"]["scheduler-restart"]
+    before = item["durable_before"]
+    after = item["durable_after"]
+    after_first = item["durable_after_first_materialization"]
+    before_ids = [] if not before.get("work") else [str(before["work"]["work_item_id"])]
+    after_ids = [] if not after.get("work") else [str(after["work"]["work_item_id"])]
+    after_first_ids = [] if not after_first.get("work") else [str(after_first["work"]["work_item_id"])]
+    schedule_key = {"schedule_id": str(item["schedule_id"]), "work_item_id": str(item["work_id"])}
+    raw = {"schedule_key": schedule_key, "work_ids_before_scheduler": before_ids,
+           "work_ids_after_first_materialization": after_first_ids,
+           "work_ids_after_second_scheduler_evaluation": after_ids,
+           "counts": {"before": len(before_ids), "after_first": len(after_ids), "after_second": len(after_ids)}}
     return ({"scheduler_before": {"pid": item["action"]["pid_1"], "argv": ["mayak.runtime.scheduler"]}, "durable_before": item["durable_before"]},
-            {"scheduler_after": {"pid": item["action"]["pid_2"], "argv": ["mayak.runtime.scheduler"]}, "durable_after": item["durable_after"], "identity_changed": item["action"]["pid_1"] != item["action"]["pid_2"], "materialized_work_identity_same": item["work_id"] == item["durable_after"]["work"]["work_item_id"], "duplicate_scheduling": False}, "mayak.runtime.scheduler::durable-materialization-restart")
+            {"scheduler_after": {"pid": item["action"]["pid_2"], "argv": ["mayak.runtime.scheduler"]}, "durable_after": item["durable_after"], "identity_changed": item["action"]["pid_1"] != item["action"]["pid_2"], "materialized_work_identity_same": item["work_id"] == item["durable_after"]["work"]["work_item_id"], "raw_durable_observations": raw, "duplicate_scheduling": 0}, "mayak.runtime.scheduler::durable-materialization-restart")
 
 
 def _h14(args: argparse.Namespace, current: dict[str, Any]):
     dsn = os.environ[args.target_dsn_env]; env = dict(os.environ); env["RF15_MIGRATION_DSN"] = dsn
     subprocess.run([sys.executable, "-m", "alembic", "downgrade", "base"], env=env, check=True, stdout=subprocess.DEVNULL)
-    child = subprocess.Popen([sys.executable, "-m", "alembic", "upgrade", "head"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(.05); child.terminate(); code = child.wait(timeout=10)
-    if code == 0: raise RuntimeError("migration completed before controlled interruption")
     import psycopg
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT version_num FROM mayak.alembic_version")
-            rows = [str(row[0]) for row in cur.fetchall()]
-    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env, check=True, stdout=subprocess.DEVNULL)
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        with conn.cursor() as cur: cur.execute("SELECT version_num FROM mayak.alembic_version"); recovered = [str(row[0]) for row in cur.fetchall()]
-    return ({"database_identity": "task-owned-target", "pre_revision": current["backup"]["source_alembic_revision"], "migration_command": "python -m alembic upgrade head", "interrupted_exit_code": code}, {"interrupted_revision": rows, "database_revision_observed": rows, "readiness_did_not_pass": bool(rows) is False, "recovered_revision": recovered, "readiness_recovered": recovered == [current["backup"]["source_alembic_revision"]]}, "alembic::actual-interrupted-upgrade-and-recovery")
+    def revision() -> list[str]:
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT version_num::text FROM mayak.alembic_version ORDER BY version_num")
+                return [str(row[0]) for row in cur.fetchall()]
+    initial = revision()
+    env.update({"MAYAK_RUNTIME_PROFILE": "synthetic_acceptance", "MAYAK_TECHNICAL_ID": TECHNICAL_ID,
+                "RF26_SYNTHETIC_MIGRATION_INTERRUPT": "1", "RF26_TASK_OWNED_DATABASE": "1",
+                "RF26_MIGRATION_INTERRUPT_BOUNDARY": "after_first_revision"})
+    interrupted = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env, text=True, capture_output=True, check=False)
+    if interrupted.returncode == 0 or "RF26 deterministic interruption after_first_revision" not in (interrupted.stdout + interrupted.stderr):
+        raise RuntimeError("migration did not fail at deterministic RF26 boundary")
+    rows = revision()
+    safe_projection = {"revision": rows, "source": "SELECT version_num FROM mayak.alembic_version"}
+    head = [str(current["backup"]["source_alembic_revision"])]
+    if rows == head: raise RuntimeError("deterministic interruption reached migration head")
+    env["RF26_SYNTHETIC_MIGRATION_INTERRUPT"] = "0"
+    recovered_process = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], env=env, text=True, capture_output=True, check=False)
+    if recovered_process.returncode != 0: raise RuntimeError("migration recovery failed")
+    recovered = revision()
+    return ({"database_identity": "task-owned-target", "initial_revision": initial, "migration_command": "python -m alembic upgrade head", "interrupted_exit_code": interrupted.returncode, "interruption_hook": "RF26 deterministic interruption after_first_revision"}, {"interrupted_revision": safe_projection, "database_revision_observed": rows, "interrupted_revision_is_head": rows == head, "readiness_did_not_pass": rows != head, "recovered_revision": recovered, "recovery_head": head, "readiness_recovered": recovered == head}, "alembic::actual-deterministic-interrupted-upgrade-and-recovery")
 
 
 def _h15(args: argparse.Namespace, current: dict[str, Any]):
@@ -227,7 +248,9 @@ def _h15(args: argparse.Namespace, current: dict[str, Any]):
     if subprocess.run(cmd, check=False).returncode != 0: raise RuntimeError("actual notification reconciliation failed")
     evidence = json.loads(out.read_text(encoding="utf-8")); phases = evidence["phases"]
     before, after = phases["P2"], phases["P5"]
-    return ({"delivery_id": evidence["outbox_id"], "before": before, "operation": "RF24_NOTIFICATION_AMBIGUOUS_SEND current run"}, {"after": after, "effect_unknown_until_reconciled": True, "reconciliation_required": True, "blind_retry_count": 0, "live_provider_calls": evidence["provider_live_calls"], "duplicate_external_effect": False, "projection_changed": before != after}, "notification-delivery::persisted-ambiguous-reconciliation")
+    probes_path = args.output.parent / "rf26-notification-probes.json"
+    probe_data = json.loads(probes_path.read_text(encoding="utf-8")) if probes_path.exists() else {}
+    return ({"delivery_id": evidence["outbox_id"], "operation": "RF24_NOTIFICATION_AMBIGUOUS_SEND current run", "raw_persistence_boundaries": phases}, {"before": before, "after": after, "reconciliation_evidence": evidence["reconciliation_evidence"], "provider_live_calls": evidence["provider_live_calls"], "provider_observations": probe_data.get("observations", []), "raw_persistence_boundaries": phases, "effect_unknown_until_reconciled": True, "reconciliation_required": True, "blind_retry_count": 0, "duplicate_external_effect": False, "projection_changed": before != after}, "notification-delivery::persisted-ambiguous-reconciliation")
 
 
 def _h16(_args: argparse.Namespace, _current: dict[str, Any]):

@@ -7,6 +7,32 @@ import pytest
 from scripts.runtime import verify_rf26_operability_acceptance as verifier
 
 
+def test_rf26_semantic_derivations_ignore_producer_booleans() -> None:
+    assert verifier._derive_duplicate_count({
+        "schedule_key": {"work_item_id": "w"},
+        "work_ids_before_scheduler": [],
+        "work_ids_after_first_materialization": ["w"],
+        "work_ids_after_second_scheduler_evaluation": ["w"],
+        "counts": {"before": 0, "after_first": 1, "after_second": 1},
+    }) == 0
+    raw = {
+        "P1": {"attempts": [{"id": "a", "state": "PENDING_RECONCILIATION"}]},
+        "P2": {"attempts": [{"id": "a", "state": "UNKNOWN", "effect_fingerprint": "e"}]},
+        "P3": {"snapshot": {}},
+        "P4": {"reconciliations": [{"id": "r", "state": "NO_EFFECT_RETRY"}]},
+        "P5": {"attempts": [{"id": "a", "state": "DELIVERED", "effect_fingerprint": "e"}]},
+    }
+    assert verifier._derive_h15(raw)[:4] == (True, True, 0, 0)
+
+
+def test_rf26_runner_has_no_h14_timing_interruption() -> None:
+    source = open("scripts/runtime/run_rf26_operability_acceptance.py", encoding="utf-8").read()
+    h14 = source[source.index("def _h14"):source.index("def _h15")]
+    assert "time.sleep" not in h14
+    assert "terminate()" not in h14
+    assert "RF26_SYNTHETIC_MIGRATION_INTERRUPT" in h14
+
+
 def test_current_c358_fake_pid_receipt_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(verifier, "verify_evidence", lambda *_args, **_kwargs: None)
     now = datetime.now(UTC).isoformat()

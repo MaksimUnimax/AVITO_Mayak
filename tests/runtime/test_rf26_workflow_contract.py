@@ -14,6 +14,16 @@ def test_rf26_complete_substrate_contract_passes() -> None:
     validate(WORKFLOW)
 
 
+def test_rf26_h1f_rejects_compose_label_service_discovery() -> None:
+    broken = WORKFLOW.with_name(".rf26-compose-label-fixture.yml")
+    broken.write_text(WORKFLOW.read_text().replace('ps --format', 'ps --filter label=com.docker.compose.service=mayak-postgres --format'), encoding="utf-8")
+    try:
+        with pytest.raises(ValueError, match="Compose labels"):
+            validate(broken)
+    finally:
+        broken.unlink(missing_ok=True)
+
+
 def test_compose_plugin_is_separately_pinned_and_interface_validated() -> None:
     text = WORKFLOW.read_text()
     assert "docker-compose-linux-x86_64" in text

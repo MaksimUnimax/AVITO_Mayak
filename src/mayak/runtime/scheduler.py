@@ -38,6 +38,13 @@ def run_once(
         made = materialize_due_work(
             composition.scan_repository(session), moment, composition.settings.worker.batch_size
         )
+        emit_process_observation(
+            {
+                "record_type": "scheduler_evaluation",
+                "materialized_count": len(made),
+                "materialized_work_ids": [str(item) for item in made],
+            }
+        )
         if made:
             work = metadata.tables["mayak.scan_work_items"]
             rows = session.execute(

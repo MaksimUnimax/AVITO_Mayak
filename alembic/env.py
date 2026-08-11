@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -17,6 +18,24 @@ if config.config_file_name is not None:
 target_metadata = metadata
 
 
+class RF26SyntheticMigrationInterrupted(RuntimeError):
+    """Deterministic, task-local interruption used only by RF26 acceptance."""
+
+
+def _rf26_interrupt_hook(step: object, heads: object, run_args: dict[str, object]) -> None:
+    del step, heads, run_args
+    if (
+        os.environ.get("MAYAK_RUNTIME_PROFILE") == "synthetic_acceptance"
+        and os.environ.get("MAYAK_TECHNICAL_ID") == "RF26-OBSERVABILITY-BACKUP-RECOVERY-01"
+        and os.environ.get("RF26_SYNTHETIC_MIGRATION_INTERRUPT") == "1"
+        and os.environ.get("RF26_TASK_OWNED_DATABASE") == "1"
+        and os.environ.get("RF26_MIGRATION_INTERRUPT_BOUNDARY") == "after_first_revision"
+    ):
+        raise RF26SyntheticMigrationInterrupted(
+            "RF26 deterministic interruption after_first_revision"
+        )
+
+
 def _configure_kwargs() -> dict[str, object]:
     return {
         "target_metadata": target_metadata,
@@ -26,6 +45,7 @@ def _configure_kwargs() -> dict[str, object]:
         "compare_type": True,
         "compare_server_default": True,
         "transaction_per_migration": True,
+        "on_version_apply": _rf26_interrupt_hook,
     }
 
 

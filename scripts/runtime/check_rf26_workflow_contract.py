@@ -21,7 +21,7 @@ def validate(path: Path) -> None:
         "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=safe.directory",
         "GIT_CONFIG_VALUE_0=%s\\n' \"$workspace\"", "$GITHUB_ENV",
         "git rev-parse --show-toplevel", "git rev-parse HEAD", "git merge-base",
-        "label=com.docker.compose.service=mayak-postgres", "docker image inspect",
+        "docker image inspect", "NetworkSettings.Networks", "mayak-postgres",
         "docker-29.2.1.tgz", "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3",
         "docker-compose-linux-x86_64", "v5.0.2",
         "2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67",
@@ -96,6 +96,26 @@ def validate(path: Path) -> None:
         raise ValueError("mutable ancestor filter is forbidden")
     if "head -n1" in text:
         raise ValueError("arbitrary first-container discovery is forbidden")
+    h1f = text.index("H1f deterministic service discovery and identity")
+    h2 = text.index("H2 Python 3.14")
+    discovery = text[h1f:h2]
+    if "com.docker.compose.service" in discovery or "label=" in discovery:
+        raise ValueError("GitHub Actions service discovery may not use Compose labels")
+    for marker in ("ps --format", "RepoDigests", "healthy", POSTGRES_DIGEST,
+                   "mayak-postgres", "matching", "RF26_POSTGRES_CONTAINER"):
+        if marker not in discovery:
+            raise ValueError(f"H1f topology proof missing: {marker}")
+    if "RF26_DOCKER_BIN" not in discovery:
+        raise ValueError("H1f must use task-local pinned Docker client")
+    h14 = runner_text[runner_text.index("def _h14"):runner_text.index("def _h15")]
+    if any(marker in h14 for marker in ("time.sleep", ".05", "terminate()", "kill()")):
+        raise ValueError("H14 timing-race interruption is forbidden")
+    for marker in (
+        "RF26_SYNTHETIC_MIGRATION_INTERRUPT", "RF26_MIGRATION_INTERRUPT_BOUNDARY",
+        "alembic_version", "recovered_revision",
+    ):
+        if marker not in h14:
+            raise ValueError(f"H14 deterministic contract missing: {marker}")
 
 
 if __name__ == "__main__":
