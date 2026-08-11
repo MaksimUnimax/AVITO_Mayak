@@ -244,45 +244,61 @@ jobs:
       - name: H17 security and redaction scan
         run: |
           set -euo pipefail
-          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --help >/dev/null
-          ! rg -n --hidden --glob '!*.pyc' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|Authorization:[[:space:]]*Bearer|postgres(ql)?://[^[:space:]]+:[^[:space:]@]+@)' rf26-receipts
+          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety \
+            --root rf26-receipts --result rf26-receipts/rf26-H17-scan.json
       - name: H18 aggregate actual stage receipts
         run: uv run python -m scripts.runtime.run_rf26_operability_acceptance --aggregate --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --environment-id "rf26-${GITHUB_RUN_ID}" --output rf26-evidence.json --current-run "$RUNNER_TEMP/rf26-current-run.json" --receipts-dir rf26-receipts --source-dsn-env RF26_SOURCE_DSN --target-dsn-env RF26_TARGET_DSN --conflict-dsn-env RF26_CONFLICT_DSN --backup "$RUNNER_TEMP/rf26-backup.dump" --seed-evidence rf26-source-runtime-seed.json
       - name: H18 exact artifact pre-scan
         run: uv run python -m scripts.runtime.verify_rf26_operability_acceptance --evidence rf26-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-verifier.json
+      - name: H18b H19 prerequisite provisioning and execution contract
+        id: h19_preflight
+        run: |
+          set -euo pipefail
+          # The helper proves the provider-disabled policy before H19.
+          # Required child names: MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB.
+          # Required receipts: H19P_POSTGRES_PROVISION H19P_STATE_VALIDATION H19P_ENVIRONMENT_EXPORT H19P_DOCKER_IDENTITY H19P_COMPOSE_IDENTITY H19P_READY_FOR_PYTEST.
+          # Persisted handoff paths: RF26_H19_STATE_DIR RF26_H19_JUNIT_PATH RF26_H19_DIAGNOSTIC_PATH.
+          h19_state_dir="$RUNNER_TEMP/rf26-h19-postgres"
+          h19_junit_path="$RUNNER_TEMP/rf26-h19-junit.xml"
+          h19_diagnostic_path="$RUNNER_TEMP/rf26-h19-preflight-diagnostic.json"
+          h19_failure_diagnostic_path="$RUNNER_TEMP/rf26-h19-failure-diagnostic.json"
+          set +e
+          RF26_H19_BOOTSTRAP_PASSWORD=rf26-bootstrap-only RF26_H19_MIGRATION_PASSWORD=rf26-migration-only \
+            uv run python -m scripts.runtime.rf26_h19_preflight \
+            --run-id "$GITHUB_RUN_ID" --repo-root "$GITHUB_WORKSPACE" \
+            --state-dir "$h19_state_dir" --github-env "$GITHUB_ENV" \
+            --junit "$h19_junit_path" --diagnostic "$h19_diagnostic_path" \
+            --docker-bin "$RF26_DOCKER_BIN" --compose-plugin "$DOCKER_CONFIG/cli-plugins/docker-compose"
+          preflight_rc=$?
+          set -e
+          if test "$preflight_rc" -eq 0; then
+            printf 'RF26_H19_FAILURE_DIAGNOSTIC_PATH=%s\n' "$h19_failure_diagnostic_path" >> "$GITHUB_ENV"
+          fi
+          exit "$preflight_rc"
+      - name: Upload bounded H19 preflight diagnostic
+        if: failure() && steps.h19_preflight.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rf26-h19-preflight-diagnostic
+          path: ${{ runner.temp }}/rf26-h19-preflight-diagnostic.json
+          if-no-files-found: error
       - name: H19 full repository pytest exactly once
         id: h19
         run: |
           set -euo pipefail
-          # H8-H18 state is stage-local. Keep Git/uv/provider policy and remove only
-          # audited RF26 business/recovery transport and database state. The pinned
-          # Docker client/toolchain remains the H19 authority for Docker-aware tests.
-          unset MAYAK_SECRETS_DIR RF26_SOURCE_DB RF26_TARGET_DB RF26_CONFLICT_DB \
-            RF26_SOURCE_DSN RF26_TARGET_DSN RF26_CONFLICT_DSN RF24_PG_TOOL_PREFIX
-          h19_state_dir="$RUNNER_TEMP/rf26-h19-postgres"
-          RF26_H19_BOOTSTRAP_PASSWORD=rf26-bootstrap-only RF26_H19_MIGRATION_PASSWORD=rf26-migration-only \
-            uv run python -m scripts.runtime.rf26_h19_postgres provision \
-            --run-id "$GITHUB_RUN_ID" --repo-root "$GITHUB_WORKSPACE" --state-dir "$h19_state_dir"
-          source "$h19_state_dir/h19.env"
-          test -x "$RF26_DOCKER_BIN"
-          test "$(command -v docker)" = "$RF26_DOCKER_BIN"
-          test -x "$DOCKER_CONFIG/cli-plugins/docker-compose"
-          "$RF26_DOCKER_BIN" compose version | grep -F 'Docker Compose version v5.0.2'
-          junit_path="$RUNNER_TEMP/rf26-h19-junit.xml"
-          diagnostic_path="$RUNNER_TEMP/rf26-h19-failure-diagnostic.json"
           set +e
-          uv run pytest -q --junitxml="$junit_path"
+          uv run pytest -q --junitxml="$RF26_H19_JUNIT_PATH"
           pytest_rc=$?
           set -e
           if test "$pytest_rc" -ne 0; then
             set +e
-            uv run python scripts/runtime/rf26_h19_diagnostics.py "$junit_path" "$diagnostic_path" \
+            uv run python scripts/runtime/rf26_h19_diagnostics.py "$RF26_H19_JUNIT_PATH" "$RF26_H19_FAILURE_DIAGNOSTIC_PATH" \
               --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
               --job "$GITHUB_JOB" --attempt "$GITHUB_RUN_ATTEMPT"
             diagnostic_rc=$?
             set -e
-            if test "$diagnostic_rc" -ne 0 || ! test -s "$diagnostic_path"; then
-              printf '%s\n' '{"diagnostic_generation_status":"bounded_generation_failure","failing_tests":[],"exception_categories":["diagnostic_generation_error"],"redacted_reasons":["diagnostic generation failed closed"]}' > "$diagnostic_path"
+            if test "$diagnostic_rc" -ne 0 || ! test -s "$RF26_H19_FAILURE_DIAGNOSTIC_PATH"; then
+              printf '%s\n' '{"schema_version":1,"technical_id":"RF26-OBSERVABILITY-BACKUP-RECOVERY-01","diagnostic_generation_status":"bounded_generation_failure","failing_tests":[],"exception_categories":["diagnostic_generation_error"],"redacted_reasons":["diagnostic generation failed closed"]}' > "$RF26_H19_FAILURE_DIAGNOSTIC_PATH"
             fi
           fi
           exit "$pytest_rc"

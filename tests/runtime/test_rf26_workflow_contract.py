@@ -127,7 +127,9 @@ def test_rf26_h19_contract_is_exactly_once_and_failure_gated(tmp_path: Path) -> 
     assert 'exit "$pytest_rc"' in h19
     assert "if: failure() && steps.h19.outcome == 'failure'" in text
     assert "RF26_DOCKER_BIN DOCKER_CONFIG" not in h19
-    assert 'test "$(command -v docker)" = "$RF26_DOCKER_BIN"' in h19
+    assert "command -v docker" not in h19
+    assert "compose version" not in h19
+    assert "rf26_h19_postgres provision" not in h19
     assert "Cleanup dedicated H19 PostgreSQL state" in text
 
     broken = WORKFLOW.with_name(".rf26-h19-exactly-once-fixture.yml")
@@ -149,9 +151,9 @@ def test_rf26_h19_contract_is_exactly_once_and_failure_gated(tmp_path: Path) -> 
 def test_rf26_h19_environment_boundary_is_explicit(tmp_path: Path) -> None:
     text = WORKFLOW.read_text()
     broken = WORKFLOW.with_name(".rf26-h19-environment-fixture.yml")
-    h19_start = text.index("H19 full repository pytest exactly once")
-    broken_text = text[:h19_start] + text[h19_start:].replace(
-        "RF26_SOURCE_DSN", "RF26_SOURCE_DSN_REMOVED", 1
+    preflight_start = text.index("H18b H19 prerequisite provisioning and execution contract")
+    broken_text = text[:preflight_start] + text[preflight_start:].replace(
+        "MAYAK_RF10_POSTGRES_DSN", "MAYAK_RF10_POSTGRES_DSN_REMOVED"
     )
     broken.write_text(broken_text, encoding="utf-8")
     try:

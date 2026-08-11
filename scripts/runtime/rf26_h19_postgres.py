@@ -92,22 +92,9 @@ def provision(*, run_id: str, repo_root: Path, state_dir: Path) -> None:
     state_dir.chmod(0o700)
     migration_role = "mayak_migration"
     migration_password = os.environ["RF26_H19_MIGRATION_PASSWORD"]
-    with _connect("postgres", user="mayak", password=_bootstrap_password()) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (migration_role,))
-            if cursor.fetchone() is None:
-                raise RuntimeError("task-owned migration role is absent")
-            for database in databases:
-                cursor.execute(
-                    sql.SQL("CREATE DATABASE {} OWNER {}").format(
-                        sql.Identifier(database), sql.Identifier(migration_role)
-                    )
-                )
-    for database in databases:
-        with _connect(database, user=migration_role, password=migration_password) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("CREATE SCHEMA mayak AUTHORIZATION CURRENT_USER")
-        _migrate(database, migration_role, migration_password, repo_root)
+    # Establish the exact run-scoped ownership receipt before the first CREATE
+    # DATABASE.  If migration later fails, cleanup can still prove and remove
+    # only these two task-owned names.
     rf11_password = state_dir / "rf11-password"
     rf11_password.write_text(migration_password + "\n", encoding="utf-8")
     rf11_password.chmod(0o600)
@@ -138,6 +125,22 @@ def provision(*, run_id: str, repo_root: Path, state_dir: Path) -> None:
         encoding="utf-8",
     )
     env_file.chmod(0o600)
+    with _connect("postgres", user="mayak", password=_bootstrap_password()) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (migration_role,))
+            if cursor.fetchone() is None:
+                raise RuntimeError("task-owned migration role is absent")
+            for database in databases:
+                cursor.execute(
+                    sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                        sql.Identifier(database), sql.Identifier(migration_role)
+                    )
+                )
+    for database in databases:
+        with _connect(database, user=migration_role, password=migration_password) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("CREATE SCHEMA mayak AUTHORIZATION CURRENT_USER")
+        _migrate(database, migration_role, migration_password, repo_root)
 
 
 def _validated_state(*, run_id: str, state_dir: Path) -> tuple[str, str] | None:

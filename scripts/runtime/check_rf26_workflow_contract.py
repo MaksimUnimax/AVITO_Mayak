@@ -8,9 +8,10 @@ from pathlib import Path
 PYTHON_DIGEST = "sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9"
 POSTGRES_DIGEST = "sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
 STAGES = ("H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16")
-H19_REMOVED_ENV = (
-    "MAYAK_SECRETS_DIR", "RF26_SOURCE_DB", "RF26_TARGET_DB", "RF26_CONFLICT_DB",
-    "RF26_SOURCE_DSN", "RF26_TARGET_DSN", "RF26_CONFLICT_DSN", "RF24_PG_TOOL_PREFIX",
+H19_REQUIRED_ENV = (
+    "MAYAK_RF10_POSTGRES_DSN", "MAYAK_RF11_POSTGRES_PASSWORD_FILE",
+    "MAYAK_RF11_POSTGRES_USER", "MAYAK_RF11_POSTGRES_HOST",
+    "MAYAK_RF11_POSTGRES_PORT", "MAYAK_RF11_POSTGRES_DB",
 )
 
 
@@ -99,41 +100,69 @@ def validate(path: Path) -> None:
             raise ValueError(f"mandatory stage missing: {stage}")
         if not re.search(rf"--stage\s+{re.escape(stage)}", text):
             raise ValueError(f"stage does not have a separate workflow executor: {stage}")
+    h17_start = text.index("H17 security and redaction scan")
+    h18_start = text.index("H18 aggregate actual stage receipts")
+    h17_block = text[h17_start:h18_start]
+    if (
+        "check_rf24_backup_restore_artifact_safety" not in h17_block
+        or "--root rf26-receipts" not in h17_block
+        or "--result rf26-receipts/rf26-H17-scan.json" not in h17_block
+    ):
+        raise ValueError("H17 must use the project-owned fail-closed scanner")
+    if re.search(r"(^|\s)!\s*rg\b|\brg\s", h17_block):
+        raise ValueError("H17 may not use fail-open or undeclared rg authority")
     if "H19 full repository pytest exactly once" not in text:
         raise ValueError("H19 is missing")
+    if "H18b H19 prerequisite provisioning and execution contract" not in text:
+        raise ValueError("H19 preflight gate is missing")
+    preflight_start = text.index("H18b H19 prerequisite provisioning and execution contract")
     h19_start = text.index("H19 full repository pytest exactly once")
     h20_start = text.index("H20-H22 verifier and final safe manifest")
     h19_block = text[h19_start:h20_start]
-    if h19_start < text.index(
-        "H18 exact artifact pre-scan"
-    ):
+    if not text.index("H18 exact artifact pre-scan") < preflight_start < h19_start:
         raise ValueError("H19 precedes H18")
     if h19_block.count("uv run pytest") != 1 or "uv run pytest -q --junitxml=" not in h19_block:
         raise ValueError(
             "H19 must contain exactly one full-suite pytest invocation with JUnit output"
         )
-    if "rf26_h19_diagnostics.py" not in h19_block or "junit_path" not in h19_block:
+    if "rf26_h19_diagnostics.py" not in h19_block or "RF26_H19_JUNIT_PATH" not in h19_block:
         raise ValueError("H19 diagnostic must derive from the single JUnit-producing run")
     if "pytest_rc=$?" not in h19_block or 'exit "$pytest_rc"' not in h19_block:
         raise ValueError("H19 must preserve the original pytest return code")
-    if "unset " not in h19_block or any(
-        not re.search(rf"\b{re.escape(name)}\b", h19_block) for name in H19_REMOVED_ENV
+    if any(
+        marker in h19_block
+        for marker in (
+            "rf26_h19_postgres provision",
+            "source ",
+            "command -v docker",
+            "compose version",
+        )
     ):
-        raise ValueError("H19 environment normalization is not explicit")
+        raise ValueError("ordinary H19 prerequisites must be in the preflight gate")
+    preflight_block = text[preflight_start:h19_start]
     for marker in (
-        "rf26_h19_postgres provision",
-        "source \"$h19_state_dir/h19.env\"",
-        'test "$(command -v docker)" = "$RF26_DOCKER_BIN"',
-        '"$RF26_DOCKER_BIN" compose version',
-        "rf26_h19_postgres cleanup",
+        "scripts.runtime.rf26_h19_preflight", "RF26_H19_BOOTSTRAP_PASSWORD",
+        "H19P_POSTGRES_PROVISION", "H19P_STATE_VALIDATION", "H19P_ENVIRONMENT_EXPORT",
+        "H19P_DOCKER_IDENTITY", "H19P_COMPOSE_IDENTITY", "H19P_READY_FOR_PYTEST",
+        '"$GITHUB_ENV"', "provider-disabled policy", "RF26_H19_JUNIT_PATH",
     ):
-        if marker not in text:
-            raise ValueError(f"H19 prerequisite boundary missing: {marker}")
+        if marker not in preflight_block and marker != "provider-disabled policy":
+            raise ValueError(f"H19 preflight contract missing: {marker}")
+    for name in H19_REQUIRED_ENV:
+        if not re.search(rf"(?<![A-Z0-9_]){re.escape(name)}(?![A-Z0-9_])", preflight_block):
+            raise ValueError(f"H19 environment normalization missing: {name}")
+    if "rf26_h19_postgres cleanup" not in text:
+        raise ValueError("H19 cleanup boundary missing")
     if re.search(r"(?m)^\s*(env|printenv|set)\s*(?:[|>]|$)", h19_block):
         raise ValueError("H19 must not dump the environment")
     diagnostic = text[h19_start:h20_start]
     if "--junitxml" not in diagnostic:
         raise ValueError("H19 machine-readable result material is missing")
+    if (
+        "Upload bounded H19 preflight diagnostic" not in text
+        or "rf26-h19-preflight-diagnostic" not in text
+    ):
+        raise ValueError("H19 preflight diagnostic upload is missing")
     upload_start = text.index("Upload bounded H19 failure diagnostic")
     upload_end = text.index("H20-H22 verifier and final safe manifest")
     upload = text[upload_start:upload_end]
