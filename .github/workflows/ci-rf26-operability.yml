@@ -57,10 +57,13 @@ jobs:
           uv run pytest -q tests/runtime/test_alembic_migration_serialization.py tests/runtime/test_rf24_notification_ambiguous_send.py tests/runtime/test_rf24_readiness_process.py
       - name: H6 affected static gates
         run: uv run ruff check src/mayak/platform src/mayak/entrypoints/api/application.py src/mayak/runtime scripts/runtime/rf26_operability.py tests/runtime/test_rf26_observability_backup.py
-      - name: H7 compose config and build boundary
+      - name: H7a Docker socket boundary
         run: |
           set -euo pipefail
           test -S /var/run/docker.sock
+      - name: H7b Compose config boundary
+        run: |
+          set -euo pipefail
           export MAYAK_SOURCE_SHA="$GITHUB_SHA"
           export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
           export MAYAK_BUILD_INPUT_DIGEST="$(sha256sum Dockerfile compose.yaml | sha256sum | cut -d' ' -f1)"
@@ -72,6 +75,8 @@ jobs:
             chmod 600 "$MAYAK_SECRETS_ROOT/$name"
           done
           docker compose config >/dev/null
+      - name: H7c RF24 workflow boundary
+        run: |
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
       - name: H8-H16 real RF26 scenario runner
         run: |
