@@ -116,6 +116,48 @@ def test_rf26_docker_client_contract_covers_all_downstream_consumers() -> None:
     assert 'RF24_PG_TOOL_PREFIX=%s exec' in text
 
 
+def test_rf26_h19_contract_is_exactly_once_and_failure_gated(tmp_path: Path) -> None:
+    text = WORKFLOW.read_text()
+    h19 = text.split("H19 full repository pytest exactly once", 1)[1].split(
+        "H20-H22 verifier and final safe manifest", 1
+    )[0]
+    assert h19.count("uv run pytest") == 1
+    assert "--junitxml=" in h19
+    assert "rf26_h19_diagnostics.py" in h19
+    assert 'exit "$pytest_rc"' in h19
+    assert "if: steps.h19.outcome == 'failure'" in text
+
+    broken = WORKFLOW.with_name(".rf26-h19-exactly-once-fixture.yml")
+    broken.write_text(
+        text.replace(
+            "uv run python scripts/runtime/rf26_h19_diagnostics.py",
+            "uv run pytest -q",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    try:
+        with pytest.raises(ValueError, match="exactly one"):
+            validate(broken)
+    finally:
+        broken.unlink(missing_ok=True)
+
+
+def test_rf26_h19_environment_boundary_is_explicit(tmp_path: Path) -> None:
+    text = WORKFLOW.read_text()
+    broken = WORKFLOW.with_name(".rf26-h19-environment-fixture.yml")
+    h19_start = text.index("H19 full repository pytest exactly once")
+    broken_text = text[:h19_start] + text[h19_start:].replace(
+        "RF26_SOURCE_DSN", "RF26_SOURCE_DSN_REMOVED", 1
+    )
+    broken.write_text(broken_text, encoding="utf-8")
+    try:
+        with pytest.raises(ValueError, match="environment normalization"):
+            validate(broken)
+    finally:
+        broken.unlink(missing_ok=True)
+
+
 @pytest.mark.parametrize(
     ("needle", "replacement"),
     [

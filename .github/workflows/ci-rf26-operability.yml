@@ -251,7 +251,33 @@ jobs:
       - name: H18 exact artifact pre-scan
         run: uv run python -m scripts.runtime.verify_rf26_operability_acceptance --evidence rf26-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-verifier.json
       - name: H19 full repository pytest exactly once
-        run: uv run pytest -q
+        id: h19
+        run: |
+          set -euo pipefail
+          # H8-H18 state is stage-local. Keep Git/uv/provider policy and remove only
+          # audited RF26 transport, database, secret-directory, and container state.
+          unset MAYAK_SECRETS_DIR RF26_SOURCE_DB RF26_TARGET_DB RF26_CONFLICT_DB \
+            RF26_SOURCE_DSN RF26_TARGET_DSN RF26_CONFLICT_DSN RF24_PG_TOOL_PREFIX \
+            RF26_POSTGRES_CONTAINER RF26_DOCKER_BIN DOCKER_CONFIG
+          junit_path="$RUNNER_TEMP/rf26-h19-junit.xml"
+          diagnostic_path="$RUNNER_TEMP/rf26-h19-failure-diagnostic.json"
+          set +e
+          uv run pytest -q --junitxml="$junit_path"
+          pytest_rc=$?
+          set -e
+          if test "$pytest_rc" -ne 0; then
+            uv run python scripts/runtime/rf26_h19_diagnostics.py "$junit_path" "$diagnostic_path" \
+              --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" \
+              --job "$GITHUB_JOB" --attempt "$GITHUB_RUN_ATTEMPT"
+          fi
+          exit "$pytest_rc"
+      - name: Upload bounded H19 failure diagnostic
+        if: steps.h19.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rf26-h19-failure-diagnostic
+          path: ${{ runner.temp }}/rf26-h19-failure-diagnostic.json
+          if-no-files-found: error
       - name: H20-H22 verifier and final safe manifest
         run: |
           set -euo pipefail

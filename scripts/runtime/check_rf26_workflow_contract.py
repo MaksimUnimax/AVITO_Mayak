@@ -8,6 +8,11 @@ from pathlib import Path
 PYTHON_DIGEST = "sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9"
 POSTGRES_DIGEST = "sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
 STAGES = ("H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16")
+H19_REMOVED_ENV = (
+    "MAYAK_SECRETS_DIR", "RF26_SOURCE_DB", "RF26_TARGET_DB", "RF26_CONFLICT_DB",
+    "RF26_SOURCE_DSN", "RF26_TARGET_DSN", "RF26_CONFLICT_DSN", "RF24_PG_TOOL_PREFIX",
+    "RF26_POSTGRES_CONTAINER", "RF26_DOCKER_BIN", "DOCKER_CONFIG",
+)
 
 
 def validate(path: Path) -> None:
@@ -97,10 +102,41 @@ def validate(path: Path) -> None:
             raise ValueError(f"stage does not have a separate workflow executor: {stage}")
     if "H19 full repository pytest exactly once" not in text:
         raise ValueError("H19 is missing")
-    if text.index("H19 full repository pytest exactly once") < text.index(
+    h19_start = text.index("H19 full repository pytest exactly once")
+    h20_start = text.index("H20-H22 verifier and final safe manifest")
+    h19_block = text[h19_start:h20_start]
+    if h19_start < text.index(
         "H18 exact artifact pre-scan"
     ):
         raise ValueError("H19 precedes H18")
+    if h19_block.count("uv run pytest") != 1 or "uv run pytest -q --junitxml=" not in h19_block:
+        raise ValueError(
+            "H19 must contain exactly one full-suite pytest invocation with JUnit output"
+        )
+    if "rf26_h19_diagnostics.py" not in h19_block or "junit_path" not in h19_block:
+        raise ValueError("H19 diagnostic must derive from the single JUnit-producing run")
+    if "pytest_rc=$?" not in h19_block or 'exit "$pytest_rc"' not in h19_block:
+        raise ValueError("H19 must preserve the original pytest return code")
+    if "unset " not in h19_block or any(
+        not re.search(rf"\b{re.escape(name)}\b", h19_block) for name in H19_REMOVED_ENV
+    ):
+        raise ValueError("H19 environment normalization is not explicit")
+    if re.search(r"(?m)^\s*(env|printenv|set)\s*(?:[|>]|$)", h19_block):
+        raise ValueError("H19 must not dump the environment")
+    diagnostic = text[h19_start:h20_start]
+    if "--junitxml" not in diagnostic:
+        raise ValueError("H19 machine-readable result material is missing")
+    upload_start = text.index("Upload bounded H19 failure diagnostic")
+    upload_end = text.index("H20-H22 verifier and final safe manifest")
+    upload = text[upload_start:upload_end]
+    if "if: steps.h19.outcome == 'failure'" not in upload:
+        raise ValueError("H19 diagnostic upload is not failure-gated")
+    if "rf26-h19-failure-diagnostic" not in upload:
+        raise ValueError("H19 diagnostic artifact name is missing")
+    if "rf26-evidence" in upload or "acceptance" in upload:
+        raise ValueError("H19 diagnostic artifact is treated as acceptance evidence")
+    if "if: always()" in text[h20_start:]:
+        raise ValueError("final RF26 acceptance flow may not bypass H19 failure gating")
     if "--aggregate" in text and text.index("--aggregate") < text.index(
         "H18 aggregate actual stage receipts"
     ):
