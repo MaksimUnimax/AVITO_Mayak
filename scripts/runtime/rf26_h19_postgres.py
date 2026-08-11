@@ -140,8 +140,62 @@ def provision(*, run_id: str, repo_root: Path, state_dir: Path) -> None:
     env_file.chmod(0o600)
 
 
-def cleanup(*, run_id: str, state_dir: Path) -> None:
+def _validated_state(*, run_id: str, state_dir: Path) -> tuple[str, str] | None:
+    """Return owned database names, or classify an actually absent lifecycle."""
+    if not state_dir.is_absolute() or state_dir.is_symlink():
+        raise RuntimeError("RF26 H19 state directory is outside the safe lifecycle boundary")
+    allowed_root_value = os.environ.get("RF26_H19_STATE_ROOT") or os.environ.get("RUNNER_TEMP")
+    if allowed_root_value and state_dir.parent.resolve() != Path(allowed_root_value).resolve():
+        raise RuntimeError("RF26 H19 state directory is outside the allowed root")
+    if not state_dir.exists():
+        return None
+    if not state_dir.is_dir():
+        raise RuntimeError("RF26 H19 state path is not a directory")
     databases = _names(run_id)
+    marker = state_dir / "h19.env"
+    password_file = state_dir / "rf11-password"
+    if (
+        marker.is_symlink()
+        or password_file.is_symlink()
+        or not marker.is_file()
+        or not password_file.is_file()
+    ):
+        raise RuntimeError("RF26 H19 state is partial or malformed")
+    if set(path.name for path in state_dir.iterdir()) != {"h19.env", "rf11-password"}:
+        raise RuntimeError("RF26 H19 state contains unexpected files")
+    values: dict[str, str] = {}
+    for line in marker.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or key in values:
+            raise RuntimeError("RF26 H19 state marker is malformed")
+        values[key] = value
+    expected = {
+        "MAYAK_RF11_POSTGRES_PASSWORD_FILE": str(password_file),
+        "MAYAK_RF11_POSTGRES_USER": "mayak_migration",
+        "RF26_H19_RF10_DB": databases[0],
+        "RF26_H19_RF11_DB": databases[1],
+    }
+    if set(values) != {
+        "MAYAK_RF10_POSTGRES_DSN", "MAYAK_RF11_POSTGRES_PASSWORD_FILE",
+        "MAYAK_RF11_POSTGRES_USER", "MAYAK_RF11_POSTGRES_HOST",
+        "MAYAK_RF11_POSTGRES_PORT", "MAYAK_RF11_POSTGRES_DB",
+        "RF26_H19_RF10_DB", "RF26_H19_RF11_DB",
+    }:
+        raise RuntimeError("RF26 H19 state marker has an unexpected schema")
+    if any(values.get(key) != value for key, value in expected.items()):
+        raise RuntimeError("RF26 H19 state ownership does not match this run")
+    dsn = values.get("MAYAK_RF10_POSTGRES_DSN", "")
+    if not re.search(rf"/\b{re.escape(databases[0])}\b(?:\?|$)", dsn):
+        raise RuntimeError("RF26 H19 RF10 DSN state does not match this run")
+    if not password_file.read_text(encoding="utf-8").strip():
+        raise RuntimeError("RF26 H19 password state is empty")
+    return databases
+
+
+def cleanup(*, run_id: str, state_dir: Path) -> str:
+    databases = _validated_state(run_id=run_id, state_dir=state_dir)
+    if databases is None:
+        return "NOT_PROVISIONED"
     with _connect("postgres", user="mayak", password=_bootstrap_password()) as connection:
         with connection.cursor() as cursor:
             for database in databases:
@@ -157,6 +211,7 @@ def cleanup(*, run_id: str, state_dir: Path) -> None:
     for path in (state_dir / "h19.env", state_dir / "rf11-password"):
         path.unlink(missing_ok=True)
     state_dir.rmdir()
+    return "CLEANED"
 
 
 def main() -> int:
@@ -169,7 +224,8 @@ def main() -> int:
     if args.action == "provision":
         provision(run_id=args.run_id, repo_root=args.repo_root, state_dir=args.state_dir)
     else:
-        cleanup(run_id=args.run_id, state_dir=args.state_dir)
+        classification = cleanup(run_id=args.run_id, state_dir=args.state_dir)
+        print(f"RF26 H19 cleanup classification={classification}")
     return 0
 
 

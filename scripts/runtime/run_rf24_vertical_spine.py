@@ -16,7 +16,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -118,6 +118,9 @@ class SeedLifecycleReporter:
         if isinstance(error, RuntimeConfigurationError):
             diagnostic["reason_code"] = error.reason_code
             diagnostic["canonical_fields"] = list(error.fields)
+        if isinstance(error, ProvenanceConvergenceError):
+            diagnostic["reason_code"] = error.reason_code
+            diagnostic["provenance_evidence"] = _safe_payload(error.details)
         encoded = json.dumps(diagnostic, sort_keys=True, separators=(",", ":"))
         print(f"::error title=RF26 runtime seed {diagnostic['failed_boundary']}::{encoded}", flush=True)
         summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -262,6 +265,15 @@ def _db_provenance(beacon_id: str) -> list[dict[str, object]]:
 
 _RF24_BACKUP_RESTORE_TECHNICAL_ID = "RF24-BACKUP-RESTORE-SCENARIO-01"
 _RF24_MAX_OBSERVATION_RECORDS = 128
+_RF24_PROVENANCE_WAIT_SECONDS = 8.0
+_RF24_PROVENANCE_POLL_SECONDS = 0.1
+
+
+class ProvenanceConvergenceError(RuntimeError):
+    def __init__(self, reason_code: str, message: str, *, details: dict[str, object]) -> None:
+        super().__init__(message)
+        self.reason_code = reason_code
+        self.details = details
 
 
 def _read_jsonl(path: Path, *, process_kind: str, run_id: str) -> list[dict[str, Any]]:
@@ -282,6 +294,117 @@ def _read_jsonl(path: Path, *, process_kind: str, run_id: str) -> list[dict[str,
             raise RuntimeError(f"invalid {process_kind} observation identity")
         rows.append(item)
     return rows
+
+
+def _scan_identity(scan_payload: object, state: str) -> dict[str, str]:
+    matches = [item for item in _run_records(scan_payload) if item.get("state") == state]
+    if len(matches) != 1:
+        raise ProvenanceConvergenceError(
+            "PROVENANCE_IDENTITY_MISMATCH",
+            f"expected exactly one {state} runtime result",
+            details={"state": state, "observed_matches": len(matches)},
+        )
+    item = matches[0]
+    fields = {key: item.get(key) for key in ("run_id", "work_item_id", "beacon_id")}
+    if any(not isinstance(value, str) or not value for value in fields.values()):
+        raise ProvenanceConvergenceError(
+            "PROVENANCE_MALFORMED", f"{state} runtime result identity is malformed",
+            details={"state": state},
+        )
+    return cast(dict[str, str], fields)
+
+
+def _converge_process_provenance(
+    *,
+    scheduler_path: Path,
+    worker_path: Path,
+    run_id: str,
+    expected: dict[str, dict[str, str]],
+    handles: list[tuple[str, subprocess.Popen[str], Path, Any]],
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    deadline_seconds: float = _RF24_PROVENANCE_WAIT_SECONDS,
+    poll_seconds: float = _RF24_PROVENANCE_POLL_SECONDS,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], float]:
+    started = monotonic()
+    deadline = started + deadline_seconds
+    expected_work = {item["work_item_id"] for item in expected.values()}
+
+    def evidence(*, elapsed: float, scheduler: list[dict[str, Any]], worker: list[dict[str, Any]]) -> dict[str, object]:
+        return {
+            "expected_record_kinds": ["scheduler_materialization", "worker_claim", "worker_terminal"],
+            "observed_safe_counts": {
+                "scheduler_materialization": len(scheduler),
+                "worker_claim": sum(item.get("record_type") == "worker_claim" for item in worker),
+                "worker_terminal": sum(item.get("record_type") == "worker_terminal" for item in worker),
+            },
+            "missing_record_kinds": [
+                kind for kind, count in (
+                    ("scheduler_materialization", len(scheduler)),
+                    ("worker_claim", sum(item.get("record_type") == "worker_claim" for item in worker)),
+                    ("worker_terminal", sum(item.get("record_type") == "worker_terminal" for item in worker)),
+                ) if count < 2
+            ],
+            "relevant_work_item_ids": sorted(expected_work),
+            "elapsed_milliseconds": round(elapsed * 1000),
+        }
+
+    while True:
+        elapsed = monotonic() - started
+        for kind, process, log, _ in handles:
+            exit_code = process.poll()
+            if exit_code is not None:
+                raise ProvenanceConvergenceError(
+                    "PROVENANCE_PROCESS_EXIT",
+                    f"{kind} exited during provenance convergence: exit_code={exit_code}",
+                    details={"process_kind": f"mayak-{kind}", "exit_code": exit_code, "elapsed_milliseconds": round(elapsed * 1000)},
+                )
+        scheduler: list[dict[str, Any]] = []
+        worker: list[dict[str, Any]] = []
+        try:
+            if scheduler_path.exists() or scheduler_path.is_symlink():
+                scheduler = [item for item in _read_jsonl(scheduler_path, process_kind="mayak-scheduler", run_id=run_id) if item.get("record_type") == "scheduler_materialization"]
+            if worker_path.exists() or worker_path.is_symlink():
+                worker = _read_jsonl(worker_path, process_kind="mayak-worker", run_id=run_id)
+        except json.JSONDecodeError as error:
+            raise ProvenanceConvergenceError("PROVENANCE_MALFORMED", "malformed provenance JSONL", details=evidence(elapsed=elapsed, scheduler=scheduler, worker=worker)) from error
+        except RuntimeError as error:
+            code = "PROVENANCE_IDENTITY_MISMATCH" if "identity" in str(error) else "PROVENANCE_MALFORMED"
+            raise ProvenanceConvergenceError(code, str(error), details=evidence(elapsed=elapsed, scheduler=scheduler, worker=worker)) from error
+
+        claims = [item for item in worker if item.get("record_type") == "worker_claim"]
+        terminals = [item for item in worker if item.get("record_type") == "worker_terminal"]
+        for record_type, records, required_fields in (
+            ("scheduler_materialization", scheduler, ("schedule_id", "work_item_id", "beacon_id")),
+            ("worker_claim", claims, ("schedule_id", "work_item_id", "beacon_id")),
+            ("worker_terminal", terminals, ("work_item_id", "run_id", "terminal_state")),
+        ):
+            seen: set[tuple[object, ...]] = set()
+            for item in records:
+                if any(not isinstance(item.get(field), str) or not item[field] for field in required_fields):
+                    raise ProvenanceConvergenceError("PROVENANCE_MALFORMED", f"malformed {record_type} observation", details=evidence(elapsed=elapsed, scheduler=scheduler, worker=worker))
+                if record_type == "scheduler_materialization" and (not isinstance(item.get("materialized_count"), int) or isinstance(item["materialized_count"], bool) or item["materialized_count"] < 1):
+                    raise ProvenanceConvergenceError("PROVENANCE_MALFORMED", "malformed scheduler materialization count", details=evidence(elapsed=elapsed, scheduler=scheduler, worker=worker))
+                semantic_key = tuple(item.get(field) for field in required_fields)
+                if semantic_key in seen:
+                    raise ProvenanceConvergenceError("PROVENANCE_IDENTITY_MISMATCH", f"ambiguous duplicate {record_type} observation", details=evidence(elapsed=elapsed, scheduler=scheduler, worker=worker))
+                seen.add(semantic_key)
+        if len(scheduler) == len(claims) == len(terminals) == 2:
+            if len({item.get("work_item_id") for item in scheduler + claims + terminals}) == 2:
+                matched: dict[str, dict[str, Any]] = {}
+                for label, identity in expected.items():
+                    work_item_id = identity["work_item_id"]
+                    scheduler_matches = [item for item in scheduler if item.get("work_item_id") == work_item_id and item.get("schedule_id") == identity["schedule_id"] and item.get("beacon_id") == identity["beacon_id"] and int(item.get("materialized_count", 0)) >= 1]
+                    claim_matches = [item for item in claims if item.get("work_item_id") == work_item_id and item.get("schedule_id") == identity["schedule_id"] and item.get("beacon_id") == identity["beacon_id"]]
+                    terminal_matches = [item for item in terminals if item.get("work_item_id") == work_item_id and item.get("run_id") == identity["run_id"] and item.get("terminal_state") == label]
+                    if len(scheduler_matches) != 1 or len(claim_matches) != 1 or len(terminal_matches) != 1:
+                        raise ProvenanceConvergenceError("PROVENANCE_IDENTITY_MISMATCH", f"provenance identity mismatch for {label}", details=evidence(elapsed=elapsed, scheduler=scheduler, worker=worker))
+                    matched[label] = {"scheduler": scheduler_matches[0], "claim": claim_matches[0], "terminal": terminal_matches[0]}
+                if len(matched) == 2:
+                    return scheduler, worker, elapsed
+        if elapsed >= deadline:
+            raise ProvenanceConvergenceError("PROVENANCE_CONVERGENCE_TIMEOUT", "expected process provenance did not converge before deadline", details=evidence(elapsed=elapsed, scheduler=scheduler, worker=worker))
+        sleep(min(poll_seconds, deadline - monotonic()))
 
 
 def _db_snapshot(account_id: str, beacon_id: str) -> dict[str, object]:
@@ -640,19 +763,28 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
             session_cookie=login._session_cookie,
         )
         reporter.passed(admin.evidence())
-        scheduler_records = [r for r in _read_jsonl(scheduler_observations, process_kind="mayak-scheduler", run_id=run_id) if r.get("record_type") == "scheduler_materialization" and r.get("materialized_count", 0) >= 1]
-        worker_records = _read_jsonl(worker_observations, process_kind="mayak-worker", run_id=run_id)
+        baseline_identity = _scan_identity(scan.payload, "SUCCEEDED_BASELINE")
+        difference_identity = _scan_identity(second.payload, "SUCCEEDED_DIFFERENCE")
+        schedule_id = _json_payload(schedule.payload).get("schedule_id")
+        second_schedule_id = _json_payload(second_schedule.payload).get("schedule_id")
+        if not isinstance(schedule_id, str) or schedule_id != second_schedule_id:
+            raise ProvenanceConvergenceError("PROVENANCE_IDENTITY_MISMATCH", "baseline and difference schedule identities do not match", details={"elapsed_milliseconds": 0})
+        expected_provenance = {
+            "SUCCEEDED_BASELINE": {**baseline_identity, "schedule_id": schedule_id},
+            "SUCCEEDED_DIFFERENCE": {**difference_identity, "schedule_id": schedule_id},
+        }
+        reporter.begin("SEED_T_PROCESS_PROVENANCE", input={"expected": expected_provenance}, derived={"required": 2}, function="run_rf24_vertical_spine:_converge_process_provenance", environment={"process_kinds": ["mayak-worker", "mayak-scheduler"]}, evidence={"observation_identity": "technical_id+acceptance_run_id+process_kind+schedule_id+work_item_id+run_id"})
+        scheduler_records, worker_records, provenance_elapsed = _converge_process_provenance(
+            scheduler_path=scheduler_observations, worker_path=worker_observations,
+            run_id=run_id, expected=expected_provenance, handles=handles,
+        )
         claims = [r for r in worker_records if r.get("record_type") == "worker_claim"]
         terminals = [r for r in worker_records if r.get("record_type") == "worker_terminal"]
-        if len(scheduler_records) < 2 or len(claims) < 2 or len(terminals) < 2:
-            raise RuntimeError("process-originated RF24 provenance is incomplete")
-        reporter.begin("SEED_T_PROCESS_PROVENANCE", input={"scheduler_records": len(scheduler_records), "worker_claims": len(claims), "worker_terminals": len(terminals)}, derived={"required": 2}, function="run_rf24_vertical_spine:_read_jsonl", environment={"process_kinds": ["mayak-worker", "mayak-scheduler"]}, evidence={"observation_identity": "technical_id+run_id+process_kind"})
-        reporter.passed({"scheduler_records": len(scheduler_records), "worker_claims": len(claims), "worker_terminals": len(terminals)})
-        first, second_provenance = scheduler_records[0], scheduler_records[1]
+        reporter.passed({"scheduler_records": len(scheduler_records), "worker_claims": len(claims), "worker_terminals": len(terminals), "elapsed_milliseconds": round(provenance_elapsed * 1000)})
+        first = next(r for r in scheduler_records if r.get("work_item_id") == baseline_identity["work_item_id"])
+        second_provenance = next(r for r in scheduler_records if r.get("work_item_id") == difference_identity["work_item_id"])
         claim_by_work = {r["work_item_id"]: r for r in claims}
         terminal_by_work = {r["work_item_id"]: r for r in terminals}
-        if first["work_item_id"] == second_provenance["work_item_id"]:
-            raise RuntimeError("scheduler did not emit two distinct work IDs")
         durable = _db_provenance(beacon_id)
         durable_by_work = {r["work_item_id"]: r for r in durable}
         for item in (first, second_provenance):
