@@ -214,8 +214,26 @@ def _run_records(scan_payload: object) -> list[dict[str, Any]]:
     return result
 
 
+def _checkout_head(root: Path) -> str:
+    """Read checkout identity with ownership trust scoped to this invocation."""
+    repository_root = root.resolve()
+    return subprocess.check_output(
+        (
+            "git",
+            "-c",
+            f"safe.directory={repository_root}",
+            "-C",
+            str(repository_root),
+            "rev-parse",
+            "HEAD",
+        ),
+        text=True,
+        shell=False,
+    ).strip()
+
+
 def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str) -> None:
-    actual_sha = subprocess.check_output(("git", "-C", str(root), "rev-parse", "HEAD"), text=True).strip()
+    actual_sha = _checkout_head(root)
     if actual_sha != expected_sha:
         raise RuntimeError("wrong source SHA")
     run_id = f"rf24-spine-{uuid4()}"

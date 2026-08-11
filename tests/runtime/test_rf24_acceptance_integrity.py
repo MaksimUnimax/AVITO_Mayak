@@ -28,6 +28,51 @@ SafeResponse = _producer.SafeResponse
 verify = _verifier.verify
 
 
+def test_checkout_head_uses_process_local_exact_safe_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+
+    def fake_check_output(args: tuple[str, ...], **kwargs: object) -> str:
+        calls.append((args, kwargs))
+        return "a" * 40 + "\n"
+
+    monkeypatch.setattr(_producer.subprocess, "check_output", fake_check_output)
+    root = tmp_path / "checkout with spaces"
+    assert _producer._checkout_head(root) == "a" * 40
+    args, kwargs = calls[0]
+    assert args == (
+        "git", "-c", f"safe.directory={root.resolve()}", "-C", str(root.resolve()),
+        "rev-parse", "HEAD",
+    )
+    assert kwargs == {"text": True, "shell": False}
+    assert "safe.directory=*" not in args
+    assert "git config --global" not in " ".join(args)
+
+
+def test_checkout_head_propagates_git_failure_and_produce_fails_closed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def fail_check_output(*args: object, **kwargs: object) -> bytes:
+        raise _producer.subprocess.CalledProcessError(128, args[0])
+
+    monkeypatch.setattr(_producer.subprocess, "check_output", fail_check_output)
+    with pytest.raises(_producer.subprocess.CalledProcessError):
+        _producer._checkout_head(tmp_path / "repo")
+
+
+def test_produce_rejects_wrong_expected_sha_before_runtime_start(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(_producer, "_checkout_head", lambda root: "a" * 40)
+    with pytest.raises(RuntimeError, match="wrong source SHA"):
+        _producer.produce(tmp_path / "repo", tmp_path / "out.json", tmp_path / "probes.json", tmp_path / "log.txt", "b" * 40)
+
+
+def test_source_identity_implementation_is_fail_closed_and_not_global_or_wildcard() -> None:
+    source = Path(_producer.__file__).read_text(encoding="utf-8")
+    assert "safe.directory=*" not in source
+    assert "safe.directory= *" not in source
+    assert "git config --global" not in source
+    assert "shell=True" not in source
+    assert 'f"safe.directory={repository_root}"' in source
+    assert '"source_sha": actual_sha' in source
+
+
 def test_safe_response_never_projects_transport_cookie() -> None:
     response = SafeResponse(200, {"account_id": "synthetic-account", "set_cookie": "fake"}, "fake-cookie")
     evidence = response.evidence()
