@@ -451,7 +451,6 @@ def test_clean_context_uses_exact_command_local_git_trust_and_sanitized_env(
     repo = tmp_path / "repo"
     repo.mkdir()
     for relative in (
-        "Dockerfile",
         ".dockerignore",
         "pyproject.toml",
         "uv.lock",
@@ -463,6 +462,20 @@ def test_clean_context_uses_exact_command_local_git_trust_and_sanitized_env(
     (repo / "src" / "app.py").write_text("app = True\n", encoding="utf-8")
     (repo / "alembic").mkdir()
     (repo / "alembic" / "README").write_text("migration\n", encoding="utf-8")
+    source_tree = Path(__file__).parents[2]
+    shutil.copy2(source_tree / "Dockerfile", repo / "Dockerfile")
+    for relative in (
+        "scripts/runtime/run_rf12_postgres_acceptance.py",
+        "scripts/runtime/verify_rf12_acceptance.py",
+        "scripts/runtime/rf26_operability.py",
+    ):
+        path = repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("safe fixture input\n", encoding="utf-8")
+    assert (
+        rf08_docker_context.validate_copy_contract(repo / "Dockerfile")
+        == rf08_docker_context.COPY_PLAN
+    )
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
     commit_env = {
@@ -500,7 +513,7 @@ def test_clean_context_uses_exact_command_local_git_trust_and_sanitized_env(
 
     def record_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         # check_output delegates to subprocess.run; record only the archive's
-        # direct run so each of the helper's three Git calls appears once.
+        # direct run so each Git invocation appears once.
         if args and args[0] == "git" and kwargs.get("stdout") is not subprocess.PIPE:
             observed.append((args, kwargs.get("env")))  # type: ignore[arg-type]
         return real_run(args, **kwargs)
@@ -518,6 +531,8 @@ def test_clean_context_uses_exact_command_local_git_trust_and_sanitized_env(
         ["-C", str(repo.resolve()), "rev-parse", "HEAD"],
         ["-C", str(repo.resolve()), "rev-parse", "HEAD^{tree}"],
         ["-C", str(repo.resolve()), "archive", "--format=tar", "HEAD"],
+        ["-C", str(repo.resolve()), "ls-files", "--", "src"],
+        ["-C", str(repo.resolve()), "ls-files", "--", "alembic"],
     ]
     for args, env in git_calls:
         assert args[:2] == ["git", "-c"]
