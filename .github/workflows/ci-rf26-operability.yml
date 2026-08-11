@@ -107,17 +107,18 @@ jobs:
           echo '2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67 *docker-compose' | (cd "$compose_plugin_dir" && sha256sum -c -)
           chmod 0755 "$compose_plugin_dir/docker-compose"
           export PATH="$docker_cli_dir:$PATH" DOCKER_CONFIG="$docker_config"
-          printf 'PATH=%s\nDOCKER_CONFIG=%s\n' "$PATH" "$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf 'PATH=%s\nDOCKER_CONFIG=%s\nRF26_DOCKER_BIN=%s\n' "$PATH" "$DOCKER_CONFIG" "$docker_cli_dir/docker" >> "$GITHUB_ENV"
           test "$(docker version --format '{{.Client.Version}}')" = 29.2.1
           test "$(docker compose version)" = 'Docker Compose version v5.0.2'
       - name: H1f deterministic service discovery and identity
         run: |
           set -euo pipefail
-          mapfile -t candidates < <(docker ps --filter label=com.docker.compose.service=mayak-postgres --filter health=healthy --format '{{.ID}}')
+          test -x "$RF26_DOCKER_BIN"
+          mapfile -t candidates < <("$RF26_DOCKER_BIN" ps --filter label=com.docker.compose.service=mayak-postgres --filter health=healthy --format '{{.ID}}')
           test "${#candidates[@]}" -eq 1
           container="${candidates[0]}"
           image_id="$(docker inspect --format '{{.Image}}' "$container")"
-          image_identity="$(docker image inspect --format '{{json .RepoDigests}}' "$image_id")"
+          image_identity="$("$RF26_DOCKER_BIN" image inspect --format '{{json .RepoDigests}}' "$image_id")"
           test "$image_identity" = '["postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"]'
           printf 'RF26_POSTGRES_CONTAINER=%s\n' "$container" >> "$GITHUB_ENV"
       - name: H2 Python 3.14 and frozen dependencies
