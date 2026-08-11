@@ -11,7 +11,6 @@ STAGES = ("H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16")
 H19_REMOVED_ENV = (
     "MAYAK_SECRETS_DIR", "RF26_SOURCE_DB", "RF26_TARGET_DB", "RF26_CONFLICT_DB",
     "RF26_SOURCE_DSN", "RF26_TARGET_DSN", "RF26_CONFLICT_DSN", "RF24_PG_TOOL_PREFIX",
-    "RF26_POSTGRES_CONTAINER", "RF26_DOCKER_BIN", "DOCKER_CONFIG",
 )
 
 
@@ -121,6 +120,15 @@ def validate(path: Path) -> None:
         not re.search(rf"\b{re.escape(name)}\b", h19_block) for name in H19_REMOVED_ENV
     ):
         raise ValueError("H19 environment normalization is not explicit")
+    for marker in (
+        "rf26_h19_postgres provision",
+        "source \"$h19_state_dir/h19.env\"",
+        'test "$(command -v docker)" = "$RF26_DOCKER_BIN"',
+        '"$RF26_DOCKER_BIN" compose version',
+        "rf26_h19_postgres cleanup",
+    ):
+        if marker not in text:
+            raise ValueError(f"H19 prerequisite boundary missing: {marker}")
     if re.search(r"(?m)^\s*(env|printenv|set)\s*(?:[|>]|$)", h19_block):
         raise ValueError("H19 must not dump the environment")
     diagnostic = text[h19_start:h20_start]
@@ -129,7 +137,7 @@ def validate(path: Path) -> None:
     upload_start = text.index("Upload bounded H19 failure diagnostic")
     upload_end = text.index("H20-H22 verifier and final safe manifest")
     upload = text[upload_start:upload_end]
-    if "if: steps.h19.outcome == 'failure'" not in upload:
+    if "if: failure() && steps.h19.outcome == 'failure'" not in upload:
         raise ValueError("H19 diagnostic upload is not failure-gated")
     if "rf26-h19-failure-diagnostic" not in upload:
         raise ValueError("H19 diagnostic artifact name is missing")

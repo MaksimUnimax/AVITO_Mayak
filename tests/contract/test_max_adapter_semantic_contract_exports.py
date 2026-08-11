@@ -69,6 +69,7 @@ ENUMS = [
 RUNTIME_EXPORTS = [
     "MaxAdapterRuntime",
     "MaxDeliveryMappingResult",
+    "MaxNotificationDeliveryMapping",
     "MaxIdentityConflict",
     "MaxIdentityMappingResult",
     "MaxInputRejected",
@@ -78,6 +79,7 @@ RUNTIME_EXPORTS = [
     "MaxReadiness",
     "MaxRuntimeError",
     "max_readiness",
+    "map_transport_result",
     "webhook_authenticity",
     "FakeMaxTransport",
     "HttpxMaxTransport",

@@ -125,7 +125,10 @@ def test_rf26_h19_contract_is_exactly_once_and_failure_gated(tmp_path: Path) -> 
     assert "--junitxml=" in h19
     assert "rf26_h19_diagnostics.py" in h19
     assert 'exit "$pytest_rc"' in h19
-    assert "if: steps.h19.outcome == 'failure'" in text
+    assert "if: failure() && steps.h19.outcome == 'failure'" in text
+    assert "RF26_DOCKER_BIN DOCKER_CONFIG" not in h19
+    assert 'test "$(command -v docker)" = "$RF26_DOCKER_BIN"' in h19
+    assert "Cleanup dedicated H19 PostgreSQL state" in text
 
     broken = WORKFLOW.with_name(".rf26-h19-exactly-once-fixture.yml")
     broken.write_text(

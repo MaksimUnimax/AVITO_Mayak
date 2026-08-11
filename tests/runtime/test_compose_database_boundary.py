@@ -109,6 +109,10 @@ def test_migration_waits_for_postgres_and_bootstrap_completion() -> None:
 
 def test_application_services_have_migration_gate_and_no_elevated_secrets() -> None:
     text = _compose()
+    expected_application_services = {"mayak-api", "mayak-worker", "mayak-scheduler"}
+    assert expected_application_services.issubset(
+        set(re.findall(r"(?m)^  ([a-z0-9-]+):\n", text))
+    )
     for name, secret in (
         ("mayak-api", "mayak_database_application_password_runtime"),
         ("mayak-worker", "mayak_database_application_password_runtime"),
@@ -128,14 +132,23 @@ def test_application_services_have_migration_gate_and_no_elevated_secrets() -> N
             command.group(1),
             re.I,
         )
-    assert text.count("condition: service_completed_successfully") == 4
+    assert (
+        "mayak-migrate:\n        condition: service_completed_successfully"
+        in _section("mayak-backup")
+    )
+    assert text.count("condition: service_completed_successfully") == 5
 
 
 def test_project_isolation_and_exposure_boundaries_remain_closed() -> None:
     text = _compose()
+    expected_services = {
+        "mayak-api", "mayak-worker", "mayak-scheduler", "mayak-postgres",
+        "mayak-db-bootstrap", "mayak-migrate", "mayak-backup", "mayak-restore-check",
+    }
+    assert set(re.findall(r"(?m)^  ([a-z0-9-]+):\n", text)) >= expected_services
     assert text.startswith("name: avito-mayak-acceptance\n")
     assert "avito-mayak-rf08-secret-delivery" not in text
-    assert text.count("profiles: [runtime-foundation]") == 6
+    assert text.count("profiles: [runtime-foundation]") == len(expected_services)
     assert "mayak-postgres" in _compose()
     postgres = _section("mayak-postgres")
     assert "ports:" not in postgres
