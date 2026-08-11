@@ -44,11 +44,14 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: H0/H1 source and immutable identity
+      - name: H0 exact candidate and base identity
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git merge-base HEAD 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d)" = 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d
+      - name: H1 immutable workflow and image pins
+        run: |
+          set -euo pipefail
           grep -Eq 'actions/checkout@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
           grep -Eq 'astral-sh/setup-uv@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
           grep -F 'postgres:18-bookworm@sha256:' compose.yaml
