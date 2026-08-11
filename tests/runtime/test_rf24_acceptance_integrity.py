@@ -81,7 +81,11 @@ def test_provenance_gate_is_fail_closed(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 
 def test_backup_restore_child_authority_is_limited_to_worker_and_scheduler(tmp_path: Path) -> None:
-    base = {"MAYAK_SECRETS_DIR": str(tmp_path)}
+    base = {
+        "MAYAK_SECRETS_DIR": str(tmp_path),
+        "RF24_ACCEPTANCE_HOOKS_ENABLED": "true",
+        "RF24_ACCEPTANCE_TECHNICAL_ID": "RF24-SCAN-RUNTIME-RESILIENCE-SCENARIOS-01-CORRECTIVE-02",
+    }
     for kind in ("worker", "scheduler"):
         child = _producer._child_environment(
             base, source_sha="a" * 40, run_id="run-1", kind=kind,

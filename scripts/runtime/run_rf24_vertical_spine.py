@@ -321,7 +321,16 @@ def _child_environment(
         or any((settings.providers.avito_live_enabled, settings.providers.telegram_enabled, settings.providers.max_enabled, settings.providers.yookassa_enabled, settings.providers.egress_agent_enabled))
     ):
         raise RuntimeError(f"runtime settings preflight failed for mayak-{kind}")
-    return {key: value for key, value in base.items() if not key.startswith("MAYAK_")} | values
+    acceptance_only = {
+        "RF24_ACCEPTANCE_HOOKS_ENABLED",
+        "RF24_ACCEPTANCE_TECHNICAL_ID",
+    }
+    inherited = {
+        key: value
+        for key, value in base.items()
+        if not key.startswith("MAYAK_") and key not in acceptance_only
+    }
+    return inherited | values
 
 
 def _startup_failure(kind: str, process: subprocess.Popen[str], log: Path, phase: str) -> RuntimeError:
