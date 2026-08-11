@@ -58,8 +58,6 @@ from mayak.modules.notification_delivery.source_intake import (
     evaluate_notification_source_intake,
 )
 from mayak.platform.idempotency import IdempotencyFingerprint, IdempotencyKey, IdempotencyScope
-from mayak.runtime.settings import compose_runtime_settings
-from scripts.runtime.run_rf24_vertical_spine import validate_acceptance_secrets_directory
 
 TECHNICAL_ID = "RF24-NOTIFICATION-AMBIGUOUS-SEND-SCENARIO-01"
 
@@ -90,59 +88,16 @@ def _child_environment(
         _child_environment as canonical_child_environment,
     )
 
-    secret_dir = validate_acceptance_secrets_directory(parent.get("MAYAK_SECRETS_DIR", ""))
     database_host = resolve_acceptance_database_host(parent.get("MAYAK_DATABASE_HOST", "postgres"))
     return canonical_child_environment(
-        {key: value for key, value in parent.items() if not key.startswith("MAYAK_")} | {"MAYAK_SECRETS_DIR": str(secret_dir)},
+        {key: value for key, value in parent.items() if not key.startswith("MAYAK_")}
+        | ({"MAYAK_SECRETS_DIR": parent["MAYAK_SECRETS_DIR"]} if "MAYAK_SECRETS_DIR" in parent else {}),
         source_sha=source_sha, run_id=run_id, kind=kind.removeprefix("mayak-"),
         database_host=database_host, database_name=parent.get("MAYAK_DATABASE_NAME", "mayak"),
         port=int(parent.get("MAYAK_API_INTERNAL_PORT", "18080")),
         scheduler_observations=Path(parent.get("RF24_SCHEDULER_OBSERVATIONS", "/tmp/rf24-scheduler.jsonl")),
         worker_observations=Path(parent.get("RF24_WORKER_OBSERVATIONS", "/tmp/rf24-worker.jsonl")),
     )
-    secret_dir = validate_acceptance_secrets_directory(parent.get("MAYAK_SECRETS_DIR", ""))
-    database_host = resolve_acceptance_database_host(parent.get("MAYAK_DATABASE_HOST", "postgres"))
-    values = {
-        "MAYAK_RUNTIME_PROFILE": "synthetic_acceptance",
-        "MAYAK_ENVIRONMENT_ID": run_id,
-        "MAYAK_SOURCE_SHA": source_sha,
-        "MAYAK_LOCK_IDENTITY": "0" * 64,
-        "MAYAK_IMAGE_DIGEST": "sha256:" + "0" * 64,
-        "MAYAK_PROCESS_KIND": kind,
-        "MAYAK_DATABASE_HOST": database_host,
-        "MAYAK_DATABASE_PORT": parent.get("MAYAK_DATABASE_PORT", "5432"),
-        "MAYAK_DATABASE_NAME": parent.get("MAYAK_DATABASE_NAME", "mayak"),
-        "MAYAK_DATABASE_APPLICATION_USER": parent.get(
-            "MAYAK_DATABASE_APPLICATION_USER", "mayak_application"
-        ),
-        "MAYAK_DATABASE_MIGRATION_USER": parent.get(
-            "MAYAK_DATABASE_MIGRATION_USER", "mayak_migration"
-        ),
-        "MAYAK_SECRETS_DIR": str(secret_dir),
-        "MAYAK_API_BIND_HOST": "127.0.0.1",
-        "MAYAK_API_INTERNAL_PORT": parent.get("MAYAK_API_INTERNAL_PORT", "18080"),
-        "MAYAK_API_HOST_PORT": "disabled",
-        "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true",
-        "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
-        "MAYAK_AVITO_LIVE_ENABLED": "false",
-        "MAYAK_TELEGRAM_ENABLED": "false",
-        "MAYAK_TELEGRAM_UPDATE_MODE": "disabled",
-        "MAYAK_MAX_ENABLED": "false",
-        "MAYAK_MAX_UPDATE_MODE": "disabled",
-        "MAYAK_YOOKASSA_ENABLED": "false",
-        "MAYAK_EGRESS_AGENT_ENABLED": "false",
-        "MAYAK_WORKER_POLL_INTERVAL_SECONDS": "1",
-        "MAYAK_WORKER_LEASE_SECONDS": "30",
-        "MAYAK_SCHEDULER_POLL_INTERVAL_SECONDS": "1",
-        "MAYAK_SYNTHETIC_SCENARIO": "usable_listing_page",
-        "MAYAK_SYNTHETIC_SCENARIO_RUN_ID": run_id,
-    }
-    try:
-        compose_runtime_settings(values)
-    except ValueError as exc:
-        fields = getattr(exc, "fields", ("configuration",))
-        raise RuntimeError(f"notification child runtime configuration invalid: fields={tuple(fields)}") from exc
-    return {key: value for key, value in parent.items() if not key.startswith("MAYAK_")} | values
 
 
 def _public_setup(

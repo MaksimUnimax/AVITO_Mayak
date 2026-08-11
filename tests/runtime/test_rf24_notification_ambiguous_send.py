@@ -99,16 +99,22 @@ def test_acceptance_host_resolver_fails_closed(
 @pytest.mark.parametrize("kind", ["mayak-api", "mayak-scheduler", "mayak-worker"])
 def test_child_environment_binds_argument_sha_and_resolved_literal(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     kind: str,
 ) -> None:
     monkeypatch.setattr(runner.socket, "getaddrinfo", lambda *args, **kwargs: _addr("10.0.0.8"))
+    secret_dir = tmp_path / "acceptance-secrets"
+    secret_dir.mkdir(mode=0o700)
+    secret = secret_dir / "mayak_database_application_password"
+    secret.write_text("synthetic-test-only", encoding="utf-8")
+    secret.chmod(0o600)
     parent = {
         "MAYAK_DATABASE_HOST": "postgres",
         "MAYAK_DATABASE_PORT": "5432",
         "MAYAK_DATABASE_NAME": "mayak",
         "MAYAK_DATABASE_APPLICATION_USER": "mayak_application",
         "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
-        "MAYAK_SECRETS_DIR": "/run/secrets",
+        "MAYAK_SECRETS_DIR": str(secret_dir),
         "MAYAK_RF10_POSTGRES_DSN": "must-not-cross-process",
     }
     child = runner._child_environment(parent, "a" * 40, "run-123", kind)
@@ -117,3 +123,13 @@ def test_child_environment_binds_argument_sha_and_resolved_literal(
     assert child["MAYAK_SOURCE_SHA"] == "a" * 40
     assert child["MAYAK_PROCESS_KIND"] == kind
     assert "MAYAK_RF10_POSTGRES_DSN" not in child
+    assert child["MAYAK_SECRETS_DIR"] == str(secret_dir)
+    assert child["MAYAK_API_INTERNAL_PORT"] == "18080"
+    assert child["MAYAK_API_BIND_HOST"] == "127.0.0.1"
+    assert child["MAYAK_TELEGRAM_ENABLED"] == "false"
+    assert child["MAYAK_AVITO_LIVE_ENABLED"] == "false"
+    assert child["MAYAK_MAX_ENABLED"] == "false"
+    assert child["MAYAK_YOOKASSA_ENABLED"] == "false"
+    assert child["MAYAK_EGRESS_AGENT_ENABLED"] == "false"
+    assert all(isinstance(value, str) for value in child.values())
+    assert "synthetic-test-only" not in child.values()

@@ -172,24 +172,53 @@ def test_runtime_seed_uses_selected_port_and_real_modules() -> None:
         assert module in source
 
 
-@pytest.mark.parametrize("case", ["missing", "empty", "symlink", "permissions"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-env",
+        "nonexistent-directory",
+        "directory-symlink",
+        "directory-permissions",
+        "missing-secret",
+        "secret-symlink",
+        "secret-permissions",
+        "empty",
+    ],
+)
 def test_acceptance_secret_boundary_fails_closed(tmp_path: Path, case: str) -> None:
     from scripts.runtime.run_rf24_vertical_spine import _child_environment
 
     directory = tmp_path / "rf26-secrets"
     directory.mkdir(mode=0o700)
     secret = directory / "mayak_database_application_password"
-    if case != "missing":
+    if case not in {
+        "missing-env", "nonexistent-directory", "directory-symlink",
+        "directory-permissions", "missing-secret",
+    }:
         secret.write_text("synthetic-only" if case != "empty" else "", encoding="utf-8")
-        secret.chmod(0o600 if case != "permissions" else 0o644)
-    if case == "symlink":
+        secret.chmod(0o600 if case != "secret-permissions" else 0o644)
+    if case == "secret-symlink":
         secret.unlink()
         target = tmp_path / "target"
         target.write_text("synthetic-only", encoding="utf-8")
         secret.symlink_to(target)
+    if case == "directory-symlink":
+        linked_directory = tmp_path / "linked-secrets"
+        linked_directory.mkdir(mode=0o700)
+        (linked_directory / "mayak_database_application_password").write_text(
+            "synthetic-only", encoding="utf-8"
+        )
+        (linked_directory / "mayak_database_application_password").chmod(0o600)
+        directory.rmdir()
+        directory.symlink_to(linked_directory, target_is_directory=True)
+    if case == "directory-permissions":
+        directory.chmod(0o755)
+    if case == "nonexistent-directory":
+        directory.rmdir()
+    base = {} if case == "missing-env" else {"MAYAK_SECRETS_DIR": str(directory)}
     with pytest.raises(RuntimeError):
         _child_environment(
-            {"MAYAK_SECRETS_DIR": str(directory)}, source_sha="a" * 40,
+            base, source_sha="a" * 40,
             run_id="rf24-test", kind="api",
             database_host="mayak-postgres", database_name="rf26_source_1", port=18081,
             scheduler_observations=tmp_path / "scheduler.jsonl",
