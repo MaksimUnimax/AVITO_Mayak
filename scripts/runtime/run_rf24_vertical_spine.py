@@ -20,7 +20,7 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from mayak.runtime.settings import compose_runtime_settings
+from mayak.runtime.settings import RuntimeConfigurationError, compose_runtime_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +94,9 @@ class SeedLifecycleReporter:
             "process_exit_code": current.get("exit_code"),
             "five_transition_trace": list(self.trace),
         }
+        if isinstance(error, RuntimeConfigurationError):
+            diagnostic["reason_code"] = error.reason_code
+            diagnostic["canonical_fields"] = list(error.fields)
         encoded = json.dumps(diagnostic, sort_keys=True, separators=(",", ":"))
         print(f"::error title=RF26 runtime seed {diagnostic['failed_boundary']}::{encoded}", flush=True)
         summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -377,7 +380,7 @@ def _redact_text(value: object) -> str:
 
 def _child_environment(
     base: dict[str, str], *, source_sha: str, run_id: str, kind: str,
-    database_host: str, database_name: str, port: str,
+    database_host: str, database_name: str, port: int,
     scheduler_observations: Path, worker_observations: Path,
 ) -> dict[str, str]:
     """Build and prove the exact acceptance environment before subprocess spawn."""
@@ -396,7 +399,7 @@ def _child_environment(
         "MAYAK_DATABASE_MIGRATION_USER": "mayak_migration",
         "MAYAK_SECRETS_DIR": base.get("MAYAK_SECRETS_DIR", "/run/secrets"),
         "MAYAK_API_BIND_HOST": "127.0.0.1",
-        "MAYAK_API_INTERNAL_PORT": port,
+        "MAYAK_API_INTERNAL_PORT": str(port),
         "MAYAK_API_HOST_PORT": "disabled",
         "MAYAK_SYNTHETIC_IDENTITY_ENABLED": "true",
         "MAYAK_IDENTITY_ADMIN_BOOTSTRAP_ENABLED": "true",
@@ -429,6 +432,7 @@ def _child_environment(
         or settings.database.name != database_name
         or settings.runtime.process_kind.value != f"mayak-{kind}"
         or settings.api.bind_host != "127.0.0.1"
+        or settings.api.internal_port != port
         or any((settings.providers.avito_live_enabled, settings.providers.telegram_enabled, settings.providers.max_enabled, settings.providers.yookassa_enabled, settings.providers.egress_agent_enabled))
     ):
         raise RuntimeError(f"runtime settings preflight failed for mayak-{kind}")
@@ -441,7 +445,10 @@ def _child_environment(
         for key, value in base.items()
         if not key.startswith("MAYAK_") and key not in acceptance_only
     }
-    return inherited | values
+    child_environment = inherited | values
+    if not all(isinstance(value, str) for value in child_environment.values()):
+        raise RuntimeError("runtime child environment must contain strings only")
+    return child_environment
 
 
 def _startup_failure(kind: str, process: subprocess.Popen[str], log: Path, phase: str) -> RuntimeError:
@@ -484,7 +491,7 @@ def produce(root: Path, output: Path, probes: Path, log: Path, expected_sha: str
         reporter.begin(
             {"api": "SEED_B_API_PROCESS_START", "worker": "SEED_C_WORKER_PROCESS_START", "scheduler": "SEED_D_SCHEDULER_PROCESS_START"}[kind],
             input={"kind": kind, "module": module, "selected_api_port": port}, derived={"process_kind": f"mayak-{kind}", "selected_api_port": port},
-            function=f"subprocess.Popen:{module}", environment={"database_host": database_host, "database_name": database_name, "secrets_dir": base_env.get("MAYAK_SECRETS_DIR")},
+            function=f"subprocess.Popen:{module}", environment={"process_kind": f"mayak-{kind}", "database_host": database_host, "database_name": database_name, "secrets_dir": base_env.get("MAYAK_SECRETS_DIR")},
             evidence={"environment_contract": "canonical_child_environment", "selected_api_port": port},
         )
         target = log.parent / f"rf24-{kind}.log"

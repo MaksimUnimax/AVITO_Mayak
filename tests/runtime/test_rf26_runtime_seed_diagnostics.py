@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from mayak.runtime.settings import RuntimeConfigurationError
 from scripts.runtime.run_rf24_vertical_spine import (
     SeedLifecycleReporter,
     _child_environment,
@@ -34,6 +35,27 @@ def test_runtime_seed_failure_publishes_safe_boundary_and_five_transition_trace(
     assert "secret" not in output
     assert "token" not in output
     assert "Authorization" not in summary.read_text(encoding="utf-8")
+
+
+def test_runtime_configuration_diagnostic_contains_safe_metadata_and_process_kind(
+    monkeypatch, capsys
+) -> None:
+    reporter = SeedLifecycleReporter(source_sha="a" * 40, run_id="rf26-test")
+    reporter.begin(
+        "SEED_B_API_PROCESS_START", input={"kind": "api"}, derived={},
+        function="subprocess.Popen:mayak.runtime.api",
+        environment={"process_kind": "mayak-api"}, evidence={},
+    )
+    reporter.publish_failure(
+        RuntimeConfigurationError("INVALID_CONFIGURATION", ("MAYAK_API_INTERNAL_PORT",))
+    )
+    output = capsys.readouterr().out
+    diagnostic = json.loads(output.split("::", 2)[-1].split("\n", 1)[0])
+    assert diagnostic["reason_code"] == "INVALID_CONFIGURATION"
+    assert diagnostic["canonical_fields"] == ["MAYAK_API_INTERNAL_PORT"]
+    assert diagnostic["affected_process_kind"] == "mayak-api"
+    assert "18080" not in output
+    assert "secret" not in output
 
 
 def test_runtime_seed_boundary_catalog_is_explicit() -> None:
@@ -91,15 +113,44 @@ def test_runtime_port_no_available_port_fails_closed(monkeypatch) -> None:
         select_runtime_api_port(None)
 
 
-def test_selected_port_reaches_all_child_settings(tmp_path: Path) -> None:
+@pytest.mark.parametrize("kind", ["api", "worker", "scheduler"])
+def test_selected_port_reaches_all_child_settings(
+    monkeypatch, tmp_path: Path, kind: str
+) -> None:
+    monkeypatch.setattr(
+        "scripts.runtime.run_rf24_vertical_spine._port_is_bindable",
+        lambda port: True,
+    )
+    selected = select_runtime_api_port("18081")
+    assert isinstance(selected, int)
     settings = _child_environment(
-        {}, source_sha="a" * 40, run_id="rf24-test", kind="api",
-        database_host="mayak-postgres", database_name="rf26_source_1", port="18081",
+        {}, source_sha="a" * 40, run_id="rf24-test", kind=kind,
+        database_host="mayak-postgres", database_name="rf26_source_1", port=selected,
         scheduler_observations=tmp_path / "scheduler.jsonl",
         worker_observations=tmp_path / "worker.jsonl",
     )
     assert settings["MAYAK_API_INTERNAL_PORT"] == "18081"
     assert settings["MAYAK_API_BIND_HOST"] == "127.0.0.1"
+    assert all(isinstance(value, str) for value in settings.values())
+    assert settings["MAYAK_PROCESS_KIND"] == f"mayak-{kind}"
+
+
+def test_selected_port_actual_allocator_shape_is_not_manually_normalized(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        "scripts.runtime.run_rf24_vertical_spine._port_is_bindable",
+        lambda port: True,
+    )
+    selected = select_runtime_api_port(None)
+    assert isinstance(selected, int)
+    settings = _child_environment(
+        {}, source_sha="a" * 40, run_id="rf24-test", kind="api",
+        database_host="mayak-postgres", database_name="rf26_source_1", port=selected,
+        scheduler_observations=tmp_path / "scheduler.jsonl",
+        worker_observations=tmp_path / "worker.jsonl",
+    )
+    assert settings["MAYAK_API_INTERNAL_PORT"] == str(selected)
 
 
 def test_runtime_seed_uses_selected_port_and_real_modules() -> None:

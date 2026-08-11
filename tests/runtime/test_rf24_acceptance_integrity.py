@@ -89,14 +89,14 @@ def test_backup_restore_child_authority_is_limited_to_worker_and_scheduler(tmp_p
     for kind in ("worker", "scheduler"):
         child = _producer._child_environment(
             base, source_sha="a" * 40, run_id="run-1", kind=kind,
-            database_host="mayak-postgres", database_name="mayak", port="18080",
+            database_host="mayak-postgres", database_name="mayak", port=18080,
             scheduler_observations=tmp_path / "scheduler.jsonl", worker_observations=tmp_path / "worker.jsonl",
         )
         assert child["RF24_ACCEPTANCE_HOOKS_ENABLED"] == "true"
         assert child["RF24_ACCEPTANCE_TECHNICAL_ID"] == "RF24-BACKUP-RESTORE-SCENARIO-01"
     api = _producer._child_environment(
         base, source_sha="a" * 40, run_id="run-1", kind="api",
-        database_host="mayak-postgres", database_name="mayak", port="18080",
+        database_host="mayak-postgres", database_name="mayak", port=18080,
         scheduler_observations=tmp_path / "scheduler.jsonl", worker_observations=tmp_path / "worker.jsonl",
     )
     assert "RF24_ACCEPTANCE_HOOKS_ENABLED" not in api
@@ -173,7 +173,7 @@ def test_synthetic_child_settings_preflight_uses_canonical_host_for_all_processe
             kind=kind,
             database_host="mayak-postgres",
             database_name="mayak_rf24_source",
-            port="18080",
+            port=18080,
             scheduler_observations=tmp_path / "scheduler.jsonl",
             worker_observations=tmp_path / "worker.jsonl",
         )
