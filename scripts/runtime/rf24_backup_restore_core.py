@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -40,6 +41,47 @@ RF24_PROJECTION_SCHEMA: dict[str, tuple[str, tuple[str, ...]]] = {
 
 class ProjectionSchemaError(ValueError):
     """Safe, deterministic projection/schema mismatch."""
+
+
+@dataclass(frozen=True, slots=True)
+class CleanTargetState:
+    """Catalog-only state for a database before a logical restore.
+
+    This intentionally has no application projection.  A clean database is a
+    valid recovery state, not a malformed migrated database.
+    """
+
+    phase: str
+    schema_exists: bool
+    project_relations: tuple[str, ...]
+    alembic_head: tuple[str, ...]
+    digest: str
+
+    @property
+    def is_clean(self) -> bool:
+        return not self.schema_exists and not self.project_relations and not self.alembic_head
+
+
+def inspect_clean_target(connection: Any, *, schema: str = "mayak") -> CleanTargetState:
+    """Inspect only PostgreSQL catalogs; never touch an application relation."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name=%s)",
+            (schema,),
+        )
+        schema_exists = bool(cursor.fetchone()[0])
+        cursor.execute(
+            "SELECT c.relname FROM pg_catalog.pg_class c "
+            "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname=%s AND c.relkind IN ('r','p','v','m','S','f') ORDER BY c.relname",
+            (schema,),
+        )
+        relations = tuple(str(row[0]) for row in cursor.fetchall())
+        # Reading the revision value would already be a full-state operation;
+        # catalog presence is the only safe pre-restore Alembic observation.
+        alembic_head = ("<relation-present>",) if "alembic_version" in relations else ()
+    digest = canonical_digest({"schema_exists": schema_exists, "project_relations": relations, "alembic_head": alembic_head})
+    return CleanTargetState("CLEAN_TARGET_PRE_RESTORE", schema_exists, relations, alembic_head, digest)
 
 
 def validate_projection_schema(connection: Any, *, schema: str = "mayak") -> None:
@@ -159,8 +201,26 @@ def verify_evidence(
     require(isinstance(before_replay.get("counts"), dict) and isinstance(after_replay.get("counts"), dict), "replay count proof missing")
     require(replay.get("scope") and replay.get("key") and replay.get("fingerprint"), "replay identity proof missing")
     require(before_replay.get("fingerprint") == after_replay.get("fingerprint"), "replay fingerprint changed")
-    for field in ("beacon_revision_delta", "lifecycle_delta", "notification_delta", "outbox_delta", "provider_effect_delta"):
-        require(replay.get(field) == 0, f"replay duplicate effect observed: {field}")
+    before_counts = before_replay["counts"]
+    after_counts = after_replay["counts"]
+    if before_counts and after_counts:
+        table_fields = {
+            "beacon_delta": "beacon_beacons", "beacon_revision_delta": "beacon_configuration_revisions",
+            "lifecycle_delta": "beacon_lifecycle_events", "notification_delta": "notification_events",
+            "outbox_delta": "notification_outbox", "provider_effect_delta": "notification_delivery_attempts",
+        }
+        for field, table in table_fields.items():
+            before_value = before_counts.get(table, 0)
+            after_value = after_counts.get(table, 0)
+            before_count = before_value.get("count", 0) if isinstance(before_value, dict) else before_value
+            after_count = after_value.get("count", 0) if isinstance(after_value, dict) else after_value
+            expected_delta = int(after_count) - int(before_count)
+            require(replay.get(field) == expected_delta, f"replay delta is not observation-derived: {field}")
+            require(expected_delta == 0, f"replay duplicate effect observed: {field}")
+        require(replay.get("original_beacon_id"), "original Beacon identity missing")
+        require(replay.get("replay_beacon_id") == replay.get("original_beacon_id"), "replay returned a different Beacon")
+        require(replay.get("result", {}).get("beacon_id") == replay.get("original_beacon_id"), "response result identity mismatch")
+        require(replay.get("original_account_id"), "original account identity missing")
     require(replay.get("live_provider_calls") == 0, "replay made a live provider call")
     security = evidence.get("security", {})
     for name, expected in {

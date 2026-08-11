@@ -28,6 +28,7 @@ jobs:
       MAYAK_EGRESS_AGENT_ENABLED: "false"
       DOCKER_HOST: unix:///var/run/docker.sock
       PGPASSWORD: bootstrap-only
+      RF24_PG_DATABASE_ROLE: mayak_migration
     defaults:
       run:
         shell: bash
@@ -63,9 +64,6 @@ jobs:
                   role(cur, "mayak_migration", "migration-only", True)
                   role(cur, "mayak_application", "application-only")
                   cur.execute("ALTER DATABASE mayak OWNER TO mayak_migration")
-          with psycopg.connect("host=mayak-postgres dbname=mayak user=mayak_migration password=migration-only", autocommit=True) as c:
-              with c.cursor() as cur:
-                  cur.execute("CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration")
           PY
           uv run alembic upgrade head
       - name: Create fresh task-owned source and restore databases
@@ -118,10 +116,10 @@ jobs:
               with psycopg.connect(f"host=mayak-postgres dbname={database} user=mayak_migration password=migration-only", autocommit=True) as conn:
                   with conn.cursor() as cur:
                       cur.execute(sql.SQL("GRANT CONNECT ON DATABASE {} TO mayak_application").format(sql.Identifier(database)))
-                      cur.execute("CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration")
-                      cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
-                      cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
-                      cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
+                      if database != target:
+                          cur.execute("GRANT USAGE ON SCHEMA mayak TO mayak_application")
+                          cur.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application")
+                          cur.execute("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application")
           with psycopg.connect(f"host=mayak-postgres dbname={source} user=mayak_application password=application-only") as conn:
               with conn.cursor() as cur:
                   cur.execute("SELECT has_schema_privilege(current_user, 'mayak', 'USAGE'), count(*) FROM mayak.alembic_version")
@@ -129,6 +127,10 @@ jobs:
                   assert usage is True and count > 0
           with psycopg.connect(f"host=mayak-postgres dbname={target} user=mayak_migration password=migration-only") as conn:
               with conn.cursor() as cur:
+                  cur.execute("SELECT EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name='mayak')")
+                  assert cur.fetchone()[0] is False
+                  cur.execute("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='mayak' AND c.relkind IN ('r','p','v','m','S','f')")
+                  assert cur.fetchone()[0] == 0
                   cur.execute("SELECT to_regclass('mayak.alembic_version')")
                   assert cur.fetchone()[0] is None
           PY
@@ -163,6 +165,7 @@ jobs:
       - name: RF24 logical backup, verification, restore and cleanup
         env:
           RF24_APPLICATION_PASSWORD: application-only
+          PGPASSWORD: migration-only
         run: |
           set -euo pipefail
           export RF24_SOURCE_DSN="postgresql://mayak_migration:migration-only@mayak-postgres:5432/${SOURCE_DB}"

@@ -86,6 +86,10 @@ def validate(path: Path) -> None:
         raise ValueError("SOURCE application grant contract missing")
     if re.search(r"TARGET_DB.*alembic upgrade|target_db.*alembic upgrade", text, re.I):
         raise ValueError("TARGET is pre-migrated before clean proof")
+    if re.search(r"(?:target|TARGET)[^\n]{0,180}CREATE SCHEMA|CREATE SCHEMA[^\n]{0,180}(?:target|TARGET)", text, re.I):
+        raise ValueError("TARGET application schema is created before restore")
+    if "if database != target:" not in text:
+        raise ValueError("target grants are not phase guarded")
     if re.search(r"docker\s+exec\s+postgres\b", text):
         raise ValueError("ambiguous docker exec postgres binding")
     if not re.search(r"services:\s*\n\s+mayak-postgres:\s*\n", text):
@@ -104,6 +108,12 @@ def validate(path: Path) -> None:
             or "reestablish_application_authority" not in runner
             or '"runtime_read_proof"' not in runner):
         raise ValueError("negative controls lack execution-derived proof")
+    if "database_tool_role_args" not in runner or "--username" not in runner:
+        raise ValueError("backup/restore database role is implicit")
+    if "inspect_clean_target" not in runner or "CLEAN_TARGET_PRE_RESTORE" not in runner:
+        raise ValueError("clean-target catalog phase is missing")
+    if '"beacon_revision_delta": 0' in runner or '"lifecycle_delta": 0' in runner:
+        raise ValueError("replay deltas are fabricated constants")
     if '"seeded_state_classes"' in runner or 'RF24_SEED_PROOF' in runner:
         raise ValueError("seed proof must come from the runtime producer")
     if "SELECT version()" not in runner or '"postgres_server_version"' not in runner:

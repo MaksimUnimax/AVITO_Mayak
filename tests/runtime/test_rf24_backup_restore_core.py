@@ -10,6 +10,7 @@ from scripts.runtime.rf24_backup_restore_core import (
     RF24_PROJECTION_SCHEMA,
     ProjectionSchemaError,
     build_manifest,
+    inspect_clean_target,
     scan_paths,
     validate_projection_schema,
     verify_evidence,
@@ -85,6 +86,19 @@ def test_verifier_rejects_fabricated_minimal_replay(field: str) -> None:
     value["idempotency_replay"] = good()["idempotency_replay"]
     del value["idempotency_replay"][field]
     with pytest.raises(ValueError):
+        verify_evidence(value, source_sha=SHA, run_id="123")
+
+
+def test_verifier_recomputes_nonzero_effect_from_observed_counts() -> None:
+    value = good()
+    replay = value["idempotency_replay"]
+    replay["before"] = {"fingerprint": "x", "counts": {"beacon_beacons": 1}}
+    replay["after"] = {"fingerprint": "x", "counts": {"beacon_beacons": 2}}
+    replay["original_beacon_id"] = "beacon-1"
+    replay["replay_beacon_id"] = "beacon-1"
+    replay["original_account_id"] = "account-1"
+    replay["result"]["beacon_id"] = "beacon-1"
+    with pytest.raises(ValueError, match="observation-derived"):
         verify_evidence(value, source_sha=SHA, run_id="123")
 
 
@@ -185,6 +199,41 @@ def test_projection_schema_contract_fails_closed_for_missing_column() -> None:
     rows = [row for row in _schema_rows() if row != ("beacon_lifecycle_events", "causation_reference")]
     with pytest.raises(ProjectionSchemaError, match=r"beacon_lifecycle_events\.causation_reference"):
         validate_projection_schema(_Connection(rows))
+
+
+class _CatalogCursor:
+    def __init__(self) -> None:
+        self._result: list[tuple[object, ...]] = []
+
+    def __enter__(self) -> "_CatalogCursor":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+    def execute(self, query: str, _: object) -> None:
+        if "information_schema.schemata" in query:
+            self._result = [(False,)]
+        elif "pg_catalog.pg_class" in query:
+            self._result = []
+
+    def fetchone(self) -> tuple[object, ...]:
+        return self._result[0]
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return self._result
+
+
+class _CatalogConnection:
+    def cursor(self) -> _CatalogCursor:
+        return _CatalogCursor()
+
+
+def test_clean_target_inspection_is_catalog_only_and_strictly_empty() -> None:
+    state = inspect_clean_target(_CatalogConnection())
+    assert state.phase == "CLEAN_TARGET_PRE_RESTORE"
+    assert state.is_clean
+    assert state.project_relations == ()
 
 
 def test_lifecycle_projection_uses_lifecycle_columns_and_revision_history_has_its_owner() -> None:
