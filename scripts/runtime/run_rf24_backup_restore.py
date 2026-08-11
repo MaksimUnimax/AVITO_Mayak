@@ -339,7 +339,7 @@ def main() -> None:
     try:
         run_binary_to_file(tool("pg_dump", "--format=custom", "--no-owner", "--no-acl", source_tool_dsn), a.backup, env=env)
         digest = hashlib.sha256(a.backup.read_bytes()).hexdigest()
-        listing = run_with_archive(tool("pg_restore", "--list", "-"), a.backup, env=env)
+        listing = run_with_archive(tool("pg_restore", "--list"), a.backup, env=env)
         if not all(marker in listing for marker in ("TABLE", "SCHEMA", "alembic_version")):
             raise SystemExit("backup inventory is incomplete")
         source_revision = ",".join(before["alembic_head"])
@@ -358,7 +358,7 @@ def main() -> None:
         raw = bytearray(corrupt.read_bytes()); raw[-1] ^= 0xFF; corrupt.write_bytes(raw)
         corrupt_listing = ""
         try:
-            corrupt_listing = run_with_archive(tool("pg_restore", "--list", "-"), corrupt, env=env)
+            corrupt_listing = run_with_archive(tool("pg_restore", "--list"), corrupt, env=env)
         except subprocess.CalledProcessError:
             pass
         control("corrupt_copy", corrupt, digest, source_revision, target, archive_listing=corrupt_listing)
@@ -368,7 +368,7 @@ def main() -> None:
         conflict = snapshot(conflict_conn)
         control("nonempty_newer_target", a.backup, digest, source_revision, conflict)
         restore_preflight(archive=a.backup, expected_digest=digest, source_sha=a.source_sha, actual_source_sha=a.source_sha, source_revision=source_revision, expected_source_revision=source_revision, target_state=target, target_identity=target_identity, source_identity=source_identity, restore_list=listing)
-        run_with_archive(tool("pg_restore", "--no-owner", "--no-acl", "--dbname", target_tool_dsn, "-"), a.backup, env=env)
+        run_with_archive(tool("pg_restore", "--no-owner", "--no-acl", "--dbname", target_tool_dsn), a.backup, env=env)
         reestablish_application_authority(target_conn)
         target = snapshot(target_conn)
         after = snapshot(source_conn)
