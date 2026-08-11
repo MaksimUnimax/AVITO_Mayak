@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Production-shaped durable Scan worker process for Module 06."""
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from mayak.modules.scan_orchestration.services import (
     validate_cadence,
 )
 from mayak.persistence.metadata import metadata
+from mayak.platform.observability import configure_logging, emit
 from mayak.runtime.rf24_composition import RF24RuntimeComposition, build_rf24_composition
 from mayak.runtime.rf24_provenance import _authorized_technical_id, emit_process_observation
 from mayak.runtime.settings import load_runtime_settings
@@ -130,12 +132,7 @@ def process_once(
             target_work_item_id=target_work_item_id,
         )
         processed = 0
-        LOGGER.info(
-            "worker process=%s claims=%d work_item_ids=%s",
-            "mayak-worker",
-            len(claims),
-            ",".join(str(item.work_item_id) for item in claims) or "none",
-        )
+        emit(LOGGER, operation="worker.claim", outcome="success", reason_code="CLAIM_COMPLETED", work_item_id=str(claims[0].work_item_id) if claims else None, claim_count=len(claims))
         for claim in claims:
             emit_process_observation(
                 {
@@ -400,10 +397,11 @@ def main() -> None:
     settings = load_runtime_settings()
     if settings.runtime.process_kind.value != "mayak-worker":
         raise RuntimeError("invalid process kind")
-    logging.basicConfig(level=settings.observability.log_level.value, force=True)
+    configure_logging(settings.observability.log_level.value)
     shutdown = Shutdown()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
+    emit(LOGGER, operation="process.start", outcome="success", reason_code="PROCESS_STARTED")
     emit_process_observation({"record_type": "worker_process_started"})
     composition = build_rf24_composition(settings)
     try:
@@ -415,7 +413,7 @@ def main() -> None:
     finally:
         emit_process_observation({"record_type": "worker_process_stopped"})
         composition.close()
-        LOGGER.info("worker process stopped")
+        emit(LOGGER, operation="process.stop", outcome="success", reason_code="PROCESS_STOPPED")
 
 
 if __name__ == "__main__":

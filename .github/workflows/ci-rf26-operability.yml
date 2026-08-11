@@ -1,0 +1,68 @@
+name: RF26 operability
+
+on:
+  push:
+    branches: [rf26-observability-backup-recovery-01]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rf26:
+    runs-on: ubuntu-24.04
+    container: python:3.14.6-bookworm
+    services:
+      mayak-postgres:
+        image: postgres:18-bookworm
+        env: {POSTGRES_DB: mayak, POSTGRES_USER: mayak, POSTGRES_PASSWORD: acceptance-only}
+        options: >-
+          --health-cmd "pg_isready -U mayak -d mayak"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      UV_VERSION: 0.11.31
+      MAYAK_AVITO_LIVE_ENABLED: "false"
+      MAYAK_TELEGRAM_ENABLED: "false"
+      MAYAK_MAX_ENABLED: "false"
+      MAYAK_YOOKASSA_ENABLED: "false"
+      MAYAK_EGRESS_AGENT_ENABLED: "false"
+    defaults: {run: {shell: bash}}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {fetch-depth: 0, ref: ${{ github.sha }}}
+      - name: Source and toolchain identity
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git merge-base --is-ancestor 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d "$GITHUB_SHA"
+          python --version | grep -E '^Python 3\.14\.'
+          test "${UV_VERSION}" = 0.11.31
+          test "$MAYAK_AVITO_LIVE_ENABLED" = false
+          test "$MAYAK_TELEGRAM_ENABLED" = false
+          test "$MAYAK_MAX_ENABLED" = false
+          test "$MAYAK_YOOKASSA_ENABLED" = false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with: {version: ${{ env.UV_VERSION }}}
+      - name: Frozen dependency sync
+        run: uv sync --frozen --all-groups
+      - name: Focused observability, correlation, backup and recovery gates
+        run: |
+          set -euo pipefail
+          uv run pytest -q tests/runtime/test_rf26_observability_backup.py tests/runtime/test_rf24_backup_restore_core.py
+          uv run ruff check src/mayak/platform/observability.py src/mayak/entrypoints/api/application.py src/mayak/runtime/api.py src/mayak/runtime/worker.py src/mayak/runtime/scheduler.py scripts/runtime/rf26_operability.py tests/runtime/test_rf26_observability_backup.py
+          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --help >/dev/null
+      - name: Compose and PostgreSQL boundary
+        run: |
+          uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
+          grep -q 'postgres:18-bookworm' compose.yaml
+          ! grep -qE 'ports:.*5432' compose.yaml
+      - name: Final repository pytest (exactly once)
+        run: uv run pytest -q
+      - name: Safe RF26 evidence manifest
+        run: |
+          set -euo pipefail
+          mkdir -p rf26-evidence
+          printf '{"technical_id":"RF26-OBSERVABILITY-BACKUP-RECOVERY-01","source_sha":"%s","raw_backup_uploaded":false,"live_provider_calls":0}\n' "$GITHUB_SHA" > rf26-evidence/summary.json
+          sha256sum rf26-evidence/summary.json > rf26-evidence/manifest.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with: {name: rf26-safe-evidence-${{ github.sha }}, path: rf26-evidence/}

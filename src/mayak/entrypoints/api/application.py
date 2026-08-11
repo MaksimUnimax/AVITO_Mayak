@@ -1,9 +1,11 @@
+# ruff: noqa: E501
 """FastAPI transport boundary for RF23."""
 
 from __future__ import annotations
 
 import logging
 import platform
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Any, Iterator
@@ -17,6 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from mayak.contracts.idempotency import IdempotencyKey
 from mayak.modules.identity_and_access.contracts import SyntheticAcceptanceLoginRequest
 from mayak.platform.correlation import CorrelationContext, CorrelationId
+from mayak.platform.correlation_context import correlation_context_scope
+from mayak.platform.observability import correlation_id, emit
 from mayak.runtime.rf23_composition import (
     CustomerSessionReference,
     RF23Composition,
@@ -82,6 +86,10 @@ def create_app(
 
     @app.middleware("http")
     async def cookie_mutation_same_origin(request: Request, call_next: Any) -> Response:
+        selected_correlation_id = correlation_id(request.headers.get("X-Correlation-ID"))
+        request.state.correlation_id = selected_correlation_id
+        started = time.monotonic()
+        context = CorrelationContext(correlation_id=CorrelationId(value=selected_correlation_id))
         unsafe = request.method not in {"GET", "HEAD", "OPTIONS"}
         protected = (
             request.url.path.startswith("/api/v1/")
@@ -107,8 +115,18 @@ def create_app(
                 and origin == expected
             )
             if not valid:
-                return JSONResponse({"detail": "same-origin required"}, status_code=403)
-        return await call_next(request)
+                response = JSONResponse({"detail": "same-origin required"}, status_code=403)
+                response.headers["X-Correlation-ID"] = selected_correlation_id
+                return response
+        with correlation_context_scope(context):
+            try:
+                response = await call_next(request)
+            except Exception:
+                emit(LOGGER, operation="http.request", outcome="failure", reason_code="UNHANDLED_EXCEPTION", correlation_id=selected_correlation_id, latency_ms=round((time.monotonic() - started) * 1000, 3))
+                raise
+        response.headers["X-Correlation-ID"] = selected_correlation_id
+        emit(LOGGER, operation="http.request", outcome="success" if response.status_code < 400 else "rejected", reason_code="HTTP_COMPLETED", correlation_id=selected_correlation_id, latency_ms=round((time.monotonic() - started) * 1000, 3))
+        return response
 
     @contextmanager
     def db() -> Iterator[Any]:
@@ -142,6 +160,30 @@ def create_app(
     @app.get("/health/live", tags=["health"])
     def live() -> dict[str, str]:
         return {"status": "live"}
+
+    @app.get("/health/diagnostics", tags=["health"])
+    def diagnostics() -> dict[str, Any]:
+        migration_head = composition.expected_migration_head()
+        observed: str | None = None
+        readiness_state = "unknown"
+        try:
+            with db() as session:
+                inspection = composition.migration_inspection(session)
+            observed = inspection.observed_revision
+            readiness_state = "ready" if inspection.structurally_valid and observed == migration_head else "not_ready"
+        except Exception:
+            readiness_state = "not_ready"
+        return {
+            "environment_id": settings.build.environment_id,
+            "source_sha": settings.build.source_sha,
+            "process_kind": settings.runtime.process_kind.value,
+            "runtime_profile": settings.runtime.profile.value,
+            "readiness_state": readiness_state,
+            "migration_revision": observed,
+            "migration_head": migration_head,
+            "providers": {"telegram": "enabled" if settings.providers.telegram_enabled else "disabled", "max": "enabled" if settings.providers.max_enabled else "disabled"},
+            "telemetry": "enabled" if settings.observability.otel_enabled else "disabled",
+        }
 
     @app.get("/health/ready", tags=["health"])
     def ready() -> JSONResponse:

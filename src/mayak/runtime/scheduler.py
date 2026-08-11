@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Production-shaped durable scheduler process for Module 06."""
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from sqlalchemy import select
 
 from mayak.modules.scan_orchestration.services import materialize_due_work
 from mayak.persistence.metadata import metadata
+from mayak.platform.observability import configure_logging, emit
 from mayak.runtime.rf24_composition import RF24RuntimeComposition, build_rf24_composition
 from mayak.runtime.rf24_provenance import emit_process_observation
 from mayak.runtime.settings import load_runtime_settings
@@ -53,12 +55,7 @@ def run_once(
                         "due_at": row["due_at"].isoformat(),
                     }
                 )
-        message = (
-            f"scheduler process=mayak-scheduler materialized={len(made)} "
-            f"work_item_ids={','.join(str(item) for item in made) or 'none'}"
-        )
-        LOGGER.info(message)
-        print(message, flush=True)
+        emit(LOGGER, operation="scheduler.materialize", outcome="success", reason_code="MATERIALIZATION_COMPLETED", work_item_id=str(made[0]) if made else None, materialized_count=len(made))
     return len(made)
 
 
@@ -66,10 +63,11 @@ def main() -> None:
     settings = load_runtime_settings()
     if settings.runtime.process_kind.value != "mayak-scheduler":
         raise RuntimeError("invalid process kind")
-    logging.basicConfig(level=settings.observability.log_level.value, force=True)
+    configure_logging(settings.observability.log_level.value)
     shutdown = Shutdown()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
+    emit(LOGGER, operation="process.start", outcome="success", reason_code="PROCESS_STARTED")
     emit_process_observation({"record_type": "scheduler_process_started"})
     composition = build_rf24_composition(settings)
     try:
@@ -82,7 +80,7 @@ def main() -> None:
     finally:
         emit_process_observation({"record_type": "scheduler_process_stopped"})
         composition.close()
-        LOGGER.info("scheduler process stopped")
+        emit(LOGGER, operation="process.stop", outcome="success", reason_code="PROCESS_STOPPED")
 
 
 if __name__ == "__main__":

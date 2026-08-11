@@ -37,6 +37,14 @@ from mayak.platform.idempotency import (
     IdempotencyKey,
     IdempotencyScope,
 )
+from mayak.platform.observability import (
+    JsonOperationalFormatter,
+    configure_logging,
+    correlation_id,
+    emit,
+    operational_context,
+    safe_identifier,
+)
 from mayak.platform.process import ProcessCompositionMetadata, ProcessRole
 from mayak.platform.readiness import DependencyReadiness, DependencyReadinessStatus
 from mayak.platform.redaction import REDACTED_VALUE, RedactedValue, redact_sensitive_value
@@ -75,6 +83,12 @@ __all__ = [
     "REDACTED_VALUE",
     "ProcessCompositionMetadata",
     "ProcessRole",
+    "JsonOperationalFormatter",
+    "configure_logging",
+    "correlation_id",
+    "emit",
+    "operational_context",
+    "safe_identifier",
     "MODULE_ID",
     "MODULE_IDS",
     "RedactedValue",
