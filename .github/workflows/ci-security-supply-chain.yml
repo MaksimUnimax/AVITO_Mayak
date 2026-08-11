@@ -2,7 +2,7 @@ name: CI Security and Supply Chain Foundation
 
 on:
   push:
-    branches: [main]
+    branches: [main, rf25-security-privacy-supply-chain-01]
   pull_request:
   workflow_dispatch:
 
