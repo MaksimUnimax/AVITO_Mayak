@@ -50,7 +50,7 @@ jobs:
           grep -F 'postgres:18-bookworm@sha256:' compose.yaml
           container="$(docker ps --filter name=mayak-postgres --format '{{.ID}}' | head -n1)"
           test -n "$container"
-          docker inspect --format '{{json .RepoDigests}}' "$container" | grep -F 'postgres@sha256:1961f96e6029a02c3812d7cb329a3b03a3acbb067058dec17b0f5596aca9296'
+          docker inspect --format '{{json .RepoDigests}}' "$container" | grep -F 'postgres@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382'
       - name: H2 Python 3.14 and frozen dependencies
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
         with:
