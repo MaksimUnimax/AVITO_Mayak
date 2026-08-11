@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -19,26 +20,44 @@ from typing import Any, Callable
 TECHNICAL_ID = "RF26-OBSERVABILITY-BACKUP-RECOVERY-01"
 RETENTION_DAYS = 7
 FORMAT = "mayak-rf26-logical-backup"
+_MANIFEST_KEYS = {"technical_id", "format", "backup_id", "environment_id", "source_sha", "migration_revision", "postgres_tool_identity", "created_at", "logical_format", "size", "sha256", "verification", "verified_at", "retention_expiry"}
+
+
+def _absolute_without_resolution(path: Path) -> Path:
+    return path.expanduser() if path.is_absolute() else Path.cwd() / path
 
 
 def canonical_root(root: Path) -> Path:
-    root = root.expanduser().resolve(strict=False)
-    root.mkdir(parents=True, exist_ok=True)
-    if root.is_symlink():
+    """Return the project root only after checking every existing component."""
+    candidate = _absolute_without_resolution(root)
+    current = Path(candidate.anchor)
+    for part in candidate.parts[1:]:
+        current /= part
+        if current.exists() and current.is_symlink():
+            raise ValueError("backup root path must not cross a symlink")
+    resolved = candidate.resolve(strict=False)
+    resolved.mkdir(parents=True, exist_ok=True)
+    if resolved.is_symlink():
         raise ValueError("backup root must not be a symlink")
-    return root
+    return resolved
 
 
 def owned_path(root: Path, candidate: Path) -> Path:
     root = canonical_root(root)
-    resolved = candidate.resolve(strict=False)
-    if resolved == root or root not in resolved.parents:
+    raw = _absolute_without_resolution(candidate)
+    if raw == root:
+        raise ValueError("root itself is not an owned set")
+    relative = raw.relative_to(root) if raw.is_relative_to(root) else None
+    if relative is None:
         raise ValueError("path escapes project backup root")
     current = root
-    for part in resolved.relative_to(root).parts[:-1]:
+    for part in relative.parts:
         current /= part
-        if current.is_symlink():
+        if current.exists() and current.is_symlink():
             raise ValueError("symlink boundary is not allowed")
+    resolved = raw.resolve(strict=False)
+    if resolved == root or root not in resolved.parents:
+        raise ValueError("path escapes project backup root")
     return resolved
 
 
@@ -57,20 +76,36 @@ def manifest_for(backup: Path, *, environment_id: str, source_sha: str, migratio
     return {"technical_id": TECHNICAL_ID, "format": FORMAT, "backup_id": backup.stem, "environment_id": environment_id, "source_sha": source_sha, "migration_revision": migration_revision, "postgres_tool_identity": tool_identity, "created_at": created.isoformat(), "logical_format": "custom", "size": backup.stat().st_size, "sha256": digest(backup), "verification": {"readability": False, "inventory": False}, "retention_expiry": (created + timedelta(days=RETENTION_DAYS)).isoformat()}
 
 
-def verify_backup(backup: Path, manifest: dict[str, Any], readable: Callable[[Path], bool] | None = None) -> dict[str, Any]:
+def verify_backup(
+    backup: Path,
+    manifest: dict[str, Any],
+    readable: Callable[[Path], bool] | None = None,
+    inventory: Callable[[Path], bool] | None = None,
+) -> dict[str, Any]:
     if manifest.get("technical_id") != TECHNICAL_ID or manifest.get("format") != FORMAT:
         raise ValueError("backup identity mismatch")
     if not backup.is_file() or backup.is_symlink() or digest(backup) != manifest.get("sha256") or backup.stat().st_size != manifest.get("size"):
         raise ValueError("backup digest or size mismatch")
-    is_readable = readable(backup) if readable is not None else backup.stat().st_size > 0
-    if not is_readable:
+    if readable is None or inventory is None:
+        raise ValueError("PostgreSQL archive verifier is required")
+    is_readable = readable(backup)
+    has_inventory = inventory(backup)
+    if not is_readable or not has_inventory:
         raise ValueError("backup readability verification failed")
-    manifest["verification"] = {"readability": True, "inventory": True}
+    manifest["verification"] = {"readability": True, "inventory": True, "verifier": "pg_restore"}
     manifest["verified_at"] = datetime.now(UTC).isoformat()
     return manifest
 
 
-def write_verified_set(root: Path, backup_id: str, dump: Callable[[Path], None], metadata: dict[str, str]) -> Path:
+def write_verified_set(
+    root: Path,
+    backup_id: str,
+    dump: Callable[[Path], None],
+    metadata: dict[str, str],
+    *,
+    readable: Callable[[Path], bool],
+    inventory: Callable[[Path], bool],
+) -> Path:
     root = canonical_root(root)
     if not backup_id or "/" in backup_id or "\\" in backup_id or backup_id.startswith("."):
         raise ValueError("unsafe backup identity")
@@ -82,13 +117,23 @@ def write_verified_set(root: Path, backup_id: str, dump: Callable[[Path], None],
         dump(temporary)
         temporary.chmod(0o600)
         manifest = manifest_for(temporary, environment_id=metadata["environment_id"], source_sha=metadata["source_sha"], migration_revision=metadata["migration_revision"], tool_identity=metadata["tool_identity"])
-        verify_backup(temporary, manifest)
+        verify_backup(temporary, manifest, readable, inventory)
         target = root / backup_id
-        target.mkdir(mode=0o700)
-        shutil.copyfile(temporary, target / "backup.dump")
-        (target / "backup.dump").chmod(0o600)
-        (target / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
-        (target / "manifest.json").chmod(0o600)
+        staging = Path(tempfile.mkdtemp(prefix=f".{backup_id}.", dir=root))
+        try:
+            staging.chmod(0o700)
+            shutil.copyfile(temporary, staging / "backup.dump")
+            (staging / "backup.dump").chmod(0o600)
+            (staging / "manifest.json").write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+            (staging / "manifest.json").chmod(0o600)
+            for child in (staging / "backup.dump", staging / "manifest.json"):
+                with child.open("rb") as stream:
+                    os.fsync(stream.fileno())
+            os.replace(staging, target)
+            os.chmod(target, 0o700)
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
     return target
 
 
@@ -102,11 +147,14 @@ def retain_expired(root: Path, *, now: datetime | None = None, active_ids: froze
         manifest_path = item / "manifest.json"
         dump_path = item / "backup.dump"
         try:
+            owned_path(root, item)
+            if set(item.iterdir()) != {manifest_path, dump_path}:
+                continue
             manifest = json.loads(manifest_path.read_text())
             expiry = datetime.fromisoformat(str(manifest["retention_expiry"]))
-            if manifest.get("technical_id") != TECHNICAL_ID or manifest.get("format") != FORMAT or not dump_path.is_file() or expiry > moment:
+            created = datetime.fromisoformat(str(manifest["created_at"]))
+            if (set(manifest) - _MANIFEST_KEYS or created.tzinfo is None or expiry.tzinfo is None or expiry != created + timedelta(days=RETENTION_DAYS) or manifest.get("technical_id") != TECHNICAL_ID or manifest.get("format") != FORMAT or manifest.get("backup_id") != item.name or manifest.get("logical_format") != "custom" or not isinstance(manifest.get("source_sha"), str) or len(manifest["source_sha"]) != 40 or any(char not in "0123456789abcdef" for char in manifest["source_sha"]) or not isinstance(manifest.get("postgres_tool_identity"), str) or not manifest["postgres_tool_identity"].startswith("pg_") or manifest.get("verification", {}).get("readability") is not True or manifest.get("verification", {}).get("inventory") is not True or not dump_path.is_file() or dump_path.is_symlink() or digest(dump_path) != manifest.get("sha256") or dump_path.stat().st_size != manifest.get("size") or expiry > moment):
                 continue
-            owned_path(root, item)
             shutil.rmtree(item)
             removed.append(item.name)
         except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):

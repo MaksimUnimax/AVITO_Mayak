@@ -196,6 +196,60 @@ services:
     labels:
       <<: *app-labels
       com.avito-mayak.process-kind: mayak-migrate
+  mayak-backup:
+    profiles: [runtime-foundation]
+    image: avito-mayak:${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+    build: *app-build
+    platform: linux/amd64
+    user: "10001:10001"
+    command: ["python", "-m", "mayak.runtime.backup"]
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    restart: "no"
+    depends_on:
+      mayak-postgres:
+        condition: service_healthy
+      mayak-migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *app-env
+      MAYAK_PROCESS_KIND: mayak-backup
+      MAYAK_BACKUP_ROOT: /var/backups/avito-mayak
+    volumes:
+      - backup-data:/var/backups/avito-mayak
+    secrets:
+      - source: mayak_database_application_password_runtime
+        target: mayak_database_application_password
+    networks: [mayak-internal]
+    labels:
+      <<: *app-labels
+      com.avito-mayak.process-kind: mayak-backup
+  mayak-restore-check:
+    profiles: [runtime-foundation]
+    image: avito-mayak:${MAYAK_SOURCE_SHA:?MAYAK_SOURCE_SHA must be set}
+    build: *app-build
+    platform: linux/amd64
+    user: "10001:10001"
+    command: ["python", "-m", "mayak.runtime.restore_check", "/var/backups/avito-mayak/${MAYAK_RESTORE_ARCHIVE:?MAYAK_RESTORE_ARCHIVE must be set}"]
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    restart: "no"
+    environment:
+      <<: *app-env
+      MAYAK_PROCESS_KIND: mayak-restore-check
+      MAYAK_BACKUP_ROOT: /var/backups/avito-mayak
+    volumes:
+      - backup-data:/var/backups/avito-mayak:ro
+    networks: [mayak-internal]
+    labels:
+      <<: *app-labels
+      com.avito-mayak.process-kind: mayak-restore-check
 networks:
   mayak-internal:
     internal: true
@@ -205,6 +259,11 @@ networks:
       com.avito-mayak.compose-family: acceptance
 volumes:
   postgres-data:
+    labels:
+      com.avito-mayak.project-owned: "true"
+      com.avito-mayak.environment-id: avito-mayak-acceptance-local-01
+      com.avito-mayak.compose-family: acceptance
+  backup-data:
     labels:
       com.avito-mayak.project-owned: "true"
       com.avito-mayak.environment-id: avito-mayak-acceptance-local-01

@@ -23,6 +23,12 @@ from mayak.platform.correlation_context import (
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _CURRENT_FIELDS: ContextVar[dict[str, str] | None] = ContextVar("mayak_log_fields", default=None)
 _SECRET_KEYS = {"authorization", "cookie", "password", "secret", "token", "dsn", "payload"}
+_SECRET_MESSAGE = re.compile(
+    r"(?:bearer\s+[^\s,;]+|password\s*[=:]\s*[^\s,;]+|(?:postgres(?:ql)?|mysql)://[^\s,;]+|"
+    r"BEGIN\s+[A-Z ]*PRIVATE KEY|(?:cookie|session|provider[_ -]?token|authorization)\s*[=:]\s*[^\s,;]+|"
+    r"raw[_ -]?provider[_ -]?payload\s*[=:]\s*[^\s,;]+)",
+    re.IGNORECASE,
+)
 
 
 def safe_identifier(value: str | None) -> str | None:
@@ -45,6 +51,11 @@ def _safe_value(key: str, value: Any) -> Any:
     return str(value)[:256]
 
 
+def safe_message(value: str) -> str:
+    """Redact secret-shaped legacy/library messages before structured output."""
+    return _SECRET_MESSAGE.sub("[REDACTED]", value[:512])
+
+
 class JsonOperationalFormatter(logging.Formatter):
     """Deterministic NDJSON formatter; formatting failures never escape logging."""
 
@@ -58,7 +69,7 @@ class JsonOperationalFormatter(logging.Formatter):
             "operation": getattr(record, "operation", record.funcName),
             "outcome": getattr(record, "outcome", "unknown"),
             "reason_code": getattr(record, "reason_code", "UNSPECIFIED"),
-            "message": record.getMessage()[:512],
+            "message": safe_message(record.getMessage()),
         }
         fields = _CURRENT_FIELDS.get() or {}
         current = current_correlation_context()
@@ -104,4 +115,4 @@ def monotonic_ms(start: float) -> float:
     return round((time.monotonic() - start) * 1000, 3)
 
 
-__all__ = ["JsonOperationalFormatter", "configure_logging", "correlation_id", "emit", "monotonic_ms", "operational_context", "safe_identifier"]
+__all__ = ["JsonOperationalFormatter", "configure_logging", "correlation_id", "emit", "monotonic_ms", "operational_context", "safe_identifier", "safe_message"]

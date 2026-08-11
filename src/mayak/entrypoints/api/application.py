@@ -117,6 +117,7 @@ def create_app(
             if not valid:
                 response = JSONResponse({"detail": "same-origin required"}, status_code=403)
                 response.headers["X-Correlation-ID"] = selected_correlation_id
+                emit(LOGGER, operation="http.request", outcome="rejected", reason_code="SAME_ORIGIN_REQUIRED", correlation_id=selected_correlation_id, latency_ms=round((time.monotonic() - started) * 1000, 3))
                 return response
         with correlation_context_scope(context):
             try:

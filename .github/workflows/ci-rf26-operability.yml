@@ -2,7 +2,8 @@ name: RF26 operability
 
 on:
   push:
-    branches: [rf26-observability-backup-recovery-01]
+    branches:
+      - rf26-observability-backup-recovery-01
   workflow_dispatch:
 
 permissions:
@@ -11,14 +12,6 @@ permissions:
 jobs:
   rf26:
     runs-on: ubuntu-24.04
-    container: python:3.14.6-bookworm
-    services:
-      mayak-postgres:
-        image: postgres:18-bookworm
-        env: {POSTGRES_DB: mayak, POSTGRES_USER: mayak, POSTGRES_PASSWORD: acceptance-only}
-        options: >-
-          --health-cmd "pg_isready -U mayak -d mayak"
-          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       UV_VERSION: 0.11.31
       MAYAK_AVITO_LIVE_ENABLED: "false"
@@ -26,43 +19,74 @@ jobs:
       MAYAK_MAX_ENABLED: "false"
       MAYAK_YOOKASSA_ENABLED: "false"
       MAYAK_EGRESS_AGENT_ENABLED: "false"
-    defaults: {run: {shell: bash}}
+      RF26_TECHNICAL_ID: RF26-OBSERVABILITY-BACKUP-RECOVERY-01
+    defaults:
+      run:
+        shell: bash
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with: {fetch-depth: 0, ref: ${{ github.sha }}}
-      - name: Source and toolchain identity
+      - name: H0 checkout exact candidate and prove ancestor
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: H0/H1 source and immutable identity
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git merge-base --is-ancestor 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d "$GITHUB_SHA"
-          python --version | grep -E '^Python 3\.14\.'
-          test "${UV_VERSION}" = 0.11.31
-          test "$MAYAK_AVITO_LIVE_ENABLED" = false
-          test "$MAYAK_TELEGRAM_ENABLED" = false
-          test "$MAYAK_MAX_ENABLED" = false
-          test "$MAYAK_YOOKASSA_ENABLED" = false
-      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
-        with: {version: ${{ env.UV_VERSION }}}
-      - name: Frozen dependency sync
-        run: uv sync --frozen --all-groups
-      - name: Focused observability, correlation, backup and recovery gates
+          test "$(git merge-base HEAD 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d)" = 74b36bc53e8b3f0ae0e6a4f6ccb1373eeccce23d
+          grep -Eq 'actions/checkout@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
+          grep -Eq 'astral-sh/setup-uv@[0-9a-f]{40}' .github/workflows/ci-rf26-operability.yml
+          grep -F 'postgres:18-bookworm@sha256:' compose.yaml
+      - name: H2 Python 3.14 and frozen dependencies
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: H2 sync
         run: |
           set -euo pipefail
-          uv run pytest -q tests/runtime/test_rf26_observability_backup.py tests/runtime/test_rf24_backup_restore_core.py
-          uv run ruff check src/mayak/platform/observability.py src/mayak/entrypoints/api/application.py src/mayak/runtime/api.py src/mayak/runtime/worker.py src/mayak/runtime/scheduler.py scripts/runtime/rf26_operability.py tests/runtime/test_rf26_observability_backup.py
-          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --help >/dev/null
-      - name: Compose and PostgreSQL boundary
+          uv sync --frozen --all-groups
+          uv run python --version | grep -E '^Python 3\.14\.'
+          uv --version | grep -F "${UV_VERSION}"
+      - name: H3 observability correlation health
+        run: uv run pytest -q tests/runtime/test_rf26_observability_backup.py -k 'correlation or formatter or message or liveness or readiness or diagnostics'
+      - name: H4 backup root retention redaction adversarial gates
+        run: uv run pytest -q tests/runtime/test_rf26_observability_backup.py -k 'backup or retention or symlink or tamper or random or unknown'
+      - name: H5 interruption and reconciliation gates
         run: |
+          uv run pytest -q tests/runtime/test_alembic_migration_serialization.py tests/runtime/test_rf24_notification_ambiguous_send.py tests/runtime/test_rf24_readiness_process.py
+      - name: H6 affected static gates
+        run: uv run ruff check src/mayak/platform src/mayak/entrypoints/api/application.py src/mayak/runtime scripts/runtime/rf26_operability.py tests/runtime/test_rf26_observability_backup.py
+      - name: H7 compose config and build boundary
+        run: |
+          set -euo pipefail
+          test -S /var/run/docker.sock
+          docker compose config >/dev/null
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
-          grep -q 'postgres:18-bookworm' compose.yaml
-          ! grep -qE 'ports:.*5432' compose.yaml
-      - name: Final repository pytest (exactly once)
+      - name: H8-H16 real RF26 scenario runner
+        run: |
+          set -euo pipefail
+          test -n "$GITHUB_SHA"
+          uv run python scripts/runtime/run_rf26_operability_acceptance.py --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf26-evidence.json
+      - name: H17 security and redaction scan
+        run: |
+          set -euo pipefail
+          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --help >/dev/null
+          ! rg -n --hidden --glob '!*.pyc' '(BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|Authorization:[[:space:]]*Bearer|postgres(ql)?://[^[:space:]]+:[^[:space:]@]+@)' rf26-evidence.json
+      - name: H18 exact artifact pre-scan
+        run: uv run python scripts/runtime/verify_rf26_operability_acceptance.py --evidence rf26-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-verifier.json
+      - name: H19 full repository pytest exactly once
         run: uv run pytest -q
-      - name: Safe RF26 evidence manifest
+      - name: H20-H22 verifier and final safe manifest
         run: |
           set -euo pipefail
           mkdir -p rf26-evidence
-          printf '{"technical_id":"RF26-OBSERVABILITY-BACKUP-RECOVERY-01","source_sha":"%s","raw_backup_uploaded":false,"live_provider_calls":0}\n' "$GITHUB_SHA" > rf26-evidence/summary.json
-          sha256sum rf26-evidence/summary.json > rf26-evidence/manifest.sha256
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with: {name: rf26-safe-evidence-${{ github.sha }}, path: rf26-evidence/}
+          cp rf26-evidence.json rf26-evidence/acceptance.json
+          cp rf26-verifier.json rf26-evidence/verifier.json
+          sha256sum rf26-evidence/* > rf26-evidence/files.sha256
+          uv run python scripts/runtime/verify_rf26_operability_acceptance.py --evidence rf26-evidence/acceptance.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf26-evidence/final-verifier.json
+      - name: H23 upload exact safe set
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: rf26-safe-evidence-${{ github.sha }}
+          path: rf26-evidence/

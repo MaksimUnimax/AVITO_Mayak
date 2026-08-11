@@ -11,6 +11,7 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 COPY scripts/runtime/run_rf12_postgres_acceptance.py ./scripts/runtime/run_rf12_postgres_acceptance.py
 COPY scripts/runtime/verify_rf12_acceptance.py ./scripts/runtime/verify_rf12_acceptance.py
+COPY scripts/runtime/rf26_operability.py ./scripts/runtime/rf26_operability.py
 COPY alembic.ini ./alembic.ini
 COPY alembic ./alembic
 RUN test "$(sha256sum uv.lock | cut -d' ' -f1)" = "${LOCK_IDENTITY}" \
