@@ -14,6 +14,8 @@ def validate(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     runner = path.parents[2] / "scripts/runtime/run_rf26_operability_acceptance.py"
     runner_text = runner.read_text(encoding="utf-8") if runner.exists() else ""
+    preflight = path.parents[2] / "scripts/runtime/rf26_postgres_preflight.py"
+    preflight_text = preflight.read_text(encoding="utf-8") if preflight.exists() else ""
     required = (
         f"python:3.14.6-bookworm@{PYTHON_DIGEST}",
         f"postgres:18-bookworm@{POSTGRES_DIGEST}",
@@ -29,6 +31,7 @@ def validate(path: Path) -> None:
         "DOCKER_CONFIG", '"$docker_cli_dir/docker" compose version',
         "test \"$(\"$docker_cli_dir/docker\" compose version)\" = 'Docker Compose version v5.0.2'",
         "H0c", "H0d", "H0e", "H1a", "H1b", "H1c", "H1d", "H1e", "H1f",
+        "scripts.runtime.rf26_postgres_preflight",
     )
     for marker in required:
         if marker not in text:
@@ -114,6 +117,16 @@ def validate(path: Path) -> None:
             "H8 actual rebuild-from-zero stage"
         )
     ]
+    if "<<'PY'" in h8_block or "alembic upgrade head" in h8_block:
+        raise ValueError("RF26 H8 retains an authoritative inline bootstrap")
+    for boundary in (
+        "H8A_CONNECTIVITY", "H8B_BOOTSTRAP_AUTHORITY", "H8C_ROLE_STATE",
+        "H8D_DATABASE_CREATE", "H8E_DATABASE_OWNERSHIP", "H8F_SCHEMA_PREPARE",
+        "H8G_SOURCE_MIGRATION", "H8H_CONFLICT_MIGRATION", "H8I_REVISION_PROOF",
+        "H8J_APPLICATION_GRANTS", "H8K_TARGET_EMPTY",
+    ):
+        if boundary not in preflight_text:
+            raise ValueError(f"RF26 canonical H8 boundary missing: {boundary}")
     for marker in (
         "unexpected pre-existing RF26 role",
         "database owner proof",
@@ -121,8 +134,11 @@ def validate(path: Path) -> None:
         "target must remain schema-empty before restore",
         "target emptiness proof",
     ):
-        if marker not in h8_block:
+        if marker not in preflight_text:
             raise ValueError(f"RF26 PostgreSQL boundary proof missing: {marker}")
+    for marker in ("::error title=RF26 H8", "GITHUB_STEP_SUMMARY", "failed_boundary", "trace"):
+        if marker not in preflight_text:
+            raise ValueError(f"RF26 H8 diagnostic contract missing: {marker}")
     if 'for db in "$source_db" "$target_db" "$conflict_db"' in h8_block:
         raise ValueError("RF26 target schema creation is forbidden before restore")
     if "ancestor=postgres:18-bookworm" in text:

@@ -19,9 +19,18 @@ def test_rf26_complete_substrate_contract_passes() -> None:
 def test_rf26_target_is_not_prepopulated_before_restore() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     boundary = text.split("H8 task-owned PostgreSQL databases", 1)[1].split("H8 actual rebuild-from-zero stage", 1)[0]
-    assert 'for db in "$source_db" "$conflict_db"' in boundary
-    assert "target must remain schema-empty before restore" in boundary
-    assert "target emptiness proof" in boundary
+    assert "scripts.runtime.rf26_postgres_preflight" in boundary
+    assert "<<'PY'" not in boundary
+    module = (WORKFLOW.parents[2] / "scripts/runtime/rf26_postgres_preflight.py").read_text()
+    assert "target must remain schema-empty before restore" in module
+    assert "target emptiness proof" in module
+
+
+def test_rf26_h8_has_one_canonical_fail_closed_runner() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    h8 = text.split("H8 task-owned PostgreSQL databases", 1)[1].split("H8 actual rebuild-from-zero stage", 1)[0]
+    assert h8.count("scripts.runtime.rf26_postgres_preflight") == 1
+    assert "uv run alembic" not in h8
 
 
 def _inspect(**overrides: object) -> str:
