@@ -64,6 +64,11 @@ jobs:
                   role(cur, "mayak_migration", "migration-only", True)
                   role(cur, "mayak_application", "application-only")
                   cur.execute("ALTER DATABASE mayak OWNER TO mayak_migration")
+          # The canonical bootstrap database is distinct from TARGET B; its
+          # migration schema is required by the repository's Alembic runner.
+          with psycopg.connect("host=mayak-postgres dbname=mayak user=mayak_migration password=migration-only", autocommit=True) as c:
+              with c.cursor() as cur:
+                  cur.execute("CREATE SCHEMA IF NOT EXISTS mayak AUTHORIZATION mayak_migration")
           PY
           uv run alembic upgrade head
       - name: Create fresh task-owned source and restore databases
