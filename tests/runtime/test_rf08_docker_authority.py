@@ -12,6 +12,7 @@ from scripts.runtime.rf08_docker_authority import (
     ComposeBinding,
     ComposeOperation,
     ComposeService,
+    DockerCommandFailure,
     GatewayAuthority,
     ObservationRequest,
     ObservationTemplate,
@@ -47,6 +48,34 @@ def test_compose_binding_and_action_round_trip() -> None:
         detach=True,
     )
     assert action.binding.project_name == "avito-mayak-rf08-secret-delivery"
+
+
+def test_check_true_raises_bounded_failure_after_recording_and_consuming(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gateway = GatewayAuthority()
+
+    def fake_run(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        return _completed(returncode=17, stderr=b"SYNTHETIC_SECRET_STDERR")
+
+    monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", fake_run)
+    capability = gateway.issue(
+        ResourceLifecycleAction(
+            kind=ResourceKind.NETWORK,
+            operation=ResourceOperation.CREATE,
+            name="avito-mayak-rf08-secret-delivery_mayak-internal",
+        ),
+        stage="bounded-failure",
+    )
+    with pytest.raises(DockerCommandFailure) as error:
+        gateway.execute(capability, stage="bounded-failure", check=True)
+    assert error.value.returncode == 17
+    assert "SYNTHETIC_SECRET_STDERR" not in str(error.value)
+    assert gateway.ledger[-1].record_type == "RESULT"
+    assert gateway.ledger[-1].returncode == 17
+    assert gateway._issued[capability.capability_id].consumed  # noqa: SLF001
+    with pytest.raises(PermissionError):
+        gateway.execute(capability, stage="bounded-failure-retry", check=True)
 
 
 def test_issue_execute_and_observe(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

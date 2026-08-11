@@ -7,6 +7,8 @@ from pathlib import Path
 
 PYTHON_DIGEST = "sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9"
 POSTGRES_DIGEST = "sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
+BUILDX_VERSION = "v0.34.1"
+BUILDX_SHA256 = "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b"
 STAGES = ("H8", "H9", "H10", "H11", "H12", "H13", "H14", "H15", "H16")
 H19_REQUIRED_ENV = (
     "MAYAK_RF10_POSTGRES_DSN", "MAYAK_RF11_POSTGRES_PASSWORD_FILE",
@@ -35,7 +37,8 @@ def validate(path: Path) -> None:
         "docker image inspect", "NetworkSettings.Networks", "mayak-postgres",
         "python -m scripts.runtime.rf26_docker_discovery", "Config.Image",
         "docker-29.2.1.tgz", "995b1d0b51e96d551a3b49c552c0170bc6ce9f8b9e0866b8c15bbc67d1cf93a3",
-        "docker-compose-linux-x86_64", "v5.0.2",
+        "docker-compose-linux-x86_64", "v5.0.2", "buildx-v0.34.1.linux-amd64",
+        BUILDX_VERSION, BUILDX_SHA256, "RF26_BUILDX_PLUGIN", "--buildx-plugin",
         "2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67",
         "DOCKER_CONFIG", '"$docker_cli_dir/docker" compose version',
         'printf \'%s\\n\' "$docker_cli_dir" >> "$GITHUB_PATH"',
@@ -57,7 +60,7 @@ def validate(path: Path) -> None:
         raise ValueError("generic process surrogate is present in mandatory RF26 runner")
     if "mayak.runtime.api" not in runner_text or "mayak.runtime.scheduler" not in runner_text:
         raise ValueError("owning runtime entrypoint provenance is missing")
-    h1e = text.index("H1e deterministic Docker and Compose client identity")
+    h1e = text.index("H1e deterministic Docker, Compose and Buildx client identity")
     h19 = text.index("H19 full repository pytest exactly once")
     docker_contract = text[h1e:h19]
     if 'DOCKER_CONFIG=%s\\nRF26_DOCKER_BIN=%s' not in docker_contract:
@@ -82,6 +85,10 @@ def validate(path: Path) -> None:
         raise ValueError("Compose plugin location is not explicit")
     if "sha256sum -c" not in text or "chmod 0755" not in text:
         raise ValueError("immutable Compose installation is incomplete")
+    if f"{BUILDX_SHA256}  docker-buildx" not in text:
+        raise ValueError("immutable Buildx installation is incomplete")
+    if BUILDX_VERSION not in docker_contract or "buildx version" not in docker_contract:
+        raise ValueError("exact Buildx version proof is missing")
     if (
         "apt-get install -y --no-install-recommends git docker.io" in text
         or "apt-get install docker.io" in text
@@ -150,7 +157,8 @@ def validate(path: Path) -> None:
     for marker in (
         "scripts.runtime.rf26_h19_preflight", "RF26_H19_BOOTSTRAP_PASSWORD",
         "H19P_POSTGRES_PROVISION", "H19P_STATE_VALIDATION", "H19P_ENVIRONMENT_EXPORT",
-        "H19P_DOCKER_IDENTITY", "H19P_COMPOSE_IDENTITY", "H19P_READY_FOR_PYTEST",
+        "H19P_DOCKER_IDENTITY", "H19P_COMPOSE_IDENTITY", "H19P_BUILDX_IDENTITY",
+        "H19P_READY_FOR_PYTEST", "--buildx-plugin", "RF26_BUILDX_PLUGIN",
         '"$GITHUB_ENV"', "provider-disabled policy", "RF26_H19_JUNIT_PATH",
     ):
         if marker not in preflight_block and marker != "provider-disabled policy":

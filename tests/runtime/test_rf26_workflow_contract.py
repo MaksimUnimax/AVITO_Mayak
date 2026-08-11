@@ -108,9 +108,30 @@ def test_compose_plugin_is_separately_pinned_and_interface_validated() -> None:
     assert "Docker Compose version v5.0.2" in text
 
 
+def test_buildx_plugin_is_exactly_pinned_and_handed_off() -> None:
+    text = WORKFLOW.read_text()
+    assert "buildx-v0.34.1.linux-amd64" in text
+    assert "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b" in text
+    assert "RF26_BUILDX_PLUGIN=%s" in text
+    assert '--buildx-plugin "$RF26_BUILDX_PLUGIN"' in text
+
+
+def test_buildx_pinning_regression_is_rejected(tmp_path: Path) -> None:
+    broken = tmp_path / "workflow.yml"
+    broken.write_text(
+        WORKFLOW.read_text().replace(
+            "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b",
+            "0" * 64,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="(Buildx|substrate marker)"):
+        validate(broken)
+
+
 def test_rf26_docker_client_contract_covers_all_downstream_consumers() -> None:
     text = WORKFLOW.read_text()
-    assert 'DOCKER_CONFIG=%s\\nRF26_DOCKER_BIN=%s' in text
+    assert 'DOCKER_CONFIG=%s\\nRF26_DOCKER_BIN=%s\\nRF26_BUILDX_PLUGIN=%s' in text
     assert '"$RF26_DOCKER_BIN" compose config' in text
     assert '"$RF26_DOCKER_BIN" exec' in text
     assert 'RF24_PG_TOOL_PREFIX=%s exec' in text

@@ -92,7 +92,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -F 'docker image inspect' .github/workflows/ci-rf26-operability.yml
-      - name: H1e deterministic Docker and Compose client identity
+      - name: H1e deterministic Docker, Compose and Buildx client identity
         run: |
           set -euo pipefail
           docker_cli_dir="$RUNNER_TEMP/rf26-docker-cli"
@@ -104,11 +104,17 @@ jobs:
           tar -xzf "$RUNNER_TEMP/docker-29.2.1.tgz" --strip-components=1 -C "$docker_cli_dir" docker/docker
           curl -fsSLo "$compose_plugin_dir/docker-compose" https://github.com/docker/compose/releases/download/v5.0.2/docker-compose-linux-x86_64
           echo '2d880f723d3da7c779c54fdaea91a842fca8af55d1397f1ed8d7cbab3dd7af67 *docker-compose' | (cd "$compose_plugin_dir" && sha256sum -c -)
+          curl -fsSLo "$compose_plugin_dir/docker-buildx" https://github.com/docker/buildx/releases/download/v0.34.1/buildx-v0.34.1.linux-amd64
+          echo 'f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b  docker-buildx' | (cd "$compose_plugin_dir" && sha256sum -c -)
           chmod 0755 "$compose_plugin_dir/docker-compose"
+          chmod 0755 "$compose_plugin_dir/docker-buildx"
           export PATH="$docker_cli_dir:$PATH" DOCKER_CONFIG="$docker_config"
           printf '%s\n' "$docker_cli_dir" >> "$GITHUB_PATH"
-          printf 'PATH=%s\nDOCKER_CONFIG=%s\nRF26_DOCKER_BIN=%s\n' "$PATH" "$DOCKER_CONFIG" "$docker_cli_dir/docker" >> "$GITHUB_ENV"
+          printf 'PATH=%s\nDOCKER_CONFIG=%s\nRF26_DOCKER_BIN=%s\nRF26_BUILDX_PLUGIN=%s\n' "$PATH" "$DOCKER_CONFIG" "$docker_cli_dir/docker" "$compose_plugin_dir/docker-buildx" >> "$GITHUB_ENV"
           test -x "$docker_cli_dir/docker"
+          test "$($docker_cli_dir/docker buildx version | sed -n 's#.*github.com/docker/buildx \(v[0-9.]*\).*#\1#p')" = 'v0.34.1'
+          test -f "$compose_plugin_dir/docker-buildx"
+          test ! -L "$compose_plugin_dir/docker-buildx"
           test "$("$docker_cli_dir/docker" version --format '{{.Client.Version}}')" = 29.2.1
           test "$("$docker_cli_dir/docker" compose version)" = 'Docker Compose version v5.0.2'
       - name: H1f deterministic service discovery and identity
@@ -257,7 +263,7 @@ jobs:
           set -euo pipefail
           # The helper proves the provider-disabled policy before H19.
           # Required child names: MAYAK_RF10_POSTGRES_DSN MAYAK_RF11_POSTGRES_PASSWORD_FILE MAYAK_RF11_POSTGRES_USER MAYAK_RF11_POSTGRES_HOST MAYAK_RF11_POSTGRES_PORT MAYAK_RF11_POSTGRES_DB.
-          # Required receipts: H19P_POSTGRES_PROVISION H19P_STATE_VALIDATION H19P_ENVIRONMENT_EXPORT H19P_DOCKER_IDENTITY H19P_COMPOSE_IDENTITY H19P_READY_FOR_PYTEST.
+          # Required receipts: H19P_POSTGRES_PROVISION H19P_STATE_VALIDATION H19P_ENVIRONMENT_EXPORT H19P_DOCKER_IDENTITY H19P_COMPOSE_IDENTITY H19P_BUILDX_IDENTITY H19P_READY_FOR_PYTEST.
           # Persisted handoff paths: RF26_H19_STATE_DIR RF26_H19_JUNIT_PATH RF26_H19_DIAGNOSTIC_PATH.
           h19_state_dir="$RUNNER_TEMP/rf26-h19-postgres"
           h19_junit_path="$RUNNER_TEMP/rf26-h19-junit.xml"
@@ -272,7 +278,8 @@ jobs:
             --run-id "$GITHUB_RUN_ID" --repo-root "$GITHUB_WORKSPACE" \
             --state-dir "$h19_state_dir" --github-env "$GITHUB_ENV" \
             --junit "$h19_junit_path" --diagnostic "$h19_diagnostic_path" \
-            --docker-bin "$RF26_DOCKER_BIN" --compose-plugin "$DOCKER_CONFIG/cli-plugins/docker-compose"
+            --docker-bin "$RF26_DOCKER_BIN" --compose-plugin "$DOCKER_CONFIG/cli-plugins/docker-compose" \
+            --buildx-plugin "$RF26_BUILDX_PLUGIN"
           preflight_rc=$?
           set -e
           if test "$preflight_rc" -eq 0; then

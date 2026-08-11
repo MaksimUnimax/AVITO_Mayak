@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -15,6 +16,8 @@ from urllib.parse import urlsplit
 from scripts.runtime.rf26_h19_postgres import _validated_state, provision
 
 TECHNICAL_ID = "RF26-OBSERVABILITY-BACKUP-RECOVERY-01"
+BUILDX_VERSION = "v0.34.1"
+BUILDX_SHA256 = "f1332ddb9010bd0b72628266c3a906d9a6979848033df4c8d9bd2cd113bae12b"
 REQUIRED = (
     "MAYAK_RF10_POSTGRES_DSN",
     "MAYAK_RF11_POSTGRES_PASSWORD_FILE",
@@ -157,7 +160,16 @@ def _append_env(
             stream.write(f"{key}={value}\n")
 
 
-def _docker_identity(docker_bin: Path, compose_plugin: Path) -> None:
+def _plugin_identity(path: Path, *, missing: str, regular: str, executable: str) -> None:
+    if not path.exists():
+        raise PreflightFailure(missing, "task-owned Docker plugin is absent")
+    if path.is_symlink() or not path.is_file():
+        raise PreflightFailure(regular, "task-owned Docker plugin is not a regular file")
+    if not os.access(path, os.X_OK):
+        raise PreflightFailure(executable, "task-owned Docker plugin is not executable")
+
+
+def _docker_identity(docker_bin: Path, compose_plugin: Path, buildx_plugin: Path) -> None:
     if not docker_bin.exists():
         raise PreflightFailure("DOCKER_BIN_MISSING", "pinned Docker client is absent")
     if docker_bin.is_symlink() or not docker_bin.is_file():
@@ -197,16 +209,38 @@ def _docker_identity(docker_bin: Path, compose_plugin: Path) -> None:
         raise PreflightFailure(
             "DOCKER_SERVER_UNREACHABLE", "Docker server is not reachable through the task socket"
         )
-    if not compose_plugin.exists():
-        raise PreflightFailure("COMPOSE_PLUGIN_MISSING", "pinned Compose plugin is absent")
-    if compose_plugin.is_symlink() or not compose_plugin.is_file():
+    _plugin_identity(
+        compose_plugin,
+        missing="COMPOSE_PLUGIN_MISSING",
+        regular="COMPOSE_PLUGIN_NOT_REGULAR",
+        executable="COMPOSE_PLUGIN_NOT_EXECUTABLE",
+    )
+    _plugin_identity(
+        buildx_plugin,
+        missing="BUILDX_PLUGIN_MISSING",
+        regular="BUILDX_PLUGIN_NOT_REGULAR",
+        executable="BUILDX_PLUGIN_NOT_EXECUTABLE",
+    )
+    if hashlib.sha256(buildx_plugin.read_bytes()).hexdigest() != BUILDX_SHA256:
+        raise PreflightFailure("BUILDX_VERSION_MISMATCH", "Buildx plugin checksum is not v0.34.1")
+    config = buildx_plugin.parent.parent
+    if buildx_plugin.resolve() != (config / "cli-plugins" / "docker-buildx").resolve():
         raise PreflightFailure(
-            "COMPOSE_PLUGIN_NOT_REGULAR", "pinned Compose plugin is not a regular file"
+            "BUILDX_PLUGIN_IDENTITY_MISMATCH", "Buildx plugin path is not task-owned"
         )
-    if not os.access(compose_plugin, os.X_OK):
-        raise PreflightFailure(
-            "COMPOSE_PLUGIN_NOT_EXECUTABLE", "pinned Compose plugin is not executable"
-        )
+    env = {**os.environ, "DOCKER_CONFIG": str(config)}
+    buildx = subprocess.run(
+        [str(docker_bin), "buildx", "version"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if buildx.returncode != 0:
+        raise PreflightFailure("BUILDX_COMMAND_FAILED", "pinned Buildx command failed")
+    version = re.search(r"\bv(\d+\.\d+\.\d+)(?:[-+][^\s]+)?\b", buildx.stdout)
+    if version is None or f"v{version.group(1)}" != BUILDX_VERSION:
+        raise PreflightFailure("BUILDX_VERSION_MISMATCH", "Buildx semantic version is not v0.34.1")
 
 
 def _compose_identity(docker_bin: Path) -> None:
@@ -272,7 +306,7 @@ def run(args: argparse.Namespace) -> int:
         completed.append(phase)
         print(phase)
         phase = PHASES[3]
-        _docker_identity(args.docker_bin, args.compose_plugin)
+        _docker_identity(args.docker_bin, args.compose_plugin, args.buildx_plugin)
         completed.append(phase)
         print(phase)
         phase = PHASES[4]
@@ -324,6 +358,7 @@ def main() -> int:
     parser.add_argument("--diagnostic", type=Path, required=True)
     parser.add_argument("--docker-bin", type=Path, required=True)
     parser.add_argument("--compose-plugin", type=Path, required=True)
+    parser.add_argument("--buildx-plugin", type=Path, required=True)
     return run(parser.parse_args())
 
 

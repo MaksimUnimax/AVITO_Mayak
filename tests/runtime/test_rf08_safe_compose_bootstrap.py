@@ -10,7 +10,7 @@ import pytest
 
 from scripts.runtime import prepare_file_secrets, rf08_docker_authority, rf08_docker_context
 from scripts.runtime import safe_compose_bootstrap as scb
-from scripts.runtime.rf08_docker_authority import GatewayAuthority
+from scripts.runtime.rf08_docker_authority import DockerCommandFailure, GatewayAuthority
 from scripts.runtime.rf09_public_bootstrap_adapter import (
     INVARIANT_CODES,
     classify_statement,
@@ -398,6 +398,47 @@ def test_build_input_digest_follows_copy_inputs_and_includes_readme(tmp_path: Pa
         canonical_build_root.exists(),
         canonical_build_root.stat().st_mtime_ns if canonical_build_root.exists() else None,
     )
+
+
+def test_docker_native_manifest_attributes_nonzero_to_primary_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = tmp_path / "context"
+    context.mkdir()
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "failure").mkdir()
+
+    def failed_run(*args: object, **kwargs: object) -> object:
+        return type("Result", (), {"returncode": 23, "stdout": b"", "stderr": b"SECRET"})()
+
+    monkeypatch.setattr("scripts.runtime.rf08_docker_authority.subprocess.run", failed_run)
+    with pytest.raises(DockerCommandFailure) as error:
+        rf08_docker_context.docker_native_manifest(
+            context, runtime, "failure", gateway=GatewayAuthority()
+        )
+    assert error.value.returncode == 23
+    assert "SECRET" not in str(error.value)
+
+
+def test_docker_native_manifest_keeps_missing_output_as_structural_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = tmp_path / "context"
+    context.mkdir()
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    (runtime / "missing-output").mkdir()
+    monkeypatch.setattr(
+        "scripts.runtime.rf08_docker_authority.subprocess.run",
+        lambda *args, **kwargs: type(
+            "Result", (), {"returncode": 0, "stdout": b"", "stderr": b""}
+        )(),
+    )
+    with pytest.raises(ValueError, match="Docker inspector did not export effective root"):
+        rf08_docker_context.docker_native_manifest(
+            context, runtime, "missing-output", gateway=GatewayAuthority()
+        )
 
 
 def test_clean_context_uses_exact_command_local_git_trust_and_sanitized_env(

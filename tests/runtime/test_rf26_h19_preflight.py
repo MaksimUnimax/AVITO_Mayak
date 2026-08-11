@@ -77,7 +77,7 @@ def test_child_process_receives_required_h19_names_without_value_output(
 def test_docker_identity_has_bounded_classification(name, docker, compose, expected) -> None:
     del name
     with pytest.raises(preflight.PreflightFailure) as error:
-        preflight._docker_identity(docker, compose)
+        preflight._docker_identity(docker, compose, Path("/tmp/buildx"))
     assert error.value.classification == expected
 
 
@@ -91,7 +91,9 @@ def test_atomic_handoff_does_not_append_on_failed_preflight(tmp_path: Path, monk
     monkeypatch.setenv("MAYAK_YOOKASSA_ENABLED", "false")
     monkeypatch.setenv("MAYAK_EGRESS_AGENT_ENABLED", "false")
     with pytest.raises(preflight.PreflightFailure):
-        preflight._docker_identity(Path("/tmp/rf26-no-such-docker"), Path("/tmp/compose"))
+        preflight._docker_identity(
+            Path("/tmp/rf26-no-such-docker"), Path("/tmp/compose"), Path("/tmp/buildx")
+        )
     assert env_file.read_bytes() == before
     assert not any(key.encode() in env_file.read_bytes() for key in preflight.REQUIRED)
 
@@ -128,6 +130,7 @@ def test_failed_run_keeps_github_env_byte_identical(tmp_path: Path, monkeypatch)
             "diagnostic": tmp_path / "diag",
             "docker_bin": tmp_path / "docker",
             "compose_plugin": tmp_path / "compose",
+            "buildx_plugin": tmp_path / "buildx",
         },
     )()
     assert preflight.run(args) == 1
@@ -135,6 +138,35 @@ def test_failed_run_keeps_github_env_byte_identical(tmp_path: Path, monkeypatch)
     diagnostic = (tmp_path / "diag").read_text()
     assert '"classification":"DOCKER_SERVER_UNREACHABLE"' in diagnostic
     assert '"h19_pytest_execution_count":0' in diagnostic
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [("missing", "BUILDX_PLUGIN_MISSING"), ("regular", "BUILDX_PLUGIN_NOT_REGULAR")],
+)
+def test_buildx_identity_classifications(
+    kind: str, expected: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker = tmp_path / "docker"
+    docker.write_bytes(b"docker")
+    docker.chmod(0o755)
+    compose = tmp_path / "docker-compose"
+    compose.write_bytes(b"compose")
+    compose.chmod(0o755)
+    buildx = tmp_path / "docker-buildx"
+    if kind == "regular":
+        buildx.mkdir()
+    monkeypatch.setattr(preflight.shutil, "which", lambda _: str(docker))
+    def fake_run(argv, **kwargs):
+        if argv[1:3] == ["version", "--format"]:
+            return type("Result", (), {"returncode": 0, "stdout": "29.2.1\n"})()
+        if argv[1:3] == ["info", "--format"]:
+            return type("Result", (), {"returncode": 0, "stdout": "29.2.1\n"})()
+        return type("Result", (), {"returncode": 0, "stdout": "Buildx version v0.34.1\n"})()
+    monkeypatch.setattr(preflight.subprocess, "run", fake_run)
+    with pytest.raises(preflight.PreflightFailure) as error:
+        preflight._docker_identity(docker, compose, buildx)
+    assert error.value.classification == expected
 
 
 def test_child_env_required_and_forbidden_names(monkeypatch, tmp_path: Path) -> None:

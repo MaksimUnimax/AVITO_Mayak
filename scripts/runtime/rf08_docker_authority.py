@@ -670,6 +670,22 @@ class DockerExecution(DockerObservation):
     pass
 
 
+class DockerCommandFailure(RuntimeError):
+    """Bounded failure for a Docker command whose transport returned non-zero."""
+
+    def __init__(
+        self, *, stage: str, operation: str, returncode: int, safe_fingerprint: str
+    ) -> None:
+        self.stage = stage
+        self.operation = operation
+        self.returncode = returncode
+        self.safe_fingerprint = safe_fingerprint
+        super().__init__(
+            f"Docker command failed stage={stage} operation={operation} "
+            f"returncode={returncode} fingerprint={safe_fingerprint}"
+        )
+
+
 def _probe_command(kind: ProbeKind) -> tuple[str, ...]:
     if kind == ProbeKind.POSTGRES_READY:
         return ("pg_isready", "-U", "mayak", "-d", "mayak")
@@ -1485,7 +1501,7 @@ class GatewayAuthority:
         text: bool = False,
         capture_output: bool = False,
     ) -> DockerExecution:
-        del check, text, capture_output
+        del text, capture_output
         capability = self.authorize(capability, stage=stage)
         if capability.consumed:
             raise PermissionError("capability already consumed")
@@ -1523,6 +1539,13 @@ class GatewayAuthority:
             safe_fingerprint=execution.safe_fingerprint,
         )
         self._issued[capability.capability_id] = dataclass_replace(capability, consumed=True)
+        if check and execution.returncode != 0:
+            raise DockerCommandFailure(
+                stage=stage,
+                operation=type(semantic).__name__,
+                returncode=execution.returncode,
+                safe_fingerprint=execution.safe_fingerprint,
+            )
         return execution
 
     def observe(
@@ -1538,7 +1561,7 @@ class GatewayAuthority:
         text: bool = False,
         capture_output: bool = False,
     ) -> DockerObservation:
-        del check, text, capture_output
+        del text, capture_output
         if request.compose is not None:
             self._validate_binding(request.compose)
         observation = self._execute_with_transport(
@@ -1559,6 +1582,13 @@ class GatewayAuthority:
             returncode=observation.returncode,
             safe_fingerprint=observation.safe_fingerprint,
         )
+        if check and observation.returncode != 0:
+            raise DockerCommandFailure(
+                stage=stage,
+                operation=type(request).__name__,
+                returncode=observation.returncode,
+                safe_fingerprint=observation.safe_fingerprint,
+            )
         return observation
 
     def run(self, request: ObservationRequest, *, stage: str, **kwargs: Any) -> DockerObservation:
