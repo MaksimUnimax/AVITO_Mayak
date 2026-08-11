@@ -61,13 +61,16 @@ jobs:
         run: |
           set -euo pipefail
           test -S /var/run/docker.sock
+          export MAYAK_SOURCE_SHA="$GITHUB_SHA"
+          export MAYAK_LOCK_IDENTITY="$(sha256sum uv.lock | cut -d' ' -f1)"
+          export MAYAK_BUILD_INPUT_DIGEST="$(sha256sum Dockerfile compose.yaml | sha256sum | cut -d' ' -f1)"
           docker compose config >/dev/null
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
       - name: H8-H16 real RF26 scenario runner
         run: |
           set -euo pipefail
           test -n "$GITHUB_SHA"
-          uv run python scripts/runtime/run_rf26_operability_acceptance.py --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf26-evidence.json
+          uv run python scripts/runtime/run_rf26_operability_acceptance.py --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf26-evidence.json --rf24-evidence rf24-backup-restore-evidence.json
       - name: H17 security and redaction scan
         run: |
           set -euo pipefail
