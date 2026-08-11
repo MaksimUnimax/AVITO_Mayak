@@ -223,7 +223,7 @@ def clean_target_snapshot(identity: ConnectionIdentity) -> CleanTargetState:
 
 def database_tool_role_args() -> tuple[str, str]:
     """The container OS user is not the PostgreSQL restore authority."""
-    return ("--username", os.environ.get("RF24_PG_DATABASE_ROLE", "mayak_migration"))
+    return ("--host=127.0.0.1", "--username", os.environ.get("RF24_PG_DATABASE_ROLE", "mayak_migration"))
 
 
 def restored_object_authority(identity: ConnectionIdentity) -> dict[str, Any]:

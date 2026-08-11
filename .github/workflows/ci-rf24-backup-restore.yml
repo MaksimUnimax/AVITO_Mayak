@@ -161,9 +161,12 @@ jobs:
           container="${candidates[0]}"
           image="$(docker inspect --format '{{.Config.Image}}' "$container")"
           test "$image" = postgres:18-bookworm
+          docker exec -i -u postgres "$container" sh -c 'umask 077; cat > /tmp/rf24.pgpass' <<'PGPASS'
+          *:*:*:mayak_migration:migration-only
+          PGPASS
           docker exec "$container" pg_dump --version
           docker exec "$container" pg_restore --version
-          printf 'RF24_PG_TOOL_PREFIX=docker exec -u postgres %s\n' "$container" >> "$GITHUB_ENV"
+          printf 'RF24_PG_TOOL_PREFIX=docker exec -u postgres -e PGPASSFILE=/tmp/rf24.pgpass %s\n' "$container" >> "$GITHUB_ENV"
           printf 'RF24_PG_TOOL_SOURCE_DSN=%s\n' "$SOURCE_DB" >> "$GITHUB_ENV"
           printf 'RF24_PG_TOOL_TARGET_DSN=%s\n' "$TARGET_DB" >> "$GITHUB_ENV"
 
