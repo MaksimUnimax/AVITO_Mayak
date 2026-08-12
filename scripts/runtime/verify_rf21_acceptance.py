@@ -26,7 +26,7 @@ def _verify_scanner_manifest(path: Path, *, root: Path) -> None:
     if manifest.get("result") != "PASS" or manifest.get("finding_count") != 0:
         raise SystemExit("artifact scan did not pass")
     files = manifest.get("payloads")
-    if not isinstance(files, list) or {item.get("basename") for item in files if isinstance(item, dict)} != {"rf21.json", "rf21-full-pytest.log"} or len(files) != 2:
+    if not isinstance(files, list) or {item.get("basename") for item in files if isinstance(item, dict)} != {"rf21.json"} or len(files) != 1:
         raise SystemExit("scanner manifest payload inventory is not exact")
     if any(not isinstance(item, dict) or item.get("classification") != "CLEAN" or item.get("finding_count") != 0 for item in files):
         raise SystemExit("scanner manifest finding/classification failed")

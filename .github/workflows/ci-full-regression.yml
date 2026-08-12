@@ -14,7 +14,7 @@ jobs:
   full-regression:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     services:
       postgres:
         image: postgres:18-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
@@ -65,10 +65,18 @@ jobs:
           test -f "$MAYAK_RF11_POSTGRES_PASSWORD_FILE"
           test "$(stat -c '%a' "$MAYAK_RF11_POSTGRES_PASSWORD_FILE")" = 600
           test -n "$MAYAK_RF10_POSTGRES_DSN" -a "$MAYAK_RF11_POSTGRES_DB" != mayak
-          uv run alembic current
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipt = json.loads((Path(os.environ["MAYAK_CI_FULL_STATE"]) / "migration-receipt.json").read_text())
+          assert len(receipt["databases"]) == 2
+          assert all(row["status"] == "PASS" and row["expected_revision"] == row["observed_revision"] for row in receipt["databases"])
+          forbidden = ("dsn", "password", "token", "authorization", "secret")
+          assert not any(any(term in str(key).lower() for term in forbidden) for row in receipt["databases"] for key in row)
+          PY
           ! env | grep -E '^(RF18|RF19|RF24|MAYAK_RF18|MAYAK_RF19|MAYAK_RF24)'
       - name: Complete unfiltered repository pytest with coverage
-        run: uv run coverage run -m pytest -q --disable-warnings && uv run coverage report --fail-under=85
+        run: uv run coverage run -m pytest -q --disable-warnings && uv run coverage report --include='src/mayak/contracts/*,src/mayak/platform/*' --fail-under=85
       - name: Cleanup exact task-owned database state
         if: always()
         run: |

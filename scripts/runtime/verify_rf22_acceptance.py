@@ -53,23 +53,18 @@ def _verify_pytest_log(path: Path) -> None:
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
-        _fail(f"pytest log unreadable: {exc}")
-    summaries: list[dict[str, int]] = []
+        _fail(f"focused pytest log unreadable: {exc}")
+    summaries = []
     for line in lines:
         match = SUMMARY.search(line.strip())
-        if not match:
-            continue
-        counts = {name: 0 for name in ("passed", "skipped", "failed", "errors")}
-        for number, label in re.findall(r"([0-9][0-9,]*)\s+(passed|skipped|failed|errors?)", match.group("parts")):
-            key = "errors" if label.startswith("error") else label
-            counts[key] = int(number.replace(",", ""))
-        if counts["passed"] + counts["skipped"] + counts["failed"] + counts["errors"]:
-            summaries.append(counts)
-    if len(summaries) != 1:
-        _fail("full pytest log must contain exactly one final pytest summary")
-    summary = summaries[0]
-    if summary["failed"] != 0 or summary["errors"] != 0:
-        _fail(f"full pytest log is not clean: {summary}")
+        if match:
+            counts = {name: 0 for name in ("passed", "skipped", "failed", "errors")}
+            for number, label in re.findall(r"([0-9][0-9,]*)\s+(passed|skipped|failed|errors?)", match.group("parts")):
+                counts["errors" if label.startswith("error") else label] = int(number.replace(",", ""))
+            if sum(counts.values()):
+                summaries.append(counts)
+    if len(summaries) != 1 or summaries[0]["failed"] or summaries[0]["errors"]:
+        _fail("focused pytest log is not a single clean summary")
 
 
 def _verify_manifest(manifest: dict[str, Any], *, root: Path) -> None:
@@ -81,13 +76,13 @@ def _verify_manifest(manifest: dict[str, Any], *, root: Path) -> None:
     if not isinstance(payloads, list):
         _fail("scanner payload inventory is not exact")
     basenames = [item.get("basename") for item in payloads if isinstance(item, dict)]
-    if basenames != ["rf22.json", "rf22-full-pytest.log"] or len(payloads) != 2:
+    if basenames != ["rf22.json", "rf22-focused-pytest.log"] or len(payloads) != 2:
         _fail("scanner payload inventory is not exact")
     for item in payloads:
         if not isinstance(item, dict) or set(item) != {"basename", "size", "sha256"}:
             _fail("malformed scanner payload entry")
         basename = item["basename"]
-        if not isinstance(basename, str) or basename not in {"rf22.json", "rf22-full-pytest.log"} or Path(basename).name != basename:
+        if not isinstance(basename, str) or basename not in {"rf22.json", "rf22-focused-pytest.log"} or Path(basename).name != basename:
             _fail("unsafe scanner basename")
         path = root / basename
         if not path.is_file():
@@ -108,7 +103,7 @@ def main() -> int:
     parser.add_argument("--pytest-log", type=Path)
     args = parser.parse_args()
     root = args.artifact.parent
-    log = args.pytest_log or root / "rf22-full-pytest.log"
+    log = args.pytest_log or root / "rf22-focused-pytest.log"
     try:
         evidence: Any = json.loads(args.artifact.read_text(encoding="utf-8"))
         manifest: Any = json.loads(args.manifest.read_text(encoding="utf-8"))
@@ -118,6 +113,7 @@ def main() -> int:
         _fail("root documents must be objects")
     if LEGACY_KEYS.intersection(evidence) or "required_true" in evidence:
         _fail("legacy boolean evidence shape is forbidden")
+    _verify_pytest_log(log)
     if evidence.get("technical_id") != TECHNICAL_ID or evidence.get("candidate_sha") != args.candidate_sha:
         _fail("identity mismatch")
     if evidence.get("postgres_major") != 18 or evidence.get("catalog_tables") != TABLES:
@@ -212,7 +208,6 @@ def main() -> int:
     if evidence.get("raw_provider_payload_persisted") is not False:
         _fail("raw provider payload invariant missing")
     _verify_manifest(manifest, root=root)
-    _verify_pytest_log(log)
     print("RF22_ACCEPTANCE_VERIFIED")
     return 0
 

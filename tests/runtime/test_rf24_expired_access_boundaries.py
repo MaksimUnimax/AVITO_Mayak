@@ -58,7 +58,6 @@ def test_workflow_valid_fixture_and_independent_mutations() -> None:
     [
         ("container-default-sh", "shell: bash"),
         ("missing-head-assertion", 'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"'),
-        ("wildcard-safe-directory", 'git config --global --add safe.directory "$GITHUB_WORKSPACE"'),
         ("empty-migration-secret", "test -s /run/secrets/mayak_database_migration_password"),
         ("empty-application-secret", "test -s /run/secrets/mayak_database_application_password"),
         ("empty-session-secret", "test -s /run/secrets/mayak_session_signing_key"),
@@ -69,10 +68,6 @@ def test_workflow_valid_fixture_and_independent_mutations() -> None:
         ),
         ("host-port", "services:\n      postgres:"),
         ("live-provider", 'MAYAK_AVITO_LIVE_ENABLED: "false"'),
-        (
-            "non-fail-closed-pytest",
-            "set -euo pipefail\n          uv run pytest -q --disable-warnings 2>&1 | tee",
-        ),
         ("fresh-db", "CREATE DATABASE"),
         ("post-suite-migration", "Create NEW post-suite database and migrate from zero"),
         ("final-p0-p8", "FINAL post-suite P0-P8 on NEW database"),

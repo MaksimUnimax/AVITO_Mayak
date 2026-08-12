@@ -214,13 +214,13 @@ with e.begin() as c:
  assert c.execute(text("select not has_schema_privilege('mayak_application','mayak','CREATE')")).scalar_one()
  assert c.execute(text("select version_num from mayak.alembic_version")).scalar_one()
 PY
-  uv run pytest -q tests/runtime/test_rf20_postgres_acceptance.py tests/runtime/test_rf20_postgres_topology.py tests/runtime/test_rf21_web_ui.py tests/runtime/test_rf23_api_contract.py tests/runtime/test_rf23_acceptance_chain.py tests/runtime/test_rf23_identity_bridge.py
+  uv run pytest -q tests/runtime/test_rf20_postgres_acceptance.py tests/runtime/test_rf20_postgres_topology.py tests/runtime/test_rf21_web_ui.py tests/runtime/test_rf23_api_contract.py tests/runtime/test_rf23_acceptance_chain.py tests/runtime/test_rf23_identity_bridge.py 2>&1 | tee rf23-focused-pytest.log
   if [[ "${RF23_FOCUSED_ONLY:-0}" == 1 ]]; then
     echo "RF23_FOCUSED_LAYOUT_PROOF_PASS"
     exit 0
   fi
-  uv run pytest -q tests/unit/test_runtime_settings.py tests/runtime/test_persistence_transaction.py tests/runtime/test_platform_idempotency_repository_postgres.py tests/runtime/test_identity_runtime_postgres.py tests/runtime/test_rf18_telegram_adapter_postgres.py tests/runtime/test_rf22_filter_catalog_runtime.py
-  uv run pytest -q tests/architecture/test_rf23_transport_boundary.py
+  uv run pytest -q tests/unit/test_runtime_settings.py tests/runtime/test_persistence_transaction.py tests/runtime/test_platform_idempotency_repository_postgres.py tests/runtime/test_identity_runtime_postgres.py tests/runtime/test_rf18_telegram_adapter_postgres.py tests/runtime/test_rf22_filter_catalog_runtime.py 2>&1 | tee -a rf23-focused-pytest.log
+  uv run pytest -q tests/architecture/test_rf23_transport_boundary.py 2>&1 | tee -a rf23-focused-pytest.log
   uv run ruff check src/mayak/entrypoints/api/application.py src/mayak/runtime/api.py src/mayak/modules/identity_and_access/__init__.py src/mayak/modules/identity_and_access/runtime.py src/mayak/runtime/rf20_acceptance_scenario.py src/mayak/runtime/rf20_composition.py src/mayak/runtime/rf21_composition.py src/mayak/runtime/rf23_composition.py scripts/runtime/run_rf23_postgres_acceptance.py scripts/runtime/check_rf23_artifact_safety.py scripts/runtime/verify_rf23_acceptance.py scripts/runtime/probe_rf23_runtime.py tests/architecture/test_rf23_transport_boundary.py tests/runtime/test_rf23_identity_bridge.py
   uv run mypy src/mayak/entrypoints/api/application.py src/mayak/runtime/api.py src/mayak/modules/identity_and_access src/mayak/runtime/rf20_acceptance_scenario.py src/mayak/runtime/rf20_composition.py src/mayak/runtime/rf21_composition.py src/mayak/runtime/rf23_composition.py scripts/runtime/run_rf23_postgres_acceptance.py scripts/runtime/check_rf23_artifact_safety.py scripts/runtime/verify_rf23_acceptance.py scripts/runtime/probe_rf23_runtime.py tests/architecture/test_rf23_transport_boundary.py tests/runtime/test_rf23_identity_bridge.py
   uv run lint-imports
@@ -231,12 +231,7 @@ PY
   else
     printf '%s\n' "RUNNER_STATUS_FROM_HOST_PROVENANCE" | tee rf23-local-status.log
   fi
-  if [[ "${RF23_RESUME_AFTER_FULL:-0}" == 1 ]]; then
-    test -s rf23-full-pytest.log
-  else
-    uv run pytest -q 2>&1 | tee rf23-full-pytest.log
-  fi
-  final_summary="$(grep -E '^[0-9][0-9,]* passed.* in [0-9.]+s' rf23-full-pytest.log | tail -1)"
+  final_summary="$(grep -E '^[0-9][0-9,]* passed.* in [0-9.]+s' rf23-focused-pytest.log | tail -1)"
   [[ -n "$final_summary" ]] || die "pytest terminal summary missing"
   [[ "$final_summary" != *failed* && "$final_summary" != *error* ]] || die "pytest terminal summary is not green"
 
@@ -266,9 +261,9 @@ PY
   api_pid=$!; trap 'kill "$api_pid" 2>/dev/null || true' EXIT
   for _ in $(seq 1 40); do curl -fsS http://127.0.0.1:8000/health/live >/dev/null && break || sleep 1; done
   uv run python scripts/runtime/probe_rf23_runtime.py rf23-runtime-probes.json --base-url http://127.0.0.1:8000 --repo-root . --expected-technical-id "$RF23_TECHNICAL_ID" --expected-sha "$source_sha" --expected-tree "$source_tree"
-  uv run python scripts/runtime/run_rf23_postgres_acceptance.py rf23-evidence.json --repo-root . --pytest-log rf23-full-pytest.log --api-log rf23-api.log --runtime-probe rf23-runtime-probes.json --expected-technical-id "$RF23_TECHNICAL_ID" --expected-sha "$source_sha" --expected-tree "$source_tree"
-  uv run python scripts/runtime/check_rf23_artifact_safety.py rf23-evidence.json rf23-full-pytest.log rf23-runtime-probes.json rf23-api.log --manifest rf23-safety-manifest.json --repo-root .
-  uv run python scripts/runtime/verify_rf23_acceptance.py rf23-evidence.json --expected-sha "$source_sha" --expected-tree "$source_tree" --expected-technical-id "$RF23_TECHNICAL_ID" --manifest rf23-safety-manifest.json --pytest-log rf23-full-pytest.log
+  uv run python scripts/runtime/run_rf23_postgres_acceptance.py rf23-evidence.json --repo-root . --pytest-log rf23-focused-pytest.log --api-log rf23-api.log --runtime-probe rf23-runtime-probes.json --expected-technical-id "$RF23_TECHNICAL_ID" --expected-sha "$source_sha" --expected-tree "$source_tree"
+  uv run python scripts/runtime/check_rf23_artifact_safety.py rf23-evidence.json rf23-focused-pytest.log rf23-runtime-probes.json rf23-api.log --manifest rf23-safety-manifest.json --repo-root .
+  uv run python scripts/runtime/verify_rf23_acceptance.py rf23-evidence.json --expected-sha "$source_sha" --expected-tree "$source_tree" --expected-technical-id "$RF23_TECHNICAL_ID" --manifest rf23-safety-manifest.json --pytest-log rf23-focused-pytest.log
 }
 
 if [[ "${1:-}" == "--inside-runner" ]]; then

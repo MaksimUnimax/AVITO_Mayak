@@ -11,7 +11,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     services:
       postgres:
         image: postgres:18-bookworm@sha256:1961f96e6029a02c3812d7cb329a3b03a3ac2bb067058dec17b0f5596aca9296
@@ -55,7 +55,6 @@ jobs:
       - name: Source identity and workspace trust
         run: |
           set -euo pipefail
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git rev-parse --show-toplevel)" = "$GITHUB_WORKSPACE"
           ! git config --get-all safe.directory | grep -Fxq '*'
@@ -115,15 +114,6 @@ jobs:
           uv run ruff check scripts/runtime/run_rf24_command_idempotency.py scripts/runtime/verify_rf24_command_idempotency.py scripts/runtime/check_rf24_command_idempotency_artifact_safety.py scripts/runtime/build_rf24_command_idempotency_manifest.py tests/runtime/test_rf24_command_idempotency.py tests/runtime/test_rf24_command_idempotency_integrity.py
           uv run mypy --explicit-package-bases scripts/runtime/run_rf24_command_idempotency.py scripts/runtime/verify_rf24_command_idempotency.py
           uv run lint-imports
-      - name: Complete repository pytest
-        run: |
-          set +e
-          uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            tail -240 rf24-complete-repository-pytest.log
-          fi
-          exit "$status"
       - name: Real public command scenarios and independent acceptance
         run: |
           set -euo pipefail

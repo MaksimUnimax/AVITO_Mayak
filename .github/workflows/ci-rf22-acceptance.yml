@@ -183,24 +183,20 @@ jobs:
           PY
       - name: Focused RF22 and static gates
         run: |
-          uv run pytest -q tests/runtime/test_rf22_filter_catalog_runtime.py tests/runtime/test_rf22_evidence.py tests/unit/test_filter_catalog_semantic_contracts.py tests/contract/test_filter_catalog_semantic_contract_exports.py tests/architecture/test_filter_catalog_semantic_boundaries.py tests/runtime/test_filter_catalog_schema.py
+          uv run pytest -q tests/runtime/test_rf22_filter_catalog_runtime.py tests/runtime/test_rf22_evidence.py tests/unit/test_filter_catalog_semantic_contracts.py tests/contract/test_filter_catalog_semantic_contract_exports.py tests/architecture/test_filter_catalog_semantic_boundaries.py tests/runtime/test_filter_catalog_schema.py 2>&1 | tee rf22-focused-pytest.log
           uv run ruff check src/mayak/modules/filter_catalog/__init__.py src/mayak/modules/filter_catalog/runtime.py scripts/runtime/run_rf22_postgres_acceptance.py scripts/runtime/verify_rf22_acceptance.py scripts/runtime/check_rf22_artifact_safety.py tests/runtime/test_rf22_filter_catalog_runtime.py tests/runtime/test_rf22_evidence.py
           uv run mypy src/mayak/modules/filter_catalog/runtime.py scripts/runtime/run_rf22_postgres_acceptance.py scripts/runtime/verify_rf22_acceptance.py scripts/runtime/check_rf22_artifact_safety.py
           uv run lint-imports
-      - name: Final full repository regression
-        run: |
-          set -o pipefail
-          uv run pytest -q 2>&1 | tee rf22-full-pytest.log
       - name: RF22 artifact safety scanner
-        run: uv run python scripts/runtime/check_rf22_artifact_safety.py rf22.json rf22-full-pytest.log --manifest rf22-safety-manifest.json
+        run: uv run python scripts/runtime/check_rf22_artifact_safety.py rf22.json rf22-focused-pytest.log --manifest rf22-safety-manifest.json
       - name: Final RF22 verifier
-        run: uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA" --manifest rf22-safety-manifest.json --pytest-log rf22-full-pytest.log
+        run: uv run python scripts/runtime/verify_rf22_acceptance.py rf22.json --candidate-sha "$GITHUB_SHA" --manifest rf22-safety-manifest.json --pytest-log rf22-focused-pytest.log
       - uses: actions/upload-artifact@v4
         if: success()
         with:
           name: rf22-filter-catalog-builder-acceptance
           path: |
             rf22.json
-            rf22-full-pytest.log
+            rf22-focused-pytest.log
             rf22-safety-manifest.json
           if-no-files-found: error

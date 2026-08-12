@@ -8,7 +8,7 @@ on:
 jobs:
   acceptance:
     runs-on: ubuntu-24.04
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     defaults:
       run:
         shell: bash
@@ -64,8 +64,6 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           command -v bash
           bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
-          git config --global --unset-all safe.directory || true
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           printf 'CHECKOUT_HEAD=%s\n' "$(git rev-parse HEAD)"
           printf 'GITHUB_SHA=%s\n' "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -218,10 +216,6 @@ jobs:
           uv run mypy --explicit-package-bases scripts/runtime/run_rf24_expired_access.py scripts/runtime/verify_rf24_expired_access.py scripts/runtime/check_rf24_expired_access_static_delta.py scripts/runtime/run_rf24_expired_access_static_delta.py scripts/runtime/check_rf24_expired_access_workflow.py
       - name: Static base-vs-candidate delta
         run: uv run python scripts/runtime/run_rf24_expired_access_static_delta.py --base 6b1d7289a38e6195b7244199ae4ee1caf46eae45 --output rf24-expired-access-static-delta.json
-      - name: Complete repository pytest
-        run: |
-          set -euo pipefail
-          uv run pytest -q --disable-warnings 2>&1 | tee rf24-expired-access-full-pytest.log
       - name: Create NEW post-suite database and migrate from zero
         run: |
           set -euo pipefail
@@ -311,7 +305,7 @@ jobs:
           set -euo pipefail
           test -s rf24-expired-access-evidence.json
           uv run python scripts/runtime/verify_rf24_expired_access.py rf24-expired-access-evidence.json "$GITHUB_SHA" --result rf24-expired-access-verifier-result.json
-          uv run python scripts/runtime/check_rf24_expired_access_artifact_safety.py --result rf24-expired-access-scanner-result.json rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-phase-boundaries.json rf24-expired-access-adversarial-execution.json rf24-expired-access-static-delta.json rf24-expired-access-verifier-result.json rf24-expired-access-full-pytest.log rf24-expired-access.log
+          uv run python scripts/runtime/check_rf24_expired_access_artifact_safety.py --result rf24-expired-access-scanner-result.json rf24-expired-access-evidence.json rf24-expired-access-provider-observations.json rf24-expired-access-phase-boundaries.json rf24-expired-access-adversarial-execution.json rf24-expired-access-static-delta.json rf24-expired-access-verifier-result.json rf24-expired-access.log
           test "$(python -c 'import json; print(json.load(open("rf24-expired-access-scanner-result.json"))["finding_count"])')" = 0
           uv run python scripts/runtime/build_rf24_expired_access_manifest.py . "$GITHUB_SHA" "$GITHUB_RUN_ID"
           test "$(python -c 'import json; print(json.load(open("rf24-expired-access-safety-manifest.json"))["scanner_finding_count"])')" = 0

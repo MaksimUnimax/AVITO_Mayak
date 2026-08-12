@@ -5,6 +5,10 @@ on:
     branches: [main, rf25-security-privacy-supply-chain-01]
   pull_request:
   workflow_dispatch:
+    inputs:
+      comparison_base_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -63,6 +67,11 @@ jobs:
         run: uv pip check
       - name: Verifier self-test
         run: python scripts/ci/verify_security_supply_chain.py --self-test --evidence-dir ci-evidence/security-supply-chain
+      - name: Resolve comparison base
+        id: comparison-base
+        run: |
+          sha=$(python scripts/ci/resolve_comparison_base.py --event-name "$GITHUB_EVENT_NAME" --pull-request-base "${{ github.event.pull_request.base.sha || '' }}" --push-before "${{ github.event.before || '' }}" --manual-base "${{ inputs.comparison_base_sha || '' }}")
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
       - name: Hosted semantic behavior gate
         run: |
           set +e
@@ -94,7 +103,7 @@ jobs:
           exit "$pytest_status"
       - name: Run complete security verifier
         env:
-          CI_COMPARISON_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          CI_COMPARISON_BASE_SHA: ${{ steps.comparison-base.outputs.sha }}
         run: python scripts/ci/verify_security_supply_chain.py --mode all --base-sha "$CI_COMPARISON_BASE_SHA" --evidence-dir ci-evidence/security-supply-chain --venv .venv
       - name: Publish safe summary
         if: always()

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      comparison_base_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -100,9 +104,14 @@ jobs:
           test "$(sha256sum uv.lock | cut -d' ' -f1)" = e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
       - name: Verifier parser self-test
         run: python scripts/ci/verify_quality_baseline.py --self-test
+      - name: Resolve comparison base
+        id: comparison-base
+        run: |
+          sha=$(python scripts/ci/resolve_comparison_base.py --event-name "$GITHUB_EVENT_NAME" --pull-request-base "${{ github.event.pull_request.base.sha || '' }}" --push-before "${{ github.event.before || '' }}" --manual-base "${{ inputs.comparison_base_sha || '' }}")
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
       - name: Run complete quality baseline
         env:
-          CI_COMPARISON_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          CI_COMPARISON_BASE_SHA: ${{ steps.comparison-base.outputs.sha }}
         run: python scripts/ci/verify_quality_baseline.py --mode quality --static-only --base-sha "$CI_COMPARISON_BASE_SHA" --evidence-dir ci-evidence/quality-suite --venv .venv
       - name: Publish safe summary
         if: always()

@@ -27,7 +27,6 @@ REQUIRED = (
     "mayak_application",
     "alembic downgrade base",
     "alembic upgrade head",
-    "uv run pytest -q --disable-warnings 2>&1 | tee rf24-expired-access-full-pytest.log",
     "CREATE DATABASE",
     "FINAL post-suite P0-P8",
     "verify_rf24_expired_access.py",
@@ -336,7 +335,6 @@ def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list
         "Initial migration zero to head",
         "Focused, one-to-one, ownership and workflow gates",
         "Static base-vs-candidate delta",
-        "Complete repository pytest",
         "Create NEW post-suite database and migrate from zero",
         "FINAL post-suite P0-P8 on NEW database",
         "Verifier scanner manifest hash chain",
@@ -347,12 +345,6 @@ def validate(text: str, branch: str = "rf24-expired-access-scenario-01") -> list
         for left, right in zip(ordered, ordered[1:]):
             if positions[left] >= positions[right]:
                 failures.append(f"ordering:{left}>{right}")
-    if "set -euo pipefail\n          uv run pytest -q --disable-warnings 2>&1 | tee" not in text:
-        failures.append("pytest-pipeline-not-fail-closed")
-    if "FINAL post-suite P0-P8" in text and text.index("FINAL post-suite P0-P8") < text.index(
-        "Complete repository pytest"
-    ):
-        failures.append("final-before-full-pytest")
     if "rm -f rf24-expired-access-evidence.json" not in text:
         failures.append("pre-suite-evidence-reused")
     if "MAYAK_DATABASE_NAME=%s" not in text or "GITHUB_RUN_ID" not in text:

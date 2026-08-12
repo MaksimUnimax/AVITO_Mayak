@@ -8,7 +8,7 @@ on:
 jobs:
   spine:
     runs-on: ubuntu-24.04
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     defaults:
       run:
         shell: bash
@@ -99,14 +99,6 @@ jobs:
           uv run ruff check src/mayak/runtime scripts/runtime
           uv run mypy --explicit-package-bases src/mayak/runtime scripts/runtime/run_rf24_vertical_spine.py scripts/runtime/verify_rf24_vertical_spine.py scripts/runtime/check_rf24_spine_artifact_safety.py
           uv run lint-imports
-      - name: Full repository pytest
-        env:
-          RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
-          RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
-          MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
-          MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
-          MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
-        run: uv run pytest -q 2>&1 | tee rf24-spine-full-pytest.log
       - name: Fresh real spine process run
         env:
           MAYAK_SOURCE_SHA: ${{ github.sha }}

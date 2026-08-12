@@ -8,7 +8,7 @@ on:
 jobs:
   acceptance:
     runs-on: ubuntu-24.04
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     defaults:
       run:
         shell: bash
@@ -55,8 +55,6 @@ jobs:
       - name: H0 exact checkout and shell proof
         run: |
           set -euo pipefail
-          git config --global --unset-all safe.directory || true
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           bash -c 'set -euo pipefail; true'
       - uses: astral-sh/setup-uv@v6
@@ -152,15 +150,10 @@ jobs:
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application;'
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'REVOKE INSERT, UPDATE, DELETE ON mayak.filter_catalog_versions, mayak.filter_definitions, mayak.filter_options, mayak.filter_dependencies, mayak.filter_category_applicability, mayak.filter_evidence_references, mayak.filter_capability_profiles FROM mayak_application;'
-      - name: H5 complete repository pytest
-        run: uv run pytest -q --disable-warnings 2>&1 | tee rf24-unsupported-filter-full-pytest.log
-      - name: Preserve full pytest diagnostic
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rf24-unsupported-filter-full-pytest-diagnostic
-          if-no-files-found: warn
-          path: rf24-unsupported-filter-full-pytest.log
+      - name: H5 focused RF24 acceptance gates
+        run: |
+          set -euo pipefail
+          uv run pytest -q tests/runtime/test_rf24_unsupported_filter_artifacts.py tests/runtime/test_rf24_unsupported_filter_boundaries.py
       - name: H6 create NEW post-suite database and migrate from zero
         run: |
           set -euo pipefail

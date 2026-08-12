@@ -58,7 +58,7 @@ def _manifest(path: Path, *, root: Path, require_probe: bool = False) -> None:
     ):
         _fail("scanner manifest is not a clean PASS")
     payloads = value.get("payloads")
-    expected_payloads = ["rf23-evidence.json", "rf23-full-pytest.log"]
+    expected_payloads = ["rf23-evidence.json", "rf23-focused-pytest.log"]
     if require_probe:
         expected_payloads.extend(("rf23-runtime-probes.json", "rf23-api.log"))
     if (
@@ -293,7 +293,7 @@ def verify(
     ) in (None, "not_observed"):
         return False
     try:
-        log_path = Path(pytest_log) if pytest_log else root / "rf23-full-pytest.log"
+        log_path = Path(pytest_log) if pytest_log else root / "rf23-focused-pytest.log"
         _pytest_log(log_path)
         if evidence.get("pytest_log_sha256") != hashlib.sha256(log_path.read_bytes()).hexdigest():
             return False

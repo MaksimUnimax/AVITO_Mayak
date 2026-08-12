@@ -21,7 +21,7 @@ def _values(value: Any) -> list[str]:
 
 
 METHOD = "rf21-semantic-artifact-scan/v3"
-EXPECTED_PAYLOADS = frozenset(("rf21.json", "rf21-full-pytest.log"))
+EXPECTED_PAYLOADS = frozenset(("rf21.json",))
 CLASSIFICATIONS = frozenset(("CLEAN",))
 
 

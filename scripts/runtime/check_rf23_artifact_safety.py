@@ -12,7 +12,7 @@ from pathlib import Path
 VERSION = "rf23-safety-scanner/v1"
 EXPECTED = (
     "rf23-evidence.json",
-    "rf23-full-pytest.log",
+    "rf23-focused-pytest.log",
     "rf23-runtime-probes.json",
     "rf23-api.log",
 )
@@ -141,7 +141,7 @@ def main() -> int:
     ):
         raise SystemExit(
             "RF23 safety scanner requires exact payloads: "
-            "rf23-evidence.json rf23-full-pytest.log rf23-runtime-probes.json rf23-api.log"
+            "rf23-evidence.json rf23-focused-pytest.log rf23-runtime-probes.json rf23-api.log"
         )
 
     findings: list[str] = []

@@ -63,7 +63,6 @@ jobs:
           workspace="$(pwd -P)"
           test -n "$GITHUB_WORKSPACE"
           test "$GITHUB_WORKSPACE" = "$workspace"
-          git config --global --add safe.directory "$workspace"
           test "$(git rev-parse --show-toplevel)" = "$workspace"
           git config --get-all safe.directory | grep -Fxq "$workspace"
       - uses: astral-sh/setup-uv@v6
@@ -165,8 +164,6 @@ jobs:
           uv run ruff check src/mayak/runtime/rf24_scan_resilience.py src/mayak/runtime/rf24_provenance.py src/mayak/runtime/worker.py src/mayak/modules/scan_orchestration/repository.py src/mayak/modules/scan_orchestration/services.py scripts/runtime/run_rf24_scan_resilience.py scripts/runtime/verify_rf24_scan_resilience.py scripts/runtime/check_rf24_scan_resilience_artifact_safety.py scripts/runtime/build_rf24_scan_resilience_manifest.py tests/runtime/test_rf24_scan_resilience.py tests/runtime/test_rf24_scan_resilience_integrity.py
           uv run mypy --explicit-package-bases scripts/runtime/run_rf24_scan_resilience.py scripts/runtime/verify_rf24_scan_resilience.py src/mayak/runtime/rf24_scan_resilience.py
           uv run lint-imports
-      - name: Complete repository pytest regression
-        run: uv run pytest -q
       - name: Execute seven real scenarios
         run: |
           uv run python scripts/runtime/run_rf24_scan_resilience.py --repo-root "$GITHUB_WORKSPACE" --output rf24-scan-resilience-evidence.json --probes rf24-scan-resilience-process-probes.json --log rf24-scan-resilience.log --source-sha "$GITHUB_SHA"

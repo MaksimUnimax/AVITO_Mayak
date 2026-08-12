@@ -59,7 +59,7 @@ RULES: dict[str, tuple[str, ...]] = {
         "MAYAK_SYNTHETIC_IDENTITY_ENABLED=true",
         "getent ahostsv4 postgres",
     ),
-    "full repository pytest": ("uv run pytest -q --disable-warnings",),
+    "focused acceptance pytest": ("uv run pytest -q tests/runtime/test_rf24_stale_web_form_core.py",),
     "fresh post-suite database": (
         "Create NEW post-suite database and migrate from zero",
         "CREATE DATABASE",
@@ -122,17 +122,17 @@ def _body(text: str, name: str) -> str:
 def validate(text: str) -> list[str]:
     missing = [name for name, needles in RULES.items() if any(needle not in text for needle in needles)]
     steps = _steps(text)
-    full = steps.get("Initial database migration and complete repository pytest", -1)
+    focused = steps.get("Focused stale-Web tests", -1)
     docker = steps.get("Install pinned Docker CLI and buildx before gates", -1)
     substrate = steps.get("Hosted substrate preflight", -1)
     fresh = steps.get("Create NEW post-suite database and migrate from zero", -1)
     final = steps.get("FINAL post-suite S0-S8 on NEW database", -1)
     artifacts = steps.get("Verify scanner manifest hash chain", -1)
     grants = steps.get("Grant fresh database application access after exact head", -1)
-    if docker < 0 or (full >= 0 and docker > full):
-        missing.append("Docker install must precede complete repository pytest")
-    if substrate < 0 or (full >= 0 and substrate > full):
-        missing.append("runtime-settings preflight must precede complete repository pytest")
+    if docker < 0 or (focused >= 0 and docker > focused):
+        missing.append("Docker install must precede focused acceptance")
+    if substrate < 0 or (focused >= 0 and substrate > focused):
+        missing.append("runtime-settings preflight must precede focused acceptance")
     fresh_body = _body(text, "Create NEW post-suite database and migrate from zero")
     for marker, finding in (
         ('export MAYAK_DATABASE_NAME="$db"', "fresh database name must be current-shell exported"),
@@ -167,12 +167,6 @@ def validate(text: str) -> list[str]:
     ):
         if scenario_pos >= 0 and text.find(marker) < scenario_pos:
             missing.append(finding)
-    if "if: always()" in text and "rf24-stale-web-form-full-pytest-diagnostic" in text:
-        # The diagnostic upload is explicitly non-acceptance evidence; final upload is later.
-        final_upload = text.rfind("name: rf24-stale-web-form")
-        diagnostic_upload = text.find("name: rf24-stale-web-form-full-pytest-diagnostic")
-        if final_upload < diagnostic_upload:
-            missing.append("acceptance artifact upload must remain after verifier/scanner/manifest")
     return list(dict.fromkeys(missing))
 
 

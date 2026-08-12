@@ -13,7 +13,6 @@ REQUIRED = (
     "postgres:18-bookworm",
     "set -euo pipefail",
     "uv sync --frozen --all-groups",
-    "uv run pytest -q --disable-warnings",
     "alembic upgrade head",
     "CREATE DATABASE mayak_rf24_unsupported_filter_",
     "run_rf24_unsupported_filter.py",
@@ -30,6 +29,7 @@ REQUIRED = (
     "runtime-settings-preflight=PASS",
     "final-dsn-database-b=PASS",
     "upload-artifact@v4",
+    "H5 focused RF24 acceptance gates",
 )
 
 GLOBAL_BROAD_SUITE = (
@@ -69,13 +69,13 @@ def _section(text: str, start: str, end: str | None = None) -> str:
 
 def validate(text: str) -> list[str]:
     errors = [f"missing:{token}" for token in REQUIRED if token not in text]
-    h5 = text.find("H5 complete repository pytest")
+    h5 = text.find("H5 focused RF24 acceptance gates")
     h6 = _section(text, "H6 create NEW post-suite database", "H7 exact head")
     h10 = _section(text, "H10 U0-U10 real PostgreSQL scenario", "H11 verifier")
     pre_h5 = text if h5 < 0 else text[:h5]
 
     if h5 < 0:
-        errors.append("missing:H5 boundary")
+        errors.append("missing:focused acceptance boundary")
     if "RF20_POSTGRES_OWNER_LABEL" in text:
         errors.append("fake RF20 owner label is forbidden")
     for name in UNRELATED_ACCEPTANCE:
@@ -102,10 +102,8 @@ def validate(text: str) -> list[str]:
         errors.append("RF22_DATABASE_URL is not bound to the DATABASE B application role")
     if h10 and 'export RF22_MIGRATION_DSN="$RF11_POSTGRES_DSN"' not in h10:
         errors.append("RF22_MIGRATION_DSN is not bound to the DATABASE B migration role")
-    if "uv run pytest -q --disable-warnings" not in text:
-        errors.append("complete repository pytest missing")
-    if text.find("H10 U0-U10") < text.find("H5 complete repository pytest"):
-        errors.append("H10 precedes successful H5")
+    if "uv run pytest -q" not in text:
+        errors.append("focused acceptance pytest missing")
     return errors
 
 

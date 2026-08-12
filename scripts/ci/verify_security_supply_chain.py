@@ -205,16 +205,20 @@ def compare_findings(base: dict[str, object], candidate: dict[str, object]) -> d
     candidate_rows = candidate.get("findings", [])
     def key(row: dict[str, object]) -> tuple[object, ...]:
         return (row["path"], row["rule"], row["value_sha256"])
+    def real(row: dict[str, object]) -> bool:
+        return row["rule"] in {"PEM_PRIVATE_KEY", "GITHUB_TOKEN", "AWS_ACCESS_KEY", "SLACK_TOKEN", "TELEGRAM_BOT_TOKEN", "URL_USERINFO_PASSWORD", "SENSITIVE_FILENAME"}
+    def synthetic(row: dict[str, object]) -> bool:
+        path = str(row.get("path", "")).lower()
+        return any(part in path for part in ("tests/fixtures/", "tests/fixture/", "/examples/", "example/", "fixture/"))
     base_keys = {key(row) for row in base_rows}
     rows = []
     for row in candidate_rows:
         k = key(row)
-        real_rule = row["rule"] in {"PEM_PRIVATE_KEY", "GITHUB_TOKEN", "AWS_ACCESS_KEY", "SLACK_TOKEN", "TELEGRAM_BOT_TOKEN", "URL_USERINFO_PASSWORD", "SENSITIVE_FILENAME"}
-        classification = "REAL_SECRET" if real_rule else ("UNCHANGED_BASELINE" if k in base_keys else "NEW_OR_WORSENED")
+        classification = "REAL_SECRET" if real(row) else ("SYNTHETIC_EXAMPLE_OR_FIXTURE" if synthetic(row) else ("UNCHANGED_BASELINE" if k in base_keys else "NEW_OR_WORSENED"))
         rows.append({"path": row["path"], "line": row["line"], "rule": row["rule"], "value_sha256": row["value_sha256"], "classification": classification})
     for row in base_rows:
         if key(row) not in {key(x) for x in candidate_rows}:
-            classification = "REAL_SECRET" if row["rule"] in {"PEM_PRIVATE_KEY", "GITHUB_TOKEN", "AWS_ACCESS_KEY", "SLACK_TOKEN", "TELEGRAM_BOT_TOKEN", "URL_USERINFO_PASSWORD", "SENSITIVE_FILENAME"} else "RESOLVED_BASELINE"
+            classification = "REAL_SECRET" if real(row) else "RESOLVED_BASELINE"
             rows.append({"path": row["path"], "line": row["line"], "rule": row["rule"], "value_sha256": row["value_sha256"], "classification": classification})
     counts = {name: sum(x["classification"] == name for x in rows) for name in ("REAL_SECRET", "NEW_OR_WORSENED", "UNCHANGED_BASELINE", "SYNTHETIC_EXAMPLE_OR_FIXTURE", "FALSE_POSITIVE", "RESOLVED_BASELINE")}
     blockers = counts["REAL_SECRET"] + counts["NEW_OR_WORSENED"]

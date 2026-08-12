@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 VERSION = "rf22-safety-scanner/v2"
-EXPECTED = ("rf22.json", "rf22-full-pytest.log")
+EXPECTED = ("rf22.json", "rf22-focused-pytest.log")
 FORBIDDEN = re.compile(
     r"-----BEGIN .*PRIVATE KEY-----|Bearer\s+[A-Za-z0-9._~-]{20,}|postgres(?:ql)?://[^\s:]+:[^\s@]+@",
     re.I,
@@ -52,7 +52,7 @@ def main() -> int:
         for path in args.paths
     ):
         raise SystemExit(
-            "RF22 safety scanner requires exact payloads: rf22.json rf22-full-pytest.log"
+            "RF22 safety scanner requires exact focused payloads: rf22.json rf22-focused-pytest.log"
         )
     payloads: list[dict[str, object]] = []
     findings: list[str] = []

@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 import psycopg
 from psycopg import sql
 
@@ -41,21 +44,26 @@ def provision(run_id: str, state: Path, root: Path) -> None:
     with _admin() as conn, conn.cursor() as cur:
         cur.execute("SELECT 1 FROM pg_roles WHERE rolname='mayak_migration'")
         if cur.fetchone() is None:
-            cur.execute("CREATE ROLE mayak_migration LOGIN PASSWORD %s", (migration_password,))
+            cur.execute(sql.SQL("CREATE ROLE mayak_migration LOGIN PASSWORD {}").format(sql.Literal(migration_password)))
         else:
-            cur.execute("ALTER ROLE mayak_migration LOGIN PASSWORD %s", (migration_password,))
+            cur.execute(sql.SQL("ALTER ROLE mayak_migration LOGIN PASSWORD {}").format(sql.Literal(migration_password)))
         cur.execute("SELECT 1 FROM pg_roles WHERE rolname='mayak_application'")
         if cur.fetchone() is None:
-            cur.execute("CREATE ROLE mayak_application LOGIN PASSWORD %s", (application_password,))
+            cur.execute(sql.SQL("CREATE ROLE mayak_application LOGIN PASSWORD {}").format(sql.Literal(application_password)))
         else:
-            cur.execute("ALTER ROLE mayak_application LOGIN PASSWORD %s", (application_password,))
+            cur.execute(sql.SQL("ALTER ROLE mayak_application LOGIN PASSWORD {}").format(sql.Literal(application_password)))
         for db in (rf10, rf11):
             if not NAME.fullmatch(db):
                 raise ValueError("unsafe task-owned database")
             cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (db,))
             if cur.fetchone() is None:
                 cur.execute(sql.SQL("CREATE DATABASE {} OWNER mayak_migration").format(sql.Identifier(db)))
+    heads = tuple(sorted(ScriptDirectory.from_config(Config(str(root / "alembic.ini"))).get_heads()))
+    if len(heads) != 1:
+        raise RuntimeError(f"repository migration graph must have exactly one head, observed {heads!r}")
+    expected = heads[0]
     dsn10 = f"postgresql+psycopg://mayak_application:{application_password}@{host}:{port}/{rf10}"
+    receipt: list[dict[str, str]] = []
     for db in (rf10, rf11):
         with psycopg.connect(host=host, port=port, dbname=db, user="mayak_migration", password=migration_password, autocommit=True) as conn:
             with conn.cursor() as cur:
@@ -65,6 +73,16 @@ def provision(run_id: str, state: Path, root: Path) -> None:
         result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=root, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         if result.returncode:
             raise RuntimeError(f"migration failed for task-owned database {db}")
+        with psycopg.connect(host=host, port=port, dbname=db, user="mayak_migration", password=migration_password) as verify:
+            with verify.cursor() as verify_cur:
+                verify_cur.execute("SELECT version_num FROM mayak.alembic_version")
+                observed = tuple(row[0] for row in verify_cur.fetchall())
+        status = "PASS" if observed == (expected,) else "FAIL"
+        receipt.append({"logical_db_role": "rf10" if db == rf10 else "rf11", "db_id": db, "expected_revision": expected, "observed_revision": observed[0] if len(observed) == 1 else "MULTIPLE_OR_MISSING", "status": status})
+        if status != "PASS":
+            raise RuntimeError(f"migration head mismatch for task-owned database {db}")
+    (state / "migration-receipt.json").write_text(json.dumps({"schema_version": 1, "run_id": run_id, "databases": receipt}, sort_keys=True) + "\n", encoding="utf-8")
+    (state / "migration-receipt.json").chmod(0o600)
     marker = state / "full-regression.env"
     marker.write_text("\n".join((f"MAYAK_RF10_POSTGRES_DSN={dsn10}", f"MAYAK_RF11_POSTGRES_PASSWORD_FILE={password_file}", "MAYAK_RF11_POSTGRES_USER=mayak_migration", f"MAYAK_RF11_POSTGRES_HOST={host}", f"MAYAK_RF11_POSTGRES_PORT={port}", f"MAYAK_RF11_POSTGRES_DB={rf11}", "MAYAK_PROVIDER_MODE=disabled", "MAYAK_RUNTIME_PROFILE=synthetic_acceptance")) + "\n", encoding="utf-8")
     marker.chmod(0o600)
@@ -76,7 +94,7 @@ def cleanup(run_id: str, state: Path) -> None:
         for db in names:
             cur.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname=%s AND pid <> pg_backend_pid()", (db,))
             cur.execute(sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(db)))
-    for name in ("full-regression.env", "rf11-password"):
+    for name in ("full-regression.env", "rf11-password", "migration-receipt.json"):
         (state / name).unlink(missing_ok=True)
     state.rmdir()
 

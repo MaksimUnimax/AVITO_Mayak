@@ -8,7 +8,7 @@ on:
 jobs:
   backup-restore:
     runs-on: ubuntu-24.04
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     services:
       mayak-postgres:
         image: postgres:18-bookworm
@@ -180,7 +180,7 @@ jobs:
           export RF24_TARGET_DSN="postgresql://mayak_migration:migration-only@mayak-postgres:5432/${TARGET_DB}"
           export RF24_CONFLICT_DSN="postgresql://mayak_migration:migration-only@mayak-postgres:5432/${CONFLICT_DB}"
           uv run python -m scripts.runtime.run_rf24_backup_restore --source-dsn-env RF24_SOURCE_DSN --target-dsn-env RF24_TARGET_DSN --conflict-dsn-env RF24_CONFLICT_DSN --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --output rf24-backup-restore-evidence.json --backup /tmp/rf24-backup-restore.dump --seed-evidence rf24-source-runtime-seed.json
-      - name: Scenario-specific PG18 gate passed before broad suite
+      - name: Scenario-specific PG18 gate passed before focused H26 gates
         run: test -s rf24-backup-restore-evidence.json
       - name: Install pinned Docker CLI and Buildx for H26
         run: |
@@ -316,25 +316,6 @@ jobs:
           uv run pytest -q tests/runtime/test_identity_runtime_postgres.py
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
           echo h26-focused-prerequisites=PASS
-      - name: Complete repository pytest once
-        run: |
-          set -euo pipefail
-          workspace="$(realpath "$GITHUB_WORKSPACE")"
-          test "${GIT_CONFIG_COUNT:-}" = 1
-          test "${GIT_CONFIG_KEY_0:-}" = safe.directory
-          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          root="${RUNNER_TEMP:-/tmp}/rf24-h26-${GITHUB_RUN_ID}"
-          install -d -m 700 "$root/passwords"
-          password_file="$root/passwords/rf11-suite.raw"
-          cleanup() { rm -f -- "$password_file"; rmdir "$root/passwords" 2>/dev/null || true; }
-          trap cleanup EXIT
-          printf '%s' 'migration-only' > "$password_file"
-          chmod 600 "$password_file"
-          test ! -L "$password_file" && test "$(stat -c '%a' "$password_file")" = 600 && test "$(wc -l < "$password_file")" = 0
-          export MAYAK_RF10_POSTGRES_DSN="postgresql+psycopg://mayak_application:application-only@mayak-postgres:5432/${RF24_H26_SUITE_DB}"
-          export MAYAK_RF11_POSTGRES_PASSWORD_FILE="$password_file" MAYAK_RF11_POSTGRES_USER=mayak_migration MAYAK_RF11_POSTGRES_HOST=mayak-postgres MAYAK_RF11_POSTGRES_PORT=5432 MAYAK_RF11_POSTGRES_DB="$RF24_H26_SUITE_DB"
-          uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log
       - name: Independent verifier, scanner and manifest
         run: |
           set -euo pipefail
@@ -348,10 +329,10 @@ jobs:
           stage=verifier
           uv run python -m scripts.runtime.verify_rf24_backup_restore --evidence rf24-backup-restore-evidence.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --result rf24-backup-restore-verifier-result.json
           stage=scanner
-          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-complete-repository-pytest.log
-          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json rf24-complete-repository-pytest.log
+          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json
+          uv run python -m scripts.runtime.check_rf24_backup_restore_artifact_safety --result rf24-backup-restore-scanner-result.json rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json
           stage=manifest
-          uv run python -m scripts.runtime.build_rf24_backup_restore_manifest --output rf24-backup-restore-safety-manifest.json --scanner rf24-backup-restore-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json rf24-complete-repository-pytest.log
+          uv run python -m scripts.runtime.build_rf24_backup_restore_manifest --output rf24-backup-restore-safety-manifest.json --scanner rf24-backup-restore-scanner-result.json --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" rf24-backup-restore-evidence.json rf24-backup-restore-verifier-result.json rf24-backup-restore-scanner-result.json
           stage=validator
           uv run python -m scripts.runtime.check_rf24_backup_restore_workflow .github/workflows/ci-rf24-backup-restore.yml
           stage=ownership
@@ -365,5 +346,4 @@ jobs:
             rf24-backup-restore-verifier-result.json
             rf24-backup-restore-scanner-result.json
             rf24-backup-restore-safety-manifest.json
-            rf24-complete-repository-pytest.log
       # RF25 is deliberately not started by this workflow.

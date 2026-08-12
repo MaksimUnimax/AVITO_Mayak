@@ -60,7 +60,7 @@ def _valid_evidence() -> dict[str, object]:
 
 def _invoke_verifier(tmp_path: Path, evidence: dict[str, object], *, manifest_mutation=None, log_text: str = "===== 1 passed, 0 skipped in 0.01s =====") -> subprocess.CompletedProcess[str]:
     artifact = tmp_path / "rf22.json"
-    log = tmp_path / "rf22-full-pytest.log"
+    log = tmp_path / "rf22-focused-pytest.log"
     manifest = tmp_path / "rf22-safety-manifest.json"
     artifact.write_text(json.dumps(evidence), encoding="utf-8")
     log.write_text(log_text, encoding="utf-8")
@@ -75,7 +75,7 @@ def _invoke_verifier(tmp_path: Path, evidence: dict[str, object], *, manifest_mu
 
 def test_rf22_scanner_binds_exact_payload_digests(tmp_path: Path) -> None:
     artifact = tmp_path / "rf22.json"
-    log = tmp_path / "rf22-full-pytest.log"
+    log = tmp_path / "rf22-focused-pytest.log"
     manifest = tmp_path / "rf22-safety-manifest.json"
     artifact.write_text('{"technical_id":"RF22"}\n', encoding="utf-8")
     log.write_text("focused tests passed\n", encoding="utf-8")
@@ -94,7 +94,7 @@ def test_rf22_scanner_binds_exact_payload_digests(tmp_path: Path) -> None:
     )
     assert result.returncode == 0
     payloads = json.loads(manifest.read_text(encoding="utf-8"))["payloads"]
-    assert [item["basename"] for item in payloads] == ["rf22.json", "rf22-full-pytest.log"]
+    assert [item["basename"] for item in payloads] == ["rf22.json", "rf22-focused-pytest.log"]
     artifact.write_text('{"technical_id":"TAMPERED"}\n', encoding="utf-8")
     assert (
         next(item for item in payloads if item["basename"] == "rf22.json")["sha256"]
@@ -233,7 +233,7 @@ def test_rf22_scanner_blocks_credential_and_unsafe_payloads(tmp_path: Path, payl
     target = tmp_path / payload
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(value, encoding="utf-8")
-    log = tmp_path / "rf22-full-pytest.log"
+    log = tmp_path / "rf22-focused-pytest.log"
     log.write_text("pytest log", encoding="utf-8")
     result = subprocess.run(
         [sys.executable, str(SCAN), str(target), str(log), "--manifest", str(tmp_path / "manifest.json")],
@@ -246,7 +246,7 @@ def test_rf22_scanner_blocks_credential_and_unsafe_payloads(tmp_path: Path, payl
 
 def test_rf22_scanner_blocks_wrong_payload_names_and_extra_payload(tmp_path: Path) -> None:
     (tmp_path / "rf22.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "rf22-full-pytest.log").write_text("pytest log", encoding="utf-8")
+    (tmp_path / "rf22-focused-pytest.log").write_text("pytest log", encoding="utf-8")
     (tmp_path / "extra.json").write_text("{}", encoding="utf-8")
     result = subprocess.run(
         [sys.executable, str(SCAN), str(tmp_path / "rf22.json"), str(tmp_path / "extra.json"), "--manifest", str(tmp_path / "manifest.json")],

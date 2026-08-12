@@ -9,7 +9,7 @@ permissions:
 jobs:
   hosted-acceptance:
     runs-on: ubuntu-latest
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     defaults:
       run:
         shell: bash
@@ -62,8 +62,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git config --global --unset-all safe.directory || true
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           command -v bash
           bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
           actual_sha="$(git rev-parse --verify HEAD)"
@@ -139,12 +137,11 @@ jobs:
           set -euo pipefail
           uv run python scripts/runtime/check_rf24_cross_account_access_workflow.py .github/workflows/ci-rf24-cross-account-access.yml
           uv run python scripts/runtime/check_rf24_cross_account_access_ownership.py .
-      - name: Initial database migration and complete repository pytest
+      - name: Initial database migration for focused acceptance
         shell: bash
         run: |
           set -euo pipefail
           uv run alembic upgrade head
-          uv run pytest -q --disable-warnings
       - name: Create NEW post-suite database and migrate from zero
         shell: bash
         run: |

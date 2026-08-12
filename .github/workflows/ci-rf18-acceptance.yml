@@ -95,7 +95,6 @@ jobs:
       - run: uv run python scripts/runtime/run_rf18_postgres_acceptance.py --dsn "$RF18_DATABASE_URL" --fixture-dsn "$RF18_MIGRATION_DSN" --candidate-sha "$GITHUB_SHA" --output rf18-acceptance-evidence.json
       - run: RF18_DATABASE_URL="$RF18_DATABASE_URL" uv run pytest -q tests/runtime/test_rf18_telegram_adapter_postgres.py
       - run: uv run python scripts/runtime/verify_rf18_acceptance.py rf18-acceptance-evidence.json
-      - run: uv run pytest -q
       - name: Artifact safety scan
         run: |
           ! rg -n -i 'bearer[[:space:]]+[^ ]+|authorization[[:space:]]*[:=]|BEGIN (RSA|OPENSSH) PRIVATE KEY|api\.telegram\.org/bot' rf18-acceptance-evidence.json

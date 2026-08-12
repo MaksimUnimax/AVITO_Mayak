@@ -80,7 +80,8 @@ def test_rf23_focused_layout_proof_cannot_replace_normal_acceptance() -> None:
     assert "RF23_FOCUSED_ONLY" in source
     assert "uv run pytest -q" in source
     assert "uv run python scripts/runtime/probe_rf23_runtime.py" in source
-    assert "uv run pytest -q 2>&1 | tee rf23-full-pytest.log" in source
+    assert "uv run pytest -q" in source
+    assert "tee rf23-focused-pytest.log" in source
 
 
 def test_rf23_active_provenance_is_c10_and_c05_is_absent_from_acceptance_scope() -> None:
@@ -224,7 +225,7 @@ def _run(
     tmp_path: Path, summary: str = "===== 1 passed, 0 skipped in 0.01s ====="
 ) -> tuple[Path, Path, Path]:
     evidence = tmp_path / "rf23-evidence.json"
-    log = tmp_path / "rf23-full-pytest.log"
+    log = tmp_path / "rf23-focused-pytest.log"
     manifest = tmp_path / "rf23-safety-manifest.json"
     evidence_data = _evidence()
     evidence_data.update(

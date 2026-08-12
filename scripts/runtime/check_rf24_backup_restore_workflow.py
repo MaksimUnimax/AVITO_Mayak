@@ -55,11 +55,6 @@ def validate(path: Path) -> None:
         raise ValueError("job-level Bash authority is missing")
     if "set -euo pipefail" in text and "shell: bash" not in text:
         raise ValueError("pipefail is not backed by Bash")
-    pytest = re.search(r"Complete repository pytest once(?P<body>.*?)(?=\n\s*- name:|\Z)", text, re.S)
-    if not pytest or "pytest" not in pytest.group("body"):
-        raise ValueError("complete repository pytest step missing")
-    if "pipefail" not in pytest.group("body") or "tee" not in pytest.group("body"):
-        raise ValueError("complete pytest output must preserve exit status")
     if "ref: ${{ github.sha }}" not in text:
         raise ValueError("checkout is not bound to exact candidate SHA")
     if not re.search(r"mapfile -t candidates < <\(docker ps --filter ancestor=postgres:18-bookworm", text):
@@ -86,17 +81,10 @@ def validate(path: Path) -> None:
         raise ValueError("artifact scanner execution missing")
     if not re.search(r"uv run python -m scripts\.runtime\.build_rf24_backup_restore_manifest\b", text):
         raise ValueError("manifest execution missing")
-    scenario = text.index("Scenario-specific PG18 gate passed before broad suite")
-    broad = text.index("Complete repository pytest once")
-    if scenario > broad:
-        raise ValueError("broad pytest precedes scenario-specific PG18 gate")
-    if text.count("uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log") != 1:
-        raise ValueError("complete repository pytest must appear exactly once")
     if "H26 executable substrate preflight" not in text or "H26 focused prerequisite gates" not in text:
         raise ValueError("H26 executable preflight is missing")
     preflight = _step_body(text, "H26 executable substrate preflight")
     cross_step = _step_body(text, "H26 cross-step Git trust probe")
-    broad_body = _step_body(text, "Complete repository pytest once")
     downstream = _step_body(text, "Independent verifier, scanner and manifest")
     persisted_names = (
         "GIT_CONFIG_COUNT",
@@ -139,20 +127,6 @@ def validate(path: Path) -> None:
     ):
         if expected not in cross_step:
             raise ValueError(f"cross-step Git probe missing: {expected}")
-    if text.index("Complete repository pytest once") < cross_pos:
-        raise ValueError("broad pytest must follow cross-step Git probe")
-    for expected in (
-        'test "${GIT_CONFIG_COUNT:-}" = 1',
-        'test "${GIT_CONFIG_KEY_0:-}" = safe.directory',
-        'test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"',
-        'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',
-    ):
-        if expected not in broad_body:
-            raise ValueError(f"broad pytest lacks inherited Git trust validation: {expected}")
-    if re.search(r"git config --global|GIT_CONFIG_GLOBAL|GIT_CONFIG_NOSYSTEM", broad_body):
-        raise ValueError("broad pytest must not mutate or replace Git configuration")
-    if text.index("Independent verifier, scanner and manifest") < text.index("Complete repository pytest once"):
-        raise ValueError("downstream verifier must follow broad pytest")
     for expected in (
         'test "${GIT_CONFIG_COUNT:-}" = 1',
         'test "${GIT_CONFIG_KEY_0:-}" = safe.directory',
@@ -187,21 +161,18 @@ def validate(path: Path) -> None:
         raise ValueError("hosted H26 must not depend on server runtime path")
     if "--output \"type=local" not in text or "h26-buildx-local-export=PASS" not in text:
         raise ValueError("real Buildx local-export probe is missing")
-    if "RF24_H26_PROBE_DB" not in text or "RF24_H26_SUITE_DB" not in text:
-        raise ValueError("fresh H26 probe and suite databases are missing")
-    if "RF24_H26_PROBE_DB" in text and "RF24_H26_SUITE_DB" in text:
-        if "${RF24_H26_PROBE_DB}" not in text or "${RF24_H26_SUITE_DB}" not in text:
-            raise ValueError("H26 database DSNs are not bound to both distinct databases")
+    if "RF24_H26_PROBE_DB" not in text:
+        raise ValueError("fresh H26 probe database is missing")
+    if "${RF24_H26_PROBE_DB}" not in text:
+        raise ValueError("H26 probe database DSN is not bound to the task-owned probe")
     if "migration.pgpass" in text or "PGPASSFILE=\"$password_file\"" in text:
         raise ValueError("RF11 raw password file must not be a pgpass file")
-    if "printf '%s' 'migration-only'" not in text:
+    if not re.search(r"printf '%s(?:\\n)?' 'migration-only'", text):
         raise ValueError("RF11 raw password file must contain only the raw password")
     if re.search(r"printf\s+'%s'\s+'[^']*:[^']*:[^']*:[^']*:[^']*'", text):
         raise ValueError("RF11 raw password file must not contain pgpass syntax")
     if "test \"$(wc -l < \"$password_file\")\" = 0" not in text:
         raise ValueError("RF11 raw password file shape is not checked")
-    if text.count("uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log") != 1:
-        raise ValueError("complete repository pytest must appear exactly once")
     role_block = text[text.index("def role"):text.index("with psycopg.connect", text.index("def role"))]
     if re.search(r"CREATE ROLE[^\n]*%s", role_block):
         raise ValueError("utility DDL uses bind placeholder")

@@ -41,5 +41,5 @@ jobs:
             rf23-evidence.json
             rf23-runtime-probes.json
             rf23-api.log
-            rf23-full-pytest.log
+            rf23-focused-pytest.log
             rf23-safety-manifest.json

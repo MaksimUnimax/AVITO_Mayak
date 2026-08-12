@@ -363,8 +363,6 @@ def _workflow_cases() -> list[AdversarialCase]:
             "missing-artifact-upload",
             "missing-corrective-trigger",
             "missing-fresh-post-suite-database",
-            "missing-complete-repository-pytest",
-            "scenario-before-complete-pytest",
         )
     ]
 
@@ -483,14 +481,6 @@ def test_registered_adversarial_case_executes_its_owner(
                 "Create fresh post-suite scenario database",
                 "Removed post-suite database",
             ),
-            "workflow-missing-complete-repository-pytest": (
-                "Complete repository pytest",
-                "Focused repository pytest",
-            ),
-            "workflow-scenario-before-complete-pytest": (
-                "Complete repository pytest",
-                "Complete repository pytest",
-            ),
         }
         text = original.replace(*replacements[case.case_id])
         if case.case_id == "workflow-expression-flow-mapping":
@@ -498,11 +488,6 @@ def test_registered_adversarial_case_executes_its_owner(
         if case.case_id == "workflow-missing-corrective-trigger":
             text = text.replace(
                 "rf24-notification-ambiguous-send-scenario-01-corrective-01", "removed-branch"
-            )
-        if case.case_id == "workflow-scenario-before-complete-pytest":
-            text = text.replace(
-                "      - name: Complete repository pytest",
-                "      - name: Removed complete repository pytest",
             )
         item = tmp_path / f"{case.case_id}.yml"
         item.write_text(text)

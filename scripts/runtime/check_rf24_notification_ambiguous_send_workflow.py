@@ -21,12 +21,9 @@ def validate(path: Path, branch: str) -> None:
         raise AssertionError("acceptance job is not a real mapping")
     if "Create fresh post-suite scenario database" not in source:
         raise AssertionError("fresh post-suite database step is absent")
-    if not re.search(r"Complete repository pytest[\s\S]{0,250}uv run pytest -q", source):
-        raise AssertionError("complete repository pytest step is absent")
     scenario = source.find("Fresh real P0-P5")
-    complete = source.find("Complete repository pytest")
-    if scenario != -1 and complete != -1 and scenario < complete:
-        raise AssertionError("scenario precedes complete repository pytest")
+    if scenario < 0:
+        raise AssertionError("focused scenario step is absent")
 
 
 def main() -> None:

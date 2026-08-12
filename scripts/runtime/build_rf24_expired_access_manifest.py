@@ -16,7 +16,6 @@ FILES = (
     "rf24-expired-access-verifier-result.json",
     "rf24-expired-access-scanner-result.json",
     "rf24-expired-access.log",
-    "rf24-expired-access-full-pytest.log",
 )
 
 

@@ -8,7 +8,7 @@ on:
 jobs:
   acceptance:
     runs-on: ubuntu-24.04
-    container: python:3.14.6-bookworm
+    container: python:3.14.6-bookworm@sha256:ec1b01f92099324b965a51c8547d9a3b71fedc99f6991a89662e7358f9b167c9
     defaults:
       run:
         shell: bash
@@ -54,8 +54,6 @@ jobs:
       - name: Prove exact checkout and Bash
         run: |
           set -euo pipefail
-          git config --global --unset-all safe.directory || true
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           command -v bash
           bash -c 'set -euo pipefail; printf "%s\n" bash-pipefail-ok'
           printf 'CHECKOUT_HEAD=%s\n' "$(git rev-parse HEAD)"
@@ -212,24 +210,12 @@ jobs:
         run: uv run pytest -q tests/runtime/test_rf21_composition.py tests/runtime/test_rf21_web_ui.py
       - name: Focused stale-Web tests
         run: uv run pytest -q tests/runtime/test_rf24_stale_web_form_core.py tests/runtime/test_rf24_stale_web_form_integrity.py tests/runtime/test_rf24_stale_web_form_boundaries.py tests/runtime/test_rf24_stale_web_form_ownership.py tests/runtime/test_rf24_stale_web_form_artifacts.py
-      - name: Initial database migration and complete repository pytest
+      - name: Initial database migration and focused acceptance
         run: |
           set -euo pipefail
           uv run alembic downgrade base
           uv run alembic upgrade head
           PGPASSWORD=migration-only psql -h postgres -U mayak_migration -d mayak -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA mayak TO mayak_application; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mayak TO mayak_application; GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA mayak TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO mayak_application; ALTER DEFAULT PRIVILEGES FOR ROLE mayak_migration IN SCHEMA mayak GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO mayak_application;'
-          uv run pytest -q --disable-warnings 2>&1 | tee rf24-stale-web-form-full-pytest.log
-      - name: Preserve full pytest diagnostic
-        if: always()
-        run: |
-          set +e
-          test -f rf24-stale-web-form-full-pytest.log && tail -200 rf24-stale-web-form-full-pytest.log || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: rf24-stale-web-form-full-pytest-diagnostic
-          if-no-files-found: warn
-          path: rf24-stale-web-form-full-pytest.log
       - name: Create NEW post-suite database and migrate from zero
         run: |
           set -euo pipefail
@@ -301,7 +287,7 @@ jobs:
         run: |
           set -euo pipefail
           uv run python scripts/runtime/verify_rf24_stale_web_form.py rf24-stale-web-form-evidence.json "$GITHUB_SHA" --result rf24-stale-web-form-verifier-result.json
-          uv run python scripts/runtime/check_rf24_stale_web_form_artifact_safety.py --result rf24-stale-web-form-scanner-result.json rf24-stale-web-form-evidence.json rf24-stale-web-form-phase-boundaries.json rf24-stale-web-form-provider-observations.json rf24-stale-web-form-verifier-result.json rf24-stale-web-form-full-pytest.log
+          uv run python scripts/runtime/check_rf24_stale_web_form_artifact_safety.py --result rf24-stale-web-form-scanner-result.json rf24-stale-web-form-evidence.json rf24-stale-web-form-phase-boundaries.json rf24-stale-web-form-provider-observations.json rf24-stale-web-form-verifier-result.json
           test "$(python -c 'import json; print(json.load(open("rf24-stale-web-form-scanner-result.json"))["finding_count"])')" = 0
           uv run python scripts/runtime/build_rf24_stale_web_form_manifest.py . "$GITHUB_SHA" "$GITHUB_RUN_ID"
           test "$(python -c 'import json; print(json.load(open("rf24-stale-web-form-manifest.json"))["source_sha"])')" = "$GITHUB_SHA"

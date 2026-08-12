@@ -170,16 +170,6 @@ def _move_git_persistence_after_probe(text: str) -> str:
             "cross-step Git probe must not repair",
         ),
         (
-            "broad step lacks inherited validation",
-            lambda text: text.replace('          test "${GIT_CONFIG_COUNT:-}" = 1\n          test "${GIT_CONFIG_KEY_0:-}" = safe.directory\n          test "${GIT_CONFIG_VALUE_0:-}" = "$workspace"\n          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"\n', "", 1),
-            "broad pytest lacks",
-        ),
-        (
-            "second full pytest",
-            lambda text: text.replace("uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log", "uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log\\n          uv run pytest -q 2>&1 | tee rf24-complete-repository-pytest.log", 1),
-            "exactly once",
-        ),
-        (
             "downstream unsets trust",
             lambda text: text.replace(
                 "      - name: Independent verifier, scanner and manifest\n        run: |\n          set -euo pipefail\n",
@@ -190,7 +180,7 @@ def _move_git_persistence_after_probe(text: str) -> str:
         ),
         (
             "raw archive upload",
-            lambda text: text.replace("          path: |\n", "          path: |\n            rf24.raw.dump\n", 1),
+            lambda text: text.replace("            rf24-backup-restore-evidence.json\n", "            rf24.raw.dump\n", 1),
             "raw backup",
         ),
     ),
@@ -216,6 +206,7 @@ def test_workflow_uses_one_module_execution_contract() -> None:
 def test_rf24_entrypoints_start_under_exact_workflow_invocation() -> None:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
+    env["PATH"] = "/opt/avito-mayak-runtime/toolchain/bin:" + env.get("PATH", "")
     for module in RF24_MODULES:
         result = subprocess.run(
             ["uv", "run", "python", "-m", f"scripts.runtime.{module}", "--help"],

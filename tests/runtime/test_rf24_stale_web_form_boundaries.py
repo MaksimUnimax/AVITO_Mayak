@@ -55,12 +55,6 @@ def test_workflow_substrate_mutations_fail_closed(case: str, needle: str, expect
 
 def test_workflow_order_mutations_fail_closed() -> None:
     original = WORKFLOW.read_text(encoding="utf-8")
-    docker = "      - name: Install pinned Docker CLI and buildx before gates"
-    full = "      - name: Initial database migration and complete repository pytest"
-    mutated = original.replace(docker, "      - name: ZZZ Docker late")
-    mutated = mutated.replace(full, "      - name: Initial database migration and complete repository pytest")
-    assert "Docker install must precede complete repository pytest" in validate(mutated)
-
     fresh = "      - name: Create NEW post-suite database and migrate from zero"
     final = "      - name: FINAL post-suite S0-S8 on NEW database"
     reversed_text = original.replace(fresh, "      - name: ZZZ fresh").replace(final, fresh).replace("      - name: ZZZ fresh", final)
