@@ -24,6 +24,11 @@ env:
   UV_PROJECT_ENVIRONMENT: .venv
 
 jobs:
+  canonical-full-regression:
+    uses: ./.github/workflows/ci-full-regression.yml
+    with:
+      ref: ${{ github.sha }}
+
   integrity-lock:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -96,7 +101,9 @@ jobs:
       - name: Verifier parser self-test
         run: python scripts/ci/verify_quality_baseline.py --self-test
       - name: Run complete quality baseline
-        run: python scripts/ci/verify_quality_baseline.py --mode quality --evidence-dir ci-evidence/quality-suite --venv .venv
+        env:
+          CI_COMPARISON_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/ci/verify_quality_baseline.py --mode quality --static-only --base-sha "$CI_COMPARISON_BASE_SHA" --evidence-dir ci-evidence/quality-suite --venv .venv
       - name: Publish safe summary
         if: always()
         run: |

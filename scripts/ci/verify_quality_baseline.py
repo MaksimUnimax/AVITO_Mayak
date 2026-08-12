@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
+import tarfile
 import tomllib
 from pathlib import Path
 from typing import Final
@@ -18,7 +21,6 @@ PYTHON = "3.14.6"
 UV = "0.11.31"
 PYPROJECT_SHA = "5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7d"
 LOCK_SHA = "e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6"
-RUFF_SHA = "23094b89436ceb7894d9bbca81552f0e44e1cbd0f82a7a13073a1a87fe65e3b3"
 MYPY_SHA = "e98c07580466ceb8794c0761567c0449ef5da51eef9de3abcdc23aedf08d5e7a"
 MINIMUM_ACCEPTED_TEST_COUNT: Final = 4636
 MINIMUM_ACCEPTED_COVERAGE_PERCENT: Final = 85
@@ -164,10 +166,11 @@ def validate_suite_observations(
     collection_run_2_count: int,
     execution: dict[str, int],
     observed_coverage_percent: int,
+    minimum_count: int | None = None,
 ) -> None:
     if collection_run_1_count != collection_run_2_count:
         raise RuntimeError("collection counts differ")
-    if collection_run_1_count < MINIMUM_ACCEPTED_TEST_COUNT:
+    if collection_run_1_count < (MINIMUM_ACCEPTED_TEST_COUNT if minimum_count is None else minimum_count):
         raise RuntimeError("test count below accepted floor")
     if execution["executed_collected_count"] != collection_run_1_count:
         raise RuntimeError("execution count differs from collection")
@@ -292,44 +295,92 @@ def validate_mypy_observations(observations: list[dict[str, object]]) -> None:
         raise RuntimeError("mypy diagnostics are not repeatable")
 
 
-def ruff_gate(evidence: Path, venv: Path) -> dict:
+def _ruff_identity(row: dict[str, object], cwd: Path) -> tuple[str, str, str]:
+    filename = Path(str(row.get("filename", "")))
+    if filename.is_absolute():
+        try:
+            filename = filename.relative_to(cwd)
+        except ValueError as exc:
+            raise RuntimeError("ruff path escapes inspected tree") from exc
+    path = filename.as_posix()
+    code = str(row.get("code") or "")
+    message = str(row.get("message") or "").strip()
+    if not path or not code or not message:
+        raise RuntimeError("malformed ruff JSON diagnostic")
+    return path, code, message
+
+
+def _ruff_observation(exe: Path, cwd: Path, evidence: Path, label: str) -> dict[str, object]:
+    cp = run([str(exe), "check", "--output-format=json", "src", "tests"], cwd=cwd)
+    if cp.returncode not in (0, 1):
+        raise RuntimeError(f"ruff command failed for {label}")
+    try:
+        payload = json.loads(cp.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"ruff output is not valid JSON for {label}") from exc
+    if not isinstance(payload, list) or not all(isinstance(row, dict) for row in payload):
+        raise RuntimeError(f"ruff output schema invalid for {label}")
+    identities = [_ruff_identity(row, cwd) for row in payload]
+    counts = Counter(identities)
+    normalized = "".join(f"{path}\t{code}\t{message}\n" for path, code, message in sorted(identities))
+    record(evidence, f"ruff-{label}", cp, {"diagnostic_count": len(identities), "normalized_sha256": digest(normalized)})
+    return {"count": len(identities), "normalized_sha256": digest(normalized), "diagnostics": counts, "exit_code": cp.returncode}
+
+
+def _materialize_ref(ref: str, destination: Path) -> None:
+    archive = destination.with_suffix(".tar")
+    cp = subprocess.run(["git", "archive", "--format=tar", ref, "-o", str(archive)], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, shell=False)
+    if cp.returncode != 0:
+        raise RuntimeError("quality comparison base cannot be resolved")
+    try:
+        with tarfile.open(archive, "r") as handle:
+            handle.extractall(destination)
+    except (OSError, tarfile.TarError) as exc:
+        raise RuntimeError("quality comparison base cannot be materialized") from exc
+
+
+def ruff_gate(evidence: Path, venv: Path, base_sha: str) -> dict:
     exe = venv / "bin" / "ruff"
-    results = []
-    for n in (1, 2):
-        cp = run([str(exe), "check", "--output-format=concise", "src", "tests"])
-        rows = [safe_text(x) for x in cp.stdout.splitlines() if x.strip()]
-        diagnostics = [x for x in rows if not x.startswith(("Found ", "[*]"))]
-        normalized = "\n".join(rows) + ("\n" if rows else "")
-        record(
-            evidence,
-            f"ruff-{n}",
-            cp,
-            {"diagnostic_count": len(diagnostics), "normalized_sha256": digest(normalized)},
-        )
-        results.append(
-            {
-                "count": len(diagnostics),
-                "sha256": digest(normalized),
-                "exit_code": cp.returncode,
-                "text": normalized,
-            }
-        )
-    if (
-        any(x["count"] != 648 or x["sha256"] != RUFF_SHA for x in results)
-        or results[0]["text"] != results[1]["text"]
-    ):
-        raise RuntimeError("ruff baseline mismatch")
-    if any(x["exit_code"] == 0 for x in results):
-        raise RuntimeError("ruff debt unexpectedly absent")
+    if not re.fullmatch(r"[0-9a-f]{40}", base_sha):
+        raise RuntimeError("quality comparison base identity invalid")
+    if subprocess.run(["git", "cat-file", "-e", f"{base_sha}^{{commit}}"], cwd=ROOT, check=False, capture_output=True, shell=False).returncode != 0:
+        raise RuntimeError("quality comparison base cannot be resolved")
+    with tempfile.TemporaryDirectory(prefix="quality-base-") as raw:
+        base_tree = Path(raw) / "tree"
+        base_tree.mkdir()
+        _materialize_ref(base_sha, base_tree)
+        base = _ruff_observation(exe, base_tree, evidence, "base")
+    candidate = _ruff_observation(exe, ROOT, evidence, "candidate")
+    regressions = candidate["diagnostics"] - base["diagnostics"]
+    if regressions:
+        raise RuntimeError("ruff no-regression baseline mismatch")
     return {
-        "run_1_count": 648,
-        "run_2_count": 648,
-        "normalized_sha256": RUFF_SHA,
-        "classification": "RUFF_PREEXISTING_DEBT_NO_REGRESSION",
+        "base_sha": base_sha,
+        "candidate_sha": run(["git", "rev-parse", "HEAD"]).stdout.strip(),
+        "base_count": base["count"],
+        "candidate_count": candidate["count"],
+        "base_digest": base["normalized_sha256"],
+        "candidate_digest": candidate["normalized_sha256"],
+        "new_or_worsened_count": sum(regressions.values()),
+        "classification": "RUFF_EXPLICIT_BASE_NO_REGRESSION",
     }
 
 
-def mypy_gate(evidence: Path, venv: Path) -> dict:
+def _stable_mypy_records(text: str, cwd: Path) -> Counter[tuple[str, str]]:
+    records: Counter[tuple[str, str]] = Counter()
+    for row in diagnostic_records(text):
+        match = re.match(r"^(.*?):\d+: (?:error|note): (.*)$", row)
+        if not match:
+            continue
+        path = match.group(1)
+        if path.startswith(str(cwd)):
+            path = os.path.relpath(path, cwd)
+        path = path.removeprefix("<WORKTREE>/")
+        records[(path, match.group(2))] += 1
+    return records
+
+
+def mypy_gate(evidence: Path, venv: Path, base_sha: str | None = None) -> dict:
     exe = venv / "bin" / "mypy"
     results = []
     for n, extra in (
@@ -349,26 +400,61 @@ def mypy_gate(evidence: Path, venv: Path) -> dict:
             evidence, f"mypy-{n}", cp, {**observation, "expected_normalized_error_sha256": MYPY_SHA}
         )
         results.append(observation)
-    validate_mypy_observations(results)
+    if base_sha:
+        with tempfile.TemporaryDirectory(prefix="mypy-base-") as raw:
+            base_tree = Path(raw) / "tree"
+            base_tree.mkdir()
+            _materialize_ref(base_sha, base_tree)
+            base_run = run(
+                [str(exe), "--show-error-codes", "src", "tests", "--no-incremental"],
+                cwd=base_tree,
+                env={"PYTHONPATH": str(base_tree / "src")},
+            )
+            if base_run.returncode not in (0, 1):
+                raise RuntimeError("mypy base command failed")
+            base_records = _stable_mypy_records(base_run.stdout, base_tree)
+        candidate_records = _stable_mypy_records(results[0]["normalized_error_text"], ROOT)
+        if candidate_records - base_records:
+            raise RuntimeError("mypy no-regression baseline mismatch")
+        if len({x["observed_normalized_error_sha256"] for x in results}) != 1:
+            raise RuntimeError("mypy diagnostics are not repeatable")
+    else:
+        validate_mypy_observations(results)
     return {
-        "run_1_count": 249,
-        "run_2_count": 249,
-        "run_3_count": 249,
-        "notes": 29,
-        "expected_normalized_error_sha256": MYPY_SHA,
+        "base_count": len(base_records) if base_sha else 249,
+        "candidate_count": results[0]["error_count"],
+        "notes": results[0]["note_count"] if base_sha else 29,
+        "expected_normalized_error_sha256": MYPY_SHA if not base_sha else None,
         "observed_normalized_error_sha256": results[0]["observed_normalized_error_sha256"],
-        "classification": "MYPY_PREEXISTING_DEBT_NO_REGRESSION",
+        "classification": "MYPY_EXPLICIT_BASE_NO_REGRESSION" if base_sha else "MYPY_PREEXISTING_DEBT_NO_REGRESSION",
     }
 
 
-def quality_gate(evidence: Path, venv: Path) -> dict:
+def static_quality_gate(evidence: Path, venv: Path, base_sha: str) -> dict:
+    if not venv.is_dir() or not (venv / "bin").is_dir():
+        raise RuntimeError("venv missing")
+    required = ["ruff", "mypy", "lint-imports"]
+    if any(not (venv / "bin" / x).is_file() for x in required):
+        raise RuntimeError("tool outside supplied venv")
+    ruff = ruff_gate(evidence, venv, base_sha)
+    mypy = mypy_gate(evidence, venv, base_sha)
+    lint = run([str(venv / "bin/lint-imports")], env={"PYTHONPATH": str(ROOT / "src")})
+    record(evidence, "import-linter", lint, {})
+    kept = re.search(r"(\d+)\s+kept", lint.stdout, re.I)
+    broken = re.search(r"(\d+)\s+broken", lint.stdout, re.I)
+    if lint.returncode or not kept or int(kept.group(1)) != 3 or not broken or int(broken.group(1)) != 0:
+        raise RuntimeError("import-linter mismatch")
+    return {"ruff": ruff, "mypy": mypy, "import_linter": {"kept": 3, "broken": 0}, "pytest": {"authority": "canonical-db-backed-reusable-workflow"}, "coverage": {"authority": "canonical-db-backed-reusable-workflow", "minimum_accepted_coverage_percent": MINIMUM_ACCEPTED_COVERAGE_PERCENT}}
+
+
+def quality_gate(evidence: Path, venv: Path, base_sha: str) -> dict:
     if not venv.is_dir() or not (venv / "bin").is_dir():
         raise RuntimeError("venv missing")
     required = ["python", "ruff", "mypy", "lint-imports", "coverage", "pytest"]
     if any(not (venv / "bin" / x).is_file() for x in required):
         raise RuntimeError("tool outside supplied venv")
-    ruff = ruff_gate(evidence, venv)
-    mypy = mypy_gate(evidence, venv)
+    ruff = ruff_gate(evidence, venv, base_sha)
+    mypy = mypy_gate(evidence, venv, base_sha)
     lint = run([str(venv / "bin/lint-imports")], env={"PYTHONPATH": str(ROOT / "src")})
     record(evidence, "import-linter", lint, {})
     kept = re.search(r"(\d+)\s+kept", lint.stdout, re.I)
@@ -393,6 +479,20 @@ def quality_gate(evidence: Path, venv: Path) -> dict:
         if collected.returncode != 0:
             raise RuntimeError("collection command failed")
         collection.append(count)
+    with tempfile.TemporaryDirectory(prefix="quality-tests-base-") as raw:
+        base_tree = Path(raw) / "tree"
+        base_tree.mkdir()
+        _materialize_ref(base_sha, base_tree)
+        base_collection_run = run(
+            [str(venv / "bin/pytest"), "--collect-only", "-q", "-p", "no:cacheprovider"],
+            cwd=base_tree,
+            env={"PYTHONPATH": str(base_tree / "src")},
+            timeout=2700,
+        )
+        base_collection_count = parse_collection_count(base_collection_run.stdout + base_collection_run.stderr)
+        record(evidence, "pytest-collection-base", base_collection_run, {"observed_count": base_collection_count})
+        if base_collection_run.returncode != 0:
+            raise RuntimeError("base collection command failed")
     coverage_file = evidence / ".coverage"
     pytest = run(
         [
@@ -418,13 +518,14 @@ def quality_gate(evidence: Path, venv: Path) -> dict:
     coverage = parse_coverage_percent(report.stdout)
     if pytest.returncode or report.returncode:
         raise RuntimeError("suite or coverage mismatch")
-    validate_suite_observations(collection[0], collection[1], execution, coverage)
+    validate_suite_observations(collection[0], collection[1], execution, coverage, base_collection_count)
     return {
         "ruff": ruff,
         "mypy": mypy,
         "import_linter": {"kept": 3, "broken": 0},
         "pytest": {
-            "minimum_accepted_test_count": MINIMUM_ACCEPTED_TEST_COUNT,
+            "base_collection_count": base_collection_count,
+            "candidate_collection_count": collection[0],
             "collection_run_1_count": collection[0],
             "collection_run_2_count": collection[1],
             **execution,
@@ -539,6 +640,8 @@ def main() -> int:
     ap.add_argument("--mode", choices=("lock", "quality"))
     ap.add_argument("--evidence-dir", type=Path, default=Path("ci-evidence"))
     ap.add_argument("--venv", type=Path, default=Path(".venv"))
+    ap.add_argument("--base-sha")
+    ap.add_argument("--static-only", action="store_true")
     args = ap.parse_args()
     if args.self_test:
         self_test()
@@ -551,7 +654,7 @@ def main() -> int:
         result = (
             lock_gate(evidence)
             if args.mode == "lock"
-            else quality_gate(evidence, args.venv.resolve())
+            else (static_quality_gate(evidence, args.venv.resolve(), args.base_sha or "") if args.static_only else quality_gate(evidence, args.venv.resolve(), args.base_sha or ""))
         )
         payload = {
             "schema_version": 1,

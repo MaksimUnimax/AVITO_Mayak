@@ -9,6 +9,9 @@ jobs:
   spine:
     runs-on: ubuntu-24.04
     container: python:3.14.6-bookworm
+    defaults:
+      run:
+        shell: bash
     services:
       postgres:
         image: postgres:18-bookworm
@@ -103,7 +106,7 @@ jobs:
           MAYAK_RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
           MAYAK_RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:migration-only@postgres:5432/mayak
           MAYAK_RF11_POSTGRES_PASSWORD_FILE: /run/secrets/mayak_database_migration_password
-        run: bash -o pipefail -c 'uv run pytest -q | tee rf24-spine-full-pytest.log'
+        run: uv run pytest -q 2>&1 | tee rf24-spine-full-pytest.log
       - name: Fresh real spine process run
         env:
           MAYAK_SOURCE_SHA: ${{ github.sha }}

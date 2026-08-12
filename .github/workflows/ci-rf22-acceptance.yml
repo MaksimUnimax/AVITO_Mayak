@@ -14,6 +14,9 @@ jobs:
     container:
       image: ubuntu:24.04
       options: --volume /var/run/docker.sock:/var/run/docker.sock
+    defaults:
+      run:
+        shell: bash
     env:
       MAYAK_PROVIDER_MODE: disabled
       MAYAK_RUNTIME_PROFILE: synthetic_acceptance

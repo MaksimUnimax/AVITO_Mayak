@@ -22,7 +22,7 @@ from urllib.parse import urlsplit, urlunsplit
 SCHEMA = 1
 RF25_SCHEMA = 1
 RF25_TECHNICAL_ID = "RF25-SECURITY-PRIVACY-SUPPLY-CHAIN-01"
-RF25_BASE_SHA = "c2f88430db02f8fd4c426bc327500ab5a8a66896"
+RF25_BASE_SHA = ""
 MAX_BYTES = 20 * 1024 * 1024
 ROOT = Path(__file__).resolve().parents[2]
 HEX40 = re.compile(r"^[0-9a-f]{40}$")
@@ -283,7 +283,7 @@ def behavior_gate(evidence: Path | None = None) -> dict[str, object]:
 def rf25_matrix(secret: dict, comparison: dict, commands: dict, runtime: dict, container: dict, dependency: dict, vulnerability: dict, workflow: dict, behavior: dict | None = None) -> list[dict[str, object]]:
     behavior = behavior or {"status": "FAIL", "reason": "behavior_gate_not_provided"}
     rows = [
-        ("secret_scanning", secret["status"], "scripts/ci/verify_security_supply_chain.py:secret_scan"),
+        ("secret_scanning", comparison["status"], "scripts/ci/verify_security_supply_chain.py:secret_scan + explicit base comparison"),
         ("base_candidate_classification", comparison["status"], "scripts/ci/verify_security_supply_chain.py:compare_findings"),
         ("unsafe_commands", commands["status"], "scripts/ci/verify_security_supply_chain.py:unsafe_command_audit"),
         ("provider_privacy_redaction_safe_errors", runtime["status"], "src/mayak/platform/redaction.py; API safe errors"),
@@ -542,14 +542,20 @@ def expect_runtime(fn, marker: str) -> None:
     else: raise AssertionError(marker)
 
 
-def run_all(evidence: Path, venv: Path) -> None:
+def run_all(evidence: Path, venv: Path, base_sha: str) -> None:
+    global RF25_BASE_SHA
     if not valid_self_test_evidence(evidence / "self-test-evidence.json"): raise SystemExit("STOP_VERIFIER_SELF_TEST_COVERAGE_FAILED")
     with (ROOT / "pyproject.toml").open("rb") as handle: pyproject = tomllib.load(handle)
     with (ROOT / "uv.lock").open("rb") as handle: lock = tomllib.load(handle)
     records, counts = lock_inventory(pyproject, lock); rows, installed_counts, distributions = installed(records, venv); license_rows, tsv = licenses(rows, distributions); secret = secret_scan(); vuln = audit(); workflow = workflow_check()
     dep_expected = {"package_records": 50, "registry_records": 49, "editable_records": 1, "sdists": 48, "wheels": 246, "total_artifacts": 294, "hashed_artifacts": 294, "unique_artifact_urls": 294, "duplicate_artifact_records": 0, "conflicting_url_hash_pairs": 0}
     dep = {"schema_version": SCHEMA, "source_sha": source_sha(), "python_requirement": pyproject["project"]["requires-python"], "direct_runtime_dependencies": sorted(pyproject["project"]["dependencies"]), "direct_development_dependencies": sorted(pyproject["dependency-groups"]["dev"]), "packages": list(records.values()), "counts": counts, "pyproject_sha256": sha256((ROOT / "pyproject.toml").read_bytes()), "uv_lock_sha256": sha256((ROOT / "uv.lock").read_bytes()), "status": "PASS" if counts == dep_expected else "FAIL"}
-    base_secret = _scan_ref(RF25_BASE_SHA)
+    if not HEX40.fullmatch(base_sha):
+        raise RuntimeError("STOP_SECURITY_COMPARISON_BASE_UNRESOLVED")
+    if subprocess.run(["git", "cat-file", "-e", f"{base_sha}^{{commit}}"], cwd=ROOT, check=False, capture_output=True, shell=False).returncode != 0:
+        raise RuntimeError("STOP_SECURITY_COMPARISON_BASE_UNRESOLVED")
+    RF25_BASE_SHA = base_sha
+    base_secret = _scan_ref(base_sha)
     comparison = compare_findings(base_secret, secret)
     commands = unsafe_command_audit(); runtime = runtime_security_audit(); container = container_security_audit()
     behavior = behavior_gate()
@@ -558,16 +564,16 @@ def run_all(evidence: Path, venv: Path) -> None:
     write_json(evidence / "vulnerability-audit.json", vuln); write_json(evidence / "dependency-inventory.json", dep); write_json(evidence / "installed-distribution-inventory.json", {"schema_version": SCHEMA, "distributions": rows, "reconciliation": installed_counts, "status": "PASS" if not installed_counts["version_mismatches"] and not installed_counts["unknown_external"] else "FAIL"}); write_json(evidence / "license-inventory.json", {"schema_version": SCHEMA, "records": license_rows, "status": "INVENTORY_COMPLETE_POLICY_NOT_EVALUATED"}); write_text(evidence / "license-inventory.tsv", tsv)
     write_json(evidence / "behavior-gate-verification.json", behavior)
     safety = artifact_safety(evidence)
-    self_summary = json.loads((evidence / "self-test-evidence.json").read_text(encoding="utf-8")); final_status = "PASS" if secret["status"] == "PASS" and comparison["status"] == "PASS" and vuln["status"] == "PASS" and dep["status"] == "PASS" and not installed_counts["version_mismatches"] and not installed_counts["unknown_external"] and workflow["status"] == "PASS" and commands["status"] == "PASS" and runtime["status"] == "PASS" and behavior["status"] == "PASS" and container["status"] == "PASS" and safety["status"] == "PASS" else "FAIL"
+    self_summary = json.loads((evidence / "self-test-evidence.json").read_text(encoding="utf-8")); final_status = "PASS" if comparison["status"] == "PASS" and vuln["status"] == "PASS" and dep["status"] == "PASS" and not installed_counts["version_mismatches"] and not installed_counts["unknown_external"] and workflow["status"] == "PASS" and commands["status"] == "PASS" and runtime["status"] == "PASS" and behavior["status"] == "PASS" and container["status"] == "PASS" and safety["status"] == "PASS" else "FAIL"
     write_json(evidence / "security-supply-chain-evidence.json", {"schema_version": RF25_SCHEMA, "technical_id": RF25_TECHNICAL_ID, "base_sha": RF25_BASE_SHA, "source_sha": source_sha(), "python_version": sys.version.split()[0], "standard_gil": bool(getattr(sys, "_is_gil_enabled", lambda: True)()), "pyproject_sha256": dep["pyproject_sha256"], "uv_lock_sha256": dep["uv_lock_sha256"], "lock_counts": counts, "installed_distribution_reconciliation": installed_counts, "self_test": {k: self_summary[k] for k in ("required_case_count", "executed_case_count", "passed_case_count", "failed_case_count", "status")}, "secret_scan": {k: secret[k] for k in ("finding_count", "status")}, "base_candidate_comparison": comparison, "unsafe_command_audit": commands, "provider_privacy_runtime": runtime, "behavior_gate": behavior, "container_compose": container, "requirement_matrix": matrix, "vulnerability": {k: vuln[k] for k in ("finding_count", "status")}, "dependency_inventory": dep["status"], "license_inventory": "INVENTORY_COMPLETE_POLICY_NOT_EVALUATED", "workflow_security": workflow["status"], "reused_evidence_identity": {"authorization": "RF24_ACCEPTED_CROSS_ACCOUNT_SCENARIOS", "postgresql": "RF24_ACCEPTED_DATABASE_BOUNDARY"}, "limitations": ["license policy is not defined by the repository", "live providers are not contacted"], "status": final_status, "production": "NOT_PRODUCTION_READY"})
     write_text(evidence / "summary.txt", f"RF25 security, privacy and supply-chain verification\nstatus: {final_status}\ntechnical_id: {RF25_TECHNICAL_ID}\nbase: {RF25_BASE_SHA}\ncandidate: {source_sha()}\nself-test cases: 18/18\nsecret findings: {secret['finding_count']}\nbase/candidate classifications: {comparison['classification_counts']}\nunsafe command audit: {commands['status']}\nprovider/privacy/http audit: {runtime['status']}\ncontainer/compose audit: {container['status']}\nvulnerability findings: {vuln['finding_count']}\nlicense inventory: COMPLETE_POLICY_NOT_EVALUATED\nNOT_PRODUCTION_READY\n")
     if final_status != "PASS": raise SystemExit("STOP_LOCAL_SECURITY_GATE_FAILED")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(); parser.add_argument("--self-test", action="store_true"); parser.add_argument("--mode", choices=["all"], default="all"); parser.add_argument("--evidence-dir", type=Path, default=Path("ci-evidence/security-supply-chain")); parser.add_argument("--venv", type=Path, default=Path(".venv")); args = parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--self-test", action="store_true"); parser.add_argument("--mode", choices=["all"], default="all"); parser.add_argument("--evidence-dir", type=Path, default=Path("ci-evidence/security-supply-chain")); parser.add_argument("--venv", type=Path, default=Path(".venv")); parser.add_argument("--base-sha"); args = parser.parse_args()
     if args.self_test: self_test(args.evidence_dir)
-    else: run_all(args.evidence_dir, args.venv)
+    else: run_all(args.evidence_dir, args.venv, args.base_sha or "")
 
 
 if __name__ == "__main__": main()

@@ -10,6 +10,9 @@ jobs:
   hosted-acceptance:
     runs-on: ubuntu-latest
     container: python:3.14.6-bookworm
+    defaults:
+      run:
+        shell: bash
     services:
       postgres:
         image: postgres:18-bookworm

@@ -93,7 +93,9 @@ jobs:
           PY
           exit "$pytest_status"
       - name: Run complete security verifier
-        run: python scripts/ci/verify_security_supply_chain.py --mode all --evidence-dir ci-evidence/security-supply-chain --venv .venv
+        env:
+          CI_COMPARISON_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/ci/verify_security_supply_chain.py --mode all --base-sha "$CI_COMPARISON_BASE_SHA" --evidence-dir ci-evidence/security-supply-chain --venv .venv
       - name: Publish safe summary
         if: always()
         run: test -s ci-evidence/security-supply-chain/summary.txt && cat ci-evidence/security-supply-chain/summary.txt >> "$GITHUB_STEP_SUMMARY"

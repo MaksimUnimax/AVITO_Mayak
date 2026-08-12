@@ -1,0 +1,77 @@
+name: Canonical DB-backed full regression
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  full-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container: python:3.14.6-bookworm
+    services:
+      postgres:
+        image: postgres:18-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONNOUSERSITE: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      LC_ALL: C.UTF-8
+      LANG: C.UTF-8
+      UV_NO_SYSTEM_CONFIG: "1"
+      UV_PROJECT_ENVIRONMENT: .venv
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.31
+          python-version: 3.14.6
+          activate-environment: true
+          venv-path: .venv
+          enable-cache: false
+      - name: Frozen all-groups sync
+        run: uv sync --frozen --all-groups --python 3.14.6
+      - name: Provision task-owned RF10/RF11 foundation
+        run: |
+          set -euo pipefail
+          state="$RUNNER_TEMP/mayak-ci-full-${GITHUB_RUN_ID}"
+          python scripts/ci/provision_full_regression.py provision --run-id "$GITHUB_RUN_ID" --state "$state" --root "$GITHUB_WORKSPACE"
+          cat "$state/full-regression.env" >> "$GITHUB_ENV"
+          printf 'MAYAK_CI_FULL_STATE=%s\n' "$state" >> "$GITHUB_ENV"
+      - name: Validate canonical database contract
+        run: |
+          set -euo pipefail
+          test "$MAYAK_PROVIDER_MODE" = disabled
+          test -f "$MAYAK_RF11_POSTGRES_PASSWORD_FILE"
+          test "$(stat -c '%a' "$MAYAK_RF11_POSTGRES_PASSWORD_FILE")" = 600
+          test -n "$MAYAK_RF10_POSTGRES_DSN" -a "$MAYAK_RF11_POSTGRES_DB" != mayak
+          uv run alembic current
+          ! env | grep -E '^(RF18|RF19|RF24|MAYAK_RF18|MAYAK_RF19|MAYAK_RF24)'
+      - name: Complete unfiltered repository pytest with coverage
+        run: uv run coverage run -m pytest -q --disable-warnings && uv run coverage report --fail-under=85
+      - name: Cleanup exact task-owned database state
+        if: always()
+        run: |
+          if test -n "${MAYAK_CI_FULL_STATE:-}"; then
+            python scripts/ci/provision_full_regression.py cleanup --run-id "$GITHUB_RUN_ID" --state "$MAYAK_CI_FULL_STATE"
+          fi

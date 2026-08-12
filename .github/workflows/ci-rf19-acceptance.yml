@@ -14,6 +14,9 @@ jobs:
     container:
       image: ubuntu:24.04
       options: --volume /var/run/docker.sock:/var/run/docker.sock
+    defaults:
+      run:
+        shell: bash
     env:
       RF10_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
       RF11_POSTGRES_DSN: postgresql+psycopg://mayak_migration:rf19_migration_synthetic@postgres:5432/mayak
