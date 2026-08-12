@@ -369,5 +369,5 @@ def test_rf22_dependency_satisfied_draft_is_valid_and_prepared(
     assert result.outcome.validation_result.validation_state.value == "VALID"
     assert BuilderDraftValidationReason.DRAFT_VALID in result.outcome.reason_codes
     assert result.candidate.candidate_outcome.candidate_state.value == "PREPARED"
-    assert result.candidate.candidate_outcome.beacon_authoritative is False
+    assert result.candidate.candidate_outcome.beacon_acceptance_required is True
     assert result.candidate.beacon_mutation_performed is False

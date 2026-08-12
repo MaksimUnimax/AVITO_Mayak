@@ -76,7 +76,16 @@ jobs:
           PY
           ! env | grep -E '^(RF18|RF19|RF24|MAYAK_RF18|MAYAK_RF19|MAYAK_RF24)'
       - name: Complete unfiltered repository pytest with coverage
-        run: uv run coverage run -m pytest -q --disable-warnings && uv run coverage report --include='src/mayak/contracts/*,src/mayak/platform/*' --fail-under=85
+        env:
+          COVERAGE_FILE: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}.coverage
+          COVERAGE_JSON: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}.coverage.json
+          PYTEST_LOG: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}.pytest.log
+        run: |
+          set -euo pipefail
+          uv run coverage run --branch -m pytest -q --disable-warnings 2>&1 | tee "$PYTEST_LOG"
+          uv run coverage json -o "$COVERAGE_JSON"
+          uv run coverage report
+          python scripts/ci/verify_coverage_baseline.py "$COVERAGE_JSON" --pytest-log "$PYTEST_LOG" --comparison-base "5359921e2aedcc567363a9f2e9d47461459fef3b"
       - name: Cleanup exact task-owned database state
         if: always()
         run: |

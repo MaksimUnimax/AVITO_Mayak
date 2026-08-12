@@ -4,14 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from mayak.runtime.settings import compose_runtime_settings
 from scripts.runtime.rf08_docker_context import (
     COPY_PLAN,
-    dockerfile_copy_contract,
     validate_copy_contract,
     validate_copy_root,
 )
-from mayak.runtime.settings import compose_runtime_settings
-
 
 ROOT = Path(__file__).parents[2]
 

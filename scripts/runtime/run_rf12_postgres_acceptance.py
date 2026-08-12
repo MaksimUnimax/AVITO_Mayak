@@ -22,7 +22,7 @@ import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 import alembic.command as command
@@ -86,8 +86,18 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _safe_git(*args: str) -> str:
-    return subprocess.check_output(("git", *args), text=True).strip()
+class GitRevisionReader(Protocol):
+    def __call__(self, argv: tuple[str, ...]) -> str: ...
+
+
+def _read_git_revision(argv: tuple[str, ...]) -> str:
+    """Execute one fully formed git query; kept injectable for characterization."""
+    return subprocess.check_output(argv, text=True, shell=False).strip()
+
+
+def _safe_git(*args: str, reader: GitRevisionReader = _read_git_revision) -> str:
+    """Read repository identity without allowing shell interpretation."""
+    return reader(("git", *args))
 
 
 def _count(session: Session, table: str, where: str = "") -> int:

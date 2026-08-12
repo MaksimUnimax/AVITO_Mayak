@@ -16,7 +16,7 @@ from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, Callable, Protocol, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -483,10 +483,18 @@ def _run_records(scan_payload: object) -> list[dict[str, Any]]:
     return result
 
 
-def _checkout_head(root: Path) -> str:
+class GitRevisionReader(Protocol):
+    def __call__(self, argv: tuple[str, ...]) -> str: ...
+
+
+def _read_git_revision(argv: tuple[str, ...]) -> str:
+    return subprocess.check_output(argv, text=True, shell=False).strip()
+
+
+def _checkout_head(root: Path, *, reader: GitRevisionReader = _read_git_revision) -> str:
     """Read checkout identity with ownership trust scoped to this invocation."""
     repository_root = root.resolve()
-    return subprocess.check_output(
+    return reader(
         (
             "git",
             "-c",
@@ -495,10 +503,8 @@ def _checkout_head(root: Path) -> str:
             str(repository_root),
             "rev-parse",
             "HEAD",
-        ),
-        text=True,
-        shell=False,
-    ).strip()
+        )
+    )
 
 
 _SECRET_LOG_PATTERNS = (

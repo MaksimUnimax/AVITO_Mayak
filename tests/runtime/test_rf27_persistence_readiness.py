@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -76,7 +77,7 @@ def _database_urls() -> tuple[str, str] | None:
 
 
 @pytest.fixture(scope="module")
-def database_engines() -> tuple[sa.Engine, sa.Engine]:
+def database_engines() -> Generator[tuple[sa.Engine, sa.Engine], None, None]:
     urls = _database_urls()
     if urls is None:
         pytest.skip("RF27_APPLICATION_DSN and RF27_MIGRATION_DSN are required")
@@ -145,3 +146,69 @@ def test_application_role_has_select_only_and_migration_role_stays_authoritative
 def test_downgrade_and_reupgrade_contract(database_engines: tuple[sa.Engine, sa.Engine]) -> None:
     _application, migration = database_engines
     pytest.skip("destructive downgrade/re-upgrade is run by the isolated RF27 acceptance harness")
+
+
+def test_rf12_runtime_matrix_exercises_owned_postgres_behavior_when_task_db_is_present() -> None:
+    """Run the accepted RF-12 command matrix through the real runtime boundary.
+
+    The CI substrate deliberately supplies this DSN only for the full regression;
+    local runs remain hermetic and skip rather than inventing a database.
+    """
+    dsn = os.environ.get("MAYAK_RF10_POSTGRES_DSN")
+    if not dsn:
+        pytest.skip("task-owned RF10 PostgreSQL DSN is required")
+    from scripts.runtime import run_rf12_postgres_acceptance as rf12
+
+    engine = sa.create_engine(dsn, pool_pre_ping=True)
+    account_ids: list[str] = []
+    try:
+        with sa.orm.Session(engine) as session:
+            matrix = rf12._call_matrix(session)
+            account_ids.append(matrix["account_id"])
+            assert len(matrix["rows"]) == 12
+            assert {row["command_id"] for row in matrix["rows"][:-1]} == set(rf12.COMMAND_IDS)
+            assert matrix["rows"][-1]["replay"]["state"] == "REPLAYED"
+            assert matrix["rows"][-1]["mismatch"]["state"] == "MISMATCH"
+        assert rf12._parity(engine)["observed"] is True
+        assert rf12._constraints(engine)["result"] is True
+    finally:
+        if account_ids:
+            rf12._cleanup(engine, account_ids)
+        engine.dispose()
+
+
+def test_rf12_runtime_concurrency_rollback_and_policy_families_are_observable() -> None:
+    """Exercise each accepted RF-12 scenario family against the task database."""
+    dsn = os.environ.get("MAYAK_RF10_POSTGRES_DSN")
+    if not dsn:
+        pytest.skip("task-owned RF10 PostgreSQL DSN is required")
+    from scripts.runtime import run_rf12_postgres_acceptance as rf12
+
+    engine = sa.create_engine(dsn, pool_pre_ping=True)
+    accounts: list[str] = []
+    try:
+        scenarios = (
+            rf12._real_concurrency(engine),
+            rf12._real_tariff_concurrency(engine),
+            rf12._real_tariff_concurrency(engine, mismatch=True),
+            rf12._real_rollback(engine),
+            rf12._real_payment_rollback(engine),
+            rf12._real_payment_race(engine),
+        )
+        for scenario in scenarios:
+            value = scenario.get("account_id")
+            if value:
+                accounts.append(str(value))
+            accounts.extend(str(item) for item in scenario.get("account_ids", ()))
+            assert scenario
+        manual, manual_account = rf12._manual_entitlement_semantics(engine)
+        payment, payment_account = rf12._payment_non_authority(engine)
+        usage, usage_account = rf12._usage_policy_semantics(engine)
+        accounts.extend((manual_account, payment_account, usage_account))
+        assert manual["cases"]["active_exact_match"]["allowed"] is True
+        assert payment["entitlement_effective"] is False
+        assert rf12._usage_policy_gate(usage) is True
+    finally:
+        if accounts:
+            rf12._cleanup(engine, accounts)
+        engine.dispose()

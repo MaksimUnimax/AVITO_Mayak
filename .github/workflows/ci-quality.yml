@@ -112,7 +112,7 @@ jobs:
       - name: Run complete quality baseline
         env:
           CI_COMPARISON_BASE_SHA: ${{ steps.comparison-base.outputs.sha }}
-        run: python scripts/ci/verify_quality_baseline.py --mode quality --static-only --base-sha "$CI_COMPARISON_BASE_SHA" --evidence-dir ci-evidence/quality-suite --venv .venv
+        run: python scripts/ci/verify_quality_baseline.py --mode quality --base-sha "$CI_COMPARISON_BASE_SHA" --evidence-dir ci-evidence/quality-suite --venv .venv
       - name: Publish safe summary
         if: always()
         run: |

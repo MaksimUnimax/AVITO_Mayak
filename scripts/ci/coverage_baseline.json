@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "reference_sha": "5359921e2aedcc567363a9f2e9d47461459fef3b",
+  "toolchain": {
+    "python": "3.14.6",
+    "uv": "0.11.31",
+    "coverage_py": "7.15.0"
+  },
+  "measurement": {
+    "branch": true,
+    "source": null,
+    "include": null,
+    "omit": null,
+    "pytest_authority": "full-repository-unfiltered",
+    "exact_percent": "78.26377069472382",
+    "reference_statements": 82672,
+    "reference_branches": 20802,
+    "reference_measured_files": 566,
+    "reference_covered_opportunities": 81734,
+    "reference_test_counts": {"passed": 6952, "failed": 0, "errors": 0, "skipped": 35}
+  },
+  "provenance": {
+    "historical_rf07_accepted_coverage_percent": 85,
+    "classification": "CURRENT_MAIN_SUCCESSOR_NO_REGRESSION_BASELINE",
+    "note": "Reference exact percentage is the controlled identity-matched clean-main observation. File and covered-opportunity fields are verified from candidate JSON when available; no aborted capture is used to lower this floor."
+  }
+}

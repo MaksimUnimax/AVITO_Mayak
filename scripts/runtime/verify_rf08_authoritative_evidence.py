@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path, PurePosixPath
-from typing import cast
+from typing import Protocol, cast
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -43,6 +43,15 @@ from scripts.runtime.rf08_safe_foreign_schema import (
 )
 
 TASK_ID = "RF-08-CORRECTIVE-ELIMINATE-HOST-EXECUTABLE-CONTENT-AUTHORITY-20260801-08"
+
+
+class GitQueryRunner(Protocol):
+    def __call__(self, argv: list[str]) -> str: ...
+
+
+def _git_query(argv: list[str]) -> str:
+    """Run a literal git query; identity reads remain injectable and auditable."""
+    return subprocess.check_output(argv, text=True, shell=False).strip()
 PRODUCER_COLLECTOR_ID = "rf08.producer.observed.typed-docker.v3"
 COPY_PLAN = (
     ("pyproject.toml", "pyproject.toml"),
@@ -1016,26 +1025,21 @@ def _verify_sanitation_record(document: dict[str, object]) -> None:
 
 
 def verify_evidence(
-    evidence_path: Path, source_tree: Path, *, verifier_gateway: GatewayAuthority
+    evidence_path: Path,
+    source_tree: Path,
+    *,
+    verifier_gateway: GatewayAuthority,
+    git_query: GitQueryRunner = _git_query,
 ) -> dict[str, object]:
     document = json.loads(evidence_path.read_text(encoding="utf-8"))
-    candidate_source_sha = subprocess.check_output(
-        ["git", "-C", str(source_tree), "rev-parse", "HEAD"], text=True
-    ).strip()
+    candidate_source_sha = git_query(["git", "-C", str(source_tree), "rev-parse", "HEAD"])
     sha = re.compile(r"^[0-9a-f]{40}$")
-    parent_sha = subprocess.check_output(
-        ["git", "-C", str(source_tree), "rev-parse", "HEAD^"], text=True
-    ).strip()
-    origin_main = subprocess.check_output(
-        ["git", "-C", str(source_tree), "rev-parse", "origin/main"], text=True
-    ).strip()
-    tree_identity = subprocess.check_output(
-        ["git", "-C", str(source_tree), "rev-parse", "HEAD^{tree}"], text=True
-    ).strip()
+    parent_sha = git_query(["git", "-C", str(source_tree), "rev-parse", "HEAD^"])
+    origin_main = git_query(["git", "-C", str(source_tree), "rev-parse", "origin/main"])
+    tree_identity = git_query(["git", "-C", str(source_tree), "rev-parse", "HEAD^{tree}"])
     parent_count = len(
-        subprocess.check_output(
-            ["git", "-C", str(source_tree), "rev-list", "--parents", "-n", "1", "HEAD"],
-            text=True,
+        git_query(
+            ["git", "-C", str(source_tree), "rev-list", "--parents", "-n", "1", "HEAD"]
         ).split()
     ) - 1
     for value in (candidate_source_sha, parent_sha, origin_main):
