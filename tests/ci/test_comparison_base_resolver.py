@@ -4,7 +4,6 @@ import pytest
 
 from scripts.ci.resolve_comparison_base import resolve
 
-
 SHA = "1" * 40
 
 

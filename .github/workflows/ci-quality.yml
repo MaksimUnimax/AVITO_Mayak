@@ -28,10 +28,27 @@ env:
   UV_PROJECT_ENVIRONMENT: .venv
 
 jobs:
+  resolve-comparison-base:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Resolve one fail-closed comparison base
+        id: resolve
+        run: |
+          sha=$(python scripts/ci/resolve_comparison_base.py --event-name "$GITHUB_EVENT_NAME" --pull-request-base "${{ github.event.pull_request.base.sha || '' }}" --push-before "${{ github.event.before || '' }}" --manual-base "${{ inputs.comparison_base_sha || '' }}" --candidate-sha "$GITHUB_SHA")
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+
   canonical-full-regression:
+    needs: resolve-comparison-base
     uses: ./.github/workflows/ci-full-regression.yml
     with:
       ref: ${{ github.sha }}
+      comparison_base: ${{ needs.resolve-comparison-base.outputs.sha }}
 
   integrity-lock:
     runs-on: ubuntu-latest
@@ -79,7 +96,7 @@ jobs:
           if-no-files-found: error
 
   quality-suite:
-    needs: integrity-lock
+    needs: [integrity-lock, resolve-comparison-base]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -104,14 +121,9 @@ jobs:
           test "$(sha256sum uv.lock | cut -d' ' -f1)" = e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6
       - name: Verifier parser self-test
         run: python scripts/ci/verify_quality_baseline.py --self-test
-      - name: Resolve comparison base
-        id: comparison-base
-        run: |
-          sha=$(python scripts/ci/resolve_comparison_base.py --event-name "$GITHUB_EVENT_NAME" --pull-request-base "${{ github.event.pull_request.base.sha || '' }}" --push-before "${{ github.event.before || '' }}" --manual-base "${{ inputs.comparison_base_sha || '' }}")
-          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
       - name: Run complete quality baseline
         env:
-          CI_COMPARISON_BASE_SHA: ${{ steps.comparison-base.outputs.sha }}
+          CI_COMPARISON_BASE_SHA: ${{ needs.resolve-comparison-base.outputs.sha }}
         run: python scripts/ci/verify_quality_baseline.py --mode quality --base-sha "$CI_COMPARISON_BASE_SHA" --evidence-dir ci-evidence/quality-suite --venv .venv
       - name: Publish safe summary
         if: always()

@@ -17,11 +17,49 @@
     "reference_branches": 20802,
     "reference_measured_files": 566,
     "reference_covered_opportunities": 81734,
-    "reference_test_counts": {"passed": 6952, "failed": 0, "errors": 0, "skipped": 35}
+    "reference_test_counts": {"passed": 6952, "failed": 0, "errors": 0, "skipped": 35},
+    "governed_skipped_nodeids": [
+      "tests.runtime.test_rf18_telegram_adapter_postgres::test_rf18_postgres_gate_requires_explicit_task_database",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_actual_basic_assignment_uses_entitlements_owner",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_actual_beacon_support_patch_mutates_once",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_actual_identity_role_delegation_is_case_scoped",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_actual_manual_access_grant_uses_entitlements_owner",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_actual_manual_access_revoke_uses_entitlements_owner",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_actual_tariff_bootstrap_uses_entitlements_owner",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_ambiguous_replay_calls_owner_once",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_beacon_success_replay_adds_no_second_revision",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_direct_unrelated_foreign_dml_is_denied",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_entitlements_owner_audit_uses_rf20_correlation",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_notification_admin_privileged_read_is_target_scoped",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_notification_privileged_read_is_read_only",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_operator_and_customer_accounts_remain_distinct",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_policy_blocked_replay_has_zero_owner_effect",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_rf20_acceptance_scenario_reaches_evidence_ready_state",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_same_key_different_fingerprint_is_conflict",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_same_key_same_fingerprint_concurrent_command_has_one_effect",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_assignment_persists_operator",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_case_round_trip_maps_physical_id_to_case_id",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_close_requires_and_persists_evidence",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_escalation_persists",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_note_persists_and_is_not_duplicated_into_event_details",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_open_get_and_list_round_trip",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_resolve_requires_and_persists_evidence",
+      "tests.runtime.test_rf20_postgres_acceptance::test_pg_support_stale_row_version_is_rejected",
+      "tests.runtime.test_rf22_filter_catalog_runtime::test_rf22_dependency_satisfied_draft_is_valid_and_prepared",
+      "tests.runtime.test_rf22_filter_catalog_runtime::test_rf22_direct_acceptance_calls_production_runtime[builder_context-exact-scope]",
+      "tests.runtime.test_rf22_filter_catalog_runtime::test_rf22_direct_acceptance_calls_production_runtime[load_catalog-published]",
+      "tests.runtime.test_rf22_filter_catalog_runtime::test_rf22_direct_acceptance_calls_production_runtime[validate_draft-required-missing]",
+      "tests.runtime.test_rf22_filter_catalog_runtime::test_rf22_direct_cycle_is_loaded_from_postgres_and_blocks",
+      "tests.runtime.test_rf22_filter_catalog_runtime::test_rf22_semantic_downgrade_is_model_valid_and_candidate_blocked",
+      "tests.runtime.test_rf24_backup_restore_transport::test_real_pg18_archive_transport_and_restore",
+      "tests.runtime.test_rf27_persistence_readiness::test_application_role_has_select_only_and_migration_role_stays_authoritative",
+      "tests.runtime.test_rf27_persistence_readiness::test_downgrade_and_reupgrade_contract"
+    ],
+    "governed_skipped_nodeids_sha256": "95bc095a251bdbf318d6033adb57b3596a084ca28d379e08440b7ddcd73deeac"
   },
   "provenance": {
     "historical_rf07_accepted_coverage_percent": 85,
-    "classification": "CURRENT_MAIN_SUCCESSOR_NO_REGRESSION_BASELINE",
-    "note": "Reference exact percentage is the controlled identity-matched clean-main observation. File and covered-opportunity fields are verified from candidate JSON when available; no aborted capture is used to lower this floor."
+    "classification": "BOOTSTRAP_ONLY_CURRENT_MAIN_TRANSITION_BASELINE",
+    "note": "Transition artifact valid only for the exact bootstrap SHA; post-bootstrap successors require fresh exact-base runtime evidence."
   }
 }

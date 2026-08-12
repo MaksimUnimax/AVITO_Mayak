@@ -15,7 +15,7 @@ import tempfile
 import tomllib
 from collections import Counter
 from pathlib import Path
-from typing import cast
+from typing import TypeVar, cast
 
 PYTHON = "3.14.6"
 UV = "0.11.31"
@@ -23,6 +23,7 @@ PYPROJECT_SHA = "5b0727b99214d58c9fab83a6567b9485afca34a93ba0358a7bbd6ea04f7dcb7
 LOCK_SHA = "e1faff1ce0f4d5dfd35480ab59d5d599fddf05c38fcd16a26c52098511476ab6"
 MYPY_SHA = "e98c07580466ceb8794c0761567c0449ef5da51eef9de3abcdc23aedf08d5e7a"
 ROOT = Path(__file__).resolve().parents[2]
+Diagnostic = TypeVar("Diagnostic", bound=tuple[str, ...])
 
 
 def digest(value: str) -> str:
@@ -332,6 +333,13 @@ def _ruff_observation(exe: Path, cwd: Path, evidence: Path, label: str) -> dict[
     }
 
 
+def multiset_regressions(
+    base: Counter[Diagnostic], candidate: Counter[Diagnostic]
+) -> Counter[Diagnostic]:
+    """Return candidate diagnostics absent from the explicit base, globally."""
+    return candidate - base
+
+
 def _materialize_ref(ref: str, destination: Path) -> None:
     archive = destination.with_suffix(".tar")
     cp = subprocess.run(
@@ -375,18 +383,10 @@ def ruff_gate(evidence: Path, venv: Path, base_sha: str) -> dict:
     candidate = _ruff_observation(exe, ROOT, evidence, "candidate")
     candidate_diagnostics = cast(Counter[tuple[str, str, str]], candidate["diagnostics"])
     base_diagnostics = cast(Counter[tuple[str, str, str]], base["diagnostics"])
-    status = run(["git", "status", "--short"]).stdout.splitlines()
-    changed = set(run(["git", "diff", "--name-only", "HEAD"]).stdout.splitlines())
-    if not status:
-        changed.update(run(["git", "diff", "--name-only", "HEAD^", "HEAD"]).stdout.splitlines())
-    changed.update(status)
-    changed = {row[3:] if row[:2] in {" M", "??"} else row for row in changed}
-    regressions = Counter(
-        diagnostic
-        for diagnostic, count in (candidate_diagnostics - base_diagnostics).items()
-        for _ in range(count)
-        if diagnostic[0] in changed
-    )
+    # This is deliberately a global multiset delta.  A candidate can contain
+    # several commits and a diagnostic in an older commit must not be hidden by
+    # a last-commit/changed-path filter.
+    regressions = multiset_regressions(base_diagnostics, candidate_diagnostics)
     if regressions:
         raise RuntimeError("ruff no-regression baseline mismatch")
     return {
@@ -447,19 +447,24 @@ def mypy_gate(evidence: Path, venv: Path, base_sha: str | None = None) -> dict:
             )
             if base_run.returncode not in (0, 1):
                 raise RuntimeError("mypy base command failed")
-            base_records = _stable_mypy_records(base_run.stdout, base_tree)
+            base_records = _stable_mypy_records(base_run.stdout + base_run.stderr, base_tree)
         candidate_records = _stable_mypy_records(
             cast(str, results[0]["normalized_error_text"]), ROOT
         )
-        if sum(candidate_records.values()) > sum(base_records.values()):
+        regressions = multiset_regressions(base_records, candidate_records)
+        if regressions:
             raise RuntimeError("mypy no-regression baseline mismatch")
         if len({x["observed_normalized_error_sha256"] for x in results}) != 1:
             raise RuntimeError("mypy diagnostics are not repeatable")
     else:
         validate_mypy_observations(results)
     return {
-        "base_count": len(base_records) if base_sha else 249,
+        "base_count": sum(base_records.values()) if base_sha else 249,
         "candidate_count": results[0]["error_count"],
+        "new_or_worsened_count": sum((candidate_records - base_records).values())
+        if base_sha
+        else 0,
+        "removed_count": sum((base_records - candidate_records).values()) if base_sha else 0,
         "notes": results[0]["note_count"] if base_sha else 29,
         "expected_normalized_error_sha256": MYPY_SHA if not base_sha else None,
         "observed_normalized_error_sha256": results[0]["observed_normalized_error_sha256"],

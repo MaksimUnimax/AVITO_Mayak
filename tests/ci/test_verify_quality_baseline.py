@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -64,3 +65,14 @@ def test_parsers_remain_fail_closed() -> None:
         verifier.parse_collection_count("collected -1 items\n")
     with pytest.raises(RuntimeError):
         verifier.parse_coverage_percent("TOTAL 10 2 85%\nTOTAL 10 2 86%\n")
+
+
+def test_diagnostic_delta_is_global_multiset_identity() -> None:
+    base = Counter({("a.py", "E1"): 1, ("b.py", "E2"): 1})
+    assert verifier.multiset_regressions(base, Counter({("a.py", "E1"): 1})) == Counter()
+    assert verifier.multiset_regressions(
+        base, Counter({("a.py", "E9"): 1, ("b.py", "E2"): 1})
+    ) == Counter({("a.py", "E9"): 1})
+    assert verifier.multiset_regressions(
+        base, Counter({("a.py", "E1"): 2, ("b.py", "E2"): 1})
+    ) == Counter({("a.py", "E1"): 1})

@@ -6,6 +6,9 @@ on:
       ref:
         required: true
         type: string
+      comparison_base:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -75,6 +78,32 @@ jobs:
           assert not any(any(term in str(key).lower() for term in forbidden) for row in receipt["databases"] for key in row)
           PY
           ! env | grep -E '^(RF18|RF19|RF24|MAYAK_RF18|MAYAK_RF19|MAYAK_RF24)'
+      - name: Measure exact dynamic comparison base
+        env:
+          COMPARISON_BASE_SHA: ${{ inputs.comparison_base }}
+          BASE_COVERAGE_FILE: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}-base.coverage
+          BASE_COVERAGE_JSON: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}-base.coverage.json
+          BASE_JUNIT: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}-base.junit.xml
+        run: |
+          set -euo pipefail
+          if test "$COMPARISON_BASE_SHA" = "$(python -c 'from scripts.ci.verify_coverage_baseline import BASELINE_SHA; print(BASELINE_SHA)')"; then
+            exit 0
+          fi
+          git fetch --no-tags origin "$COMPARISON_BASE_SHA"
+          base_tree="$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base-tree"
+          git worktree add --detach "$base_tree" "$COMPARISON_BASE_SHA"
+          trap 'git worktree remove --force "$base_tree"' EXIT
+          (cd "$base_tree" && uv sync --frozen --all-groups --python 3.14.6)
+          (cd "$base_tree" && COVERAGE_FILE="$BASE_COVERAGE_FILE" uv run coverage run --branch -m pytest -q --disable-warnings --junitxml="$BASE_JUNIT")
+          COVERAGE_FILE="$BASE_COVERAGE_FILE" uv run coverage json -o "$BASE_COVERAGE_JSON"
+          python - "$BASE_COVERAGE_JSON" "$COMPARISON_BASE_SHA" "$BASE_JUNIT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text())
+          data["reference_sha"] = sys.argv[2]
+          data["pytest_evidence"] = sys.argv[3]
+          Path(sys.argv[1]).write_text(json.dumps(data, sort_keys=True) + "\n")
+          PY
       - name: Complete unfiltered repository pytest with coverage
         env:
           COVERAGE_FILE: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}.coverage
@@ -82,10 +111,23 @@ jobs:
           PYTEST_LOG: ${{ runner.temp }}/avito-mayak-${{ github.run_id }}.pytest.log
         run: |
           set -euo pipefail
-          uv run coverage run --branch -m pytest -q --disable-warnings 2>&1 | tee "$PYTEST_LOG"
+          uv run coverage run --branch -m pytest -q --disable-warnings --junitxml="$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}.junit.xml" 2>&1 | tee "$PYTEST_LOG"
           uv run coverage json -o "$COVERAGE_JSON"
           uv run coverage report
-          python scripts/ci/verify_coverage_baseline.py "$COVERAGE_JSON" --pytest-log "$PYTEST_LOG" --comparison-base "5359921e2aedcc567363a9f2e9d47461459fef3b"
+          if test "$COMPARISON_BASE_SHA" = "$(python -c 'from scripts.ci.verify_coverage_baseline import BASELINE_SHA; print(BASELINE_SHA)')"; then
+            cp scripts/ci/coverage_baseline.json "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base.coverage.json"
+          fi
+          if test -s "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base.coverage.json"; then
+            if python scripts/ci/verify_coverage_baseline.py "$COVERAGE_JSON" --baseline "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base.coverage.json" --candidate-junit "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}.junit.xml" --comparison-base "$COMPARISON_BASE_SHA"; then
+              exit 0
+            fi
+          else
+            test -s "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base.coverage.json"
+          fi
+          test -s "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base.junit.xml"
+          python scripts/ci/verify_coverage_baseline.py "$COVERAGE_JSON" --baseline "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base.coverage.json" --base-junit "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}-base.junit.xml" --candidate-junit "$RUNNER_TEMP/avito-mayak-${GITHUB_RUN_ID}.junit.xml" --comparison-base "$COMPARISON_BASE_SHA"
+        env:
+          COMPARISON_BASE_SHA: ${{ inputs.comparison_base }}
       - name: Cleanup exact task-owned database state
         if: always()
         run: |
